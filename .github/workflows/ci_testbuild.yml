@@ -54,7 +54,6 @@ jobs:
           verbose: false
           token: ${{ secrets.CODECOV_TOKEN }}
           plugin: xcode
-          files: artifacts/coverage.xml
 
       - name: Upload artifacts (build log)
         if: always()
@@ -83,13 +82,6 @@ jobs:
         with:
           name: docstrings-lint-annotations.json
           path: artifacts/annotations.json
-
-      - name: Upload artifacts (coverage)
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage.xml
-          path: artifacts/coverage.xml
 
       - name: Send notification (Push)
         if: ${{ always() && github.event_name == 'push' && github.repository == 'hammerspoon/hammerspoon' }}

@@ -7,13 +7,13 @@ set -o pipefail
 export IS_CI=1
 mkdir -p artifacts
 
-# Remove the pre-installed Cocoapods binary
+# Remove the pre-installed Cocoapods binary (CI runners ship a stale version)
 if [ -f /usr/local/bin/pod ]; then
     rm /usr/local/bin/pod
 fi
 
-# We need coreutils before the rest of this script can proceed, so we're going to cheat and install everything even though installdeps will do this again shortly
-brew bundle install
+# Install mise-managed tools (includes cocoapods)
+mise install
 
 # Install build dependencies
 ./scripts/build.sh installdeps

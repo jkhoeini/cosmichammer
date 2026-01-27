@@ -209,9 +209,9 @@ function op_docs() {
 }
 
 function op_installdeps() {
-    echo "Installing dependencies..." 
-    echo "  Homebrew packages..."
-    brew bundle install || fail "Unable to install Homebrew dependencies"
+    echo "Installing dependencies..."
+    echo "  mise-managed tools..."
+    mise install || fail "Unable to install mise-managed tools"
 
     echo "  Python packages..."
     /usr/bin/pip3 install --user --disable-pip-version-check -r "${HAMMERSPOON_HOME}/requirements.txt" || fail "Unable to install Python dependencies"
@@ -401,7 +401,7 @@ function op_release() {
               <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
           </item>
   "
-    gawk -i inplace -v s="<!-- __UPDATE_MARKER__ -->" -v r="${NEWCHUNK}" '{gsub(s,r)}1' appcast.xml
+    NEWCHUNK="${NEWCHUNK}" perl -i -pe "BEGIN{\$r=\$ENV{NEWCHUNK}} s/<!-- __UPDATE_MARKER__ -->/\$r/" appcast.xml
     git add appcast.xml
     git commit -qam "Update appcast.xml for ${VERSION}"
 
@@ -460,7 +460,6 @@ EOF
 ############################## COMMAND ASSERTIONS ##############################
 function op_build_assert() {
     echo "Checking build environment..."
-    assert_gawk
     assert_xcbeautify
     assert_cocoapods_state
 
@@ -598,12 +597,6 @@ function op_release_assert() {
 }
 
 ############################## ASSERTION HELPERS ###############################
-function assert_gawk() {
-  if [ "$(which gawk)" == "" ]; then
-    fail "gawk doesn't seem to be in your PATH. Try $0 installdeps"
-  fi
-}
-
 function assert_xcbeautify() {
   if [ "$(which xcbeautify)" == "" ]; then
     fail "xcbeautify is not in PATH. Try $0 installdeps"

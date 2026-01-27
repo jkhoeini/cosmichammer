@@ -266,22 +266,16 @@ if [[ "$(xcode-select -p)" != *"Xcode"* ]]; then
     echo "You can change this with: sudo xcode-select -s /path/to/Xcode.app"
     exit 1
 fi
-# Check for greadlink
 export PATH="$PATH:/opt/homebrew/bin"
-if [ "$(which greadlink)" == "" ]; then
-    echo "ERROR: Unable to find greadlink. Please run \"brew install coreutils\" and then \"$0 installdeps\""
-    exit 1
-fi
-# This silly which dancing is to ensure we don't trip over a zsh alias for 'grm' to 'git rm'
-export RM ; RM="$(which -a grm | grep -v aliased | head -1) --one-file-system --preserve-root"
+export RM="rm"
 
 # Calculate some variables we need later
 echo "Gathering info..."
 
 export SCRIPT_NAME ; SCRIPT_NAME="$(basename "$0")"
-export SCRIPT_HOME ; SCRIPT_HOME="$(dirname "$(greadlink -f "$0")")"
-export HAMMERSPOON_HOME ; HAMMERSPOON_HOME="$(greadlink -f "${SCRIPT_HOME}/../")"
-export WEBSITE_HOME ; WEBSITE_HOME="$(greadlink -f "${HAMMERSPOON_HOME}/../website")"
+export SCRIPT_HOME ; SCRIPT_HOME="$(dirname "$(readlink -f "$0")")"
+export HAMMERSPOON_HOME ; HAMMERSPOON_HOME="$(readlink -f "${SCRIPT_HOME}/../")"
+export WEBSITE_HOME ; WEBSITE_HOME="$(readlink -f "${HAMMERSPOON_HOME}/../website")"
 export BUILD_HOME="${HAMMERSPOON_HOME}/build"
 export CI_ARTIFACTS_HOME="${HAMMERSPOON_HOME}/artifacts"
 
@@ -292,7 +286,7 @@ export XCODE_BUILT_PRODUCTS_DIR ; XCODE_BUILT_PRODUCTS_DIR="$(xcodebuild -worksp
 export DOCS_SEARCH_DIRS=("Hammerspoon" "extensions/")
 
 # Calculate private token variables
-export TOKENPATH ; TOKENPATH="$(greadlink -f "${HAMMERSPOON_HOME}/..")"
+export TOKENPATH ; TOKENPATH="$(readlink -f "${HAMMERSPOON_HOME}/..")"
 export GITHUB_TOKEN_FILE="${TOKENPATH}/token-github-release"
 export GITHUB_USER="${GITHUB_USER:-hammerspoon}"
 export GITHUB_REPO="${GITHUB_REPO:-hammerspoon}"
