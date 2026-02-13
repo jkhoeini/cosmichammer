@@ -9,12 +9,6 @@
 #import <Foundation/Foundation.h>
 #import "HSLogger.h"
 
-#ifdef SENTRY_API_URL
-#   pragma message "BUILD NOTE: Sentry API URL available"
-@import Sentry;
-#else
-#   pragma message "BUILD NOTE: Sentry API URL unavailable"
-#endif
 
 @implementation HSLogger
 
@@ -84,25 +78,5 @@
     va_start(args, format);
     NSString *message = [[NSString alloc] initWithFormat:format arguments:args];
     NSLog(@"BREADCRUMB: %@", message);
-    SentryBreadcrumb *crumb = [[SentryBreadcrumb alloc] init];
-    crumb.message = message;
-#ifdef SENTRY_API_URL
-    [SentrySDK addBreadcrumb:crumb];
-#endif
-}
-
-- (void)logKnownBug:(NSString *)format, ... {
-    va_list args;
-    va_start(args, format);
-    NSString *message = [[NSString alloc] initWithFormat:format arguments:args];
-    NSLog(@"KNOWN BUG: %@", message);
-
-    // FIXME: no idea why we can't use SentryLevel for this, but 4 currently means error. It may break at any future release of Sentry.
-    SentryEvent *event = [[SentryEvent alloc] initWithLevel:4];
-    event.message = [[SentryMessage alloc] initWithFormatted:message];
-
-#ifdef SENTRY_API_URL
-    [SentrySDK captureEvent:event];
-#endif
 }
 @end

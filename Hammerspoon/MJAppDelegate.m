@@ -11,11 +11,6 @@
 #import "MJAccessibilityUtils.h"
 #import "HSLogger.h"
 #import "variables.h"
-#import "secrets.h"
-
-#ifdef SENTRY_API_URL
-@import Sentry;
-#endif
 
 @implementation MJAppDelegate
 
@@ -37,7 +32,6 @@
     self.startupEvent = nil;
     self.startupFile = nil;
     self.openFileDelegate = nil;
-    self.updateAvailable = nil;
 }
 
 - (void)handleGetURLEvent:(NSAppleEventDescriptor *)event withReplyEvent:(NSAppleEventDescriptor *)replyEvent
@@ -244,47 +238,6 @@
 
     [self registerDefaultDefaults];
 
-    // Enable Sentry, if we have an API URL available
-#ifdef SENTRY_API_URL
-    if (HSUploadCrashData() && !isTesting) {
-        SentryEvent* (^sentryWillUploadCrashReport) (SentryEvent *event) = ^SentryEvent* (SentryEvent *event) {
-            if ([event.extra objectForKey:@"MjolnirModuleLoaded"]) {
-                dispatch_async(dispatch_get_main_queue(), ^{
-                   [self showMjolnirMigrationNotification];
-                });
-            }
-            return event;
-        };
-
-        [SentrySDK startWithConfigureOptions:^(SentryOptions *options) {
-            options.dsn = @SENTRY_API_URL;
-            options.beforeSend = sentryWillUploadCrashReport;
-            options.releaseName = NSBundle.mainBundle.infoDictionary[@"CFBundleShortVersionString"];
-            options.enableAppHangTracking = NO;
-            options.debug = YES; // Enabled debug when first installing is always helpful
-        }];
-    }
-#endif
-
-    // Become the Sparkle delegate, if it's available
-    if (NSClassFromString(@"SUUpdater")) {
-        NSString *frameworkPath = [[[NSBundle mainBundle] privateFrameworksPath] stringByAppendingPathComponent:@"Sparkle.framework"];
-        if ([[NSBundle bundleWithPath:frameworkPath] load]) {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wundeclared-selector"
-            id sharedUpdater = [NSClassFromString(@"SUUpdater")  performSelector:@selector(sharedUpdater)];
-            NSMethodSignature * mySignature = [NSClassFromString(@"SUUpdater") instanceMethodSignatureForSelector:@selector(setDelegate:)];
-            NSInvocation * myInvocation = [NSInvocation invocationWithMethodSignature:mySignature];
-            [myInvocation setTarget:sharedUpdater];
-            // even though signature specifies this, we need to specify it in the invocation, since the signature is re-usable
-            // for any method which accepts the same signature list for the target.
-            [myInvocation setSelector:@selector(setDelegate:)];
-            [myInvocation setArgument:(void *)&self atIndex:2];
-            [myInvocation invoke];
-#pragma clang diagnostic pop
-        }
-    }
-
     MJMenuIconSetup(self.menuBarMenu);
     MJDockIconSetup();
     [[MJConsoleWindowController singleton] setup];
@@ -326,7 +279,7 @@
                          MJShowDockIconKey: @NO,
                          MJShowMenuIconKey: @YES,
                          HSAutoLoadExtensions: @YES,
-                         HSUploadCrashDataKey: @YES,
+
                          HSAppleScriptEnabledKey: @NO,
                          HSOpenConsoleOnDockClickKey: @YES,
                          HSPreferencesDarkModeKey: @NO,
@@ -375,27 +328,6 @@
         // No app is associated with .lua files, so fall back on TextEdit
         [workspace openFile:path withApplication:@"TextEdit" andDeactivate:YES];
     }
-}
-
-- (void)showMjolnirMigrationNotification {
-    NSAlert *alert = [[NSAlert alloc] init];
-    [alert addButtonWithTitle:@"OK"];
-    [alert setMessageText:@"Hammerspoon crash detected"];
-    [alert setInformativeText:@"Your init.lua is loading Mjolnir modules and a previous launch crashed.\n\nHammerspoon ships with updated versions of many of the Mjolnir modules, with both new features and many bug fixes.\n\nPlease consult our API documentation and migrate your config."];
-    [alert setAlertStyle:NSAlertStyleCritical];
-    [alert runModal];
-}
-
-#pragma mark - Sparkle delegate methods
-- (void)updater:(id)updater didFindValidUpdate:(id)update {
-    NSLog(@"Update found: %@ (Build: %@)", [update valueForKey:@"displayVersionString"], [update valueForKey:@"versionString"]);
-    self.updateAvailable = [update valueForKey:@"versionString"];
-    self.updateAvailableDisplayVersion = [update valueForKey:@"displayVersionString"];
-}
-
-- (void)updaterDidNotFindUpdate:(id)update {
-    self.updateAvailable = nil;
-    self.updateAvailableDisplayVersion = nil;
 }
 
 @end

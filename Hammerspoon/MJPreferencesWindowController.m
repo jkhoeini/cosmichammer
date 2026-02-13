@@ -6,7 +6,6 @@
 #import "MJAccessibilityUtils.h"
 #import "MJConsoleWindowController.h"
 #import "variables.h"
-#import "secrets.h"
 
 //
 // Enable & Disable Preferences Dark Mode:
@@ -29,8 +28,6 @@ void PreferencesDarkModeSetEnabled(BOOL enabled) {
 @property (weak) IBOutlet NSButton* showDockIconCheckbox;
 @property (weak) IBOutlet NSButton* showMenuIconCheckbox;
 @property (weak) IBOutlet NSButton* keepConsoleOnTopCheckbox;
-@property (weak) IBOutlet NSButton* uploadCrashDataCheckbox;
-@property (weak) IBOutlet NSButton* updatesCheckbox;
 
 @property BOOL isAccessibilityEnabled;
 
@@ -72,11 +69,6 @@ void PreferencesDarkModeSetEnabled(BOOL enabled) {
         [self.showDockIconCheckbox setState: MJDockIconVisible() ? NSControlStateValueOn : NSControlStateValueOff];
         [self.showMenuIconCheckbox setState: MJMenuIconVisible() ? NSControlStateValueOn : NSControlStateValueOff];
         [self.keepConsoleOnTopCheckbox setState: MJConsoleWindowAlwaysOnTop() ? NSControlStateValueOn : NSControlStateValueOff];
-        [self.uploadCrashDataCheckbox setState: HSUploadCrashData() ? NSControlStateValueOn : NSControlStateValueOff];
-#ifndef SENTRY_API_URL
-        [self.uploadCrashDataCheckbox setState:NSControlStateValueOff];
-        [self.uploadCrashDataCheckbox setEnabled:NO];
-#endif
     });
 }
 
@@ -102,29 +94,6 @@ void PreferencesDarkModeSetEnabled(BOOL enabled) {
     [self.showDockIconCheckbox setState: MJDockIconVisible() ? NSControlStateValueOn : NSControlStateValueOff];
     [self.showMenuIconCheckbox setState: MJMenuIconVisible() ? NSControlStateValueOn : NSControlStateValueOff];
     [self.keepConsoleOnTopCheckbox setState: MJConsoleWindowAlwaysOnTop() ? NSControlStateValueOn : NSControlStateValueOff];
-    [self.uploadCrashDataCheckbox setState: HSUploadCrashData() ? NSControlStateValueOn : NSControlStateValueOff];
-
-    if (NSClassFromString(@"SUUpdater")) {
-        NSString *frameworkPath = [[[NSBundle bundleForClass:[self class]] privateFrameworksPath] stringByAppendingPathComponent:@"Sparkle.framework"];
-        if ([[NSBundle bundleWithPath:frameworkPath] load]) {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wundeclared-selector"
-            id updater = [NSClassFromString(@"SUUpdater") performSelector:@selector(sharedUpdater)];
-#pragma clang diagnostic pop
-            [self.updatesCheckbox bind:@"value" toObject:updater withKeyPath:@"automaticallyChecksForUpdates" options:nil];
-        } else {
-            NSLog(@"Could not load %@ while trying to construct SUUpdater!", frameworkPath);
-        }
-    } else {
-        NSLog(@"SUUpdater doesn't exist, disabling updates checkbox in Preferences");
-        [self.updatesCheckbox setState:NSControlStateValueOff];
-        [self.updatesCheckbox setEnabled:NO];
-    }
-
-#ifndef SENTRY_API_URL
-    [self.uploadCrashDataCheckbox setState:NSControlStateValueOff];
-    [self.uploadCrashDataCheckbox setEnabled:NO];
-#endif
 
     NSNotificationCenter *changeWatcher = [NSNotificationCenter defaultCenter];
     [changeWatcher addObserver:self
@@ -196,14 +165,6 @@ void PreferencesDarkModeSetEnabled(BOOL enabled) {
     MJConsoleWindowSetAlwaysOnTop([sender state] == NSControlStateValueOn);
 }
 
-- (IBAction) toggleUploadCrashData:(id)sender {
-    HSSetUploadCrashData([sender state] == NSControlStateValueOn);
-}
-
-- (IBAction) privacyPolicyClicked:(id)sender {
-    [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:@"https://www.hammerspoon.org/privacy"]];
-}
-
 - (void) dockMenuProblemAlertDidEnd:(NSAlert *)alert returnCode:(NSInteger)returnCode contextInfo:(void *)contextInfo {
     BOOL skipNextTime = ([[alert suppressionButton] state] == NSControlStateValueOn);
     [[NSUserDefaults standardUserDefaults] setBool:skipNextTime forKey:MJSkipDockMenuIconProblemAlertKey];
@@ -231,12 +192,3 @@ void PreferencesDarkModeSetEnabled(BOOL enabled) {
 }
 
 @end
-
-
-BOOL HSUploadCrashData(void) {
-    return [[NSUserDefaults standardUserDefaults] boolForKey: HSUploadCrashDataKey];
-}
-
-void HSSetUploadCrashData(BOOL uploadCrashData) {
-    [[NSUserDefaults standardUserDefaults] setBool:uploadCrashData forKey:HSUploadCrashDataKey];
-}

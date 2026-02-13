@@ -21,23 +21,12 @@ function op_clean() {
 function op_build() {
     op_build_assert
 
-    if [ "${UPLOAD_DSYM}" == "1" ]; then
-        op_sentry_assert
-        echo "Importing Sentry token from: ${TOKENPATH}/token-sentry-auth"
-        # shellcheck disable=SC1090
-        source "${SENTRY_TOKEN_AUTH_FILE}"
-    fi
-
     echo "Building..."
     ${RM} -rf "${HAMMERSPOON_BUNDLE_PATH}"
 
     local BUILD_COMMAND="build"
-    local EXTRA_ARGS=()
     if [ "${BUILD_FOR_TESTING}" == "1" ]; then
         BUILD_COMMAND="build-for-testing"
-    elif [ "${XCODE_CONFIGURATION}" == "Release" ]; then
-        BUILD_COMMAND="archive"
-        EXTRA_ARGS+=(-archivePath "${HAMMERSPOON_XCARCHIVE_PATH}")
     fi
 
     # Build the app
@@ -45,28 +34,7 @@ function op_build() {
                -scheme "${XCODE_SCHEME}" \
                -configuration "${XCODE_CONFIGURATION}" \
                -destination "platform=macOS" \
-               ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"} \
                "${BUILD_COMMAND}" | tee "${BUILD_HOME}/${XCODE_CONFIGURATION}-build.log" | xcbeautify ${XCB_OPTS[@]:-}
-
-    if [ "${BUILD_COMMAND}" == "archive" ]; then
-        # Export the signed app bundle from the archive (requires Developer ID certificate)
-        xcodebuild -exportArchive -archivePath "${HAMMERSPOON_XCARCHIVE_PATH}" \
-                   -exportOptionsPlist Hammerspoon/Build\ Configs/Archive-Export-Options.plist \
-                   -exportPath "${BUILD_HOME}"
-    fi
-
-    # Upload dSYMs to Sentry if so desired
-    if [ "${UPLOAD_DSYM}" == "1" ]; then
-        export SENTRY_ORG="${SENTRY_ORG:-hammerspoon}"
-        export SENTRY_PROJECT="${SENTRY_PROJECT:-hammerspoon}"
-        export SENTRY_LOG_LEVEL=error
-        if [ "${DEBUG}" == "1" ]; then
-            SENTRY_LOG_LEVEL=debug
-        fi
-        export SENTRY_AUTH_TOKEN
-        "${HAMMERSPOON_HOME}/scripts/sentry-cli" debug-files upload "${HAMMERSPOON_XCARCHIVE_PATH}/dSYMs/" 2>&1 | tee "${BUILD_HOME}/sentry-upload.log"
-        "${HAMMERSPOON_HOME}/scripts/sentry-cli" debug-files upload "${HAMMERSPOON_HOME}/Pods/Sparkle/Symbols/" 2>&1 | tee -a "${BUILD_HOME}/sentry-upload.log"
-    fi
 }
 
 function op_test() {
@@ -88,68 +56,6 @@ function op_test() {
     # Re-enable error capture
     set -e
     set -o pipefail
-}
-
-function op_validate() {
-  echo "Validating ${HAMMERSPOON_BUNDLE_PATH}..."
-  op_validate_assert
-
-  # Obtain the relevant build settings
-  local BUILD_SETTINGS ; BUILD_SETTINGS=$(xcodebuild -workspace Hammerspoon.xcworkspace -scheme Release -configuration Release -showBuildSettings 2>&1 | grep -E " CODE_SIGN_IDENTITY|DEVELOPMENT_TEAM|CODE_SIGN_ENTITLEMENTS")
-
-  local SIGN_IDENTITY ; SIGN_IDENTITY=$(echo "${BUILD_SETTINGS}" | grep "CODE_SIGN_IDENTITY = " | sed -e 's/.* = //')
-  local SIGN_TEAM ; SIGN_TEAM=$(echo "${BUILD_SETTINGS}" | grep "DEVELOPMENT_TEAM = " | sed -e 's/.* = //')
-  local ENTITLEMENTS_FILE ; ENTITLEMENTS_FILE=$(echo "${BUILD_SETTINGS}" | grep CODE_SIGN_ENTITLEMENTS | sed -e 's/.* = //')
-
-  # Validate that the app bundle has a correct signature at all
-  if ! codesign --verify "${HAMMERSPOON_BUNDLE_PATH}" ; then
-      codesign -dvv "${HAMMERSPOON_BUNDLE_PATH}"
-      fail "Invalid signature"
-  fi
-  echo "  ✅ App bundle is signed"
-
-  # Fetch the app bundle's relevant signature data
-  local APP_SIGNATURE ; APP_SIGNATURE=$(codesign --display --verbose=4 "${HAMMERSPOON_BUNDLE_PATH}" 2>&1 | grep ^Authority | head -1)
-
-  # Check that the signing team is correct (this is the bit that looks like ABCDEF123G)
-  # shellcheck disable=SC2001
-  if [ "$SIGN_TEAM" != "$(echo "${APP_SIGNATURE}" | sed -e 's/.*(\(.*\))/\1/')" ]; then
-      fail "App is signed with the wrong key: $APP_SIGNATURE (expecting $SIGN_TEAM)"
-  fi
-  echo "  ✅ Signing team is correct (${SIGN_TEAM})"
-
-  # Check that the signing identity is correct (typically this should be "Developer ID Application")
-  # shellcheck disable=SC2001
-  if [ "${SIGN_IDENTITY}" != "$(echo "${APP_SIGNATURE}" | sed -e 's/.*=\(.*\):.*/\1/')" ]; then
-      fail "App is signed with the wrong identity: $APP_SIGNATURE (expecting $SIGN_IDENTITY)"
-  fi
-  echo "  ✅ Signing identity is correct (${SIGN_IDENTITY})"
-
-  # Check that Gatekeeper accepts the app bundle
-  if ! spctl --assess --type execute "${HAMMERSPOON_BUNDLE_PATH}" ; then
-      spctl --verbose=4 --assess --type execute "${HAMMERSPOON_BUNDLE_PATH}"
-      fail "Gatekeeper rejection:"
-  fi
-  echo "  ✅ Gatekeeper accepts the app bundle"
-
-  # Check that the app bundle has the expected entitlements
-  local EXPECTED_ENTITLEMENTS ; EXPECTED_ENTITLEMENTS=$(xmllint --c14n --format "${HAMMERSPOON_HOME}/${ENTITLEMENTS_FILE}" 2>/dev/null)
-  # FIXME: the ':-' syntax is deprecated, when we stop caring about building on <Monterey machines, this is the correct new line
-  #local ACTUAL_ENTITLEMENTS ; ACTUAL_ENTITLEMENTS=$(codesign --display --entitlements - --xml "${HAMMERSPOON_BUNDLE_PATH}" | xmllint --c14n --format -)
-  local ACTUAL_ENTITLEMENTS ; ACTUAL_ENTITLEMENTS=$(codesign --display --entitlements :- "${HAMMERSPOON_BUNDLE_PATH}" | xmllint --c14n --format -)
-
-  if [ "${EXPECTED_ENTITLEMENTS}" != "${ACTUAL_ENTITLEMENTS}" ]; then
-      echo "***** EXPECTED ENTITLEMENTS (${ENTITLEMENTS_FILE}):"
-      echo "${EXPECTED_ENTITLEMENTS}"
-      echo "***** ACTUAL ENTITLEMENTS:"
-      echo "${ACTUAL_ENTITLEMENTS}"
-      echo "*****"
-      fail "Entitlements did not apply correctly"
-  fi
-  echo "  ✅ Entitlements are as expected"
-
-  echo ""
-  echo "  🎉 ${HAMMERSPOON_BUNDLE_PATH} is fully valid"
 }
 
 function op_docs() {
@@ -208,7 +114,7 @@ function op_docs() {
     fi
 
     echo "Docs built"
-    popd >/dev/null || fail "Unknown"
+  popd >/dev/null || fail "Unknown"
 }
 
 function op_installdeps() {
@@ -220,201 +126,11 @@ function op_installdeps() {
     /usr/bin/pip3 install --user --disable-pip-version-check -r "${HAMMERSPOON_HOME}/requirements.txt" || fail "Unable to install Python dependencies"
 }
 
-function op_notarize() {
-    echo " Notarizing ${NOTARIZATION_FILE:-${HAMMERSPOON_BUNDLE_PATH}}..."
-    op_notarize_assert
-
-    local IS_ZIP=0
-    if [ "${NOTARIZATION_FILE}" == "" ]; then
-        echo " Zipping..."
-        local ZIP_PATH="${HAMMERSPOON_BUNDLE_PATH}.zip"
-        create_zip "${HAMMERSPOON_BUNDLE_PATH}" "${ZIP_PATH}"
-        NOTARIZATION_FILE="${ZIP_PATH}"
-        IS_ZIP=1
-    fi
-
-    echo " Uploading to Apple Notary Service (may take many minutes)..."
-    local UPLOAD_OUTPUT ; UPLOAD_OUTPUT=$(xcrun notarytool submit "${NOTARIZATION_FILE}" --keychain-profile "${KEYCHAIN_PROFILE}" --wait -f json)
-    local UPLOAD_ID ; UPLOAD_ID=$(echo "${UPLOAD_OUTPUT}" | jq -r .id)
-    local UPLOAD_STATUS ; UPLOAD_STATUS=$(echo "${UPLOAD_OUTPUT}" | jq -r .status)
-    local UPLOAD_MSG ; UPLOAD_MSG=$(echo "${UPLOAD_OUTPUT}" | jq -r .message)
-
-    echo " Fetching notarization log..."
-    xcrun notarytool log "${UPLOAD_ID}" --keychain-profile "${KEYCHAIN_PROFILE}" "${BUILD_HOME}/notarization-log.json"
-
-    if [ "${UPLOAD_STATUS}" != "Accepted" ]; then
-        echo "Notarization upload is in an unexpected state: ${UPLOAD_STATUS} (${UPLOAD_MSG})"
-        echo "Upload log follows:"
-        cat build/notarization-log.json
-        fail "Unable to continue"
-    fi
-
-    echo " Stapling notarization ticket..."
-    xcrun stapler staple "${HAMMERSPOON_BUNDLE_PATH}"
-
-    echo " Validating notarization..."
-    if ! xcrun stapler validate "${HAMMERSPOON_BUNDLE_PATH}" ; then
-        fail "Notarization rejection"
-    fi
-
-    if [ "${IS_ZIP}" == "1" ]; then
-        # Remove the zip we uploaded for Notarization
-        ${RM} "${HAMMERSPOON_BUNDLE_PATH}.zip"
-
-        create_zip "${HAMMERSPOON_BUNDLE_PATH}" "${HAMMERSPOON_BUNDLE_PATH}-$(release_version).zip"
-    fi
-
-    echo " ✅ Notarization successful!"
-}
-
-function op_archive() {
-    local VERSION ; VERSION="$(get_version)"
-    local ARCHIVE_PATH="${HAMMERSPOON_HOME}/../archive/${VERSION}"
-
-    echo "Archiving to ${ARCHIVE_PATH}..."
-    mkdir -p "${ARCHIVE_PATH}"
-
-    # Archive the final zip, the xcarchive, and all the build/notarization/sentry logfiles
-    cp -a "${HAMMERSPOON_BUNDLE_PATH}-${VERSION}.zip" "${ARCHIVE_PATH}/"
-    cp -a "${HAMMERSPOON_XCARCHIVE_PATH}" "${ARCHIVE_PATH}/"
-    cp -a "${BUILD_HOME}"/*.log "${ARCHIVE_PATH}/"
-    cp -a "${BUILD_HOME}"/*.plist "${ARCHIVE_PATH}/"
-
-    # Dump dSYM UUIDs and archive them
-    find "${HAMMERSPOON_XCARCHIVE_PATH}" -name '*.dSYM' -exec dwarfdump -u {} \; >"${ARCHIVE_PATH}/dSYM_UUID.txt"
-    create_zip "${HAMMERSPOON_XCARCHIVE_PATH}/dSYMs" "${ARCHIVE_PATH}/${APP_NAME}-dSYM-${VERSION}.zip"
-
-    # Archive the docs
-    mkdir -p "${ARCHIVE_PATH}/docs"
-    cp -a "${BUILD_HOME}/docs.json" "${ARCHIVE_PATH}/docs/"
-    create_zip "${BUILD_HOME}/html" "${ARCHIVE_PATH}/docs/${VERSION}-docs.zip"
-}
-
-function op_release() {
-    local VERSION ; VERSION="$(release_version)"
-    op_release_assert
-
-    # We always do a local test of the signed/notarized build, to ensure it runs
-    echo "Opening Finder for a local test..."
-    open -R "${HAMMERSPOON_BUNDLE_PATH}"
-    echo -n "******** TEST THE BUILD PLEASE ('yes' to confirm it works): "
-    local REPLY=""
-    read -r REPLY
-
-    if [ "${REPLY}" != "yes" ]; then
-        fail "User rejected build"
-    fi
-
-    # Prepare the release archive
-    echo " Zipping..."
-    # FIXME: HAMMERSPOON_BUNDLE_PATH here is not right, that gives us Hammerspoon.app-X.Y.Z.zip and we don't want the .app
-    local ZIP_PATH="${BUILD_HOME}/${APP_NAME}-${VERSION}.zip"
-    rm -f "${ZIP_PATH}"
-    create_zip "${HAMMERSPOON_BUNDLE_PATH}" "${ZIP_PATH}"
-
-    echo " Creating release on GitHub..."
-    gh release create "${VERSION}" "${ZIP_PATH}" --title "${VERSION}" --notes-file "${WEBSITE_HOME}/_posts/$(date "+%Y-%m-%d")-${VERSION}.md"
-
-    echo " Uploading docs to website..."
-    pushd "${WEBSITE_HOME}" >/dev/null || fail "Unable to access website repo at ${WEBSITE_HOME}"
-    mkdir -p "docs/${VERSION}"
-    ${RM} docs/*.html
-    ${RM} -rf docs/LuaSkin
-    cp -r "${BUILD_HOME}/html/" docs/
-    cp -r "${BUILD_HOME}/html/" "docs/${VERSION}/"
-    git add .
-    git commit --allow-empty -am "Add docs for ${VERSION}"
-    git push
-    popd >/dev/null || fail "Unknown"
-
-    echo " Updating appcast.xml..."
-    eval $(stat -s "${ZIP_PATH}")
-    export ZIPLEN="${st_size}"
-    pushd "${HAMMERSPOON_HOME}/" >/dev/null || fail "Unable to access ${HAMMERSPOON_HOME}/"
-    local BUILD_NUMBER ; BUILD_NUMBER=$(git rev-list "$(git symbolic-ref HEAD | sed -e 's,.*/\\(.*\\),\\1,')" --count)
-    local NEWCHUNK ; NEWCHUNK="<!-- __UPDATE_MARKER__ -->
-          <item>
-              <title>Version ${VERSION}</title>
-              <sparkle:releaseNotesLink>
-                  https://www.hammerspoon.org/releasenotes/${VERSION}.html
-              </sparkle:releaseNotesLink>
-              <pubDate>$(date +"%a, %e %b %Y %H:%M:%S %z")</pubDate>
-              <enclosure url=\"https://github.com/Hammerspoon/hammerspoon/releases/download/${VERSION}/Hammerspoon-${VERSION}.zip\"
-                  sparkle:version=\"${BUILD_NUMBER}\"
-                  sparkle:shortVersionString=\"${VERSION}\"
-                  length=\"${ZIPLEN}\"
-                  type=\"application/octet-stream\"
-              />
-              <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
-          </item>
-  "
-    NEWCHUNK="${NEWCHUNK}" perl -i -pe "BEGIN{\$r=\$ENV{NEWCHUNK}} s/<!-- __UPDATE_MARKER__ -->/\$r/" appcast.xml
-    git add appcast.xml
-    git commit -qam "Update appcast.xml for ${VERSION}"
-
-    git push
-    popd >/dev/null || fail "Unknown"
-
-    echo " Updating Sentry release..."
-    op_sentry_assert
-    echo "  Importing Sentry token from: ${TOKENPATH}/token-sentry-auth"
-    # shellcheck disable=SC1090
-    source "${SENTRY_TOKEN_AUTH_FILE}"
-
-    export SENTRY_ORG="${SENTRY_ORG:-hammerspoon}"
-    export SENTRY_PROJECT="${SENTRY_PROJECT:-hammerspoon}"
-    export SENTRY_LOG_LEVEL=error
-    if [ "${DEBUG}" == "1" ]; then
-        SENTRY_LOG_LEVEL=debug
-    fi
-    export SENTRY_AUTH_TOKEN
-    "${HAMMERSPOON_HOME}/scripts/sentry-cli" releases set-commits --auto "${VERSION}" 2>&1 | tee "${BUILD_HOME}/sentry-release.log"
-    "${HAMMERSPOON_HOME}/scripts/sentry-cli" releases finalize "${VERSION}" 2>&1 | tee -a "${BUILD_HOME}/sentry-release.log"
- 
-    echo " Creating PR for Dash docs..."
-    pushd "${HAMMERSPOON_HOME}/../" >/dev/null || fail "Unable to access ${HAMMERSPOON_HOME}/../"
-    ${RM} -rf dash
-    git clone -q git@github.com:Kapeli/Dash-User-Contributions.git dash
-    cp "${BUILD_HOME}/Hammerspoon.tgz" dash/docsets/Hammerspoon/
-    pushd "dash" >/dev/null || fail "Unable to access dash repo at: ${HAMMERSPOON_HOME}/../dash"
-    git remote add hammerspoon git@github.com:hammerspoon/Dash-User-Contributions.git
-    git checkout -b "hammerspoon-${VERSION}"
-    cat >docsets/Hammerspoon/docset.json <<EOF
-    {
-       "name": "Hammerspoon",
-       "version": "${VERSION}",
-       "archive": "Hammerspoon.tgz",
-       "author": {
-           "name": "Hammerspoon Team",
-           "link": "https://www.hammerspoon.org/"
-       },
-       "aliases": [],
-       "specific_versions": [
-       ]
-   }
-EOF
-    git add docsets/Hammerspoon/Hammerspoon.tgz
-    git commit -qam "Update Hammerspoon docset to ${VERSION}"
-    git push -qfv hammerspoon master
-    gh repo set-default Kapeli/Dash-User-Contributions
-    gh pr create --body "" --title "Update Hammerspoon docset to ${VERSION}"
-    popd >/dev/null || fail "Unknown"
-    popd >/dev/null || fail "Unknown"
-
-    echo "Release actions complete!"
-}
-
 ############################## COMMAND ASSERTIONS ##############################
 function op_build_assert() {
     echo "Checking build environment..."
     assert_xcbeautify
     assert_cocoapods_state
-
-    if [ "${XCODE_CONFIGURATION}" == "Release" ]; then
-        if [ ! -f "${SENTRY_TOKEN_API_FILE}" ]; then
-            fail "Release build requested, but no Sentry API token exists at: ${SENTRY_TOKEN_API_FILE}"
-        fi
-    fi
 }
 
 function op_test_assert() {
@@ -436,90 +152,6 @@ function op_installdeps_assert() {
         echo "Unable to continue without Homebrew installed, please see: https://brew.sh/"
         exit 1
     fi
-}
-
-function op_validate_assert() {
-  if [ ! -e "${HAMMERSPOON_BUNDLE_PATH}" ]; then
-    fail "Unable to validate ${HAMMERSPOON_BUNDLE_PATH}, it doesn't exist"
-  fi
-}
-
-function op_notarize_assert() {
-  # FIXME: Figure out a way to assert that the keychain profile exists
-  return
-}
-
-function op_archive_assert() {
-    if [ ! -e "${HAMMERSPOON_BUNDLE_PATH}-${VERSION}.zip" ]; then
-        fail "Unable to archive: ${HAMMERSPOON_BUNDLE_PATH}-${VERSION}.zip is missing"
-    fi
-
-    if [ ! -e "${HAMMERSPOON_XCARCHIVE_PATH}" ]; then
-        fail "Unable to archive: ${HAMMERSPOON_XCARCHIVE_PATH} is missing"
-    fi
-
-    if [ ! -e "${BUILD_HOME}/docs.json" ]; then
-        fail "Unable to archive: ${BUILD_HOME}/docs.json is missing"
-    fi
-
-    if [ ! -e "${BUILD_HOME}/html" ]; then
-        fail "Unable to archive: ${BUILD_HOME}/html is missing"
-    fi
-}
-
-function op_sentry_assert() {
-    if [ ! -f "${SENTRY_TOKEN_AUTH_FILE}" ]; then
-        fail "You do not have a Sentry auth tokens in ${SENTRY_TOKEN_AUTH_FILE}"
-    fi
-}
-
-function op_release_assert() {
-    echo "Checking release notes exist..."
-    local RNOTES ; RNOTES="${WEBSITE_HOME}/_posts/$(date "+%Y-%m-%d")-${VERSION}.md"
-    if [ ! -f "${RNOTES}" ]; then
-        fail "Unable to find expected release notes: ${RNOTES}"
-    fi
-
-    echo "Checking GitHub login status..."
-    if ! gh auth status >/dev/null 2>&1 ; then
-        echo " gh not logged in, trying with ${GITHUB_TOKEN_FILE}"
-        # GitHub CLI client is not currently logged in, let's see if we have a token available and can fix it
-        if [ ! -f "${GITHUB_TOKEN_FILE}" ]; then
-            fail "You do not have a GitHub auth token in ${GITHUB_TOKEN_FILE}. Generate one with 'read:org, repo' permissions at: https://github.com/settings/tokens, or run 'gh auth login'"
-        fi
-        gh auth login --with-token <"${GITHUB_TOKEN_FILE}"
-
-        if ! gh auth status >/dev/null 2>&1 ; then
-            fail "Unable to login to GitHub with token in ${GITHUB_TOKEN_FILE}"
-        fi
-    fi
-
-    # Ensure we have a full tag for the release
-    echo "Checking release tag..."
-    pushd "${HAMMERSPOON_HOME}" >/dev/null || fail "Unable to access ${HAMMERSPOON_HOME}"
-    local TAGTYPE ; TAGTYPE="$(git cat-file -t "${VERSION}")"
-    if [ "${TAGTYPE}" != "tag" ]; then
-        fail "${VERSION} is not an annotated tag, it is either missing or is a lightweight tag. Use: git tag -a ${VERSION}"
-    fi
-    popd >/dev/null || fail "Unknown"
-
-    # Ensure this tag is not already released
-    if gh release view "${VERSION}" >/dev/null 2>&1 ; then
-        fail "${VERSION} already exists on GitHub, cannot re-release"
-    fi
-
-    # Check that the website repo is present, has no uncommitted changes, and is in-sync with upstream
-    pushd "${WEBSITE_HOME}" >/dev/null || fail "Website repo missing/inaccessible at: ${WEBSITE_HOME}"
-    if ! git diff-index --quiet HEAD -- ; then
-        fail "Website repo has uncommitted changes, please commit or stash them before releasing"
-    fi
-    git fetch origin
-    local DESYNC
-    DESYNC="$(git rev-list --left-right "@{upstream}"...HEAD)"
-    if [ "${DESYNC}" != "" ]; then
-        fail "Website repo is out of sync with GitHub, please sync before releasing"
-    fi
-    popd >/dev/null || fail "Unknown"
 }
 
 ############################## ASSERTION HELPERS ###############################
@@ -548,18 +180,3 @@ function assert_cocoapods_state() {
   popd >/dev/null || fail "Unknown"
 }
 
-############################## UTILITY HELPERS ###############################
-function get_version() {
-    release_version
-}
-
-function release_version() {
-    local VERSION ; VERSION=$(cd "${HAMMERSPOON_HOME}" || fail "Unable to enter ${HAMMERSPOON_HOME}" ; git describe --abbrev=0)
-    echo "${VERSION}"
-}
-
-function create_zip() {
-    local SRC ; SRC="${1}"
-    local DST ; DST="${2}"
-    /usr/bin/ditto -c -k --keepParent "${SRC}" "${DST}"
-}

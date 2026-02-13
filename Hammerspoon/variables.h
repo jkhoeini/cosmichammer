@@ -3,7 +3,6 @@
 #define MJKeepConsoleOnTopKey        @"MJKeepConsoleOnTopKey"
 #define MJHasRunAlreadyKey           @"MJHasRunAlreadyKey"
 #define HSAutoLoadExtensions         @"HSAutoLoadExtensions"
-#define HSUploadCrashDataKey         @"HSUploadCrashData"
 #define HSAppleScriptEnabledKey      @"HSAppleScriptEnabledKey"
 #define HSOpenConsoleOnDockClickKey  @"HSOpenConsoleOnDockClickKey"
 #define HSConsoleDarkModeKey         @"HSConsoleDarkModeKey"

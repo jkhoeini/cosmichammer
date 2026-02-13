@@ -10,7 +10,6 @@ XCODE_CONFIGURATION="Debug"
 XCCONFIG_FILE=""
 UPLOAD_DSYM=0
 BUILD_FOR_TESTING=0
-KEYCHAIN_PROFILE="HAMMERSPOON_BUILDSH"
 DEBUG=0
 DOCS_JSON=1
 DOCS_MD=1
@@ -29,11 +28,7 @@ function usage() {
     echo "  clean         - Erase build directory"
     echo "  build         - Build ${APP_NAME}.app"
     echo "  test          - Test ${APP_NAME}.app"
-    echo "  validate      - Validate signature/gatekeeper/entitlements"
     echo "  docs          - Build documentation"
-    echo "  notarize      - Notarize a ${APP_NAME}.app bundle with Apple (note that it must be signed first)"
-    echo "  archive       - Archive the build/notarization artifacts"
-    echo "  release       - Perform all the steps to upload a release"
     echo ""
     echo "GENERAL OPTIONS:"
     echo "  -h             - Show this help"
@@ -59,18 +54,6 @@ function usage() {
     echo ""
     echo "INSTALLDEPS OPTIONS:"
     echo "  -r             - Install full dependencies required to complete a public release"
-    echo ""
-    echo "NOTARIZATION OPTIONS:"
-    echo "Note: The keychain profile must be set up ahead of time using your developer Apple ID account and Team ID:"
-    echo "  xcrun notarytool store-credentials -v --apple-id APPLE_ID --team-id TEAM_ID --password APP_SPECIFIC_PASSWORD"
-    echo "  -y             - Keychain profile name (Default: HAMMERSPOON_BUILDSH)"
-    echo "  -z             - Path to a file to notarize (Default: build/Hammerspoon.app.zip"
-    echo ""
-    echo "ENVIRONMENT VARIABLES:"
-    echo "  GITHUB_USER    - GitHub user/organization to upload releases to (Default: Hammerspoon)"
-    echo "  GITHUB_REPO    - GitHub repository to upload releases to (Default: hammerspoon)"
-    echo "  SENTRY_ORG     - Sentry organization to upload debugging symbols to (Default: hammerspoon)"
-    echo "  SENTRY_PROJECT - Sentry project to upload debugging symbols to (Default hammerspoon)"
 
     exit 2
 }
@@ -82,7 +65,7 @@ if [ "${OPERATION}" == "-h" ] || [ "${OPERATION}" == "--help" ]; then
 fi
 
 # Parse the rest of any arguments
-PARSED_ARGUMENTS=$(getopt ds:c:x:ujmtqakly:z:w:er $*)
+PARSED_ARGUMENTS=$(getopt ds:c:x:ujmtqaklw:e $*)
 if [ $? != 0 ]; then
     usage
 fi
@@ -166,12 +149,6 @@ do
             DOCS_DASH=0
             DOCS_LINT_ONLY=1
             shift;;
-        -y)
-            KEYCHAIN_PROFILE=${2}; shift
-            shift;;
-        -z)
-            NOTARIZATION_FILE=${2}; shift
-            shift;;
         -r)
             INSTALLDEPS_FULL=1
             shift;;
@@ -188,7 +165,6 @@ if [ ${DEBUG} == 1 ]; then
     echo "XCCONFIG_FILE is: ${XCCONFIG_FILE:-None}"
     echo "UPLOAD_DSYM is: ${UPLOAD_DSYM}"
     echo "BUILD_FOR_TESTING is: ${BUILD_FOR_TESTING}"
-    echo "KEYCHAIN_PROFILE is: ${KEYCHAIN_PROFILE}"
     echo "DEBUG is: ${DEBUG}"
 
     echo "DOCS_JSON is: ${DOCS_JSON}"
@@ -214,7 +190,6 @@ export XCODE_CONFIGURATION
 export XCCONFIG_FILE
 export UPLOAD_DSYM
 export BUILD_FOR_TESTING
-export KEYCHAIN_PROFILE
 export DEBUG
 export DOCS_JSON
 export DOCS_MD
@@ -240,23 +215,12 @@ echo "Gathering info..."
 export SCRIPT_NAME ; SCRIPT_NAME="$(basename "$0")"
 export SCRIPT_HOME ; SCRIPT_HOME="$(dirname "$(readlink -f "$0")")"
 export HAMMERSPOON_HOME ; HAMMERSPOON_HOME="$(readlink -f "${SCRIPT_HOME}/../")"
-export WEBSITE_HOME ; WEBSITE_HOME="$(readlink -f "${HAMMERSPOON_HOME}/../website")"
 export BUILD_HOME="${HAMMERSPOON_HOME}/build"
 export HAMMERSPOON_BUNDLE_NAME="${APP_NAME}.app"
 export HAMMERSPOON_BUNDLE_PATH="${BUILD_HOME}/${HAMMERSPOON_BUNDLE_NAME}"
 export HAMMERSPOON_XCARCHIVE_PATH="${HAMMERSPOON_BUNDLE_PATH}.xcarchive"
 export XCODE_BUILT_PRODUCTS_DIR ; XCODE_BUILT_PRODUCTS_DIR="$(xcodebuild -workspace Hammerspoon.xcworkspace -scheme "${XCODE_SCHEME}" -configuration "${XCODE_CONFIGURATION}" -destination "platform=macOS" -showBuildSettings | sort | uniq | grep ' BUILT_PRODUCTS_DIR =' | awk '{ print $3 }')"
 export DOCS_SEARCH_DIRS=("Hammerspoon" "extensions/")
-
-# Calculate private token variables
-export TOKENPATH ; TOKENPATH="$(readlink -f "${HAMMERSPOON_HOME}/..")"
-export GITHUB_TOKEN_FILE="${TOKENPATH}/token-github-release"
-export GITHUB_USER="${GITHUB_USER:-hammerspoon}"
-export GITHUB_REPO="${GITHUB_REPO:-hammerspoon}"
-export SENTRY_TOKEN_API_FILE="${TOKENPATH}/token-sentry-api"
-export SENTRY_TOKEN_AUTH_FILE="${TOKENPATH}/token-sentry-auth"
-export NOTARIZATION_TOKEN_FILE="${TOKENPATH}/token-notarization"
-export NOTARIZATION_FILE="${NOTARIZATION_FILE:-}"
 
 # Calculate options for xcbeautify
 export XCB_OPTS=(-q)
@@ -282,23 +246,11 @@ case "${OPERATION}" in
     "test")
         op_test
         ;;
-    "validate")
-        op_validate
-        ;;
     "docs")
         op_docs
         ;;
     "installdeps")
         op_installdeps
-        ;;
-    "notarize")
-        op_notarize
-        ;;
-    "archive")
-        op_archive
-        ;;
-    "release")
-        op_release
         ;;
     *)
         echo "Unknown command: ${OPERATION}"

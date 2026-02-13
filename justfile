@@ -19,7 +19,7 @@ check:
     echo "  Xcode: OK ($XCODE_PATH)"
     
     # Check mise tools
-    for cmd in just python3 ruby jq gh xcbeautify pod; do
+    for cmd in just python3 ruby jq xcbeautify pod; do
         if ! command -v $cmd &>/dev/null; then
             echo "ERROR: $cmd not found. Run: mise install"
             exit 1
@@ -57,10 +57,6 @@ clean:
 build:
     ./scripts/build.sh build
 
-# Build release configuration
-build-release:
-    ./scripts/build.sh build -c Release
-
 # Run tests (requires build first)
 test:
     ./scripts/build.sh test
@@ -68,10 +64,6 @@ test:
 # Build documentation
 docs:
     ./scripts/build.sh docs
-
-# Validate signed build
-validate:
-    ./scripts/build.sh validate
 
 # Full rebuild: clean + build
 rebuild: clean build

@@ -7,9 +7,6 @@
 
 @end
 
-BOOL HSUploadCrashData(void);
-void HSSetUploadCrashData(BOOL uploadCrashData);
-
 //
 // Enable & Disable Preferences Dark Mode:
 //

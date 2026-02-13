@@ -54,7 +54,7 @@
 		4CD203B21C6D77750089706D /* libsocket.m in Sources */ = {isa = PBXBuildFile; fileRef = 4CD203A21C6D75950089706D /* libsocket.m */; };
 		4CD64AA91C6F15F400EB6E39 /* HSsocket.m in Sources */ = {isa = PBXBuildFile; fileRef = 4CD64AA81C6F15F400EB6E39 /* HSsocket.m */; };
 		4CD64AAB1C6F168700EB6E39 /* test_socket.lua in Resources */ = {isa = PBXBuildFile; fileRef = 4CD64AAA1C6F168700EB6E39 /* test_socket.lua */; };
-		4CD96BD61C73ABD2009FF648 /* (null) in Frameworks */ = {isa = PBXBuildFile; };
+		4CD96BD61C73ABD2009FF648 /* BuildFile in Frameworks */ = {isa = PBXBuildFile; };
 		4CD96BDE1C73AC1C009FF648 /* libsocket_udp.m in Sources */ = {isa = PBXBuildFile; fileRef = 4CD96BDD1C73AC1C009FF648 /* libsocket_udp.m */; };
 		4CE6390F1C76C7F500BB7CD2 /* socket.h in Headers */ = {isa = PBXBuildFile; fileRef = 4CE6390E1C76C7F500BB7CD2 /* socket.h */; };
 		4CE639101C76C7F500BB7CD2 /* socket.h in Headers */ = {isa = PBXBuildFile; fileRef = 4CE6390E1C76C7F500BB7CD2 /* socket.h */; };
@@ -1649,7 +1649,6 @@
 		4F0676061C32C0B30088C57C /* HSChooserCell.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = HSChooserCell.m; path = extensions/chooser/HSChooserCell.m; sourceTree = "<group>"; };
 		4F081E7922D69D5600AB87C1 /* Hammerspoon.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Hammerspoon.entitlements; sourceTree = "<group>"; };
 		4F0C1C77272F3EE9002CA157 /* Extensions-Base.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "Extensions-Base.xcconfig"; sourceTree = "<group>"; };
-		4F0C1C78272F4F28002CA157 /* Project-Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "Project-Release.xcconfig"; sourceTree = "<group>"; };
 		4F0C1C79272F5EA7002CA157 /* Extensions-Ideal.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "Extensions-Ideal.xcconfig"; sourceTree = "<group>"; };
 		4F0F08071DC0DAAA00082B73 /* HSChooserRootView.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = HSChooserRootView.h; path = extensions/chooser/HSChooserRootView.h; sourceTree = "<group>"; };
 		4F0F08081DC0DAAA00082B73 /* HSChooserRootView.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = HSChooserRootView.m; path = extensions/chooser/HSChooserRootView.m; sourceTree = "<group>"; };
@@ -1807,7 +1806,6 @@
 		4F7F3B76272B3F3700E05732 /* HSExecuteLuaIntentHandler.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = HSExecuteLuaIntentHandler.m; sourceTree = "<group>"; };
 		4F7F3B7A272DE83500E05732 /* Hammerspoon-Debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "Hammerspoon-Debug.xcconfig"; sourceTree = "<group>"; };
 		4F7F3B7B272DE98800E05732 /* Hammerspoon-Profile.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "Hammerspoon-Profile.xcconfig"; sourceTree = "<group>"; };
-		4F7F3B7C272DE99200E05732 /* Hammerspoon-Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "Hammerspoon-Release.xcconfig"; sourceTree = "<group>"; };
 		4F7F3B7D272DE9F800E05732 /* Project-Base.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "Project-Base.xcconfig"; sourceTree = "<group>"; };
 		4F7F3B7E272E009C00E05732 /* Hammerspoon-Base.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "Hammerspoon-Base.xcconfig"; sourceTree = "<group>"; };
 		4F85FECB1CCA8A2F00FBBAD7 /* distributednotifications.lua */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; name = distributednotifications.lua; path = extensions/distributednotifications/distributednotifications.lua; sourceTree = "<group>"; };
@@ -1960,7 +1958,6 @@
 		4FF06118274AA61000FB15D6 /* camera.lua */ = {isa = PBXFileReference; lastKnownFileType = text; path = camera.lua; sourceTree = "<group>"; };
 		4FF06119274AA62300FB15D6 /* libcamera.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = libcamera.m; sourceTree = "<group>"; };
 		4FF06124274AA7A200FB15D6 /* libcamera.dylib */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.dylib"; includeInIndex = 0; path = libcamera.dylib; sourceTree = BUILT_PRODUCTS_DIR; };
-		4FF73950273448B30007074E /* Archive-Export-Options.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "Archive-Export-Options.plist"; sourceTree = "<group>"; };
 		4FF73A212735944D0007074E /* lua.json */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.json; name = lua.json; path = extensions/doc/lua.json; sourceTree = "<group>"; };
 		4FF73A24273595340007074E /* timeout3 */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; name = timeout3; path = extensions/httpserver/timeout3; sourceTree = "<group>"; };
 		4FF73A2727359BD20007074E /* window_tiling.lua */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; name = window_tiling.lua; path = extensions/window/window_tiling.lua; sourceTree = "<group>"; };
@@ -2212,7 +2209,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				4FB852502735B2D100462DD0 /* LuaSkin.framework in Frameworks */,
-				4CD96BD61C73ABD2009FF648 /* (null) in Frameworks */,
+				4CD96BD61C73ABD2009FF648 /* BuildFile in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -3469,15 +3466,12 @@
 		4F7F3B79272DE7D000E05732 /* Build Configs */ = {
 			isa = PBXGroup;
 			children = (
-				4FF73950273448B30007074E /* Archive-Export-Options.plist */,
 				4F7F3B7D272DE9F800E05732 /* Project-Base.xcconfig */,
-				4F0C1C78272F4F28002CA157 /* Project-Release.xcconfig */,
 				4F0C1C77272F3EE9002CA157 /* Extensions-Base.xcconfig */,
 				4F0C1C79272F5EA7002CA157 /* Extensions-Ideal.xcconfig */,
 				4F7F3B7E272E009C00E05732 /* Hammerspoon-Base.xcconfig */,
 				4F7F3B7A272DE83500E05732 /* Hammerspoon-Debug.xcconfig */,
 				4F7F3B7B272DE98800E05732 /* Hammerspoon-Profile.xcconfig */,
-				4F7F3B7C272DE99200E05732 /* Hammerspoon-Release.xcconfig */,
 				4FF73AA5273AAE290007074E /* Hammerspoon-Test.xcconfig */,
 				4FF73AA4273A85820007074E /* hs.xcconfig */,
 			);
@@ -6281,7 +6275,6 @@
 			buildConfigurationList = 9445CA3C19083251002568BB /* Build configuration list for PBXNativeTarget "Hammerspoon" */;
 			buildPhases = (
 				CDFA91F1078130B13A38C135 /* [CP] Check Pods Manifest.lock */,
-				4F251E7F1A49D5BE00AB6103 /* Prepare secret header file */,
 				4FC09F7A19F99E48007542A6 /* Compile docs.json */,
 				9445CA0719083251002568BB /* Sources */,
 				9445CA0819083251002568BB /* Frameworks */,
@@ -6289,7 +6282,6 @@
 				4FF7395127344D370007074E /* Copy Extension Dylibs */,
 				4FF739B1273481C90007074E /* Copy Extension Lua files */,
 				9445CA0919083251002568BB /* Resources */,
-				E849AEC367EA9502A25B9A7C /* [CP] Embed Pods Frameworks */,
 				4F6D9E3523074BC6006CC3E4 /* Update version/build numbers */,
 				4FF73A1E2735449D0007074E /* Copy hs manpage */,
 				4FCA05A12767689C0089A5FC /* Copy hsdocs Files */,
@@ -7057,21 +7049,6 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
-		4F251E7F1A49D5BE00AB6103 /* Prepare secret header file */ = {
-			isa = PBXShellScriptBuildPhase;
-			alwaysOutOfDate = 1;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputPaths = (
-			);
-			name = "Prepare secret header file";
-			outputPaths = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "set -eux\n\n# Skip this on Profile builds\nif [ \"${CONFIGURATION}\" != \"Release\" ]; then\n  > Hammerspoon/secrets.h\n  exit 0\nfi\n\nTOKENPATH=\"${HAMMERSPOON_TOKEN_PATH:-..}\"\n\nif [ -f \"${TOKENPATH}/token-sentry-api\" ] ; then\n  source \"${TOKENPATH}/token-sentry-api\"\n  > Hammerspoon/secrets.h\n  echo \"#define SENTRY_API_URL \\\"${SENTRY_API_URL}\\\"\" >>Hammerspoon/secrets.h\nelse\n  > Hammerspoon/secrets.h\nfi\n";
-		};
 		4F6D9E3523074BC6006CC3E4 /* Update version/build numbers */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
@@ -7147,34 +7124,14 @@
 			inputPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-Hammerspoon/Pods-Hammerspoon-resources.sh",
 				"${PODS_CONFIGURATION_BUILD_DIR}/CocoaLumberjack/CocoaLumberjackPrivacy.bundle",
-				"${PODS_CONFIGURATION_BUILD_DIR}/Sentry/Sentry.bundle",
 			);
 			name = "[CP] Copy Pods Resources";
 			outputPaths = (
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/CocoaLumberjackPrivacy.bundle",
-				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/Sentry.bundle",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-Hammerspoon/Pods-Hammerspoon-resources.sh\"\n";
-			showEnvVarsInLog = 0;
-		};
-		E849AEC367EA9502A25B9A7C /* [CP] Embed Pods Frameworks */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputPaths = (
-				"${PODS_ROOT}/Target Support Files/Pods-Hammerspoon/Pods-Hammerspoon-frameworks.sh",
-				"${PODS_ROOT}/Sparkle/Sparkle.framework",
-			);
-			name = "[CP] Embed Pods Frameworks";
-			outputPaths = (
-				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/Sparkle.framework",
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-Hammerspoon/Pods-Hammerspoon-frameworks.sh\"\n";
 			showEnvVarsInLog = 0;
 		};
 /* End PBXShellScriptBuildPhase section */
@@ -10516,7 +10473,6 @@
 		};
 		9445CA3B19083251002568BB /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 4F0C1C78272F4F28002CA157 /* Project-Release.xcconfig */;
 			buildSettings = {
 			};
 			name = Release;
@@ -10534,7 +10490,7 @@
 		};
 		9445CA3E19083251002568BB /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 4F7F3B7C272DE99200E05732 /* Hammerspoon-Release.xcconfig */;
+			baseConfigurationReference = DE2547C1592A3EDD90D9815D /* Pods-Hammerspoon.release.xcconfig */;
 			buildSettings = {
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

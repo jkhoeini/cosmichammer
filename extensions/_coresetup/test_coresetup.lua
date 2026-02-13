@@ -64,20 +64,6 @@ function testAutoLaunch()
   return success()
 end
 
-function testAutomaticallyCheckForUpdates()
-  -- NB It's not safe to actually call the function on a non-release build, so we can just check that it is a function
-  assertIsFunction(hs.automaticallyCheckForUpdates)
-
-  return success()
-end
-
-function testCheckForUpdates()
-  -- NB It is not safe to actually call the function on a non-release build, so we can just check that it is a function
-  assertIsFunction(hs.checkForUpdates)
-
-  return success()
-end
-
 function testCleanUTF8forConsole()
   local orig = "Simple test string"
   assertIsEqual(orig, hs.cleanUTF8forConsole(orig))

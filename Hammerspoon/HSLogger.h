@@ -8,18 +8,7 @@
 
 #import <LuaSkin/LuaSkin.h>
 
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wvariadic-macros"
-#import "Sentry/Sentry.h"
-#pragma clang diagnostic pop
-
-#import "secrets.h"
-
-#ifdef SENTRY_API_URL
-#   define HSNSLOG(__FORMAT__, ...) [LuaSkin logBreadcrumb:[NSString stringWithFormat:__FORMAT__, ##__VA_ARGS__]];
-#else
-#   define HSNSLOG(__FORMAT__, ...) NSLog(__FORMAT__, ##__VA_ARGS__)
-#endif
+#define HSNSLOG(__FORMAT__, ...) NSLog(__FORMAT__, ##__VA_ARGS__)
 
 @interface HSLogger : NSObject <LuaSkinDelegate> {
     lua_State *_L;
@@ -31,5 +20,4 @@
 - (void)setLuaState:(lua_State *)L;
 - (void) logForLuaSkinAtLevel:(int)level withMessage:(NSString *)theMessage;
 - (void)logBreadcrumb:(NSString *)format, ...;
-- (void)logKnownBug:(NSString *)format, ...;
 @end

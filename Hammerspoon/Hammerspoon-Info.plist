@@ -225,7 +225,7 @@
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Some Hammerspoon extensions (such as hs.noises) require access to the microphone.</string>
 	<key>NSPrincipalClass</key>
-	<string>SentryCrashExceptionApplication</string>
+	<string>NSApplication</string>
 	<key>NSServices</key>
 	<array>
 		<dict>
@@ -268,12 +268,6 @@
 	<string>alert</string>
 	<key>OSAScriptingDefinition</key>
 	<string>Hammerspoon.sdef</string>
-	<key>SUEnableAutomaticChecks</key>
-	<true/>
-	<key>SUFeedURL</key>
-	<string>https://raw.githubusercontent.com/Hammerspoon/hammerspoon/master/appcast.xml</string>
-	<key>SUScheduledCheckInterval</key>
-	<integer>21600</integer>
 	<key>UTExportedTypeDeclarations</key>
 	<array>
 		<dict>

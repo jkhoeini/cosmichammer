@@ -12,12 +12,7 @@
 #import "MJDockIcon.h"
 #import "HSAppleScript.h"
 
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wvariadic-macros"
-#import "Sentry.h"
-#pragma clang diagnostic pop
-
-#import "HSLogger.h" // This should come after Sentry
+#import "HSLogger.h"
 #import <AVFoundation/AVFoundation.h>
 #import <AppKit/AppKit.h>
 #import <libproc.h>
@@ -42,25 +37,6 @@ static LSRefTable refTable;
 static void(^loghandler)(NSString* str);
 void MJLuaSetupLogHandler(void(^blk)(NSString* str)) {
     loghandler = blk;
-}
-
-/// hs.uploadCrashData([state]) -> bool
-/// Function
-/// Get or set the "Upload Crash Data" preference for Hammerspoon
-///
-/// Parameters:
-///  * state - An optional boolean, true to upload crash reports, false to not
-///
-/// Returns:
-///  * True if Hammerspoon is currently (or has just been) set to upload crash data or False otherwise
-///
-/// Notes:
-///  * If at all possible, please do allow Hammerspoon to upload crash reports to us, it helps a great deal in keeping Hammerspoon stable
-///  * Our Privacy Policy can be found here: [https://www.hammerspoon.org/privacy.html](https://www.hammerspoon.org/privacy.html)
-static int core_uploadCrashData(lua_State* L) {
-    if (lua_isboolean(L, 1)) { HSSetUploadCrashData(lua_toboolean(L, 1)); }
-    lua_pushboolean(L, HSUploadCrashData()) ;
-    return 1;
 }
 
 /// hs.autoLaunch([state]) -> bool
@@ -484,167 +460,6 @@ static int core_cameraState(lua_State* L) {
     return 1;
 }
 
-/// hs.automaticallyCheckForUpdates([setting]) -> bool
-/// Function
-/// Gets and optionally sets the Hammerspoon option to automatically check for updates.
-///
-/// Parameters:
-///  * setting - an optional boolean variable indicating if Hammerspoon should (true) or should not (false) check for updates.
-///
-/// Returns:
-///  * The current (or newly set) value indicating whether or not automatic update checks should occur for Hammerspoon.
-///
-/// Notes:
-///  * If you are running a non-release or locally compiled version of Hammerspoon then the results of this function are unspecified.
-static int automaticallyChecksForUpdates(lua_State *L) {
-    LuaSkin *skin = [LuaSkin sharedWithState:L];
-    if (NSClassFromString(@"SUUpdater")) {
-        NSString *frameworkPath = [[[NSBundle mainBundle] privateFrameworksPath] stringByAppendingPathComponent:@"Sparkle.framework"];
-        if ([[NSBundle bundleWithPath:frameworkPath] load]) {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wundeclared-selector"
-            id sharedUpdater = [NSClassFromString(@"SUUpdater")  performSelector:@selector(sharedUpdater)] ;
-            if (lua_isboolean(L, 1)) {
-
-            // This convoluted #$@#% is required (a) because we want to weakly link to the SparkleFramework for dev builds, and
-            // (b) because performSelector: withObject: only works when withObject: is an argument of type id or nil
-
-            // the following is equivalent to: [sharedUpdater setAutomaticallyChecksForUpdates:lua_toboolean(L, 1)] ;
-
-                BOOL myBoolValue = lua_toboolean(L, 1) ;
-                NSMethodSignature * mySignature = [NSClassFromString(@"SUUpdater") instanceMethodSignatureForSelector:@selector(setAutomaticallyChecksForUpdates:)];
-                NSInvocation * myInvocation = [NSInvocation invocationWithMethodSignature:mySignature];
-                [myInvocation setTarget:sharedUpdater];
-            // even though signature specifies this, we need to specify it in the invocation, since the signature is re-usable
-            // for any method which accepts the same signature list for the target.
-                [myInvocation setSelector:@selector(setAutomaticallyChecksForUpdates:)];
-                [myInvocation setArgument:&myBoolValue atIndex:2];
-                //[myInvocation setReturnValue:&myBoolValue];
-                [myInvocation invoke];
-
-            }
-            BOOL autoCheckUpdates = NO;
-            NSMethodSignature *autoCheckSignature = [NSClassFromString(@"SUUpdater") instanceMethodSignatureForSelector:@selector(automaticallyChecksForUpdates)];
-            NSInvocation *autoCheckInvocation = [NSInvocation invocationWithMethodSignature:autoCheckSignature];
-            [autoCheckInvocation setTarget:sharedUpdater];
-            [autoCheckInvocation setSelector:@selector(automaticallyChecksForUpdates)];
-            [autoCheckInvocation invoke];
-            [autoCheckInvocation getReturnValue:&autoCheckUpdates];
-            lua_pushboolean(L, autoCheckUpdates) ;
-#pragma clang diagnostic pop
-        } else {
-            [skin logWarn:@"Sparkle Update framework not available for the running instance of Hammerspoon."] ;
-            lua_pushboolean(L, NO) ;
-        }
-    } else {
-        [skin logWarn:@"Sparkle Update framework not available for the running instance of Hammerspoon."] ;
-        lua_pushboolean(L, NO) ;
-    }
-    return 1 ;
-}
-
-/// hs.checkForUpdates([silent]) -> none
-/// Function
-/// Check for an update now, and if one is available, prompt the user to continue the update process.
-///
-/// Parameters:
-///  * silent - An optional boolean. If true, no UI will be displayed if an update is available. Defaults to false.
-///
-/// Returns:
-///  * None
-///
-/// Notes:
-///  * If you are running a non-release or locally compiled version of Hammerspoon then the results of this function are unspecified.
-static int checkForUpdates(lua_State *L) {
-    LuaSkin *skin = [LuaSkin sharedWithState:L];
-    [skin checkArgs:LS_TBOOLEAN|LS_TOPTIONAL, LS_TBREAK];
-
-    if (NSClassFromString(@"SUUpdater")) {
-        NSString *frameworkPath = [[[NSBundle mainBundle] privateFrameworksPath] stringByAppendingPathComponent:@"Sparkle.framework"];
-        if ([[NSBundle bundleWithPath:frameworkPath] load]) {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wundeclared-selector"
-#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
-            id sharedUpdater = [NSClassFromString(@"SUUpdater") performSelector:@selector(sharedUpdater)] ;
-
-            SEL checkMethod = @selector(checkForUpdates:);
-            if (lua_type(L, 1) == LUA_TBOOLEAN && lua_toboolean(L, 1) == YES) {
-                checkMethod = @selector(checkForUpdateInformation);
-            }
-            [sharedUpdater performSelector:checkMethod withObject:nil] ;
-#pragma clang diagnostic pop
-        } else {
-            [skin logWarn:@"Sparkle Update framework not available for the running instance of Hammerspoon."] ;
-        }
-    } else {
-        [skin logWarn:@"Sparkle Update framework not available for the running instance of Hammerspoon."] ;
-    }
-    return 0 ;
-}
-
-/// hs.updateAvailable() -> string or false, string
-/// Function
-/// Gets the version & build number of an available update
-///
-/// Parameters:
-///  * None
-///
-/// Returns:
-///  * A string containing the display version of the latest release, or a boolean false if no update is available
-///  * A string containing the build number of the latest release, or `nil` if no update is available
-///
-/// Notes:
-///  * This is not a live check, it is a cached result of whatever the previous update check found. By default Hammerspoon checks for updates every few hours, but you can also add your own timer to check for updates more frequently with `hs.checkForUpdates()`
-static int updateAvailable(lua_State *L) {
-    LuaSkin *skin = [LuaSkin sharedWithState:L];
-    [skin checkArgs:LS_TBREAK];
-
-    id appDelegate = [[NSApplication sharedApplication] delegate];
-
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wundeclared-selector"
-
-    NSString *updateAvailable = [appDelegate performSelector:@selector(updateAvailable)];
-    NSString *updateAvailableDisplayVersion = [appDelegate performSelector:@selector(updateAvailableDisplayVersion)];
-    if (updateAvailable == nil) {
-        lua_pushboolean(L, 0);
-        return 1;
-    } else {
-        [skin pushNSObject:updateAvailableDisplayVersion];
-        [skin pushNSObject:updateAvailable];
-        return 2;
-    }
-
-#pragma clang diagnostic pop
-}
-
-/// hs.canCheckForUpdates() -> boolean
-/// Function
-/// Returns a boolean indicating whether or not the Sparkle framework is available to check for Hammerspoon updates.
-///
-/// Parameters:
-///  * None
-///
-/// Returns:
-///  * a boolean indicating whether or not the Sparkle framework is available to check for Hammerspoon updates
-///
-/// Notes:
-///  * The Sparkle framework is included in all regular releases of Hammerspoon but not included if you are running a non-release or locally compiled version of Hammerspoon, so this function can be used as a simple test to determine whether or not you are running a formal release Hammerspoon or not.
-static int canCheckForUpdates(lua_State *L) {
-    LuaSkin *skin = [LuaSkin sharedWithState:L];
-    [skin checkArgs:LS_TBREAK];
-    BOOL canUpdate = NO ;
-
-    if (NSClassFromString(@"SUUpdater")) {
-        NSString *frameworkPath = [[[NSBundle mainBundle] privateFrameworksPath] stringByAppendingPathComponent:@"Sparkle.framework"];
-        if ([[NSBundle bundleWithPath:frameworkPath] load]) {
-            canUpdate = YES ;
-        }
-    }
-    lua_pushboolean(L, canUpdate) ;
-    return 1 ;
-}
-
 /// hs.preferencesDarkMode([state]) -> bool
 /// Function
 /// Set or display whether or not the Preferences panel should display in dark mode.
@@ -818,10 +633,6 @@ static luaL_Reg corelib[] = {
     {"closePreferences", core_closepreferences},
     {"open", core_open},
     {"autoLaunch", core_autolaunch},
-    {"automaticallyCheckForUpdates", automaticallyChecksForUpdates},
-    {"checkForUpdates", checkForUpdates},
-    {"updateAvailable", updateAvailable},
-    {"canCheckForUpdates", canCheckForUpdates},
     {"allowAppleScript", core_appleScript},
     {"reload", core_reload},
     {"focus", core_focus},
@@ -830,7 +641,6 @@ static luaL_Reg corelib[] = {
     {"microphoneState", core_microphoneState},
     {"cameraState", core_cameraState},
     {"getObjectMetatable", core_getObjectMetatable},
-    {"uploadCrashData", core_uploadCrashData},
     {"cleanUTF8forConsole", core_cleanUTF8},
     {"_exit", core_exit},
     {"_logmessage", core_logmessage},
