@@ -238,16 +238,6 @@ static int push_hammerAppInfo(lua_State* L) {
         arch = [NSString stringWithCString:utsname.machine encoding:NSUTF8StringEncoding];
     }
 
-    // Determine if we're running under Rosetta
-    int isTranslated = 0;
-    size_t size = sizeof(isTranslated);
-    if (sysctlbyname("sysctl.proc_translated", &isTranslated, &size, NULL, 0) == -1) {
-        if (errno == ENOENT)
-            isTranslated = 0;
-        // Technically to reach here we have an error in the sysctl, but we'll ignore it
-        // isTranslated = -1;
-    }
-
     NSDictionary *appInfo = @{
                               @"version": [[[NSBundle mainBundle] infoDictionary] objectForKey:@"CFBundleShortVersionString"],
                               @"build": [[[NSBundle mainBundle] infoDictionary] objectForKey:@"CFBundleVersion"],
@@ -258,7 +248,7 @@ static int push_hammerAppInfo(lua_State* L) {
                               @"processID": @(getpid()),
                               @"bundleID": [[NSBundle mainBundle] bundleIdentifier],
                               @"arch": arch,
-                              @"isRosetta": [NSNumber numberWithBool:isTranslated],
+                              @"isRosetta": @(NO),
                               @"buildTime": @(__DATE__ ", " __TIME__),
 #ifdef DEBUG
                               @"debugBuild": @(YES),
@@ -360,10 +350,16 @@ static int core_screenRecordingState(lua_State* L) {
     BOOL shouldprompt = lua_toboolean(L, 1);
     BOOL enabled = isScreenRecordingEnabled();
     if (shouldprompt) {
-        CGDisplayStreamRef stream = CGDisplayStreamCreate(CGMainDisplayID(), 1, 1, kCVPixelFormatType_32BGRA, nil, ^(CGDisplayStreamFrameStatus status, uint64_t displayTime, IOSurfaceRef frameSurface, CGDisplayStreamUpdateRef updateRef) {
-        });
-        if (stream) {
-            CFRelease(stream);
+        // CGDisplayStreamCreate is obsoleted in macOS 15 SDK but still works at runtime.
+        // We use it only to trigger the screen recording permission prompt.
+        typedef CGDisplayStreamRef (*CGDisplayStreamCreateFunc)(CGDirectDisplayID, size_t, size_t, int32_t, CFDictionaryRef, CGDisplayStreamFrameAvailableHandler);
+        CGDisplayStreamCreateFunc createStream = (CGDisplayStreamCreateFunc)dlsym(RTLD_DEFAULT, "CGDisplayStreamCreate");
+        if (createStream) {
+            CGDisplayStreamRef stream = createStream(CGMainDisplayID(), 1, 1, kCVPixelFormatType_32BGRA, nil, ^(CGDisplayStreamFrameStatus status, uint64_t displayTime, IOSurfaceRef frameSurface, CGDisplayStreamUpdateRef updateRef) {
+            });
+            if (stream) {
+                CFRelease(stream);
+            }
         }
     }
     lua_pushboolean(L, enabled);

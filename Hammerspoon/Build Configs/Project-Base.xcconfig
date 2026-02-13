@@ -12,9 +12,9 @@
 // Base SDK
 SDKROOT = macosx
 // macOS Deployment Target
-MACOSX_DEPLOYMENT_TARGET = 13.0
-// Build Active Architecture Only
-ONLY_ACTIVE_ARCH = YES
+MACOSX_DEPLOYMENT_TARGET = 15.0
+// Build only for Apple Silicon
+ARCHS = arm64
 
 // Debug Information Format
 DEBUG_INFORMATION_FORMAT = dwarf-with-dsym

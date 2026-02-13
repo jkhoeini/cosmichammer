@@ -7,6 +7,19 @@
 
 #define get_screen_arg(L, idx) (__bridge NSScreen*)*((void**)luaL_checkudata(L, idx, USERDATA_TAG))
 
+// CGDisplayCreateImageForRect is marked obsoleted in macOS 15 SDK but still works at runtime.
+// We load it dynamically to bypass the SDK's availability annotation until ScreenCaptureKit migration.
+#include <dlfcn.h>
+typedef CGImageRef (*CGDisplayCreateImageForRectFunc)(CGDirectDisplayID, CGRect);
+static CGImageRef hs_CGDisplayCreateImageForRect(CGDirectDisplayID display, CGRect rect) {
+    static CGDisplayCreateImageForRectFunc func = NULL;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        func = (CGDisplayCreateImageForRectFunc)dlsym(RTLD_DEFAULT, "CGDisplayCreateImageForRect");
+    });
+    return func ? func(display, rect) : NULL;
+}
+
 #pragma mark - Private API declarations
 
 extern void CoreDisplay_Display_SetUserBrightness(CGDirectDisplayID id, double brightness)
@@ -1254,7 +1267,23 @@ NSImage *screenToNSImage(NSScreen *screen, NSRect screenRect) {
     NSImage *theImage = nil;
 
     screenID = [[[screen deviceDescription] objectForKey:@"NSScreenNumber"] unsignedIntValue];
-    cgImage = CGDisplayCreateImageForRect(screenID, (NSIsEmptyRect(screenRect)) ? CGRectMake(0, 0, [screen frame].size.width, [screen frame].size.height) : screenRect);
+
+    CGRect captureRect;
+    if (NSIsEmptyRect(screenRect)) {
+        captureRect = CGDisplayBounds(screenID);
+    } else {
+        // Convert from screen-relative to global display coordinates
+        CGRect displayBounds = CGDisplayBounds(screenID);
+        captureRect = CGRectMake(displayBounds.origin.x + screenRect.origin.x,
+                                 displayBounds.origin.y + screenRect.origin.y,
+                                 screenRect.size.width,
+                                 screenRect.size.height);
+    }
+
+    // CGDisplayCreateImageForRect is marked obsoleted in macOS 15 SDK in favor of ScreenCaptureKit,
+    // but the function still exists at runtime. We call it via a locally-declared prototype to bypass
+    // the SDK's availability annotation until a full ScreenCaptureKit migration is done.
+    cgImage = hs_CGDisplayCreateImageForRect(screenID, captureRect);
     if (!cgImage) goto cleanup;
 
     theImage = [[NSImage alloc] initWithCGImage:cgImage size:NSZeroSize];

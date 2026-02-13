@@ -345,7 +345,7 @@ function op_release() {
                   length=\"${ZIPLEN}\"
                   type=\"application/octet-stream\"
               />
-              <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+              <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
           </item>
   "
     NEWCHUNK="${NEWCHUNK}" perl -i -pe "BEGIN{\$r=\$ENV{NEWCHUNK}} s/<!-- __UPDATE_MARKER__ -->/\$r/" appcast.xml

@@ -1,5 +1,18 @@
 #import "HSuicore.h"
 
+// CGWindowListCreateImage is marked obsoleted in macOS 15 SDK but still works at runtime.
+// We load it dynamically to bypass the SDK's availability annotation until ScreenCaptureKit migration.
+#include <dlfcn.h>
+typedef CGImageRef (*CGWindowListCreateImageFunc)(CGRect, CGWindowListOption, CGWindowID, CGWindowImageOption);
+static CGImageRef hs_CGWindowListCreateImage(CGRect screenBounds, CGWindowListOption listOption, CGWindowID windowID, CGWindowImageOption imageOption) {
+    static CGWindowListCreateImageFunc func = NULL;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        func = (CGWindowListCreateImageFunc)dlsym(RTLD_DEFAULT, "CGWindowListCreateImage");
+    });
+    return func ? func(screenBounds, listOption, windowID, imageOption) : NULL;
+}
+
 #pragma mark - HSapplication implementation
 
 @implementation HSapplication
@@ -612,7 +625,7 @@ cleanup:
     NSImage *image = nil;
     CGWindowImageOption makeOpaque = keepTransparency ? kCGWindowImageDefault : kCGWindowImageShouldBeOpaque;
     CGRect windowRect = CGRectNull;
-    CGImageRef windowImage = CGWindowListCreateImage(windowRect, kCGWindowListOptionIncludingWindow, windowID, kCGWindowImageBoundsIgnoreFraming | makeOpaque);
+    CGImageRef windowImage = hs_CGWindowListCreateImage(windowRect, kCGWindowListOptionIncludingWindow, windowID, kCGWindowImageBoundsIgnoreFraming | makeOpaque);
 
     if (windowImage) {
         image = [[NSImage alloc] initWithCGImage:windowImage size:windowRect.size];
