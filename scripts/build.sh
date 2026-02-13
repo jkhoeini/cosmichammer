@@ -1,11 +1,6 @@
 #!/bin/bash
 # Hammerspoon build system
 
-# Check if we're in a CI system
-export IS_CI=${IS_CI:-0}
-# Check if we're doing a nightly build
-export IS_NIGHTLY=${IS_NIGHTLY:-0}
-
 # Make it easy to fork us
 export APP_NAME="${APP_NAME:-"Hammerspoon"}"
 
@@ -16,8 +11,6 @@ XCCONFIG_FILE=""
 UPLOAD_DSYM=0
 BUILD_FOR_TESTING=0
 KEYCHAIN_PROFILE="HAMMERSPOON_BUILDSH"
-P12_FILE=""
-NOTARIZATION_CREDS_FILE=""
 DEBUG=0
 DOCS_JSON=1
 DOCS_MD=1
@@ -38,8 +31,6 @@ function usage() {
     echo "  test          - Test ${APP_NAME}.app"
     echo "  validate      - Validate signature/gatekeeper/entitlements"
     echo "  docs          - Build documentation"
-    echo "  keychain-prep - (CI Only) Prepare a new default Keychain with required secrets for signing/notarizing"
-    echo "  keychain-post - (CI Only) Remove Keychain secrets"
     echo "  notarize      - Notarize a ${APP_NAME}.app bundle with Apple (note that it must be signed first)"
     echo "  archive       - Archive the build/notarization artifacts"
     echo "  release       - Perform all the steps to upload a release"
@@ -69,22 +60,6 @@ function usage() {
     echo "INSTALLDEPS OPTIONS:"
     echo "  -r             - Install full dependencies required to complete a public release"
     echo ""
-    echo "KEYCHAIN-PREP OPTIONS:"
-    echo "Note: This command is primarily for use in CI. For local builds, manually import your Apple signing certificate"
-    echo "       and see the suggested xcrun command in NOTARIZATION OPTIONS below"
-    echo "  -s             - Hammerspoon build scheme (Default: Hammerspoon)"
-    echo "  -c             - Hammerspoon build configuration (Default: Debug)"
-    echo "  -x             - Use extrabuild settings from a .xcconfig file (Default: None)"
-    echo "  -p             - Import a .p12 containing the signing certificate (usually issued by Apple)"
-    echo "  -o             - Import Notarization credentials file. This should contain your developer"
-    echo "                   Apple ID and an App Specific Password for it, in the format:"
-    echo "                    NOTARIZATION_USERNAME=\"foo@bar.com\""
-    echo "                    NOTARIZATION_PASSWORD=\"abcd-1234-efgh-5678\""
-    echo "  -y             - Keychain profile name for notarization credentials (Default: HAMMERSPOON_BUILDSH)"
-    echo ""
-    echo "KEYCHAIN-POST OPTIONS:"
-    echo "Note: This command is primarily for use in CI. You should never run this locally, it will delete your keychain"
-    echo ""
     echo "NOTARIZATION OPTIONS:"
     echo "Note: The keychain profile must be set up ahead of time using your developer Apple ID account and Team ID:"
     echo "  xcrun notarytool store-credentials -v --apple-id APPLE_ID --team-id TEAM_ID --password APP_SPECIFIC_PASSWORD"
@@ -92,7 +67,6 @@ function usage() {
     echo "  -z             - Path to a file to notarize (Default: build/Hammerspoon.app.zip"
     echo ""
     echo "ENVIRONMENT VARIABLES:"
-    echo "  IS_CI          - Set to 1 to enable CI behaviours (Default: 0)"
     echo "  GITHUB_USER    - GitHub user/organization to upload releases to (Default: Hammerspoon)"
     echo "  GITHUB_REPO    - GitHub repository to upload releases to (Default: hammerspoon)"
     echo "  SENTRY_ORG     - Sentry organization to upload debugging symbols to (Default: hammerspoon)"
@@ -106,12 +80,9 @@ OPERATION=${1:-unknown};shift
 if [ "${OPERATION}" == "-h" ] || [ "${OPERATION}" == "--help" ]; then
     usage
 fi
-#if [ "${OPERATION}" != "build" ] && [ "${OPERATION}" != "test" ] && [ "${OPERATION}" != "docs" ] && [ "${OPERATION}" != "installdeps" ] && [ "${OPERATION}" != "notarize" ] && [ "${OPERATION}" != "archive" ] && [ "${OPERATION}" != "release" ] && [ "${OPERATION}" != "clean" ] && [ "${OPERATION}" != "validate" ] && [ "${OPERATION}" != "keychain-prep" ] && [ "${OPERATION}" != "keychain-post" ] ; then
-#    usage
-#fi;
 
 # Parse the rest of any arguments
-PARSED_ARGUMENTS=$(getopt ds:c:x:ujmtqakly:z:w:ep:o:r $*)
+PARSED_ARGUMENTS=$(getopt ds:c:x:ujmtqakly:z:w:er $*)
 if [ $? != 0 ]; then
     usage
 fi
@@ -201,12 +172,6 @@ do
         -z)
             NOTARIZATION_FILE=${2}; shift
             shift;;
-        -p)
-            P12_FILE="${2}"; shift
-            shift;;
-        -o)
-            NOTARIZATION_CREDS_FILE="${2}"; shift
-            shift;;
         -r)
             INSTALLDEPS_FULL=1
             shift;;
@@ -277,8 +242,6 @@ export SCRIPT_HOME ; SCRIPT_HOME="$(dirname "$(readlink -f "$0")")"
 export HAMMERSPOON_HOME ; HAMMERSPOON_HOME="$(readlink -f "${SCRIPT_HOME}/../")"
 export WEBSITE_HOME ; WEBSITE_HOME="$(readlink -f "${HAMMERSPOON_HOME}/../website")"
 export BUILD_HOME="${HAMMERSPOON_HOME}/build"
-export CI_ARTIFACTS_HOME="${HAMMERSPOON_HOME}/artifacts"
-
 export HAMMERSPOON_BUNDLE_NAME="${APP_NAME}.app"
 export HAMMERSPOON_BUNDLE_PATH="${BUILD_HOME}/${HAMMERSPOON_BUNDLE_NAME}"
 export HAMMERSPOON_XCARCHIVE_PATH="${HAMMERSPOON_BUNDLE_PATH}.xcarchive"
@@ -297,7 +260,7 @@ export NOTARIZATION_FILE="${NOTARIZATION_FILE:-}"
 
 # Calculate options for xcbeautify
 export XCB_OPTS=(-q)
-if [ "${IS_CI}" == "1" ] || [ "${DEBUG}" == "1" ]; then
+if [ "${DEBUG}" == "1" ]; then
     XCB_OPTS=()
 fi
 
@@ -307,9 +270,6 @@ source "${SCRIPT_HOME}/libbuild.sh"
 
 # Make sure our build directory exists
 mkdir -p "${BUILD_HOME}"
-if [ "${IS_CI}" == "1" ]; then
-    mkdir -p "${CI_ARTIFACTS_HOME}"
-fi
 
 # Figure out which COMMAND we have been tasked with performing, and go do it
 case "${OPERATION}" in
@@ -330,12 +290,6 @@ case "${OPERATION}" in
         ;;
     "installdeps")
         op_installdeps
-        ;;
-    "keychain-prep")
-        op_keychain_prep
-        ;;
-    "keychain-post")
-        op_keychain_post
         ;;
     "notarize")
         op_notarize

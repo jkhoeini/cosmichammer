@@ -2,7 +2,6 @@
 # -*- coding: utf-8 -*-
 """Hammerspoon API Documentation Builder"""
 
-
 import argparse
 import json
 import os
@@ -23,8 +22,16 @@ CHUNK_LINE = 1
 CHUNK_SIGN = 2
 CHUNK_TYPE = 3
 CHUNK_DESC = 4
-TYPE_NAMES = ["Deprecated", "Command", "Constant", "Variable", "Function",
-              "Constructor", "Field", "Method"]
+TYPE_NAMES = [
+    "Deprecated",
+    "Command",
+    "Constant",
+    "Variable",
+    "Function",
+    "Constructor",
+    "Field",
+    "Method",
+]
 SECTION_NAMES = ["Parameters", "Returns", "Notes", "Examples"]
 TYPE_DESC = {
     "Constant": "Useful values which cannot be changed",
@@ -34,24 +41,23 @@ TYPE_DESC = {
     "Constructor": "API calls which return an object, typically one that offers API methods",
     "Command": "External shell commands",
     "Field": "Variables which can only be accessed from an object returned by a constructor",
-    "Deprecated": "API features which will be removed in an future release"
+    "Deprecated": "API features which will be removed in an future release",
 }
 LINKS = [
     {"name": "Website", "url": "https://www.hammerspoon.org/"},
-    {"name": "GitHub page",
-     "url": "https://github.com/Hammerspoon/hammerspoon"},
-    {"name": "Getting Started Guide",
-     "url": "https://www.hammerspoon.org/go/"},
-    {"name": "Spoon Plugin Documentation",
-     "url": "https://github.com/Hammerspoon/hammerspoon/blob/master/SPOONS.md"},
-    {"name": "Official Spoon repository",
-     "url": "https://www.hammerspoon.org/Spoons"},
-    {"name": "Discord server",
-     "url": "https://discord.gg/vxchqkRbkR"},
-    {"name": "Mailing list",
-     "url": "https://groups.google.com/forum/#!forum/hammerspoon/"},
-    {"name": "LuaSkin API docs",
-     "url": "https://www.hammerspoon.org/docs/LuaSkin/"}
+    {"name": "GitHub page", "url": "https://github.com/Hammerspoon/hammerspoon"},
+    {"name": "Getting Started Guide", "url": "https://www.hammerspoon.org/go/"},
+    {
+        "name": "Spoon Plugin Documentation",
+        "url": "https://github.com/Hammerspoon/hammerspoon/blob/master/SPOONS.md",
+    },
+    {"name": "Official Spoon repository", "url": "https://www.hammerspoon.org/Spoons"},
+    {"name": "Discord server", "url": "https://discord.gg/vxchqkRbkR"},
+    {
+        "name": "Mailing list",
+        "url": "https://groups.google.com/forum/#!forum/hammerspoon/",
+    },
+    {"name": "LuaSkin API docs", "url": "https://www.hammerspoon.org/docs/LuaSkin/"},
 ]
 
 ARGUMENTS = None
@@ -97,7 +103,7 @@ def extract_docstrings(filename):
     with open(filename, "r") as filedata:
         for raw_line in filedata.readlines():
             i += 1
-            line = raw_line.strip('\n')
+            line = raw_line.strip("\n")
             if line.startswith("----") or line.startswith("////"):
                 dbg("Skipping %s:%d - too many comment chars" % (filename, i))
                 continue
@@ -112,7 +118,7 @@ def extract_docstrings(filename):
                     chunk.append("%d" % i)
                 # Append the line to the current chunk
                 line = line.strip("/-")
-                if len(line) > 0 and line[0] == ' ':
+                if len(line) > 0 and line[0] == " ":
                     line = line[1:]
                 chunk.append(line)
             else:
@@ -133,14 +139,14 @@ def find_module_for_item(modules, item):
     module = None
 
     # We need a shortcut here for root level items
-    if not ARGUMENTS.standalone and item.count('.') == 1:
+    if not ARGUMENTS.standalone and item.count(".") == 1:
         dbg("find_module_for_item: Using root-level shortcut")
         module = "hs"
 
     # Methods are very easy to shortcut
-    if item.count(':') == 1:
+    if item.count(":") == 1:
         dbg("find_module_for_item: Using method shortcut")
-        module = item.split(':')[0]
+        module = item.split(":")[0]
 
     if not module:
         matches = []
@@ -161,21 +167,21 @@ def find_module_for_item(modules, item):
 
 def find_itemname_from_signature(signature):
     """Find the name of an item, from a full signature"""
-    return ''.join(re.split(r"[\(\[\s]", signature)[0])
+    return "".join(re.split(r"[\(\[\s]", signature)[0])
 
 
 def remove_method_from_itemname(itemname):
     """Return an itemname without any method name in it"""
-    return itemname.split(':')[0]
+    return itemname.split(":")[0]
 
 
 def find_basename_from_itemname(itemname):
     """Find the base name of an item, from its full name"""
     # (where "base name" means the function/method/variable/etc name
-    splitchar = '.'
-    if ':' in itemname:
-        splitchar = ':'
-    return itemname.split(splitchar)[-1].split(' ')[0]
+    splitchar = "."
+    if ":" in itemname:
+        splitchar = ":"
+    return itemname.split(splitchar)[-1].split(" ")[0]
 
 
 def get_section_from_chunk(chunk, sectionname, item):
@@ -185,7 +191,7 @@ def get_section_from_chunk(chunk, sectionname, item):
     is_done = False
     i = -1
 
-#    print("Looking for: "+sectionname)
+    #    print("Looking for: "+sectionname)
     for line in chunk:
         if is_done:
             # Something in the previous iteration decided we should stop processing this chunk
@@ -198,7 +204,7 @@ def get_section_from_chunk(chunk, sectionname, item):
         if in_section:
             for check_section_name in SECTION_NAMES:
                 # Check to see if we've hit another section
-                if line == check_section_name+":":
+                if line == check_section_name + ":":
                     # We've hit another section, signal the outer loop to stop
                     is_done = True
                     break
@@ -212,14 +218,15 @@ def get_section_from_chunk(chunk, sectionname, item):
         # Having removed any final blank lines, there should be no further blank lines, but we found one
         message = "%s has a blank line in %s" % (item["signature"], sectionname)
         warn(message)
-        LINTS.append({
-            "file": item["file"],
-            "line": int(item["lineno"]) + 3,
-            "title": "Blank lines should not occur within sections",
-            "message": message,
-            "annotation_level": "failure"
-
-        })
+        LINTS.append(
+            {
+                "file": item["file"],
+                "line": int(item["lineno"]) + 3,
+                "title": "Blank lines should not occur within sections",
+                "message": message,
+                "annotation_level": "failure",
+            }
+        )
 
     return section
 
@@ -253,10 +260,10 @@ def process_docstrings(docstrings):
         if chunk[2].startswith("==="):
             # This is a module definition
             modulename = chunk[CHUNK_SIGN].strip("= ")
-            dbg("process_docstrings: Module: %s at %s:%s" % (
-                modulename,
-                chunk[CHUNK_FILE],
-                chunk[CHUNK_LINE]))
+            dbg(
+                "process_docstrings: Module: %s at %s:%s"
+                % (modulename, chunk[CHUNK_FILE], chunk[CHUNK_LINE])
+            )
             docs[modulename] = {}
             docs[modulename]["header"] = chunk
             docs[modulename]["items"] = {}
@@ -266,15 +273,12 @@ def process_docstrings(docstrings):
         if not chunk[2].startswith("==="):
             # This is an item definition
             itemname = find_itemname_from_signature(chunk[CHUNK_SIGN])
-            dbg("process_docstrings: Found item: %s at %s:%s" % (
-                itemname,
-                chunk[CHUNK_FILE],
-                chunk[CHUNK_LINE]))
+            dbg(
+                "process_docstrings: Found item: %s at %s:%s"
+                % (itemname, chunk[CHUNK_FILE], chunk[CHUNK_LINE])
+            )
             modulename = find_module_for_item(list(docs.keys()), itemname)
-            dbg("process_docstrings:   Assigning item to module: %s" %
-                modulename)
-            if modulename not in docs and os.environ.get("GITHUB_ACTIONS", default=None):
-                print("::error file=%s,line=%s,title='Unknown module'::Found a reference to module '%s', but that module has no definition anywhere" % (CHUNK_FILE, CHUNK_LINE, modulename))
+            dbg("process_docstrings:   Assigning item to module: %s" % modulename)
             docs[modulename]["items"][itemname] = chunk
 
     return docs
@@ -288,8 +292,8 @@ def process_module(modulename, raw_module):
     module["name"] = modulename
     module["type"] = "Module"
     module["desc"] = raw_module["header"][CHUNK_DESC]
-    module["doc"] = '\n'.join(raw_module["header"][CHUNK_DESC:])
-    module["stripped_doc"] = '\n'.join(raw_module["header"][CHUNK_DESC + 1:])
+    module["doc"] = "\n".join(raw_module["header"][CHUNK_DESC:])
+    module["stripped_doc"] = "\n".join(raw_module["header"][CHUNK_DESC + 1 :])
     module["submodules"] = []
     module["items"] = []  # Deprecated
     module["Function"] = []
@@ -306,8 +310,7 @@ def process_module(modulename, raw_module):
         dbg("  Processing item: %s" % itemname)
         chunk = raw_module["items"][itemname]
         if chunk[CHUNK_TYPE] not in TYPE_NAMES:
-            err("UNKNOWN TYPE: %s (%s)" % (chunk[CHUNK_TYPE],
-                                           pprint.pformat(chunk)))
+            err("UNKNOWN TYPE: %s (%s)" % (chunk[CHUNK_TYPE], pprint.pformat(chunk)))
         basename = find_basename_from_itemname(itemname)
 
         item = {}
@@ -316,21 +319,23 @@ def process_module(modulename, raw_module):
         item["def"] = chunk[CHUNK_SIGN]  # Deprecated
         item["type"] = chunk[CHUNK_TYPE]
         item["desc"] = chunk[CHUNK_DESC]
-        item["doc"] = '\n'.join(chunk[CHUNK_DESC:])
+        item["doc"] = "\n".join(chunk[CHUNK_DESC:])
         item["file"] = chunk[CHUNK_FILE]
         item["lineno"] = chunk[CHUNK_LINE]
 
         for section in ["Parameters", "Returns", "Notes", "Examples"]:
-            if section + ':' in chunk:
-                item[section.lower()] = get_section_from_chunk(chunk,
-                                                               section + ':',
-                                                               item)
+            if section + ":" in chunk:
+                item[section.lower()] = get_section_from_chunk(
+                    chunk, section + ":", item
+                )
 
-        item["stripped_doc"] = '\n'.join(strip_sections_from_chunk(chunk[CHUNK_DESC + 1:]))
+        item["stripped_doc"] = "\n".join(
+            strip_sections_from_chunk(chunk[CHUNK_DESC + 1 :])
+        )
         module[item["type"]].append(item)
         module["items"].append(item)  # Deprecated
 
-        dbg("    %s" % pprint.pformat(item).replace('\n', "\n            "))
+        dbg("    %s" % pprint.pformat(item).replace("\n", "\n            "))
 
         # The rest of this code is only for functions/constructors/methods
         if item["type"] not in ["Function", "Constructor", "Method"]:
@@ -340,7 +345,7 @@ def process_module(modulename, raw_module):
             return some_text.startswith(" * ")
 
         try:
-            if item['desc'].startswith("Alias for [`"):
+            if item["desc"].startswith("Alias for [`"):
                 item["parameters"] = []
                 item["returns"] = []
                 item["notes"] = []
@@ -348,23 +353,29 @@ def process_module(modulename, raw_module):
             else:
                 sig_without_return = item["signature"].split("->")[0]
                 sig_params = re.sub(r".*\((.*)\).*", r"\1", sig_without_return)
-                sig_param_arr = re.split(r',|\|', sig_params)
+                sig_param_arr = re.split(r",|\|", sig_params)
                 sig_arg_count = len(sig_param_arr)
 
                 # Check if there are more than a single line of description at the top of the function
                 params_index = chunk[CHUNK_DESC:].index("Parameters:")
-                desc_section = [x for x in chunk[CHUNK_DESC:][0:params_index] if x != '']
+                desc_section = [
+                    x for x in chunk[CHUNK_DESC:][0:params_index] if x != ""
+                ]
                 if len(desc_section) > 1:
-                    message = "Function/Method/Constructor description for %s should be a single line. Other content may belong in the Notes: section." % sig_without_return
+                    message = (
+                        "Function/Method/Constructor description for %s should be a single line. Other content may belong in the Notes: section."
+                        % sig_without_return
+                    )
                     warn(message)
-                    LINTS.append({
-                        "file": item["file"],
-                        "line": int(item["lineno"]) + 3,
-                        "title": "Docstring function/method/constructor description should not be multiline",
-                        "message": message,
-                        "annotation_level": "failure"
-
-                    })
+                    LINTS.append(
+                        {
+                            "file": item["file"],
+                            "line": int(item["lineno"]) + 3,
+                            "title": "Docstring function/method/constructor description should not be multiline",
+                            "message": message,
+                            "annotation_level": "failure",
+                        }
+                    )
 
                 # Clean up Parameters
                 clean_params = []
@@ -382,52 +393,73 @@ def process_module(modulename, raw_module):
                                 line = " " + line
                             # This is a sub-parameter of the previous parameter, add it to that string in clean_params
                             prev_clean_line = clean_params[-1]
-                            prev_clean_line += '\n' + line.rstrip()
+                            prev_clean_line += "\n" + line.rstrip()
                             clean_params[-1] = prev_clean_line
                         else:
                             # This should have been on the line before
                             prev_clean_line = clean_params[-1]
-                            prev_clean_line += ' ' + line.strip()
+                            prev_clean_line += " " + line.strip()
                             clean_params[-1] = prev_clean_line
                 except:
-                    message = "PARAMETERS FORMAT ISSUE: Unable to parse Parameters for: %s" % sig_without_return
+                    message = (
+                        "PARAMETERS FORMAT ISSUE: Unable to parse Parameters for: %s"
+                        % sig_without_return
+                    )
                     warn(message)
-                    LINTS.append({
-                        "file": item["file"],
-                        "line": int(item["lineno"]),
-                        "title": "Docstring function/method/constructor parameter parsing error",
-                        "message": message,
-                        "annotation_level": "failure"
-                    })
+                    LINTS.append(
+                        {
+                            "file": item["file"],
+                            "line": int(item["lineno"]),
+                            "title": "Docstring function/method/constructor parameter parsing error",
+                            "message": message,
+                            "annotation_level": "failure",
+                        }
+                    )
                 item["parameters"] = clean_params
 
                 # Check the number of parameters in the signature matches the number in Parameters
                 parameter_count = len(item["parameters"])
                 if parameter_count != sig_arg_count:
-                    message = "SIGNATURE/PARAMETER COUNT MISMATCH: '%s' says %d parameters ('%s'), but Parameters section has %d entries:\n%s\n" % (sig_without_return, sig_arg_count, ','.join(sig_param_arr), parameter_count, '\n'.join(item["parameters"]))
+                    message = (
+                        "SIGNATURE/PARAMETER COUNT MISMATCH: '%s' says %d parameters ('%s'), but Parameters section has %d entries:\n%s\n"
+                        % (
+                            sig_without_return,
+                            sig_arg_count,
+                            ",".join(sig_param_arr),
+                            parameter_count,
+                            "\n".join(item["parameters"]),
+                        )
+                    )
                     warn(message)
-                    LINTS.append({
-                        "file": item["file"],
-                        "line": int(item["lineno"]),
-                        "title": "Docstring signature/parameter mismatch",
-                        "message": message,
-                        "annotation_level": "failure"
-                    })
+                    LINTS.append(
+                        {
+                            "file": item["file"],
+                            "line": int(item["lineno"]),
+                            "title": "Docstring signature/parameter mismatch",
+                            "message": message,
+                            "annotation_level": "failure",
+                        }
+                    )
 
                 # Check if we have zero items for Returns.
                 # This is a lint error in Hammerspoon, but in Standalone (ie Spoons) we'll let it slide and assume they meant to have no returns
                 if "returns" not in item:
                     item["returns"] = []
                 if len(item["returns"]) == 0 and not ARGUMENTS.standalone:
-                    message = "RETURN COUNT ERROR: '%s' does not specify a return value" % (sig_without_return)
+                    message = (
+                        "RETURN COUNT ERROR: '%s' does not specify a return value"
+                        % (sig_without_return)
+                    )
                     warn(message)
-                    LINTS.append({
-                        "file": item["file"],
-                        "line": int(item["lineno"]),
-                        "title": "Docstring missing return value",
-                        "message": message,
-                        "annotation_level": "failure"
-                    })
+                    LINTS.append(
+                        {
+                            "file": item["file"],
+                            "line": int(item["lineno"]),
+                            "title": "Docstring missing return value",
+                            "message": message,
+                            "annotation_level": "failure",
+                        }
+                    )
 
                 # Having validated the Returns, we will now remove any "None" ones
                 if len(item["returns"]) == 1 and item["returns"][0] == "* None":
@@ -442,15 +474,20 @@ def process_module(modulename, raw_module):
                     item["examples"] = []
 
         except:
-            message = "Unable to parse parameters for %s\n%s\n" % (item["signature"], sys.exc_info()[1])
+            message = "Unable to parse parameters for %s\n%s\n" % (
+                item["signature"],
+                sys.exc_info()[1],
+            )
             warn(message)
-            LINTS.append({
-                "file": item["file"],
-                "line": int(item["lineno"]),
-                "title": "Docstring Parameters parse failure",
-                "message": message,
-                "annotation_level": "failure"
-            })
+            LINTS.append(
+                {
+                    "file": item["file"],
+                    "line": int(item["lineno"]),
+                    "title": "Docstring Parameters parse failure",
+                    "message": message,
+                    "annotation_level": "failure",
+                }
+            )
             if FAIL_ON_WARN:
                 sys.exit(1)
     return module
@@ -473,9 +510,8 @@ def process_markdown(data):
     class HighlightRenderer(mistune.HTMLRenderer):
         def block_code(self, code, lang=None):
             if not lang:
-                return '\n<pre><code>%s</code></pre>\n' % \
-                    mistune.escape(code)
-            #print("BLOCK_CODE:\nCODE:%s\nLANG: %s\n======" % (code, lang))
+                return "\n<pre><code>%s</code></pre>\n" % mistune.escape(code)
+            # print("BLOCK_CODE:\nCODE:%s\nLANG: %s\n======" % (code, lang))
             lexer = get_lexer_by_name(lang, stripall=True)
             formatter = html.HtmlFormatter()
             return highlight(code, lexer, formatter)
@@ -495,10 +531,10 @@ def process_markdown(data):
                 item["desc_gfm"] = md(item["desc"])
                 item["doc_gfm"] = md(item["doc"])
                 if "notes" in item:
-                    item["notes_gfm"] = md('\n'.join(item["notes"]))
+                    item["notes_gfm"] = md("\n".join(item["notes"]))
                 if item_type in ["Function", "Constructor", "Method"]:
-                    item["parameters_gfm"] = md('\n'.join(item["parameters"]))
-                    item["returns_gfm"] = md('\n'.join(item["returns"]))
+                    item["parameters_gfm"] = md("\n".join(item["parameters"]))
+                    item["returns_gfm"] = md("\n".join(item["returns"]))
                 items[j] = item
         # Now do the same for the deprecated 'items' list
         for j in range(0, len(module["items"])):
@@ -541,7 +577,7 @@ def do_processing(directories):
         processed_docstrings.append(module_docs)
 
         # Add this module to our module tree
-        module_parts = module.split('.')
+        module_parts = module.split(".")
         cursor = module_tree
         for part in module_parts:
             if part not in cursor:
@@ -555,7 +591,7 @@ def do_processing(directories):
     i = 0
     for module in processed_docstrings:
         dbg("Finding submodules for: %s" % module["name"])
-        module_parts = module["name"].split('.')
+        module_parts = module["name"].split(".")
         cursor = module_tree
         for part in module_parts:
             cursor = cursor[part]
@@ -572,25 +608,38 @@ def do_processing(directories):
 def write_annotations(filepath, data):
     """Write out a JSON file with our linter errors"""
     with open(filepath, "wb") as jsonfile:
-        jsonfile.write(json.dumps(data, indent=2,
-                                  separators=(',', ': '),
-                                  ensure_ascii=False).encode('utf-8'))
+        jsonfile.write(
+            json.dumps(
+                data, indent=2, separators=(",", ": "), ensure_ascii=False
+            ).encode("utf-8")
+        )
 
 
 def emit_lints(lints):
     """Print GitHub Actions messages to stderr for each of our docstrings lint errors"""
     for lint in lints:
-        print("::error file=%s,line=%s,title=%s::%s" % (lint["file"], lint["line"], lint["title"], lint["message"]), file=sys.stderr)
+        print(
+            "::error file=%s,line=%s,title=%s::%s"
+            % (lint["file"], lint["line"], lint["title"], lint["message"]),
+            file=sys.stderr,
+        )
 
     if len(lints) > 0:
         sys.exit(1)
 
+
 def write_json(filepath, data):
     """Write out a JSON version of the docs"""
     with open(filepath, "wb") as jsonfile:
-        jsonfile.write(json.dumps(data, sort_keys=True, indent=2,
-                                  separators=(',', ': '),
-                                  ensure_ascii=False).encode('utf-8'))
+        jsonfile.write(
+            json.dumps(
+                data,
+                sort_keys=True,
+                indent=2,
+                separators=(",", ": "),
+                ensure_ascii=False,
+            ).encode("utf-8")
+        )
 
 
 def write_json_index(filepath, data):
@@ -611,9 +660,15 @@ def write_json_index(filepath, data):
                 entry["type"] = subitem["type"]
                 index.append(entry)
     with open(filepath, "wb") as jsonfile:
-        jsonfile.write(json.dumps(index, sort_keys=True, indent=2,
-                                  separators=(',', ': '),
-                                  ensure_ascii=False).encode('utf-8'))
+        jsonfile.write(
+            json.dumps(
+                index,
+                sort_keys=True,
+                indent=2,
+                separators=(",", ": "),
+                ensure_ascii=False,
+            ).encode("utf-8")
+        )
 
 
 def write_sql(filepath, data):
@@ -626,30 +681,42 @@ def write_sql(filepath, data):
     except sqlite3.OperationalError:
         # This table won't have existed in a blank database
         pass
-    cur.execute("CREATE TABLE searchIndex(id INTEGER PRIMARY KEY, name TEXT, "
-                "type TEXT, path TEXT);")
-    cur.execute("CREATE UNIQUE INDEX anchor ON searchIndex (name, type, "
-                "path);")
+    cur.execute(
+        "CREATE TABLE searchIndex(id INTEGER PRIMARY KEY, name TEXT, "
+        "type TEXT, path TEXT);"
+    )
+    cur.execute("CREATE UNIQUE INDEX anchor ON searchIndex (name, type, path);")
 
     for module in data:
-        cur.execute("INSERT INTO searchIndex VALUES(NULL, '%(modname)s', "
-                    "'Module', '%(modname)s.html');" %
-                    {"modname": module["name"]})
+        cur.execute(
+            "INSERT INTO searchIndex VALUES(NULL, '%(modname)s', "
+            "'Module', '%(modname)s.html');" % {"modname": module["name"]}
+        )
         for item in module["items"]:
             try:
-                cur.execute("INSERT INTO searchIndex VALUES(NULL, "
-                            "'%(modname)s.%(itemname)s', "
-                            "'%(itemtype)s', '%(modname)s.html#%(itemname)s');" %
-                            {"modname": module["name"], "itemname": item["name"],
-                             "itemtype": item["type"]})
+                cur.execute(
+                    "INSERT INTO searchIndex VALUES(NULL, "
+                    "'%(modname)s.%(itemname)s', "
+                    "'%(itemtype)s', '%(modname)s.html#%(itemname)s');"
+                    % {
+                        "modname": module["name"],
+                        "itemname": item["name"],
+                        "itemtype": item["type"],
+                    }
+                )
             except:
-                err("DB Insert failed on %s:%s(%s)" % (module["name"], item["name"], item["type"]))
+                err(
+                    "DB Insert failed on %s:%s(%s)"
+                    % (module["name"], item["name"], item["type"])
+                )
 
     db.commit()
     cur.execute("VACUUM;")
 
 
-def write_templated_output(output_dir, template_dir, title, source_url_base, data, extension):
+def write_templated_output(
+    output_dir, template_dir, title, source_url_base, data, extension
+):
     """Write out a templated version of the docs"""
     from jinja2 import Environment
 
@@ -660,15 +727,16 @@ def write_templated_output(output_dir, template_dir, title, source_url_base, dat
         try:
             os.makedirs(output_dir)
         except Exception as error:
-            err("Output directory is not a directory, "
-                "and/or can't be created: %s" % error)
+            err(
+                "Output directory is not a directory, "
+                "and/or can't be created: %s" % error
+            )
 
     # Prepare for writing index.<extensions>
     try:
         outfile = open(output_dir + "/index." + extension, "wb")
     except Exception as error:
-        err("Unable to create %s: %s" % (output_dir + "/index." + extension,
-            error))
+        err("Unable to create %s: %s" % (output_dir + "/index." + extension, error))
 
     # Prepare for reading index.j2.<extension>
     try:
@@ -698,13 +766,15 @@ def write_templated_output(output_dir, template_dir, title, source_url_base, dat
         err("Unable to open module.j2.%s: %s" % (extension, error))
 
     for module in data:
-        with open("%s/%s.%s" % (output_dir,
-                                module["name"],
-                                extension), "wb") as docfile:
-            render = template.render(module=module,
-                                     type_order=TYPE_NAMES,
-                                     type_desc=TYPE_DESC,
-                                     source_url_base=source_url_base)
+        with open(
+            "%s/%s.%s" % (output_dir, module["name"], extension), "wb"
+        ) as docfile:
+            render = template.render(
+                module=module,
+                type_order=TYPE_NAMES,
+                type_desc=TYPE_DESC,
+                source_url_base=source_url_base,
+            )
             docfile.write(render.encode("utf-8"))
             dbg("Wrote %s.%s" % (module["name"], extension))
 
@@ -713,7 +783,9 @@ def write_templated_output(output_dir, template_dir, title, source_url_base, dat
 
 def write_html(output_dir, template_dir, title, source_url_base, data):
     """Write out an HTML version of the docs"""
-    write_templated_output(output_dir, template_dir, title, source_url_base, data, "html")
+    write_templated_output(
+        output_dir, template_dir, title, source_url_base, data, "html"
+    )
 
 
 def write_markdown(output_dir, template_dir, title, source_url_base, data):
@@ -728,56 +800,116 @@ def main():
 
     parser = argparse.ArgumentParser()
     commands = parser.add_argument_group("Commands")
-    commands.add_argument("-v", "--validate", action="store_true",
-                          dest="validate", default=False,
-                          help="Ensure all docstrings are valid")
-    commands.add_argument("-j", "--json", action="store_true",
-                          dest="json", default=False,
-                          help="Output docs.json")
-    commands.add_argument("-s", "--sql", action="store_true",
-                          dest="sql", default=False,
-                          help="Output docs.sqlite")
-    commands.add_argument("-t", "--html", action="store_true",
-                          dest="html", default=False,
-                          help="Output HTML docs")
-    commands.add_argument("-m", "--markdown", action="store_true",
-                          dest="markdown", default=False,
-                          help="Output Markdown docs")
-    parser.add_argument("-n", "--standalone",
-                        help="Process a single module only",
-                        action="store_true", default=False,
-                        dest="standalone")
-    parser.add_argument("-d", "--debug", help="Enable debugging output",
-                        action="store_true", default=False,
-                        dest="debug")
-    parser.add_argument("-e", "--templates", action="store",
-                        help="Directory of HTML templates",
-                        dest="template_dir", default="scripts/docs/templates")
-    parser.add_argument("-o", "--output_dir", action="store",
-                        dest="output_dir", default="build/",
-                        help="Directory to write outputs to")
-    parser.add_argument("-i", "--title", action="store",
-                        dest="title", default="Hammerspoon",
-                        help="Title for the index page")
-    parser.add_argument("-l", "--lint", action="store_true",
-                        dest="lint_mode", default=False,
-                        help="Run in Lint mode. No docs will be built")
-    parser.add_argument("-u", "--source_url_base", action="store",
-                        dest="source_url_base", default = "https://github.com/Hammerspoon/hammerspoon/blob/master/")
-    parser.add_argument("DIRS", nargs=argparse.REMAINDER,
-                        help="Directories to search")
+    commands.add_argument(
+        "-v",
+        "--validate",
+        action="store_true",
+        dest="validate",
+        default=False,
+        help="Ensure all docstrings are valid",
+    )
+    commands.add_argument(
+        "-j",
+        "--json",
+        action="store_true",
+        dest="json",
+        default=False,
+        help="Output docs.json",
+    )
+    commands.add_argument(
+        "-s",
+        "--sql",
+        action="store_true",
+        dest="sql",
+        default=False,
+        help="Output docs.sqlite",
+    )
+    commands.add_argument(
+        "-t",
+        "--html",
+        action="store_true",
+        dest="html",
+        default=False,
+        help="Output HTML docs",
+    )
+    commands.add_argument(
+        "-m",
+        "--markdown",
+        action="store_true",
+        dest="markdown",
+        default=False,
+        help="Output Markdown docs",
+    )
+    parser.add_argument(
+        "-n",
+        "--standalone",
+        help="Process a single module only",
+        action="store_true",
+        default=False,
+        dest="standalone",
+    )
+    parser.add_argument(
+        "-d",
+        "--debug",
+        help="Enable debugging output",
+        action="store_true",
+        default=False,
+        dest="debug",
+    )
+    parser.add_argument(
+        "-e",
+        "--templates",
+        action="store",
+        help="Directory of HTML templates",
+        dest="template_dir",
+        default="scripts/docs/templates",
+    )
+    parser.add_argument(
+        "-o",
+        "--output_dir",
+        action="store",
+        dest="output_dir",
+        default="build/",
+        help="Directory to write outputs to",
+    )
+    parser.add_argument(
+        "-i",
+        "--title",
+        action="store",
+        dest="title",
+        default="Hammerspoon",
+        help="Title for the index page",
+    )
+    parser.add_argument(
+        "-l",
+        "--lint",
+        action="store_true",
+        dest="lint_mode",
+        default=False,
+        help="Run in Lint mode. No docs will be built",
+    )
+    parser.add_argument(
+        "-u",
+        "--source_url_base",
+        action="store",
+        dest="source_url_base",
+        default="https://github.com/Hammerspoon/hammerspoon/blob/master/",
+    )
+    parser.add_argument("DIRS", nargs=argparse.REMAINDER, help="Directories to search")
     arguments, leftovers = parser.parse_known_args()
 
     if arguments.debug:
         DEBUG = True
     dbg("Arguments: %s" % arguments)
 
-    if not arguments.validate and \
-       not arguments.json and \
-       not arguments.sql and \
-       not arguments.html and \
-       not arguments.markdown and \
-       not arguments.lint_mode:
+    if (
+        not arguments.validate
+        and not arguments.json
+        and not arguments.sql
+        and not arguments.html
+        and not arguments.markdown
+        and not arguments.lint_mode
+    ):
         parser.print_help()
         err("At least one of validate/json/sql/html/markdown is required.")
 
@@ -808,13 +940,21 @@ def main():
     if arguments.sql:
         write_sql(arguments.output_dir + "/docs.sqlite", results)
     if arguments.html:
-        write_html(arguments.output_dir + "/html/",
-                   arguments.template_dir,
-                   arguments.title, arguments.source_url_base, results)
+        write_html(
+            arguments.output_dir + "/html/",
+            arguments.template_dir,
+            arguments.title,
+            arguments.source_url_base,
+            results,
+        )
     if arguments.markdown:
-        write_markdown(arguments.output_dir + "/markdown/",
-                       arguments.template_dir,
-                       arguments.title, arguments.source_url_base, results)
+        write_markdown(
+            arguments.output_dir + "/markdown/",
+            arguments.template_dir,
+            arguments.title,
+            arguments.source_url_base,
+            results,
+        )
 
 
 if __name__ == "__main__":

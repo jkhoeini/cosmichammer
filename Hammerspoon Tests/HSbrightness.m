@@ -25,20 +25,16 @@
 }
 
 - (void)testGet {
-    SKIP_IN_TRAVIS()
-    SKIP_IN_GITHUB_ACTIONS()
+    SKIP_IN_HEADLESS()
     RUN_LUA_TEST()
 }
 
 - (void)testSet {
-    SKIP_IN_TRAVIS()
-    SKIP_IN_XCODE_SERVER()
-    SKIP_IN_GITHUB_ACTIONS()
+    SKIP_IN_HEADLESS()
     RUN_LUA_TEST()
 }
 
 - (void)testAmbient {
-    SKIP_IN_TRAVIS()
     RUN_LUA_TEST()
 }
 

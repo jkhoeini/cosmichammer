@@ -170,7 +170,7 @@ The best place to start is in the `Hammerspoon/Hammerspoon Tests` folder in Xcod
  * The rest of `HSfoo` should be methods named `testBar`, each of which causes some test action to take place.
  * There are some helper macros for use inside the test methods:
   * `RUN_LUA_TEST()` will cause a function from `test_foo.lua` to be run, if its name exactly matches the name of the `HSfoo` method
-  * `SKIP_IN_GITHUB_ACTIONS()` will cause this test to be skipped when running as part of our GitHub Actions test runs (e.g. because the GitHub VMs lack hardware/network resources required to test)
+  * `SKIP_IN_HEADLESS()` will cause this test to be skipped when `HEADLESS=1` is set in the environment (e.g. because the test requires hardware like a display, audio device, or keyboard)
 
 When Hammerspoon detects it is is being run by `XCTest`, it loads a special `init.lua` (`Hammerspoon/Hammerspoon Tests/init.lua`) which provides a number of helper functions, mainly related to asserting state in test functions. These functions will generate Lua errors if a test failure occurs, which will cause Xcode to report the test has failed, with an appropriate backtrace in the logs. Refer to the file for the full list of assertions, but the most useful are:
 

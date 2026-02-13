@@ -27,22 +27,22 @@
 }
 
 - (void)testNewFromName {
-    SKIP_IN_GITHUB_ACTIONS()
+    SKIP_IN_HEADLESS()
     RUN_LUA_TEST()
 }
 
 - (void)testNewFromPath {
-    SKIP_IN_GITHUB_ACTIONS()
+    SKIP_IN_HEADLESS()
     RUN_LUA_TEST()
 }
 
 - (void)testOpenAndClose {
-    SKIP_IN_GITHUB_ACTIONS()
+    SKIP_IN_HEADLESS()
     RUN_LUA_TEST()
 }
 
 - (void)testAttributes {
-    SKIP_IN_GITHUB_ACTIONS()
+    SKIP_IN_HEADLESS()
     RUN_LUA_TEST()
 }
 

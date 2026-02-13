@@ -71,8 +71,7 @@
 }
 
 - (void)testVolumes {
-    SKIP_IN_TRAVIS()
-    SKIP_IN_GITHUB_ACTIONS()
+    SKIP_IN_HEADLESS()
     [self luaTestWithCheckAndTimeOut:10 setupCode:@"testVolumes()" checkCode:@"testVolumesValues()"];
 }
 

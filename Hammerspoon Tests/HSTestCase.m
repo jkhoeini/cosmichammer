@@ -12,9 +12,7 @@
 
 - (void)setUpWithRequire:(NSString *)requireName {
     [super setUp];
-    self.isTravis = [self runningInTravis];
-    self.isXcodeServer = [self runningInXcodeServer];
-    self.isGitHubActions = [self runningInGitHubActions];
+    self.isHeadless = [self runningHeadless];
 
     NSString *result = [self runLua:[NSString stringWithFormat:@"require('%@')", requireName]];
     XCTAssertEqualObjects(@"true", result, @"Unable to load %@.lua", requireName);
@@ -83,16 +81,8 @@
     return [self luaTest:[NSString stringWithFormat:@"%@()", funcName]];
 }
 
-- (BOOL)runningInTravis {
-    return (getenv("TRAVIS") != NULL);
-}
-
-- (BOOL)runningInXcodeServer {
-    return (getenv("XCS") != NULL);
-}
-
-- (BOOL)runningInGitHubActions {
-    return (getenv("GITHUB_ACTIONS") != NULL);
+- (BOOL)runningHeadless {
+    return (getenv("HEADLESS") != NULL);
 }
 
 // Tests of the above methods

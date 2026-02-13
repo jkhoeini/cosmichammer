@@ -29,7 +29,7 @@
 }
 
 - (void)testInitWithPid {
-    SKIP_IN_GITHUB_ACTIONS() // Added by @asmagill
+    SKIP_IN_HEADLESS() // Added by @asmagill
     RUN_LUA_TEST()
 }
 
@@ -46,8 +46,7 @@
 // }
 
 - (void)testFrontmostApplication {
-    SKIP_IN_TRAVIS()
-    SKIP_IN_GITHUB_ACTIONS()
+    SKIP_IN_HEADLESS()
     RUN_LUA_TEST()
 }
 
@@ -56,24 +55,20 @@
 }
 
 - (void)testHiding {
-    SKIP_IN_TRAVIS()
-    SKIP_IN_GITHUB_ACTIONS()
+    SKIP_IN_HEADLESS()
     [self luaTestWithCheckAndTimeOut:5 setupCode:@"testHiding()" checkCode:@"testHidingValues()"];
 }
 
 - (void)testKilling {
-    SKIP_IN_TRAVIS()
     [self luaTestWithCheckAndTimeOut:5 setupCode:@"testKilling()" checkCode:@"testKillingValues()"];
 }
 
 - (void)testForceKilling {
-    SKIP_IN_TRAVIS()
     [self luaTestWithCheckAndTimeOut:5 setupCode:@"testForceKilling()" checkCode:@"testForceKillingValues()"];
 }
 
 - (void)testWindows {
-    SKIP_IN_TRAVIS()
-    SKIP_IN_GITHUB_ACTIONS()
+    SKIP_IN_HEADLESS()
     [self luaTestWithCheckAndTimeOut:5 setupCode:@"testWindows()" checkCode:@"testWindowsValues()"];
 }
 

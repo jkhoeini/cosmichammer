@@ -48,56 +48,47 @@
 }
 
 - (void)testGetAllDevices {
-    SKIP_IN_TRAVIS()
-    SKIP_IN_GITHUB_ACTIONS()
+    SKIP_IN_HEADLESS()
     RUN_LUA_TEST()
 }
 
 - (void)testGetAllOutputDevices {
-    SKIP_IN_TRAVIS()
-    SKIP_IN_GITHUB_ACTIONS()
+    SKIP_IN_HEADLESS()
     RUN_LUA_TEST()
 }
 
 - (void)testGetAllInputDevices {
-    SKIP_IN_TRAVIS()
-    SKIP_IN_GITHUB_ACTIONS()
+    SKIP_IN_HEADLESS()
     RUN_LUA_TEST()
 }
 
 - (void)testFindDeviceByName {
-    SKIP_IN_TRAVIS()
-    SKIP_IN_GITHUB_ACTIONS()
+    SKIP_IN_HEADLESS()
     RUN_LUA_TEST()
 }
 
 - (void)testFindDeviceByUID {
-    SKIP_IN_TRAVIS()
-    SKIP_IN_GITHUB_ACTIONS()
+    SKIP_IN_HEADLESS()
     RUN_LUA_TEST()
 }
 
 - (void)testFindInputByName {
-    SKIP_IN_TRAVIS()
-    SKIP_IN_GITHUB_ACTIONS()
+    SKIP_IN_HEADLESS()
     RUN_LUA_TEST()
 }
 
 - (void)testFindInputByUID {
-    SKIP_IN_TRAVIS()
-    SKIP_IN_GITHUB_ACTIONS()
+    SKIP_IN_HEADLESS()
     RUN_LUA_TEST()
 }
 
 - (void)testFindOutputByName {
-    SKIP_IN_TRAVIS()
-    SKIP_IN_GITHUB_ACTIONS()
+    SKIP_IN_HEADLESS()
     RUN_LUA_TEST()
 }
 
 - (void)testFindOutputByUID {
-    SKIP_IN_TRAVIS()
-    SKIP_IN_GITHUB_ACTIONS()
+    SKIP_IN_HEADLESS()
     RUN_LUA_TEST()
 }
 
@@ -119,24 +110,20 @@
 }
 
 - (void)testName {
-    SKIP_IN_TRAVIS()
-    SKIP_IN_GITHUB_ACTIONS()
+    SKIP_IN_HEADLESS()
     RUN_LUA_TEST()
 }
 
 - (void)testUID {
-    SKIP_IN_TRAVIS()
-    SKIP_IN_GITHUB_ACTIONS()
+    SKIP_IN_HEADLESS()
     RUN_LUA_TEST()
 }
 
 - (void)testIsInputDevice {
-    SKIP_IN_TRAVIS()
     RUN_LUA_TEST()
 }
 
 - (void)testIsOutputDevice {
-    SKIP_IN_TRAVIS()
     RUN_LUA_TEST()
 }
 
@@ -149,17 +136,14 @@
 }
 
 - (void)testVolume {
-    SKIP_IN_TRAVIS()
     RUN_LUA_TEST()
 }
 
 - (void)testInputVolume {
-    SKIP_IN_TRAVIS()
     RUN_LUA_TEST()
 }
 
 - (void)testOutputVolume {
-    SKIP_IN_TRAVIS()
     RUN_LUA_TEST()
 }
 
@@ -176,8 +160,7 @@
 }
 
 - (void)testWatcherCallback {
-    SKIP_IN_TRAVIS()
-    SKIP_IN_GITHUB_ACTIONS()
+    SKIP_IN_HEADLESS()
     NSDate *timeoutDate = [NSDate dateWithTimeIntervalSinceNow:5.0];
     BOOL result = NO;
 
@@ -192,57 +175,48 @@
 }
 
 - (void)testInputSupportsDataSources {
-    SKIP_IN_TRAVIS()
-    SKIP_IN_GITHUB_ACTIONS()
+    SKIP_IN_HEADLESS()
     RUN_LUA_TEST()
 }
 
 - (void)testOutputSupportsDataSources {
-    SKIP_IN_TRAVIS()
-    SKIP_IN_GITHUB_ACTIONS()
+    SKIP_IN_HEADLESS()
     RUN_LUA_TEST()
 }
 
 - (void)testCurrentInputDataSource {
-    SKIP_IN_TRAVIS()
-    SKIP_IN_GITHUB_ACTIONS()
+    SKIP_IN_HEADLESS()
     RUN_LUA_TEST()
 }
 
 - (void)testCurrentOutputDataSource {
-    SKIP_IN_TRAVIS()
-    SKIP_IN_GITHUB_ACTIONS()
+    SKIP_IN_HEADLESS()
     RUN_LUA_TEST()
 }
 
 - (void)testAllInputDataSources {
-    SKIP_IN_TRAVIS()
-    SKIP_IN_GITHUB_ACTIONS()
+    SKIP_IN_HEADLESS()
     RUN_LUA_TEST()
 }
 
 - (void)testAllOutputDataSources {
-    SKIP_IN_TRAVIS()
-    SKIP_IN_GITHUB_ACTIONS()
+    SKIP_IN_HEADLESS()
     RUN_LUA_TEST()
 }
 
 // hs.audiodevice.datasource methods
 - (void)testDataSourceToString {
-    SKIP_IN_TRAVIS()
-    SKIP_IN_GITHUB_ACTIONS()
+    SKIP_IN_HEADLESS()
     RUN_LUA_TEST()
 }
 
 - (void)testDataSourceName {
-    SKIP_IN_TRAVIS()
-    SKIP_IN_GITHUB_ACTIONS()
+    SKIP_IN_HEADLESS()
     RUN_LUA_TEST()
 }
 
 - (void)testDataSourceSetDefault {
-    SKIP_IN_TRAVIS()
-    SKIP_IN_GITHUB_ACTIONS()
+    SKIP_IN_HEADLESS()
     RUN_LUA_TEST()
 }
 @end

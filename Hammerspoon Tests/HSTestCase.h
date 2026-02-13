@@ -13,14 +13,10 @@
 #define RUN_LUA_TEST() XCTAssertTrue([self luaTestFromSelector:_cmd], @"Test failed: %@", NSStringFromSelector(_cmd));
 #define RUN_TWO_PART_LUA_TEST_WITH_TIMEOUT(timeout) [self twoPartTestName:_cmd withTimeout:timeout];
 
-#define SKIP_IN_TRAVIS() if(self.isTravis) { NSLog(@"Skipping %@ due to Travis", NSStringFromSelector(_cmd)) ; XCTSkip("Test is unreliable in Travis"); }
-#define SKIP_IN_XCODE_SERVER() if(self.isXcodeServer) { NSLog(@"Skipping %@ due to Xcode Server", NSStringFromSelector(_cmd)) ; XCTSkip("Test is unreliable in Xcode Server"); }
-#define SKIP_IN_GITHUB_ACTIONS() if(self.isGitHubActions) { NSLog(@"Skipping %@ due to GitHub Actions", NSStringFromSelector(_cmd)) ; XCTSkip("Test is unreliable in GitHub Actions"); }
+#define SKIP_IN_HEADLESS() if(self.isHeadless) { NSLog(@"Skipping %@ due to headless environment", NSStringFromSelector(_cmd)) ; XCTSkip("Test requires hardware (display, audio, keyboard, etc.)"); }
 
 @interface HSTestCase : XCTestCase
-@property (nonatomic) BOOL isTravis;
-@property (nonatomic) BOOL isXcodeServer;
-@property (nonatomic) BOOL isGitHubActions;
+@property (nonatomic) BOOL isHeadless;
 
 /**
  Sets up the testing environment and loads a Lua file with require()
@@ -80,17 +76,11 @@ Executes a two-part Lua test with a timeout.
 - (BOOL)luaTestFromSelector:(SEL)selector;
 
 /**
- Determines if the test run is happening in the Travis CI build system, since we need to skip some tests in their environment
+ Determines if the test run is happening in a headless environment (no display, audio, etc.)
+ Set HEADLESS=1 in the environment to skip hardware-dependent tests.
 
- @return A boolean, true if the test run is happening in Travis, false otherwise
+ @return A boolean, true if the HEADLESS environment variable is set, false otherwise
  */
-- (BOOL)runningInTravis;
-
-/**
- Determines if the test run is happening in an Xcode Server  build system, since we need to skip some tests in that environment
-
- @return A boolean, true if the test run is happening in Xcode Server, false otherwise
- */
-- (BOOL)runningInXcodeServer;
+- (BOOL)runningHeadless;
 
 @end

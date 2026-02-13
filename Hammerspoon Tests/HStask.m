@@ -37,7 +37,6 @@
 }
 
 - (void)testStreamingTask {
-    SKIP_IN_TRAVIS()
     [self luaTestWithCheckAndTimeOut:10 setupCode:@"testStreamingTask()" checkCode:@"testStreamingTaskValueCheck()"];
 }
 
@@ -54,7 +53,6 @@
 }
 
 - (void)testTaskWorkingDirectory {
-    SKIP_IN_TRAVIS()
     RUN_LUA_TEST()
 }
 @end

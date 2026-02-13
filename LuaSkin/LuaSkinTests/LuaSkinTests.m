@@ -14,7 +14,6 @@
 #pragma mark - Defines
 
 #define RUN_LUA_TEST() XCTAssertTrue([self luaTestFromSelector:_cmd], @"Test failed: %@", NSStringFromSelector(_cmd));
-#define SKIP_IN_TRAVIS() if(self.isTravis) { NSLog(@"Skipping %@ due to Travis", NSStringFromSelector(_cmd)) ; return; }
 
 #pragma mark - Utility C functions
 
@@ -264,10 +263,6 @@ static int pushTestUserData(lua_State *L, id object) {
     NSString *funcName = NSStringFromSelector(selector);
     NSLog(@"Calling Lua function from selector: %@()", funcName);
     return [self luaTest:[NSString stringWithFormat:@"%@()", funcName]];
-}
-
-- (BOOL)runningInTravis {
-    return (getenv("TRAVIS") != NULL);
 }
 
 // Tests of the above methods

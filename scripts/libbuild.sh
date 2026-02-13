@@ -31,22 +31,25 @@ function op_build() {
     echo "Building..."
     ${RM} -rf "${HAMMERSPOON_BUNDLE_PATH}"
 
-    local BUILD_COMMAND="archive"
+    local BUILD_COMMAND="build"
+    local EXTRA_ARGS=()
     if [ "${BUILD_FOR_TESTING}" == "1" ]; then
         BUILD_COMMAND="build-for-testing"
+    elif [ "${XCODE_CONFIGURATION}" == "Release" ]; then
+        BUILD_COMMAND="archive"
+        EXTRA_ARGS+=(-archivePath "${HAMMERSPOON_XCARCHIVE_PATH}")
     fi
 
     # Build the app
-    echo "-> xcodebuild -workspace Hammerspoon.xcworkspace -scheme ${XCODE_SCHEME} -configuration ${XCODE_CONFIGURATION} -destination \"platform=macOS\" -archivePath ${HAMMERSPOON_XCARCHIVE_PATH} archive | tee ${BUILD_HOME}/${XCODE_CONFIGURATION}-build.log"
     xcodebuild -workspace Hammerspoon.xcworkspace \
                -scheme "${XCODE_SCHEME}" \
                -configuration "${XCODE_CONFIGURATION}" \
                -destination "platform=macOS" \
-               -archivePath "${HAMMERSPOON_XCARCHIVE_PATH}" \
+               ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"} \
                "${BUILD_COMMAND}" | tee "${BUILD_HOME}/${XCODE_CONFIGURATION}-build.log" | xcbeautify ${XCB_OPTS[@]:-}
 
     if [ "${BUILD_COMMAND}" == "archive" ]; then
-        # Export the app bundle from the archive
+        # Export the signed app bundle from the archive (requires Developer ID certificate)
         xcodebuild -exportArchive -archivePath "${HAMMERSPOON_XCARCHIVE_PATH}" \
                    -exportOptionsPlist Hammerspoon/Build\ Configs/Archive-Export-Options.plist \
                    -exportPath "${BUILD_HOME}"
@@ -217,60 +220,6 @@ function op_installdeps() {
     /usr/bin/pip3 install --user --disable-pip-version-check -r "${HAMMERSPOON_HOME}/requirements.txt" || fail "Unable to install Python dependencies"
 }
 
-function op_keychain_prep() {
-    echo " Preparing keychain..."
-    op_keychain_prep_assert
-
-    local SECBIN="/usr/bin/security"
-    local KEYCHAIN="build.keychain"
-
-    # Note: This will fail if KEYCHAIN_PASSPHRASE isn't set in the environment.
-    #  This is explicitly undocumented because this really shouldn't be called anywhere other than CI
-    if [ "${P12_FILE}" != "" ]; then
-        echo " Creating new default keychain: ${KEYCHAIN}"
-        "${SECBIN}" create-keychain -p "${KEYCHAIN_PASSPHRASE}" "${KEYCHAIN}"
-        "${SECBIN}" default-keychain -s "${KEYCHAIN}"
-
-        echo " Unlocking keychain..."
-        "${SECBIN}" unlock-keychain -p "${KEYCHAIN_PASSPHRASE}" "${KEYCHAIN}"
-
-        echo " Importing signing certificate/key..."
-        "${SECBIN}" import "${P12_FILE}" -f pkcs12 -k "${KEYCHAIN}" -P "${KEYCHAIN_PASSPHRASE}" -T /usr/bin/codesign -x
-
-        echo " Removing keychain autolocking settings..."
-        "${SECBIN}" set-keychain-settings -t 1200
-
-        echo " Setting permissions for keychain... (logs suppressed)"
-        "${SECBIN}" -q set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "${KEYCHAIN_PASSPHRASE}" "${KEYCHAIN}" >/dev/null 2>&1
-
-        echo " Listing keychains:"
-        "${SECBIN}" list-keychains -d user
-
-        echo " Dumping keychain identity:"
-        "${SECBIN}" find-identity -v
-    fi
-
-    if [ "${NOTARIZATION_CREDS_FILE}" != "" ]; then
-        source "${NOTARIZATION_CREDS_FILE}"
-
-        local SIGN_TEAM ; SIGN_TEAM=$(xcodebuild -workspace Hammerspoon.xcworkspace -scheme Release -configuration Release -showBuildSettings 2>&1 | grep -E " DEVELOPMENT_TEAM" | sed -e 's/.* = //')
-
-        echo " Storing notarization credentials:"
-        xcrun notarytool store-credentials --sync "${KEYCHAIN_PROFILE}" --apple-id "${NOTARIZATION_USERNAME}" --team-id "${SIGN_TEAM}" --password "${NOTARIZATION_PASSWORD}"
-
-        unset NOTARIZATION_USERNAME
-        unset NOTARIZATION_PASSWORD
-    fi
-}
-
-function op_keychain_post() {
-    echo " Removing keychain..."
-    local SECBIN="/usr/bin/security"
-    local KEYCHAIN="build.keychain"
-
-    "${SECBIN}" delete-keychain "${KEYCHAIN}"
-}
-
 function op_notarize() {
     echo " Notarizing ${NOTARIZATION_FILE:-${HAMMERSPOON_BUNDLE_PATH}}..."
     op_notarize_assert
@@ -312,9 +261,7 @@ function op_notarize() {
         # Remove the zip we uploaded for Notarization
         ${RM} "${HAMMERSPOON_BUNDLE_PATH}.zip"
 
-        # At this stage we don't know if this is a full release build or a CI build, so prepare a notarized zip for both
         create_zip "${HAMMERSPOON_BUNDLE_PATH}" "${HAMMERSPOON_BUNDLE_PATH}-$(release_version).zip"
-        create_zip "${HAMMERSPOON_BUNDLE_PATH}" "${HAMMERSPOON_BUNDLE_PATH}-$(nightly_version).zip"
     fi
 
     echo " ✅ Notarization successful!"
@@ -497,27 +444,6 @@ function op_validate_assert() {
   fi
 }
 
-function op_keychain_prep_assert() {
-    if [ "${IS_CI}" != "1" ]; then
-        echo "You almost certainly don't want to do this keychain preparation outside of CI"
-        echo "If you are absolutely sure that you do want to, export IS_CI=1"
-        echo " BE WARNED: If you force this to run and give it a P12 file, it will create a new default keychain on your Mac"
-        fail "Refusing to continue"
-    fi
-
-    if [ "${P12_FILE}" == "" ] && [ "${NOTARIZATION_CREDS_FILE}" == "" ]; then
-        fail "Can't prepare a keychain without either a P12 file or a Notarization Credentials file (or both)"
-    fi
-
-    if [ "${P12_FILE}" != "" ] && [ ! -e "${P12_FILE}" ]; then
-        fail "Unable to access P12 signing certificate: ${P12_FILE}"
-    fi
-
-    if [ "${NOTARIZATION_CREDS_FILE}" != "" ] && [ ! -e "${NOTARIZATION_CREDS_FILE}" ]; then
-        fail "Unable to access Notarization credentials file: ${NOTARIZATION_CREDS_FILE}"
-    fi
-}
-
 function op_notarize_assert() {
   # FIXME: Figure out a way to assert that the keychain profile exists
   return
@@ -624,20 +550,11 @@ function assert_cocoapods_state() {
 
 ############################## UTILITY HELPERS ###############################
 function get_version() {
-    if [ "${IS_NIGHTLY}" == "1" ]; then
-        nightly_version
-    else
-        release_version
-    fi
+    release_version
 }
 
 function release_version() {
     local VERSION ; VERSION=$(cd "${HAMMERSPOON_HOME}" || fail "Unable to enter ${HAMMERSPOON_HOME}" ; git describe --abbrev=0)
-    echo "${VERSION}"
-}
-
-function nightly_version() {
-    local VERSION ; VERSION=$(cd "${HAMMERSPOON_HOME}" || fail "Unable to enter ${HAMMERSPOON_HOME}" ; git describe)
     echo "${VERSION}"
 }
 
