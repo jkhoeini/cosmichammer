@@ -62,12 +62,18 @@ function op_docs() {
     op_docs_assert
 
     local LSDOCSDIR="${BUILD_HOME}/html/LuaSkin"
-    local DOCSCRIPT="${HAMMERSPOON_HOME}/scripts/docs/bin/build_docs.py"
+    local DOCSTOOL="${HAMMERSPOON_HOME}/scripts/docs/.build/release/BuildDocs"
+
+    # Build the docs tool if needed
+    if [ ! -f "${DOCSTOOL}" ]; then
+        echo "Building docs tool..."
+        swift build -c release --package-path "${HAMMERSPOON_HOME}/scripts/docs" || fail "Unable to build docs tool"
+    fi
 
     pushd "${HAMMERSPOON_HOME}" >/dev/null || fail "Unable to access Hammerspoon repo at ${HAMMERSPOON_HOME}"
 
     if [ "${DOCS_LINT_ONLY}" == 1 ]; then
-        "${DOCSCRIPT}" -l ${DOCS_SEARCH_DIRS[*]} || fail "Docs lint failed"
+        "${DOCSTOOL}" --lint ${DOCS_SEARCH_DIRS[*]} || fail "Docs lint failed"
         echo "Docs lint OK"
         popd >/dev/null || fail "Unknown"
         return # We return here because this option cannot be used with any of the subsequent ones
@@ -75,22 +81,22 @@ function op_docs() {
 
     if [ "${DOCS_JSON}" == 1 ]; then
         echo "Building docs JSON..."
-        "${DOCSCRIPT}" -o "${BUILD_HOME}" --json ${DOCS_SEARCH_DIRS[@]}
+        "${DOCSTOOL}" -o "${BUILD_HOME}" --json ${DOCS_SEARCH_DIRS[@]}
     fi
 
     if [ "${DOCS_MD}" == 1 ]; then
         echo "Building docs Markdown..."
-        "${DOCSCRIPT}" -o "${BUILD_HOME}" --markdown ${DOCS_SEARCH_DIRS[@]}
+        "${DOCSTOOL}" -o "${BUILD_HOME}" --markdown ${DOCS_SEARCH_DIRS[@]}
     fi
 
     if [ "${DOCS_HTML}" == 1 ]; then
         echo "Building docs HTML..."
-        "${DOCSCRIPT}" -o "${BUILD_HOME}" --html ${DOCS_SEARCH_DIRS[@]}
+        "${DOCSTOOL}" -o "${BUILD_HOME}" --html ${DOCS_SEARCH_DIRS[@]}
     fi
 
     if [ "${DOCS_SQL}" == 1 ]; then
         echo "Building docs SQLite..."
-        "${DOCSCRIPT}" -o "${BUILD_HOME}" --sql ${DOCS_SEARCH_DIRS[@]}
+        "${DOCSTOOL}" -o "${BUILD_HOME}" --sql ${DOCS_SEARCH_DIRS[@]}
     fi
 
     if [ "${DOCS_DASH}" == 1 ]; then
@@ -122,8 +128,8 @@ function op_installdeps() {
     echo "  mise-managed tools..."
     mise install || fail "Unable to install mise-managed tools"
 
-    echo "  Python packages..."
-    /usr/bin/pip3 install --user --disable-pip-version-check -r "${HAMMERSPOON_HOME}/requirements.txt" || fail "Unable to install Python dependencies"
+    echo "  Building docs tool..."
+    swift build -c release --package-path "${HAMMERSPOON_HOME}/scripts/docs" || fail "Unable to build docs tool"
 }
 
 ############################## COMMAND ASSERTIONS ##############################
@@ -140,10 +146,6 @@ function op_test_assert() {
 
 function op_docs_assert() {
     echo "Checking docs environment..."
-    # We only need to assert requirements.txt satisfaction if we're going to be generating output that needs the modules it specifies
-    if [ "${DOCS_MD}" == 1 ] || [ "${DOCS_HTML}" == 1 ] || [ "${DOCS_DASH}" == 1 ]; then
-        assert_docs_requirements
-    fi
 }
 
 function op_installdeps_assert() {
@@ -159,16 +161,6 @@ function assert_xcbeautify() {
   if [ "$(which xcbeautify)" == "" ]; then
     fail "xcbeautify is not in PATH. Try $0 installdeps"
   fi
-}
-
-function assert_docs_requirements() {
-    # FIXME: This is overly broad - if all that's happening is linting or JSON generation, these requirements are not required
-  echo "Checking Python requirements.txt is satisfied..."
-  echo "import sys
-import pkg_resources
-from pkg_resources import DistributionNotFound, VersionConflict
-dependencies = open('${HAMMERSPOON_HOME}/requirements.txt', 'r').readlines()
-pkg_resources.require(dependencies)" | /usr/bin/python3
 }
 
 function assert_cocoapods_state() {

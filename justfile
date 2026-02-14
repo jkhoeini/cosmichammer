@@ -19,7 +19,7 @@ check:
     echo "  Xcode: OK ($XCODE_PATH)"
     
     # Check mise tools
-    for cmd in just python3 ruby jq xcbeautify pod; do
+    for cmd in just ruby jq xcbeautify pod; do
         if ! command -v $cmd &>/dev/null; then
             echo "ERROR: $cmd not found. Run: mise install"
             exit 1
@@ -34,20 +34,13 @@ check:
     fi
     echo "  Pods: OK"
     
-    # Check Python requirements (build scripts use /usr/bin/python3)
-    if ! /usr/bin/python3 -c "import jinja2, mistune, pygments" &>/dev/null; then
-        echo "ERROR: Python requirements not satisfied. Run: /usr/bin/pip3 install --user -r requirements.txt"
-        exit 1
-    fi
-    echo "  Python requirements: OK"
-    
     echo "All dependencies OK!"
 
 # Install all dependencies
 setup:
     mise install
     pod install
-    /usr/bin/pip3 install --user -r requirements.txt
+    swift build -c release --package-path scripts/docs
 
 # Clean build artifacts
 clean:
