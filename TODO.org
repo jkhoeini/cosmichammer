@@ -1,0 +1,136 @@
+#+TITLE: CocoaPods to SPM Migration
+#+STARTUP: overview
+
+* Migrate Dependencies from CocoaPods to Swift Package Manager
+
+** Phase 0: Preparation
+*** DONE Remove PocketSocket from Podfile
+PocketSocket is not imported by any source file. It's an archived/dead dependency.
+- [X] Remove ~pod 'PocketSocket/Client'~ from Podfile
+- [X] Run ~pod install~ to regenerate Pods project
+- [X] Verify build succeeds
+- [X] Verify no source files reference PocketSocket
+
+*** NOW Audit stale Sparkle reference
+~Pods-Hammerspoon-frameworks.sh~ references ~Sparkle.framework~ but Sparkle is not in the Podfile.
+- [ ] Determine if Sparkle is handled outside of CocoaPods
+- [ ] Remove stale reference if orphaned, or document if intentional
+
+** Phase 1: SPM-Ready Dependencies
+*** NEXT Migrate ORSSerialPort to SPM
+Low risk, isolated to ~hs.serial~ extension. Already has ~Package.swift~ upstream.
+- [ ] Add ~https://github.com/armadsen/ORSSerialPort~ as SPM dependency (version ~2.1.0~)
+- [ ] Remove ~pod 'ORSSerialPort'~ from Podfile
+- [ ] Run ~pod install~
+- [ ] Update imports in ~extensions/serial/libserial.m~ if needed
+- [ ] Build and test ~hs.serial~
+- [ ] Test all 4 build configurations (Debug, Profile, Release, Test)
+
+*** LATER Migrate CocoaAsyncSocket + CocoaLumberjack to SPM
+Both have SPM support, but CocoaHTTPServer depends on them transitively via CocoaPods.
+Migrating these independently may cause duplicate symbol conflicts.
+*Decision:* Defer to Phase 3 and migrate as a group with CocoaHTTPServer, unless
+testing proves they can coexist.
+- [ ] Test adding CocoaAsyncSocket (~from: "7.6.5"~) via SPM alongside the pod version
+- [ ] Test adding CocoaLumberjack (~from: "3.8.5"~) via SPM alongside the pod version
+- [ ] If no duplicate symbol issues, migrate independently
+- [ ] If conflicts, defer to Phase 3 (migrate with CocoaHTTPServer as a unit)
+
+** Phase 2: Vendored / Wrapped Dependencies
+*** NEXT Vendor ASCIImage directly
+Abandoned since ~2015. Tiny library (one ~.m~ and one ~.h~ file). Not worth an SPM package.
+- [ ] Copy ~PARImage+ASCIIInput.h~ and ~PARImage+ASCIIInput.m~ into ~Vendor/ASCIImage/~ or ~extensions/image/~
+- [ ] Add files to Xcode project
+- [ ] Remove ~pod 'ASCIImage'~ from Podfile
+- [ ] Run ~pod install~
+- [ ] Update ~#import~ in ~extensions/image/libimage.m~
+- [ ] Build and test ~hs.image~
+
+*** NEXT Migrate SocketRocket to SPM
+Isolated to ~hs.websocket~ extension. No upstream ~Package.swift~, needs a wrapper.
+- [ ] Evaluate replacing SocketRocket with ~URLSessionWebSocketTask~ (available since macOS 10.15)
+- [ ] If replacing: rewrite ~extensions/websocket/libwebsocket.m~ to use ~URLSessionWebSocketTask~
+- [ ] If keeping: fork ~facebookincubator/SocketRocket~ and add ~Package.swift~ (needs ~libicucore~ linker setting)
+- [ ] Remove ~pod 'SocketRocket'~ from Podfile
+- [ ] Run ~pod install~
+- [ ] Update import in ~extensions/websocket/libwebsocket.m~
+- [ ] Build and test ~hs.websocket~
+
+*** NEXT Migrate MIKMIDI to SPM
+Isolated to ~hs.midi~ extension. No upstream ~Package.swift~, needs a wrapper.
+- [ ] Fork ~mixedinkey-opensource/MIKMIDI~ into Hammerspoon org (or create local SPM package)
+- [ ] Write ~Package.swift~ with ~linkerSettings~ for CoreMIDI, AudioToolbox, libxml2
+- [ ] Write ~module.modulemap~ / umbrella header for ObjC header exposure
+- [ ] Add as SPM dependency
+- [ ] Remove ~pod 'MIKMIDI'~ from Podfile
+- [ ] Run ~pod install~
+- [ ] Update import in ~extensions/midi/libmidi.m~
+- [ ] Build and test ~hs.midi~
+- [ ] Watch for ObjC header visibility issues
+
+** Phase 3: CocoaHTTPServer (Hardest)
+*** LATER Migrate CocoaHTTPServer + transitive deps to SPM
+Most complex migration. Hammerspoon's own fork, upstream dead, no SPM support.
+Transitive deps (CocoaAsyncSocket, CocoaLumberjack) must come along.
+- [ ] Inspect diff between Hammerspoon fork and upstream to understand patches
+- [ ] Add ~Package.swift~ to ~Hammerspoon/CocoaHTTPServer~ fork
+  - [ ] Declare SPM dependencies on CocoaAsyncSocket and CocoaLumberjack
+  - [ ] Set up ObjC module map / umbrella header
+  - [ ] Link necessary system frameworks (CFNetwork, Security, CoreServices)
+- [ ] Push updated fork
+- [ ] Add fork as SPM dependency using git URL + commit
+- [ ] If not already done: CocoaAsyncSocket and CocoaLumberjack come as transitive SPM deps now
+- [ ] Remove ~pod 'CocoaHTTPServer'~ from Podfile
+- [ ] Remove ~pod 'CocoaAsyncSocket'~ from Podfile (if not already removed)
+- [ ] Remove ~pod 'CocoaLumberjack'~ from Podfile (if not already removed)
+- [ ] Run ~pod install~
+- [ ] Update imports in ~extensions/httpserver/libhttpserver.m~
+- [ ] Update imports in ~extensions/socket/libsocket.m~ and ~libsocket_udp.m~ (if not already done)
+- [ ] Build and test ~hs.httpserver~, ~hs.socket~
+- [ ] Test all 4 build configurations
+
+** Phase 4: Cleanup
+*** LATER Remove CocoaPods infrastructure
+Only after all dependencies are migrated and verified.
+- [ ] Delete ~Podfile~
+- [ ] Delete ~Podfile.lock~
+- [ ] Delete ~Pods/~ directory
+- [ ] Remove ~[CP] Check Pods Manifest.lock~ build phase from ~Hammerspoon.xcodeproj~
+- [ ] Remove ~[CP] Copy Pods Resources~ build phase
+  - [ ] Verify ~CocoaLumberjackPrivacy.bundle~ is handled via SPM resource bundles
+- [ ] Remove pod xcconfig includes from:
+  - [ ] ~Hammerspoon/Build Configs/Hammerspoon-Debug.xcconfig~
+  - [ ] ~Hammerspoon/Build Configs/Hammerspoon-Profile.xcconfig~
+  - [ ] ~Hammerspoon/Build Configs/Hammerspoon-Test.xcconfig~
+- [ ] Clean up build settings in xcconfig files:
+  - [ ] Remove ~COCOAPODS=1~ from ~GCC_PREPROCESSOR_DEFINITIONS~
+  - [ ] Remove pod-related ~HEADER_SEARCH_PATHS~
+  - [ ] Remove pod-related ~LIBRARY_SEARCH_PATHS~
+  - [ ] Remove pod-related ~OTHER_LDFLAGS~
+  - [ ] Remove pod-related ~OTHER_CFLAGS~
+  - [ ] Remove ~PODS_ROOT~ references
+
+*** LATER Remove CocoaPods from build tooling
+- [ ] Remove ~cocoapods~ from ~mise.toml~
+- [ ] Remove ~pod install~ from ~justfile~ setup recipe
+- [ ] Remove ~pod~ availability check from ~justfile~ check recipe
+- [ ] Remove ~assert_cocoapods_state()~ from ~scripts/libbuild.sh~
+- [ ] Update ~CONTRIBUTING.md~ — remove CocoaPods setup instructions, document SPM
+- [ ] Remove ~Pods/Pods.xcodeproj~ reference from ~Hammerspoon.xcworkspace~
+
+** Risk Register
+*** Duplicate symbols when mixing SPM + CocoaPods for the same library
+- Likelihood: Medium
+- Mitigation: Migrate dependency clusters together (CocoaHTTPServer + its deps as a unit)
+
+*** ObjC header visibility issues with SPM module maps
+- Likelihood: Medium
+- Mitigation: Test each migration thoroughly; may need custom ~module.modulemap~ files
+
+*** MIKMIDI or SocketRocket break under SPM
+- Likelihood: Medium
+- Mitigation: Budget debugging time; consider vendoring source directly as fallback
+
+*** Build config changes break Profile/Release/Test configurations
+- Likelihood: Low
+- Mitigation: Test all 4 build configurations after each phase

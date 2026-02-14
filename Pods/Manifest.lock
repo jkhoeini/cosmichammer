@@ -9,9 +9,6 @@ PODS:
   - CocoaLumberjack/Core (3.8.5)
   - MIKMIDI (1.7.1)
   - ORSSerialPort (2.1)
-  - PocketSocket/Client (1.0.1):
-    - PocketSocket/Core
-  - PocketSocket/Core (1.0.1)
   - SocketRocket (0.7.1)
 
 DEPENDENCIES:
@@ -21,7 +18,6 @@ DEPENDENCIES:
   - CocoaLumberjack (= 3.8.5)
   - MIKMIDI (= 1.7.1)
   - ORSSerialPort (= 2.1.0)
-  - PocketSocket/Client (= 1.0.1)
   - SocketRocket (= 0.7.1)
 
 SPEC REPOS:
@@ -31,7 +27,6 @@ SPEC REPOS:
     - CocoaLumberjack
     - MIKMIDI
     - ORSSerialPort
-    - PocketSocket
     - SocketRocket
 
 EXTERNAL SOURCES:
@@ -50,9 +45,8 @@ SPEC CHECKSUMS:
   CocoaLumberjack: 6a459bc897d6d80bd1b8c78482ec7ad05dffc3f0
   MIKMIDI: f53dca2f372e71183ecdd2b35c984c1c2cd11cbc
   ORSSerialPort: d2d5d131797453430c557ba8dc7dcbcae20ff2e5
-  PocketSocket: 9c6867d66fb4f962af96b9b07f4b45bb561b2c2a
   SocketRocket: d4aabe649be1e368d1318fdf28a022d714d65748
 
-PODFILE CHECKSUM: 636f97f064c1fa516ffb3a71aba8872c44a22e83
+PODFILE CHECKSUM: 835e7b3b376b749eaf08c6961dc28fb8ea9a8055
 
 COCOAPODS: 1.16.2
