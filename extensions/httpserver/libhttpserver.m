@@ -1,14 +1,7 @@
 #import <LuaSkin/LuaSkin.h>
-#import "CocoaHTTPServer/HTTPServer.h"
-#import "CocoaHTTPServer/HTTPMessage.h"
-#import "CocoaHTTPServer/HTTPConnection.h"
-#import "CocoaHTTPServer/HTTPDataResponse.h"
-#import "CocoaHTTPServer/WebSocket.h"
-#import "CocoaAsyncSocket/GCDAsyncSocket.h"
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wexpansion-to-defined"
-#import "CocoaLumberjack/CocoaLumberjack.h"
-#pragma clang diagnostic pop
+@import CocoaHTTPServer;
+@import CocoaAsyncSocket;
+@import CocoaLumberjack;
 #import "MYAnonymousIdentity.h"
 
 // From HTTPConnection.m

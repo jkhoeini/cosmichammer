@@ -1,8 +1,7 @@
 @import Cocoa;
 @import LuaSkin;
 
-#import "ORSSerialPort/ORSSerialPort.h"
-#import "ORSSerialPort/ORSSerialPortManager.h"
+@import ORSSerial;
 
 #import <IOKit/usb/USBSpec.h>
 

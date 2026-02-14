@@ -11,30 +11,36 @@ PocketSocket is not imported by any source file. It's an archived/dead dependenc
 - [X] Verify build succeeds
 - [X] Verify no source files reference PocketSocket
 
-*** NOW Audit stale Sparkle reference
+*** DONE Audit stale Sparkle reference
 ~Pods-Hammerspoon-frameworks.sh~ references ~Sparkle.framework~ but Sparkle is not in the Podfile.
-- [ ] Determine if Sparkle is handled outside of CocoaPods
-- [ ] Remove stale reference if orphaned, or document if intentional
+- [X] Determine if Sparkle is handled outside of CocoaPods
+- [X] Remove stale reference if orphaned, or document if intentional
+Dead code. The script is not referenced by any build phase in ~project.pbxproj~.
+No ~Pods/Sparkle/~ directory exists. No Sparkle imports in source.
+Will be deleted with the rest of ~Pods/~ in Phase 4.
 
 ** Phase 1: SPM-Ready Dependencies
-*** NEXT Migrate ORSSerialPort to SPM
+*** DONE Migrate ORSSerialPort to SPM
 Low risk, isolated to ~hs.serial~ extension. Already has ~Package.swift~ upstream.
-- [ ] Add ~https://github.com/armadsen/ORSSerialPort~ as SPM dependency (version ~2.1.0~)
-- [ ] Remove ~pod 'ORSSerialPort'~ from Podfile
-- [ ] Run ~pod install~
-- [ ] Update imports in ~extensions/serial/libserial.m~ if needed
-- [ ] Build and test ~hs.serial~
-- [ ] Test all 4 build configurations (Debug, Profile, Release, Test)
+- [X] Add ~https://github.com/armadsen/ORSSerialPort~ as SPM dependency (version ~2.1.0~)
+- [X] Remove ~pod 'ORSSerialPort'~ from Podfile
+- [X] Run ~pod install~
+- [X] Update imports in ~extensions/serial/libserial.m~ — changed to ~@import ORSSerial;~
+- [X] Add SPM dependency to both Hammerspoon target and serial extension target
+- [X] Build and test ~hs.serial~
+Note: SPM module name is ~ORSSerial~, not ~ORSSerialPort~. Both the main app target
+and the serial extension target need ~packageProductDependencies~ entries.
 
-*** LATER Migrate CocoaAsyncSocket + CocoaLumberjack to SPM
-Both have SPM support, but CocoaHTTPServer depends on them transitively via CocoaPods.
-Migrating these independently may cause duplicate symbol conflicts.
-*Decision:* Defer to Phase 3 and migrate as a group with CocoaHTTPServer, unless
-testing proves they can coexist.
-- [ ] Test adding CocoaAsyncSocket (~from: "7.6.5"~) via SPM alongside the pod version
-- [ ] Test adding CocoaLumberjack (~from: "3.8.5"~) via SPM alongside the pod version
-- [ ] If no duplicate symbol issues, migrate independently
-- [ ] If conflicts, defer to Phase 3 (migrate with CocoaHTTPServer as a unit)
+*** DONE Migrate CocoaAsyncSocket + CocoaLumberjack + CocoaHTTPServer to SPM
+Merged with Phase 3. All three migrated as a single unit because CocoaHTTPServer
+depends on the other two at compile time.
+- [X] Vendored CocoaHTTPServer as local SPM package at ~Packages/CocoaHTTPServer/~
+- [X] Updated ~HTTPLogging.h~ to use modern CocoaLumberjack ~LOG_MAYBE~ macros (replaced legacy ~LOG_OBJC_MAYBE~)
+- [X] Added CocoaAsyncSocket (~7.6.5~) and CocoaLumberjack (~3.8.5~) as remote SPM packages
+- [X] Added SPM deps to Hammerspoon, httpserver, socket, socketudp targets
+- [X] Updated imports to ~@import~ style in ~libhttpserver.m~, ~libsocket.m~, ~libsocket_udp.m~
+- [X] Removed all 3 pods from Podfile (3 pods remaining: ASCIImage, MIKMIDI, SocketRocket)
+- [X] Build succeeded
 
 ** Phase 2: Vendored / Wrapped Dependencies
 *** NEXT Vendor ASCIImage directly
@@ -69,25 +75,9 @@ Isolated to ~hs.midi~ extension. No upstream ~Package.swift~, needs a wrapper.
 - [ ] Watch for ObjC header visibility issues
 
 ** Phase 3: CocoaHTTPServer (Hardest)
-*** LATER Migrate CocoaHTTPServer + transitive deps to SPM
-Most complex migration. Hammerspoon's own fork, upstream dead, no SPM support.
-Transitive deps (CocoaAsyncSocket, CocoaLumberjack) must come along.
-- [ ] Inspect diff between Hammerspoon fork and upstream to understand patches
-- [ ] Add ~Package.swift~ to ~Hammerspoon/CocoaHTTPServer~ fork
-  - [ ] Declare SPM dependencies on CocoaAsyncSocket and CocoaLumberjack
-  - [ ] Set up ObjC module map / umbrella header
-  - [ ] Link necessary system frameworks (CFNetwork, Security, CoreServices)
-- [ ] Push updated fork
-- [ ] Add fork as SPM dependency using git URL + commit
-- [ ] If not already done: CocoaAsyncSocket and CocoaLumberjack come as transitive SPM deps now
-- [ ] Remove ~pod 'CocoaHTTPServer'~ from Podfile
-- [ ] Remove ~pod 'CocoaAsyncSocket'~ from Podfile (if not already removed)
-- [ ] Remove ~pod 'CocoaLumberjack'~ from Podfile (if not already removed)
-- [ ] Run ~pod install~
-- [ ] Update imports in ~extensions/httpserver/libhttpserver.m~
-- [ ] Update imports in ~extensions/socket/libsocket.m~ and ~libsocket_udp.m~ (if not already done)
-- [ ] Build and test ~hs.httpserver~, ~hs.socket~
-- [ ] Test all 4 build configurations
+*** DONE Migrate CocoaHTTPServer + transitive deps to SPM
+Merged into Phase 1 — completed as a single unit with CocoaAsyncSocket + CocoaLumberjack.
+See Phase 1 entry for details.
 
 ** Phase 4: Cleanup
 *** LATER Remove CocoaPods infrastructure

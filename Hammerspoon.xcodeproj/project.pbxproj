@@ -37,6 +37,8 @@
 		22DF5D2823B9A9EA00C41AE6 /* libpasteboard_watcher.m in Sources */ = {isa = PBXBuildFile; fileRef = 22DF5D1A23B99C4D00C41AE6 /* libpasteboard_watcher.m */; };
 		22E4D8031FA748AC00C8CF5C /* libmidi.m in Sources */ = {isa = PBXBuildFile; fileRef = 22E4D7F71FA7485A00C8CF5C /* libmidi.m */; };
 		22EEC62424926E6E00BAE4DA /* libserial.m in Sources */ = {isa = PBXBuildFile; fileRef = 22EEC61724926E2100BAE4DA /* libserial.m */; };
+		2D3B09BEDB884079973A3D3F /* CocoaAsyncSocket in Frameworks */ = {isa = PBXBuildFile; productRef = D9EB50BB348C41E49EAAB27A /* CocoaAsyncSocket */; };
+		36A65B36CB8D4AB5A98D6FA8 /* CocoaAsyncSocket in Frameworks */ = {isa = PBXBuildFile; productRef = FEEF121845C6436385F755CE /* CocoaAsyncSocket */; };
 		394FD223913AE68B92126D37 /* libPods-Hammerspoon.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 5BC78AF8FE9DA0BD317A7528 /* libPods-Hammerspoon.a */; };
 		4C3D55BC1C7F0AA90023B633 /* libosascript.m in Sources */ = {isa = PBXBuildFile; fileRef = 4C3D55AA1C7F05D00023B633 /* libosascript.m */; };
 		4C3D55BF1C7F17150023B633 /* NSAppleEventDescriptor+Parsing.h in Headers */ = {isa = PBXBuildFile; fileRef = 4C3D55AE1C7F061D0023B633 /* NSAppleEventDescriptor+Parsing.h */; };
@@ -532,12 +534,16 @@
 		4FFB210123CD14A500811E77 /* HSStreamDeckDeviceOriginalV2.m in Sources */ = {isa = PBXBuildFile; fileRef = 4FFB20FF23CD14A400811E77 /* HSStreamDeckDeviceOriginalV2.m */; };
 		4FFF9FB525D89B3B00D2997C /* HSmouse.m in Sources */ = {isa = PBXBuildFile; fileRef = 4FFF9FB425D89B3B00D2997C /* HSmouse.m */; };
 		4FFFA01225D89BAF00D2997C /* test_mouse.lua in Resources */ = {isa = PBXBuildFile; fileRef = 4FFFA01125D89BAF00D2997C /* test_mouse.lua */; };
+		516AD1DCDDDB49838946A32A /* CocoaLumberjack in Frameworks */ = {isa = PBXBuildFile; productRef = 23B553CD683E4B1B8262C85C /* CocoaLumberjack */; };
+		5C977939CF5F489FA62C7B6E /* CocoaHTTPServer in Frameworks */ = {isa = PBXBuildFile; productRef = 76BB9ED7EEFC4A8DAB3CB39C /* CocoaHTTPServer */; };
+		5E910C5817844B8DA22611AB /* CocoaLumberjack in Frameworks */ = {isa = PBXBuildFile; productRef = CC270092535241AC90676249 /* CocoaLumberjack */; };
 		6AE181281D36E9260097211C /* detectors.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 6AE181161D36E8E50097211C /* detectors.cpp */; };
 		6AE1812A1D36E9260097211C /* libnoises.m in Sources */ = {isa = PBXBuildFile; fileRef = 6AE181191D36E8E50097211C /* libnoises.m */; };
 		6AE1812C1D36E9600097211C /* Accelerate.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 6AE1812B1D36E9600097211C /* Accelerate.framework */; };
 		6AE1812E1D36E96A0097211C /* CoreAudio.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 6AE1812D1D36E96A0097211C /* CoreAudio.framework */; };
 		6AE181321D39C8F10097211C /* HSnoises.m in Sources */ = {isa = PBXBuildFile; fileRef = 6AE181311D39C8F10097211C /* HSnoises.m */; };
 		6AE181341D39C9570097211C /* test_noises.lua in Resources */ = {isa = PBXBuildFile; fileRef = 6AE181331D39C9570097211C /* test_noises.lua */; };
+		83A0987ED0CE47F9AC0459A6 /* CocoaAsyncSocket in Frameworks */ = {isa = PBXBuildFile; productRef = 31AF93AC56C543A5A9707F58 /* CocoaAsyncSocket */; };
 		9409203119A5940600B9964E /* MJVersionUtils.m in Sources */ = {isa = PBXBuildFile; fileRef = 9409203019A5940600B9964E /* MJVersionUtils.m */; };
 		9422ACBD19B6163800F06A90 /* MJConfigUtils.m in Sources */ = {isa = PBXBuildFile; fileRef = 9422ACBC19B6163800F06A90 /* MJConfigUtils.m */; };
 		942BF3911989E18600983892 /* MJAutoLaunch.m in Sources */ = {isa = PBXBuildFile; fileRef = 942BF3901989E18600983892 /* MJAutoLaunch.m */; };
@@ -556,7 +562,11 @@
 		949CDBFE1990747B00906CCE /* PreferencesWindow.xib in Resources */ = {isa = PBXBuildFile; fileRef = 949CDBFD1990747B00906CCE /* PreferencesWindow.xib */; };
 		949CDC001990759B00906CCE /* ConsoleWindow.xib in Resources */ = {isa = PBXBuildFile; fileRef = 949CDBFF1990759B00906CCE /* ConsoleWindow.xib */; };
 		94A1E5481993AC5C003AEB26 /* MJFileUtils.m in Sources */ = {isa = PBXBuildFile; fileRef = 94A1E5471993AC5C003AEB26 /* MJFileUtils.m */; };
+		9A8FE65BAD7B4151BFD38AF6 /* ORSSerial in Frameworks */ = {isa = PBXBuildFile; productRef = C9665188498442C9B5542958 /* ORSSerial */; };
+		A2209528E5CE47E1A77C148B /* CocoaHTTPServer in Frameworks */ = {isa = PBXBuildFile; productRef = 3D5EE9DABA4247958CC9E371 /* CocoaHTTPServer */; };
+		A859341EA3344C03BA349A49 /* CocoaAsyncSocket in Frameworks */ = {isa = PBXBuildFile; productRef = 8F651E18B6F6497C93A779F1 /* CocoaAsyncSocket */; };
 		B8524F32201A896000844F3D /* libhid.m in Sources */ = {isa = PBXBuildFile; fileRef = B8524F25201A875600844F3D /* libhid.m */; };
+		BC79C2AE3E074044894597D7 /* ORSSerial in Frameworks */ = {isa = PBXBuildFile; productRef = BC79C2AE3E074044894597D8 /* ORSSerial */; };
 		CE139CB028B24B6500743C90 /* HShttp.m in Sources */ = {isa = PBXBuildFile; fileRef = CE139CAF28B24B6500743C90 /* HShttp.m */; };
 		CE139CB128B24DAC00743C90 /* http.lua in Resources */ = {isa = PBXBuildFile; fileRef = 4F4CB4421B73AFD2000EA9B6 /* http.lua */; };
 		CE139CB328B2539500743C90 /* test_http.lua in Resources */ = {isa = PBXBuildFile; fileRef = CE139CB228B2539500743C90 /* test_http.lua */; };
@@ -1943,7 +1953,6 @@
 		4FDE05F81B7356A400E9E8EE /* appfinder.lua */ = {isa = PBXFileReference; lastKnownFileType = text; name = appfinder.lua; path = extensions/appfinder/appfinder.lua; sourceTree = "<group>"; };
 		4FE15C1C27D8A5D100D37D27 /* libbuild.sh */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; name = libbuild.sh; path = scripts/libbuild.sh; sourceTree = "<group>"; };
 		4FE15C1D27D8A5D100D37D27 /* build.sh */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; name = build.sh; path = scripts/build.sh; sourceTree = "<group>"; };
-
 		4FEA61501F06546200D71839 /* spoons.lua */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; name = spoons.lua; path = extensions/spoons/spoons.lua; sourceTree = "<group>"; };
 		4FEABA561BC7ABF8005E2CFB /* expose.lua */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; name = expose.lua; path = extensions/expose/expose.lua; sourceTree = "<group>"; };
 		4FEE39D81F0A697400935F90 /* HScrash.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = HScrash.m; sourceTree = "<group>"; };
@@ -2185,6 +2194,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				4FB852542735B2E100462DD0 /* LuaSkin.framework in Frameworks */,
+				BC79C2AE3E074044894597D7 /* ORSSerial in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -2201,6 +2211,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				4FB852512735B2D500462DD0 /* LuaSkin.framework in Frameworks */,
+				A859341EA3344C03BA349A49 /* CocoaAsyncSocket in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -2210,6 +2221,7 @@
 			files = (
 				4FB852502735B2D100462DD0 /* LuaSkin.framework in Frameworks */,
 				4CD96BD61C73ABD2009FF648 /* BuildFile in Frameworks */,
+				83A0987ED0CE47F9AC0459A6 /* CocoaAsyncSocket in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -2628,6 +2640,9 @@
 			buildActionMask = 2147483647;
 			files = (
 				4FB8526D2735B35400462DD0 /* LuaSkin.framework in Frameworks */,
+				5C977939CF5F489FA62C7B6E /* CocoaHTTPServer in Frameworks */,
+				36A65B36CB8D4AB5A98D6FA8 /* CocoaAsyncSocket in Frameworks */,
+				5E910C5817844B8DA22611AB /* CocoaLumberjack in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -2703,6 +2718,10 @@
 			files = (
 				4FB852382735B15200462DD0 /* LuaSkin.framework in Frameworks */,
 				394FD223913AE68B92126D37 /* libPods-Hammerspoon.a in Frameworks */,
+				9A8FE65BAD7B4151BFD38AF6 /* ORSSerial in Frameworks */,
+				2D3B09BEDB884079973A3D3F /* CocoaAsyncSocket in Frameworks */,
+				516AD1DCDDDB49838946A32A /* CocoaLumberjack in Frameworks */,
+				A2209528E5CE47E1A77C148B /* CocoaHTTPServer in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -3435,7 +3454,6 @@
 		4F766E561C48F789007B9D24 /* scripts */ = {
 			isa = PBXGroup;
 			children = (
-
 				4FE15C1D27D8A5D100D37D27 /* build.sh */,
 				4FE15C1C27D8A5D100D37D27 /* libbuild.sh */,
 				4FD427CB2621E7F000E8D95F /* update_version_build_numbers.sh */,
@@ -5193,6 +5211,9 @@
 			dependencies = (
 			);
 			name = serial;
+			packageProductDependencies = (
+				BC79C2AE3E074044894597D8 /* ORSSerial */,
+			);
 			productName = alert;
 			productReference = 22EEC62324926E5100BAE4DA /* libserial.dylib */;
 			productType = "com.apple.product-type.library.dynamic";
@@ -5227,6 +5248,9 @@
 			dependencies = (
 			);
 			name = socket;
+			packageProductDependencies = (
+				8F651E18B6F6497C93A779F1 /* CocoaAsyncSocket */,
+			);
 			productName = alert;
 			productReference = 4CD203B11C6D76E20089706D /* libsocket.dylib */;
 			productType = "com.apple.product-type.library.dynamic";
@@ -5244,6 +5268,9 @@
 			dependencies = (
 			);
 			name = socketudp;
+			packageProductDependencies = (
+				31AF93AC56C543A5A9707F58 /* CocoaAsyncSocket */,
+			);
 			productName = alert;
 			productReference = 4CD96BDC1C73ABD2009FF648 /* libsocketudp.dylib */;
 			productType = "com.apple.product-type.library.dynamic";
@@ -6130,6 +6157,11 @@
 			dependencies = (
 			);
 			name = httpserver;
+			packageProductDependencies = (
+				76BB9ED7EEFC4A8DAB3CB39C /* CocoaHTTPServer */,
+				FEEF121845C6436385F755CE /* CocoaAsyncSocket */,
+				CC270092535241AC90676249 /* CocoaLumberjack */,
+			);
 			productName = alert;
 			productReference = 4FD0AC211B74C58800A82496 /* libhttpserver.dylib */;
 			productType = "com.apple.product-type.library.dynamic";
@@ -6286,7 +6318,6 @@
 				4FF73A1E2735449D0007074E /* Copy hs manpage */,
 				4FCA05A12767689C0089A5FC /* Copy hsdocs Files */,
 				4FCA05AB276768EC0089A5FC /* Copy hsdocs minweb Files */,
-				D72D27248E8DDB706F2F1960 /* [CP] Copy Pods Resources */,
 			);
 			buildRules = (
 			);
@@ -6386,6 +6417,12 @@
 				4FBE2D021B72624A00407788 /* PBXTargetDependency */,
 			);
 			name = Hammerspoon;
+			packageProductDependencies = (
+				C9665188498442C9B5542958 /* ORSSerial */,
+				D9EB50BB348C41E49EAAB27A /* CocoaAsyncSocket */,
+				23B553CD683E4B1B8262C85C /* CocoaLumberjack */,
+				3D5EE9DABA4247958CC9E371 /* CocoaHTTPServer */,
+			);
 			productName = Hammerspoon;
 			productReference = 9445CA0B19083251002568BB /* Hammerspoon.app */;
 			productType = "com.apple.product-type.application";
@@ -6873,6 +6910,12 @@
 				Base,
 			);
 			mainGroup = 9445CA0219083251002568BB;
+			packageReferences = (
+				C93E7D88B82849229E9233C3 /* XCRemoteSwiftPackageReference "ORSSerialPort" */,
+				B86E0D3804E34C19950602C3 /* XCRemoteSwiftPackageReference "CocoaAsyncSocket" */,
+				7E3DCC8F8B4F4CB0A94288E0 /* XCRemoteSwiftPackageReference "CocoaLumberjack" */,
+				4F1D462818414FC78DA1D6A5 /* XCLocalSwiftPackageReference "CocoaHTTPServer" */,
+			);
 			productRefGroup = 9445CA0C19083251002568BB /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
@@ -7114,24 +7157,6 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
-			showEnvVarsInLog = 0;
-		};
-		D72D27248E8DDB706F2F1960 /* [CP] Copy Pods Resources */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputPaths = (
-				"${PODS_ROOT}/Target Support Files/Pods-Hammerspoon/Pods-Hammerspoon-resources.sh",
-				"${PODS_CONFIGURATION_BUILD_DIR}/CocoaLumberjack/CocoaLumberjackPrivacy.bundle",
-			);
-			name = "[CP] Copy Pods Resources";
-			outputPaths = (
-				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/CocoaLumberjackPrivacy.bundle",
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-Hammerspoon/Pods-Hammerspoon-resources.sh\"\n";
 			showEnvVarsInLog = 0;
 		};
 /* End PBXShellScriptBuildPhase section */
@@ -11969,6 +11994,91 @@
 			defaultConfigurationName = Debug;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		4F1D462818414FC78DA1D6A5 /* XCLocalSwiftPackageReference "CocoaHTTPServer" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/CocoaHTTPServer;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		7E3DCC8F8B4F4CB0A94288E0 /* XCRemoteSwiftPackageReference "CocoaLumberjack" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/CocoaLumberjack/CocoaLumberjack";
+			requirement = {
+				kind = exactVersion;
+				version = 3.8.5;
+			};
+		};
+		B86E0D3804E34C19950602C3 /* XCRemoteSwiftPackageReference "CocoaAsyncSocket" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/robbiehanson/CocoaAsyncSocket";
+			requirement = {
+				kind = exactVersion;
+				version = 7.6.5;
+			};
+		};
+		C93E7D88B82849229E9233C3 /* XCRemoteSwiftPackageReference "ORSSerialPort" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/armadsen/ORSSerialPort";
+			requirement = {
+				kind = exactVersion;
+				version = 2.1.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		23B553CD683E4B1B8262C85C /* CocoaLumberjack */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 7E3DCC8F8B4F4CB0A94288E0 /* XCRemoteSwiftPackageReference "CocoaLumberjack" */;
+			productName = CocoaLumberjack;
+		};
+		31AF93AC56C543A5A9707F58 /* CocoaAsyncSocket */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = B86E0D3804E34C19950602C3 /* XCRemoteSwiftPackageReference "CocoaAsyncSocket" */;
+			productName = CocoaAsyncSocket;
+		};
+		3D5EE9DABA4247958CC9E371 /* CocoaHTTPServer */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = CocoaHTTPServer;
+		};
+		76BB9ED7EEFC4A8DAB3CB39C /* CocoaHTTPServer */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = CocoaHTTPServer;
+		};
+		8F651E18B6F6497C93A779F1 /* CocoaAsyncSocket */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = B86E0D3804E34C19950602C3 /* XCRemoteSwiftPackageReference "CocoaAsyncSocket" */;
+			productName = CocoaAsyncSocket;
+		};
+		BC79C2AE3E074044894597D8 /* ORSSerial */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C93E7D88B82849229E9233C3 /* XCRemoteSwiftPackageReference "ORSSerialPort" */;
+			productName = ORSSerial;
+		};
+		C9665188498442C9B5542958 /* ORSSerial */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C93E7D88B82849229E9233C3 /* XCRemoteSwiftPackageReference "ORSSerialPort" */;
+			productName = ORSSerial;
+		};
+		CC270092535241AC90676249 /* CocoaLumberjack */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 7E3DCC8F8B4F4CB0A94288E0 /* XCRemoteSwiftPackageReference "CocoaLumberjack" */;
+			productName = CocoaLumberjack;
+		};
+		D9EB50BB348C41E49EAAB27A /* CocoaAsyncSocket */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = B86E0D3804E34C19950602C3 /* XCRemoteSwiftPackageReference "CocoaAsyncSocket" */;
+			productName = CocoaAsyncSocket;
+		};
+		FEEF121845C6436385F755CE /* CocoaAsyncSocket */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = B86E0D3804E34C19950602C3 /* XCRemoteSwiftPackageReference "CocoaAsyncSocket" */;
+			productName = CocoaAsyncSocket;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 9445CA0319083251002568BB /* Project object */;
 }

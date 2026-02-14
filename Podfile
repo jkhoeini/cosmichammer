@@ -9,12 +9,8 @@ project 'Hammerspoon', 'Profile' => :debug
 
 target 'Hammerspoon' do
 pod 'ASCIImage', '1.0.0'
-pod 'CocoaLumberjack', '3.8.5'
-pod 'CocoaAsyncSocket', '7.6.5'
-pod 'CocoaHTTPServer', :git => 'https://github.com/Hammerspoon/CocoaHTTPServer.git'
 pod 'MIKMIDI', '1.7.1'
 pod 'SocketRocket', '0.7.1'
-pod 'ORSSerialPort', '2.1.0'
 end
 
 post_install do |installer|
