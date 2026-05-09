@@ -1,1 +1,0 @@
-../../../ASCIImage/Core/PARImage+ASCIIInput.h

@@ -8,7 +8,6 @@ source 'https://github.com/CocoaPods/Specs.git'
 project 'Hammerspoon', 'Profile' => :debug
 
 target 'Hammerspoon' do
-pod 'ASCIImage', '1.0.0'
 pod 'MIKMIDI', '1.7.1'
 pod 'SocketRocket', '0.7.1'
 end

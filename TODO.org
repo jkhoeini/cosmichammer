@@ -43,14 +43,15 @@ depends on the other two at compile time.
 - [X] Build succeeded
 
 ** Phase 2: Vendored / Wrapped Dependencies
-*** NEXT Vendor ASCIImage directly
-Abandoned since ~2015. Tiny library (one ~.m~ and one ~.h~ file). Not worth an SPM package.
-- [ ] Copy ~PARImage+ASCIIInput.h~ and ~PARImage+ASCIIInput.m~ into ~Vendor/ASCIImage/~ or ~extensions/image/~
-- [ ] Add files to Xcode project
-- [ ] Remove ~pod 'ASCIImage'~ from Podfile
-- [ ] Run ~pod install~
-- [ ] Update ~#import~ in ~extensions/image/libimage.m~
-- [ ] Build and test ~hs.image~
+*** DONE Remove ASCIImage dependency
+Abandoned since ~2015. Not worth vendoring or migrating to SPM.
+Removed the dependency entirely and stubbed ~hs.image.imageFromASCII~ to throw
+"not implemented" at runtime.
+- [X] Remove ~pod 'ASCIImage'~ from Podfile
+- [X] Run ~pod install~
+- [X] Remove ~#import~ and implementation in ~extensions/image/libimage.m~
+- [X] Replace function body with ~luaL_error~ stub
+- [X] Build succeeds
 
 *** NEXT Migrate SocketRocket to SPM
 Isolated to ~hs.websocket~ extension. No upstream ~Package.swift~, needs a wrapper.

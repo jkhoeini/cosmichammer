@@ -1,24 +1,20 @@
 PODS:
-  - ASCIImage (1.0.0)
   - MIKMIDI (1.7.1)
   - SocketRocket (0.7.1)
 
 DEPENDENCIES:
-  - ASCIImage (= 1.0.0)
   - MIKMIDI (= 1.7.1)
   - SocketRocket (= 0.7.1)
 
 SPEC REPOS:
   https://github.com/CocoaPods/Specs.git:
-    - ASCIImage
     - MIKMIDI
     - SocketRocket
 
 SPEC CHECKSUMS:
-  ASCIImage: bcff9650deae86e0e0ac310145cc628948201ab8
   MIKMIDI: f53dca2f372e71183ecdd2b35c984c1c2cd11cbc
   SocketRocket: d4aabe649be1e368d1318fdf28a022d714d65748
 
-PODFILE CHECKSUM: e80c822211fc4fd5bfcc181513df7dc9b7dcdca0
+PODFILE CHECKSUM: f8e91cef51aa963ed5284b13bddf0070f90608bd
 
 COCOAPODS: 1.16.2
