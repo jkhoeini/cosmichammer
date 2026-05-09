@@ -53,15 +53,13 @@ Removed the dependency entirely and stubbed ~hs.image.imageFromASCII~ to throw
 - [X] Replace function body with ~luaL_error~ stub
 - [X] Build succeeds
 
-*** NEXT Migrate SocketRocket to SPM
-Isolated to ~hs.websocket~ extension. No upstream ~Package.swift~, needs a wrapper.
-- [ ] Evaluate replacing SocketRocket with ~URLSessionWebSocketTask~ (available since macOS 10.15)
-- [ ] If replacing: rewrite ~extensions/websocket/libwebsocket.m~ to use ~URLSessionWebSocketTask~
-- [ ] If keeping: fork ~facebookincubator/SocketRocket~ and add ~Package.swift~ (needs ~libicucore~ linker setting)
-- [ ] Remove ~pod 'SocketRocket'~ from Podfile
-- [ ] Run ~pod install~
-- [ ] Update import in ~extensions/websocket/libwebsocket.m~
-- [ ] Build and test ~hs.websocket~
+*** DONE Replace SocketRocket with NSURLSessionWebSocketTask
+Replaced the SocketRocket dependency with Apple's built-in ~NSURLSessionWebSocketTask~
+(available since macOS 10.15). Same Lua API surface preserved.
+- [X] Rewrote ~extensions/websocket/libwebsocket.m~ to use ~NSURLSessionWebSocketTask~
+- [X] Remove ~pod 'SocketRocket'~ from Podfile
+- [X] Run ~pod install~
+- [X] Build succeeds
 
 *** NEXT Migrate MIKMIDI to SPM
 Isolated to ~hs.midi~ extension. No upstream ~Package.swift~, needs a wrapper.

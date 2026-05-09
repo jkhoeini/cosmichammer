@@ -2,10 +2,7 @@
 @import Cocoa;
 @import Carbon;
 @import LuaSkin;
-@import WebKit;
-#import <SocketRocket/SRWebSocket.h>
 
-// Websocket userdata struct
 typedef struct _webSocketUserData {
     int selfRef;
     void *ws;
@@ -16,105 +13,86 @@ static const char *WS_USERDATA_TAG = "hs.websocket";
 
 static LSRefTable refTable;
 
-@interface HSWebSocketDelegate: NSObject<SRWebSocketDelegate>
+@interface HSWebSocketDelegate: NSObject<NSURLSessionWebSocketDelegate>
 @property int fn;
-@property (strong) SRWebSocket *webSocket;
+@property (strong) NSURLSessionWebSocketTask *webSocket;
+@property (strong) NSURLSession *session;
+@property (assign) BOOL isOpen;
 @end
 
 @implementation HSWebSocketDelegate
 
 - (instancetype)initWithURL:(NSURL *)URL {
     if((self = [super init])) {
-        _webSocket = [[SRWebSocket alloc] initWithURL:URL];
-        _webSocket.delegate = self;
+        NSURLSessionConfiguration *config = [NSURLSessionConfiguration defaultSessionConfiguration];
+        _session = [NSURLSession sessionWithConfiguration:config delegate:self delegateQueue:[NSOperationQueue mainQueue]];
+        _webSocket = [_session webSocketTaskWithURL:URL];
+        _isOpen = NO;
     }
     return self;
 }
-- (void)webSocket:(SRWebSocket *)webSocket didReceiveMessage:(id)message {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        if (self.fn == LUA_NOREF) {
+
+- (void)open {
+    [_webSocket resume];
+    [self listenForMessages];
+}
+
+- (void)listenForMessages {
+    __weak typeof(self) weakSelf = self;
+    [_webSocket receiveMessageWithCompletionHandler:^(NSURLSessionWebSocketMessage *message, NSError *error) {
+        __strong typeof(weakSelf) strongSelf = weakSelf;
+        if (!strongSelf || strongSelf.fn == LUA_NOREF) return;
+
+        if (error) {
+            if (strongSelf.isOpen) return;
+            LuaSkin *skin = [LuaSkin sharedWithState:NULL];
+            _lua_stackguard_entry(skin.L);
+            [skin pushLuaRef:refTable ref:strongSelf.fn];
+            [skin pushNSObject:@"fail"];
+            [skin pushNSObject:error.localizedDescription];
+            [skin protectedCallAndError:@"hs.websocket callback" nargs:2 nresults:0];
+            _lua_stackguard_exit(skin.L);
             return;
         }
+
         LuaSkin *skin = [LuaSkin sharedWithState:NULL];
         _lua_stackguard_entry(skin.L);
-
-        [skin pushLuaRef:refTable ref:self.fn];
+        [skin pushLuaRef:refTable ref:strongSelf.fn];
         [skin pushNSObject:@"received"];
-        [skin pushNSObject:message];
-
+        if (message.type == NSURLSessionWebSocketMessageTypeString) {
+            [skin pushNSObject:message.string];
+        } else {
+            [skin pushNSObject:message.data];
+        }
         [skin protectedCallAndError:@"hs.websocket callback" nargs:2 nresults:0];
         _lua_stackguard_exit(skin.L);
-    });
+
+        [strongSelf listenForMessages];
+    }];
 }
 
-- (void)webSocketDidOpen:(SRWebSocket *)webSocket;
-{
-    dispatch_async(dispatch_get_main_queue(), ^{
-        if (self.fn == LUA_NOREF) {
-            return;
-        }
-        LuaSkin *skin = [LuaSkin sharedWithState:NULL];
-        _lua_stackguard_entry(skin.L);
-
-        [skin pushLuaRef:refTable ref:self.fn];
-        [skin pushNSObject:@"open"];
-
-        [skin protectedCallAndError:@"hs.websocket callback" nargs:1 nresults:0];
-        _lua_stackguard_exit(skin.L);
-    });
+- (void)URLSession:(NSURLSession *)session webSocketTask:(NSURLSessionWebSocketTask *)webSocketTask didOpenWithProtocol:(NSString *)protocol {
+    self.isOpen = YES;
+    if (self.fn == LUA_NOREF) return;
+    LuaSkin *skin = [LuaSkin sharedWithState:NULL];
+    _lua_stackguard_entry(skin.L);
+    [skin pushLuaRef:refTable ref:self.fn];
+    [skin pushNSObject:@"open"];
+    [skin protectedCallAndError:@"hs.websocket callback" nargs:1 nresults:0];
+    _lua_stackguard_exit(skin.L);
 }
 
-- (void)webSocket:(SRWebSocket *)webSocket didFailWithError:(NSError *)error;
-{
-    dispatch_async(dispatch_get_main_queue(), ^{
-        if (self.fn == LUA_NOREF) {
-            return;
-        }
-        LuaSkin *skin = [LuaSkin sharedWithState:NULL];
-        _lua_stackguard_entry(skin.L);
-
-        [skin pushLuaRef:refTable ref:self.fn];
-        [skin pushNSObject:@"fail"];
-        [skin pushNSObject:error.localizedDescription];
-
-        [skin protectedCallAndError:@"hs.websocket callback" nargs:2 nresults:0];
-        _lua_stackguard_exit(skin.L);
-    });
+- (void)URLSession:(NSURLSession *)session webSocketTask:(NSURLSessionWebSocketTask *)webSocketTask didCloseWithCode:(NSURLSessionWebSocketCloseCode)closeCode reason:(NSData *)reason {
+    self.isOpen = NO;
+    if (self.fn == LUA_NOREF) return;
+    LuaSkin *skin = [LuaSkin sharedWithState:NULL];
+    _lua_stackguard_entry(skin.L);
+    [skin pushLuaRef:refTable ref:self.fn];
+    [skin pushNSObject:@"closed"];
+    [skin protectedCallAndError:@"hs.websocket callback" nargs:1 nresults:0];
+    _lua_stackguard_exit(skin.L);
 }
 
-- (void)webSocket:(SRWebSocket *)webSocket didCloseWithCode:(NSInteger)code reason:(NSString *)reason wasClean:(BOOL)wasClean;
-{
-    dispatch_async(dispatch_get_main_queue(), ^{
-        if (self.fn == LUA_NOREF) {
-            return;
-        }
-        LuaSkin *skin = [LuaSkin sharedWithState:NULL];
-        _lua_stackguard_entry(skin.L);
-
-        [skin pushLuaRef:refTable ref:self.fn];
-        [skin pushNSObject:@"closed"];
-
-        [skin protectedCallAndError:@"hs.websocket callback" nargs:1 nresults:0];
-        _lua_stackguard_exit(skin.L);
-    });
-}
-
-- (void)webSocket:(SRWebSocket *)webSocket didReceivePong:(NSData *)pongPayload;
-{
-    dispatch_async(dispatch_get_main_queue(), ^{
-        if (self.fn == LUA_NOREF) {
-            return;
-        }
-        LuaSkin *skin = [LuaSkin sharedWithState:NULL];
-        _lua_stackguard_entry(skin.L);
-
-        [skin pushLuaRef:refTable ref:self.fn];
-        [skin pushNSObject:@"pong"];
-
-        [skin protectedCallAndError:@"hs.websocket callback" nargs:1 nresults:0];
-        _lua_stackguard_exit(skin.L);
-    });
-}
 @end
 
 /// hs.websocket.new(url, callback) -> object
@@ -150,7 +128,7 @@ static int websocket_new(lua_State *L) {
     lua_pushvalue(L, 2);
     ws.fn = [skin luaRef:refTable];
 
-    [ws.webSocket open];
+    [ws open];
 
     webSocketUserData *userData = lua_newuserdata(L, sizeof(webSocketUserData));
     memset(userData, 0, sizeof(webSocketUserData));
@@ -186,12 +164,14 @@ static int websocket_send(lua_State *L) {
 
     NSUInteger options = isData ? LS_NSLuaStringAsDataOnly : LS_NSPreserveLuaStringExactly;
 
+    NSURLSessionWebSocketMessage *message;
     if (isData) {
-        [ws.webSocket sendData:[skin toNSObjectAtIndex:2 withOptions:options] error:nil];
+        message = [[NSURLSessionWebSocketMessage alloc] initWithData:[skin toNSObjectAtIndex:2 withOptions:options]];
     } else {
-        [ws.webSocket sendString:[skin toNSObjectAtIndex:2 withOptions:options] error:nil];
+        message = [[NSURLSessionWebSocketMessage alloc] initWithString:[skin toNSObjectAtIndex:2 withOptions:options]];
     }
-    
+    [ws.webSocket sendMessage:message completionHandler:^(NSError *error) {}];
+
     lua_pushvalue(L, 1);
     return 1;
 }
@@ -214,20 +194,20 @@ static int websocket_status(lua_State *L) {
     LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TUSERDATA, WS_USERDATA_TAG, LS_TBREAK];
     HSWebSocketDelegate* ws = getWsUserData(L, 1);
-    if (ws.webSocket.readyState==0) {
-        [skin pushNSObject:@"connecting"];
-    }
-    else if (ws.webSocket.readyState==1) {
-        [skin pushNSObject:@"open"];
-    }
-    else if (ws.webSocket.readyState==2) {
-        [skin pushNSObject:@"closing"];
-    }
-    else if (ws.webSocket.readyState==3) {
-        [skin pushNSObject:@"closed"];
-    }
-    else {
-        [skin pushNSObject:@"unknown"];
+
+    switch (ws.webSocket.state) {
+        case NSURLSessionTaskStateRunning:
+            [skin pushNSObject: ws.isOpen ? @"open" : @"connecting"];
+            break;
+        case NSURLSessionTaskStateCanceling:
+            [skin pushNSObject:@"closing"];
+            break;
+        case NSURLSessionTaskStateCompleted:
+            [skin pushNSObject:@"closed"];
+            break;
+        default:
+            [skin pushNSObject:@"unknown"];
+            break;
     }
     return 1;
 }
@@ -246,7 +226,7 @@ static int websocket_close(lua_State *L) {
     [skin checkArgs:LS_TUSERDATA, WS_USERDATA_TAG, LS_TBREAK];
     HSWebSocketDelegate* ws = getWsUserData(L, 1);
 
-    [ws.webSocket close];
+    [ws.webSocket cancelWithCloseCode:NSURLSessionWebSocketCloseCodeNormalClosure reason:nil];
 
     lua_pushvalue(L, 1);
     return 1;
@@ -257,9 +237,10 @@ static int websocket_gc(lua_State* L){
     HSWebSocketDelegate* ws = (__bridge_transfer HSWebSocketDelegate *)userData->ws;
     userData->ws = nil;
 
-    [ws.webSocket close];
-    ws.webSocket.delegate = nil;
+    [ws.webSocket cancelWithCloseCode:NSURLSessionWebSocketCloseCodeNormalClosure reason:nil];
     ws.webSocket = nil;
+    [ws.session invalidateAndCancel];
+    ws.session = nil;
     ws.fn = [[LuaSkin sharedWithState:L] luaUnref:refTable ref:ws.fn];
     ws = nil;
 
@@ -268,11 +249,7 @@ static int websocket_gc(lua_State* L){
 
 static int websocket_tostring(lua_State* L) {
     HSWebSocketDelegate* ws = getWsUserData(L, 1);
-    NSString *host = @"disconnected";
-
-    if (ws.webSocket.readyState==1) {
-        host = @"connected";
-    }
+    NSString *host = ws.isOpen ? @"connected" : @"disconnected";
 
     lua_pushstring(L, [[NSString stringWithFormat:@"%s: %@ (%p)", WS_USERDATA_TAG, host, lua_topointer(L, 1)] UTF8String]);
     return 1;

@@ -9,7 +9,6 @@ project 'Hammerspoon', 'Profile' => :debug
 
 target 'Hammerspoon' do
 pod 'MIKMIDI', '1.7.1'
-pod 'SocketRocket', '0.7.1'
 end
 
 post_install do |installer|
