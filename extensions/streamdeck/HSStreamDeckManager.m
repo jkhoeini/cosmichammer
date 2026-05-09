@@ -136,7 +136,7 @@ static void HIDdisconnect(void *context, IOReturn result, void *sender, IOHIDDev
     if (self) {
         self.devices = [[NSMutableArray alloc] initWithCapacity:5];
         self.discoveryCallbackRef = LUA_NOREF;
-        inputBuffer = malloc(1024);
+        inputBuffer = (char *)malloc(1024);
 
         // Create a HID device manager
         self.ioHIDManager = CFBridgingRelease(IOHIDManagerCreate(kCFAllocatorDefault, kIOHIDManagerOptionNone));
@@ -229,16 +229,16 @@ static void HIDdisconnect(void *context, IOReturn result, void *sender, IOHIDDev
 
 - (HSStreamDeckDevice*)deviceDidConnect:(IOHIDDeviceRef)device {
     LuaSkin *skin = [LuaSkin sharedWithState:NULL];
-    _lua_stackguard_entry(skin.L);
+    _lua_stackguard_entry(skin.L)
 
     if (![skin checkGCCanary:self.lsCanary]) {
-        _lua_stackguard_exit(skin.L);
+        _lua_stackguard_exit(skin.L)
         return nil;
     }
 
     if (self.discoveryCallbackRef == LUA_NOREF || self.discoveryCallbackRef == LUA_REFNIL) {
         [skin logWarn:@"hs.streamdeck detected a device connecting, but no discovery callback has been set. See hs.streamdeck.discoveryCallback()"];
-        _lua_stackguard_exit(skin.L);
+        _lua_stackguard_exit(skin.L)
         return nil;
     }
 
@@ -308,16 +308,16 @@ static void HIDdisconnect(void *context, IOReturn result, void *sender, IOHIDDev
 
     //NSLog(@"Created deck device: %p", (__bridge void*)deviceId);
     //NSLog(@"Now have %lu devices", self.devices.count);
-    _lua_stackguard_exit(skin.L);
+    _lua_stackguard_exit(skin.L)
     return deck;
 }
 
 - (void)deviceDidDisconnect:(IOHIDDeviceRef)device {
     LuaSkin *skin = [LuaSkin sharedWithState:NULL];
-    _lua_stackguard_entry(skin.L);
+    _lua_stackguard_entry(skin.L)
 
     if (![skin checkGCCanary:self.lsCanary]) {
-        _lua_stackguard_exit(skin.L);
+        _lua_stackguard_exit(skin.L)
         return;
     }
 
@@ -339,12 +339,12 @@ static void HIDdisconnect(void *context, IOReturn result, void *sender, IOHIDDev
             deckDevice.lsCanary = tmpLSUUID;
 
             [self.devices removeObject:deckDevice];
-            _lua_stackguard_exit(skin.L);
+            _lua_stackguard_exit(skin.L)
             return;
         }
     }
     NSLog(@"ERROR: A Stream Deck was disconnected that we didn't know about");
-    _lua_stackguard_exit(skin.L);
+    _lua_stackguard_exit(skin.L)
     return;
 }
 

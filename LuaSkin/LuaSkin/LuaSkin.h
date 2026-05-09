@@ -17,6 +17,8 @@ FOUNDATION_EXPORT const unsigned char LuaSkinVersionString[];
 // In this header, you should import all the public headers of your framework using statements like #import <LuaSkin/PublicHeader.h>
 
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wquoted-include-in-framework-header"
 #import <LuaSkin/Skin.h>
 #import <LuaSkin/lapi.h>
 #import <LuaSkin/lauxlib.h>
@@ -43,3 +45,4 @@ FOUNDATION_EXPORT const unsigned char LuaSkinVersionString[];
 #import <LuaSkin/lundump.h>
 #import <LuaSkin/lvm.h>
 #import <LuaSkin/lzio.h>
+#pragma clang diagnostic pop

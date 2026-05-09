@@ -84,7 +84,7 @@
     // The original Stream Deck needs images sent in two halves of seemingly arbitrary length
     int imageLen = (int)data.length;
     int halfImageLen = imageLen / 2;
-    const uint8_t *imageBuf = data.bytes;
+    const uint8_t *imageBuf = (const uint8_t *)data.bytes;
 
     // Prepare and send the first half of the image
     NSMutableData *reportPage1 = [NSMutableData dataWithLength:self.reportLength];
@@ -92,7 +92,7 @@
     [reportPage1 replaceBytesInRange:NSMakeRange(self.reportHeaderLength, halfImageLen) withBytes:imageBuf];
     //const uint8_t *rawPage1 = (const uint8_t *)reportPage1.bytes;
 
-    IOHIDDeviceSetReport(self.device, kIOHIDReportTypeOutput, reportMagic[0], reportPage1.bytes, (int)reportPage1.length);
+    IOHIDDeviceSetReport(self.device, kIOHIDReportTypeOutput, reportMagic[0], (const uint8_t *)reportPage1.bytes, (int)reportPage1.length);
 
     // Prepare and send the second half of the image
     NSMutableData *reportPage2 = [NSMutableData dataWithLength:self.reportLength];
@@ -102,6 +102,6 @@
     [reportPage2 replaceBytesInRange:NSMakeRange(self.reportHeaderLength, halfImageLen) withBytes:imageBuf+halfImageLen];
     //const uint8_t *rawPage2 = (const uint8_t *)reportPage2.bytes;
 
-    IOHIDDeviceSetReport(self.device, kIOHIDReportTypeOutput, reportMagic[0], reportPage2.bytes, (int)reportPage2.length);
+    IOHIDDeviceSetReport(self.device, kIOHIDReportTypeOutput, reportMagic[0], (const uint8_t *)reportPage2.bytes, (int)reportPage2.length);
 }
 @end

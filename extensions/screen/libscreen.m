@@ -347,9 +347,9 @@ static int screen_gammaGet(lua_State* L) {
     uint32_t gammaCapacity = CGDisplayGammaTableCapacity(screen_id);
     uint32_t sampleCount;
 
-    CGGammaValue *redTable = malloc(sizeof(CGGammaValue) * gammaCapacity);
-    CGGammaValue *greenTable = malloc(sizeof(CGGammaValue) * gammaCapacity);
-    CGGammaValue *blueTable = malloc(sizeof(CGGammaValue) * gammaCapacity);
+    CGGammaValue *redTable = (CGGammaValue *)malloc(sizeof(CGGammaValue) * gammaCapacity);
+    CGGammaValue *greenTable = (CGGammaValue *)malloc(sizeof(CGGammaValue) * gammaCapacity);
+    CGGammaValue *blueTable = (CGGammaValue *)malloc(sizeof(CGGammaValue) * gammaCapacity);
 
     if (CGGetDisplayTransferByTable(screen_id, gammaCapacity, redTable, greenTable, blueTable, &sampleCount) != kCGErrorSuccess) {
         free(redTable);
@@ -406,9 +406,9 @@ void storeInitialScreenGamma(CGDirectDisplayID display) {
     uint32_t capacity = CGDisplayGammaTableCapacity(display);
     uint32_t count = 0;
     int i = 0;
-    CGGammaValue *redTable = malloc(sizeof(CGGammaValue) * capacity);
-    CGGammaValue *greenTable = malloc(sizeof(CGGammaValue) * capacity);
-    CGGammaValue *blueTable = malloc(sizeof(CGGammaValue) * capacity);
+    CGGammaValue *redTable = (CGGammaValue *)malloc(sizeof(CGGammaValue) * capacity);
+    CGGammaValue *greenTable = (CGGammaValue *)malloc(sizeof(CGGammaValue) * capacity);
+    CGGammaValue *blueTable = (CGGammaValue *)malloc(sizeof(CGGammaValue) * capacity);
 
     CGError result = CGGetDisplayTransferByTable(display, capacity, redTable, greenTable, blueTable, &count);
     if (result == kCGErrorSuccess) {
@@ -445,7 +445,7 @@ void getAllInitialScreenGammas(void) {
     CGGetActiveDisplayList(0, NULL, &numDisplays);
 
     // Fetch the gamma for each display
-    CGDirectDisplayID *displays = malloc(sizeof(CGDirectDisplayID) * numDisplays);
+    CGDirectDisplayID *displays = (CGDirectDisplayID *)malloc(sizeof(CGDirectDisplayID) * numDisplays);
     CGGetActiveDisplayList(numDisplays, displays, NULL);
 
     // Iterate each display and store its gamma
@@ -510,7 +510,6 @@ void displayReconfigurationCallback(CGDirectDisplayID display, CGDisplayChangeSu
         [currentGammas removeObjectForKey:[NSNumber numberWithInt:display]];
     } else if ((flags & kCGDisplayEnabledFlag) || (flags & kCGDisplayBeginConfigurationFlag)) {
         // NOOP
-        ;
     } else {
         // Some kind of display reconfiguration that didn't involve any hardware coming or going, re-apply a gamma if we have one
         // We seem to have to wait a few seconds for this to work, so we'll dispatch a delayed call, but run it on the main thread
@@ -589,9 +588,9 @@ static int screen_gammaSet(lua_State* L) {
     int count = (int)[redArray count];
 //    NSLog(@"screen_gammaSet: Found %i entries in the original gamma table", count);
 
-    CGGammaValue *redTable = malloc(sizeof(CGGammaValue) * count);
-    CGGammaValue *greenTable = malloc(sizeof(CGGammaValue) * count);
-    CGGammaValue *blueTable = malloc(sizeof(CGGammaValue) * count);
+    CGGammaValue *redTable = (CGGammaValue *)malloc(sizeof(CGGammaValue) * count);
+    CGGammaValue *greenTable = (CGGammaValue *)malloc(sizeof(CGGammaValue) * count);
+    CGGammaValue *blueTable = (CGGammaValue *)malloc(sizeof(CGGammaValue) * count);
 
     NSMutableArray *red   = [NSMutableArray arrayWithCapacity:count];
     NSMutableArray *green = [NSMutableArray arrayWithCapacity:count];
@@ -676,7 +675,7 @@ static int screen_getBrightness(lua_State *L) {
         CGDisplayErr err;
 
         float brightness;
-        err = IODisplayGetFloatParameter(service, kNilOptions, CFSTR(kIODisplayBrightnessKey), &brightness);
+        err = (CGDisplayErr)IODisplayGetFloatParameter(service, kNilOptions, CFSTR(kIODisplayBrightnessKey), &brightness);
         if (err != kIOReturnSuccess) {
             lua_pushnil(L);
         } else {
@@ -872,9 +871,9 @@ void screen_gammaReapply(CGDirectDisplayID display) {
 
     int count = (int)[red count];
 
-    CGGammaValue *redTable = malloc(sizeof(CGGammaValue) * count);
-    CGGammaValue *greenTable = malloc(sizeof(CGGammaValue) * count);
-    CGGammaValue *blueTable = malloc(sizeof(CGGammaValue) * count);
+    CGGammaValue *redTable = (CGGammaValue *)malloc(sizeof(CGGammaValue) * count);
+    CGGammaValue *greenTable = (CGGammaValue *)malloc(sizeof(CGGammaValue) * count);
+    CGGammaValue *blueTable = (CGGammaValue *)malloc(sizeof(CGGammaValue) * count);
 
     for (int i = 0; i < count; i++) {
         redTable[i]   = [[red objectAtIndex:i] floatValue];
@@ -910,7 +909,7 @@ static int screen_eq(lua_State* L) {
 }
 
 void new_screen(lua_State* L, NSScreen* screen) {
-    void** screenptr = lua_newuserdata(L, sizeof(NSScreen**));
+    void** screenptr = (void **)lua_newuserdata(L, sizeof(NSScreen**));
     *screenptr = (__bridge_retained void*)screen;
 
     luaL_getmetatable(L, USERDATA_TAG);
@@ -979,7 +978,7 @@ static int screen_setPrimary(lua_State* L) {
     CGDisplayCount maxDisplays = 32;
     CGDisplayCount displayCount, i;
 
-    CGDirectDisplayID *onlineDisplays = malloc(sizeof(CGDirectDisplayID) * maxDisplays);
+    CGDirectDisplayID *onlineDisplays = (CGDirectDisplayID *)malloc(sizeof(CGDirectDisplayID) * maxDisplays);
     CGDisplayConfigRef config;
 
     NSScreen* screen = get_screen_arg(L, 1);
@@ -1054,6 +1053,7 @@ static int screen_rotate(lua_State* L) {
     CGDisplayCount maxDisplays = 32;
     CGDisplayCount displayCount, i;
     CGDirectDisplayID *onlineDisplays = NULL;
+    CGDirectDisplayID screenID = 0;
 
     int rotation = -1;
 
@@ -1076,7 +1076,7 @@ static int screen_rotate(lua_State* L) {
         }
     }
 
-    CGDirectDisplayID screenID = [[[screen deviceDescription] objectForKey:@"NSScreenNumber"] unsignedIntValue];
+    screenID = [[[screen deviceDescription] objectForKey:@"NSScreenNumber"] unsignedIntValue];
 
     if (rotation == -1) {
         double currentRotation = CGDisplayRotation(screenID);
@@ -1085,7 +1085,7 @@ static int screen_rotate(lua_State* L) {
         return 1;
     }
 
-    onlineDisplays = malloc(sizeof(CGDirectDisplayID) * maxDisplays);
+    onlineDisplays = (CGDirectDisplayID *)malloc(sizeof(CGDirectDisplayID) * maxDisplays);
     if (CGGetOnlineDisplayList(maxDisplays, onlineDisplays, &displayCount) != kCGErrorSuccess) goto cleanup;
 
     for (i = 0; i < displayCount; i++) {
@@ -1134,7 +1134,7 @@ static int screen_setOrigin(lua_State* L) {
     CGDisplayCount displayCount, i;
     CGDirectDisplayID *onlineDisplays = NULL;
     CGDirectDisplayID screenID = [[[screen deviceDescription] objectForKey:@"NSScreenNumber"] unsignedIntValue];
-    onlineDisplays = malloc(sizeof(CGDirectDisplayID) * maxDisplays);
+    onlineDisplays = (CGDirectDisplayID *)malloc(sizeof(CGDirectDisplayID) * maxDisplays);
     if (CGGetOnlineDisplayList(maxDisplays, onlineDisplays, &displayCount) != kCGErrorSuccess) goto cleanup;
 
     CGDisplayConfigRef config;

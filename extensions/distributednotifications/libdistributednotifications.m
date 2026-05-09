@@ -23,13 +23,13 @@ typedef struct _distnot_t {
 - (void)callback:(NSNotification *)note {
     if (self.fnRef != LUA_NOREF && self.fnRef != LUA_REFNIL) {
         LuaSkin *skin = [LuaSkin sharedWithState:NULL];
-        _lua_stackguard_entry(skin.L);
+        _lua_stackguard_entry(skin.L)
         [skin pushLuaRef:refTable ref:self.fnRef];
         [skin pushNSObject:note.name];
         [skin pushNSObject:note.object];
         [skin pushNSObject:note.userInfo];
         [skin protectedCallAndError:@"hs.distributednotification callback" nargs:3 nresults:0];
-        _lua_stackguard_exit(skin.L);
+        _lua_stackguard_exit(skin.L)
     }
 }
 
@@ -59,7 +59,7 @@ static int distnot_new(lua_State *L) {
     NSString *name = lua_isnoneornil(L, 2) ? nil : [skin toNSObjectAtIndex:2];
     NSString *obj  = lua_isnoneornil(L, 3) ? nil : [skin toNSObjectAtIndex:3];
 
-    distnot_t *userData = lua_newuserdata(L, sizeof(distnot_t));
+    distnot_t *userData = (distnot_t *)lua_newuserdata(L, sizeof(distnot_t));
     memset(userData, 0, sizeof(distnot_t));
 
     luaL_getmetatable(L, USERDATA_TAG);
@@ -129,7 +129,7 @@ static int distnot_start(lua_State *L) {
     LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG, LS_TBREAK];
 
-    distnot_t *userData = lua_touserdata(L, 1);
+    distnot_t *userData = (distnot_t *)lua_touserdata(L, 1);
     HSDistNotWatcher *watcher = (__bridge HSDistNotWatcher *)userData->watcher;
 
     NSDistributedNotificationCenter *center = [NSDistributedNotificationCenter defaultCenter];
@@ -152,7 +152,7 @@ static int distnot_stop(lua_State *L) {
     LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG, LS_TBREAK];
 
-    distnot_t *userData = lua_touserdata(L, 1);
+    distnot_t *userData = (distnot_t *)lua_touserdata(L, 1);
     HSDistNotWatcher *watcher = (__bridge HSDistNotWatcher *)userData->watcher;
 
     NSDistributedNotificationCenter *center = [NSDistributedNotificationCenter defaultCenter];
@@ -168,7 +168,7 @@ static int userdata_tostring(lua_State* L) {
     LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG, LS_TBREAK];
 
-    distnot_t *userData = lua_touserdata(L, 1);
+    distnot_t *userData = (distnot_t *)lua_touserdata(L, 1);
     HSDistNotWatcher *watcher = (__bridge HSDistNotWatcher *)userData->watcher;
 
     [skin pushNSObject:[NSString stringWithFormat:@"%s: name: %@ object: %@ (%p)", USERDATA_TAG, watcher.name, watcher.object, (void *)watcher]];
@@ -179,7 +179,7 @@ static int userdata_gc(lua_State* L) {
     LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG, LS_TBREAK];
 
-    distnot_t *userData = lua_touserdata(L, 1);
+    distnot_t *userData = (distnot_t *)lua_touserdata(L, 1);
     HSDistNotWatcher *watcher = (__bridge_transfer HSDistNotWatcher *)userData->watcher;
 
     NSDistributedNotificationCenter *center = [NSDistributedNotificationCenter defaultCenter];

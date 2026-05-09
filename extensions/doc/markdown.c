@@ -131,7 +131,7 @@ rndr_newbuf(struct sd_markdown *rndr, int type)
 
 	if (pool->size < pool->asize &&
 		pool->item[pool->size] != NULL) {
-		work = pool->item[pool->size++];
+		work = (struct buf *)pool->item[pool->size++];
 		work->size = 0;
 	} else {
 		work = bufnew(buf_size[type]);
@@ -184,7 +184,7 @@ add_link_ref(
 	struct link_ref **references,
 	const uint8_t *name, size_t name_size)
 {
-	struct link_ref *ref = calloc(1, sizeof(struct link_ref));
+	struct link_ref *ref = (struct link_ref *)calloc(1, sizeof(struct link_ref));
 
 	if (!ref)
 		return NULL;
@@ -1622,7 +1622,7 @@ parse_blockcode(struct buf *ob, struct sd_markdown *rndr, uint8_t *data, size_t 
 
 	beg = 0;
 	while (beg < size) {
-		for (end = beg + 1; end < size && data[end - 1] != '\n'; end++) {};
+		for (end = beg + 1; end < size && data[end - 1] != '\n'; end++) {}
 		pre = prefix_code(data + beg, end - beg);
 
 		if (pre)
@@ -2146,7 +2146,7 @@ parse_table_header(
 		pipes--;
 
 	*columns = (size_t)pipes + 1;
-	*column_data = calloc(*columns, sizeof(int));
+	*column_data = (int *)calloc(*columns, sizeof(int));
 
 	/* Parse the header underline */
 	i++;
@@ -2482,7 +2482,7 @@ sd_markdown_new(
 
 	assert(max_nesting > 0 && callbacks);
 
-	md = malloc(sizeof(struct sd_markdown));
+	md = (struct sd_markdown *)malloc(sizeof(struct sd_markdown));
 	if (!md)
 		return NULL;
 
@@ -2621,10 +2621,10 @@ sd_markdown_free(struct sd_markdown *md)
 	size_t i;
 
 	for (i = 0; i < (size_t)md->work_bufs[BUFFER_SPAN].asize; ++i)
-		bufrelease(md->work_bufs[BUFFER_SPAN].item[i]);
+		bufrelease((struct buf *)md->work_bufs[BUFFER_SPAN].item[i]);
 
 	for (i = 0; i < (size_t)md->work_bufs[BUFFER_BLOCK].asize; ++i)
-		bufrelease(md->work_bufs[BUFFER_BLOCK].item[i]);
+		bufrelease((struct buf *)md->work_bufs[BUFFER_BLOCK].item[i]);
 
 	stack_free(&md->work_bufs[BUFFER_SPAN]);
 	stack_free(&md->work_bufs[BUFFER_BLOCK]);

@@ -111,13 +111,13 @@ double getSecondsSinceEpoch(void) {
             return;
         }
 
-        _lua_stackguard_entry(skin.L);
+        _lua_stackguard_entry(skin.L)
         [skin pushLuaRef:razerRefTable ref:self.buttonCallbackRef];
         [skin pushNSObject:self];
         [skin pushNSObject:buttonName];
         [skin pushNSObject:buttonAction];
         [skin protectedCallAndError:@"hs.razer:callback" nargs:3 nresults:0];
-        _lua_stackguard_exit(skin.L);
+        _lua_stackguard_exit(skin.L)
     }
 
 }

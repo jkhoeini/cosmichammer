@@ -164,11 +164,11 @@ void AudioInputCallback(void * inUserData,  // Custom audio metadata
   if (self.fn != LUA_NOREF) {
       LuaSkin *skin = [LuaSkin sharedWithState:NULL];
       lua_State* L = skin.L;
-      _lua_stackguard_entry(L);
+      _lua_stackguard_entry(L)
       [skin pushLuaRef:refTable ref:self.fn];
       lua_pushinteger(L, [evNumber intValue]);
       [skin protectedCallAndError:@"hs.noises callback" nargs:1 nresults:0];
-      _lua_stackguard_exit(L);
+      _lua_stackguard_exit(L)
   }
 }
 @end
@@ -226,7 +226,7 @@ static int listener_eq(lua_State* L) {
 }
 
 void new_listener(lua_State* L, Listener* listener) {
-  void** listenptr = lua_newuserdata(L, sizeof(Listener**));
+  void** listenptr = (void **)lua_newuserdata(L, sizeof(Listener**));
   *listenptr = (__bridge_retained void*)listener;
 
   luaL_getmetatable(L, USERDATA_TAG);

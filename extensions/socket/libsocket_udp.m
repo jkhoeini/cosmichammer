@@ -3,7 +3,7 @@
 
 
 // Userdata for hs.socket.udp objects
-#define getUserData(L, idx) (__bridge HSAsyncUdpSocket *)((asyncSocketUserData *)lua_touserdata(L, idx))->asyncSocket;
+#define getUserData(L, idx) (__bridge HSAsyncUdpSocket *)((asyncSocketUserData *)lua_touserdata(L, idx))->asyncSocket
 static const char *USERDATA_TAG = "hs.socket.udp";
 
 
@@ -133,7 +133,7 @@ static int socketudp_new(lua_State *L) {
         lua_getfield(skin.L, -1, [field UTF8String]);
     asyncUdpSocket.timeout = lua_tonumber(skin.L, -1);
 
-    asyncSocketUserData *userData = lua_newuserdata(L, sizeof(asyncSocketUserData));
+    asyncSocketUserData *userData = (asyncSocketUserData *)lua_newuserdata(L, sizeof(asyncSocketUserData));
     memset(userData, 0, sizeof(asyncSocketUserData));
     userData->asyncSocket = (__bridge_retained void*)asyncUdpSocket;
     luaL_getmetatable(L, USERDATA_TAG);
@@ -782,7 +782,7 @@ static int userdata_tostring(lua_State* L) {
 }
 
 static int userdata_gc(lua_State *L) {
-    asyncSocketUserData *userData = lua_touserdata(L, 1);
+    asyncSocketUserData *userData = (asyncSocketUserData *)lua_touserdata(L, 1);
     HSAsyncUdpSocket* asyncUdpSocket = (__bridge_transfer HSAsyncUdpSocket *)userData->asyncSocket;
     userData->asyncSocket = nil;
 

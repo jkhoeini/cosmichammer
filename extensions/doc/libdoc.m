@@ -17,8 +17,8 @@ NSInteger docSortFunction(NSString *a, NSString *b, __unused void *context) {
                                                                             options:NSRegularExpressionUseUnicodeWordBoundaries
                                                                               error:&error] ;
     if (!error) {
-        NSTextCheckingResult *aMatch = [parser firstMatchInString:a options:0 range:NSMakeRange(0, a.length)] ;
-        NSTextCheckingResult *bMatch = [parser firstMatchInString:b options:0 range:NSMakeRange(0, b.length)] ;
+        NSTextCheckingResult *aMatch = [parser firstMatchInString:a options:(NSMatchingOptions)0 range:NSMakeRange(0, a.length)] ;
+        NSTextCheckingResult *bMatch = [parser firstMatchInString:b options:(NSMatchingOptions)0 range:NSMakeRange(0, b.length)] ;
         if (aMatch.range.length != 0 && bMatch.range.length != 0) {
             NSString *aTag = [a substringWithRange:aMatch.range] ;
             NSString *bTag = [b substringWithRange:bMatch.range] ;
@@ -26,8 +26,8 @@ NSInteger docSortFunction(NSString *a, NSString *b, __unused void *context) {
                                                                options:NSRegularExpressionUseUnicodeWordBoundaries
                                                                  error:&error] ;
             if (!error) {
-                NSArray *aNumericParts = [parser matchesInString:aTag options:0 range:NSMakeRange(0, aTag.length)] ;
-                NSArray *bNumericParts = [parser matchesInString:bTag options:0 range:NSMakeRange(0, bTag.length)] ;
+                NSArray *aNumericParts = [parser matchesInString:aTag options:(NSMatchingOptions)0 range:NSMakeRange(0, aTag.length)] ;
+                NSArray *bNumericParts = [parser matchesInString:bTag options:(NSMatchingOptions)0 range:NSMakeRange(0, bTag.length)] ;
 
                 NSUInteger minCount = (aNumericParts.count < bNumericParts.count) ? aNumericParts.count : bNumericParts.count ;
                 NSNumberFormatter *f = [[NSNumberFormatter alloc] init] ;
@@ -95,7 +95,7 @@ static BOOL processRegisteredFile(lua_State *L, NSString *path) {
             } else {
                 NSString *entryName = entry[@"name"] ;
                 [parser enumerateMatchesInString:entryName
-                                         options:0
+                                         options:(NSMatchingOptions)0
                                            range:NSMakeRange(0, entryName.length)
                                       usingBlock:^(NSTextCheckingResult *match, NSMatchingFlags __unused flags, __unused BOOL *stop2) {
                     NSString *part = [entryName substringWithRange:match.range] ;
@@ -122,7 +122,7 @@ static BOOL processRegisteredFile(lua_State *L, NSString *path) {
                             [skin logInfo:[NSString stringWithFormat:@"%s.processRegisteredFile - malformed entry in %@ -- expected item dictionary with 'name' key for %@ at index %lu; skipping", USERDATA_TAG, path, entryName, idx2 + 1]] ;
                         } else {
                             NSString *itemName = itemEntry[@"name"] ;
-                            NSTextCheckingResult *match = [parser firstMatchInString:itemName options:0 range:NSMakeRange(0, itemName.length)] ;
+                            NSTextCheckingResult *match = [parser firstMatchInString:itemName options:(NSMatchingOptions)0 range:NSMakeRange(0, itemName.length)] ;
                             if (match.range.location != NSNotFound) {
                                 NSString *part = [itemName substringWithRange:match.range] ;
                                 if (pos[part]) {
@@ -173,7 +173,7 @@ NSMutableDictionary *getPosInTreeFor(NSString *target) {
     if (!error) {
         pos = documentationTree ;
         [parser enumerateMatchesInString:target
-                                 options:0
+                                 options:(NSMatchingOptions)0
                                    range:NSMakeRange(0, target.length)
                               usingBlock:^(NSTextCheckingResult *match, NSMatchingFlags __unused flags, BOOL *stop) {
             NSString *part = [target substringWithRange:match.range] ;
@@ -244,7 +244,7 @@ static int doc_help(lua_State *L) {
             NSMutableArray *children = [[(NSDictionary *)pos allKeys] mutableCopy] ;
 
             [children sortUsingComparator:^NSComparisonResult(id obj1, id obj2) {
-                return docSortFunction((NSString *)obj1, (NSString *)obj2, NULL);
+                return (NSComparisonResult)docSortFunction((NSString *)obj1, (NSString *)obj2, NULL);
             }];
 
             [children enumerateObjectsUsingBlock:^(NSString *entry, __unused NSUInteger idx, __unused BOOL *stop) {

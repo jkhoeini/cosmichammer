@@ -385,7 +385,7 @@ static int streamdeck_setButtonColor(lua_State *L) {
 static int pushHSStreamDeckDevice(lua_State *L, id obj) {
     HSStreamDeckDevice *value = obj;
     value.selfRefCount++;
-    void** valuePtr = lua_newuserdata(L, sizeof(HSStreamDeckDevice *));
+    void** valuePtr = (void **)lua_newuserdata(L, sizeof(HSStreamDeckDevice *));
     *valuePtr = (__bridge_retained void *)value;
     luaL_getmetatable(L, USERDATA_TAG);
     lua_setmetatable(L, -2);

@@ -13,7 +13,7 @@ static void swapOutObjectInUserdata(lua_State *L, int idx, NSObject *obj, NSObje
     LuaSkin *skin = [LuaSkin sharedWithState:L] ;
 
     // change existing userdata: release old object and retain new one
-    void** valuePtr = lua_touserdata(L, idx) ;
+    void** valuePtr = (void **)lua_touserdata(L, idx) ;
 
 #pragma clang diagnostic push
 #if __has_warning("-Wunused-but-set-variable")

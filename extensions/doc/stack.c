@@ -9,7 +9,7 @@ stack_grow(struct stack *st, size_t new_size)
 	if (st->asize >= new_size)
 		return 0;
 
-	new_st = realloc(st->item, new_size * sizeof(void *));
+	new_st = (void **)realloc(st->item, new_size * sizeof(void *));
 	if (new_st == NULL)
 		return -1;
 

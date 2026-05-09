@@ -76,7 +76,7 @@ static inline void escape_href(struct buf *ob, const uint8_t *source, size_t len
 static int
 rndr_autolink(struct buf *ob, const struct buf *link, enum mkd_autolink type, void *opaque)
 {
-	struct html_renderopt *options = opaque;
+	struct html_renderopt *options = (struct html_renderopt *)opaque;
 
 	if (!link || !link->size)
 		return 0;
@@ -207,7 +207,7 @@ rndr_emphasis(struct buf *ob, const struct buf *text, __unused void *opaque)
 static int
 rndr_linebreak(struct buf *ob, void *opaque)
 {
-	struct html_renderopt *options = opaque;
+	struct html_renderopt *options = (struct html_renderopt *)opaque;
 	bufputs(ob, USE_XHTML(options) ? "<br/>\n" : "<br>\n");
 	return 1;
 }
@@ -215,7 +215,7 @@ rndr_linebreak(struct buf *ob, void *opaque)
 static void
 rndr_header(struct buf *ob, const struct buf *text, int level, void *opaque)
 {
-	struct html_renderopt *options = opaque;
+	struct html_renderopt *options = (struct html_renderopt *)opaque;
 
 	if (ob->size)
 		bufputc(ob, '\n');
@@ -232,7 +232,7 @@ rndr_header(struct buf *ob, const struct buf *text, int level, void *opaque)
 static int
 rndr_link(struct buf *ob, const struct buf *link, const struct buf *title, const struct buf *content, void *opaque)
 {
-	struct html_renderopt *options = opaque;
+	struct html_renderopt *options = (struct html_renderopt *)opaque;
 
 	if (link != NULL && (options->flags & HTML_SAFELINK) != 0 && !sd_autolink_issafe(link->data, link->size))
 		return 0;
@@ -286,7 +286,7 @@ rndr_listitem(struct buf *ob, const struct buf *text, __unused int flags, __unus
 static void
 rndr_paragraph(struct buf *ob, const struct buf *text, void *opaque)
 {
-	struct html_renderopt *options = opaque;
+	struct html_renderopt *options = (struct html_renderopt *)opaque;
 	size_t i = 0;
 
 	if (ob->size) bufputc(ob, '\n');
@@ -354,7 +354,7 @@ rndr_triple_emphasis(struct buf *ob, const struct buf *text, __unused void *opaq
 static void
 rndr_hrule(struct buf *ob, void *opaque)
 {
-	struct html_renderopt *options = opaque;
+	struct html_renderopt *options = (struct html_renderopt *)opaque;
 	if (ob->size) bufputc(ob, '\n');
 	bufputs(ob, USE_XHTML(options) ? "<hr/>\n" : "<hr>\n");
 }
@@ -362,7 +362,7 @@ rndr_hrule(struct buf *ob, void *opaque)
 static int
 rndr_image(struct buf *ob, const struct buf *link, const struct buf *title, const struct buf *alt, void *opaque)
 {
-	struct html_renderopt *options = opaque;
+	struct html_renderopt *options = (struct html_renderopt *)opaque;
 	if (!link || !link->size) return 0;
 
 	BUFPUTSL(ob, "<img src=\"");
@@ -383,7 +383,7 @@ rndr_image(struct buf *ob, const struct buf *link, const struct buf *title, cons
 static int
 rndr_raw_html(struct buf *ob, const struct buf *text, void *opaque)
 {
-	struct html_renderopt *options = opaque;
+	struct html_renderopt *options = (struct html_renderopt *)opaque;
 
 	/* HTML_ESCAPE overrides SKIP_HTML, SKIP_STYLE, SKIP_LINKS and SKIP_IMAGES
 	* It doesn't see if there are any valid tags, just escape all of them. */
@@ -489,7 +489,7 @@ rndr_normal_text(struct buf *ob, const struct buf *text, __unused void *opaque)
 static void
 toc_header(struct buf *ob, const struct buf *text, int level, void *opaque)
 {
-	struct html_renderopt *options = opaque;
+	struct html_renderopt *options = (struct html_renderopt *)opaque;
 
 	/* set the level offset if this is the first header
 	 * we're parsing for the document */
@@ -531,7 +531,7 @@ toc_link(struct buf *ob, __unused const struct buf *link, __unused const struct 
 static void
 toc_finalize(struct buf *ob, void *opaque)
 {
-	struct html_renderopt *options = opaque;
+	struct html_renderopt *options = (struct html_renderopt *)opaque;
 
 	while (options->toc_data.current_level > 0) {
 		BUFPUTSL(ob, "</li>\n</ul>\n");

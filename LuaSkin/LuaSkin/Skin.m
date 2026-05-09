@@ -255,6 +255,8 @@ static NSMutableSet *_sharedWarnings ;
 
 - (void)createLuaState {
     NSString *catastropheText = @"";
+    int loadresult = 0;
+    int luaresult = 0;
 
     NSLog(@"createLuaState");
     NSAssert((LuaSkin.mainLuaState == NULL), @"createLuaState called on a live Lua environment", nil);
@@ -275,13 +277,13 @@ static NSMutableSet *_sharedWarnings ;
 
     luaopen_luaskin_internal(LuaSkin.mainLuaState) ; // load objectWrapper userdata methods and create _G["ls"]
 
-    int loadresult = luaL_loadfile(LuaSkin.mainLuaState, luaSkinLua.fileSystemRepresentation); // extend _G["ls"]
+    loadresult = luaL_loadfile(LuaSkin.mainLuaState, luaSkinLua.fileSystemRepresentation); // extend _G["ls"]
     if (loadresult != 0) {
         catastropheText = @"createLuaState was unable to load luaskin.lua. Please re-install Hammerspoon";
         goto catastrophe;
     }
 
-    int luaresult = lua_pcall(LuaSkin.mainLuaState, 0, 0, 0);
+    luaresult = lua_pcall(LuaSkin.mainLuaState, 0, 0, 0);
     if (luaresult != LUA_OK) {
         catastropheText = @"createLuaState was unable to evaluate luaskin.lua. Please re-install Hammerspoon";
         goto catastrophe;
@@ -1290,7 +1292,7 @@ nextarg:
                 size_t size = [(NSString *)obj lengthOfBytesUsingEncoding:NSUTF8StringEncoding] ;
                 lua_pushlstring(self.L, [(NSString *)obj UTF8String], size) ;
         } else if ([obj isKindOfClass:[NSData class]]) {
-            lua_pushlstring(self.L, [(NSData *)obj bytes], [(NSData *)obj length]) ;
+            lua_pushlstring(self.L, (const char *)[(NSData *)obj bytes], [(NSData *)obj length]) ;
         } else if ([obj isKindOfClass:[NSDate class]]) {
             lua_pushinteger(self.L, lround([(NSDate *)obj timeIntervalSince1970])) ;
         } else if ([obj isKindOfClass:[NSArray class]]) {
@@ -1357,7 +1359,7 @@ nextarg:
                           if ([number unsignedLongLongValue] < 0x8000000000000000)
                               lua_pushinteger(self.L, (long long)[number unsignedLongLongValue]) ;
                           else
-                              lua_pushnumber(self.L, [number unsignedLongLongValue]) ;
+                              lua_pushnumber(self.L, (lua_Number)[number unsignedLongLongValue]) ;
                       }
                       break ;
 
@@ -1429,7 +1431,7 @@ nextarg:
 
 - (int)pushNSArray:(id)obj withOptions:(NSUInteger)options alreadySeenObjects:(NSMutableDictionary *)alreadySeen {
     if ((options & LS_WithObjectWrapper) == LS_WithObjectWrapper) {
-        void** valuePtr = lua_newuserdata(self.L, sizeof(NSObject *)) ;
+        void** valuePtr = (void **)lua_newuserdata(self.L, sizeof(NSObject *)) ;
         *valuePtr = (__bridge_retained void *)obj ;
         luaL_getmetatable(self.L, LuaSkin_UD_TAG) ;
         lua_setmetatable(self.L, -2) ;
@@ -1482,7 +1484,7 @@ nextarg:
 
 - (int)pushNSDictionary:(id)obj withOptions:(NSUInteger)options alreadySeenObjects:(NSMutableDictionary *)alreadySeen {
     if ((options & LS_WithObjectWrapper) == LS_WithObjectWrapper) {
-        void** valuePtr = lua_newuserdata(self.L, sizeof(NSObject *)) ;
+        void** valuePtr = (void **)lua_newuserdata(self.L, sizeof(NSObject *)) ;
         *valuePtr = (__bridge_retained void *)obj ;
         luaL_getmetatable(self.L, LuaSkin_UD_TAG) ;
         lua_setmetatable(self.L, -2) ;
@@ -1547,7 +1549,7 @@ nextarg:
                 return @(lua_tonumber(self.L, idx));
             }
         case LUA_TSTRING: {
-                LS_NSConversionOptions stringOptions = options & ( LS_NSPreserveLuaStringExactly | LS_NSLuaStringAsDataOnly ) ;
+                LS_NSConversionOptions stringOptions = (LS_NSConversionOptions)(options & ( LS_NSPreserveLuaStringExactly | LS_NSLuaStringAsDataOnly )) ;
                 if (stringOptions == LS_NSLuaStringAsDataOnly) {
                     size_t size ;
                     unsigned char *junk = (unsigned char *)lua_tolstring(self.L, idx, &size) ;

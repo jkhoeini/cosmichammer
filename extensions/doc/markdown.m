@@ -227,7 +227,7 @@ static int to_html(lua_State *L) {
     output_buf = bufnew(128);
 
     /* render the magic */
-    sd_markdown_render(output_buf, [textBody bytes], [textBody length], md);
+    sd_markdown_render(output_buf, (const uint8_t *)[textBody bytes], [textBody length], md);
 
     /* build the Lua string */
     NSData *outputData = [NSData dataWithBytes:output_buf->data length:output_buf->size];

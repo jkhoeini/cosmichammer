@@ -31,6 +31,8 @@ bool hidled_set(uint32 usage, long target_value) {
     bool success = false;
     CFSetRef deviceCFSetRef = NULL;
     IOHIDDeviceRef * refs = NULL;
+    IOReturn err = 0;
+    CFIndex deviceIndex = 0, deviceCount = 0;
     // create a IO HID Manager reference
     IOHIDManagerRef mgr = IOHIDManagerCreate(kCFAllocatorDefault, kIOHIDOptionsTypeNone);
     if(!mgr)
@@ -44,7 +46,7 @@ bool hidled_set(uint32 usage, long target_value) {
     IOHIDManagerSetDeviceMatching(mgr, (__bridge CFDictionaryRef)dic);
     //    [dic release];
     // Now open the IO HID Manager reference
-    IOReturn err = IOHIDManagerOpen(mgr, kIOHIDOptionsTypeNone);
+    err = IOHIDManagerOpen(mgr, kIOHIDOptionsTypeNone);
     if (err != 0)
         goto Oops;
     // and copy out its devices
@@ -52,9 +54,9 @@ bool hidled_set(uint32 usage, long target_value) {
     if (!deviceCFSetRef)
         goto Oops;
     // how many devices in the set?
-    CFIndex deviceIndex, deviceCount = CFSetGetCount(deviceCFSetRef);
+    deviceCount = CFSetGetCount(deviceCFSetRef);
     // allocate a block of memory to extract the device refs from the set into
-    refs = malloc(sizeof(IOHIDDeviceRef) * deviceCount);
+    refs = (IOHIDDeviceRef *)malloc(sizeof(IOHIDDeviceRef) * deviceCount);
     if (!refs)
         goto Oops;
     // now extract the device refs from the set

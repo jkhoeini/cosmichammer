@@ -71,7 +71,7 @@ bufgrow(struct buf *buf, size_t neosz)
 	if (!neodata)
 		return BUF_ENOMEM;
 
-	buf->data = neodata;
+	buf->data = (uint8_t *)neodata;
 	buf->asize = neoasz;
 	return BUF_OK;
 }
@@ -82,7 +82,7 @@ struct buf *
 bufnew(size_t unit)
 {
 	struct buf *ret;
-	ret = malloc(sizeof (struct buf));
+	ret = (struct buf *)malloc(sizeof (struct buf));
 
 	if (ret) {
 		ret->data = 0;

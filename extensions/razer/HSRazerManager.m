@@ -4,7 +4,7 @@
 
 static void HIDcallback(void* context, IOReturn result, void* sender, IOHIDValueRef value)
 {
-    NSNumber *locationID = (__bridge NSNumber *)IOHIDDeviceGetProperty(sender, CFSTR(kIOHIDLocationIDKey));
+    NSNumber *locationID = (__bridge NSNumber *)IOHIDDeviceGetProperty((IOHIDDeviceRef)sender, CFSTR(kIOHIDLocationIDKey));
     if (!locationID) {
         return;
     }
@@ -174,7 +174,7 @@ static void HIDdisconnect(void *context, IOReturn result, void *sender, IOHIDDev
     LuaSkin *skin = [LuaSkin sharedWithState:NULL];
     razerDevice.lsCanary = [skin createGCCanary];
 
-    _lua_stackguard_entry(skin.L);
+    _lua_stackguard_entry(skin.L)
     if (self.discoveryCallbackRef == LUA_NOREF || self.discoveryCallbackRef == LUA_REFNIL) {
         [skin logWarn:@"hs.razer detected a device connecting, but no discovery callback has been set. See hs.razer.discoveryCallback()"];
     } else {
@@ -186,7 +186,7 @@ static void HIDdisconnect(void *context, IOReturn result, void *sender, IOHIDDev
 
     //NSLog(@"Created Razer device: %p", (__bridge void*)deviceId);
     //NSLog(@"[hs.razer] Now have %lu devices", self.devices.count);
-    _lua_stackguard_exit(skin.L);
+    _lua_stackguard_exit(skin.L)
     return razerDevice;
 }
 
@@ -195,7 +195,7 @@ static void HIDdisconnect(void *context, IOReturn result, void *sender, IOHIDDev
         if (razerDevice.device == device) {
             [razerDevice invalidate];
             LuaSkin *skin = [LuaSkin sharedWithState:NULL];
-            _lua_stackguard_entry(skin.L);
+            _lua_stackguard_entry(skin.L)
             if (self.discoveryCallbackRef == LUA_NOREF || self.discoveryCallbackRef == LUA_REFNIL) {
                 [skin logWarn:@"hs.razer detected a device disconnecting, but no callback has been set. See hs.razer.discoveryCallback()"];
             } else {
@@ -206,7 +206,7 @@ static void HIDdisconnect(void *context, IOReturn result, void *sender, IOHIDDev
             }
 
             [self.devices removeObject:razerDevice];
-            _lua_stackguard_exit(skin.L);
+            _lua_stackguard_exit(skin.L)
             return;
         }
     }

@@ -17,11 +17,14 @@
 
 
 #import <Foundation/Foundation.h>
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wquoted-include-in-framework-header"
 #import "lobject.h"
 #import "lapi.h"
 #import "lauxlib.h"
 #import "lualib.h"
 #import "lua.h"
+#pragma clang diagnostic pop
 #import <assert.h>
 #import <limits.h>
 #import <dlfcn.h>

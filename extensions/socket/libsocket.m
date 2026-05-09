@@ -3,7 +3,7 @@
 
 
 // Userdata for hs.socket objects
-#define getUserData(L, idx) (__bridge HSAsyncTcpSocket *)((asyncSocketUserData *)lua_touserdata(L, idx))->asyncSocket;
+#define getUserData(L, idx) (__bridge HSAsyncTcpSocket *)((asyncSocketUserData *)lua_touserdata(L, idx))->asyncSocket
 static const char *USERDATA_TAG = "hs.socket";
 
 
@@ -175,7 +175,7 @@ static int socket_new(lua_State *L) {
     lua_getfield(skin.L, -1, "timeout");
     asyncSocket.timeout = lua_tonumber(skin.L, -1);
 
-    asyncSocketUserData *userData = lua_newuserdata(L, sizeof(asyncSocketUserData));
+    asyncSocketUserData *userData = (asyncSocketUserData *)lua_newuserdata(L, sizeof(asyncSocketUserData));
     memset(userData, 0, sizeof(asyncSocketUserData));
     userData->asyncSocket = (__bridge_retained void*)asyncSocket;
     luaL_getmetatable(L, USERDATA_TAG);
@@ -687,7 +687,7 @@ static int userdata_tostring(lua_State* L) {
 }
 
 static int userdata_gc(lua_State *L) {
-    asyncSocketUserData *userData = lua_touserdata(L, 1);
+    asyncSocketUserData *userData = (asyncSocketUserData *)lua_touserdata(L, 1);
     HSAsyncTcpSocket* asyncSocket = (__bridge_transfer HSAsyncTcpSocket *)userData->asyncSocket;
     userData->asyncSocket = nil;
 

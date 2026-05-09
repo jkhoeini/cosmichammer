@@ -67,7 +67,7 @@
     int imageLen = (int)data.length;
     int bytesRemaining = imageLen;
     int pageNumber = reportMagic[2];
-    const uint8_t *imageBuf = data.bytes;
+    const uint8_t *imageBuf = (const uint8_t *)data.bytes;
     IOReturn result;
 
     while (bytesRemaining > 0) {
@@ -83,7 +83,7 @@
         [report replaceBytesInRange:NSMakeRange(0, self.reportHeaderLength) withBytes:reportMagic];
         [report replaceBytesInRange:NSMakeRange(self.reportHeaderLength, reportLength) withBytes:imageBuf+bytesSent length:reportLength];
 
-        result = IOHIDDeviceSetReport(self.device, kIOHIDReportTypeOutput, reportMagic[0], report.bytes, (int)report.length);
+        result = IOHIDDeviceSetReport(self.device, kIOHIDReportTypeOutput, reportMagic[0], (const uint8_t *)report.bytes, (int)report.length);
         if (result != kIOReturnSuccess) {
             NSLog(@"WARNING: writing an image with hs.streamdeck encountered a failure on page %d: %d", pageNumber, result);
         }
