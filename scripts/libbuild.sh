@@ -136,7 +136,6 @@ function op_installdeps() {
 function op_build_assert() {
     echo "Checking build environment..."
     assert_xcbeautify
-    assert_cocoapods_state
 }
 
 function op_test_assert() {
@@ -163,12 +162,4 @@ function assert_xcbeautify() {
   fi
 }
 
-function assert_cocoapods_state() {
-  echo "Checking Cocoapods state..."
-  pushd "${HAMMERSPOON_HOME}" >/dev/null || fail "Unable to enter ${HAMMERSPOON_HOME}"
-  if ! pod outdated >/dev/null 2>&1 ; then
-    fail "cocoapods installation does not seem sane"
-  fi
-  popd >/dev/null || fail "Unknown"
-}
 

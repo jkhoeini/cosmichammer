@@ -19,27 +19,19 @@ check:
     echo "  Xcode: OK ($XCODE_PATH)"
     
     # Check mise tools
-    for cmd in just ruby jq xcbeautify pod; do
+    for cmd in just ruby jq xcbeautify; do
         if ! command -v $cmd &>/dev/null; then
             echo "ERROR: $cmd not found. Run: mise install"
             exit 1
         fi
     done
-    echo "  mise tools: OK (incl. CocoaPods $(pod --version))"
-    
-    # Check pods installed (check Pods directory exists)
-    if [[ ! -d "Pods" ]]; then
-        echo "ERROR: Pods not installed. Run: pod install"
-        exit 1
-    fi
-    echo "  Pods: OK"
-    
+    echo "  mise tools: OK"
+
     echo "All dependencies OK!"
 
 # Install all dependencies
 setup:
     mise install
-    pod install
     swift build -c release --package-path scripts/docs
 
 # Clean build artifacts

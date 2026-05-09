@@ -36,9 +36,12 @@ STRIP_INSTALLED_PRODUCT = NO
 // Always Search User Paths (Deprecated)
 ALWAYS_SEARCH_USER_PATHS = NO
 // Header Search Paths
-HEADER_SEARCH_PATHS = $(SRCROOT)/Pods/**
+HEADER_SEARCH_PATHS =
 // User Header Search Paths
 USER_HEADER_SEARCH_PATHS = $(HEADER_SEARCH_PATHS)
+
+// LuaSkin framework headers use double-quoted includes internally
+CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = NO
 
 // Optimization Level
 GCC_OPTIMIZATION_LEVEL = 0
