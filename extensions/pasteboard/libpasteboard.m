@@ -442,7 +442,24 @@ static int readArchivedDataForType(lua_State *L) {
         // uses dataForType: which is documented to throw exceptions for errors
         @try {
             NSData *holding = [pb dataForType:type] ;
-            id realItem = [NSKeyedUnarchiver unarchiveObjectWithData:holding] ;
+            NSError *error = nil ;
+            NSSet *allowedClasses = [NSSet setWithArray:@[
+                [NSString class],
+                [NSAttributedString class],
+                [NSNumber class],
+                [NSDate class],
+                [NSData class],
+                [NSArray class],
+                [NSDictionary class],
+                [NSColor class],
+                [NSImage class],
+                [NSSound class],
+                [NSURL class],
+            ]] ;
+            id realItem = [NSKeyedUnarchiver unarchivedObjectOfClasses:allowedClasses fromData:holding error:&error] ;
+            if (error) {
+                return luaL_error(L, [[error localizedDescription] UTF8String]) ;
+            }
             [skin pushNSObject:realItem withOptions:LS_NSDescribeUnknownTypes] ;
         } @catch (NSException *exception) {
             return luaL_error(L, [[exception reason] UTF8String]) ;
@@ -500,7 +517,11 @@ static int writeArchivedDataForType(lua_State *L) {
     if (pb && type && data) {
         // uses setData:forType: which is documented to throw exceptions for errors
         @try {
-            NSData *encoded = [NSKeyedArchiver archivedDataWithRootObject:data];
+            NSError *error = nil ;
+            NSData *encoded = [NSKeyedArchiver archivedDataWithRootObject:data requiringSecureCoding:NO error:&error] ;
+            if (error) {
+                return luaL_error(L, [[error localizedDescription] UTF8String]) ;
+            }
             if (!add) {
                 [pb clearContents] ;
             }
