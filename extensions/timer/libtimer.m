@@ -42,11 +42,11 @@ static LSRefTable refTable;
         return;
     }
 
-    _lua_stackguard_entry(skin.L);
+    _lua_stackguard_entry(skin.L)
 
     if (!timer.isValid) {
         [skin logBreadcrumb:@"hs.timer callback fired on an invalid hs.timer object. This is a bug"];
-        _lua_stackguard_exit(skin.L);
+        _lua_stackguard_exit(skin.L)
         return;
     }
 
@@ -67,7 +67,7 @@ static LSRefTable refTable;
             [self.t invalidate];
         }
     }
-    _lua_stackguard_exit(skin.L);
+    _lua_stackguard_exit(skin.L)
 }
 
 - (BOOL)isRunning {
@@ -168,7 +168,7 @@ static int timer_new(lua_State* L) {
     HSTimer *timer = createHSTimer(sec, callbackRef, continueOnError, shouldRepeat);
 
     // Wire up the timer object to Lua
-    void **userData = lua_newuserdata(L, sizeof(HSTimer*));
+    void **userData = (void **)lua_newuserdata(L, sizeof(HSTimer*));
     *userData = (__bridge_retained void*)timer;
     luaL_getmetatable(L, USERDATA_TAG);
     lua_setmetatable(L, -2);
@@ -232,7 +232,7 @@ static int timer_doAfter(lua_State* L) {
     [timer start];
 
     // Wire up the timer object to Lua
-    void **userData = lua_newuserdata(L, sizeof(HSTimer*));
+    void **userData = (void **)lua_newuserdata(L, sizeof(HSTimer*));
     *userData = (__bridge_retained void*)timer;
     luaL_getmetatable(L, USERDATA_TAG);
     lua_setmetatable(L, -2);
