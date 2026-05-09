@@ -2929,14 +2929,7 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		0024EE4F07CEC6C274F32AB6 /* Pods */ = {
-			isa = PBXGroup;
-			children = (
-			);
-			name = Pods;
-			sourceTree = "<group>";
-		};
-		2213841E27A105520085CA24 /* razer */ = {
+2213841E27A105520085CA24 /* razer */ = {
 			isa = PBXGroup;
 			children = (
 				2213843027A105DD0085CA24 /* HSRazerDevice.h */,
@@ -3994,7 +3987,6 @@
 				4F20B52A1C1F1C5B00F52437 /* Hammerspoon UI Tests */,
 				9445CA0D19083251002568BB /* Frameworks */,
 				9445CA0C19083251002568BB /* Products */,
-				0024EE4F07CEC6C274F32AB6 /* Pods */,
 			);
 			sourceTree = "<group>";
 		};

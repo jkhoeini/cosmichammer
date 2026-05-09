@@ -18,7 +18,7 @@ DYLIB_CURRENT_VERSION = 1
 EXECUTABLE_PREFIX = lib
 
 // FIXME: Fix up hs.axuielement and remove this line
-WARNING_CLAGS =  $(inherited) -Wno-tautological-pointer-compare -Wno-bad-function-cast -Wno-deprecated-non-prototype
+WARNING_CFLAGS =  $(inherited) -Wno-tautological-pointer-compare -Wno-bad-function-cast -Wno-deprecated-non-prototype
 
 // LuaSkin framework headers use double-quoted includes internally
 CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = NO
