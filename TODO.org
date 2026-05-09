@@ -1,90 +1,66 @@
-#+TITLE: CocoaPods to SPM Migration
+#+TITLE: Project Modernization
 #+STARTUP: overview
 
-* Migrate Dependencies from CocoaPods to Swift Package Manager
+* Fix Build
 
-** Phase 0: Preparation
-*** DONE Remove PocketSocket from Podfile
-PocketSocket is not imported by any source file. It's an archived/dead dependency.
-- [X] Remove ~pod 'PocketSocket/Client'~ from Podfile
-- [X] Run ~pod install~ to regenerate Pods project
-- [X] Verify build succeeds
-- [X] Verify no source files reference PocketSocket
+** NEXT Fix ~-Werror~ failures so Debug build passes
+The build currently fails due to ~-Weverything~ + ~GCC_TREAT_WARNINGS_AS_ERRORS~ in
+~Extensions-Ideal.xcconfig~. Two extensions are affected:
+*** ~extensions/timer/libtimer.m~
+- ~-Wimplicit-void-ptr-cast~ (5 sites) — add explicit casts
+- ~-Wextra-semi-stmt~ (3 sites) — remove trailing semicolons from macros
+*** ~extensions/streamdeck/~ (~HSStreamDeckDevice.m~, ~HSStreamDeckManager.m~)
+- ~-Wimplicit-void-ptr-cast~ (7 sites) — add explicit casts
+- ~-Wextra-semi-stmt~ (many sites) — remove trailing semicolons from macros
+*** ~extensions/screen/libscreen.m~
+- ~-Wimplicit-int-enum-cast~ — cast ~IOReturn~ to ~CGDisplayErr~
+- ~-Wjump-misses-init~ — refactor goto to avoid jumping over variable init
 
-*** DONE Audit stale Sparkle reference
-~Pods-Hammerspoon-frameworks.sh~ references ~Sparkle.framework~ but Sparkle is not in the Podfile.
-- [X] Determine if Sparkle is handled outside of CocoaPods
-- [X] Remove stale reference if orphaned, or document if intentional
-Dead code. The script is not referenced by any build phase in ~project.pbxproj~.
-No ~Pods/Sparkle/~ directory exists. No Sparkle imports in source.
+** NEXT Enable ~GCC_TREAT_WARNINGS_AS_ERRORS~ project-wide
+Currently commented out in ~Project-Base.xcconfig~ with a FIXME.
+After fixing the above, uncomment it so new warnings can't slip in.
 
-** Phase 1: SPM-Ready Dependencies
-*** DONE Migrate ORSSerialPort to SPM
-Low risk, isolated to ~hs.serial~ extension. Already has ~Package.swift~ upstream.
-- [X] Add ~https://github.com/armadsen/ORSSerialPort~ as SPM dependency (version ~2.1.0~)
-- [X] Remove ~pod 'ORSSerialPort'~ from Podfile
-- [X] Run ~pod install~
-- [X] Update imports in ~extensions/serial/libserial.m~ — changed to ~@import ORSSerial;~
-- [X] Add SPM dependency to both Hammerspoon target and serial extension target
-- [X] Build and test ~hs.serial~
-Note: SPM module name is ~ORSSerial~, not ~ORSSerialPort~. Both the main app target
-and the serial extension target need ~packageProductDependencies~ entries.
+* Clean Up Stale References
 
-*** DONE Migrate CocoaAsyncSocket + CocoaLumberjack + CocoaHTTPServer to SPM
-Merged with Phase 3. All three migrated as a single unit because CocoaHTTPServer
-depends on the other two at compile time.
-- [X] Vendored CocoaHTTPServer as local SPM package at ~Packages/CocoaHTTPServer/~
-- [X] Updated ~HTTPLogging.h~ to use modern CocoaLumberjack ~LOG_MAYBE~ macros (replaced legacy ~LOG_OBJC_MAYBE~)
-- [X] Added CocoaAsyncSocket (~7.6.5~) and CocoaLumberjack (~3.8.5~) as remote SPM packages
-- [X] Added SPM deps to Hammerspoon, httpserver, socket, socketudp targets
-- [X] Updated imports to ~@import~ style in ~libhttpserver.m~, ~libsocket.m~, ~libsocket_udp.m~
-- [X] Removed all 3 pods from Podfile (3 pods remaining: ASCIImage, MIKMIDI, SocketRocket)
-- [X] Build succeeded
+** NEXT Remove empty Pods group from ~project.pbxproj~
+Group ~0024EE4F07CEC6C274F32AB6~ is an empty leftover from CocoaPods removal.
+Remove the ~PBXGroup~ entry and its reference in the parent group's ~children~ array.
 
-** Phase 2: Removed Dependencies
-*** DONE Remove ASCIImage dependency
-Abandoned since ~2015. Not worth vendoring or migrating to SPM.
-Removed the dependency entirely and stubbed ~hs.image.imageFromASCII~ to throw
-"not implemented" at runtime.
-- [X] Remove ~pod 'ASCIImage'~ from Podfile
-- [X] Run ~pod install~
-- [X] Remove ~#import~ and implementation in ~extensions/image/libimage.m~
-- [X] Replace function body with ~luaL_error~ stub
-- [X] Build succeeds
+** NEXT Update ~CONTRIBUTING.md~
+Still references CocoaPods, ~Podfile~, and ~pod install~. Rewrite the build
+instructions to reflect the current SPM-only setup.
 
-*** DONE Replace SocketRocket with NSURLSessionWebSocketTask
-Replaced the SocketRocket dependency with Apple's built-in ~NSURLSessionWebSocketTask~
-(available since macOS 10.15). Same Lua API surface preserved.
-- [X] Rewrote ~extensions/websocket/libwebsocket.m~ to use ~NSURLSessionWebSocketTask~
-- [X] Remove ~pod 'SocketRocket'~ from Podfile
-- [X] Run ~pod install~
-- [X] Build succeeds
+** NEXT Remove stale ~Pods~ header search path
+~Project-Base.xcconfig~ had ~HEADER_SEARCH_PATHS = $(SRCROOT)/Pods/**~ which was
+cleared but should be fully removed (currently set to empty string).
 
-*** DONE Remove MIKMIDI dependency
-Not needed — ~hs.midi~ extension stubbed with ~luaL_error~.
-- [X] Stubbed ~extensions/midi/libmidi.m~ — all functions throw "removed" error
-- [X] Removed ~pod 'MIKMIDI'~ (last pod)
-- [X] Build succeeds
+* Build Config Cleanup
 
-** Phase 3: CocoaHTTPServer (Hardest)
-*** DONE Migrate CocoaHTTPServer + transitive deps to SPM
-Merged into Phase 1 — completed as a single unit with CocoaAsyncSocket + CocoaLumberjack.
-See Phase 1 entry for details.
+** NEXT Fix typo in ~Extensions-Base.xcconfig~
+~WARNING_CLAGS~ should be ~WARNING_CFLAGS~ (line 20). Currently the
+~-Wno-tautological-pointer-compare~ and related flags have no effect.
 
-** Phase 4: Cleanup
-*** DONE Remove CocoaPods infrastructure
-All pods removed. CocoaPods fully ripped out.
-- [X] Delete ~Podfile~, ~Podfile.lock~, ~Pods/~ directory
-- [X] Remove ~[CP] Check Pods Manifest.lock~ build phase from ~project.pbxproj~
-- [X] Remove ~libPods-Hammerspoon.a~ from Frameworks and file references
-- [X] Remove pod xcconfig file references from ~project.pbxproj~
-- [X] Remove ~baseConfigurationReference~ to Pods xcconfig on Release config
-- [X] Remove pod xcconfig ~#include~ from Debug, Profile, Test xcconfigs
-- [X] Remove ~Pods/Pods.xcodeproj~ reference from ~Hammerspoon.xcworkspace~
+** NEXT Resolve ~EXECUTABLE_PREFIX~ FIXME
+~Extensions-Base.xcconfig~ sets ~EXECUTABLE_PREFIX = lib~ with a FIXME asking
+whether the copy script can be adjusted instead. Investigate and either remove
+the FIXME or fix the script.
 
-*** DONE Remove CocoaPods from build tooling
-- [X] Remove ~cocoapods~ from ~mise.toml~
-- [X] Remove ~pod install~ from ~justfile~ setup recipe
-- [X] Remove ~pod~ availability check from ~justfile~ check recipe
-- [X] Remove ~assert_cocoapods_state()~ from ~scripts/libbuild.sh~
-- [X] Remove ~Pods/Pods.xcodeproj~ reference from ~Hammerspoon.xcworkspace~
+** NEXT Enable ~ENABLE_USER_SCRIPT_SANDBOXING~
+Xcode warns that unsandboxed script phases delay ~httpserver~ target's Copy Headers.
+Set ~ENABLE_USER_SCRIPT_SANDBOXING=YES~ where possible.
+
+* Tech Debt
+
+** NEXT Fix ~hs.axuielement~ warnings
+~Extensions-Base.xcconfig~ has a FIXME to fix ~hs.axuielement~ so the
+~-Wno-tautological-pointer-compare~ and ~-Wno-bad-function-cast~ suppression
+flags can be removed.
+
+** NEXT Fix ~hs.doc~ shadow warnings
+~Project-Base.xcconfig~ has ~GCC_WARN_SHADOW~ commented out because it breaks
+~hs.doc~'s autolink dependency. Fix the underlying issue and enable the warning.
+
+** NEXT Audit deprecated API usage
+~extensions/pasteboard/libpasteboard.m~ uses deprecated ~NSArchiver~ APIs
+(~unarchiveObjectWithData:~, ~archivedDataWithRootObject:~). Migrate to
+~NSSecureCoding~ equivalents.
