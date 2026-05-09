@@ -100,7 +100,7 @@
 
 - (NSData *)deviceRead:(int)resultLength reportID:(CFIndex)reportID readOffset:(NSUInteger)readOffset {
     CFIndex reportLength = resultLength + readOffset;
-    uint8_t *report = malloc(reportLength);
+    uint8_t *report = (uint8_t *)malloc(reportLength);
 
     //NSLog(@"deviceRead: expecting resultLength %d, calculated report length %ld", resultLength, (long)reportLength);
 
@@ -137,10 +137,10 @@
     }
 
     LuaSkin *skin = [LuaSkin sharedWithState:NULL];
-    _lua_stackguard_entry(skin.L);
+    _lua_stackguard_entry(skin.L)
 
     if (![skin checkGCCanary:self.lsCanary]) {
-        _lua_stackguard_exit(skin.L);
+        _lua_stackguard_exit(skin.L)
         return;
     }
 
@@ -163,7 +163,7 @@
         }
     }
 
-    _lua_stackguard_exit(skin.L);
+    _lua_stackguard_exit(skin.L)
 }
 
 - (void)deviceDidSendEncoderInput:(NSArray*)newPressEncoderStates {
@@ -173,10 +173,10 @@
     }
 
     LuaSkin *skin = [LuaSkin sharedWithState:NULL];
-    _lua_stackguard_entry(skin.L);
+    _lua_stackguard_entry(skin.L)
 
     if (![skin checkGCCanary:self.lsCanary]) {
-        _lua_stackguard_exit(skin.L);
+        _lua_stackguard_exit(skin.L)
         return;
     }
 
@@ -196,10 +196,10 @@
             [skin protectedCallAndError:@"hs.streamdeck:encoderCallback" nargs:5 nresults:0];
             self.encoderButtonStateCache[button] = newPressEncoderStates[button];
         }
-        
+
     }
 
-    _lua_stackguard_exit(skin.L);
+    _lua_stackguard_exit(skin.L)
 }
 
 - (void)deviceDidSendEncoderTurnWithButton:(NSNumber*)button turningLeft:(BOOL)turningLeft {
@@ -209,10 +209,10 @@
     }
 
     LuaSkin *skin = [LuaSkin sharedWithState:NULL];
-    _lua_stackguard_entry(skin.L);
+    _lua_stackguard_entry(skin.L)
 
     if (![skin checkGCCanary:self.lsCanary]) {
-        _lua_stackguard_exit(skin.L);
+        _lua_stackguard_exit(skin.L)
         return;
     }
 
@@ -229,7 +229,7 @@
     lua_pushboolean(skin.L, !turningLeft);
     [skin protectedCallAndError:@"hs.streamdeck:encoderCallback" nargs:5 nresults:0];
 
-    _lua_stackguard_exit(skin.L);
+    _lua_stackguard_exit(skin.L)
 }
 
 - (void)deviceDidSendScreenTouch:(NSString*)eventType startX:(int)startX startY:(int)startY endX:(int)endX endY:(int)endY {
@@ -239,10 +239,10 @@
     }
 
     LuaSkin *skin = [LuaSkin sharedWithState:NULL];
-    _lua_stackguard_entry(skin.L);
+    _lua_stackguard_entry(skin.L)
 
     if (![skin checkGCCanary:self.lsCanary]) {
-        _lua_stackguard_exit(skin.L);
+        _lua_stackguard_exit(skin.L)
         return;
     }
 
@@ -250,7 +250,7 @@
         [skin logError:@"hs.streamdeck received an screen input, but no callback has been set. See hs.streamdeck:screenCallback()"];
         return;
     }
-    
+
     [skin pushLuaRef:streamDeckRefTable ref:self.screenCallbackRef];
     [skin pushNSObject:self];
     [skin pushNSObject:eventType];
@@ -260,7 +260,7 @@
     lua_pushinteger(skin.L, endY);
     [skin protectedCallAndError:@"hs.streamdeck:screenCallback" nargs:6 nresults:0];
 
-    _lua_stackguard_exit(skin.L);
+    _lua_stackguard_exit(skin.L)
 }
 
 - (BOOL)setBrightness:(int)brightness {
@@ -455,7 +455,7 @@
     int bytesRemaining = (int)data.length;
     int bytesSent = 0;
     int pageNumber = 0;
-    const uint8_t *imageBuf = data.bytes;
+    const uint8_t *imageBuf = (const uint8_t *)data.bytes;
 
     IOReturn result;
 
@@ -484,7 +484,7 @@
         result = IOHIDDeviceSetReport(self.device,
                                       kIOHIDReportTypeOutput,
                                       reportHeader[0],
-                                      report.bytes,
+                                      (const uint8_t *)report.bytes,
                                       (int)report.length);
         if (result != kIOReturnSuccess) {
             NSLog(@"WARNING: writing an image with hs.streamdeck encountered a failure on page %d: %d", pageNumber, result);
@@ -589,7 +589,7 @@
     int bytesRemaining = (int)data.length;
     int bytesSent = 0;
     int pageNumber = 0;
-    const uint8_t *imageBuf = data.bytes;
+    const uint8_t *imageBuf = (const uint8_t *)data.bytes;
 
     IOReturn result;
 
@@ -618,7 +618,7 @@
         result = IOHIDDeviceSetReport(self.device,
                                       kIOHIDReportTypeOutput,
                                       reportHeader[0],
-                                      report.bytes,
+                                      (const uint8_t *)report.bytes,
                                       (int)report.length);
         if (result != kIOReturnSuccess) {
             NSLog(@"WARNING: writing an image with hs.streamdeck encountered a failure on page %d: %d", pageNumber, result);
