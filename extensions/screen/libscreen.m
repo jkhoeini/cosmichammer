@@ -676,7 +676,7 @@ static int screen_getBrightness(lua_State *L) {
         CGDisplayErr err;
 
         float brightness;
-        err = IODisplayGetFloatParameter(service, kNilOptions, CFSTR(kIODisplayBrightnessKey), &brightness);
+        err = (CGDisplayErr)IODisplayGetFloatParameter(service, kNilOptions, CFSTR(kIODisplayBrightnessKey), &brightness);
         if (err != kIOReturnSuccess) {
             lua_pushnil(L);
         } else {
@@ -1054,6 +1054,7 @@ static int screen_rotate(lua_State* L) {
     CGDisplayCount maxDisplays = 32;
     CGDisplayCount displayCount, i;
     CGDirectDisplayID *onlineDisplays = NULL;
+    CGDirectDisplayID screenID = 0;
 
     int rotation = -1;
 
@@ -1076,7 +1077,7 @@ static int screen_rotate(lua_State* L) {
         }
     }
 
-    CGDirectDisplayID screenID = [[[screen deviceDescription] objectForKey:@"NSScreenNumber"] unsignedIntValue];
+    screenID = [[[screen deviceDescription] objectForKey:@"NSScreenNumber"] unsignedIntValue];
 
     if (rotation == -1) {
         double currentRotation = CGDisplayRotation(screenID);
