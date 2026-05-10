@@ -13,8 +13,8 @@
 DYLIB_COMPATIBILITY_VERSION = 1
 DYLIB_CURRENT_VERSION = 1
 
-// Executable prefix (this ends up being renamed by later scripts anyway)
-// FIXME: See if we can do away with this and just adjust the copy script?
+// Executable prefix. Extensions are loaded via Lua's require() as "hs.lib<name>",
+// so the dylib must be named lib<name>.dylib to match the cpath lookup.
 EXECUTABLE_PREFIX = lib
 
 // FIXME: Fix up hs.axuielement and remove this line
