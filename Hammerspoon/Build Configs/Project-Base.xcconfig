@@ -19,7 +19,7 @@ ARCHS = arm64
 // Debug Information Format
 DEBUG_INFORMATION_FORMAT = dwarf-with-dsym
 // Other Warning Flags
-WARNING_CFLAGS = -Wno-cstring-format-directive -Wno-padded -Wno-objc-missing-property-synthesis -Wno-auto-import -Wno-gnu-statement-expression -Wno-reserved-id-macro -Wno-gnu-zero-variadic-macro-arguments -Wno-objc-messaging-id -Wno-declaration-after-statement -Wno-deprecated-non-prototype -Wno-reserved-identifier
+WARNING_CFLAGS = -Wno-cstring-format-directive -Wno-padded -Wno-objc-missing-property-synthesis -Wno-auto-import -Wno-gnu-statement-expression -Wno-reserved-id-macro -Wno-gnu-zero-variadic-macro-arguments -Wno-objc-messaging-id -Wno-declaration-after-statement -Wno-deprecated-non-prototype -Wno-reserved-identifier -Wno-deprecated-declarations -Wno-strict-prototypes -Wno-language-extension-token -Wno-extra-semi-stmt -Wno-deprecated-implementations
 // Other Linker Flags
 OTHER_LDFLAGS = -undefined dynamic_lookup
 // Enable Testability
@@ -29,8 +29,7 @@ COPY_PHASE_STRIP = NO
 // Strip Linked Product
 STRIP_INSTALLED_PRODUCT = NO
 // Treat warnings as errors
-// FIXME: We really ought to have this enabled
-//GCC_TREAT_WARNINGS_AS_ERRORS = YES
+GCC_TREAT_WARNINGS_AS_ERRORS = YES
 
 
 // Always Search User Paths (Deprecated)

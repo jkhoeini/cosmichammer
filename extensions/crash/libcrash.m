@@ -77,8 +77,8 @@ static int crashKV(lua_State *L) {
     LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TSTRING, LS_TSTRING, LS_TBREAK];
 
-    NSString *key = [skin toNSObjectAtIndex:1];
-    NSString *value = [skin toNSObjectAtIndex:2];
+    __unused NSString *key = [skin toNSObjectAtIndex:1];
+    __unused NSString *value = [skin toNSObjectAtIndex:2];
 
     return 0;
 }

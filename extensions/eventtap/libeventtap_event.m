@@ -1233,7 +1233,7 @@ static int eventtap_event_getTouches(lua_State *L) {
     CGEventRef  event      = *(CGEventRef*)luaL_checkudata(L, 1, EVENT_USERDATA_TAG) ;
     NSEvent     *asNSEvent = [NSEvent eventWithCGEvent:event] ;
 
-    if (CGEventGetType(event) == NSEventTypeGesture) {
+    if ((NSEventType)CGEventGetType(event) == NSEventTypeGesture) {
         NSSet *touches = asNSEvent.allTouches ;
         [skin pushNSObject:touches] ;
     } else {
@@ -1268,7 +1268,7 @@ static int eventtap_event_getTouchDetails(lua_State *L) {
     NSEvent     *asNSEvent = [NSEvent eventWithCGEvent:event] ;
     NSEventType type       = asNSEvent.type ;
 
-    if (CGEventGetType(event) == NSEventTypeGesture) {
+    if ((NSEventType)CGEventGetType(event) == NSEventTypeGesture) {
         lua_newtable(L) ;
 
         if (type == NSEventTypePressure) {
