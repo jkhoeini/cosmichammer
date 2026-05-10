@@ -1,5 +1,4 @@
 [tools]
 just = "latest"
 ruby = "3.4"
-jq = "latest"
 xcbeautify = "latest"
