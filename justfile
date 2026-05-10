@@ -19,7 +19,7 @@ check:
     echo "  Xcode: OK ($XCODE_PATH)"
     
     # Check mise tools
-    for cmd in just ruby xcbeautify; do
+    for cmd in just xcbeautify; do
         if ! command -v $cmd &>/dev/null; then
             echo "ERROR: $cmd not found. Run: mise install"
             exit 1
