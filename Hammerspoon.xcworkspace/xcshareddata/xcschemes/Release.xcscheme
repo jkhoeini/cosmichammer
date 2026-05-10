@@ -72,17 +72,6 @@
             testExecutionOrdering = "random">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "4FEF59591B29CE06002344A7"
-               BuildableName = "LuaSkinTests.xctest"
-               BlueprintName = "LuaSkinTests"
-               ReferencedContainer = "container:LuaSkin/LuaSkin.xcodeproj">
-            </BuildableReference>
-         </TestableReference>
-         <TestableReference
-            skipped = "NO"
-            testExecutionOrdering = "random">
-            <BuildableReference
-               BuildableIdentifier = "primary"
                BlueprintIdentifier = "D02F95231A00221C00E28BB2"
                BuildableName = "Hammerspoon Tests.xctest"
                BlueprintName = "Hammerspoon Tests"

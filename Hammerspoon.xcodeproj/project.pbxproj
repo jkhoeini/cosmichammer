@@ -1832,7 +1832,7 @@
 		4FDD8E4F1C834C9400085D7A /* test_base64.lua */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; name = test_base64.lua; path = extensions/base64/test_base64.lua; sourceTree = "<group>"; };
 		4FDD8E511C83612C00085D7A /* HSalert.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = HSalert.m; sourceTree = "<group>"; };
 		4FDD8E531C83616100085D7A /* test_alert.lua */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; name = test_alert.lua; path = extensions/alert/test_alert.lua; sourceTree = "<group>"; };
-		4FDD8E7B1C85A05700085D7A /* lsunit.lua */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; name = lsunit.lua; path = LuaSkin/LuaSkinTests/lsunit.lua; sourceTree = SOURCE_ROOT; };
+		4FDD8E7B1C85A05700085D7A /* lsunit.lua */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; path = lsunit.lua; sourceTree = "<group>"; };
 		4FDD8E7D1C85A06800085D7A /* testinit.lua */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; path = testinit.lua; sourceTree = "<group>"; };
 		4FDD8E871C8AE3ED00085D7A /* HSTestCase.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = HSTestCase.h; sourceTree = "<group>"; };
 		4FDD8E881C8AE3ED00085D7A /* HSTestCase.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = HSTestCase.m; sourceTree = "<group>"; };
