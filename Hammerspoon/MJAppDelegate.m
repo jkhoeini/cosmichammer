@@ -1,4 +1,5 @@
 #import <Cocoa/Cocoa.h>
+#import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 #import "MJAppDelegate.h"
 #import "MJConsoleWindowController.h"
 #import "MJPreferencesWindowController.h"
@@ -51,7 +52,12 @@
 #endif
 
 - (BOOL)application:(NSApplication *)theApplication openFile:(NSString *)fileAndPath {
-    NSString *typeOfFile = [[NSWorkspace sharedWorkspace] typeOfFile:fileAndPath error:nil];
+    NSString *typeOfFile = nil;
+    NSURL *fileURL = [NSURL fileURLWithPath:fileAndPath];
+    id contentTypeValue = nil;
+    if ([fileURL getResourceValue:&contentTypeValue forKey:NSURLContentTypeKey error:nil] && contentTypeValue) {
+        typeOfFile = [(UTType *)contentTypeValue identifier];
+    }
 
     if ([typeOfFile isEqualToString:@"org.hammerspoon.hammerspoon.spoon"]) {
         // This is a Spoon, so we will attempt to copy it to the Spoons directory
