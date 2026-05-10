@@ -4,7 +4,4 @@
    <FileRef
       location = "group:Hammerspoon.xcodeproj">
    </FileRef>
-   <FileRef
-      location = "group:LuaSkin/LuaSkin.xcodeproj">
-   </FileRef>
 </Workspace>

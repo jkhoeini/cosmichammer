@@ -23,5 +23,8 @@ WARNING_CFLAGS =  $(inherited) -Wno-tautological-pointer-compare -Wno-bad-functi
 // LuaSkin framework headers use double-quoted includes internally
 CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = NO
 
+// LuaSkin SPM package headers (extensions use -undefined dynamic_lookup, not a direct dependency)
+HEADER_SEARCH_PATHS = $(inherited) $(SRCROOT)/Packages/LuaSkin/Sources/LuaSkin/include
+
 // Don't try and install the library in /usr/local/lib when archiving/exporting
 SKIP_INSTALL = YES
