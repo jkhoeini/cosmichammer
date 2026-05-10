@@ -15,7 +15,7 @@ function op_clean() {
     ${RM} -rf "${BUILD_HOME}"
 
     echo "Cleaning temporary build folders..."
-    xcodebuild -workspace Hammerspoon.xcworkspace -scheme "${XCODE_SCHEME}" -configuration "${XCODE_CONFIGURATION}" -destination "platform=macOS" clean | xcbeautify ${XCB_OPTS[@]:-}
+    xcodebuild -workspace Hammerspoon.xcworkspace -scheme "${XCODE_SCHEME}" -configuration "${XCODE_CONFIGURATION}" -destination "platform=macOS" clean
 }
 
 function op_build() {
@@ -34,7 +34,7 @@ function op_build() {
                -scheme "${XCODE_SCHEME}" \
                -configuration "${XCODE_CONFIGURATION}" \
                -destination "platform=macOS" \
-               "${BUILD_COMMAND}" | tee "${BUILD_HOME}/${XCODE_CONFIGURATION}-build.log" | xcbeautify ${XCB_OPTS[@]:-}
+               "${BUILD_COMMAND}" | tee "${BUILD_HOME}/${XCODE_CONFIGURATION}-build.log"
 }
 
 function op_test() {
@@ -51,7 +51,7 @@ function op_test() {
                -scheme "${XCODE_SCHEME}" \
                -configuration "${XCODE_CONFIGURATION}" \
                -resultBundlePath "${BUILD_HOME}/TestResults" \
-               test-without-building 2>&1 | tee "${BUILD_HOME}/test.log" | xcbeautify ${XCB_OPTS[@]:-}
+               test-without-building 2>&1 | tee "${BUILD_HOME}/test.log"
 
     # Re-enable error capture
     set -e
@@ -135,7 +135,6 @@ function op_installdeps() {
 ############################## COMMAND ASSERTIONS ##############################
 function op_build_assert() {
     echo "Checking build environment..."
-    assert_xcbeautify
 }
 
 function op_test_assert() {
@@ -153,13 +152,6 @@ function op_installdeps_assert() {
         echo "Unable to continue without Homebrew installed, please see: https://brew.sh/"
         exit 1
     fi
-}
-
-############################## ASSERTION HELPERS ###############################
-function assert_xcbeautify() {
-  if [ "$(which xcbeautify)" == "" ]; then
-    fail "xcbeautify is not in PATH. Try $0 installdeps"
-  fi
 }
 
 

@@ -222,12 +222,6 @@ export HAMMERSPOON_XCARCHIVE_PATH="${HAMMERSPOON_BUNDLE_PATH}.xcarchive"
 export XCODE_BUILT_PRODUCTS_DIR ; XCODE_BUILT_PRODUCTS_DIR="$(xcodebuild -workspace Hammerspoon.xcworkspace -scheme "${XCODE_SCHEME}" -configuration "${XCODE_CONFIGURATION}" -destination "platform=macOS" -showBuildSettings | sort | uniq | grep ' BUILT_PRODUCTS_DIR =' | awk '{ print $3 }')"
 export DOCS_SEARCH_DIRS=("Hammerspoon" "extensions/")
 
-# Calculate options for xcbeautify
-export XCB_OPTS=(-q)
-if [ "${DEBUG}" == "1" ]; then
-    XCB_OPTS=()
-fi
-
 # Import our function library
 # shellcheck source=scripts/libbuild.sh disable=SC1091
 source "${SCRIPT_HOME}/libbuild.sh"
