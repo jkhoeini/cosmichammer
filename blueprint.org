@@ -1,0 +1,154 @@
+#+TITLE: Hammerspoon Architecture Blueprint
+#+STARTUP: overview
+
+* Workspace Structure
+
+The Xcode workspace contains two projects:
+
+| Project                       | Targets | Purpose                         |
+|-------------------------------+---------+---------------------------------|
+| Hammerspoon.xcodeproj         |      96 | Main app, CLI, extensions, tests |
+| LuaSkin/LuaSkin.xcodeproj     |       3 | Lua-ObjC bridge framework       |
+
+* Target Summary
+
+| Type              | Count | Targets                                 |
+|-------------------+-------+-----------------------------------------|
+| Application       |     1 | Hammerspoon                             |
+| Command Line Tool |     1 | hs                                      |
+| Dynamic Library   |    92 | Extension modules (see below)           |
+| Framework         |     1 | LuaSkin (sub-project)                   |
+| Static Library    |     1 | lua (Lua 5.4.7, linked into LuaSkin)    |
+| Unit Test Bundle  |     2 | Hammerspoon Tests, LuaSkinTests         |
+| UI Test Bundle    |     1 | Hammerspoon UI Tests                    |
+
+* Dependency Graph
+
+Star topology. LuaSkin is the core, extensions are leaves, the app is the aggregator.
+
+#+begin_example
+┌─────────────────────────────────────────────────┐
+│               Hammerspoon.app                   │
+│                                                 │
+│  Entry: MJAppDelegate.m → NSApplicationMain()   │
+│  Embeds: LuaSkin.framework, hs CLI              │
+└──────┬──────────────┬──────────────┬────────────┘
+       │              │              │
+       ▼              ▼              ▼
+  ┌─────────┐  ┌────────────┐  ┌──────────────┐
+  │ hs CLI  │  │ 92 extension│  │ SPM Packages │
+  │ (tool)  │  │   dylibs   │  └──────────────┘
+  └─────────┘  └──────┬─────┘
+                      │
+                      ▼
+              ┌──────────────┐
+              │   LuaSkin    │
+              │ (framework)  │
+              │ ObjC ↔ Lua   │
+              └──────┬───────┘
+                     │
+                     ▼
+              ┌──────────────┐
+              │  Lua 5.4.7   │
+              │ (static lib) │
+              └──────────────┘
+#+end_example
+
+- Every extension dylib links ~LuaSkin.framework~. No extension depends on another.
+- The Hammerspoon app target depends on all 92 dylibs + the ~hs~ CLI tool.
+- LuaSkin statically links the Lua 5.4.7 interpreter.
+
+* SPM Packages
+
+| Package          | Source                                    | Used By                                |
+|------------------+-------------------------------------------+----------------------------------------|
+| CocoaAsyncSocket | github.com/robbiehanson/CocoaAsyncSocket  | socket, socketudp, httpserver, osascript |
+| CocoaLumberjack  | github.com/CocoaLumberjack/CocoaLumberjack | httpserver (via CocoaHTTPServer)        |
+| ORSSerialPort    | github.com/armadsen/ORSSerialPort         | serial, websocket                      |
+| CocoaHTTPServer  | local: ~Packages/CocoaHTTPServer/~        | httpserver, UI tests                   |
+
+* Extension Dylibs (92)
+
+All follow the same pattern: link LuaSkin, produce ~lib<name>.dylib~, loaded at
+runtime via Lua's ~require()~ as ~hs.lib<name>~.
+
+** Audio/Media (7)
+~audiodevice~ ~audiodevicewatcher~ ~midi~ ~noises~ ~sound~ ~speech~ ~speechlistener~
+
+** Window/UI (10)
+~window~ ~uielement~ ~uielementwatcher~ ~axuielement~ ~application~
+~applicationwatcher~ ~chooser~ ~dialog~ ~hints~ ~console~
+
+** Drawing/Canvas (4)
+~canvas~ ~canvasmatrix~ ~drawing_color~ ~styledtext~
+
+** Web/Network (12)
+~http~ ~httpserver~ ~websocket~ ~socket~ ~socketudp~ ~networkconfiguration~
+~networkhost~ ~networkping~ ~networkreachability~ ~bonjour~ ~bonjourservice~ ~urlevent~
+
+** Input (5)
+~hotkey~ ~eventtap~ ~eventtapevent~ ~keycodes~ ~mouse~
+
+** Hardware (8)
+~battery~ ~batterywatcher~ ~brightness~ ~camera~ ~hid~ ~razer~ ~serial~
+~streamdeck~ ~usb~ ~usbwatcher~
+
+** Screen/Display (4)
+~screen~ ~screenwatcher~ ~spaces~ ~spaces_watcher~
+
+** File System (4)
+~fs~ ~fsvolume~ ~fsxattr~ ~pathwatcher~
+
+** System/OS (11)
+~caffeinate~ ~caffeinatewatcher~ ~crash~ ~distributednotifications~ ~dockicon~
+~host~ ~host_locale~ ~location~ ~osascript~ ~settings~ ~shortcuts~
+
+** Data/Text (7)
+~base64~ ~hash~ ~json~ ~lsqlite3~ ~markdown~ ~math~ ~plist~
+
+** Pasteboard/Sharing (4)
+~pasteboard~ ~pasteboardwatcher~ ~sharing~ ~ipc~
+
+** Web View (4)
+~webview~ ~webviewdatastore~ ~webviewtoolbar~ ~webviewusercontent~
+
+** Other (6)
+~doc~ ~image~ ~menubar~ ~milight~ ~notify~ ~spotlight~ ~task~ ~timer~ ~wifi~ ~wifiwatcher~
+
+** Stubbed Extensions
+- ~midi~ — MIKMIDI dependency removed, all functions return error
+- ~image~ — ASCIImage dependency removed, ~imageFromASCII~ returns error
+
+* Test Targets
+
+| Target               | Type    | Depends On          |
+|----------------------+---------+---------------------|
+| Hammerspoon Tests    | XCTest  | Hammerspoon.app     |
+| Hammerspoon UI Tests | XCTest  | Hammerspoon.app     |
+| LuaSkinTests         | XCTest  | LuaSkin.framework   |
+
+* Standalone Tools
+
+** Doc Generator (~scripts/docs/~)
+Swift package producing ~BuildDocs~ CLI. Depends on ~swift-argument-parser~.
+Used by ~just docs~ and ~just docs-lint~. Builds on demand.
+
+** Version Stamper (~scripts/update_version_build_numbers.sh~)
+Xcode build phase script. Reads version from git tags, stamps
+~CFBundleVersion~ and ~CFBundleShortVersionString~ into the built plist.
+
+* Build System
+
+Build tasks are defined in the ~justfile~ at the project root:
+
+| Recipe        | Description                              |
+|---------------+------------------------------------------|
+| ~just build~  | Build Hammerspoon.app (Debug by default) |
+| ~just clean~  | Wipe build dir + xcodebuild clean        |
+| ~just test~   | Run tests (requires build first)         |
+| ~just docs~   | Build all documentation formats          |
+| ~just docs-lint~ | Lint docs without building            |
+| ~just rebuild~ | Clean + build                           |
+
+Dependencies are managed via mise (~mise.toml~). Only ~just~ itself remains
+as a managed tool. SPM packages are resolved by Xcode automatically.
