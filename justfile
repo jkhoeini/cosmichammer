@@ -4,30 +4,7 @@
 default:
     @just --list
 
-# Check all dependencies are installed
-check:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    echo "Checking dependencies..."
-    
-    # Check Xcode
-    XCODE_PATH=$(xcode-select -p 2>/dev/null || echo "")
-    if [[ ! "$XCODE_PATH" == *"Xcode"* ]]; then
-        echo "ERROR: Xcode not found. Install from App Store and run: sudo xcode-select -s /Applications/Xcode.app"
-        exit 1
-    fi
-    echo "  Xcode: OK ($XCODE_PATH)"
-    
-    # Check mise tools
-    if ! command -v just &>/dev/null; then
-        echo "ERROR: just not found. Run: mise install"
-        exit 1
-    fi
-    echo "  mise tools: OK"
-
-    echo "All dependencies OK!"
-
-# Install all dependencies
+# Install dependencies and build docs tool
 setup:
     mise install
     swift build -c release --package-path scripts/docs
