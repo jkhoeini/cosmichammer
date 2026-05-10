@@ -1950,8 +1950,6 @@
 		4FDE05EF1B734EE600E9E8EE /* libcaffeinatewatcher.dylib */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.dylib"; includeInIndex = 0; path = libcaffeinatewatcher.dylib; sourceTree = BUILT_PRODUCTS_DIR; };
 		4FDE05F11B734F0100E9E8EE /* libcaffeinate_watcher.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = libcaffeinate_watcher.m; path = extensions/caffeinate/libcaffeinate_watcher.m; sourceTree = "<group>"; };
 		4FDE05F81B7356A400E9E8EE /* appfinder.lua */ = {isa = PBXFileReference; lastKnownFileType = text; name = appfinder.lua; path = extensions/appfinder/appfinder.lua; sourceTree = "<group>"; };
-		4FE15C1C27D8A5D100D37D27 /* libbuild.sh */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; name = libbuild.sh; path = scripts/libbuild.sh; sourceTree = "<group>"; };
-		4FE15C1D27D8A5D100D37D27 /* build.sh */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; name = build.sh; path = scripts/build.sh; sourceTree = "<group>"; };
 		4FEA61501F06546200D71839 /* spoons.lua */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; name = spoons.lua; path = extensions/spoons/spoons.lua; sourceTree = "<group>"; };
 		4FEABA561BC7ABF8005E2CFB /* expose.lua */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; name = expose.lua; path = extensions/expose/expose.lua; sourceTree = "<group>"; };
 		4FEE39D81F0A697400935F90 /* HScrash.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = HScrash.m; sourceTree = "<group>"; };
@@ -3438,8 +3436,6 @@
 		4F766E561C48F789007B9D24 /* scripts */ = {
 			isa = PBXGroup;
 			children = (
-				4FE15C1D27D8A5D100D37D27 /* build.sh */,
-				4FE15C1C27D8A5D100D37D27 /* libbuild.sh */,
 				4FD427CB2621E7F000E8D95F /* update_version_build_numbers.sh */,
 			);
 			name = scripts;
