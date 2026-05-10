@@ -4,11 +4,6 @@
 default:
     @just --list
 
-# Install dependencies and build docs tool
-setup:
-    mise install
-    swift build -c release --package-path scripts/docs
-
 # Clean build artifacts
 clean:
     ./scripts/build.sh clean
