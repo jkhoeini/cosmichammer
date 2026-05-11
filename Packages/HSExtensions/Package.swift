@@ -46,7 +46,6 @@ let package = Package(
                 "Hammerspoon/ConsoleWindow.xib",
                 "Hammerspoon/Credits.rtf",
                 "Hammerspoon/Hammerspoon-Info.plist",
-                "Hammerspoon/Hammerspoon-Prefix.pch",
                 "Hammerspoon/Hammerspoon-dev.entitlements",
                 "Hammerspoon/Hammerspoon.entitlements",
                 "Hammerspoon/Hammerspoon.sdef",
