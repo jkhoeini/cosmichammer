@@ -1,13 +1,8 @@
 #!/usr/bin/env bash
 # Verifies that generated files are in sync with their manifest.
 #
-# Both generator pipelines read from one unified manifest:
-#
 #   extensions.manifest → generate-hsextensions.sh
 #     Outputs: HSExtensions+Preload.h, HSExtensions.m, HSExtensionsRegistry.m
-#
-#   extensions.manifest → generate-lua-files-xcfilelists.sh
-#     Outputs: lua-files.inputs.xcfilelist, lua-files.outputs.xcfilelist
 #
 # This script does NOT modify any files. It regenerates outputs into a temp
 # directory and compares them against the committed versions. If they differ,
@@ -69,7 +64,7 @@ OUT_KEEPALIVE_M="Hammerspoon/HSExtensionsRegistry.m"
 [[ -f "$OUT_KEEPALIVE_M" ]] || die "output not found: $OUT_KEEPALIVE_M"
 
 tmpdir_ext="$(mktemp -d)"
-trap 'rm -rf "$tmpdir_ext" "${tmpdir_lua:-}"' EXIT
+trap 'rm -rf "$tmpdir_ext"' EXIT
 
 # Create a mirror directory structure so the generator writes to predictable paths.
 mkdir -p "$tmpdir_ext/Packages/HSExtensions/Sources/HSExtensions/include/HSExtensions"
@@ -96,38 +91,6 @@ check_file_match "HSExtensions.m" \
 check_file_match "HSExtensionsRegistry.m" \
     "$tmpdir_ext/$OUT_KEEPALIVE_M" "$repo_root/$OUT_KEEPALIVE_M"
 
-# ── Pipeline 2: extensions.manifest → xcfilelists ─────────────────────
-
-GEN_LUA="scripts/generate-lua-files-xcfilelists.sh"
-
-OUT_INPUTS="scripts/lua-files.inputs.xcfilelist"
-OUT_OUTPUTS="scripts/lua-files.outputs.xcfilelist"
-
-[[ -f "$GEN_LUA" ]]     || die "generator not found: $GEN_LUA"
-[[ -f "$OUT_INPUTS" ]]  || die "output not found: $OUT_INPUTS"
-[[ -f "$OUT_OUTPUTS" ]] || die "output not found: $OUT_OUTPUTS"
-
-tmpdir_lua="$(mktemp -d)"
-
-# Mirror the structure for pipeline 2.
-mkdir -p "$tmpdir_lua/Packages/HSExtensions"
-mkdir -p "$tmpdir_lua/scripts"
-
-cp "$MANIFEST" "$tmpdir_lua/$MANIFEST"
-
-(
-    cd "$tmpdir_lua"
-    cp "$repo_root/$GEN_LUA" scripts/
-    chmod +x scripts/generate-lua-files-xcfilelists.sh
-    bash scripts/generate-lua-files-xcfilelists.sh >/dev/null 2>&1
-) || die "generate-lua-files-xcfilelists.sh failed in temp directory"
-
-echo "Checking pipeline 2: extensions.manifest → xcfilelists"
-check_file_match "lua-files.inputs.xcfilelist" \
-    "$tmpdir_lua/$OUT_INPUTS" "$repo_root/$OUT_INPUTS"
-check_file_match "lua-files.outputs.xcfilelist" \
-    "$tmpdir_lua/$OUT_OUTPUTS" "$repo_root/$OUT_OUTPUTS"
-
 # ── Result ───────────────────────────────────────────────────────────────
 
 if [[ "$failed" -ne 0 ]]; then
@@ -135,7 +98,6 @@ if [[ "$failed" -ne 0 ]]; then
     echo "Generated files are out of sync with their manifest."
     echo "Run the following to fix:"
     echo "  scripts/generate-hsextensions.sh"
-    echo "  scripts/generate-lua-files-xcfilelists.sh"
     exit 1
 fi
 
