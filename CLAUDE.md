@@ -57,7 +57,7 @@ Key pieces of this model — preserve them when adding extensions:
 6. Add the `.lua` file's repo-relative path to `Packages/HSExtensions/lua-files.list` (drives the "Copy Extension Lua files (manifest)" Run Script build phase). Re-run `scripts/generate-lua-files-xcfilelists.sh` to refresh the xcfilelists.
 7. `just build`.
 
-The Xcode project no longer needs per-extension targets — there are 4 targets total (`Hammerspoon`, `Hammerspoon Tests`, `HammerspoonUITests`, `hs` CLI). The "Copy hs CLI" build phase deploys the `hs` command-line tool into the app bundle.
+The Xcode project no longer needs per-extension targets — there are 3 targets total (`Hammerspoon`, `Hammerspoon Tests`, `HammerspoonUITests`). The `hs` CLI is built by SPM (`Packages/hs/`) and copied into `Hammerspoon.app/Contents/Frameworks/hs/hs` by the "Copy hs CLI" Run Script phase.
 
 ### Other notable bits
 

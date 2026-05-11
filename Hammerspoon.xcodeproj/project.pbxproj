@@ -23,7 +23,6 @@
 		4CB349EF1C7F74AD006F0DE0 /* test_javascript.lua in Resources */ = {isa = PBXBuildFile; fileRef = 4C3D55AD1C7F05D00023B633 /* test_javascript.lua */; };
 		4CB349F11C7F74E5006F0DE0 /* test_osascript.lua in Resources */ = {isa = PBXBuildFile; fileRef = 4CB349F01C7F74E5006F0DE0 /* test_osascript.lua */; };
 		4CB349F31C7F74EE006F0DE0 /* test_applescript.lua in Resources */ = {isa = PBXBuildFile; fileRef = 4CB349F21C7F74EE006F0DE0 /* test_applescript.lua */; };
-		4CBF1C681C91154700B861CE /* libedit.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = 4CBF1C671C91154700B861CE /* libedit.tbd */; };
 		4CD64AA91C6F15F400EB6E39 /* HSsocket.m in Sources */ = {isa = PBXBuildFile; fileRef = 4CD64AA81C6F15F400EB6E39 /* HSsocket.m */; };
 		4CD64AAB1C6F168700EB6E39 /* test_socket.lua in Resources */ = {isa = PBXBuildFile; fileRef = 4CD64AAA1C6F168700EB6E39 /* test_socket.lua */; };
 		4CE639141C772DC700BB7CD2 /* test_udpsocket.lua in Resources */ = {isa = PBXBuildFile; fileRef = 4CE639131C772DC700BB7CD2 /* test_udpsocket.lua */; };
@@ -87,15 +86,6 @@
 		4FEF4D4F1C5FA01100E3B939 /* HSaudiodevice.m in Sources */ = {isa = PBXBuildFile; fileRef = 4FEF4D4E1C5FA01000E3B939 /* HSaudiodevice.m */; };
 		4FEF4D551C5FBC0F00E3B939 /* test_audiodevice.lua in Resources */ = {isa = PBXBuildFile; fileRef = 4FEF4D531C5FBA9800E3B939 /* test_audiodevice.lua */; };
 		4FEF59431B29A352002344A7 /* HSGrowingTextField.m in Sources */ = {isa = PBXBuildFile; fileRef = 4FEF59421B29A352002344A7 /* HSGrowingTextField.m */; };
-		4FF73A1D2735439B0007074E = {
-			isa = PBXBuildFile;
-			fileRef = 4FD0AC091B74BACD00A82496 /* hs */;
-			settings = {
-				ATTRIBUTES = (
-					CodeSignOnCopy,
-				);
-			};
-		};
 		4FF73A1F273544AD0007074E /* hs.man in Copy hs manpage */ = {isa = PBXBuildFile; fileRef = 4FD0AC121B74BB2300A82496 /* hs.man */; };
 		4FF73A2027358DDA0007074E /* HSChooserWindow.xib in Resources */ = {isa = PBXBuildFile; fileRef = 4F0676041C32AED90088C57C /* HSChooserWindow.xib */; };
 		4FF73A23273594730007074E /* lua.json in Resources */ = {isa = PBXBuildFile; fileRef = 4FF73A212735944D0007074E /* lua.json */; };
@@ -132,9 +122,6 @@
 		D02F95291A00221C00E28BB2 /* HSrequire_all.m in Sources */ = {isa = PBXBuildFile; fileRef = D02F95281A00221C00E28BB2 /* HSrequire_all.m */; };
 		D077B5BF1A001B5300369B30 /* variables.m in Sources */ = {isa = PBXBuildFile; fileRef = D077B5BE1A001B5300369B30 /* variables.m */; };
 		D659EC7429F8468F00A7D103 /* docs.css in Copy hsdocs Files */ = {isa = PBXBuildFile; fileRef = D659EC7329F8468F00A7D103 /* docs.css */; };
-		D6943FE01EDBF1F50057BB26 /* hs.m in Sources */ = {isa = PBXBuildFile; fileRef = D6943FDE1EDBF1DE0057BB26 /* hs.m */; };
-		D6943FE31EDBF2510057BB26 /* CoreFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = D6943FE11EDBF2510057BB26 /* CoreFoundation.framework */; };
-		D6943FE41EDBF2510057BB26 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = D6943FE21EDBF2510057BB26 /* Foundation.framework */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -144,13 +131,6 @@
 			proxyType = 1;
 			remoteGlobalIDString = 9445CA0A19083251002568BB;
 			remoteInfo = Hammerspoon;
-		};
-		4FD0AC151B74BD1300A82496 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 9445CA0319083251002568BB /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 4FD0AC081B74BACD00A82496;
-			remoteInfo = hs;
 		};
 		D02F952A1A00221C00E28BB2 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -205,25 +185,24 @@
 			name = "Copy hsdocs minweb Files";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		4FD0AC071B74BACD00A82496 /* CopyFiles */ = {
-			isa = PBXCopyFilesBuildPhase;
+		4FF7395127344D370007074E /* Copy hs CLI */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
 			buildActionMask = 2147483647;
-			dstPath = /usr/share/man/man1/;
-			dstSubfolderSpec = 0;
 			files = (
 			);
-			runOnlyForDeploymentPostprocessing = 1;
-		};
-		4FF7395127344D370007074E /* Copy hs CLI */ = {
-			isa = PBXCopyFilesBuildPhase;
-			buildActionMask = 2147483647;
-			dstPath = hs;
-			dstSubfolderSpec = 10;
-			files = (
-				4FF73A1D2735439B0007074E,
+			inputFileListPaths = (
+			);
+			inputPaths = (
 			);
 			name = "Copy hs CLI";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
 			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/bash;
+			shellScript = "set -euo pipefail\nPKG=\"${SRCROOT}/Packages/hs\"\nswift build -c release --package-path \"${PKG}\"\nDEST=\"${TARGET_BUILD_DIR}/${CONTENTS_FOLDER_PATH}/Frameworks/hs\"\nmkdir -p \"${DEST}\"\ncp \"${PKG}/.build/release/hs\" \"${DEST}/hs\"\n/usr/bin/codesign --force --sign \"${EXPANDED_CODE_SIGN_IDENTITY:-${CODE_SIGN_IDENTITY:--}}\" \"${DEST}/hs\"\n";
 		};
 		4FF73A1E2735449D0007074E /* Copy hs manpage */ = {
 			isa = PBXCopyFilesBuildPhase;
@@ -285,7 +264,6 @@
 		4C8F8CB41CC38BC500F72CE5 /* test_uielement.lua */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; name = test_uielement.lua; path = extensions/uielement/test_uielement.lua; sourceTree = "<group>"; };
 		4CB349F01C7F74E5006F0DE0 /* test_osascript.lua */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; path = test_osascript.lua; sourceTree = "<group>"; };
 		4CB349F21C7F74EE006F0DE0 /* test_applescript.lua */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; path = test_applescript.lua; sourceTree = "<group>"; };
-		4CBF1C671C91154700B861CE /* libedit.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libedit.tbd; path = usr/lib/libedit.tbd; sourceTree = SDKROOT; };
 		4CD203A11C6D75950089706D /* socket.lua */ = {isa = PBXFileReference; lastKnownFileType = text; path = socket.lua; sourceTree = "<group>"; };
 		4CD203A21C6D75950089706D /* libsocket.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = libsocket.m; sourceTree = "<group>"; };
 		4CD64AA81C6F15F400EB6E39 /* HSsocket.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = HSsocket.m; sourceTree = "<group>"; };
@@ -498,7 +476,6 @@
 		4FD0ABEA1B74B36000A82496 /* eventtap_event.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = eventtap_event.h; path = extensions/eventtap/eventtap_event.h; sourceTree = "<group>"; };
 		4FD0AC001B74BA1600A82496 /* ipc.lua */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; name = ipc.lua; path = extensions/ipc/ipc.lua; sourceTree = "<group>"; };
 		4FD0AC011B74BA1600A82496 /* libipc.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = libipc.m; path = extensions/ipc/libipc.m; sourceTree = "<group>"; };
-		4FD0AC091B74BACD00A82496 /* hs */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = hs; sourceTree = BUILT_PRODUCTS_DIR; };
 		4FD0AC121B74BB2300A82496 /* hs.man */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; name = hs.man; path = extensions/ipc/cli/hs.man; sourceTree = "<group>"; };
 		4FD0AC231B74C62200A82496 /* httpserver.lua */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; name = httpserver.lua; path = extensions/httpserver/httpserver.lua; sourceTree = "<group>"; };
 		4FD0AC241B74C62200A82496 /* libhttpserver.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = libhttpserver.m; path = extensions/httpserver/libhttpserver.m; sourceTree = "<group>"; };
@@ -549,7 +526,6 @@
 		4FF73A24273595340007074E /* timeout3 */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; name = timeout3; path = extensions/httpserver/timeout3; sourceTree = "<group>"; };
 		4FF73A2727359BD20007074E /* window_tiling.lua */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; name = window_tiling.lua; path = extensions/window/window_tiling.lua; sourceTree = "<group>"; };
 		4FF73A2A27359C0E0007074E /* window_highlight.lua */ = {isa = PBXFileReference; lastKnownFileType = text; name = window_highlight.lua; path = extensions/window/window_highlight.lua; sourceTree = "<group>"; };
-		4FF73AA4273A85820007074E /* hs.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = hs.xcconfig; sourceTree = "<group>"; };
 		4FF73AA5273AAE290007074E /* Hammerspoon-Test.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "Hammerspoon-Test.xcconfig"; sourceTree = "<group>"; };
 		4FFB20FA23C5E01300811E77 /* HSStreamDeckDeviceXL.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = HSStreamDeckDeviceXL.h; path = extensions/streamdeck/HSStreamDeckDeviceXL.h; sourceTree = "<group>"; };
 		4FFB20FB23C5E01300811E77 /* HSStreamDeckDeviceXL.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = HSStreamDeckDeviceXL.m; path = extensions/streamdeck/HSStreamDeckDeviceXL.m; sourceTree = "<group>"; };
@@ -660,9 +636,6 @@
 		D687FC3C247B9317005FA3A5 /* common.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = common.m; path = extensions/axuielement/common.m; sourceTree = SOURCE_ROOT; };
 		D68CE61B1E9C44E200912154 /* host_locale.lua */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; name = host_locale.lua; path = extensions/host/locale/host_locale.lua; sourceTree = "<group>"; };
 		D68CE61C1E9C44E200912154 /* libhost_locale.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = libhost_locale.m; path = extensions/host/locale/libhost_locale.m; sourceTree = "<group>"; };
-		D6943FDE1EDBF1DE0057BB26 /* hs.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = hs.m; path = extensions/ipc/cli/hs.m; sourceTree = "<group>"; };
-		D6943FE11EDBF2510057BB26 /* CoreFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreFoundation.framework; path = System/Library/Frameworks/CoreFoundation.framework; sourceTree = SDKROOT; };
-		D6943FE21EDBF2510057BB26 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = System/Library/Frameworks/Foundation.framework; sourceTree = SDKROOT; };
 		D6A212E61DE38F3B00998C0B /* spotlight.lua */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; name = spotlight.lua; path = extensions/spotlight/spotlight.lua; sourceTree = "<group>"; };
 		D6A212E71DE38F3B00998C0B /* libspotlight.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = libspotlight.m; path = extensions/spotlight/libspotlight.m; sourceTree = "<group>"; };
 		D6A3189A1DDD830A00D9B328 /* network_ping.lua */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; name = network_ping.lua; path = extensions/network/ping/network_ping.lua; sourceTree = "<group>"; };
@@ -702,16 +675,6 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		4FD0AC061B74BACD00A82496 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				D6943FE31EDBF2510057BB26 /* CoreFoundation.framework in Frameworks */,
-				D6943FE41EDBF2510057BB26 /* Foundation.framework in Frameworks */,
-				4CBF1C681C91154700B861CE /* libedit.tbd in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1278,7 +1241,6 @@
 				4F7F3B7A272DE83500E05732 /* Hammerspoon-Debug.xcconfig */,
 				4F7F3B7B272DE98800E05732 /* Hammerspoon-Profile.xcconfig */,
 				4FF73AA5273AAE290007074E /* Hammerspoon-Test.xcconfig */,
-				4FF73AA4273A85820007074E /* hs.xcconfig */,
 			);
 			path = "Build Configs";
 			sourceTree = "<group>";
@@ -1613,20 +1575,11 @@
 		4FD0ABFF1B74B9FC00A82496 /* ipc */ = {
 			isa = PBXGroup;
 			children = (
-				4FD0AC101B74BB0600A82496 /* hs */,
 				4FD0AC001B74BA1600A82496 /* ipc.lua */,
 				4FD0AC011B74BA1600A82496 /* libipc.m */,
-			);
-			name = ipc;
-			sourceTree = "<group>";
-		};
-		4FD0AC101B74BB0600A82496 /* hs */ = {
-			isa = PBXGroup;
-			children = (
-				D6943FDE1EDBF1DE0057BB26 /* hs.m */,
 				4FD0AC121B74BB2300A82496 /* hs.man */,
 			);
-			name = hs;
+			name = ipc;
 			sourceTree = "<group>";
 		};
 		4FD0AC221B74C60100A82496 /* httpserver */ = {
@@ -1840,7 +1793,6 @@
 				4FD0ABD71B74B2C500A82496,
 				4FD0ABE11B74B2FA00A82496,
 				4FD0ABFE1B74B9DE00A82496,
-				4FD0AC091B74BACD00A82496 /* hs */,
 				4FD0AC211B74C58800A82496,
 				4F7694541B74C96800536DE4,
 				D64125641BA07CEA000FB5F8,
@@ -1900,12 +1852,9 @@
 			isa = PBXGroup;
 			children = (
 				22E4D8071FA74BDA00C8CF5C /* libMIKMIDI.a */,
-				D6943FE11EDBF2510057BB26 /* CoreFoundation.framework */,
-				D6943FE21EDBF2510057BB26 /* Foundation.framework */,
 				4F9618AE1E24ED650048F71D /* libsqlite3.tbd */,
 				6AE1812D1D36E96A0097211C /* CoreAudio.framework */,
 				6AE1812B1D36E9600097211C /* Accelerate.framework */,
-				4CBF1C671C91154700B861CE /* libedit.tbd */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
@@ -2206,23 +2155,6 @@
 			productReference = 4F20B5291C1F1C5B00F52437 /* Hammerspoon UI Tests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
-		4FD0AC081B74BACD00A82496 /* hs */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = 4FD0AC0D1B74BACD00A82496 /* Build configuration list for PBXNativeTarget "hs" */;
-			buildPhases = (
-				4FD0AC051B74BACD00A82496 /* Sources */,
-				4FD0AC061B74BACD00A82496 /* Frameworks */,
-				4FD0AC071B74BACD00A82496 /* CopyFiles */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-			);
-			name = hs;
-			productName = hs;
-			productReference = 4FD0AC091B74BACD00A82496 /* hs */;
-			productType = "com.apple.product-type.tool";
-		};
 		9445CA0A19083251002568BB /* Hammerspoon */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 9445CA3C19083251002568BB /* Build configuration list for PBXNativeTarget "Hammerspoon" */;
@@ -2242,7 +2174,6 @@
 			buildRules = (
 			);
 			dependencies = (
-				4FD0AC161B74BD1300A82496 /* PBXTargetDependency */,
 			);
 			name = Hammerspoon;
 			packageProductDependencies = (
@@ -2288,9 +2219,6 @@
 					4F20B5281C1F1C5B00F52437 = {
 						CreatedOnToolsVersion = 7.2;
 						TestTargetID = 9445CA0A19083251002568BB;
-					};
-					4FD0AC081B74BACD00A82496 = {
-						CreatedOnToolsVersion = 7.0;
 					};
 					9445CA0A19083251002568BB = {
 						ProvisioningStyle = Manual;
@@ -2369,7 +2297,6 @@
 				4FD0AC171B74C58800A82496,
 				4F4CB4461B73B09C000EA9B6,
 				4FD0ABF41B74B9DE00A82496,
-				4FD0AC081B74BACD00A82496 /* hs */,
 				4F6B3E9E1B73D6D300B2A4DE,
 				4F76944A1B74C96800536DE4,
 				4F6B3EB11B73DC4500B2A4DE,
@@ -2564,14 +2491,6 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		4FD0AC051B74BACD00A82496 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				D6943FE01EDBF1F50057BB26 /* hs.m in Sources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 		9445CA0719083251002568BB /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -2642,11 +2561,6 @@
 			isa = PBXTargetDependency;
 			target = 9445CA0A19083251002568BB /* Hammerspoon */;
 			targetProxy = 4F20B52E1C1F1C5B00F52437 /* PBXContainerItemProxy */;
-		};
-		4FD0AC161B74BD1300A82496 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = 4FD0AC081B74BACD00A82496 /* hs */;
-			targetProxy = 4FD0AC151B74BD1300A82496 /* PBXContainerItemProxy */;
 		};
 		D02F952B1A00221C00E28BB2 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
@@ -2731,14 +2645,6 @@
 			};
 			name = Profile;
 		};
-		4F0454B420F0EE7D00699F29 /* Profile */ = {
-			isa = XCBuildConfiguration;
-			baseConfigurationReference = 4FF73AA4273A85820007074E /* hs.xcconfig */;
-			buildSettings = {
-				PRODUCT_NAME = "$(TARGET_NAME)";
-			};
-			name = Profile;
-		};
 		4F20B5311C1F1C5B00F52437 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -2781,22 +2687,6 @@
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				TEST_TARGET_NAME = Hammerspoon;
 				USES_XCTRUNNER = YES;
-			};
-			name = Release;
-		};
-		4FD0AC0E1B74BACD00A82496 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			baseConfigurationReference = 4FF73AA4273A85820007074E /* hs.xcconfig */;
-			buildSettings = {
-				PRODUCT_NAME = "$(TARGET_NAME)";
-			};
-			name = Debug;
-		};
-		4FD0AC0F1B74BACD00A82496 /* Release */ = {
-			isa = XCBuildConfiguration;
-			baseConfigurationReference = 4FF73AA4273A85820007074E /* hs.xcconfig */;
-			buildSettings = {
-				PRODUCT_NAME = "$(TARGET_NAME)";
 			};
 			name = Release;
 		};
@@ -2907,16 +2797,6 @@
 				4F20B5311C1F1C5B00F52437 /* Debug */,
 				4F04548F20F0EE7D00699F29 /* Profile */,
 				4F20B5321C1F1C5B00F52437 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Debug;
-		};
-		4FD0AC0D1B74BACD00A82496 /* Build configuration list for PBXNativeTarget "hs" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				4FD0AC0E1B74BACD00A82496 /* Debug */,
-				4F0454B420F0EE7D00699F29 /* Profile */,
-				4FD0AC0F1B74BACD00A82496 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
