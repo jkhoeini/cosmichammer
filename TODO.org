@@ -12,364 +12,68 @@ from a flat manifest — no Xcode-UI-only state.
 Done so far: 91 extension dylibs → single SPM static library; LuaSkin →
 SPM; per-extension Xcode targets removed (96 → 3); hs CLI → SPM; Lua
 file copying → manifest-driven; script sandboxing enabled; ~-undefined
-dynamic_lookup~ removed; pbxproj cut ~80 %.
+dynamic_lookup~ removed; xcconfigs collapsed 6 → 3; all 15 compiler
+warnings enabled; PCH removed; incremental builds fixed; pbxproj cut
+~85 %.
 
-* Dead weight removal
+* TODO
+
+** Switch ~Package.swift~ to SPM auto-discovery
+   Remove the 145-line hand-maintained ~sources:~ array. Feasible with
+   3 ~exclude:~ entries (~Hammerspoon~, ~ipc/cli~, ~sqlite3/lsqlite3.c~)
+   + an explicit ~.headerSearchPath("../../../../Hammerspoon")~ replacing
+   the Hammerspoon symlink. Drops Package.swift from 246 → ~100 lines.
+   New extensions no longer need a ~Package.swift~ edit.
+
+** Unify ~extensions.list~ and ~lua-files.list~
+   The two manifests are NOT 1:1 (24 Lua-only extensions, multi-file
+   extensions, ~luaskin.lua~ special case). A TSV with columns
+   ~dir / entry-points / lua-files~ would work. Half-day effort.
+   Defer until generators are wired into CI.
+
+* Investigated — not worth doing
+
+** SKIP Extract ~HammerspoonCore~ SPM package
+   Only 5 files (168 lines) are decoupled enough to extract. Too small
+   to justify the structural overhead.
+
+** SKIP Replace ~.xib~ files with programmatic UI
+   Controllers are coupled to app-level singletons regardless of XIBs.
+   Half-day effort for low benefit.
+
+** SKIP Make generators Xcode build-time phases
+   Not feasible — generator outputs are SPM package sources (compiled
+   before Xcode target phases run) and xcfilelists (consumed before the
+   build starts). Pre-commit hook + CI is the correct enforcement point.
+
+** DEFER Make ~BuildDocs~ a workspace SPM dependency
+   Only practical option (Option C: ~.executableTarget~ invoked by Run
+   Script) adds ~swift-argument-parser~ to workspace resolution for
+   marginal benefit. Current out-of-band build works fine.
+
+* Done
 
 ** DONE Delete orphaned ~hs.xcconfig~
-   Belonged to the old ~hs~ Xcode target (now SPM). Not referenced by
-   any build configuration in ~project.pbxproj~. Deleted.
-
 ** DONE Delete unused ~Hammerspoon-Test.xcconfig~
-   Defines coverage flags but is not wired to the test target — the
-   test target uses inline ~buildSettings~ in ~project.pbxproj~. Deleted,
-   PBXFileReference and PBXGroup entries removed from pbxproj.
-
 ** DONE Remove empty "Embed Frameworks" build phase
-   ~PBXCopyFilesBuildPhase~ (4FB852372735B02400462DD0) has zero files.
-   Leftover from when extensions were dylibs.
-
 ** DONE Remove dead ~Hammerspoon-Downstream.xcconfig~ includes
-   Three xcconfigs reference ~#include? "Hammerspoon-Downstream.xcconfig"~.
-   The file does not exist and never has. Removed from Profile (Debug and
-   Test were deleted entirely).
-
-* Incremental build speed
-
-** DONE Fix "Copy hs CLI" phase to support incremental builds
-   Currently ~alwaysOutOfDate = 1~ — runs ~swift build -c release~ +
-   codesign every build (~3-5 s overhead). Add ~inputFileListPaths~
-   pointing at ~Packages/hs/Sources/hs/*.m~ and ~outputPaths~ pointing
-   at the signed binary so Xcode can skip the phase when nothing changed.
-
-** DONE Fix "Compile docs.json" phase to support incremental builds
-   Also ~alwaysOutOfDate = 1~. Silently skips when ~BuildDocs~ is not
-   compiled — missing docs discovered late. Add proper input/output
-   file lists, or at minimum remove ~alwaysOutOfDate~ and declare the
-   tool binary + source tree as inputs.
-
-* xcconfig consolidation
-
+** DONE Fix "Copy hs CLI" phase for incremental builds
+** DONE Fix "Compile docs.json" output declaration
 ** DONE Collapse xcconfigs from 6 → 3
-   Deleted ~hs.xcconfig~, ~Hammerspoon-Test.xcconfig~, and
-   ~Hammerspoon-Debug.xcconfig~. Hammerspoon target Debug config now
-   points directly at ~Hammerspoon-Base.xcconfig~. Result: 3 files
-   remain (~Project-Base~, ~Hammerspoon-Base~, ~Hammerspoon-Profile~).
-
 ** DONE Document ~Hammerspoon-Profile.xcconfig~ overrides
-   Added comments explaining why Profile clears entitlements and disables
-   hardened runtime (Instruments profiling). Also added ~GCC_OPTIMIZATION_LEVEL = s~.
-
-* Generator automation
-
-** NOT FEASIBLE Make ~generate-hsextensions.sh~ a build-time phase
-   :LOGBOOK:
-   - State "NOT FEASIBLE" from "TODO"       [2026-05-11]
-   :END:
-   Not feasible. The generator outputs (~HSExtensions.m~,
-   ~HSExtensions+Preload.h~) are sources inside the ~HSExtensions~ SPM
-   package. SPM resolves and compiles its packages *before* Xcode
-   target build phases execute. A Run Script phase in the Hammerspoon
-   target would run too late — SPM has already compiled the (potentially
-   stale) generated files. Moving the generator earlier is not possible
-   without SPM build-tool plugins, which cannot run arbitrary shell
-   scripts against the host filesystem.
-
-** NOT FEASIBLE Make ~generate-lua-files-xcfilelists.sh~ a build-time phase
-   :LOGBOOK:
-   - State "NOT FEASIBLE" from "TODO"       [2026-05-11]
-   :END:
-   Not feasible for a related reason. The outputs (~lua-files.inputs.xcfilelist~,
-   ~lua-files.outputs.xcfilelist~) are xcfilelists consumed by Xcode's
-   dependency system to decide whether the "Copy Extension Lua files"
-   phase needs to run. They must exist and be correct *before* the
-   build starts — a Run Script phase cannot update them in time for the
-   same build invocation to use the new values.
-
-** DONE Add pre-commit hook as safety net for generators
-   :LOGBOOK:
-   - State "DONE" from "TODO"               [2026-05-11]
-   :END:
-   Added ~scripts/check-generated-files.sh~ (standalone, read-only
-   staleness check) and ~scripts/hooks/pre-commit~ (thin wrapper for
-   git hook installation). The check script regenerates outputs into a
-   temp directory and diffs against the committed versions. Fires on
-   ~git commit~; jj users run the script manually or via CI.
-
-* Manifest unification
-
-** RESEARCHED Unify ~extensions.list~ and ~lua-files.list~ into one manifest
-   Investigated both manifests and both generator scripts thoroughly.
-
-   Current state:
-   - ~extensions.list~: 92 ~luaopen_*~ symbols (one per line), drives
-     ~generate-hsextensions.sh~ which emits 3 C/ObjC files.
-   - ~lua-files.list~: 110 file paths (1 luaskin.lua + 109 extension .lua),
-     drives ~generate-lua-files-xcfilelists.sh~ which emits 2 xcfilelists.
-
-   Relationship mapping (NOT 1:1):
-   - 24 extensions are Lua-only (no C entry point): ~_coresetup~, ~alert~,
-     ~appfinder~, ~applescript~, ~deezer~, ~expose~, ~fnutils~, ~geometry~,
-     ~grid~, ~inspect~, ~itunes~, ~javascript~, ~layout~, ~logger~,
-     ~messages~, ~mjomatic~, ~redshift~, ~spoons~, ~spotify~, ~tabs~,
-     ~tangent~, ~utf8~, ~vox~, ~watchable~. These appear in ~lua-files.list~
-     but not ~extensions.list~.
-   - 1 entry (~luaskin.lua~) is not an extension at all — it comes from
-     ~Packages/LuaSkin/~.
-   - Several extensions have multiple Lua files: ~window~ (6), ~network~ (5),
-     ~httpserver~ (3), ~webview~ (2), ~location~ (2), ~drawing~ (3),
-     ~doc~ (2), ~canvas~ (2).
-   - Some C symbols don't map cleanly to directory names: ~luaopen_hs_liblsqlite3~
-     lives under ~sqlite3/~, ~network~ has 4 separate C entry points
-     (~networkconfiguration~, ~networkhost~, ~networkping~, ~networkreachability~)
-     but the umbrella ~network.lua~ has no C counterpart.
-
-   Proposed unified format (TSV):
-   #+BEGIN_EXAMPLE
-   # extension-dir  entry-points (comma-sep, optional)  lua-files (comma-sep)
-   _coresetup       -                                   _coresetup.lua
-   application      luaopen_hs_libapplication,luaopen_hs_libapplicationwatcher  application.lua
-   network          luaopen_hs_libnetworkconfiguration,luaopen_hs_libnetworkhost,...  network.lua,network_configuration.lua,...
-   sqlite3          luaopen_hs_liblsqlite3              sqlite3.lua
-   #+END_EXAMPLE
-
-   Migration steps:
-   1. Create ~extensions.tsv~ (or ~extensions.manifest~) from the two lists.
-   2. Update ~generate-hsextensions.sh~ to parse column 2 (skip ~-~ rows).
-   3. Update ~generate-lua-files-xcfilelists.sh~ to parse column 3, resolving
-      paths via column 1 as directory prefix.
-   4. Handle the ~luaskin.lua~ special case (either a magic row or separate).
-   5. Delete the two old manifests.
-
-   Risks:
-   - TSV is fragile with commas in filenames (unlikely here but unpleasant).
-     YAML would be cleaner but adds a parser dependency to the bash scripts.
-   - The directory-convention alternative (auto-discover ~.lua~ files in each
-     extension dir) is simpler but would break the explicit "this is what gets
-     bundled" contract and make the xcfilelist generation non-deterministic
-     without sorting.
-
-   Effort: medium (half-day). Benefit: low-medium (removes sync risk between
-   two files, but the files change rarely). Recommendation: defer until
-   generators are automated build phases (those TODOs above), then unify.
-
-* Xcode surface reduction
-
-** RESEARCHED Audit and extract ~HammerspoonCore~ SPM package
-   Read all 19 ~.m~ files in ~Hammerspoon/~ and mapped their dependencies.
-
-   The 19 source files break into these categories:
-
-   *Potentially extractable utilities (453 lines total):*
-   - ~MJAutoLaunch.m~ (91 lines): Uses deprecated ~LSSharedFileList~ APIs,
-     imports ~CoreServices~. No app-state dependency beyond ~NSBundle mainBundle~.
-     Could be extracted.
-   - ~MJAccessibilityUtils.m~ (30 lines): Weak-imports ~AXIsProcessTrustedWithOptions~,
-     depends on ~HSLogger.h~ for ~HSNSLOG~ macro. Extractable with HSLogger.
-   - ~MJConfigUtils.m~ (15 lines): Depends on ~variables.h~ (~MJConfigFile~ global).
-     Extractable if ~variables~ moves too.
-   - ~MJFileUtils.m~ (8 lines): Pure ~NSFileManager~ wrapper. Trivially extractable.
-   - ~MJVersionUtils.m~ (24 lines): Pure ~NSBundle~/~NSScanner~ logic. Trivially
-     extractable.
-   - ~HSLogger.m~ (82 lines): Implements ~LuaSkinDelegate~, depends on ~LuaSkin~
-     (for ~lua_State~, ~lua_pcall~, etc.) and ~NSAlert~ (AppKit). The LuaSkin
-     dependency is fine (it's already SPM). The ~NSAlert~ usage in
-     ~handleCatastrophe:~ is AppKit-coupled.
-   - ~MJDockIcon.m~ (56 lines): Uses ~NSApplication activationPolicy~, ~NSDisableScreenUpdates~.
-     Heavily AppKit-coupled.
-   - ~MJMenuIcon.m~ (39 lines): Uses ~NSStatusBar~, ~NSStatusItem~, ~NSMenu~.
-     Heavily AppKit-coupled.
-   - ~variables.m~ (9 lines): Single global ~NSString* MJConfigFile~.
-
-   *Not extractable (app-level, UI, or singleton-heavy):*
-   - ~MJAppDelegate.m~ (343 lines): The app entry point. Depends on everything.
-   - ~MJLua.m~ (~730 lines): Owns the ~lua_State~, calls ~HSExtensionsRegisterAll~.
-   - ~MJConsoleWindowController.m~ (281 lines): NSWindowController + XIB + MJLua.
-   - ~MJPreferencesWindowController.m~ (194 lines): NSWindowController + XIB +
-     MJAutoLaunch/MJDockIcon/MJMenuIcon/MJAccessibilityUtils.
-   - ~HSAppleScript.m~ (108 lines): NSScriptCommand subclass, depends on MJLua +
-     MJConsoleWindowController + MJPreferencesWindowController + MJDockIcon.
-   - ~HSuicore.m~ (~600+ lines): Core UI abstractions (HSapplication, HSwindow,
-     HSuielment, HSscreen), deeply AppKit + runtime coupled.
-   - ~HSGrowingTextField.m~: Custom NSTextField subclass.
-   - ~HSExecuteLuaIntentHandler.m~: Intents framework handler.
-   - ~HSExtensionsRegistry.m~: Auto-generated keep-alive array.
-   - ~MJUserNotificationManager.m~: NSUserNotificationCenter delegate.
-
-   Dependency graph for extractable subset:
-   ~MJFileUtils~ → (none)
-   ~MJVersionUtils~ → (none)
-   ~MJConfigUtils~ → ~variables.h~
-   ~MJAutoLaunch~ → (none, self-contained)
-   ~HSLogger~ → ~LuaSkin~, ~AppKit~ (NSAlert)
-   ~MJAccessibilityUtils~ → ~HSLogger~ (HSNSLOG macro only)
-   ~MJDockIcon~ → ~variables.h~, ~NSApplication~ (AppKit)
-   ~MJMenuIcon~ → ~variables.h~, ~NSStatusBar~ (AppKit)
-
-   Assessment: Only 5 files (~MJFileUtils~, ~MJVersionUtils~, ~MJConfigUtils~,
-   ~MJAutoLaunch~, ~MJAccessibilityUtils~) totaling ~168 lines are genuinely
-   decoupled enough to extract. ~HSLogger~ is borderline (AppKit for the
-   catastrophe handler). ~MJDockIcon~ and ~MJMenuIcon~ are too AppKit-heavy.
-
-   The extractable subset is too small (168 lines) to justify a new SPM
-   package with its own build target, public headers, and dependency wiring.
-   The files are stable (last meaningful change years ago) and cause no
-   build or maintenance pain in their current location.
-
-   Effort: medium (half-day to extract, wire dependencies, update imports).
-   Benefit: very low (5 tiny files become independently testable, but they
-   have no bugs and no tests to write). Recommendation: skip. Not worth the
-   structural overhead.
-
-** DONE Add missing comment on "Copy hs CLI" build phase reference
-   In ~project.pbxproj~ the phase UUID (4FF7395127344D370007074E) is
-   listed in ~buildPhases~ without the standard ~/* Copy hs CLI */~
-   comment. Cosmetic but aids readability.
-
-* Speculative / future
-
-** RESEARCHED Explore replacing ~.xib~ files with programmatic UI
-   Read all three XIB files and their corresponding controllers.
-
-   *ConsoleWindow.xib* (83 lines): Simple layout — one NSTextView
-   (output) + one NSTextField (input, custom HSGrowingTextField class)
-   in a scroll view with auto-layout constraints. 3 outlet connections
-   (~outputView~, ~inputField~, ~window~), 1 action (~tryMessage:~),
-   1 delegate connection. Trivial to rewrite programmatically (~30 min).
-
-   *PreferencesWindow.xib* (167 lines): NSPanel with a visual effect
-   view containing 4 checkboxes (~openAtLogin~, ~showDockIcon~,
-   ~showMenuIcon~, ~keepConsoleOnTop~), 2 labels, 1 button
-   (~Enable Accessibility~), 1 image view, ~20 auto-layout constraints.
-   5 outlet connections, 5 action connections, 3 bindings (KVO for
-   accessibility state). Moderate complexity (~1-2 hours).
-
-   *MainMenu.xib* (412 lines): Standard macOS menu bar — application
-   menu, File, Edit (with find/spelling/substitutions submenus),
-   Window, Help — plus a custom right-click status-bar menu with
-   Reload/Open Config/Console/Preferences/About/Quit. 165 connection
-   references, though most are standard responder-chain actions (cut,
-   copy, paste, undo, find, etc.). Would take ~2-3 hours to replicate
-   programmatically, mostly tedious NSMenu/NSMenuItem setup.
-
-   Total IBOutlet+IBAction count across controllers:
-   - MJConsoleWindowController: 2 IBOutlets + 1 IBAction
-   - MJPreferencesWindowController: 4 IBOutlets + 5 IBActions
-   - MJAppDelegate: 1 IBOutlet (~menuBarMenu~) + ~6 IBActions
-
-   What would be gained:
-   - Controllers could theoretically move to SPM. But MJConsoleWindowController
-     depends on MJLua (Lua state), MJPreferencesWindowController depends on
-     MJAutoLaunch/MJDockIcon/MJMenuIcon/MJAccessibilityUtils, and the main
-     menu is inherently tied to MJAppDelegate. The coupling is to app-level
-     state, not to XIBs.
-   - Removes 3 binary XML files from the project (minor version-control win).
-   - No measurable build speed improvement (XIBs compile in <1s total).
-
-   What would be lost:
-   - Visual editability in Interface Builder (useful for the PreferencesWindow
-     layout which has non-trivial constraint relationships).
-   - Slight increase in code volume (~200 lines of programmatic UI code).
-
-   Effort: medium (half-day for all 3). Benefit: low. The XIBs are not
-   blocking any meaningful simplification — the controllers are coupled to
-   app-level singletons regardless. Recommendation: skip. The effort-to-benefit
-   ratio is poor and the XIBs are stable, rarely-changed artifacts.
-
-** RESEARCHED Explore making ~BuildDocs~ a build-time SPM dependency
-   Read ~scripts/docs/Package.swift~ and investigated SPM plugin options.
-
-   Current state: BuildDocs is a standalone SPM executable target (~2114
-   lines across 8 Swift files) with one dependency (~swift-argument-parser~).
-   It parses ~///~ (ObjC) and ~---~ (Lua) doc comments from the entire
-   source tree and writes JSON/Markdown/HTML/SQL outputs. It is built
-   out-of-band and invoked by a Run Script build phase.
-
-   *Option A: SPM Build Tool Plugin (~.plugin(capability: .buildTool(...))~)*
-   - Build tool plugins run in a strict sandbox: read-only access to the
-     package source directory, write access only to a designated output
-     directory (~$DERIVED_DATA/...~), no network access.
-   - BuildDocs needs to walk the entire repo source tree (~extensions/~,
-     ~Hammerspoon/~, etc.) which may or may not be within the plugin's
-     input scope depending on which package hosts the plugin.
-   - BuildDocs writes output files (docs.json, html, etc.) to configurable
-     paths — the sandbox restricts this to the plugin output directory only.
-   - Build tool plugins must declare their outputs statically; BuildDocs
-     generates a variable number of per-module HTML/Markdown files, making
-     static output declaration impractical.
-   - *Verdict: not feasible* without significant rearchitecting of BuildDocs.
-
-   *Option B: Command Plugin (~.plugin(capability: .command(...))~)*
-   - Command plugins are invoked manually (~swift package generate-docs~),
-     not automatically during build. This doesn't solve the "automatic
-     generation" goal.
-
-   *Option C: ~.executableTarget~ in the workspace, invoked by Run Script*
-   - Add BuildDocs as a package dependency of the workspace (not a target
-     dependency of the app). The Run Script phase invokes the built binary.
-   - Advantage: ~swift build~ compiles BuildDocs alongside the app, ensuring
-     it's always up to date. The "tool missing" skip logic goes away.
-   - Disadvantage: adds ~swift-argument-parser~ as a workspace dependency
-     (pulled into Xcode's package resolution). BuildDocs compilation adds
-     ~5-10s to clean builds.
-   - This is the most practical option but the benefit is marginal: the
-     current out-of-band build works fine and the Run Script phase already
-     handles the "not compiled" case gracefully.
-
-   Effort: low-medium for Option C (2-3 hours). Benefit: low (removes a
-   manual build step that rarely matters). Recommendation: defer. The
-   current setup works. If the "Compile docs.json" build phase gets proper
-   input/output file lists (separate TODO), that addresses the main pain
-   point without restructuring BuildDocs.
-
-** DONE Enable all 15 commented-out compiler warnings
-   All 15 warnings (including ~GCC_WARN_SHADOW~, which was previously
-   noted as broken on hs.doc's autolink dependency) now build cleanly.
-   Fixed sign-conversion issues in ~MJConsoleWindowController.m~,
-   ~HSuicore.m/h~, ~MJLua.m~; added ~__unused~ annotations for unused
-   parameters; added ~static~ or prototypes for ~-Wmissing-prototypes~
-   in ~HSAppleScript.m~ and ~MJLua.m/h~.
-
+** DONE Add pre-commit hook for generator staleness
+** DONE Enable all 15 compiler warnings
 ** DONE Set ~GCC_OPTIMIZATION_LEVEL~ per-configuration
-   Debug stays at ~0~ (via ~Project-Base.xcconfig~). Profile gets ~s~ via
-   ~Hammerspoon-Profile.xcconfig~. Release gets ~s~ via inline
-   ~buildSettings~ in ~project.pbxproj~ (both project-level and
-   target-level).
-
 ** DONE Remove the precompiled header
-   ~Hammerspoon-Prefix.pch~ only imported ~<Cocoa/Cocoa.h>~ and defined
-   ~LUA_USE_MACOSX~. The define is already set in LuaSkin's ~Package.swift~,
-   and modules (~CLANG_ENABLE_MODULES = YES~) make the implicit Cocoa
-   import unnecessary. Only 3 files needed explicit imports:
-   ~variables.m~ (~@import Foundation~), ~MJAutoLaunch.m~ (~@import Cocoa~),
-   ~MJDockIcon.m~ (~@import Cocoa~). Also fixed ~MJMenuIcon.h~ to import
-   ~<Cocoa/Cocoa.h>~ instead of ~<Foundation/Foundation.h>~ (uses ~NSMenu~).
-   ~GCC_PRECOMPILE_PREFIX_HEADER~ set to ~NO~; PCH file retained but
-   unused.
-
-** RESEARCHED Evaluate ~HSExtensions/Package.swift~ source-path maintenance
-   Investigated whether removing the explicit ~sources:~ array from
-   ~Package.swift~ would allow SPM auto-discovery to compile everything
-   correctly.
-
-   Current state: 145 source paths hand-listed in ~extensionSourcePaths~.
-   SPM auto-discovery (following symlinks) finds 138 compilable files
-   excluding the ~Hammerspoon/~ symlink.
-
-   Blockers for removing ~sources:~:
-   1. *Hammerspoon symlink*: exists for ~.headerSearchPath("Hammerspoon")~.
-      SPM auto-discovery would compile all 19 app-target ~.m~ files →
-      duplicate symbols. Excluding ~"Hammerspoon"~ removes header access.
-   2. *ipc/cli/hs.m*: visible through ~ipc~ symlink, must not be compiled
-      (built by its own SPM package). Needs ~exclude: ["ipc/cli"]~.
-   3. *sqlite3/lsqlite3.c*: ~#include~'d by ~lsqlite3_wrapper.m~. SPM
-      auto-discovery would also compile it as plain C → duplicates. Needs
-      ~exclude: ["sqlite3/lsqlite3.c"]~.
-
-   Feasible with 3 ~exclude:~ entries + an explicit
-   ~.headerSearchPath("../../../../Hammerspoon")~ replacing the symlink.
-   Package.swift drops from 246 → ~100 lines. New extensions no longer
-   need a ~Package.swift~ edit.
-
-   Effort: low (1-2 hours). Benefit: medium (eliminates 145-line source
-   list, simplifies "add extension" workflow). Recommendation: do.
+** DONE Add missing ~/* Copy hs CLI */~ pbxproj comment
+** DONE Drive "Copy Extension Lua Files" from a manifest
+** DONE Move the ~hs~ CLI to ~swift build~
+** DONE Consolidate 91 extension dylibs into one SPM static library
+** DONE Move LuaSkin into an SPM package
+** DONE Remove per-extension Xcode targets (96 → 3)
+** DONE Fix ~-Werror~ failures so Debug build passes
+** DONE Enable ~GCC_TREAT_WARNINGS_AS_ERRORS~ project-wide
+** DONE Remove empty Pods group from ~project.pbxproj~
+** DONE Remove stale ~Pods~ header search path
+** DONE Enable ~ENABLE_USER_SCRIPT_SANDBOXING~
+** DONE Drop ~-undefined dynamic_lookup~
