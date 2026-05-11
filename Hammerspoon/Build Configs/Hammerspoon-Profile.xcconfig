@@ -10,10 +10,17 @@
 // https://help.apple.com/xcode/#/dev745c5c974
 
 #include "Hammerspoon-Base.xcconfig"
-#include? "../../../Hammerspoon-Downstream.xcconfig"
 
-// Code Signing Entitlements
+// Profile builds are intended for use with Instruments.app. Entitlements and
+// hardened runtime are cleared so the profiler can attach without code-signing
+// restrictions. This is intentional — do not add entitlements or re-enable
+// hardened runtime for the Profile configuration.
+
+// Code Signing Entitlements — cleared for Instruments profiling
 CODE_SIGN_ENTITLEMENTS =
 
-// Enable Hardened Runtime
+// Enable Hardened Runtime — disabled so Instruments can attach to the process
 ENABLE_HARDENED_RUNTIME = NO
+
+// Optimization Level — optimized for size in profile builds (matches Release)
+GCC_OPTIMIZATION_LEVEL = s

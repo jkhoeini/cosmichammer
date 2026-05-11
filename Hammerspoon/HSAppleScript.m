@@ -17,7 +17,7 @@
 // Run String:
 //
 
-NSString* HSAppleScriptRunString(executeLua *self, NSString* command) {
+static NSString* HSAppleScriptRunString(executeLua *self, NSString* command) {
     LuaSkin *skin = [LuaSkin sharedWithState:NULL] ;
     lua_State* L = skin.L;
     _lua_stackguard_entry(L);

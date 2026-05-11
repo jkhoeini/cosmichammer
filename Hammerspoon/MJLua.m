@@ -161,7 +161,7 @@ static int core_openconsole(lua_State* L) {
 ///
 /// Returns:
 ///  * None
-static int core_closeconsole(lua_State* L) {
+static int core_closeconsole(__unused lua_State* L) {
     [[MJConsoleWindowController singleton].window orderOut:nil];
     return 0;
 }
@@ -195,7 +195,7 @@ static int core_open(lua_State *L) {
 ///
 /// Returns:
 ///  * None
-static int core_reload(lua_State* L) {
+static int core_reload(__unused lua_State* L) {
     dispatch_async(dispatch_get_main_queue(), ^{
         MJLuaReplace();
     });
@@ -262,7 +262,7 @@ static int core_accessibilityState(lua_State* L) {
 }
 
 // SOURCE: https://stackoverflow.com/a/58985069
-bool isScreenRecordingEnabled(void)
+static bool isScreenRecordingEnabled(void)
 {
     if (@available(macos 10.15, *)) {
         BOOL canRecordScreen = YES;
@@ -272,8 +272,8 @@ bool isScreenRecordingEnabled(void)
             NSNumber *ourProcessIdentifier = [NSNumber numberWithInteger:runningApplication.processIdentifier];
 
             CFArrayRef windowList = CGWindowListCopyWindowInfo(kCGWindowListOptionOnScreenOnly, kCGNullWindowID);
-            NSUInteger numberOfWindows = CFArrayGetCount(windowList);
-            for (int index = 0; index < numberOfWindows; index++) {
+            CFIndex numberOfWindows = CFArrayGetCount(windowList);
+            for (CFIndex index = 0; index < numberOfWindows; index++) {
                 // get information for each window
                 NSDictionary *windowInfo = (NSDictionary *)CFArrayGetValueAtIndex(windowList, index);
                 NSString *windowName = windowInfo[(id)kCGWindowName];
@@ -332,7 +332,7 @@ static int core_screenRecordingState(lua_State* L) {
         typedef CGDisplayStreamRef (*CGDisplayStreamCreateFunc)(CGDirectDisplayID, size_t, size_t, int32_t, CFDictionaryRef, CGDisplayStreamFrameAvailableHandler);
         CGDisplayStreamCreateFunc createStream = (CGDisplayStreamCreateFunc)dlsym(RTLD_DEFAULT, "CGDisplayStreamCreate");
         if (createStream) {
-            CGDisplayStreamRef stream = createStream(CGMainDisplayID(), 1, 1, kCVPixelFormatType_32BGRA, nil, ^(CGDisplayStreamFrameStatus status, uint64_t displayTime, IOSurfaceRef frameSurface, CGDisplayStreamUpdateRef updateRef) {
+            CGDisplayStreamRef stream = createStream(CGMainDisplayID(), 1, 1, kCVPixelFormatType_32BGRA, nil, ^(__unused CGDisplayStreamFrameStatus status, __unused uint64_t displayTime, __unused IOSurfaceRef frameSurface, __unused CGDisplayStreamUpdateRef updateRef) {
             });
             if (stream) {
                 CFRelease(stream);
@@ -552,7 +552,7 @@ static int core_openConsoleOnDockClick(lua_State* L) {
 ///
 /// Returns:
 ///  * None
-static int core_focus(lua_State* L) {
+static int core_focus(__unused lua_State* L) {
     [[NSApplication sharedApplication] activateIgnoringOtherApps:YES];
     return 0;
 }
@@ -594,7 +594,7 @@ static int core_cleanUTF8(lua_State *L) {
     return 1 ;
 }
 
-static int core_exit(lua_State* L) {
+static int core_exit(__unused lua_State* L) {
     [[NSApplication sharedApplication] terminate: nil];
     return 0;
 }

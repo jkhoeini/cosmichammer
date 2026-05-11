@@ -402,7 +402,6 @@
 		4F7F3B70272B3E2900E05732 /* Intents.intentdefinition */ = {isa = PBXFileReference; lastKnownFileType = file.intentdefinition; path = Intents.intentdefinition; sourceTree = "<group>"; };
 		4F7F3B75272B3F3700E05732 /* HSExecuteLuaIntentHandler.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = HSExecuteLuaIntentHandler.h; sourceTree = "<group>"; };
 		4F7F3B76272B3F3700E05732 /* HSExecuteLuaIntentHandler.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = HSExecuteLuaIntentHandler.m; sourceTree = "<group>"; };
-		4F7F3B7A272DE83500E05732 /* Hammerspoon-Debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "Hammerspoon-Debug.xcconfig"; sourceTree = "<group>"; };
 		4F7F3B7B272DE98800E05732 /* Hammerspoon-Profile.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "Hammerspoon-Profile.xcconfig"; sourceTree = "<group>"; };
 		4F7F3B7D272DE9F800E05732 /* Project-Base.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "Project-Base.xcconfig"; sourceTree = "<group>"; };
 		4F7F3B7E272E009C00E05732 /* Hammerspoon-Base.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "Hammerspoon-Base.xcconfig"; sourceTree = "<group>"; };
@@ -526,7 +525,6 @@
 		4FF73A24273595340007074E /* timeout3 */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; name = timeout3; path = extensions/httpserver/timeout3; sourceTree = "<group>"; };
 		4FF73A2727359BD20007074E /* window_tiling.lua */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; name = window_tiling.lua; path = extensions/window/window_tiling.lua; sourceTree = "<group>"; };
 		4FF73A2A27359C0E0007074E /* window_highlight.lua */ = {isa = PBXFileReference; lastKnownFileType = text; name = window_highlight.lua; path = extensions/window/window_highlight.lua; sourceTree = "<group>"; };
-		4FF73AA5273AAE290007074E /* Hammerspoon-Test.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "Hammerspoon-Test.xcconfig"; sourceTree = "<group>"; };
 		4FFB20FA23C5E01300811E77 /* HSStreamDeckDeviceXL.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = HSStreamDeckDeviceXL.h; path = extensions/streamdeck/HSStreamDeckDeviceXL.h; sourceTree = "<group>"; };
 		4FFB20FB23C5E01300811E77 /* HSStreamDeckDeviceXL.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = HSStreamDeckDeviceXL.m; path = extensions/streamdeck/HSStreamDeckDeviceXL.m; sourceTree = "<group>"; };
 		4FFB20FE23CD14A400811E77 /* HSStreamDeckDeviceOriginalV2.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = HSStreamDeckDeviceOriginalV2.h; path = extensions/streamdeck/HSStreamDeckDeviceOriginalV2.h; sourceTree = "<group>"; };
@@ -1238,9 +1236,7 @@
 			children = (
 				4F7F3B7D272DE9F800E05732 /* Project-Base.xcconfig */,
 				4F7F3B7E272E009C00E05732 /* Hammerspoon-Base.xcconfig */,
-				4F7F3B7A272DE83500E05732 /* Hammerspoon-Debug.xcconfig */,
 				4F7F3B7B272DE98800E05732 /* Hammerspoon-Profile.xcconfig */,
-				4FF73AA5273AAE290007074E /* Hammerspoon-Test.xcconfig */,
 			);
 			path = "Build Configs";
 			sourceTree = "<group>";
@@ -2700,12 +2696,13 @@
 		9445CA3B19083251002568BB /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				GCC_OPTIMIZATION_LEVEL = s;
 			};
 			name = Release;
 		};
 		9445CA3D19083251002568BB /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 4F7F3B7A272DE83500E05732 /* Hammerspoon-Debug.xcconfig */;
+			baseConfigurationReference = 4F7F3B7E272E009C00E05732 /* Hammerspoon-Base.xcconfig */;
 			buildSettings = {
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -2717,6 +2714,7 @@
 		9445CA3E19083251002568BB /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				GCC_OPTIMIZATION_LEVEL = s;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",

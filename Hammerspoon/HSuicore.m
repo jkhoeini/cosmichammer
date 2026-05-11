@@ -208,7 +208,7 @@ static CGImageRef hs_CGWindowListCreateImage(CGRect screenBounds, CGWindowListOp
     AXError result = AXUIElementCopyAttributeValues(self.elementRef, kAXWindowsAttribute, 0, 100, &windows);
     if (result == kAXErrorSuccess) {
         CFIndex windowCount = CFArrayGetCount(windows);
-        allWindows = [[NSMutableArray alloc] initWithCapacity:windowCount];
+        allWindows = [[NSMutableArray alloc] initWithCapacity:(NSUInteger)windowCount];
         for (NSInteger i = 0; i < windowCount; i++) {
             AXUIElementRef win = CFArrayGetValueAtIndex(windows, i);
             HSwindow *window = [[HSwindow alloc] initWithAXUIElementRef:win];
@@ -607,7 +607,7 @@ cleanup:
 
     if (wins) {
         CFArrayRef windowDescs = CGWindowListCreateDescriptionFromArray(wins);
-        windowIDs = [[NSMutableArray alloc] initWithCapacity:CFArrayGetCount(wins)];
+        windowIDs = [[NSMutableArray alloc] initWithCapacity:(NSUInteger)CFArrayGetCount(wins)];
         for (CFIndex i = 0; i < CFArrayGetCount(wins); i++) {
             CFDictionaryRef dict = CFArrayGetValueAtIndex(windowDescs, i);
             CFNumberRef winid = CFDictionaryGetValue(dict, kCGWindowNumber);
@@ -621,7 +621,7 @@ cleanup:
     return windowIDs;
 }
 
-+(NSImage *)snapshotForID:(int)windowID keepTransparency:(BOOL)keepTransparency {
++(NSImage *)snapshotForID:(CGWindowID)windowID keepTransparency:(BOOL)keepTransparency {
     NSImage *image = nil;
     CGWindowImageOption makeOpaque = keepTransparency ? kCGWindowImageDefault : kCGWindowImageShouldBeOpaque;
     CGRect windowRect = CGRectNull;

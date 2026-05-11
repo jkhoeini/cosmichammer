@@ -14,6 +14,8 @@ NSString* MJLuaRunString(NSString* command);
 NSString* MJFindInitFile(void);
 NSArray *MJLuaCompletionsForWord(NSString *completionWord);
 
+lua_State* MJGetActiveLuaState(void);
+
 void callDockIconCallback(void);
 void callAccessibilityStateCallback(void);
 void textDroppedToDockIcon(NSString *pboardString);

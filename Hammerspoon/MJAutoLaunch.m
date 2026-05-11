@@ -1,3 +1,4 @@
+@import Cocoa;
 #import "MJAutoLaunch.h"
 
 static LSSharedFileListRef shared_file_list() {

@@ -16,22 +16,23 @@ dynamic_lookup~ removed; pbxproj cut ~80 %.
 
 * Dead weight removal
 
-** TODO Delete orphaned ~hs.xcconfig~
+** DONE Delete orphaned ~hs.xcconfig~
    Belonged to the old ~hs~ Xcode target (now SPM). Not referenced by
-   any build configuration in ~project.pbxproj~.
+   any build configuration in ~project.pbxproj~. Deleted.
 
-** TODO Delete unused ~Hammerspoon-Test.xcconfig~
+** DONE Delete unused ~Hammerspoon-Test.xcconfig~
    Defines coverage flags but is not wired to the test target — the
-   test target uses inline ~buildSettings~ in ~project.pbxproj~.
+   test target uses inline ~buildSettings~ in ~project.pbxproj~. Deleted,
+   PBXFileReference and PBXGroup entries removed from pbxproj.
 
 ** TODO Remove empty "Embed Frameworks" build phase
    ~PBXCopyFilesBuildPhase~ (4FB852372735B02400462DD0) has zero files.
    Leftover from when extensions were dylibs.
 
-** TODO Remove dead ~Hammerspoon-Downstream.xcconfig~ includes
+** DONE Remove dead ~Hammerspoon-Downstream.xcconfig~ includes
    Three xcconfigs reference ~#include? "Hammerspoon-Downstream.xcconfig"~.
-   The file does not exist and never has. Paths are also inconsistent
-   (~../../../~ in Debug/Profile vs relative in Test). Remove all three.
+   The file does not exist and never has. Removed from Profile (Debug and
+   Test were deleted entirely).
 
 * Incremental build speed
 
@@ -49,18 +50,15 @@ dynamic_lookup~ removed; pbxproj cut ~80 %.
 
 * xcconfig consolidation
 
-** TODO Collapse xcconfigs from 6 → 3
-   After deleting ~hs.xcconfig~ and ~Hammerspoon-Test.xcconfig~, merge
-   ~Hammerspoon-Debug.xcconfig~ into ~Hammerspoon-Base.xcconfig~ —
-   Debug adds nothing beyond ~#include Base~ + a dead downstream
-   include. Result: ~Project-Base~, ~Hammerspoon-Base~,
-   ~Hammerspoon-Profile~ (the only variant with real overrides:
-   entitlements + hardened runtime).
+** DONE Collapse xcconfigs from 6 → 3
+   Deleted ~hs.xcconfig~, ~Hammerspoon-Test.xcconfig~, and
+   ~Hammerspoon-Debug.xcconfig~. Hammerspoon target Debug config now
+   points directly at ~Hammerspoon-Base.xcconfig~. Result: 3 files
+   remain (~Project-Base~, ~Hammerspoon-Base~, ~Hammerspoon-Profile~).
 
-** TODO Document ~Hammerspoon-Profile.xcconfig~ overrides
-   Profile clears ~CODE_SIGN_ENTITLEMENTS~ and sets
-   ~ENABLE_HARDENED_RUNTIME = NO~. Intentional for Instruments but
-   undocumented — add comments explaining why.
+** DONE Document ~Hammerspoon-Profile.xcconfig~ overrides
+   Added comments explaining why Profile clears entitlements and disables
+   hardened runtime (Instruments profiling). Also added ~GCC_OPTIMIZATION_LEVEL = s~.
 
 * Generator automation
 
@@ -125,21 +123,30 @@ dynamic_lookup~ removed; pbxproj cut ~80 %.
    the main workspace, doc generation becomes automatic and the
    conditional skip logic in the build phase goes away.
 
-** TODO Explore enabling more compiler warnings
-   ~Project-Base.xcconfig~ has 12 commented-out warnings (~GCC_WARN_SHADOW~,
-   ~CLANG_WARN_IMPLICIT_SIGN_CONVERSION~, etc.). Each should be tried,
-   and the ones that pass (or can be fixed) should be enabled to raise
-   the baseline code quality.
+** DONE Enable all 15 commented-out compiler warnings
+   All 15 warnings (including ~GCC_WARN_SHADOW~, which was previously
+   noted as broken on hs.doc's autolink dependency) now build cleanly.
+   Fixed sign-conversion issues in ~MJConsoleWindowController.m~,
+   ~HSuicore.m/h~, ~MJLua.m~; added ~__unused~ annotations for unused
+   parameters; added ~static~ or prototypes for ~-Wmissing-prototypes~
+   in ~HSAppleScript.m~ and ~MJLua.m/h~.
 
-** TODO Explore ~GCC_OPTIMIZATION_LEVEL~ per-configuration
-   Currently ~0~ project-wide (even Release/Profile). Release builds
-   should probably use ~s~ or ~2~. Requires verifying Lua runtime
-   correctness under optimization.
+** DONE Set ~GCC_OPTIMIZATION_LEVEL~ per-configuration
+   Debug stays at ~0~ (via ~Project-Base.xcconfig~). Profile gets ~s~ via
+   ~Hammerspoon-Profile.xcconfig~. Release gets ~s~ via inline
+   ~buildSettings~ in ~project.pbxproj~ (both project-level and
+   target-level).
 
-** TODO Explore removing the precompiled header
-   ~Hammerspoon-Prefix.pch~ only imports ~<Cocoa/Cocoa.h>~ and defines
-   ~LUA_USE_MACOSX~. With modules enabled (~CLANG_ENABLE_MODULES = YES~)
-   the PCH adds little value and is one more Xcode-only artifact.
+** DONE Remove the precompiled header
+   ~Hammerspoon-Prefix.pch~ only imported ~<Cocoa/Cocoa.h>~ and defined
+   ~LUA_USE_MACOSX~. The define is already set in LuaSkin's ~Package.swift~,
+   and modules (~CLANG_ENABLE_MODULES = YES~) make the implicit Cocoa
+   import unnecessary. Only 3 files needed explicit imports:
+   ~variables.m~ (~@import Foundation~), ~MJAutoLaunch.m~ (~@import Cocoa~),
+   ~MJDockIcon.m~ (~@import Cocoa~). Also fixed ~MJMenuIcon.h~ to import
+   ~<Cocoa/Cocoa.h>~ instead of ~<Foundation/Foundation.h>~ (uses ~NSMenu~).
+   ~GCC_PRECOMPILE_PREFIX_HEADER~ set to ~NO~; PCH file retained but
+   unused.
 
 ** TODO Evaluate ~HSExtensions/Package.swift~ source-path maintenance
    The 246-line package manifest hand-lists every ~.m~/~.c~ file. If

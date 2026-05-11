@@ -39,9 +39,9 @@ DEVELOPMENT_TEAM =
 // Enable Hardened Runtime
 ENABLE_HARDENED_RUNTIME = YES
 
-// Prefix Header Stuff
-GCC_PRECOMPILE_PREFIX_HEADER = YES
-GCC_PREFIX_HEADER = Hammerspoon/Hammerspoon-Prefix.pch
+// Prefix Header — removed. Cocoa.h is implicitly available via CLANG_ENABLE_MODULES
+// and LUA_USE_MACOSX is defined in LuaSkin's Package.swift.
+GCC_PRECOMPILE_PREFIX_HEADER = NO
 
 // SiriKit Intent (Shortcuts) generation language
 INTENTS_CODEGEN_LANGUAGE = Objective-C

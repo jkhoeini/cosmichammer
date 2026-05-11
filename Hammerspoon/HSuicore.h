@@ -134,7 +134,7 @@
 
 // Class methods
 +(NSArray<NSNumber *>*)orderedWindowIDs;
-+(NSImage *)snapshotForID:(int)windowID keepTransparency:(BOOL)keepTransparency;
++(NSImage *)snapshotForID:(CGWindowID)windowID keepTransparency:(BOOL)keepTransparency;
 +(HSwindow *)focusedWindow;
 
 // Initialiser

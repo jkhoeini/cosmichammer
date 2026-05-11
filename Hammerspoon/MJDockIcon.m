@@ -1,3 +1,4 @@
+@import Cocoa;
 #import "MJDockIcon.h"
 #import "variables.h"
 

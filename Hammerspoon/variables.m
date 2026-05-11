@@ -6,4 +6,6 @@
 //  Copyright (c) 2014 Hammerspoon. All rights reserved.
 //
 
+@import Foundation;
+
 NSString* MJConfigFile = @"~/.hammerspoon/init.lua";

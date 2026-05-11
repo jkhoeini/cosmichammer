@@ -17,7 +17,7 @@ void ConsoleDarkModeSetEnabled(BOOL enabled) {
 @interface MJConsoleWindowController ()
 
 @property NSMutableArray* history;
-@property NSInteger historyIndex;
+@property NSUInteger historyIndex;
 @property IBOutlet NSTextView* outputView;
 @property (weak) IBOutlet NSTextField* inputField;
 @property NSMutableArray* preshownStdouts;
@@ -46,16 +46,16 @@ typedef NS_ENUM(NSUInteger, MJReplLineType) {
         self.outputBuffer = [[NSMutableArray alloc] initWithCapacity:1000];
 
         // Strings that we want to add to the console window are batched up in self.outputBuffer and this timer drains them
-        self.outputTimer = [NSTimer timerWithTimeInterval:0.2 repeats:YES block:^(NSTimer * _Nonnull timer) {
+        self.outputTimer = [NSTimer timerWithTimeInterval:0.2 repeats:YES block:^(NSTimer * _Nonnull __unused timer) {
             if (self.outputBuffer.count > 0) {
                 @autoreleasepool {
                     NSTextStorage *storage = self.outputView.textStorage;
                     [storage beginEditing];
 
                     for (NSAttributedString *attrstr in self.outputBuffer) {
-                        int curLength = (int)storage.length;
-                        int maxLength = self.maxConsoleOutputHistory.intValue;
-                        int addLength = (int)attrstr.length;
+                        NSUInteger curLength = storage.length;
+                        NSUInteger maxLength = (NSUInteger)self.maxConsoleOutputHistory.integerValue;
+                        NSUInteger addLength = attrstr.length;
 
                         [storage appendAttributedString:attrstr];
                         if (curLength > maxLength && maxLength > 0) {
