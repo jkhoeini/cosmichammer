@@ -14,7 +14,7 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "9445CA0A19083251002568BB"
+               BlueprintIdentifier = "A202A81D3FA7EB445109F68B"
                BuildableName = "Hammerspoon.app"
                BlueprintName = "Hammerspoon"
                ReferencedContainer = "container:Hammerspoon.xcodeproj">
@@ -28,7 +28,7 @@
             buildForAnalyzing = "NO">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "D02F95231A00221C00E28BB2"
+               BlueprintIdentifier = "5748386E97805DC8850C64D7"
                BuildableName = "Hammerspoon Tests.xctest"
                BlueprintName = "Hammerspoon Tests"
                ReferencedContainer = "container:Hammerspoon.xcodeproj">
@@ -48,7 +48,7 @@
       <MacroExpansion>
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "9445CA0A19083251002568BB"
+            BlueprintIdentifier = "A202A81D3FA7EB445109F68B"
             BuildableName = "Hammerspoon.app"
             BlueprintName = "Hammerspoon"
             ReferencedContainer = "container:Hammerspoon.xcodeproj">
@@ -72,7 +72,7 @@
             testExecutionOrdering = "random">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "D02F95231A00221C00E28BB2"
+               BlueprintIdentifier = "5748386E97805DC8850C64D7"
                BuildableName = "Hammerspoon Tests.xctest"
                BlueprintName = "Hammerspoon Tests"
                ReferencedContainer = "container:Hammerspoon.xcodeproj">
@@ -82,7 +82,7 @@
             skipped = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "4F20B5281C1F1C5B00F52437"
+               BlueprintIdentifier = "DD43489822D53616E74FE625"
                BuildableName = "Hammerspoon UI Tests.xctest"
                BlueprintName = "Hammerspoon UI Tests"
                ReferencedContainer = "container:Hammerspoon.xcodeproj">
@@ -109,7 +109,7 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "9445CA0A19083251002568BB"
+            BlueprintIdentifier = "A202A81D3FA7EB445109F68B"
             BuildableName = "Hammerspoon.app"
             BlueprintName = "Hammerspoon"
             ReferencedContainer = "container:Hammerspoon.xcodeproj">
@@ -126,7 +126,7 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "9445CA0A19083251002568BB"
+            BlueprintIdentifier = "A202A81D3FA7EB445109F68B"
             BuildableName = "Hammerspoon.app"
             BlueprintName = "Hammerspoon"
             ReferencedContainer = "container:Hammerspoon.xcodeproj">

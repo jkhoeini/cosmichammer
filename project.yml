@@ -1,0 +1,124 @@
+name: Hammerspoon
+
+options:
+  bundleIdPrefix: org.hammerspoon
+  deploymentTarget:
+    macOS: "15.0"
+  xcodeVersion: "1600"
+
+configs:
+  Debug: debug
+  Profile: debug
+  Release: release
+
+settings:
+  configFiles:
+    Debug: Hammerspoon/Build Configs/Project-Base.xcconfig
+    Profile: Hammerspoon/Build Configs/Project-Base.xcconfig
+    Release: Hammerspoon/Build Configs/Project-Base.xcconfig
+  configs:
+    Release:
+      GCC_OPTIMIZATION_LEVEL: s
+
+packages:
+  LuaSkin:
+    path: Packages/LuaSkin
+  HSExtensions:
+    path: Packages/HSExtensions
+  CocoaHTTPServer:
+    path: Packages/CocoaHTTPServer
+  CocoaLumberjack:
+    url: https://github.com/CocoaLumberjack/CocoaLumberjack
+    exactVersion: 3.8.5
+  CocoaAsyncSocket:
+    url: https://github.com/robbiehanson/CocoaAsyncSocket
+    exactVersion: 7.6.5
+  ORSSerialPort:
+    url: https://github.com/armadsen/ORSSerialPort
+    exactVersion: 2.1.0
+
+targets:
+  Hammerspoon:
+    type: application
+    platform: macOS
+    configFiles:
+      Debug: Hammerspoon/Build Configs/Hammerspoon-Base.xcconfig
+      Profile: Hammerspoon/Build Configs/Hammerspoon-Profile.xcconfig
+    settings:
+      base:
+        LD_RUNPATH_SEARCH_PATHS: ["$(inherited)", "@executable_path/../Frameworks"]
+        ENABLE_DEBUG_DYLIB: "NO"
+      configs:
+        Release:
+          GCC_OPTIMIZATION_LEVEL: s
+    sources:
+      # Resources from Hammerspoon/ (exclude code — compiled by SPM via HSExtensions)
+      - path: Hammerspoon
+        excludes: ["**/*.m", "**/*.h", "**/*.pch", Build Configs, Hammerspoon-Info.plist, "*.entitlements"]
+        buildPhase: resources
+      # Resources from outside Hammerspoon/
+      - path: extensions/chooser/HSChooserWindow.xib
+        buildPhase: resources
+      - path: extensions/doc/lua.json
+        buildPhase: resources
+      - path: extensions/httpserver/timeout3
+        buildPhase: resources
+      - path: build/docs.json
+        buildPhase: resources
+        optional: true
+      # Copy hs manpage -> Resources/man/
+      - path: extensions/ipc/cli/hs.man
+        buildPhase:
+          copyFiles: { destination: resources, subpath: man }
+      # Copy hsdocs -> Resources/extensions/hs/hsdocs/
+      - path: extensions/doc/hsdocs
+        excludes: [hsminweb]
+        buildPhase:
+          copyFiles: { destination: resources, subpath: extensions/hs/hsdocs }
+      - path: scripts/docs/templates/docs.css
+        buildPhase:
+          copyFiles: { destination: resources, subpath: extensions/hs/hsdocs }
+      # Copy hsdocs/hsminweb -> Resources/extensions/hs/hsdocs/hsminweb/
+      - path: extensions/doc/hsdocs/hsminweb
+        buildPhase:
+          copyFiles: { destination: resources, subpath: extensions/hs/hsdocs/hsminweb }
+    dependencies:
+      - package: LuaSkin
+      - package: HSExtensions
+      - package: ORSSerialPort
+        product: ORSSerial
+      - package: CocoaAsyncSocket
+      - package: CocoaLumberjack
+      - package: CocoaHTTPServer
+
+  Hammerspoon Tests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Hammerspoon Tests
+    dependencies:
+      - target: Hammerspoon
+    settings:
+      base:
+        BUNDLE_LOADER: "$(TEST_HOST)"
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Hammerspoon.app/Contents/MacOS/Hammerspoon"
+        INFOPLIST_FILE: "Hammerspoon Tests/Info.plist"
+        PRODUCT_BUNDLE_IDENTIFIER: "org.hammerspoon.$(PRODUCT_NAME:rfc1034identifier)"
+        LD_RUNPATH_SEARCH_PATHS: ["$(inherited)", "@executable_path/../Frameworks", "@loader_path/../Frameworks"]
+        WARNING_CFLAGS: ["-Wno-cstring-format-directive", "-Wno-padded", "-Wno-objc-missing-property-synthesis", "-Wno-gnu-statement-expression"]
+        FRAMEWORK_SEARCH_PATHS: ["$(DEVELOPER_FRAMEWORKS_DIR)", "$(inherited)"]
+        GCC_PREPROCESSOR_DEFINITIONS: ["DEBUG=1", "$(inherited)"]
+
+  Hammerspoon UI Tests:
+    type: bundle.ui-testing
+    platform: macOS
+    sources:
+      - path: HammerspoonUITests
+    dependencies:
+      - target: Hammerspoon
+    settings:
+      base:
+        TEST_TARGET_NAME: Hammerspoon
+        INFOPLIST_FILE: HammerspoonUITests/Info.plist
+        PRODUCT_BUNDLE_IDENTIFIER: org.hammerspoon.HammerspoonUITests
+        LD_RUNPATH_SEARCH_PATHS: ["$(inherited)", "@executable_path/../Frameworks", "@loader_path/../Frameworks"]

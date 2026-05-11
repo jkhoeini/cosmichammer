@@ -114,5 +114,9 @@ docs-lint:
     fi
     "$DOCSTOOL" --lint Hammerspoon extensions/
 
+# Generate Xcode project from project.yml
+generate:
+    xcodegen generate
+
 # Full rebuild: clean + build
 rebuild: clean build
