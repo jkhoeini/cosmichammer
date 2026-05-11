@@ -1,4 +1,4 @@
-local modpath, frameworkspath, prettypath, fullpath, configdir, docstringspath, hasinitfile, autoload_extensions = ...
+local modpath, prettypath, fullpath, configdir, docstringspath, hasinitfile, autoload_extensions = ...
 
 local userruntime = os.getenv("HOME") .. "/.local/share/hammerspoon/site"
 
@@ -18,7 +18,6 @@ local cpaths = {
   configdir .. "/?.dylib",
   configdir .. "/?.so",
   package.cpath,
-  frameworkspath .. "/?.dylib",
   userruntime .. "/lib/?.dylib",
   userruntime .. "/lib/?.so",
 }

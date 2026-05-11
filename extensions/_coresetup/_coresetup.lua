@@ -3,7 +3,7 @@
 --- Core Hammerspoon functionality
 
 return {setup=function(...)
-  local modpath, frameworkspath, prettypath, fullpath, configdir, docstringspath, hasinitfile, autoload_extensions = ...
+  local modpath, prettypath, fullpath, configdir, docstringspath, hasinitfile, autoload_extensions = ...
   local tostring,pack,tconcat,sformat,tsort=tostring,table.pack,table.concat,string.format,table.sort
   local traceback = debug.traceback
 
