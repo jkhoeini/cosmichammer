@@ -175,27 +175,6 @@
 			name = "Copy hsdocs minweb Files";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		4FF7395127344D370007074E /* Copy hs CLI */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-				"$(SRCROOT)/Packages/hs/Package.swift",
-				"$(SRCROOT)/Packages/hs/Sources/hs/hs.m",
-			);
-			name = "Copy hs CLI";
-			outputFileListPaths = (
-			);
-			outputPaths = (
-				"$(TARGET_BUILD_DIR)/$(CONTENTS_FOLDER_PATH)/Frameworks/hs/hs",
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/bash;
-			shellScript = "set -euo pipefail\nPKG=\"${SRCROOT}/Packages/hs\"\nswift build -c release --package-path \"${PKG}\"\nDEST=\"${TARGET_BUILD_DIR}/${CONTENTS_FOLDER_PATH}/Frameworks/hs\"\nmkdir -p \"${DEST}\"\ncp \"${PKG}/.build/release/hs\" \"${DEST}/hs\"\n/usr/bin/codesign --force --sign \"${EXPANDED_CODE_SIGN_IDENTITY:-${CODE_SIGN_IDENTITY:--}}\" \"${DEST}/hs\"\n";
-		};
 		4FF73A1E2735449D0007074E /* Copy hs manpage */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
@@ -2147,13 +2126,9 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = 9445CA3C19083251002568BB /* Build configuration list for PBXNativeTarget "Hammerspoon" */;
 			buildPhases = (
-				4FC09F7A19F99E48007542A6 /* Compile docs.json */,
 				9445CA0719083251002568BB /* Sources */,
 				9445CA0819083251002568BB /* Frameworks */,
-				4FF7395127344D370007074E /* Copy hs CLI */,
-				4FF739B1273481C90007074E /* Copy Extension Lua files (manifest) */,
 				9445CA0919083251002568BB /* Resources */,
-				4F6D9E3523074BC6006CC3E4 /* Update version/build numbers */,
 				4FF73A1E2735449D0007074E /* Copy hs manpage */,
 				4FCA05A12767689C0089A5FC /* Copy hsdocs Files */,
 				4FCA05AB276768EC0089A5FC /* Copy hsdocs minweb Files */,
@@ -2412,63 +2387,8 @@
 		};
 /* End PBXResourcesBuildPhase section */
 
-/* Begin PBXShellScriptBuildPhase section */
-		4F6D9E3523074BC6006CC3E4 /* Update version/build numbers */ = {
-			isa = PBXShellScriptBuildPhase;
-			alwaysOutOfDate = 1;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-			);
-			name = "Update version/build numbers";
-			outputFileListPaths = (
-			);
-			outputPaths = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "#Update build number with number of git commits if in release mode\nset -eux\n\n./scripts/update_version_build_numbers.sh\n";
-		};
-		4FC09F7A19F99E48007542A6 /* Compile docs.json */ = {
-			isa = PBXShellScriptBuildPhase;
-			alwaysOutOfDate = 1;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputPaths = (
-			);
-			name = "Compile docs.json";
-			outputPaths = (
-				"$(SRCROOT)/build/docs.json",
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "# alwaysOutOfDate is intentional: inputs are the entire Hammerspoon/\n# and extensions/ source trees (every .m and .lua with doc comments),\n# which is impractical to enumerate as inputPaths.\nset -eux\n\n/bin/mkdir -p ./build\nif [ -f ./scripts/docs/.build/release/BuildDocs ]; then\n  ./scripts/docs/.build/release/BuildDocs -o ./build/ --json Hammerspoon extensions\nelse\n  echo \"warning: BuildDocs tool not built, skipping docs.json generation. Run: swift build -c release --package-path scripts/docs\"\n  # Ensure the declared output exists so Xcode does not fail the build.\n  touch ./build/docs.json\nfi\n";
-		};
-		4FF739B1273481C90007074E /* Copy Extension Lua files (manifest) */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-				"$(SRCROOT)/scripts/lua-files.inputs.xcfilelist",
-			);
-			inputPaths = (
-			);
-			name = "Copy Extension Lua files (manifest)";
-			outputFileListPaths = (
-				"$(SRCROOT)/scripts/lua-files.outputs.xcfilelist",
-			);
-			outputPaths = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/bash;
-			shellScript = "\"${SRCROOT}/scripts/copy-extension-lua-files.sh\"\n";
-		};
-/* End PBXShellScriptBuildPhase section */
+/* PBXShellScriptBuildPhase section intentionally empty — all script
+   phases moved to justfile recipes (just build). */
 
 /* Begin PBXSourcesBuildPhase section */
 		4F20B5251C1F1C5B00F52437 /* Sources */ = {
