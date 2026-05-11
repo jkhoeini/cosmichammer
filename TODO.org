@@ -25,7 +25,7 @@ dynamic_lookup~ removed; pbxproj cut ~80 %.
    test target uses inline ~buildSettings~ in ~project.pbxproj~. Deleted,
    PBXFileReference and PBXGroup entries removed from pbxproj.
 
-** TODO Remove empty "Embed Frameworks" build phase
+** DONE Remove empty "Embed Frameworks" build phase
    ~PBXCopyFilesBuildPhase~ (4FB852372735B02400462DD0) has zero files.
    Leftover from when extensions were dylibs.
 
@@ -36,13 +36,13 @@ dynamic_lookup~ removed; pbxproj cut ~80 %.
 
 * Incremental build speed
 
-** TODO Fix "Copy hs CLI" phase to support incremental builds
+** DONE Fix "Copy hs CLI" phase to support incremental builds
    Currently ~alwaysOutOfDate = 1~ — runs ~swift build -c release~ +
    codesign every build (~3-5 s overhead). Add ~inputFileListPaths~
    pointing at ~Packages/hs/Sources/hs/*.m~ and ~outputPaths~ pointing
    at the signed binary so Xcode can skip the phase when nothing changed.
 
-** TODO Fix "Compile docs.json" phase to support incremental builds
+** DONE Fix "Compile docs.json" phase to support incremental builds
    Also ~alwaysOutOfDate = 1~. Silently skips when ~BuildDocs~ is not
    compiled — missing docs discovered late. Add proper input/output
    file lists, or at minimum remove ~alwaysOutOfDate~ and declare the
@@ -103,7 +103,7 @@ dynamic_lookup~ removed; pbxproj cut ~80 %.
    package consumed by the app target. Reduces Xcode-compiled source
    count and makes the utilities independently testable.
 
-** TODO Add missing comment on "Copy hs CLI" build phase reference
+** DONE Add missing comment on "Copy hs CLI" build phase reference
    In ~project.pbxproj~ the phase UUID (4FF7395127344D370007074E) is
    listed in ~buildPhases~ without the standard ~/* Copy hs CLI */~
    comment. Cosmetic but aids readability.
