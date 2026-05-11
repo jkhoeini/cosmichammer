@@ -398,10 +398,10 @@ static int startWatcher(lua_State *L) {
     }
 
     // For some reason, the device added/removed notifications don't fire unless we ask macOS to enumerate the devices first
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-    [AVCaptureDevice devices];
-#pragma clang diagnostic pop
+    AVCaptureDeviceDiscoverySession *session = [AVCaptureDeviceDiscoverySession discoverySessionWithDeviceTypes:@[AVCaptureDeviceTypeBuiltInWideAngleCamera, AVCaptureDeviceTypeExternal]
+                                                                                                     mediaType:AVMediaTypeVideo
+                                                                                                      position:AVCaptureDevicePositionUnspecified];
+    (void)session.devices;
 
     NSNotificationCenter *center = [NSNotificationCenter defaultCenter];
     deviceWatcherAddedObserver = [center addObserverForName:AVCaptureDeviceWasConnectedNotification

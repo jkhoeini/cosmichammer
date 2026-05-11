@@ -101,7 +101,7 @@ static int core_consoleontop(lua_State* L) {
 /// Returns:
 ///  * None
 static int core_openabout(lua_State* __unused L) {
-    [[NSApplication sharedApplication] activateIgnoringOtherApps:YES];
+    [[NSApplication sharedApplication] activate];
     [[NSApplication sharedApplication] orderFrontStandardAboutPanel:nil];
     return 0;
 }
@@ -116,7 +116,7 @@ static int core_openabout(lua_State* __unused L) {
 /// Returns:
 ///  * None
 static int core_openpreferences(lua_State* __unused L) {
-    [[NSApplication sharedApplication] activateIgnoringOtherApps:YES];
+    [[NSApplication sharedApplication] activate];
     [[MJPreferencesWindowController singleton] showWindow: nil];
 
     return 0 ;
@@ -147,7 +147,7 @@ static int core_closepreferences(lua_State* __unused L) {
 ///  * None
 static int core_openconsole(lua_State* L) {
     if (!(lua_isboolean(L,1) && !lua_toboolean(L, 1)))
-        [[NSApplication sharedApplication] activateIgnoringOtherApps:YES];
+        [[NSApplication sharedApplication] activate];
     [[MJConsoleWindowController singleton] showWindow: nil];
     return 0;
 }
@@ -536,7 +536,7 @@ static int core_openConsoleOnDockClick(lua_State* L) {
 /// Returns:
 ///  * None
 static int core_focus(__unused lua_State* L) {
-    [[NSApplication sharedApplication] activateIgnoringOtherApps:YES];
+    [[NSApplication sharedApplication] activate];
     return 0;
 }
 

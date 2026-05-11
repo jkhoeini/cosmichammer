@@ -298,17 +298,17 @@
 }
 
 - (IBAction) showConsoleWindow:(id)sender {
-    [[NSApplication sharedApplication] activateIgnoringOtherApps:YES];
+    [[NSApplication sharedApplication] activate];
     [[MJConsoleWindowController singleton] showWindow: nil];
 }
 
 - (IBAction) showPreferencesWindow:(id)sender {
-    [[NSApplication sharedApplication] activateIgnoringOtherApps:YES];
+    [[NSApplication sharedApplication] activate];
     [[MJPreferencesWindowController singleton] showWindow: nil];
 }
 
 - (IBAction) showAboutPanel:(id)sender {
-    [[NSApplication sharedApplication] activateIgnoringOtherApps:YES];
+    [[NSApplication sharedApplication] activate];
     @try {
         [[NSApplication sharedApplication] orderFrontStandardAboutPanel: nil];
     } @catch (NSException *exception) {

@@ -28,19 +28,10 @@ static void reflect_defaults(void) {
         return;
     }
 
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-    NSDisableScreenUpdates();
-#pragma clang diagnostic pop
-
     [app setActivationPolicy:targetPolicy];
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         [app unhide: nil];
-        [app activateIgnoringOtherApps:YES];
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-        NSEnableScreenUpdates();
-#pragma clang diagnostic pop
+        [app activate];
     });
 }
 

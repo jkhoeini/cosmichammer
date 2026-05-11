@@ -43,10 +43,7 @@ static HSWifiWatcherManager *manager ;
 //         _client = [[CWWiFiClient alloc] init] ;
 //         _client.delegate = self ;
         // Using the notification center for the notifications requires us to retain a reference to the interface
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-        _interface = [CWInterface interface] ;
-#pragma clang diagnostic pop
+        _interface = [[CWWiFiClient sharedWiFiClient] interface] ;
 
 
         NSNotificationCenter *nc = [NSNotificationCenter defaultCenter] ;
