@@ -62,20 +62,39 @@ dynamic_lookup~ removed; pbxproj cut ~80 %.
 
 * Generator automation
 
-** TODO Make ~generate-hsextensions.sh~ a build-time phase
-   Currently must be run manually after editing ~extensions.list~.
-   Move it into a Run Script phase with ~extensions.list~ as input
-   and the three generated files as outputs. Xcode skips the phase
-   when the manifest is unchanged.
+** NOT FEASIBLE Make ~generate-hsextensions.sh~ a build-time phase
+   :LOGBOOK:
+   - State "NOT FEASIBLE" from "TODO"       [2026-05-11]
+   :END:
+   Not feasible. The generator outputs (~HSExtensions.m~,
+   ~HSExtensions+Preload.h~) are sources inside the ~HSExtensions~ SPM
+   package. SPM resolves and compiles its packages *before* Xcode
+   target build phases execute. A Run Script phase in the Hammerspoon
+   target would run too late — SPM has already compiled the (potentially
+   stale) generated files. Moving the generator earlier is not possible
+   without SPM build-tool plugins, which cannot run arbitrary shell
+   scripts against the host filesystem.
 
-** TODO Make ~generate-lua-files-xcfilelists.sh~ a build-time phase
-   Same story — must be run manually after editing ~lua-files.list~.
-   Declare the manifest as input and the two xcfilelists as outputs.
+** NOT FEASIBLE Make ~generate-lua-files-xcfilelists.sh~ a build-time phase
+   :LOGBOOK:
+   - State "NOT FEASIBLE" from "TODO"       [2026-05-11]
+   :END:
+   Not feasible for a related reason. The outputs (~lua-files.inputs.xcfilelist~,
+   ~lua-files.outputs.xcfilelist~) are xcfilelists consumed by Xcode's
+   dependency system to decide whether the "Copy Extension Lua files"
+   phase needs to run. They must exist and be correct *before* the
+   build starts — a Run Script phase cannot update them in time for the
+   same build invocation to use the new values.
 
-** TODO Add pre-commit hook as safety net for generators
-   Alternative/complement to build-time phases: a ~jj~/~git~
-   pre-commit hook that diffs ~extensions.list~ and ~lua-files.list~
-   against the generated outputs and fails if they are stale.
+** DONE Add pre-commit hook as safety net for generators
+   :LOGBOOK:
+   - State "DONE" from "TODO"               [2026-05-11]
+   :END:
+   Added ~scripts/check-generated-files.sh~ (standalone, read-only
+   staleness check) and ~scripts/hooks/pre-commit~ (thin wrapper for
+   git hook installation). The check script regenerates outputs into a
+   temp directory and diffs against the committed versions. Fires on
+   ~git commit~; jj users run the script manually or via CI.
 
 * Manifest unification
 

@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# Pre-commit hook: verifies generated files are in sync with manifests.
+#
+# Fires on `git commit` in the colocated repo. jj does not invoke git
+# hooks, so jj users should run `scripts/check-generated-files.sh`
+# manually (or via CI). The hook is still useful for anyone who
+# occasionally uses raw git in this repo.
+#
+# Installation (from repo root):
+#   ln -sf ../../scripts/hooks/pre-commit .git/hooks/pre-commit
+#
+# The hook delegates to scripts/check-generated-files.sh and exits with
+# its return code. It does NOT modify any files — it only checks.
+set -euo pipefail
+
+# Find repo root. Works whether invoked from .git/hooks/ or manually.
+if [[ -n "${GIT_DIR:-}" ]]; then
+    repo_root="$(cd "$GIT_DIR/.." && pwd)"
+else
+    repo_root="$(cd "$(dirname "$0")/../.." && pwd)"
+fi
+
+check_script="$repo_root/scripts/check-generated-files.sh"
+
+if [[ ! -x "$check_script" ]]; then
+    echo "warning: check-generated-files.sh not found or not executable, skipping manifest check" >&2
+    exit 0
+fi
+
+exec "$check_script" --quiet
