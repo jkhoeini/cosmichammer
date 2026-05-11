@@ -10,9 +10,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Common commands
 
-The project uses `just` as a task runner over `xcodebuild`. `mise` installs `just` (`mise.toml`).
+The project uses `just` as a task runner over `xcodebuild`. `mise` installs `just` and `xcodegen` (`mise.toml`).
 
-- `just build` — Debug build of `Hammerspoon.app` into `build/`. `just build Release` for Release.
+- `just build` — Debug build of `Hammerspoon.app` into `build/`. `just build Release` for Release. Orchestrates version numbering (from git tags), docs.json compilation, hs CLI build, xcodebuild, and post-build Lua/hs-CLI copying — no Xcode Run Script phases.
+- `just generate` — Regenerates `Hammerspoon.xcodeproj/project.pbxproj` from `project.yml` via XcodeGen. Run after changing targets, dependencies, or build settings.
 - `just rebuild` — `clean` + `build`.
 - `just test` — Runs the Xcode test bundle (requires a prior `build`). Test results go to `build/TestResults`.
 - `just docs` / `just docs-lint` — Builds/lints the API docs via the Swift tool under `scripts/docs/` (auto-builds the `BuildDocs` binary the first time).
@@ -20,6 +21,10 @@ The project uses `just` as a task runner over `xcodebuild`. `mise` installs `jus
 - `scripts/generate-lua-files-xcfilelists.sh` — Regenerates `scripts/lua-files.inputs.xcfilelist` and `scripts/lua-files.outputs.xcfilelist` from `Packages/HSExtensions/extensions.manifest`. Re-run this whenever a Lua file is added or removed from the bundled set. The script is idempotent.
 
 Builds **must** go through the workspace, not the bare project. `xcodebuild -workspace Hammerspoon.xcworkspace -scheme Hammerspoon ...` (this is what the `justfile` does). Opening `Hammerspoon.xcodeproj` directly will fail because SPM resolution happens at the workspace level.
+
+### Xcode project generation
+
+The `project.pbxproj` is **generated** from `project.yml` (XcodeGen) and gitignored. After cloning or modifying project structure, run `just generate` before opening Xcode or building. The 124-line YAML replaces a ~2900-line binary plist — edit `project.yml`, not the pbxproj.
 
 To run a single Lua-side test, use Xcode's test navigator on the `Hammerspoon Tests` target — there is no per-extension test runner on the CLI.
 
@@ -58,7 +63,7 @@ Key pieces of this model — preserve them when adding extensions:
 4. Run `scripts/generate-hsextensions.sh` and `scripts/generate-lua-files-xcfilelists.sh`.
 5. `just build`.
 
-The Xcode project no longer needs per-extension targets — there are 3 targets total (`Hammerspoon`, `Hammerspoon Tests`, `HammerspoonUITests`). The `hs` CLI is built by SPM (`Packages/hs/`) and copied into `Hammerspoon.app/Contents/Frameworks/hs/hs` by the "Copy hs CLI" Run Script phase.
+The Xcode project no longer needs per-extension targets — there are 3 targets total (`Hammerspoon`, `Hammerspoon Tests`, `HammerspoonUITests`). The `hs` CLI is built by SPM (`Packages/hs/`) and copied into `Hammerspoon.app/Contents/Frameworks/hs/hs` by `just build` (post-build step).
 
 ### Other notable bits
 
