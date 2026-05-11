@@ -14,15 +14,136 @@ SPM; per-extension Xcode targets removed (96 → 3); hs CLI → SPM; Lua
 file copying → manifest-driven; script sandboxing enabled; ~-undefined
 dynamic_lookup~ removed; pbxproj cut ~80 %.
 
-* TODO
+* Dead weight removal
 
-** Shrink the Xcode-only surface
-   What still legitimately needs Xcode: ~Info.plist~, entitlements,
-   ~.xib~ files, the asset catalog, code signing, app-bundle layout.
-   Everything else should be SPM or generated. Audit ~Hammerspoon/~
-   for sources that could move into an SPM target consumed by the app
-   shell.
+** TODO Delete orphaned ~hs.xcconfig~
+   Belonged to the old ~hs~ Xcode target (now SPM). Not referenced by
+   any build configuration in ~project.pbxproj~.
 
-** Consolidate ~Build Configs/*.xcconfig~
-   Six xcconfig files with overlapping layering. Fold them into the
-   minimum set that distinguishes Debug / Release / Profile / Test.
+** TODO Delete unused ~Hammerspoon-Test.xcconfig~
+   Defines coverage flags but is not wired to the test target — the
+   test target uses inline ~buildSettings~ in ~project.pbxproj~.
+
+** TODO Remove empty "Embed Frameworks" build phase
+   ~PBXCopyFilesBuildPhase~ (4FB852372735B02400462DD0) has zero files.
+   Leftover from when extensions were dylibs.
+
+** TODO Remove dead ~Hammerspoon-Downstream.xcconfig~ includes
+   Three xcconfigs reference ~#include? "Hammerspoon-Downstream.xcconfig"~.
+   The file does not exist and never has. Paths are also inconsistent
+   (~../../../~ in Debug/Profile vs relative in Test). Remove all three.
+
+* Incremental build speed
+
+** TODO Fix "Copy hs CLI" phase to support incremental builds
+   Currently ~alwaysOutOfDate = 1~ — runs ~swift build -c release~ +
+   codesign every build (~3-5 s overhead). Add ~inputFileListPaths~
+   pointing at ~Packages/hs/Sources/hs/*.m~ and ~outputPaths~ pointing
+   at the signed binary so Xcode can skip the phase when nothing changed.
+
+** TODO Fix "Compile docs.json" phase to support incremental builds
+   Also ~alwaysOutOfDate = 1~. Silently skips when ~BuildDocs~ is not
+   compiled — missing docs discovered late. Add proper input/output
+   file lists, or at minimum remove ~alwaysOutOfDate~ and declare the
+   tool binary + source tree as inputs.
+
+* xcconfig consolidation
+
+** TODO Collapse xcconfigs from 6 → 3
+   After deleting ~hs.xcconfig~ and ~Hammerspoon-Test.xcconfig~, merge
+   ~Hammerspoon-Debug.xcconfig~ into ~Hammerspoon-Base.xcconfig~ —
+   Debug adds nothing beyond ~#include Base~ + a dead downstream
+   include. Result: ~Project-Base~, ~Hammerspoon-Base~,
+   ~Hammerspoon-Profile~ (the only variant with real overrides:
+   entitlements + hardened runtime).
+
+** TODO Document ~Hammerspoon-Profile.xcconfig~ overrides
+   Profile clears ~CODE_SIGN_ENTITLEMENTS~ and sets
+   ~ENABLE_HARDENED_RUNTIME = NO~. Intentional for Instruments but
+   undocumented — add comments explaining why.
+
+* Generator automation
+
+** TODO Make ~generate-hsextensions.sh~ a build-time phase
+   Currently must be run manually after editing ~extensions.list~.
+   Move it into a Run Script phase with ~extensions.list~ as input
+   and the three generated files as outputs. Xcode skips the phase
+   when the manifest is unchanged.
+
+** TODO Make ~generate-lua-files-xcfilelists.sh~ a build-time phase
+   Same story — must be run manually after editing ~lua-files.list~.
+   Declare the manifest as input and the two xcfilelists as outputs.
+
+** TODO Add pre-commit hook as safety net for generators
+   Alternative/complement to build-time phases: a ~jj~/~git~
+   pre-commit hook that diffs ~extensions.list~ and ~lua-files.list~
+   against the generated outputs and fails if they are stale.
+
+* Manifest unification
+
+** TODO Unify ~extensions.list~ and ~lua-files.list~ into one manifest
+   The two manifests partially overlap (one extension = one symbol +
+   one-or-more Lua files). A single per-extension manifest (YAML, TSV,
+   or structured text) could drive both generators and eliminate the
+   sync risk. Larger refactor — do after the generators are automated.
+
+* Xcode surface reduction
+
+** TODO Audit ~Hammerspoon/~ sources for SPM migration candidates
+   ~Info.plist~, entitlements, ~.xib~ files, the asset catalog, code
+   signing, and app-bundle layout must stay in Xcode. Everything else
+   is a candidate. ~12 utility files (MJAutoLaunch, MJAccessibilityUtils,
+   MJConfigUtils, MJFileUtils, MJVersionUtils, HSLogger, HSAppleScript,
+   etc.) could become an SPM "HammerspoonCore" package — but they are
+   small, stable, and tightly coupled to the app delegate, so ROI is
+   low today.
+
+** TODO Extract app utilities into SPM ~HammerspoonCore~ package
+   If the audit above shows enough payoff: move ~MJAutoLaunch~,
+   ~MJAccessibilityUtils~, ~MJConfigUtils~, ~MJFileUtils~,
+   ~MJVersionUtils~, ~HSLogger~, ~HSAppleScript~ into a new SPM
+   package consumed by the app target. Reduces Xcode-compiled source
+   count and makes the utilities independently testable.
+
+** TODO Add missing comment on "Copy hs CLI" build phase reference
+   In ~project.pbxproj~ the phase UUID (4FF7395127344D370007074E) is
+   listed in ~buildPhases~ without the standard ~/* Copy hs CLI */~
+   comment. Cosmetic but aids readability.
+
+* Speculative / future
+
+** TODO Explore replacing ~.xib~ files with programmatic UI
+   Three XIBs (~MainMenu~, ~ConsoleWindow~, ~PreferencesWindow~) are
+   the main reason UI controllers must live in the Xcode target. If
+   rewritten as programmatic ~NSWindow~/~NSMenu~ setup, the
+   controllers could move to SPM and the Xcode target shrinks to
+   ~MJAppDelegate~ + ~MJLua~ + resources.
+
+** TODO Explore making ~BuildDocs~ a build-time SPM dependency
+   Currently a separate SPM project under ~scripts/docs/~, built
+   out-of-band. If wired as a ~.plugin~ or build-tool dependency of
+   the main workspace, doc generation becomes automatic and the
+   conditional skip logic in the build phase goes away.
+
+** TODO Explore enabling more compiler warnings
+   ~Project-Base.xcconfig~ has 12 commented-out warnings (~GCC_WARN_SHADOW~,
+   ~CLANG_WARN_IMPLICIT_SIGN_CONVERSION~, etc.). Each should be tried,
+   and the ones that pass (or can be fixed) should be enabled to raise
+   the baseline code quality.
+
+** TODO Explore ~GCC_OPTIMIZATION_LEVEL~ per-configuration
+   Currently ~0~ project-wide (even Release/Profile). Release builds
+   should probably use ~s~ or ~2~. Requires verifying Lua runtime
+   correctness under optimization.
+
+** TODO Explore removing the precompiled header
+   ~Hammerspoon-Prefix.pch~ only imports ~<Cocoa/Cocoa.h>~ and defines
+   ~LUA_USE_MACOSX~. With modules enabled (~CLANG_ENABLE_MODULES = YES~)
+   the PCH adds little value and is one more Xcode-only artifact.
+
+** TODO Evaluate ~HSExtensions/Package.swift~ source-path maintenance
+   The 246-line package manifest hand-lists every ~.m~/~.c~ file. If
+   SPM's directory-based source discovery could be leveraged (by
+   reorganising the symlink tree), the explicit list becomes
+   unnecessary and adding an extension no longer requires editing
+   ~Package.swift~.
