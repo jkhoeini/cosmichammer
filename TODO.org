@@ -13,23 +13,14 @@ Done so far: 91 extension dylibs → single SPM static library; LuaSkin →
 SPM; per-extension Xcode targets removed (96 → 3); hs CLI → SPM; Lua
 file copying → manifest-driven; script sandboxing enabled; ~-undefined
 dynamic_lookup~ removed; xcconfigs collapsed 6 → 3; all 15 compiler
-warnings enabled; PCH removed; incremental builds fixed; pbxproj cut
-~85 %.
+warnings enabled; PCH removed; incremental builds fixed; Package.swift
+switched to auto-discovery; manifests unified; pbxproj cut ~85 %.
 
 * TODO
 
-** Switch ~Package.swift~ to SPM auto-discovery
-   Remove the 145-line hand-maintained ~sources:~ array. Feasible with
-   3 ~exclude:~ entries (~Hammerspoon~, ~ipc/cli~, ~sqlite3/lsqlite3.c~)
-   + an explicit ~.headerSearchPath("../../../../Hammerspoon")~ replacing
-   the Hammerspoon symlink. Drops Package.swift from 246 → ~100 lines.
-   New extensions no longer need a ~Package.swift~ edit.
-
-** Unify ~extensions.list~ and ~lua-files.list~
-   The two manifests are NOT 1:1 (24 Lua-only extensions, multi-file
-   extensions, ~luaskin.lua~ special case). A TSV with columns
-   ~dir / entry-points / lua-files~ would work. Half-day effort.
-   Defer until generators are wired into CI.
+   No remaining build-simplification items. The Xcode-only surface is
+   at its practical minimum: ~Info.plist~, entitlements, 3 XIBs, the
+   asset catalog, code signing, and app-bundle layout.
 
 * Investigated — not worth doing
 
@@ -53,6 +44,8 @@ warnings enabled; PCH removed; incremental builds fixed; pbxproj cut
 
 * Done
 
+** DONE Switch ~Package.swift~ to SPM auto-discovery (246 → 105 lines)
+** DONE Unify ~extensions.list~ + ~lua-files.list~ into ~extensions.manifest~
 ** DONE Delete orphaned ~hs.xcconfig~
 ** DONE Delete unused ~Hammerspoon-Test.xcconfig~
 ** DONE Remove empty "Embed Frameworks" build phase
