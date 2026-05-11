@@ -16,7 +16,7 @@
 - (double)_force ;
 @end
 
-NSPoint hs_topoint(lua_State* L, int idx) {
+static inline NSPoint hs_topoint(lua_State* L, int idx) {
     luaL_checktype(L, idx, LUA_TTABLE);
     CGFloat x = ((void)lua_getfield(L, idx, "x"), luaL_checknumber(L, -1));
     CGFloat y = ((void)lua_getfield(L, idx, "y"), luaL_checknumber(L, -1));
@@ -25,11 +25,11 @@ NSPoint hs_topoint(lua_State* L, int idx) {
 }
 
 
-CGEventRef hs_to_eventtap_event(lua_State* L, int idx) {
+static inline CGEventRef hs_to_eventtap_event(lua_State* L, int idx) {
     return *(CGEventRef*)luaL_checkudata(L, idx, EVENT_USERDATA_TAG);
 }
 
-void new_eventtap_event(lua_State* L, CGEventRef event) {
+static inline void new_eventtap_event(lua_State* L, CGEventRef event) {
     CFRetain(event);
     *(CGEventRef*)lua_newuserdata(L, sizeof(CGEventRef*)) = event;
 

@@ -12,7 +12,7 @@ static LSRefTable refTable;
 //
 // This function creates a dictionary mapping of this where the keys are the byte positions in the
 // Lua string and the values are the corresponding character positions in the NSString.
-NSDictionary *luaByteToObjCharMap(NSString *theString) {
+static NSDictionary *luaByteToObjCharMap(NSString *theString) {
     NSMutableDictionary *luaByteToObjChar = [[NSMutableDictionary alloc] init];
 
     NSUInteger luaPos = 1 ;
