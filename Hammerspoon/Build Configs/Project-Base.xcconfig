@@ -24,6 +24,10 @@ WARNING_CFLAGS = -Wno-cstring-format-directive -Wno-padded -Wno-objc-missing-pro
 OTHER_LDFLAGS = -undefined dynamic_lookup
 // Enable Testability
 ENABLE_TESTABILITY = YES
+// User Script Sandboxing — let Xcode sandbox Run Script phases so they don't
+// delay downstream phases (e.g. httpserver headers). Phases that legitimately
+// need broader filesystem access opt out per-phase in the pbxproj.
+ENABLE_USER_SCRIPT_SANDBOXING = YES
 // Strip Debug Symbols During Copy
 COPY_PHASE_STRIP = NO
 // Strip Linked Product

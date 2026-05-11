@@ -45,3 +45,11 @@ GCC_PREFIX_HEADER = Hammerspoon/Hammerspoon-Prefix.pch
 
 // SiriKit Intent (Shortcuts) generation language
 INTENTS_CODEGEN_LANGUAGE = Objective-C
+
+// The two Run Script phases on this target (Update version / Compile docs.json)
+// both need filesystem access outside the sandbox: the first reads `.git` and
+// writes Info.plist via PlistBuddy, the second walks the entire Hammerspoon/ and
+// extensions/ source trees. Per-phase sandbox override isn't expressible in
+// pbxproj, so opt the whole target out of script sandboxing while keeping it
+// enabled project-wide for everything else.
+ENABLE_USER_SCRIPT_SANDBOXING = NO

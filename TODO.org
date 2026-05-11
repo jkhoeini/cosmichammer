@@ -34,11 +34,6 @@ Xcode targets removed (96 → 4); pbxproj cut ~73%.
    out of Xcode into a plain SPM executable product. The main app's
    build phase would just copy the already-built binary in.
 
-** NEXT Enable ~ENABLE_USER_SCRIPT_SANDBOXING~
-   Xcode warns that unsandboxed script phases delay ~httpserver~'s
-   Copy Headers. Set it where possible; audit the few phases that
-   genuinely need filesystem access.
-
 ** TODO Shrink the Xcode-only surface
    What still legitimately needs Xcode: ~Info.plist~, entitlements,
    ~.xib~ files, the asset catalog, code signing, app-bundle layout.
@@ -67,3 +62,13 @@ Xcode targets removed (96 → 4); pbxproj cut ~73%.
 ** DONE Fix ~hs.doc~ shadow warnings
 ** DONE Audit deprecated API usage (pasteboard)
 ** DONE Migrate deprecated ~typeOfFile:error:~ API in ~MJAppDelegate.m~
+** DONE Enable ~ENABLE_USER_SCRIPT_SANDBOXING~
+   Set ~YES~ project-wide in ~Project-Base.xcconfig~ so new targets
+   default to sandboxed scripts. The ~Hammerspoon~ target overrides
+   to ~NO~ in ~Hammerspoon-Base.xcconfig~ because its two Run Script
+   phases (~Update version/build numbers~ and ~Compile docs.json~)
+   need filesystem access outside the sandbox — the first reads
+   ~.git~ + writes ~Info.plist~ via PlistBuddy, the second walks the
+   whole ~Hammerspoon/~ + ~extensions/~ source tree. Xcode 15+ has
+   no pbxproj-readable per-phase opt-out, so target-level override
+   is the cleanest option.
