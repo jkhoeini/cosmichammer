@@ -16,8 +16,8 @@ The project uses `just` as a task runner over `xcodebuild`. `mise` installs `jus
 - `just rebuild` — `clean` + `build`.
 - `just test` — Runs the Xcode test bundle (requires a prior `build`). Test results go to `build/TestResults`.
 - `just docs` / `just docs-lint` — Builds/lints the API docs via the Swift tool under `scripts/docs/` (auto-builds the `BuildDocs` binary the first time).
-- `scripts/generate-hsextensions.sh` — Regenerates the HSExtensions glue (`HSExtensions.m`, `HSExtensions+Preload.h`, `HSExtensionsRegistry.m`) from `Packages/HSExtensions/extensions.list`. Re-run this whenever an extension entry-point is added or removed. The script is idempotent.
-- `scripts/generate-lua-files-xcfilelists.sh` — Regenerates `scripts/lua-files.inputs.xcfilelist` and `scripts/lua-files.outputs.xcfilelist` from `Packages/HSExtensions/lua-files.list`. Re-run this whenever a Lua file is added or removed from the bundled set. The script is idempotent.
+- `scripts/generate-hsextensions.sh` — Regenerates the HSExtensions glue (`HSExtensions.m`, `HSExtensions+Preload.h`, `HSExtensionsRegistry.m`) from `Packages/HSExtensions/extensions.manifest`. Re-run this whenever an extension entry-point is added or removed. The script is idempotent.
+- `scripts/generate-lua-files-xcfilelists.sh` — Regenerates `scripts/lua-files.inputs.xcfilelist` and `scripts/lua-files.outputs.xcfilelist` from `Packages/HSExtensions/extensions.manifest`. Re-run this whenever a Lua file is added or removed from the bundled set. The script is idempotent.
 
 Builds **must** go through the workspace, not the bare project. `xcodebuild -workspace Hammerspoon.xcworkspace -scheme Hammerspoon ...` (this is what the `justfile` does). Opening `Hammerspoon.xcodeproj` directly will fail because SPM resolution happens at the workspace level.
 
@@ -38,11 +38,12 @@ Historically each extension was its own Xcode dynamic-library target producing a
 Key pieces of this model — preserve them when adding extensions:
 
 - `Packages/HSExtensions/Package.swift` — Single `.target` named `HSExtensions`. SPM **auto-discovers** sources by following symlinks from `Sources/HSExtensions/<name>/` into `extensions/<name>/`. Three things are excluded via `exclude:`: the `Hammerspoon` symlink (app source tree, kept only for header search), `ipc/cli` (the standalone `hs` CLI), and `sqlite3/lsqlite3.c` (compiled indirectly via `lsqlite3_wrapper.m`). No need to edit Package.swift when adding extensions.
-- `Packages/HSExtensions/extensions.list` — One `luaopen_hs_lib*` symbol per line. **Single source of truth** for the generator.
-- `scripts/generate-hsextensions.sh` reads `extensions.list` and emits:
+- `Packages/HSExtensions/extensions.manifest` — Unified TSV manifest (directory, entry-points, lua-files). **Single source of truth** for both generators.
+- `scripts/generate-hsextensions.sh` reads entry-point symbols from `extensions.manifest` and emits:
   - `HSExtensions.m` (`HSExtensionsRegisterAll(L)` — walks each entry into `package.preload`),
   - `HSExtensions+Preload.h` (forward decls),
   - `Hammerspoon/HSExtensionsRegistry.m` (a `__attribute__((used))` static const function-pointer array in the main app target — this prevents the static linker from dead-stripping any `luaopen_*` symbol out of `libHSExtensions.a`).
+- `scripts/generate-lua-files-xcfilelists.sh` reads lua-file paths from `extensions.manifest` and emits the xcfilelists for the "Copy Extension Lua files (manifest)" build phase.
 - `MJLua.m` calls `HSExtensionsRegisterAll(L)` once between creating the global `hs` table and loading `setup.lua`. Because Lua resolves `package.preload[name]` **before** `package.cpath`, no dylib lookup is needed.
 - Some C files needed targeted fixes when moving from `-undefined dynamic_lookup` dylibs to static linking: `static inline` on helpers in `extensions/eventtap/eventtap_event.h`, and `static` on `luaByteToObjCharMap` in `extensions/speech/libspeech.m` and `extensions/styledtext/libstyledtext.m`. Watch for duplicate-symbol errors when adding new extensions and prefer those same patterns.
 - `lsqlite3.c` is a `.c` file that transitively imports Cocoa via LuaSkin; it is compiled as Objective-C via an `lsqlite3_wrapper.m` shim that `#include`s it. Do not rename either file without updating the shim.
@@ -51,10 +52,9 @@ Key pieces of this model — preserve them when adding extensions:
 
 1. Create `extensions/<name>/<name>.lua` and (optional) `extensions/<name>/lib<name>.m`.
 2. Symlink the directory into `Packages/HSExtensions/Sources/HSExtensions/<name>` if it isn't already.
-3. Add the `luaopen_hs_lib<name>` symbol to `Packages/HSExtensions/extensions.list`.
-4. Run `scripts/generate-hsextensions.sh`.
-5. Add the `.lua` file's repo-relative path to `Packages/HSExtensions/lua-files.list` (drives the "Copy Extension Lua files (manifest)" Run Script build phase). Re-run `scripts/generate-lua-files-xcfilelists.sh` to refresh the xcfilelists.
-6. `just build`.
+3. Add a line to `Packages/HSExtensions/extensions.manifest`: `<name><TAB><luaopen_hs_lib symbols or "-"><TAB><lua filenames>`.
+4. Run `scripts/generate-hsextensions.sh` and `scripts/generate-lua-files-xcfilelists.sh`.
+5. `just build`.
 
 The Xcode project no longer needs per-extension targets — there are 3 targets total (`Hammerspoon`, `Hammerspoon Tests`, `HammerspoonUITests`). The `hs` CLI is built by SPM (`Packages/hs/`) and copied into `Hammerspoon.app/Contents/Frameworks/hs/hs` by the "Copy hs CLI" Run Script phase.
 

@@ -1,4 +1,4 @@
-$(SRCROOT)/Packages/HSExtensions/lua-files.list
+$(SRCROOT)/Packages/HSExtensions/extensions.manifest
 $(SRCROOT)/Packages/LuaSkin/Sources/LuaSkin/Resources/luaskin.lua
 $(SRCROOT)/extensions/_coresetup/_coresetup.lua
 $(SRCROOT)/extensions/alert/alert.lua

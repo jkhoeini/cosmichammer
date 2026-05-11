@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Regenerates HSExtensions glue files.
 #
-# Reads the list of `luaopen_hs_lib*` symbols (one per line) from
-# Packages/HSExtensions/extensions.list and emits three generated files:
+# Reads entry-point symbols from the unified manifest
+# Packages/HSExtensions/extensions.manifest and emits three generated files:
 #
 #   1. Packages/HSExtensions/Sources/HSExtensions/HSExtensions+Preload.h
 #      Forward declarations for each luaopen_hs_lib* symbol.
@@ -24,30 +24,40 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$repo_root"
 
-LIST_FILE="Packages/HSExtensions/extensions.list"
+MANIFEST="Packages/HSExtensions/extensions.manifest"
 OUT_PRELOAD_H="Packages/HSExtensions/Sources/HSExtensions/include/HSExtensions/HSExtensions+Preload.h"
 OUT_REGISTER_M="Packages/HSExtensions/Sources/HSExtensions/HSExtensions.m"
 OUT_KEEPALIVE_M="Hammerspoon/HSExtensionsRegistry.m"
 
-if [[ ! -f "$LIST_FILE" ]]; then
-    echo "error: extensions list not found: $LIST_FILE" >&2
-    echo "expected one luaopen_hs_lib* symbol per line." >&2
+if [[ ! -f "$MANIFEST" ]]; then
+    echo "error: manifest not found: $MANIFEST" >&2
     exit 1
 fi
 
+# Extract entry-point symbols from column 2 of the manifest.
+# Skip comment/blank lines and lines where column 2 is "-" (Lua-only).
 symbols=()
-while IFS= read -r line; do
-    # strip whitespace and skip blank / comment lines
-    sym="${line%%#*}"
-    sym="${sym//[[:space:]]/}"
-    [[ -z "$sym" ]] && continue
-    symbols+=("$sym")
-done < "$LIST_FILE"
+while IFS=$'\t' read -r _dir entry_points _lua; do
+    # strip comments and whitespace
+    _dir="${_dir%%#*}"
+    _dir="${_dir//[[:space:]]/}"
+    [[ -z "$_dir" ]] && continue
+    [[ "$entry_points" == "-" ]] && continue
+    # split comma-separated symbols
+    IFS=',' read -ra syms <<< "$entry_points"
+    for sym in "${syms[@]}"; do
+        sym="${sym//[[:space:]]/}"
+        [[ -n "$sym" ]] && symbols+=("$sym")
+    done
+done < "$MANIFEST"
 
 if [[ ${#symbols[@]} -eq 0 ]]; then
-    echo "error: no symbols found in $LIST_FILE" >&2
+    echo "error: no symbols found in $MANIFEST" >&2
     exit 1
 fi
+
+# Sort symbols alphabetically for deterministic output.
+IFS=$'\n' symbols=($(sort <<<"${symbols[*]}")); unset IFS
 
 count="${#symbols[@]}"
 echo "Generating glue for ${count} symbols..."
