@@ -2483,26 +2483,6 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				944A2D391989735300D8DC90 /* MJAppDelegate.m in Sources */,
-				942BF3911989E18600983892 /* MJAutoLaunch.m in Sources */,
-				9409203119A5940600B9964E /* MJVersionUtils.m in Sources */,
-				944A2DA91989760400D8DC90 /* MJConsoleWindowController.m in Sources */,
-				4F9BA8D723DFAB03006349F2 /* HSuicore.m in Sources */,
-				4F7F3B77272B3F3700E05732 /* HSExecuteLuaIntentHandler.m in Sources */,
-				94A1E5481993AC5C003AEB26 /* MJFileUtils.m in Sources */,
-				4FEF59431B29A352002344A7 /* HSGrowingTextField.m in Sources */,
-				949B520319A5576E00ED4F02 /* MJDockIcon.m in Sources */,
-				945B65AC198D2DDB002D2E30 /* MJLua.m in Sources */,
-				B7A4EEBAF2D74951856D0C65 /* HSExtensionsRegistry.m in Sources */,
-				D077B5BF1A001B5300369B30 /* variables.m in Sources */,
-				942E71AA19B11176001BA156 /* MJAccessibilityUtils.m in Sources */,
-				949B520619A55BF400ED4F02 /* MJMenuIcon.m in Sources */,
-				4F7F3B71272B3E2900E05732 /* Intents.intentdefinition in Sources */,
-				943BF0F219A4B43E0017F79D /* MJUserNotificationManager.m in Sources */,
-				4F5B6E6E1E9E87CE003FC580 /* HSAppleScript.m in Sources */,
-				9422ACBD19B6163800F06A90 /* MJConfigUtils.m in Sources */,
-				942E71A619B1112F001BA156 /* MJPreferencesWindowController.m in Sources */,
-				4FA125882016739500F02FDF /* HSLogger.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -2,15 +2,18 @@
 import PackageDescription
 
 // SPM auto-discovers sources under Sources/HSExtensions/ by following the
-// symlinks into extensions/<name>/.  Three things must be excluded:
+// symlinks into extensions/<name>/ AND into Hammerspoon/ (the core app
+// sources).  The Hammerspoon symlink points at the main app source tree;
+// SPM compiles its .m/.h files alongside the extensions so that everything
+// ends up in one static library (libHSExtensions.a).
 //
-//  1. "Hammerspoon" — symlink to the main app source tree, present only for
-//     header search (SPM disallows search paths outside the package root).
-//     We exclude it so SPM doesn't compile those .m files.
-//  2. "ipc/cli" — the standalone `hs` CLI tool (built by Packages/hs/).
-//  3. "sqlite3/lsqlite3.c" — compiled indirectly via lsqlite3_wrapper.m as
-//     Objective-C.  Letting SPM also compile it as plain C causes duplicate
-//     symbols.
+// Excludes:
+//  - Non-source files inside Hammerspoon/ (XIBs, plists, assets, etc.)
+//    that SPM would otherwise try to process or treat as resources.
+//  - "ipc/cli" — the standalone `hs` CLI tool (built by Packages/hs/).
+//  - "sqlite3/lsqlite3.c" — compiled indirectly via lsqlite3_wrapper.m as
+//    Objective-C.  Letting SPM also compile it as plain C causes duplicate
+//    symbols.
 
 let package = Package(
     name: "HSExtensions",
@@ -37,7 +40,24 @@ let package = Package(
             ],
             path: "Sources/HSExtensions",
             exclude: [
-                "Hammerspoon",
+                // Non-source files inside Hammerspoon/ that must not be
+                // compiled or treated as SPM resources.
+                "Hammerspoon/Build Configs",
+                "Hammerspoon/ConsoleWindow.xib",
+                "Hammerspoon/Credits.rtf",
+                "Hammerspoon/Hammerspoon-Info.plist",
+                "Hammerspoon/Hammerspoon-Prefix.pch",
+                "Hammerspoon/Hammerspoon-dev.entitlements",
+                "Hammerspoon/Hammerspoon.entitlements",
+                "Hammerspoon/Hammerspoon.sdef",
+                "Hammerspoon/Images.xcassets",
+                "Hammerspoon/Intents.intentdefinition",
+                "Hammerspoon/MainMenu.xib",
+                "Hammerspoon/PreferencesWindow.xib",
+                "Hammerspoon/Spoon.icns",
+                "Hammerspoon/setup.lua",
+                "Hammerspoon/statusicon.pdf",
+                // Other excludes carried forward from before.
                 "ipc/cli",
                 "sqlite3/lsqlite3.c",
             ],
