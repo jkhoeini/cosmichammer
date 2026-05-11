@@ -19,3 +19,7 @@ void HSExtensionsRegisterAll(lua_State *L);
 #ifdef __cplusplus
 }
 #endif
+
+// Include the generated forward declarations so the umbrella module covers
+// every public header in this include directory.
+#include "HSExtensions+Preload.h"

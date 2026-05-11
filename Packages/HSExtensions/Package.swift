@@ -7,6 +7,9 @@ import PackageDescription
 // so the source-of-truth remains under extensions/<name>/.
 let extensionSourcePaths: [String] = [
     "HSExtensions.m",
+    "base64/libbase64.m",
+    "math/libmath.m",
+    "window/libwindow.m",
 ]
 
 let package = Package(
@@ -30,12 +33,20 @@ let package = Package(
             cSettings: [
                 .define("LUA_USE_MACOSX"),
                 .define("LUA_COMPAT_5_3"),
+                // Headers for HSuicore.h and other main-app headers referenced by extensions.
+                .headerSearchPath("Hammerspoon"),
                 .unsafeFlags([
                     "-Wno-everything",
                 ]),
             ],
             linkerSettings: [
+                .linkedFramework("Cocoa"),
+                .linkedFramework("Carbon"),
                 .linkedFramework("Foundation"),
+                .linkedFramework("AppKit"),
+                .linkedFramework("Security"),
+                .linkedFramework("ApplicationServices"),
+                .linkedFramework("CoreGraphics"),
             ]
         ),
     ]

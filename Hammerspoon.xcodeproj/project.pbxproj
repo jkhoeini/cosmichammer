@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		B7A4EEBAF2D74951856D0C65 /* HSExtensionsRegistry.m in Sources */ = {isa = PBXBuildFile; fileRef = FC4516DEDF014DDB8E7CDA5C /* HSExtensionsRegistry.m */; };
 		F8F9372BDCA5C4859BB03819 /* luaskin.lua in Copy Extension Lua files */ = {isa = PBXBuildFile; fileRef = B234E934AAF4B819D68BAEE9 /* luaskin.lua */; };
 		220B882A27F8F954006C0B2B /* test_image.lua in Resources */ = {isa = PBXBuildFile; fileRef = 220B882927F8F954006C0B2B /* test_image.lua */; };
 		220B882C27F8F9A3006C0B2B /* HSimage.m in Sources */ = {isa = PBXBuildFile; fileRef = 220B882B27F8F9A3006C0B2B /* HSimage.m */; };
@@ -1496,6 +1497,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		FC4516DEDF014DDB8E7CDA5C /* HSExtensionsRegistry.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = HSExtensionsRegistry.m; sourceTree = "<group>"; };
 		B234E934AAF4B819D68BAEE9 /* luaskin.lua */ = {isa = PBXFileReference; lastKnownFileType = text; path = "Packages/LuaSkin/Sources/LuaSkin/Resources/luaskin.lua"; sourceTree = SOURCE_ROOT; };
 		220B882927F8F954006C0B2B /* test_image.lua */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; name = test_image.lua; path = extensions/image/test_image.lua; sourceTree = "<group>"; };
 		220B882B27F8F9A3006C0B2B /* HSimage.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = HSimage.m; sourceTree = "<group>"; };
@@ -3954,6 +3956,7 @@
 				4F5050311B97A7B9009E2B14 /* MJAppDelegate.h */,
 				942050C41990940000FC4839 /* MJLua.h */,
 				945B65AB198D2DDB002D2E30 /* MJLua.m */,
+				FC4516DEDF014DDB8E7CDA5C /* HSExtensionsRegistry.m */,
 				4FA12589201673E400F02FDF /* HSLogger.h */,
 				4FA125872016739500F02FDF /* HSLogger.m */,
 				945B65B1198D31FC002D2E30 /* setup.lua */,
@@ -6209,6 +6212,7 @@
 			name = Hammerspoon;
 			packageProductDependencies = (
 				3DFEACCB690010E2619FB224 /* LuaSkin */,
+				F78B6F7431DB4FE7832F91F8 /* HSExtensions */,
 				C9665188498442C9B5542958 /* ORSSerial */,
 				D9EB50BB348C41E49EAAB27A /* CocoaAsyncSocket */,
 				23B553CD683E4B1B8262C85C /* CocoaLumberjack */,
@@ -6707,6 +6711,7 @@
 				7E3DCC8F8B4F4CB0A94288E0 /* XCRemoteSwiftPackageReference "CocoaLumberjack" */,
 				4F1D462818414FC78DA1D6A5 /* XCLocalSwiftPackageReference "CocoaHTTPServer" */,
 				C346228E293DF3AAEB3E6FF6 /* XCLocalSwiftPackageReference "LuaSkin" */,
+				30BB97267228466B9014AA70 /* XCLocalSwiftPackageReference "HSExtensions" */,
 			);
 			productRefGroup = 9445CA0C19083251002568BB /* Products */;
 			projectDirPath = "";
@@ -7539,6 +7544,7 @@
 				4FEF59431B29A352002344A7 /* HSGrowingTextField.m in Sources */,
 				949B520319A5576E00ED4F02 /* MJDockIcon.m in Sources */,
 				945B65AC198D2DDB002D2E30 /* MJLua.m in Sources */,
+				B7A4EEBAF2D74951856D0C65 /* HSExtensionsRegistry.m in Sources */,
 				D077B5BF1A001B5300369B30 /* variables.m in Sources */,
 				942E71AA19B11176001BA156 /* MJAccessibilityUtils.m in Sources */,
 				949B520619A55BF400ED4F02 /* MJMenuIcon.m in Sources */,
@@ -11777,6 +11783,10 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Packages/LuaSkin;
 		};
+		30BB97267228466B9014AA70 /* XCLocalSwiftPackageReference "HSExtensions" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/HSExtensions;
+		};
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCRemoteSwiftPackageReference section */
@@ -11858,6 +11868,10 @@
 		3DFEACCB690010E2619FB224 /* LuaSkin */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = LuaSkin;
+		};
+		F78B6F7431DB4FE7832F91F8 /* HSExtensions */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = HSExtensions;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

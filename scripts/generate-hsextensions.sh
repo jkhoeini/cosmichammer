@@ -25,7 +25,7 @@ repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$repo_root"
 
 LIST_FILE="Packages/HSExtensions/extensions.list"
-OUT_PRELOAD_H="Packages/HSExtensions/Sources/HSExtensions/HSExtensions+Preload.h"
+OUT_PRELOAD_H="Packages/HSExtensions/Sources/HSExtensions/include/HSExtensions/HSExtensions+Preload.h"
 OUT_REGISTER_M="Packages/HSExtensions/Sources/HSExtensions/HSExtensions.m"
 OUT_KEEPALIVE_M="Hammerspoon/HSExtensionsRegistry.m"
 
@@ -97,7 +97,7 @@ HDR
 // Call after lua_State creation and before setup.lua runs so require()
 // resolves bundled modules without ever touching package.cpath.
 #import "HSExtensions/HSExtensions.h"
-#import "HSExtensions+Preload.h"
+#import "HSExtensions/HSExtensions+Preload.h"
 
 #include <LuaSkin/lauxlib.h>
 
@@ -133,7 +133,7 @@ HDR
 // Purpose: prevent the static linker from dead-stripping the luaopen_hs_*
 // entry points out of libHSExtensions.a. Each symbol is referenced from a
 // __used array so the linker keeps the archive object alive.
-#import "HSExtensions+Preload.h"
+#import <HSExtensions/HSExtensions+Preload.h>
 
 __attribute__((used))
 static void * const _HSExtensionsKeepAlive[] = {

@@ -13,6 +13,7 @@
 #import "HSAppleScript.h"
 
 #import "HSLogger.h"
+#import <HSExtensions/HSExtensions.h>
 #import <AVFoundation/AVFoundation.h>
 #import <AppKit/AppKit.h>
 #import <libproc.h>
@@ -712,6 +713,9 @@ void MJLuaInit(void) {
     lua_setfield(L, -2, "processInfo") ;
 
     lua_setglobal(L, "hs");
+
+    // Register every bundled hs.lib<name> entry point into package.preload before setup.lua runs.
+    HSExtensionsRegisterAll(L);
 
     int loadresult = luaL_loadfile(L, [[[NSBundle mainBundle] pathForResource:@"setup" ofType:@"lua"] fileSystemRepresentation]);
     if (loadresult != 0) {

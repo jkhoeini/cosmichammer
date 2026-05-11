@@ -1,6 +1,9 @@
 # OS X artifacts
 .DS_Store
 
+# Claude Code session artifacts
+/.claude/
+
 # Rebuild script
 /rebuild.sh
 

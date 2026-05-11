@@ -1,0 +1,3 @@
+luaopen_hs_libbase64
+luaopen_hs_libmath
+luaopen_hs_libwindow

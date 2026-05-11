@@ -1,12 +1,19 @@
 // AUTO-GENERATED. DO NOT EDIT. Re-run scripts/generate-hsextensions.sh.
+//
+// Implements HSExtensionsRegisterAll(L), which inserts every bundled
+// luaopen_hs_lib<name> into Lua's package.preload keyed by "hs.lib<name>".
+// Call after lua_State creation and before setup.lua runs so require()
+// resolves bundled modules without ever touching package.cpath.
 #import "HSExtensions/HSExtensions.h"
-#import "HSExtensions+Preload.h"
+#import "HSExtensions/HSExtensions+Preload.h"
 
 #include <LuaSkin/lauxlib.h>
 
 void HSExtensionsRegisterAll(lua_State *L) {
     static const struct { const char *name; lua_CFunction func; } preload[] = {
-        // (no entries yet — Phase 1 scaffold; regenerated per scripts/generate-hsextensions.sh)
+        { "hs.libbase64",        luaopen_hs_libbase64 },
+        { "hs.libmath",          luaopen_hs_libmath },
+        { "hs.libwindow",        luaopen_hs_libwindow },
         { NULL, NULL }
     };
 

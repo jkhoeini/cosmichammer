@@ -11,7 +11,9 @@
 extern "C" {
 #endif
 
-// (no symbols yet — Phase 1 scaffold; regenerated per scripts/generate-hsextensions.sh)
+int luaopen_hs_libbase64(lua_State *L);
+int luaopen_hs_libmath(lua_State *L);
+int luaopen_hs_libwindow(lua_State *L);
 
 #ifdef __cplusplus
 }
