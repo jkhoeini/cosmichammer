@@ -55,7 +55,7 @@ INTENTS_CODEGEN_LANGUAGE = Objective-C
 // or code-coverage are enabled, SPM compiles with instrumentation but Xcode
 // no longer infers the matching linker flags from compiled sources. Add them
 // explicitly so the link step succeeds regardless of scheme settings.
-OTHER_LDFLAGS = $(inherited) -fobjc-arc -fobjc-link-runtime -fprofile-instr-generate -fsanitize=address -fsanitize=undefined -weak_framework SkyLight -weak_framework DisplayServices -weak_framework CoreDisplay
+OTHER_LDFLAGS = $(inherited) -fobjc-arc -fobjc-link-runtime -fprofile-instr-generate -fsanitize=address -fsanitize=undefined -framework SkyLight -framework DisplayServices -framework CoreDisplay
 
 // Private frameworks consumed by the brightness/screen/spaces extensions.
 FRAMEWORK_SEARCH_PATHS = $(inherited) $(SDKROOT)/System/Library/PrivateFrameworks

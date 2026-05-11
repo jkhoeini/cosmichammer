@@ -15,8 +15,8 @@
 NS_ASSUME_NONNULL_BEGIN
 
 @interface HSExecuteLuaIntentHandler<HSExecuteLuaIntentHandling> : NSObject
-- (void)handleExecuteLua:(HSExecuteLuaIntent *)intent completion:(void (^)(HSExecuteLuaIntentResponse *response))completion NS_SWIFT_NAME(handle(intent:completion:)) API_AVAILABLE(macos(11.0));
-- (void)resolveSourceForExecuteLua:(HSExecuteLuaIntent *)intent withCompletion:(void (^)(HSExecuteLuaSourceResolutionResult *resolutionResult))completion NS_SWIFT_NAME(resolveSource(for:with:)) API_AVAILABLE(ios(13.0), macos(10.16), watchos(6.0));
+- (void)handleExecuteLua:(HSExecuteLuaIntent *)intent completion:(void (^)(HSExecuteLuaIntentResponse *response))completion NS_SWIFT_NAME(handle(intent:completion:));
+- (void)resolveSourceForExecuteLua:(HSExecuteLuaIntent *)intent withCompletion:(void (^)(HSExecuteLuaSourceResolutionResult *resolutionResult))completion NS_SWIFT_NAME(resolveSource(for:with:));
 @end
 
 NS_ASSUME_NONNULL_END

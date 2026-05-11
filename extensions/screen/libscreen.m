@@ -22,13 +22,11 @@ static CGImageRef hs_CGDisplayCreateImageForRect(CGDirectDisplayID display, CGRe
 
 #pragma mark - Private API declarations
 
-extern void CoreDisplay_Display_SetUserBrightness(CGDirectDisplayID id, double brightness)
-    __attribute__((weak_import));
-extern double CoreDisplay_Display_GetUserBrightness(CGDirectDisplayID)
-    __attribute__((weak_import));
+extern void CoreDisplay_Display_SetUserBrightness(CGDirectDisplayID id, double brightness);
+extern double CoreDisplay_Display_GetUserBrightness(CGDirectDisplayID);
 
-extern int DisplayServicesGetBrightness(CGDirectDisplayID display, float *brightness) __attribute__((weak_import));
-extern int DisplayServicesSetBrightness(CGDirectDisplayID display, float brightness) __attribute__((weak_import));
+extern int DisplayServicesGetBrightness(CGDirectDisplayID display, float *brightness);
+extern int DisplayServicesSetBrightness(CGDirectDisplayID display, float brightness);
 
 #pragma mark - Module
 static void geom_pushrect(lua_State* L, NSRect rect) {
@@ -88,24 +86,7 @@ static int screen_name(lua_State* L) {
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG, LS_TBREAK];
 
     NSScreen* screen = get_screen_arg(L, 1);
-    if (@available(macOS 10.15, *)) {
-        [skin pushNSObject:screen.localizedName] ;
-    } else {
-        CGDirectDisplayID screen_id = [[[screen deviceDescription] objectForKey:@"NSScreenNumber"] intValue];
-
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-        CFDictionaryRef deviceInfo = IODisplayCreateInfoDictionary(CGDisplayIOServicePort(screen_id), kIODisplayOnlyPreferredName);
-#pragma clang diagnostic pop
-        NSDictionary *localizedNames = [(__bridge NSDictionary *)deviceInfo objectForKey:(NSString *)[NSString stringWithUTF8String:kDisplayProductName]];
-
-        if ([localizedNames count])
-            lua_pushstring(L, [[localizedNames objectForKey:[[localizedNames allKeys] objectAtIndex:0]] UTF8String]);
-        else
-            lua_pushnil(L);
-
-        CFRelease(deviceInfo);
-    }
+    [skin pushNSObject:screen.localizedName] ;
 
     return 1;
 }
@@ -654,33 +635,12 @@ static int screen_getBrightness(lua_State *L) {
     NSScreen* screen = get_screen_arg(L, 1);
     CGDirectDisplayID screen_id = [[[screen deviceDescription] objectForKey:@"NSScreenNumber"] intValue];
 
-    if (DisplayServicesGetBrightness != NULL) {
-        float brightness ;
-        int err = DisplayServicesGetBrightness(screen_id, &brightness) ;
-        if (err == kCGErrorSuccess) {
-            lua_pushnumber(L, (lua_Number)brightness) ;
-        } else {
-            lua_pushnil(L);
-        }
-    } else if (CoreDisplay_Display_GetUserBrightness != NULL) {
-        // Preferred API - interacts better with Night Shift, but is semi-private
-        double brightness = CoreDisplay_Display_GetUserBrightness(screen_id);
-        lua_pushnumber(L, brightness);
+    float brightness ;
+    int err = DisplayServicesGetBrightness(screen_id, &brightness) ;
+    if (err == kCGErrorSuccess) {
+        lua_pushnumber(L, (lua_Number)brightness) ;
     } else {
-        // Legacy API for people on older macOS
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-        io_service_t service = CGDisplayIOServicePort(screen_id);
-#pragma clang diagnostic pop
-        CGDisplayErr err;
-
-        float brightness;
-        err = (CGDisplayErr)IODisplayGetFloatParameter(service, kNilOptions, CFSTR(kIODisplayBrightnessKey), &brightness);
-        if (err != kIOReturnSuccess) {
-            lua_pushnil(L);
-        } else {
-            lua_pushnumber(L, (lua_Number)brightness);
-        }
+        lua_pushnil(L);
     }
     return 1;
 }
@@ -702,19 +662,7 @@ static int screen_setBrightness(lua_State *L) {
     CGDirectDisplayID screen_id = [[[screen deviceDescription] objectForKey:@"NSScreenNumber"] intValue];
 
     double brightness = lua_tonumber(L, 2);
-    if (DisplayServicesSetBrightness != NULL) {
-        DisplayServicesSetBrightness(screen_id, brightness) ;
-    } else if (CoreDisplay_Display_SetUserBrightness != NULL) {
-        // Preferred API - interacts better with Night Shift, but is semi-private
-        CoreDisplay_Display_SetUserBrightness(screen_id, brightness);
-    } else {
-        // Legacy API for people on older macOS
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-        io_service_t service = CGDisplayIOServicePort(screen_id);
-#pragma clang diagnostic pop
-        IODisplaySetFloatParameter(service, kNilOptions, CFSTR(kIODisplayBrightnessKey), brightness);
-    }
+    DisplayServicesSetBrightness(screen_id, brightness) ;
 
     lua_pushvalue(L, 1);
     return 1;
@@ -1411,23 +1359,8 @@ static int userdata_tostring(lua_State* L) {
     LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG, LS_TBREAK];
 
-    NSString *theName = @"(un-named screen)" ;
     NSScreen *screen = get_screen_arg(L, 1);
-
-    if (@available(macOS 10.15, *)) {
-        theName = screen.localizedName ;
-    } else {
-        CGDirectDisplayID screen_id = [[[screen deviceDescription] objectForKey:@"NSScreenNumber"] intValue];
-
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-        CFDictionaryRef deviceInfo = IODisplayCreateInfoDictionary(CGDisplayIOServicePort(screen_id), kIODisplayOnlyPreferredName);
-#pragma clang diagnostic pop
-        NSDictionary *localizedNames = [(__bridge NSDictionary *)deviceInfo objectForKey:(NSString *)[NSString stringWithUTF8String:kDisplayProductName]];
-        if ([localizedNames count])
-            theName = [localizedNames objectForKey:[[localizedNames allKeys] objectAtIndex:0]] ;
-        CFRelease(deviceInfo);
-    }
+    NSString *theName = screen.localizedName ;
 
     lua_pushstring(L, [[NSString stringWithFormat:@"%s: %@ (%p)", USERDATA_TAG, theName, lua_topointer(L, 1)] UTF8String]) ;
     return 1 ;

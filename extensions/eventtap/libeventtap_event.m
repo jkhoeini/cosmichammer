@@ -1391,9 +1391,7 @@ static void pushtypestable(lua_State* L) {
     lua_pushinteger(L, NSEventTypeSmartMagnify);       lua_setfield(L, -2, "smartMagnify");
     lua_pushinteger(L, NSEventTypePressure);           lua_setfield(L, -2, "pressure");
     lua_pushinteger(L, NSEventTypeDirectTouch);        lua_setfield(L, -2, "directTouch");
-    if (@available(macOS 10.15, *)) {
-        lua_pushinteger(L, NSEventTypeChangeMode);         lua_setfield(L, -2, "changeMode");
-    }
+    lua_pushinteger(L, NSEventTypeChangeMode);         lua_setfield(L, -2, "changeMode");
 
 // // no longer generated as of 10.11+
 //     lua_pushinteger(L, NSEventTypeBeginGesture);       lua_setfield(L, -2, "beginGesture");

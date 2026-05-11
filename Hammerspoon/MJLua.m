@@ -264,51 +264,44 @@ static int core_accessibilityState(lua_State* L) {
 // SOURCE: https://stackoverflow.com/a/58985069
 static bool isScreenRecordingEnabled(void)
 {
-    if (@available(macos 10.15, *)) {
-        BOOL canRecordScreen = YES;
-        if (@available(macOS 10.15, *)) {
-            canRecordScreen = NO;
-            NSRunningApplication *runningApplication = NSRunningApplication.currentApplication;
-            NSNumber *ourProcessIdentifier = [NSNumber numberWithInteger:runningApplication.processIdentifier];
+    BOOL canRecordScreen = NO;
+    NSRunningApplication *runningApplication = NSRunningApplication.currentApplication;
+    NSNumber *ourProcessIdentifier = [NSNumber numberWithInteger:runningApplication.processIdentifier];
 
-            CFArrayRef windowList = CGWindowListCopyWindowInfo(kCGWindowListOptionOnScreenOnly, kCGNullWindowID);
-            CFIndex numberOfWindows = CFArrayGetCount(windowList);
-            for (CFIndex index = 0; index < numberOfWindows; index++) {
-                // get information for each window
-                NSDictionary *windowInfo = (NSDictionary *)CFArrayGetValueAtIndex(windowList, index);
-                NSString *windowName = windowInfo[(id)kCGWindowName];
-                NSNumber *processIdentifier = windowInfo[(id)kCGWindowOwnerPID];
+    CFArrayRef windowList = CGWindowListCopyWindowInfo(kCGWindowListOptionOnScreenOnly, kCGNullWindowID);
+    CFIndex numberOfWindows = CFArrayGetCount(windowList);
+    for (CFIndex index = 0; index < numberOfWindows; index++) {
+        // get information for each window
+        NSDictionary *windowInfo = (NSDictionary *)CFArrayGetValueAtIndex(windowList, index);
+        NSString *windowName = windowInfo[(id)kCGWindowName];
+        NSNumber *processIdentifier = windowInfo[(id)kCGWindowOwnerPID];
 
-                // don't check windows owned by this process
-                if (! [processIdentifier isEqual:ourProcessIdentifier]) {
-                    // get process information for each window
-                    pid_t pid = processIdentifier.intValue;
-                    NSRunningApplication *windowRunningApplication = [NSRunningApplication runningApplicationWithProcessIdentifier:pid];
-                    if (! windowRunningApplication) {
-                        // ignore processes we don't have access to, such as WindowServer, which manages the windows named "Menubar" and "Backstop Menubar"
+        // don't check windows owned by this process
+        if (! [processIdentifier isEqual:ourProcessIdentifier]) {
+            // get process information for each window
+            pid_t pid = processIdentifier.intValue;
+            NSRunningApplication *windowRunningApplication = [NSRunningApplication runningApplicationWithProcessIdentifier:pid];
+            if (! windowRunningApplication) {
+                // ignore processes we don't have access to, such as WindowServer, which manages the windows named "Menubar" and "Backstop Menubar"
+            }
+            else {
+                NSString *windowExecutableName = windowRunningApplication.executableURL.lastPathComponent;
+                if (windowName) {
+                    if ([windowExecutableName isEqual:@"Dock"]) {
+                        // ignore the Dock, which provides the desktop picture
                     }
                     else {
-                        NSString *windowExecutableName = windowRunningApplication.executableURL.lastPathComponent;
-                        if (windowName) {
-                            if ([windowExecutableName isEqual:@"Dock"]) {
-                                // ignore the Dock, which provides the desktop picture
-                            }
-                            else {
-                                canRecordScreen = YES;
-                                break;
-                            }
-                        }
+                        canRecordScreen = YES;
+                        break;
                     }
                 }
             }
-            if (windowList) {
-                CFRelease(windowList);
-            }
         }
-        return canRecordScreen;
-    } else {
-        return true;
     }
+    if (windowList) {
+        CFRelease(windowList);
+    }
+    return canRecordScreen;
 }
 
 /// hs.screenRecordingState(shouldPrompt) -> isEnabled
@@ -360,44 +353,39 @@ static int core_microphoneState(lua_State* L) {
     BOOL shouldprompt = lua_toboolean(L, 1);
 
     // Request permission to access the camera and microphone.
-    if (@available(macOS 10.14, *)) {
-        switch ([AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeAudio])
+    switch ([AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeAudio])
+    {
+        case AVAuthorizationStatusAuthorized:
         {
-            case AVAuthorizationStatusAuthorized:
-            {
-                // The user has previously granted access to the camera.
-                lua_pushboolean(L, YES) ;
-                break;
-            }
-            case AVAuthorizationStatusNotDetermined:
-            {
-                if (shouldprompt) {
-                    // The app hasn't yet asked the user for camera access.
-                    [AVCaptureDevice requestAccessForMediaType:AVMediaTypeAudio completionHandler:^(BOOL granted) {
-                        if (!granted) {
-                            [skin logWarn:@"Hammerspoon has been declined Microphone access by the user."] ;
-                        }
-                    }];
-                }
-                lua_pushboolean(L, NO) ;
-                break;
-            }
-            case AVAuthorizationStatusDenied:
-            {
-                // The user has previously denied access.
-                lua_pushboolean(L, NO) ;
-                break;
-            }
-            case AVAuthorizationStatusRestricted:
-            {
-                // The user can't grant access due to restrictions.
-                lua_pushboolean(L, NO) ;
-                break;
-            }
+            // The user has previously granted access to the camera.
+            lua_pushboolean(L, YES) ;
+            break;
         }
-    } else {
-        // Fallback on earlier versions
-        lua_pushboolean(L, YES) ;
+        case AVAuthorizationStatusNotDetermined:
+        {
+            if (shouldprompt) {
+                // The app hasn't yet asked the user for camera access.
+                [AVCaptureDevice requestAccessForMediaType:AVMediaTypeAudio completionHandler:^(BOOL granted) {
+                    if (!granted) {
+                        [skin logWarn:@"Hammerspoon has been declined Microphone access by the user."] ;
+                    }
+                }];
+            }
+            lua_pushboolean(L, NO) ;
+            break;
+        }
+        case AVAuthorizationStatusDenied:
+        {
+            // The user has previously denied access.
+            lua_pushboolean(L, NO) ;
+            break;
+        }
+        case AVAuthorizationStatusRestricted:
+        {
+            // The user can't grant access due to restrictions.
+            lua_pushboolean(L, NO) ;
+            break;
+        }
     }
     return 1;
 }
@@ -419,44 +407,39 @@ static int core_cameraState(lua_State* L) {
     BOOL shouldprompt = lua_toboolean(L, 1);
 
     // Request permission to access the camera and microphone.
-    if (@available(macOS 10.14, *)) {
-        switch ([AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeVideo])
+    switch ([AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeVideo])
+    {
+        case AVAuthorizationStatusAuthorized:
         {
-            case AVAuthorizationStatusAuthorized:
-            {
-                // The user has previously granted access to the camera.
-                lua_pushboolean(L, YES) ;
-                break;
-            }
-            case AVAuthorizationStatusNotDetermined:
-            {
-                if (shouldprompt) {
-                    // The app hasn't yet asked the user for camera access.
-                    [AVCaptureDevice requestAccessForMediaType:AVMediaTypeVideo completionHandler:^(BOOL granted) {
-                        if (!granted) {
-                            [skin logWarn:@"Hammerspoon has been declined Microphone access by the user."] ;
-                        }
-                    }];
-                }
-                lua_pushboolean(L, NO) ;
-                break;
-            }
-            case AVAuthorizationStatusDenied:
-            {
-                // The user has previously denied access.
-                lua_pushboolean(L, NO) ;
-                break;
-            }
-            case AVAuthorizationStatusRestricted:
-            {
-                // The user can't grant access due to restrictions.
-                lua_pushboolean(L, NO) ;
-                break;
-            }
+            // The user has previously granted access to the camera.
+            lua_pushboolean(L, YES) ;
+            break;
         }
-    } else {
-        // Fallback on earlier versions
-        lua_pushboolean(L, YES) ;
+        case AVAuthorizationStatusNotDetermined:
+        {
+            if (shouldprompt) {
+                // The app hasn't yet asked the user for camera access.
+                [AVCaptureDevice requestAccessForMediaType:AVMediaTypeVideo completionHandler:^(BOOL granted) {
+                    if (!granted) {
+                        [skin logWarn:@"Hammerspoon has been declined Microphone access by the user."] ;
+                    }
+                }];
+            }
+            lua_pushboolean(L, NO) ;
+            break;
+        }
+        case AVAuthorizationStatusDenied:
+        {
+            // The user has previously denied access.
+            lua_pushboolean(L, NO) ;
+            break;
+        }
+        case AVAuthorizationStatusRestricted:
+        {
+            // The user can't grant access due to restrictions.
+            lua_pushboolean(L, NO) ;
+            break;
+        }
     }
     return 1;
 }

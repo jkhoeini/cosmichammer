@@ -83,9 +83,7 @@ static NSMenu *createCoreSearchFieldMenu() {
         _fnRefDictionary       = [[NSMutableDictionary alloc] init] ;
         _enabledDictionary     = [[NSMutableDictionary alloc] init] ;
 
-        if (@available(macOS 11.0, *)) {
-            _toolbarStyle      = NSWindowToolbarStyleAutomatic ;
-        }
+        _toolbarStyle          = NSWindowToolbarStyleAutomatic ;
 
         _callbackRef           = LUA_NOREF;
         _selfRef               = LUA_NOREF;
@@ -145,9 +143,7 @@ static NSMenu *createCoreSearchFieldMenu() {
         _notifyToolbarChanges  = original.notifyToolbarChanges ;
         _windowUsingToolbar    = nil ;
 
-        if (@available(macOS 11.0, *)) {
-            _toolbarStyle      = original.toolbarStyle ;
-        }
+        _toolbarStyle          = original.toolbarStyle ;
 
         self.allowsUserCustomization = original.allowsUserCustomization ;
         self.allowsExtensionItems    = original.allowsExtensionItems ;
@@ -963,10 +959,8 @@ static int attachToolbar(lua_State *L) {
             newToolbar.windowUsingToolbar = theWindow ;
             newToolbar.visible            = YES ;
 
-            // Update the toolbar style if available:
-            if (@available(macOS 11.0, *)) {
-                theWindow.toolbarStyle = newToolbar.toolbarStyle;
-            }
+            // Update the toolbar style:
+            theWindow.toolbarStyle = newToolbar.toolbarStyle;
 
         }
         lua_pushvalue(L, 1) ;
@@ -1353,59 +1347,51 @@ static int toolbarStyle(lua_State *L) {
     HSToolbar *toolbar = [skin toNSObjectAtIndex:1] ;
 
     if (lua_gettop(L) == 2) {
-        if (@available(macOS 11.0, *))
-        {
-            NSString *type = [skin toNSObjectAtIndex:2] ;
-            BOOL valid = NO;
-            if ([type isEqualToString:@"automatic"]) {
-                valid = YES;
-                toolbar.toolbarStyle = NSWindowToolbarStyleAutomatic ;
-            } else if ([type isEqualToString:@"expanded"]) {
-                valid = YES;
-                toolbar.toolbarStyle = NSWindowToolbarStyleExpanded ;
-            } else if ([type isEqualToString:@"preference"]) {
-                valid = YES;
-                toolbar.toolbarStyle = NSWindowToolbarStylePreference ;
-            } else if ([type isEqualToString:@"unified"]) {
-                valid = YES;
-                toolbar.toolbarStyle = NSWindowToolbarStyleUnified ;
-            } else if ([type isEqualToString:@"unifiedCompact"]) {
-                valid = YES;
-                toolbar.toolbarStyle = NSWindowToolbarStyleUnifiedCompact ;
-            } else {
-                return luaL_error(L, "invalid toolbarStyle: '%s'", [type UTF8String]) ;
-            }
-            // Update the toolbar if it's already visible:
-            if (valid && toolbar.windowUsingToolbar) {
-                toolbar.windowUsingToolbar.toolbarStyle = toolbar.toolbarStyle;
-            }
+        NSString *type = [skin toNSObjectAtIndex:2] ;
+        BOOL valid = NO;
+        if ([type isEqualToString:@"automatic"]) {
+            valid = YES;
+            toolbar.toolbarStyle = NSWindowToolbarStyleAutomatic ;
+        } else if ([type isEqualToString:@"expanded"]) {
+            valid = YES;
+            toolbar.toolbarStyle = NSWindowToolbarStyleExpanded ;
+        } else if ([type isEqualToString:@"preference"]) {
+            valid = YES;
+            toolbar.toolbarStyle = NSWindowToolbarStylePreference ;
+        } else if ([type isEqualToString:@"unified"]) {
+            valid = YES;
+            toolbar.toolbarStyle = NSWindowToolbarStyleUnified ;
+        } else if ([type isEqualToString:@"unifiedCompact"]) {
+            valid = YES;
+            toolbar.toolbarStyle = NSWindowToolbarStyleUnifiedCompact ;
+        } else {
+            return luaL_error(L, "invalid toolbarStyle: '%s'", [type UTF8String]) ;
+        }
+        // Update the toolbar if it's already visible:
+        if (valid && toolbar.windowUsingToolbar) {
+            toolbar.windowUsingToolbar.toolbarStyle = toolbar.toolbarStyle;
         }
         lua_pushvalue(L, 1) ;
     } else {
-        if (@available(macOS 11.0, *))
-        {
-            switch(toolbar.toolbarStyle) {
-                case NSWindowToolbarStyleAutomatic:
-                    [skin pushNSObject:@"automatic"] ;
-                    break ;
-                case NSWindowToolbarStyleExpanded:
-                    [skin pushNSObject:@"expanded"] ;
-                    break ;
-                case NSWindowToolbarStylePreference:
-                    [skin pushNSObject:@"preference"] ;
-                    break ;
-                case NSWindowToolbarStyleUnified:
-                    [skin pushNSObject:@"unified"] ;
-                    break ;
-                case NSWindowToolbarStyleUnifiedCompact:
-                    [skin pushNSObject:@"unifiedCompact"] ;
-                    break ;
-                default:
-                    [skin pushNSObject:[NSString stringWithFormat:@"** unrecognized toolbarStyle (%tu)", toolbar.windowUsingToolbar.toolbarStyle]] ;
-                    break ;
-            }
-        } else {
-            lua_pushnil(L);
+        switch(toolbar.toolbarStyle) {
+            case NSWindowToolbarStyleAutomatic:
+                [skin pushNSObject:@"automatic"] ;
+                break ;
+            case NSWindowToolbarStyleExpanded:
+                [skin pushNSObject:@"expanded"] ;
+                break ;
+            case NSWindowToolbarStylePreference:
+                [skin pushNSObject:@"preference"] ;
+                break ;
+            case NSWindowToolbarStyleUnified:
+                [skin pushNSObject:@"unified"] ;
+                break ;
+            case NSWindowToolbarStyleUnifiedCompact:
+                [skin pushNSObject:@"unifiedCompact"] ;
+                break ;
+            default:
+                [skin pushNSObject:[NSString stringWithFormat:@"** unrecognized toolbarStyle (%tu)", toolbar.windowUsingToolbar.toolbarStyle]] ;
+                break ;
         }
     }
     return 1 ;

@@ -10,7 +10,6 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
-API_AVAILABLE(ios(12.0), macos(11.0), watchos(5.0)) API_UNAVAILABLE(tvos)
 @interface HSExecuteLuaIntent : INIntent
 
 @property (readwrite, copy, nullable, nonatomic) NSString *source;
@@ -24,7 +23,6 @@ API_AVAILABLE(ios(12.0), macos(11.0), watchos(5.0)) API_UNAVAILABLE(tvos)
  @abstract Protocol to declare support for handling a HSExecuteLuaIntent. By implementing this protocol, a class can provide logic for resolving, confirming and handling the intent.
  @discussion The minimum requirement for an implementing class is that it should be able to handle the intent. The confirmation method is optional. The handling method is always called last, after confirming the intent.
  */
-API_AVAILABLE(ios(12.0), macos(11.0), watchos(5.0)) API_UNAVAILABLE(tvos)
 @protocol HSExecuteLuaIntentHandling <NSObject>
 
 @required
@@ -49,7 +47,7 @@ API_AVAILABLE(ios(12.0), macos(11.0), watchos(5.0)) API_UNAVAILABLE(tvos)
 
 @see INIntentResolutionResult
 */
-- (void)resolveSourceForExecuteLua:(HSExecuteLuaIntent *)intent withCompletion:(void (^)(HSExecuteLuaSourceResolutionResult *resolutionResult))completion NS_SWIFT_NAME(resolveSource(for:with:)) API_AVAILABLE(ios(13.0), macos(11.0), watchos(6.0));
+- (void)resolveSourceForExecuteLua:(HSExecuteLuaIntent *)intent withCompletion:(void (^)(HSExecuteLuaSourceResolutionResult *resolutionResult))completion NS_SWIFT_NAME(resolveSource(for:with:));
 
 @optional
 
@@ -77,9 +75,8 @@ typedef NS_ENUM(NSInteger, HSExecuteLuaIntentResponseCode) {
     HSExecuteLuaIntentResponseCodeSuccess,
     HSExecuteLuaIntentResponseCodeFailure,
     HSExecuteLuaIntentResponseCodeFailureRequiringAppLaunch
-} API_AVAILABLE(ios(12.0), macos(11.0), watchos(5.0)) API_UNAVAILABLE(tvos);
+};
 
-API_AVAILABLE(ios(12.0), macos(11.0), watchos(5.0)) API_UNAVAILABLE(tvos)
 @interface HSExecuteLuaIntentResponse : INIntentResponse
 
 - (instancetype)init NS_UNAVAILABLE;
@@ -114,9 +111,8 @@ API_AVAILABLE(ios(12.0), macos(11.0), watchos(5.0)) API_UNAVAILABLE(tvos)
 
 typedef NS_ENUM(NSInteger, HSExecuteLuaSourceUnsupportedReason) {
     HSExecuteLuaSourceUnsupportedReasonNoLua = 1,
-} API_AVAILABLE(ios(13.0), macos(11.0), watchos(6.0));
+};
 
-API_AVAILABLE(ios(13.0), macos(11.0), watchos(6.0))
 @interface HSExecuteLuaSourceResolutionResult : INStringResolutionResult
 
 + (instancetype)unsupportedForReason:(HSExecuteLuaSourceUnsupportedReason)reason;
