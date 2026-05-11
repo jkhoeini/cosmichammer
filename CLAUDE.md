@@ -17,6 +17,7 @@ The project uses `just` as a task runner over `xcodebuild`. `mise` installs `jus
 - `just test` — Runs the Xcode test bundle (requires a prior `build`). Test results go to `build/TestResults`.
 - `just docs` / `just docs-lint` — Builds/lints the API docs via the Swift tool under `scripts/docs/` (auto-builds the `BuildDocs` binary the first time).
 - `scripts/generate-hsextensions.sh` — Regenerates the HSExtensions glue (`HSExtensions.m`, `HSExtensions+Preload.h`, `HSExtensionsRegistry.m`) from `Packages/HSExtensions/extensions.list`. Re-run this whenever an extension entry-point is added or removed. The script is idempotent.
+- `scripts/generate-lua-files-xcfilelists.sh` — Regenerates `scripts/lua-files.inputs.xcfilelist` and `scripts/lua-files.outputs.xcfilelist` from `Packages/HSExtensions/lua-files.list`. Re-run this whenever a Lua file is added or removed from the bundled set. The script is idempotent.
 
 Builds **must** go through the workspace, not the bare project. `xcodebuild -workspace Hammerspoon.xcworkspace -scheme Hammerspoon ...` (this is what the `justfile` does). Opening `Hammerspoon.xcodeproj` directly will fail because SPM resolution happens at the workspace level.
 
@@ -53,7 +54,7 @@ Key pieces of this model — preserve them when adding extensions:
 3. Add the source path(s) to `extensionSourcePaths` in `Packages/HSExtensions/Package.swift`.
 4. Add the `luaopen_hs_lib<name>` symbol to `Packages/HSExtensions/extensions.list`.
 5. Run `scripts/generate-hsextensions.sh`.
-6. Add the `.lua` file to the "Copy Extension Lua Files" build phase on the Hammerspoon Xcode target.
+6. Add the `.lua` file's repo-relative path to `Packages/HSExtensions/lua-files.list` (drives the "Copy Extension Lua files (manifest)" Run Script build phase). Re-run `scripts/generate-lua-files-xcfilelists.sh` to refresh the xcfilelists.
 7. `just build`.
 
 The Xcode project no longer needs per-extension targets — there are 4 targets total (`Hammerspoon`, `Hammerspoon Tests`, `HammerspoonUITests`, `hs` CLI). The "Copy hs CLI" build phase deploys the `hs` command-line tool into the app bundle.
