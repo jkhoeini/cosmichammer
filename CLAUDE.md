@@ -62,6 +62,6 @@ The Xcode project no longer needs per-extension targets — there are 3 targets 
 ### Other notable bits
 
 - Test isolation: launch with `-MJConfigFile <path>` to point at a non-default Hammerspoon config dir; useful for ad-hoc verification runs.
-- `Hammerspoon/Build Configs/*.xcconfig` holds the compile/link flags. `-undefined dynamic_lookup` is intentionally retained for compatibility with extension code that references late-bound symbols.
+- `Hammerspoon/Build Configs/*.xcconfig` holds the compile/link flags. `-undefined dynamic_lookup` has been removed; all symbols resolve at link time. The brightness/screen/spaces extensions weak-link `CoreDisplay`, `DisplayServices`, and `SkyLight` (the latter two from `$(SDKROOT)/System/Library/PrivateFrameworks`) — call sites null-check via `weak_import`.
 - The doc-build tool is its own SPM project (`scripts/docs/`); `BuildDocs` parses `///` (ObjC) and `---` (Lua) doc comments into JSON/Markdown/HTML/SQL.
 - `.claude-plans/dylib-consolidation.md` is the historical record of the static-linking refactor. Consult it before making large structural changes to the build.
