@@ -3,7 +3,7 @@ name: Hammerspoon
 options:
   bundleIdPrefix: org.hammerspoon
   deploymentTarget:
-    macOS: "15.0"
+    macOS: "26.0"
   xcodeVersion: "1600"
 
 configs:

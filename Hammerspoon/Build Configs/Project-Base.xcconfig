@@ -12,7 +12,7 @@
 // Base SDK
 SDKROOT = macosx
 // macOS Deployment Target (also set in project.yml for XcodeGen)
-MACOSX_DEPLOYMENT_TARGET = 15.0
+MACOSX_DEPLOYMENT_TARGET = 26.0
 // Build only for Apple Silicon
 ARCHS = arm64
 
@@ -41,9 +41,6 @@ STRIP_INSTALLED_PRODUCT = NO
 GCC_TREAT_WARNINGS_AS_ERRORS = YES
 
 
-// Always Search User Paths (Deprecated)
-ALWAYS_SEARCH_USER_PATHS = NO
-
 // LuaSkin framework headers use double-quoted includes internally
 CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = NO
 
@@ -60,9 +57,9 @@ GCC_SYMBOLS_PRIVATE_EXTERN = NO
 COMBINE_HIDPI_IMAGES = YES
 
 // C Language Dialect
-GCC_C_LANGUAGE_STANDARD = gnu99
+GCC_C_LANGUAGE_STANDARD = gnu17
 // C++ Language Dialect
-CLANG_CXX_LANGUAGE_STANDARD = gnu++0x
+CLANG_CXX_LANGUAGE_STANDARD = gnu++17
 // C++ Standard Library
 CLANG_CXX_LIBRARY = libc++
 // Enable Modules (C and Objective-C)
