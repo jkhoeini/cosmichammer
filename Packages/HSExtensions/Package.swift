@@ -1,4 +1,4 @@
-// swift-tools-version:5.9
+// swift-tools-version:6.0
 import PackageDescription
 
 // SPM auto-discovers sources under Sources/HSExtensions/ by following the
@@ -17,7 +17,7 @@ import PackageDescription
 
 let package = Package(
     name: "HSExtensions",
-    platforms: [.macOS(.v14)],
+    platforms: [.macOS(.v15)],
     products: [
         .library(name: "HSExtensions", type: .static, targets: ["HSExtensions"]),
     ],

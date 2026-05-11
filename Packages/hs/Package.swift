@@ -1,4 +1,4 @@
-// swift-tools-version:5.9
+// swift-tools-version:6.0
 import PackageDescription
 
 // The `hs` command-line tool. A self-contained Objective-C executable that
@@ -11,7 +11,7 @@ import PackageDescription
 
 let package = Package(
     name: "hs",
-    platforms: [.macOS(.v14)],
+    platforms: [.macOS(.v15)],
     products: [
         .executable(name: "hs", targets: ["hs"]),
     ],

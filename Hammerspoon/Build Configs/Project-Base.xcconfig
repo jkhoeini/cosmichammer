@@ -11,7 +11,7 @@
 
 // Base SDK
 SDKROOT = macosx
-// macOS Deployment Target
+// macOS Deployment Target (also set in project.yml for XcodeGen)
 MACOSX_DEPLOYMENT_TARGET = 15.0
 // Build only for Apple Silicon
 ARCHS = arm64
