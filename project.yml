@@ -20,17 +20,12 @@ settings:
     Release:
       GCC_OPTIMIZATION_LEVEL: s
 
-# Only local SPM packages need to be declared here. Remote packages
-# (CocoaLumberjack, CocoaAsyncSocket, ORSSerialPort) are declared in
-# Packages/HSExtensions/Package.swift and Xcode resolves them transitively
-# — no need to duplicate them at the workspace level.
+# Single unified SPM package containing LuaSkin, CocoaHTTPServer, and
+# HSExtensions as internal targets. Remote dependencies (CocoaLumberjack,
+# CocoaAsyncSocket, ORSSerialPort) are resolved transitively.
 packages:
-  LuaSkin:
-    path: Packages/LuaSkin
-  HSExtensions:
-    path: Packages/HSExtensions
-  CocoaHTTPServer:
-    path: Packages/CocoaHTTPServer
+  HammerspoonLibs:
+    path: Packages
 
 targets:
   Hammerspoon:
@@ -78,9 +73,7 @@ targets:
         buildPhase:
           copyFiles: { destination: resources, subpath: extensions/hs/hsdocs/hsminweb }
     dependencies:
-      - package: LuaSkin
-      - package: HSExtensions
-      - package: CocoaHTTPServer
+      - package: HammerspoonLibs
 
   Hammerspoon Tests:
     type: bundle.unit-test

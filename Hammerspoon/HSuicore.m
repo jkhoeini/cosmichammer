@@ -240,7 +240,11 @@ static CGImageRef hs_CGWindowListCreateImage(CGRect screenBounds, CGWindowListOp
 }
 
 -(BOOL)activate:(BOOL)allWindows {
-    return [self.runningApp activateWithOptions:NSApplicationActivateIgnoringOtherApps | (allWindows ? NSApplicationActivateAllWindows : 0)];
+    NSApplicationActivationOptions options = 0;
+    if (allWindows) {
+        options |= NSApplicationActivateAllWindows;
+    }
+    return [self.runningApp activateWithOptions:options];
 }
 
 -(BOOL)isResponsive {

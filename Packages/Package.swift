@@ -1,34 +1,84 @@
 // swift-tools-version:6.2
 import PackageDescription
 
-// SPM auto-discovers sources under Sources/HSExtensions/ by following the
-// symlinks into extensions/<name>/ AND into Hammerspoon/ (the core app
-// sources).  The Hammerspoon symlink points at the main app source tree;
-// SPM compiles its .m/.h files alongside the extensions so that everything
-// ends up in one static library (libHSExtensions.a).
+// Unified SPM package for all Hammerspoon libraries.
 //
-// Excludes:
-//  - Non-source files inside Hammerspoon/ (XIBs, plists, assets, etc.)
-//    that SPM would otherwise try to process or treat as resources.
-//  - "ipc/cli" — the standalone `hs` CLI tool (built by Packages/hs/).
-//  - "sqlite3/lsqlite3.c" — compiled indirectly via lsqlite3_wrapper.m as
-//    Objective-C.  Letting SPM also compile it as plain C causes duplicate
-//    symbols.
+// Three internal targets compiled into one static library product:
+//
+//   LuaSkin          – Lua 5.4 runtime + Objective-C bridge
+//   CocoaHTTPServer  – vendored HTTP server (used by hs.httpserver)
+//   HSExtensions     – 90+ extensions + core app sources
+//
+// The hs CLI (Packages/hs/) is a separate package built outside Xcode
+// by `swift build --package-path Packages/hs` in the justfile.
 
 let package = Package(
-    name: "HSExtensions",
+    name: "HammerspoonLibs",
     platforms: [.macOS(.v26)],
     products: [
-        .library(name: "HSExtensions", type: .static, targets: ["HSExtensions"]),
+        .library(name: "HammerspoonLibs", type: .static, targets: ["HSExtensions"]),
     ],
     dependencies: [
-        .package(path: "../LuaSkin"),
-        .package(path: "../CocoaHTTPServer"),
         .package(url: "https://github.com/robbiehanson/CocoaAsyncSocket", exact: "7.6.5"),
         .package(url: "https://github.com/armadsen/ORSSerialPort", exact: "2.1.0"),
         .package(url: "https://github.com/CocoaLumberjack/CocoaLumberjack", exact: "3.9.0"),
     ],
     targets: [
+        // ---------------------------------------------------------------
+        // LuaSkin — Lua 5.4 + Objective-C bridge
+        // ---------------------------------------------------------------
+        .target(
+            name: "LuaSkin",
+            path: "LuaSkin/Sources/LuaSkin",
+            exclude: ["Resources/luaskin.lua"],
+            publicHeadersPath: "include",
+            cSettings: [
+                .define("LUA_USE_MACOSX"),
+                .define("LUA_USE_APICHECK"),
+                .define("LUA_COMPAT_5_3"),
+                .headerSearchPath("include/LuaSkin"),
+            ],
+            linkerSettings: [
+                .linkedFramework("Foundation"),
+                .linkedFramework("AppKit"),
+            ]
+        ),
+        // ---------------------------------------------------------------
+        // CocoaHTTPServer — vendored HTTP server library
+        // ---------------------------------------------------------------
+        .target(
+            name: "CocoaHTTPServer",
+            dependencies: [
+                "CocoaAsyncSocket",
+                .product(name: "CocoaLumberjack", package: "CocoaLumberjack"),
+            ],
+            path: "CocoaHTTPServer",
+            exclude: ["LICENSE.txt"],
+            sources: ["Core", "Extensions"],
+            publicHeadersPath: "Core",
+            cSettings: [
+                .headerSearchPath("Core"),
+                .headerSearchPath("Core/Categories"),
+                .headerSearchPath("Core/Mime"),
+                .headerSearchPath("Core/Responses"),
+                .headerSearchPath("Extensions/WebDAV"),
+            ],
+            linkerSettings: [
+                .linkedFramework("CoreServices"),
+                .linkedFramework("Security"),
+                .linkedLibrary("xml2"),
+            ]
+        ),
+        // ---------------------------------------------------------------
+        // HSExtensions — 90+ extensions + core app .m files
+        // ---------------------------------------------------------------
+        // SPM auto-discovers sources under HSExtensions/Sources/HSExtensions/
+        // by following symlinks into extensions/<name>/ and Hammerspoon/.
+        // Non-source files inside Hammerspoon/ (XIBs, plists, assets, etc.)
+        // are individually excluded.  "ipc/cli" is the standalone hs CLI
+        // (built by Packages/hs/).  "sqlite3/lsqlite3.c" is compiled as
+        // Objective-C via lsqlite3_wrapper.m — excluding it avoids
+        // duplicate symbols.
         .target(
             name: "HSExtensions",
             dependencies: [
@@ -38,7 +88,7 @@ let package = Package(
                 .product(name: "ORSSerial", package: "ORSSerialPort"),
                 .product(name: "CocoaLumberjack", package: "CocoaLumberjack"),
             ],
-            path: "Sources/HSExtensions",
+            path: "HSExtensions/Sources/HSExtensions",
             exclude: [
                 // Non-source files inside Hammerspoon/ that must not be
                 // compiled or treated as SPM resources.

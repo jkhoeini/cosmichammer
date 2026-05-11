@@ -31,17 +31,19 @@ To run a single Lua-side test, use Xcode's test navigator on the `Hammerspoon Te
 
 Hammerspoon is a Lua scripting host for macOS. Three logical layers:
 
-1. **LuaSkin** (`Packages/LuaSkin/`) — SPM package, the Lua C runtime + Objective-C bridge framework. Embedded Lua 5.4 sources live under `Sources/LuaSkin/`.
-2. **Core app** (`Hammerspoon/`) — The `Hammerspoon.app` AppKit shell. `MJAppDelegate.m` boots the runtime; `MJLua.m` owns the `lua_State`, sets up `package.path`/`package.cpath`, and bootstraps `setup.lua` → `extensions/_coresetup/_coresetup.lua` → user `init.lua`. All `.m` files in this directory are compiled by SPM as part of the HSExtensions target (see below), not by the Xcode app target. The Xcode target's Sources build phase is empty — it only handles resources (XIBs, assets, plists) and run-script phases.
-3. **Extensions** (`extensions/<name>/`) — 90+ extensions exposing system APIs to Lua. Each is a folder with a `<name>.lua` and optional `lib<name>.m` (Objective-C) sources. They are **statically linked** into the app via a single SPM package (see below), not as separate dylibs.
+1. **LuaSkin** (`Packages/LuaSkin/`) — Lua 5.4 C runtime + Objective-C bridge. Embedded Lua sources live under `Sources/LuaSkin/`. Compiled as an SPM target inside the unified `Packages/Package.swift`.
+2. **Core app** (`Hammerspoon/`) — The `Hammerspoon.app` AppKit shell. `MJAppDelegate.m` boots the runtime; `MJLua.m` owns the `lua_State`, sets up `package.path`/`package.cpath`, and bootstraps `setup.lua` → `extensions/_coresetup/_coresetup.lua` → user `init.lua`. All `.m` files in this directory are compiled by SPM as part of the HSExtensions target (see below), not by the Xcode app target. The Xcode target's Sources build phase is empty — it only handles resources (XIBs, assets, plists).
+3. **Extensions** (`extensions/<name>/`) — 90+ extensions exposing system APIs to Lua. Each is a folder with a `<name>.lua` and optional `lib<name>.m` (Objective-C) sources. They are **statically linked** into the app via the HSExtensions SPM target, not as separate dylibs.
 
 ### HSExtensions static-linking model
 
-Historically each extension was its own Xcode dynamic-library target producing a `.dylib` copied into the bundle and loaded via `package.cpath`. That was consolidated into one SPM static library: **`Packages/HSExtensions/`**.
+Historically each extension was its own Xcode dynamic-library target producing a `.dylib` copied into the bundle and loaded via `package.cpath`. That was consolidated into one SPM static library.
+
+All SPM code lives in a single unified package: **`Packages/Package.swift`**. It declares three internal targets (LuaSkin, CocoaHTTPServer, HSExtensions) and one product (`HammerspoonLibs`). The `hs` CLI (`Packages/hs/`) is a separate, independent package built outside Xcode by the justfile.
 
 Key pieces of this model — preserve them when adding extensions:
 
-- `Packages/HSExtensions/Package.swift` — Single `.target` named `HSExtensions`. SPM **auto-discovers** sources by following symlinks from `Sources/HSExtensions/<name>/` into `extensions/<name>/` and from `Sources/HSExtensions/Hammerspoon/` into the core app source tree. Non-source files inside `Hammerspoon/` (XIBs, plists, xcassets, entitlements, etc.) are individually excluded. `ipc/cli` (the standalone `hs` CLI) and `sqlite3/lsqlite3.c` (compiled indirectly via `lsqlite3_wrapper.m`) are also excluded. No need to edit Package.swift when adding extensions.
+- `Packages/Package.swift` — Unified package. The `HSExtensions` target auto-discovers sources by following symlinks from `HSExtensions/Sources/HSExtensions/<name>/` into `extensions/<name>/` and from `HSExtensions/Sources/HSExtensions/Hammerspoon/` into the core app source tree. Non-source files inside `Hammerspoon/` (XIBs, plists, xcassets, entitlements, etc.) are individually excluded. `ipc/cli` (the standalone `hs` CLI) and `sqlite3/lsqlite3.c` (compiled indirectly via `lsqlite3_wrapper.m`) are also excluded. No need to edit Package.swift when adding extensions.
 - `Packages/HSExtensions/extensions.manifest` — Unified TSV manifest (directory, entry-points, lua-files). **Single source of truth** for the generator.
 - `scripts/generate-hsextensions.sh` reads entry-point symbols from `extensions.manifest` and emits:
   - `HSExtensions.m` (`HSExtensionsRegisterAll(L)` — walks each entry into `package.preload`),
@@ -66,6 +68,6 @@ The Xcode project no longer needs per-extension targets — there are 3 targets 
 ### Other notable bits
 
 - Test isolation: launch with `-MJConfigFile <path>` to point at a non-default Hammerspoon config dir; useful for ad-hoc verification runs.
-- `Hammerspoon/Build Configs/*.xcconfig` holds the compile/link flags. `-undefined dynamic_lookup` has been removed; all symbols resolve at link time. The brightness/screen/spaces extensions weak-link `CoreDisplay`, `DisplayServices`, and `SkyLight` (the latter two from `$(SDKROOT)/System/Library/PrivateFrameworks`) — call sites null-check via `weak_import`.
+- `Hammerspoon/Build Configs/*.xcconfig` holds the compile/link flags. `-undefined dynamic_lookup` has been removed; all symbols resolve at link time. The brightness/screen/spaces extensions link `CoreDisplay`, `DisplayServices`, and `SkyLight` (private frameworks from `$(SDKROOT)/System/Library/PrivateFrameworks`) — with the macOS 26 deployment floor these are always present (no weak-linking or NULL guards needed).
 - The doc-build tool is its own SPM project (`scripts/docs/`); `BuildDocs` parses `///` (ObjC) and `---` (Lua) doc comments into JSON/Markdown/HTML/SQL.
 - `.claude-plans/dylib-consolidation.md` is the historical record of the static-linking refactor. Consult it before making large structural changes to the build.

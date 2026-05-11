@@ -125,7 +125,7 @@ static int pushNSCharacterSet(lua_State *L, id obj) {
     return 1 ;
 }
 
-FOUNDATION_EXPORT NSLocaleKey const NSLocaleTemperatureUnit  __attribute__((weak_import));
+FOUNDATION_EXPORT NSLocaleKey const NSLocaleTemperatureUnit;
 
 static int pushNSLocale(lua_State *L, id obj) {
     LuaSkin *skin = [LuaSkin sharedWithState:L] ;

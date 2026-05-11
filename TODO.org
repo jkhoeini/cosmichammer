@@ -19,57 +19,8 @@ XcodeGen ~project.yml~; Run Script phases moved to ~justfile~.
 
 * TODO — Modernization (macOS 26 Tahoe + Xcode 17)
 
-** Build & config modernization
-
-*** TODO Bump deployment target to macOS 26
-    ~Project-Base.xcconfig~, ~project.yml~, 3 Package.swift files.
-    Unlocks all other modernization items.
-
-*** TODO Modernize C/C++ language standards
-    ~gnu99~ → ~gnu17~, ~gnu++0x~ → ~gnu++17~. Drop deprecated
-    ~ALWAYS_SEARCH_USER_PATHS~.
-
-*** TODO Bump ~swift-tools-version~ to 6.2
-    All 4 Package.swift files (HSExtensions, LuaSkin, hs, CocoaHTTPServer).
-
-*** TODO Verify Explicitly Built Modules
-    On by default in Xcode 26. Just verify the build succeeds.
-
-*** TODO Remove weak-linking of SkyLight, DisplayServices, CoreDisplay
-    With macOS 26 floor they're always present. Change ~-weak_framework~
-    to ~-framework~ in xcconfig. Remove NULL guards in brightness/screen.
-
-*** TODO Remove all ~@available~ guards below macOS 26
-    Dead code in ~MJLua.m~, ~libscreen.m~, ~libeventtap_event.m~,
-    ~libwebview_toolbar.m~, ~HSExecuteLuaIntent*.h~, others.
-
-** Deprecated API replacements
-
-*** TODO Replace ~LSSharedFileList~ with ~SMAppService~
-    ~Hammerspoon/MJAutoLaunch.m~ (93 lines). Clean replacement.
-
-*** TODO Replace ~activateIgnoringOtherApps:~ with ~activate~
-    6+ call sites in ~MJLua.m~, ~MJAppDelegate.m~, ~MJDockIcon.m~.
-
-*** TODO Replace ~NSDisableScreenUpdates~ / ~NSEnableScreenUpdates~
-    ~MJDockIcon.m~. Use ~NSAnimationContext~ grouping instead.
-
-*** TODO Replace ~[AVCaptureDevice devices]~ with discovery session
-    ~extensions/camera/libcamera.m~ line 403.
-
-*** TODO Replace ~[CWInterface interface]~ with ~CWWiFiClient~
-    ~extensions/wifi/libwifi_watcher.m~.
-
-*** TODO Replace ~ProcessSerialNumber~ / Carbon Process Manager
-    ~HSuicore.m~, ~libeventtap.m~, ~libeventtap_event.m~. Use
-    ~NSRunningApplication~ APIs instead.
-
 *** TODO Rewrite ~notify~ extension: ~NSUserNotification~ → ~UNUserNotificationCenter~
     ~extensions/notify/libnotify.m~ (1518 lines). Complete rewrite.
-
-** Dependency updates
-
-*** TODO Update CocoaLumberjack 3.8.5 → 3.9.0
 
 * Investigated — not worth doing
 
@@ -126,3 +77,15 @@ XcodeGen ~project.yml~; Run Script phases moved to ~justfile~.
 ** DONE Remove stale ~Pods~ header search path
 ** DONE Enable ~ENABLE_USER_SCRIPT_SANDBOXING~
 ** DONE Drop ~-undefined dynamic_lookup~
+** DONE Bump deployment target to macOS 26
+** DONE Modernize C/C++ language standards (~gnu17~ / ~gnu++17~)
+** DONE Bump ~swift-tools-version~ to 6.2 (all 4 packages)
+** DONE Remove weak-linking of SkyLight, DisplayServices, CoreDisplay
+** DONE Remove all ~@available~ guards below macOS 26
+** DONE Replace ~LSSharedFileList~ with ~SMAppService~
+** DONE Replace ~activateIgnoringOtherApps:~ with ~activate~
+** DONE Replace ~NSDisableScreenUpdates~ / ~NSEnableScreenUpdates~
+** DONE Replace ~[AVCaptureDevice devices]~ with discovery session
+** DONE Replace ~[CWInterface interface]~ with ~CWWiFiClient~
+** DONE Replace ~ProcessSerialNumber~ / Carbon Process Manager
+** DONE Update CocoaLumberjack 3.8.5 → 3.9.0
