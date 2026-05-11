@@ -21,7 +21,12 @@ DEBUG_INFORMATION_FORMAT = dwarf-with-dsym
 // Other Warning Flags
 WARNING_CFLAGS = -Wno-cstring-format-directive -Wno-padded -Wno-objc-missing-property-synthesis -Wno-auto-import -Wno-gnu-statement-expression -Wno-reserved-id-macro -Wno-gnu-zero-variadic-macro-arguments -Wno-objc-messaging-id -Wno-declaration-after-statement -Wno-deprecated-non-prototype -Wno-reserved-identifier -Wno-deprecated-declarations -Wno-strict-prototypes -Wno-language-extension-token -Wno-extra-semi-stmt -Wno-deprecated-implementations
 // Other Linker Flags
-OTHER_LDFLAGS = -undefined dynamic_lookup
+// `-undefined dynamic_lookup` was historically required when each extension
+// was its own dylib that resolved LuaSkin/system symbols against the host
+// process at load time. Since the dylib consolidation, every symbol is
+// resolved at link time, so the flag only serves to hide real link errors.
+// Dropped intentionally; do not re-add without a documented reason.
+OTHER_LDFLAGS =
 // Enable Testability
 ENABLE_TESTABILITY = YES
 // User Script Sandboxing — let Xcode sandbox Run Script phases so they don't

@@ -53,3 +53,13 @@ INTENTS_CODEGEN_LANGUAGE = Objective-C
 // pbxproj, so opt the whole target out of script sandboxing while keeping it
 // enabled project-wide for everything else.
 ENABLE_USER_SCRIPT_SANDBOXING = NO
+
+// Private frameworks consumed by the brightness/screen/spaces extensions.
+// CoreDisplay is a public framework that contains private (`CoreDisplay_*`)
+// symbols; SkyLight and DisplayServices live under PrivateFrameworks and
+// require an explicit framework search path. All three are linked with
+// `-weak_framework` because the extensions guard each call site with
+// `weak_import` null-checks (older macOS versions did not export every
+// symbol).
+FRAMEWORK_SEARCH_PATHS = $(inherited) $(SDKROOT)/System/Library/PrivateFrameworks
+OTHER_LDFLAGS = $(inherited) -weak_framework SkyLight -weak_framework DisplayServices -weak_framework CoreDisplay

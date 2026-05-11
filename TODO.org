@@ -23,11 +23,6 @@ Xcode targets removed (96 → 4); pbxproj cut ~73%.
    Goal: adding an extension touches only ~extensions/~ and one
    manifest file.
 
-** NEXT Drop ~-undefined dynamic_lookup~ from ~Project-Base.xcconfig~
-   The flag predates static linking and now hides real link errors
-   (we already fixed three latent duplicate-symbol bugs it was
-   masking). Remove it and resolve whatever surfaces.
-
 ** NEXT Move the ~hs~ CLI to ~swift build~
    The ~hs~ command-line tool is a small ObjC binary with no AppKit /
    XIB / entitlements story. It is the lowest-hanging target to lift
@@ -72,3 +67,10 @@ Xcode targets removed (96 → 4); pbxproj cut ~73%.
    whole ~Hammerspoon/~ + ~extensions/~ source tree. Xcode 15+ has
    no pbxproj-readable per-phase opt-out, so target-level override
    is the cleanest option.
+** DONE Drop ~-undefined dynamic_lookup~ from ~Project-Base.xcconfig~
+   Removed the flag and resolved the three private-framework symbol
+   groups it was masking (CoreDisplay's user-brightness helpers,
+   DisplayServices' brightness helpers, and SkyLight's SLS*). Added
+   them as ~-weak_framework~ links on the main app target so the
+   ~weak_import~ null-checks at call sites still work on older macOS
+   versions. Frameworks live under ~$(SDKROOT)/System/Library/PrivateFrameworks~.
