@@ -54,23 +54,12 @@ INTENTS_CODEGEN_LANGUAGE = Objective-C
 // enabled project-wide for everything else.
 ENABLE_USER_SCRIPT_SANDBOXING = NO
 
-// Because all .m files are compiled by the HSExtensions SPM package (not the
-// Xcode app target), the Sources build phase is empty. Xcode infers certain
-// linker flags — ObjC runtime, sanitizer/profiling runtimes — from the
-// presence of compiled sources. Without them, add the flags explicitly.
-//
-// -fobjc-arc / -fobjc-link-runtime: pull in the ObjC ARC runtime.
-// -fsanitize=address,undefined: link the sanitizer runtimes when the scheme
-//   enables sanitizers. Benign when sanitizers are off (no instrumented code
-//   to trigger callbacks). -fprofile-instr-generate does the same for code-
-//   coverage profiling.
+// The Xcode app target's Sources build phase is empty (all .m files are
+// compiled by the HSExtensions SPM package). When scheme-level sanitizers
+// or code-coverage are enabled, SPM compiles with instrumentation but Xcode
+// no longer infers the matching linker flags from compiled sources. Add them
+// explicitly so the link step succeeds regardless of scheme settings.
 OTHER_LDFLAGS = $(inherited) -fobjc-arc -fobjc-link-runtime -fprofile-instr-generate -fsanitize=address -fsanitize=undefined -weak_framework SkyLight -weak_framework DisplayServices -weak_framework CoreDisplay
 
 // Private frameworks consumed by the brightness/screen/spaces extensions.
-// CoreDisplay is a public framework that contains private (`CoreDisplay_*`)
-// symbols; SkyLight and DisplayServices live under PrivateFrameworks and
-// require an explicit framework search path. All three are linked with
-// `-weak_framework` because the extensions guard each call site with
-// `weak_import` null-checks (older macOS versions did not export every
-// symbol).
 FRAMEWORK_SEARCH_PATHS = $(inherited) $(SDKROOT)/System/Library/PrivateFrameworks
