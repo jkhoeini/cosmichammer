@@ -97,18 +97,11 @@ static int eventtap_keyStrokes(lua_State* L) {
 
     NSString *theString = [skin toNSObjectAtIndex:1];
     HSapplication *app = nil;
-    ProcessSerialNumber psn;
+    pid_t targetPid = 0;
 
     if (lua_type(L, 2) == LUA_TUSERDATA && luaL_checkudata(L, 2, "hs.application")) {
         app = [skin toNSObjectAtIndex:2];
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-        OSStatus err = GetProcessForPID(app.pid, &psn);
-#pragma clang diagnostic pop
-        if (err != noErr) {
-            [skin logError:[NSString stringWithFormat:@"Unable to get PSN for: %@", app]];
-            return 0;
-        }
+        targetPid = app.pid;
     }
 
     CGEventRef keyDownEvent = CGEventCreateKeyboardEvent(nil, 0, true);
@@ -123,7 +116,7 @@ static int eventtap_keyStrokes(lua_State* L) {
         CGEventSetFlags(keyDownEvent, (CGEventFlags)0);
         CGEventKeyboardSetUnicodeString(keyDownEvent, 1, &buffer);
         if (app) {
-            CGEventPostToPSN(&psn, keyDownEvent);
+            CGEventPostToPid(targetPid, keyDownEvent);
         } else {
             CGEventPost(kCGHIDEventTap, keyDownEvent);
         }
@@ -132,7 +125,7 @@ static int eventtap_keyStrokes(lua_State* L) {
         CGEventSetFlags(keyUpEvent, (CGEventFlags)0);
         CGEventKeyboardSetUnicodeString(keyUpEvent, 1, &buffer);
         if (app) {
-            CGEventPostToPSN(&psn, keyUpEvent);
+            CGEventPostToPid(targetPid, keyUpEvent);
         } else {
             CGEventPost(kCGHIDEventTap, keyUpEvent);
         }

@@ -268,12 +268,13 @@ static CGImageRef hs_CGWindowListCreateImage(CGRect screenBounds, CGWindowListOp
 }
 
 -(BOOL)setFrontmost:(BOOL)allWindows {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-    ProcessSerialNumber psn;
-    GetProcessForPID(self.pid, &psn);
-    return (SetFrontProcessWithOptions(&psn, allWindows ? 0 : kSetFrontProcessFrontWindowOnly) == noErr);
-#pragma clang diagnostic pop
+    NSRunningApplication *app = [NSRunningApplication runningApplicationWithProcessIdentifier:self.pid];
+    if (!app) return NO;
+    NSApplicationActivationOptions options = 0;
+    if (allWindows) {
+        options |= NSApplicationActivateAllWindows;
+    }
+    return [app activateWithOptions:options];
 }
 
 -(BOOL)isFrontmost {

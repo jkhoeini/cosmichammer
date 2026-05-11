@@ -673,17 +673,7 @@ static int eventtap_event_post(lua_State* L) {
     if (luaL_testudata(L, 2, APPLICATION_USERDATA_TAG)) {
         HSapplication *appObj = [skin toNSObjectAtIndex:2] ;
         pid_t pid = appObj.pid;
-
-        ProcessSerialNumber psn;
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-        OSStatus err = GetProcessForPID(pid, &psn);
-#pragma clang diagnostic pop
-        if (err != noErr) {
-            NSLog(@"ERROR: Unable to get PSN for PID: %d", pid);
-        } else {
-            CGEventPostToPSN(&psn, event);
-        }
+        CGEventPostToPid(pid, event);
     }
     else {
         // NOTE: @latenitefilms has tried to use `kCGHIDEventTap` as discussed in #2104
