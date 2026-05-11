@@ -928,3 +928,28 @@ The flag `-Wno-everything` is needed because every extension was built with `-We
 - `/Users/mohammadk/Dev/hammerspoon/Hammerspoon.xcodeproj/project.pbxproj` — add HSExtensions SPM package reference; delete 91 PBXNativeTarget entries, 91 PBXTargetDependency entries, and the Copy Extension Dylibs phase.
 - `/Users/mohammadk/Dev/hammerspoon/Packages/LuaSkin/Package.swift` — reference pattern for the new `Packages/HSExtensions/Package.swift`.
 - `/Users/mohammadk/Dev/hammerspoon/Hammerspoon/Build Configs/Extensions-Base.xcconfig` — represents the per-extension build settings being absorbed into the SPM target's `cSettings` and `linkerSettings`.
+
+---
+
+## Findings during implementation (Phases 0-5)
+
+### F1. SPM forbids `..` in `.headerSearchPath`
+The plan assumed `.headerSearchPath("../../../../Hammerspoon")` would work. SPM rejects header search paths outside the package root. **Workaround**: symlink `Hammerspoon/` into `Packages/HSExtensions/Sources/HSExtensions/` and use `.headerSearchPath("Hammerspoon")`. Combined with the symlinked `extensions/<name>/` directories, this keeps every source-of-truth file outside the package while keeping SPM happy.
+
+### F2. Public headers can't import sibling internal headers
+The auto-generated SPM module map treats `include/HSExtensions/*.h` as a single umbrella module. The generator initially put `HSExtensions+Preload.h` next to `HSExtensions.m` (private), but `HSExtensionsRegistry.m` in the main app needs to `#import <HSExtensions/HSExtensions+Preload.h>` to reference the luaopen_* symbols. **Fix**: move `HSExtensions+Preload.h` to the public include directory and `#include "HSExtensions+Preload.h"` from the umbrella `HSExtensions.h` to silence `-Wincomplete-umbrella`. The generator now writes the preload header to `include/HSExtensions/`.
+
+### F3. lsqlite3.c needs Objective-C compilation
+`extensions/sqlite3/lsqlite3.c` includes `<LuaSkin/LuaSkin.h>`, which transitively `#import <Cocoa/Cocoa.h>` (Objective-C). The old Xcode build worked around this by tagging the file `explicitFileType = sourcecode.c.objc` so clang compiled it as Objective-C. SPM has no per-file flags, so the consolidation introduces `Packages/HSExtensions/Sources/HSExtensions/lsqlite3_wrapper.m` that just `#include`s the `.c` file. Compiling the wrapper as `.m` reuses every line of lsqlite3 without modification.
+
+### F4. Three duplicate-symbol clashes hidden by per-dylib boundaries
+The static archive surfaces three colocations that previously linked separately:
+- `extensions/eventtap/eventtap_event.h` defined `hs_topoint`, `hs_to_eventtap_event`, and `new_eventtap_event` as non-static functions in a header. Made them `static inline`.
+- `extensions/speech/libspeech.m` and `extensions/styledtext/libstyledtext.m` both defined `NSDictionary *luaByteToObjCharMap(NSString*)`. Marked both `static`.
+These were latent bugs masked by `-undefined dynamic_lookup`; the fix is harmless and applies whether or not consolidation moves forward.
+
+### F5. LuaSkin pattern is package-product-only
+LuaSkin is wired into the Hammerspoon target via `packageProductDependencies` *only* — there is no `PBXBuildFile` entry referencing it from the `Frameworks` build phase. Xcode auto-links SPM package product dependencies. HSExtensions follows the same pattern. The plan's hint about adding HSExtensions to the `PBXFrameworksBuildPhase` is unnecessary.
+
+### F6. Test infrastructure has a pre-existing crash
+`just test Debug` fails to bootstrap with `dyld: terminating because inserted dylib '.../libclang_rt.asan_osx_dynamic.dylib' could not be loaded`. This is a pre-existing environment issue (the asan runtime can't be located in this SDK) and is unrelated to the consolidation. Both Debug and Release `just build` succeed; runtime verification of the static-linked extensions requires launching the app in the GUI.
