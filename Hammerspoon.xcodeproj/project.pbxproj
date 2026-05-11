@@ -528,8 +528,6 @@
 		4F0676051C32C0B30088C57C /* HSChooserCell.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = HSChooserCell.h; path = extensions/chooser/HSChooserCell.h; sourceTree = "<group>"; };
 		4F0676061C32C0B30088C57C /* HSChooserCell.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = HSChooserCell.m; path = extensions/chooser/HSChooserCell.m; sourceTree = "<group>"; };
 		4F081E7922D69D5600AB87C1 /* Hammerspoon.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Hammerspoon.entitlements; sourceTree = "<group>"; };
-		4F0C1C77272F3EE9002CA157 /* Extensions-Base.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "Extensions-Base.xcconfig"; sourceTree = "<group>"; };
-		4F0C1C79272F5EA7002CA157 /* Extensions-Ideal.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "Extensions-Ideal.xcconfig"; sourceTree = "<group>"; };
 		4F0F08071DC0DAAA00082B73 /* HSChooserRootView.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = HSChooserRootView.h; path = extensions/chooser/HSChooserRootView.h; sourceTree = "<group>"; };
 		4F0F08081DC0DAAA00082B73 /* HSChooserRootView.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = HSChooserRootView.m; path = extensions/chooser/HSChooserRootView.m; sourceTree = "<group>"; };
 		4F11989E1FF0412600D279D8 /* window_switcher.lua */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; name = window_switcher.lua; path = extensions/window/window_switcher.lua; sourceTree = "<group>"; };
@@ -1507,8 +1505,6 @@
 			isa = PBXGroup;
 			children = (
 				4F7F3B7D272DE9F800E05732 /* Project-Base.xcconfig */,
-				4F0C1C77272F3EE9002CA157 /* Extensions-Base.xcconfig */,
-				4F0C1C79272F5EA7002CA157 /* Extensions-Ideal.xcconfig */,
 				4F7F3B7E272E009C00E05732 /* Hammerspoon-Base.xcconfig */,
 				4F7F3B7A272DE83500E05732 /* Hammerspoon-Debug.xcconfig */,
 				4F7F3B7B272DE98800E05732 /* Hammerspoon-Profile.xcconfig */,
