@@ -18,15 +18,61 @@ switched to auto-discovery; manifests unified; pbxproj cut ~85 %.
 
 * TODO
 
-   No remaining build-simplification items. The Xcode-only surface is
-   at its practical minimum: ~Info.plist~, entitlements, 3 XIBs, the
-   asset catalog, code signing, and app-bundle layout.
+** TODO Merge 19 core ~.m~ files into ~HSExtensions~ SPM target
+   Move all ~Hammerspoon/*.m~ sources into the existing ~HSExtensions~
+   SPM package instead of creating a separate ~HammerspoonCore~ target.
+
+   Why merge instead of separate package: the core files and extensions
+   already have circular header dependencies (extensions import
+   ~variables.h~, ~MJLua.h~; core calls ~HSExtensionsRegisterAll()~).
+   Keeping them in one SPM target eliminates dead-stripping risk for
+   ~HSExtensionsRegistry.m~, avoids public-header API decisions, and
+   removes the need for ~-force_load~ linker flags.
+
+   Steps:
+   1. Symlink ~Hammerspoon/~ source files into ~Sources/HSExtensions/~
+      (the ~Hammerspoon~ symlink already exists for headers).
+   2. Remove the ~"Hammerspoon"~ entry from ~exclude:~ in Package.swift
+      so SPM compiles the 19 ~.m~ files. Add excludes for non-source
+      files in ~Hammerspoon/~ (~.xib~, ~.xcassets~, ~.plist~,
+      ~.entitlements~, ~.pch~, ~.sdef~, ~.intentdefinition~, ~.rtf~,
+      ~.pdf~, ~.json~, ~.lua~, ~.icns~).
+   3. Remove the 19 source files from the Xcode ~Sources~ build phase
+      (they're now compiled by SPM).
+   4. Keep XIBs, asset catalog, ~Intents.intentdefinition~, ~Info.plist~,
+      entitlements, and resources in the Xcode target.
+   5. Add any needed ~cSettings~ (header search paths for ~libxml2~,
+      framework links for ~CoreServices~, etc.).
+
+   Result: Xcode compiles zero ~.m~ files — purely assembles the bundle.
+
+** TODO Move Run Script phases into ~just~ recipes
+   The 4 shell-script build phases become ~just~ recipes:
+   1. ~just _version~ — update version/build numbers via git tags.
+   2. ~just _docs~ — compile docs.json (conditional on BuildDocs).
+   3. ~just _hs-cli~ — build + codesign the ~hs~ CLI.
+   4. ~just _copy-lua~ — manifest-driven Lua file copy.
+
+   The ~just build~ recipe becomes:
+   ~just _version && just _docs && just _hs-cli~ → ~xcodebuild~ → ~just _copy-lua~.
+   Steps 1-3 run before xcodebuild (no ~$TARGET_BUILD_DIR~ needed).
+   Step 4 runs after (needs the ~.app~ bundle path).
+
+   Remove the 4 ~PBXShellScriptBuildPhase~ entries from pbxproj.
+
+** TODO Replace ~.xcodeproj~ with XcodeGen ~project.yml~
+   After the above two items, the xcodeproj is pure boilerplate:
+   - Links ~HSExtensions~ (transitively pulls LuaSkin, CocoaHTTPServer)
+   - Compiles 3 XIBs + 1 asset catalog + 1 intent definition
+   - Bundles ~Info.plist~, entitlements, resources
+   - Weak-links ~SkyLight~, ~DisplayServices~, ~CoreDisplay~
+   - Hosts test + UI test targets
+
+   Generate from a ~60-80 line YAML. Delete pbxproj from version
+   control. Add ~xcodegen~ to ~mise.toml~, ~just generate~ recipe.
+   The 3 xcconfig files transfer via ~configFiles:~.
 
 * Investigated — not worth doing
-
-** SKIP Extract ~HammerspoonCore~ SPM package
-   Only 5 files (168 lines) are decoupled enough to extract. Too small
-   to justify the structural overhead.
 
 ** SKIP Replace ~.xib~ files with programmatic UI
    Controllers are coupled to app-level singletons regardless of XIBs.
