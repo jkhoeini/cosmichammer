@@ -20,6 +20,10 @@ settings:
     Release:
       GCC_OPTIMIZATION_LEVEL: s
 
+# Only local SPM packages need to be declared here. Remote packages
+# (CocoaLumberjack, CocoaAsyncSocket, ORSSerialPort) are declared in
+# Packages/HSExtensions/Package.swift and Xcode resolves them transitively
+# — no need to duplicate them at the workspace level.
 packages:
   LuaSkin:
     path: Packages/LuaSkin
@@ -27,15 +31,6 @@ packages:
     path: Packages/HSExtensions
   CocoaHTTPServer:
     path: Packages/CocoaHTTPServer
-  CocoaLumberjack:
-    url: https://github.com/CocoaLumberjack/CocoaLumberjack
-    exactVersion: 3.8.5
-  CocoaAsyncSocket:
-    url: https://github.com/robbiehanson/CocoaAsyncSocket
-    exactVersion: 7.6.5
-  ORSSerialPort:
-    url: https://github.com/armadsen/ORSSerialPort
-    exactVersion: 2.1.0
 
 targets:
   Hammerspoon:
@@ -85,10 +80,6 @@ targets:
     dependencies:
       - package: LuaSkin
       - package: HSExtensions
-      - package: ORSSerialPort
-        product: ORSSerial
-      - package: CocoaAsyncSocket
-      - package: CocoaLumberjack
       - package: CocoaHTTPServer
 
   Hammerspoon Tests:
