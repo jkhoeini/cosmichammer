@@ -26,7 +26,7 @@ let package = Package(
         .package(path: "../CocoaHTTPServer"),
         .package(url: "https://github.com/robbiehanson/CocoaAsyncSocket", exact: "7.6.5"),
         .package(url: "https://github.com/armadsen/ORSSerialPort", exact: "2.1.0"),
-        .package(url: "https://github.com/CocoaLumberjack/CocoaLumberjack", exact: "3.8.5"),
+        .package(url: "https://github.com/CocoaLumberjack/CocoaLumberjack", exact: "3.9.0"),
     ],
     targets: [
         .target(

@@ -9,7 +9,7 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/robbiehanson/CocoaAsyncSocket", exact: "7.6.5"),
-        .package(url: "https://github.com/CocoaLumberjack/CocoaLumberjack", exact: "3.8.5"),
+        .package(url: "https://github.com/CocoaLumberjack/CocoaLumberjack", exact: "3.9.0"),
     ],
     targets: [
         .target(

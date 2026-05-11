@@ -1,5 +1,4 @@
 {
-  "originHash" : "86694285e97ebfebd14b4d5cf2259fb7258e050b716214f9ceffa76fb37a84e0",
   "pins" : [
     {
       "identity" : "cocoaasyncsocket",
@@ -15,8 +14,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/CocoaLumberjack/CocoaLumberjack",
       "state" : {
-        "revision" : "4b8714a7fb84d42393314ce897127b3939885ec3",
-        "version" : "3.8.5"
+        "revision" : "a9ed4b6f9bdedce7d77046f43adfb8ce1fd54114",
+        "version" : "3.9.0"
       }
     },
     {
@@ -38,5 +37,5 @@
       }
     }
   ],
-  "version" : 3
+  "version" : 2
 }
