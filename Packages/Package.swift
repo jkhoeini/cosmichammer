@@ -1,22 +1,22 @@
 // swift-tools-version:6.2
 import PackageDescription
 
-// Unified SPM package for all Hammerspoon libraries.
+// Unified SPM package for Hammerspoon.
 //
-// Three internal targets compiled into one static library product:
+// Three internal targets compiled into one executable product:
 //
 //   LuaSkin          – Lua 5.4 runtime + Objective-C bridge
 //   CocoaHTTPServer  – vendored HTTP server (used by hs.httpserver)
-//   HSExtensions     – 90+ extensions + core app sources
+//   HSExtensions     – 90+ extensions + core app sources (contains main())
 //
 // The hs CLI (Packages/hs/) is a separate package built outside Xcode
 // by `swift build --package-path Packages/hs` in the justfile.
 
 let package = Package(
-    name: "HammerspoonLibs",
+    name: "Hammerspoon",
     platforms: [.macOS(.v26)],
     products: [
-        .library(name: "HammerspoonLibs", type: .static, targets: ["HSExtensions"]),
+        .executable(name: "Hammerspoon", targets: ["HSExtensions"]),
     ],
     dependencies: [
         .package(url: "https://github.com/robbiehanson/CocoaAsyncSocket", exact: "7.6.5"),
@@ -79,7 +79,7 @@ let package = Package(
         // (built by Packages/hs/).  "sqlite3/lsqlite3.c" is compiled as
         // Objective-C via lsqlite3_wrapper.m — excluding it avoids
         // duplicate symbols.
-        .target(
+        .executableTarget(
             name: "HSExtensions",
             dependencies: [
                 "LuaSkin",
@@ -177,6 +177,12 @@ let package = Package(
                 .linkedFramework("IOBluetooth"),
                 .linkedLibrary("sqlite3"),
                 .linkedLibrary("z"),
+                // Private frameworks for brightness/screen/spaces extensions.
+                // The framework search path is passed via -Xlinker in the
+                // justfile build recipe so we don't hardcode the SDK path.
+                .linkedFramework("SkyLight"),
+                .linkedFramework("DisplayServices"),
+                .linkedFramework("CoreDisplay"),
             ]
         ),
     ]
