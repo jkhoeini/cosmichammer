@@ -13,7 +13,7 @@
 @end
 
 @interface MJAppDelegate : NSObject <NSApplicationDelegate>
-@property IBOutlet NSMenu* menuBarMenu;
+@property (nonatomic, strong) NSMenu* menuBarMenu;
 @property (nonatomic, copy) NSAppleEventDescriptor *startupEvent;
 @property (nonatomic, copy) NSString *startupFile;
 @property (nonatomic, weak) id<HSOpenFileDelegate> openFileDelegate;

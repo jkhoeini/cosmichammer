@@ -15,6 +15,216 @@
 
 @implementation MJAppDelegate
 
+#pragma mark - Programmatic Menu Construction
+
+- (void)setupMainMenu {
+    NSMenu *mainMenu = [[NSMenu alloc] initWithTitle:@"Main Menu"];
+
+    // ── Hammerspoon (application) menu ──
+    NSMenuItem *appMenuItem = [[NSMenuItem alloc] initWithTitle:@"Hammerspoon" action:nil keyEquivalent:@""];
+    NSMenu *appMenu = [[NSMenu alloc] initWithTitle:@"Hammerspoon"];
+
+    [appMenu addItemWithTitle:@"About Hammerspoon" action:@selector(showAboutPanel:) keyEquivalent:@""].target = self;
+
+    [appMenu addItem:[NSMenuItem separatorItem]];
+
+    [appMenu addItemWithTitle:@"Preferences…" action:@selector(showPreferencesWindow:) keyEquivalent:@","].target = self;
+
+    [appMenu addItem:[NSMenuItem separatorItem]];
+
+    NSMenuItem *servicesItem = [[NSMenuItem alloc] initWithTitle:@"Services" action:nil keyEquivalent:@""];
+    NSMenu *servicesMenu = [[NSMenu alloc] initWithTitle:@"Services"];
+    servicesItem.submenu = servicesMenu;
+    [appMenu addItem:servicesItem];
+    [NSApp setServicesMenu:servicesMenu];
+
+    [appMenu addItem:[NSMenuItem separatorItem]];
+
+    [appMenu addItemWithTitle:@"Hide Hammerspoon" action:@selector(hide:) keyEquivalent:@"h"];
+
+    NSMenuItem *hideOthersItem = [appMenu addItemWithTitle:@"Hide Others" action:@selector(hideOtherApplications:) keyEquivalent:@"h"];
+    hideOthersItem.keyEquivalentModifierMask = NSEventModifierFlagCommand | NSEventModifierFlagOption;
+
+    [appMenu addItemWithTitle:@"Show All" action:@selector(unhideAllApplications:) keyEquivalent:@""];
+
+    [appMenu addItem:[NSMenuItem separatorItem]];
+
+    [appMenu addItemWithTitle:@"Quit Hammerspoon" action:@selector(quitHammerspoon:) keyEquivalent:@"q"].target = self;
+
+    appMenuItem.submenu = appMenu;
+    [mainMenu addItem:appMenuItem];
+
+    // ── File menu ──
+    NSMenuItem *fileMenuItem = [[NSMenuItem alloc] initWithTitle:@"File" action:nil keyEquivalent:@""];
+    NSMenu *fileMenu = [[NSMenu alloc] initWithTitle:@"File"];
+
+    NSMenuItem *reloadItem = [fileMenu addItemWithTitle:@"Reload Config" action:@selector(reloadConfig:) keyEquivalent:@"R"];
+    reloadItem.target = self;
+    reloadItem.keyEquivalentModifierMask = NSEventModifierFlagCommand;
+
+    [fileMenu addItemWithTitle:@"Open Config" action:@selector(openConfig:) keyEquivalent:@"o"].target = self;
+
+    [fileMenu addItem:[NSMenuItem separatorItem]];
+
+    [fileMenu addItemWithTitle:@"Console…" action:@selector(showConsoleWindow:) keyEquivalent:@"r"].target = self;
+
+    [fileMenu addItem:[NSMenuItem separatorItem]];
+
+    NSMenuItem *pageSetupItem = [fileMenu addItemWithTitle:@"Page Setup…" action:@selector(runPageLayout:) keyEquivalent:@"P"];
+    pageSetupItem.keyEquivalentModifierMask = NSEventModifierFlagCommand | NSEventModifierFlagShift;
+
+    [fileMenu addItemWithTitle:@"Print…" action:@selector(print:) keyEquivalent:@"p"];
+
+    fileMenuItem.submenu = fileMenu;
+    [mainMenu addItem:fileMenuItem];
+
+    // ── Edit menu ──
+    NSMenuItem *editMenuItem = [[NSMenuItem alloc] initWithTitle:@"Edit" action:nil keyEquivalent:@""];
+    NSMenu *editMenu = [[NSMenu alloc] initWithTitle:@"Edit"];
+
+    [editMenu addItemWithTitle:@"Undo" action:@selector(undo:) keyEquivalent:@"z"];
+    NSMenuItem *redoItem = [editMenu addItemWithTitle:@"Redo" action:@selector(redo:) keyEquivalent:@"Z"];
+    redoItem.keyEquivalentModifierMask = NSEventModifierFlagCommand;
+
+    [editMenu addItem:[NSMenuItem separatorItem]];
+
+    [editMenu addItemWithTitle:@"Cut" action:@selector(cut:) keyEquivalent:@"x"];
+    [editMenu addItemWithTitle:@"Copy" action:@selector(copy:) keyEquivalent:@"c"];
+    [editMenu addItemWithTitle:@"Paste" action:@selector(paste:) keyEquivalent:@"v"];
+
+    NSMenuItem *pasteMatchItem = [editMenu addItemWithTitle:@"Paste and Match Style" action:@selector(pasteAsPlainText:) keyEquivalent:@"V"];
+    pasteMatchItem.keyEquivalentModifierMask = NSEventModifierFlagCommand | NSEventModifierFlagOption;
+
+    [editMenu addItemWithTitle:@"Delete" action:@selector(delete:) keyEquivalent:@""];
+    [editMenu addItemWithTitle:@"Select All" action:@selector(selectAll:) keyEquivalent:@"a"];
+
+    [editMenu addItem:[NSMenuItem separatorItem]];
+
+    // Find submenu
+    NSMenuItem *findMenuItem = [[NSMenuItem alloc] initWithTitle:@"Find" action:nil keyEquivalent:@""];
+    NSMenu *findMenu = [[NSMenu alloc] initWithTitle:@"Find"];
+
+    NSMenuItem *findItem = [findMenu addItemWithTitle:@"Find…" action:@selector(performFindPanelAction:) keyEquivalent:@"f"];
+    findItem.tag = 1;
+
+    NSMenuItem *findReplaceItem = [findMenu addItemWithTitle:@"Find and Replace…" action:@selector(performFindPanelAction:) keyEquivalent:@"f"];
+    findReplaceItem.tag = 12;
+    findReplaceItem.keyEquivalentModifierMask = NSEventModifierFlagCommand | NSEventModifierFlagOption;
+
+    NSMenuItem *findNextItem = [findMenu addItemWithTitle:@"Find Next" action:@selector(performFindPanelAction:) keyEquivalent:@"g"];
+    findNextItem.tag = 2;
+
+    NSMenuItem *findPrevItem = [findMenu addItemWithTitle:@"Find Previous" action:@selector(performFindPanelAction:) keyEquivalent:@"G"];
+    findPrevItem.tag = 3;
+    findPrevItem.keyEquivalentModifierMask = NSEventModifierFlagCommand;
+
+    NSMenuItem *useSelItem = [findMenu addItemWithTitle:@"Use Selection for Find" action:@selector(performFindPanelAction:) keyEquivalent:@"e"];
+    useSelItem.tag = 7;
+
+    [findMenu addItemWithTitle:@"Jump to Selection" action:@selector(centerSelectionInVisibleArea:) keyEquivalent:@"j"];
+
+    findMenuItem.submenu = findMenu;
+    [editMenu addItem:findMenuItem];
+
+    // Spelling and Grammar submenu
+    NSMenuItem *spellingMenuItem = [[NSMenuItem alloc] initWithTitle:@"Spelling and Grammar" action:nil keyEquivalent:@""];
+    NSMenu *spellingMenu = [[NSMenu alloc] initWithTitle:@"Spelling"];
+
+    [spellingMenu addItemWithTitle:@"Show Spelling and Grammar" action:@selector(showGuessPanel:) keyEquivalent:@":"];
+    [spellingMenu addItemWithTitle:@"Check Document Now" action:@selector(checkSpelling:) keyEquivalent:@";"];
+    [spellingMenu addItem:[NSMenuItem separatorItem]];
+    [spellingMenu addItemWithTitle:@"Check Spelling While Typing" action:@selector(toggleContinuousSpellChecking:) keyEquivalent:@""];
+    [spellingMenu addItemWithTitle:@"Check Grammar With Spelling" action:@selector(toggleGrammarChecking:) keyEquivalent:@""];
+    [spellingMenu addItemWithTitle:@"Correct Spelling Automatically" action:@selector(toggleAutomaticSpellingCorrection:) keyEquivalent:@""];
+
+    spellingMenuItem.submenu = spellingMenu;
+    [editMenu addItem:spellingMenuItem];
+
+    // Substitutions submenu
+    NSMenuItem *subsMenuItem = [[NSMenuItem alloc] initWithTitle:@"Substitutions" action:nil keyEquivalent:@""];
+    NSMenu *subsMenu = [[NSMenu alloc] initWithTitle:@"Substitutions"];
+
+    [subsMenu addItemWithTitle:@"Show Substitutions" action:@selector(orderFrontSubstitutionsPanel:) keyEquivalent:@""];
+    [subsMenu addItem:[NSMenuItem separatorItem]];
+    [subsMenu addItemWithTitle:@"Smart Copy/Paste" action:@selector(toggleSmartInsertDelete:) keyEquivalent:@""];
+    [subsMenu addItemWithTitle:@"Smart Quotes" action:@selector(toggleAutomaticQuoteSubstitution:) keyEquivalent:@""];
+    [subsMenu addItemWithTitle:@"Smart Dashes" action:@selector(toggleAutomaticDashSubstitution:) keyEquivalent:@""];
+    [subsMenu addItemWithTitle:@"Smart Links" action:@selector(toggleAutomaticLinkDetection:) keyEquivalent:@""];
+    [subsMenu addItemWithTitle:@"Data Detectors" action:@selector(toggleAutomaticDataDetection:) keyEquivalent:@""];
+    [subsMenu addItemWithTitle:@"Text Replacement" action:@selector(toggleAutomaticTextReplacement:) keyEquivalent:@""];
+
+    subsMenuItem.submenu = subsMenu;
+    [editMenu addItem:subsMenuItem];
+
+    // Transformations submenu
+    NSMenuItem *transMenuItem = [[NSMenuItem alloc] initWithTitle:@"Transformations" action:nil keyEquivalent:@""];
+    NSMenu *transMenu = [[NSMenu alloc] initWithTitle:@"Transformations"];
+
+    [transMenu addItemWithTitle:@"Make Upper Case" action:@selector(uppercaseWord:) keyEquivalent:@""];
+    [transMenu addItemWithTitle:@"Make Lower Case" action:@selector(lowercaseWord:) keyEquivalent:@""];
+    [transMenu addItemWithTitle:@"Capitalize" action:@selector(capitalizeWord:) keyEquivalent:@""];
+
+    transMenuItem.submenu = transMenu;
+    [editMenu addItem:transMenuItem];
+
+    // Speech submenu
+    NSMenuItem *speechMenuItem = [[NSMenuItem alloc] initWithTitle:@"Speech" action:nil keyEquivalent:@""];
+    NSMenu *speechMenu = [[NSMenu alloc] initWithTitle:@"Speech"];
+
+    [speechMenu addItemWithTitle:@"Start Speaking" action:@selector(startSpeaking:) keyEquivalent:@""];
+    [speechMenu addItemWithTitle:@"Stop Speaking" action:@selector(stopSpeaking:) keyEquivalent:@""];
+
+    speechMenuItem.submenu = speechMenu;
+    [editMenu addItem:speechMenuItem];
+
+    editMenuItem.submenu = editMenu;
+    [mainMenu addItem:editMenuItem];
+
+    // ── Window menu ──
+    NSMenuItem *windowMenuItem = [[NSMenuItem alloc] initWithTitle:@"Window" action:nil keyEquivalent:@""];
+    NSMenu *windowMenu = [[NSMenu alloc] initWithTitle:@"Window"];
+
+    [windowMenu addItemWithTitle:@"Minimize" action:@selector(performMiniaturize:) keyEquivalent:@"m"];
+    [windowMenu addItemWithTitle:@"Zoom" action:@selector(performZoom:) keyEquivalent:@""];
+    [windowMenu addItem:[NSMenuItem separatorItem]];
+    [windowMenu addItemWithTitle:@"Close" action:@selector(performClose:) keyEquivalent:@"w"];
+    [windowMenu addItem:[NSMenuItem separatorItem]];
+    [windowMenu addItemWithTitle:@"Bring All to Front" action:@selector(arrangeInFront:) keyEquivalent:@""];
+
+    windowMenuItem.submenu = windowMenu;
+    [mainMenu addItem:windowMenuItem];
+    [NSApp setWindowsMenu:windowMenu];
+
+    // ── Help menu ──
+    NSMenuItem *helpMenuItem = [[NSMenuItem alloc] initWithTitle:@"Help" action:nil keyEquivalent:@""];
+    NSMenu *helpMenu = [[NSMenu alloc] initWithTitle:@"Help"];
+
+    [helpMenu addItemWithTitle:@"Hammerspoon Help" action:@selector(showHelp:) keyEquivalent:@"?"];
+
+    helpMenuItem.submenu = helpMenu;
+    [mainMenu addItem:helpMenuItem];
+    [NSApp setHelpMenu:helpMenu];
+
+    [NSApp setMainMenu:mainMenu];
+}
+
+- (void)setupStatusItemMenu {
+    NSMenu *menu = [[NSMenu alloc] initWithTitle:@"Status Item Menu"];
+
+    [menu addItemWithTitle:@"Reload Config" action:@selector(reloadConfig:) keyEquivalent:@""].target = self;
+    [menu addItemWithTitle:@"Open Config" action:@selector(openConfig:) keyEquivalent:@""].target = self;
+    [menu addItem:[NSMenuItem separatorItem]];
+    [menu addItemWithTitle:@"Console…" action:@selector(showConsoleWindow:) keyEquivalent:@""].target = self;
+    [menu addItemWithTitle:@"Preferences…" action:@selector(showPreferencesWindow:) keyEquivalent:@""].target = self;
+    [menu addItem:[NSMenuItem separatorItem]];
+    [menu addItemWithTitle:@"About Hammerspoon" action:@selector(showAboutPanel:) keyEquivalent:@""].target = self;
+    [menu addItemWithTitle:@"Quit Hammerspoon" action:@selector(quitHammerspoon:) keyEquivalent:@""].target = self;
+
+    self.menuBarMenu = menu;
+}
+
+#pragma mark - Application Lifecycle
+
 - (BOOL) applicationShouldHandleReopen:(NSApplication*)theApplication hasVisibleWindows:(BOOL)hasVisibleWindows {
     callDockIconCallback();
     if (HSOpenConsoleOnDockClickEnabled()) {
@@ -25,6 +235,9 @@
 
 -(void)applicationWillFinishLaunching:(NSNotification *)aNotification
 {
+    [self setupMainMenu];
+    [self setupStatusItemMenu];
+
     // Set up an early event manager handler so we can catch URLs used to launch us
     NSAppleEventManager *appleEventManager = [NSAppleEventManager sharedAppleEventManager];
     [appleEventManager setEventHandler:self
@@ -328,5 +541,11 @@
 @end
 
 int main(int argc, const char * argv[]) {
-    return NSApplicationMain(argc, argv);
+    @autoreleasepool {
+        NSApplication *app = [NSApplication sharedApplication];
+        MJAppDelegate *delegate = [[MJAppDelegate alloc] init];
+        app.delegate = delegate;
+        [app run];
+    }
+    return 0;
 }
