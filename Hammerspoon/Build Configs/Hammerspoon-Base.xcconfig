@@ -27,8 +27,8 @@ HEADER_SEARCH_PATHS = $(inherited)/** "$(SDKROOT)/usr/include/libxml2" "$(SDK_DI
 // User Header Search Paths
 USER_HEADER_SEARCH_PATHS = $(inherited)/**
 
-// Code Signing Entitlements
-CODE_SIGN_ENTITLEMENTS = Hammerspoon/Hammerspoon-dev.entitlements
+// Code Signing Entitlements — applied via codesign in the justfile post-build
+// step rather than by Xcode, so CODE_SIGN_ENTITLEMENTS is intentionally unset.
 
 // Code Signing Identity
 CODE_SIGN_IDENTITY = -

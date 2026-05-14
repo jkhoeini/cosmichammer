@@ -75,10 +75,16 @@ build config="Debug":
     UNLOCALIZED_RESOURCES_FOLDER_PATH="Hammerspoon.app/Contents/Resources" \
     ./scripts/copy-extension-lua-files.sh
 
-    # --- Post-build: re-sign .app after post-build copies ---
+    # --- Post-build: re-sign .app with entitlements ---
     # The hs CLI and Lua file copies happen after xcodebuild's CodeSign
-    # step, which invalidates the sealed signature. Re-sign to fix.
-    /usr/bin/codesign --force --sign - --deep "${APP_DIR}"
+    # step, which invalidates the sealed signature. Re-sign and apply
+    # entitlements (moved out of Xcode's CODE_SIGN_ENTITLEMENTS).
+    if [ "{{ config }}" = "Release" ]; then
+        ENTITLEMENTS="Hammerspoon/Hammerspoon.entitlements"
+    else
+        ENTITLEMENTS="Hammerspoon/Hammerspoon-dev.entitlements"
+    fi
+    /usr/bin/codesign --force --sign - --deep --entitlements "${ENTITLEMENTS}" "${APP_DIR}"
 
 # Run tests (requires build first)
 test config="Debug":
