@@ -524,7 +524,7 @@
 
 #pragma mark - Programmatic cell construction
 
-/// Create the "HSChooserCellSubtext" cell: icon (36px) | main text (15pt) + subtext (cellTitle font) | shortcut text (25pt)
+// Create the "HSChooserCellSubtext" cell: icon (36px) | main text (15pt) + subtext (cellTitle font) | shortcut text (25pt)
 - (HSChooserCell *)makeSubtextCellWithIdentifier:(NSString *)identifier {
     HSChooserCell *cell = [[HSChooserCell alloc] initWithFrame:NSMakeRect(0, 0, 496, 40)];
     cell.identifier = identifier;
@@ -632,7 +632,7 @@
     return cell;
 }
 
-/// Create the "HSChooserCell" cell: icon (36px) | main text (20pt, vertically centering) | shortcut text (25pt)
+// Create the "HSChooserCell" cell: icon (36px) | main text (20pt, vertically centering) | shortcut text (25pt)
 - (HSChooserCell *)makePlainCellWithIdentifier:(NSString *)identifier {
     HSChooserCell *cell = [[HSChooserCell alloc] initWithFrame:NSMakeRect(0, 0, 496, 40)];
     cell.identifier = identifier;

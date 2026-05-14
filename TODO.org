@@ -15,7 +15,11 @@ file copying → manifest-driven; script sandboxing enabled; ~-undefined
 dynamic_lookup~ removed; xcconfigs collapsed 6 → 3; all 15 compiler
 warnings enabled; PCH removed; incremental builds fixed; Package.swift
 switched to auto-discovery; manifests unified; pbxproj replaced with
-XcodeGen ~project.yml~; Run Script phases moved to ~justfile~.
+XcodeGen ~project.yml~; Run Script phases moved to ~justfile~; 3 SPM
+packages → 1 unified ~Packages/Package.swift~; all 4 XIBs → programmatic
+UI; xcassets → pre-compiled ~.icns~; entitlements → ~codesign~ in
+justfile; App Intents removed; macOS 26 deployment floor; deprecated APIs
+replaced.
 
 * TODO — Modernization (macOS 26 Tahoe + Xcode 17)
 
@@ -23,10 +27,6 @@ XcodeGen ~project.yml~; Run Script phases moved to ~justfile~.
     ~extensions/notify/libnotify.m~ (1518 lines). Complete rewrite.
 
 * Investigated — not worth doing
-
-** SKIP Replace ~.xib~ files with programmatic UI
-   Controllers are coupled to app-level singletons regardless of XIBs.
-   Half-day effort for low benefit.
 
 ** SKIP Make generators Xcode build-time phases
    Not feasible — generator outputs are SPM package sources (compiled
@@ -79,7 +79,7 @@ XcodeGen ~project.yml~; Run Script phases moved to ~justfile~.
 ** DONE Drop ~-undefined dynamic_lookup~
 ** DONE Bump deployment target to macOS 26
 ** DONE Modernize C/C++ language standards (~gnu17~ / ~gnu++17~)
-** DONE Bump ~swift-tools-version~ to 6.2 (all 4 packages)
+** DONE Bump ~swift-tools-version~ to 6.2
 ** DONE Remove weak-linking of SkyLight, DisplayServices, CoreDisplay
 ** DONE Remove all ~@available~ guards below macOS 26
 ** DONE Replace ~LSSharedFileList~ with ~SMAppService~
@@ -89,3 +89,8 @@ XcodeGen ~project.yml~; Run Script phases moved to ~justfile~.
 ** DONE Replace ~[CWInterface interface]~ with ~CWWiFiClient~
 ** DONE Replace ~ProcessSerialNumber~ / Carbon Process Manager
 ** DONE Update CocoaLumberjack 3.8.5 → 3.9.0
+** DONE Unify 3 SPM packages into one ~Packages/Package.swift~
+** DONE Remove App Intents / Siri Shortcuts integration
+** DONE Replace all 4 XIBs with programmatic UI
+** DONE Replace ~xcassets~ with pre-compiled ~.icns~ file
+** DONE Move entitlements from Xcode to ~codesign~ in justfile

@@ -350,6 +350,10 @@
 
 
 - (void)applicationDidFinishLaunching:(NSNotification *)aNotification {
+    // Set app icon programmatically as a fallback for non-bundle contexts
+    NSImage *icon = [NSImage imageNamed:@"Hammerspoon"];
+    if (icon) [NSApp setApplicationIconImage:icon];
+
     BOOL isTesting = NO;
 
     // User is holding down Command (0x37) & Option (0x3A) keys:
