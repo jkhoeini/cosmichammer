@@ -8,6 +8,8 @@
 /rebuild.sh
 
 # Build artifacts
+/build/
+/release/
 /Hammerspoon.app
 /Hammerspoon*.zip
 /LuaSkin.framework

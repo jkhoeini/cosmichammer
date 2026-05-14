@@ -183,3 +183,88 @@ generate:
 
 # Full rebuild: clean + build
 rebuild: clean build
+
+# Create a GitHub release with DMG
+release version:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    TAG="v{{ version }}"
+    DMG_NAME="Hammerspoon-{{ version }}-macos-arm64.dmg"
+    OUTPUT_DIR="release"
+
+    # ── Preflight ─────────────────────────────────────────────────────────
+    command -v gh >/dev/null \
+        || { echo "Error: gh CLI not found — install with: brew install gh" >&2; exit 1; }
+    command -v create-dmg >/dev/null \
+        || { echo "Error: create-dmg not found — install with: brew install create-dmg" >&2; exit 1; }
+
+    if gh release view "$TAG" &>/dev/null; then
+        echo "Error: release $TAG already exists on GitHub" >&2
+        exit 1
+    fi
+
+    # ── Tag ───────────────────────────────────────────────────────────────
+    echo "===> Tagging $TAG"
+    jj tag create "$TAG" -r dev 2>/dev/null \
+        || git tag "$TAG" $(jj log -r dev --no-graph -T commit_id --limit 1)
+    git push origin "$TAG"
+
+    # ── Build Release ─────────────────────────────────────────────────────
+    echo "===> Building Hammerspoon {{ version }} (Release)"
+    just build Release
+
+    # ── Package DMG ───────────────────────────────────────────────────────
+    echo "===> Creating $DMG_NAME"
+    rm -rf "$OUTPUT_DIR"
+    mkdir -p "$OUTPUT_DIR"
+
+    create-dmg \
+        --volname "Hammerspoon" \
+        --window-pos 200 120 \
+        --window-size 600 380 \
+        --icon-size 100 \
+        --icon "Hammerspoon.app" 150 180 \
+        --hide-extension "Hammerspoon.app" \
+        --app-drop-link 450 180 \
+        --no-internet-enable \
+        "$OUTPUT_DIR/$DMG_NAME" \
+        "{{ build_dir }}/Hammerspoon.app"
+
+    echo "===> DMG ready:"
+    ls -lh "$OUTPUT_DIR/$DMG_NAME"
+
+    # ── Publish GitHub release ────────────────────────────────────────────
+    RELEASE_NOTES="$(cat <<NOTES
+    ## Hammerspoon {{ version }}
+
+    ### Install
+
+    Download \`$DMG_NAME\`, open the DMG, and drag **Hammerspoon** to Applications.
+
+    If macOS blocks the app on first launch:
+    \`\`\`
+    xattr -dr com.apple.quarantine /Applications/Hammerspoon.app
+    \`\`\`
+
+    ### Requirements
+
+    - macOS 26+
+    NOTES
+    )"
+
+    echo "===> Publishing $TAG to GitHub"
+    gh release create "$TAG" \
+        --title "$TAG" \
+        --notes "$RELEASE_NOTES" \
+        "$OUTPUT_DIR/$DMG_NAME"
+
+    echo "===> Release $TAG published ✓"
+
+    # ── Update flake.nix with new version + hash ─────────────────────────
+    DMG_HASH=$(nix hash to-sri --type sha256 $(shasum -a 256 "$OUTPUT_DIR/$DMG_NAME" | cut -d' ' -f1))
+    sed -i '' \
+        -e "s|version = \".*\";|version = \"{{ version }}\";|" \
+        -e "s|hash = \".*\";|hash = \"${DMG_HASH}\";|" \
+        flake.nix
+    echo "===> Updated flake.nix to {{ version }} (${DMG_HASH})"
