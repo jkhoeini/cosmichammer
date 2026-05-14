@@ -44,6 +44,17 @@ void PreferencesDarkModeSetEnabled(BOOL enabled) {
     return s;
 }
 
+- (instancetype) init {
+    self = [super init];
+    if (self) {
+        // NSWindowController -init calls -initWithWindow:nil which marks
+        // isWindowLoaded=YES, preventing loadWindow from ever running.
+        // Force it to run here.
+        [self loadWindow];
+    }
+    return self;
+}
+
 - (void) setup {
     [self reflectDefaults];
 }

@@ -72,6 +72,19 @@ typedef NS_ENUM(NSUInteger, MJReplLineType) {
         [[NSRunLoop mainRunLoop] addTimer:self.outputTimer forMode:NSRunLoopCommonModes];
 
         [self initializeConsoleColorsAndFont] ;
+
+        // NSWindowController -init calls -initWithWindow:nil which marks
+        // isWindowLoaded=YES, preventing loadWindow from ever running.
+        // Force it to run here.
+        [self loadWindow];
+
+        // Post-load setup (windowDidLoad equivalent)
+        [self setShouldCascadeWindows:NO];
+        self.history = [NSMutableArray array];
+        [self appendString:@""
+         "Welcome to the Hammerspoon Console!\n"
+         "You can run any Lua code in here.\n\n"
+                      type:MJReplLineTypeStdout];
     }
     return self;
 }
@@ -220,22 +233,6 @@ typedef NS_ENUM(NSUInteger, MJReplLineType) {
     [[self window] setLevel: MJConsoleWindowAlwaysOnTop() ? NSFloatingWindowLevel : NSNormalWindowLevel];
 }
 
-- (void) windowDidLoad {
-    [self setShouldCascadeWindows:NO];
-
-    self.history = [NSMutableArray array];
-
-    [self appendString:@""
-     "Welcome to the Hammerspoon Console!\n"
-     "You can run any Lua code in here.\n\n"
-                  type:MJReplLineTypeStdout];
-
-    for (NSString* str in self.preshownStdouts)
-        [self appendString:str type:MJReplLineTypeStdout];
-
-    [self.outputView scrollToEndOfDocument:self];
-    self.preshownStdouts = nil;
-}
 
 - (void) appendString:(NSString*)str type:(MJReplLineType)type {
     NSColor* color = self.MJColorForStdout;

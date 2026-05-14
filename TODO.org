@@ -26,6 +26,10 @@ replaced.
 *** TODO Rewrite ~notify~ extension: ~NSUserNotification~ → ~UNUserNotificationCenter~
     ~extensions/notify/libnotify.m~ (1518 lines). Complete rewrite.
 
+*** TODO Rename the app (new name, bundle ID, branding)
+
+*** TODO Generate a new app icon
+
 * Investigated — not worth doing
 
 ** SKIP Make generators Xcode build-time phases
