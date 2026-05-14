@@ -6,10 +6,6 @@
 //  Copyright (c) 2015 Hammerspoon. All rights reserved.
 //
 
-#ifndef NO_INTENTS
-#import "HSExecuteLuaIntentHandler.h"
-#endif
-
 @protocol HSOpenFileDelegate <NSObject>
 
 -(void)callbackWithURL:(NSString *)openUrl senderPID:(pid_t)pid;

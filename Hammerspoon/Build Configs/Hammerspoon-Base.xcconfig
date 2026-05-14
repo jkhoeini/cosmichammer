@@ -43,9 +43,6 @@ ENABLE_HARDENED_RUNTIME = YES
 // and LUA_USE_MACOSX is defined in LuaSkin's Package.swift.
 GCC_PRECOMPILE_PREFIX_HEADER = NO
 
-// SiriKit Intent (Shortcuts) generation language
-INTENTS_CODEGEN_LANGUAGE = Objective-C
-
 // All Run Script build phases have been moved to justfile recipes.
 // ENABLE_USER_SCRIPT_SANDBOXING is no longer overridden here; the
 // project-wide YES (from Project-Base.xcconfig) applies.

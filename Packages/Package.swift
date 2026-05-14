@@ -100,7 +100,6 @@ let package = Package(
                 "Hammerspoon/Hammerspoon.entitlements",
                 "Hammerspoon/Hammerspoon.sdef",
                 "Hammerspoon/Images.xcassets",
-                "Hammerspoon/Intents.intentdefinition",
                 "Hammerspoon/MainMenu.xib",
                 "Hammerspoon/PreferencesWindow.xib",
                 "Hammerspoon/Spoon.icns",
