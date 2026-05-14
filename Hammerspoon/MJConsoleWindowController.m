@@ -18,8 +18,8 @@ void ConsoleDarkModeSetEnabled(BOOL enabled) {
 
 @property NSMutableArray* history;
 @property NSUInteger historyIndex;
-@property IBOutlet NSTextView* outputView;
-@property (weak) IBOutlet NSTextField* inputField;
+@property NSTextView* outputView;
+@property NSTextField* inputField;
 @property NSMutableArray* preshownStdouts;
 @property NSDateFormatter *dateFormatter;
 @property NSMutableArray *outputBuffer;
@@ -76,16 +76,107 @@ typedef NS_ENUM(NSUInteger, MJReplLineType) {
     return self;
 }
 
+#pragma mark - Programmatic window construction
+
+- (void)loadWindow {
+    // --- Window ---
+    NSWindowStyleMask styleMask = NSWindowStyleMaskTitled
+                                | NSWindowStyleMaskClosable
+                                | NSWindowStyleMaskMiniaturizable
+                                | NSWindowStyleMaskResizable;
+    NSRect contentRect = NSMakeRect(916, 704, 510, 389);
+    NSWindow *window = [[NSWindow alloc] initWithContentRect:contentRect
+                                                   styleMask:styleMask
+                                                     backing:NSBackingStoreBuffered
+                                                       defer:YES];
+    window.title = @"Hammerspoon Console";
+    window.releasedWhenClosed = NO;
+    window.minSize = NSMakeSize(340, 200);
+    window.frameAutosaveName = @"console";
+    window.collectionBehavior = NSWindowCollectionBehaviorFullScreenPrimary;
+    window.animationBehavior = NSWindowAnimationBehaviorDefault;
+    window.autorecalculatesKeyViewLoop = NO;
+    window.allowsToolTipsWhenApplicationIsInactive = NO;
+
+    NSView *contentView = window.contentView;
+
+    // --- ScrollView + TextView (output) ---
+    NSScrollView *scrollView = [[NSScrollView alloc] initWithFrame:NSZeroRect];
+    scrollView.translatesAutoresizingMaskIntoConstraints = NO;
+    scrollView.hasVerticalScroller = YES;
+    scrollView.hasHorizontalScroller = NO;
+    scrollView.horizontalScrollElasticity = NSScrollElasticityNone;
+    scrollView.drawsBackground = YES;
+    scrollView.contentView.drawsBackground = NO;
+
+    NSTextView *textView = [[NSTextView alloc] initWithFrame:NSZeroRect];
+    textView.editable = NO;
+    textView.selectable = YES;
+    textView.richText = NO;
+    textView.importsGraphics = NO;
+    textView.verticallyResizable = YES;
+    textView.horizontallyResizable = NO;
+    textView.usesFindBar = YES;
+    textView.allowsCharacterPickerTouchBarItem = NO;
+    textView.automaticTextCompletionEnabled = NO;
+    textView.textColor = [NSColor textColor];
+    textView.backgroundColor = [NSColor textBackgroundColor];
+
+    // Let the text view track the scroll view's clip width but grow vertically
+    textView.textContainer.containerSize = NSMakeSize(0, CGFLOAT_MAX);
+    textView.textContainer.widthTracksTextView = YES;
+    textView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+
+    scrollView.documentView = textView;
+    [contentView addSubview:scrollView];
+    self.outputView = textView;
+
+    // --- Input field ---
+    HSGrowingTextField *inputField = [[HSGrowingTextField alloc] initWithFrame:NSZeroRect];
+    inputField.translatesAutoresizingMaskIntoConstraints = NO;
+    inputField.font = [NSFont fontWithName:@"Menlo-Regular" size:12.0];
+    inputField.textColor = [NSColor controlTextColor];
+    inputField.backgroundColor = [NSColor textBackgroundColor];
+    inputField.drawsBackground = YES;
+    inputField.bordered = YES;
+    inputField.bezeled = YES;
+    inputField.bezelStyle = NSTextFieldSquareBezel;
+    inputField.editable = YES;
+    inputField.selectable = YES;
+    inputField.focusRingType = NSFocusRingTypeNone;
+    [inputField setContentCompressionResistancePriority:250 forOrientation:NSLayoutConstraintOrientationHorizontal];
+    inputField.target = self;
+    inputField.action = @selector(tryMessage:);
+    inputField.delegate = self;
+    [contentView addSubview:inputField];
+    self.inputField = inputField;
+
+    // --- Auto Layout constraints (matching XIB: 20pt margins, 8pt gap) ---
+    [NSLayoutConstraint activateConstraints:@[
+        // Scroll view edges
+        [scrollView.topAnchor constraintEqualToAnchor:contentView.topAnchor constant:20],
+        [scrollView.leadingAnchor constraintEqualToAnchor:contentView.leadingAnchor constant:20],
+        [scrollView.trailingAnchor constraintEqualToAnchor:contentView.trailingAnchor constant:-20],
+
+        // Input field edges
+        [inputField.leadingAnchor constraintEqualToAnchor:scrollView.leadingAnchor],
+        [inputField.trailingAnchor constraintEqualToAnchor:scrollView.trailingAnchor],
+        [inputField.bottomAnchor constraintEqualToAnchor:contentView.bottomAnchor constant:-20],
+
+        // 8pt gap between scroll view bottom and input field top
+        [inputField.topAnchor constraintEqualToAnchor:scrollView.bottomAnchor constant:8],
+    ]];
+
+    window.initialFirstResponder = inputField;
+    [self setWindow:window];
+}
+
 - (void)initializeConsoleColorsAndFont {
     self.MJColorForStdout  = [NSColor colorWithCalibratedHue:0.88 saturation:1.0 brightness:0.6 alpha:1.0] ;
     self.MJColorForCommand = [NSColor blackColor] ;
     self.MJColorForResult  = [NSColor colorWithCalibratedHue:0.54 saturation:1.0 brightness:0.7 alpha:1.0] ;
     self.consoleFont       = [NSFont fontWithName:@"Menlo" size:12.0] ;
     self.maxConsoleOutputHistory = [NSNumber numberWithInt:100000];
-}
-
-- (NSString*) windowNibName {
-    return @"ConsoleWindow";
 }
 
 + (instancetype) singleton {
@@ -130,14 +221,9 @@ typedef NS_ENUM(NSUInteger, MJReplLineType) {
 }
 
 - (void) windowDidLoad {
-    
-    // Save & Restore Last Window Location to Preferences:
     [self setShouldCascadeWindows:NO];
-    [self setWindowFrameAutosaveName:@"console"];
 
     self.history = [NSMutableArray array];
-    [self.outputView setEditable:NO];
-    [self.outputView setSelectable:YES];
 
     [self appendString:@""
      "Welcome to the Hammerspoon Console!\n"

@@ -93,7 +93,6 @@ let package = Package(
                 // Non-source files inside Hammerspoon/ that must not be
                 // compiled or treated as SPM resources.
                 "Hammerspoon/Build Configs",
-                "Hammerspoon/ConsoleWindow.xib",
                 "Hammerspoon/Credits.rtf",
                 "Hammerspoon/Hammerspoon-Info.plist",
                 "Hammerspoon/Hammerspoon-dev.entitlements",
