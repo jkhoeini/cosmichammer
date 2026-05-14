@@ -99,7 +99,6 @@ let package = Package(
                 "Hammerspoon/Hammerspoon.entitlements",
                 "Hammerspoon/Hammerspoon.sdef",
                 "Hammerspoon/Images.xcassets",
-                "Hammerspoon/PreferencesWindow.xib",
                 "Hammerspoon/Spoon.icns",
                 "Hammerspoon/setup.lua",
                 "Hammerspoon/statusicon.pdf",

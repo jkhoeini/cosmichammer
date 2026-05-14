@@ -24,10 +24,10 @@ void PreferencesDarkModeSetEnabled(BOOL enabled) {
 
 @interface MJPreferencesWindowController ()
 
-@property (weak) IBOutlet NSButton* openAtLoginCheckbox;
-@property (weak) IBOutlet NSButton* showDockIconCheckbox;
-@property (weak) IBOutlet NSButton* showMenuIconCheckbox;
-@property (weak) IBOutlet NSButton* keepConsoleOnTopCheckbox;
+@property (strong) NSButton* openAtLoginCheckbox;
+@property (strong) NSButton* showDockIconCheckbox;
+@property (strong) NSButton* showMenuIconCheckbox;
+@property (strong) NSButton* keepConsoleOnTopCheckbox;
 
 @property BOOL isAccessibilityEnabled;
 
@@ -79,11 +79,150 @@ void PreferencesDarkModeSetEnabled(BOOL enabled) {
     [self reflectDefaults];
 }
 
-- (NSString*) windowNibName {
-    return @"PreferencesWindow";
-}
+- (void)loadWindow {
+    // --- Panel ---
+    NSPanel *panel = [[NSPanel alloc] initWithContentRect:NSMakeRect(957, 580, 357, 246)
+                                                styleMask:(NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskMiniaturizable)
+                                                  backing:NSBackingStoreBuffered
+                                                    defer:YES];
+    panel.title = @"Hammerspoon Preferences";
+    panel.releasedWhenClosed = NO;
+    panel.frameAutosaveName = @"prefs";
+    panel.titlebarAppearsTransparent = YES;
+    panel.titleVisibility = NSWindowTitleHidden;
+    panel.animationBehavior = NSWindowAnimationBehaviorDefault;
 
-- (void)windowDidLoad {
+    // --- Visual effect view as the content view ---
+    NSVisualEffectView *effectView = [[NSVisualEffectView alloc] initWithFrame:panel.contentView.bounds];
+    effectView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    effectView.blendingMode = NSVisualEffectBlendingModeBehindWindow;
+    effectView.material = NSVisualEffectMaterialUnderWindowBackground;
+    effectView.state = NSVisualEffectStateFollowsWindowActiveState;
+    effectView.translatesAutoresizingMaskIntoConstraints = NO;
+
+    // Replace the content view's subview hierarchy — pin the effect view to fill
+    NSView *contentView = panel.contentView;
+    [contentView addSubview:effectView];
+    [NSLayoutConstraint activateConstraints:@[
+        [effectView.topAnchor constraintEqualToAnchor:contentView.topAnchor],
+        [effectView.bottomAnchor constraintEqualToAnchor:contentView.bottomAnchor],
+        [effectView.leadingAnchor constraintEqualToAnchor:contentView.leadingAnchor],
+        [effectView.trailingAnchor constraintEqualToAnchor:contentView.trailingAnchor],
+    ]];
+
+    // --- "Behavior:" label ---
+    NSTextField *behaviorLabel = [NSTextField labelWithString:@"Behavior:"];
+    behaviorLabel.translatesAutoresizingMaskIntoConstraints = NO;
+    behaviorLabel.alignment = NSTextAlignmentRight;
+    behaviorLabel.font = [NSFont systemFontOfSize:0]; // system default size
+    [effectView addSubview:behaviorLabel];
+
+    // --- Checkboxes ---
+    NSButton *openAtLogin = [NSButton checkboxWithTitle:@"Launch Hammerspoon at login"
+                                                 target:self
+                                                 action:@selector(toggleOpensAtLogin:)];
+    openAtLogin.translatesAutoresizingMaskIntoConstraints = NO;
+    [effectView addSubview:openAtLogin];
+    self.openAtLoginCheckbox = openAtLogin;
+
+    NSButton *showDock = [NSButton checkboxWithTitle:@"Show dock icon"
+                                              target:self
+                                              action:@selector(toggleShowDockIcon:)];
+    showDock.translatesAutoresizingMaskIntoConstraints = NO;
+    [effectView addSubview:showDock];
+    self.showDockIconCheckbox = showDock;
+
+    NSButton *showMenu = [NSButton checkboxWithTitle:@"Show menu icon"
+                                              target:self
+                                              action:@selector(toggleMenuDockIcon:)];
+    showMenu.translatesAutoresizingMaskIntoConstraints = NO;
+    [effectView addSubview:showMenu];
+    self.showMenuIconCheckbox = showMenu;
+
+    NSButton *keepOnTop = [NSButton checkboxWithTitle:@"Keep Console window on top"
+                                               target:self
+                                               action:@selector(toggleKeepConsoleOnTop:)];
+    keepOnTop.translatesAutoresizingMaskIntoConstraints = NO;
+    [effectView addSubview:keepOnTop];
+    self.keepConsoleOnTopCheckbox = keepOnTop;
+
+    // --- "Accessibility:" label ---
+    NSTextField *accessibilityLabel = [NSTextField labelWithString:@"Accessibility:"];
+    accessibilityLabel.translatesAutoresizingMaskIntoConstraints = NO;
+    accessibilityLabel.alignment = NSTextAlignmentRight;
+    accessibilityLabel.font = [NSFont systemFontOfSize:0];
+    [effectView addSubview:accessibilityLabel];
+
+    // --- Accessibility status text (bound) ---
+    NSTextField *statusText = [NSTextField labelWithString:@""];
+    statusText.translatesAutoresizingMaskIntoConstraints = NO;
+    statusText.font = [NSFont systemFontOfSize:0];
+    [statusText bind:NSValueBinding toObject:self withKeyPath:@"maybeEnableAccessibilityString" options:nil];
+    [effectView addSubview:statusText];
+
+    // --- "Enable Accessibility" button (bound) ---
+    NSButton *enableAccessButton = [[NSButton alloc] initWithFrame:NSZeroRect];
+    enableAccessButton.translatesAutoresizingMaskIntoConstraints = NO;
+    enableAccessButton.title = @"Enable Accessibility";
+    enableAccessButton.bezelStyle = NSBezelStyleRounded;
+    enableAccessButton.target = self;
+    enableAccessButton.action = @selector(openAccessibility:);
+    [enableAccessButton bind:NSEnabledBinding toObject:self withKeyPath:@"isAccessibilityEnabled"
+                     options:@{ NSValueTransformerNameBindingOption: NSNegateBooleanTransformerName }];
+    [effectView addSubview:enableAccessButton];
+
+    // --- Status dot image view (bound) ---
+    NSImageView *statusDot = [[NSImageView alloc] initWithFrame:NSZeroRect];
+    statusDot.translatesAutoresizingMaskIntoConstraints = NO;
+    [statusDot bind:NSValueBinding toObject:self withKeyPath:@"isAccessibilityEnabledImage" options:nil];
+    [effectView addSubview:statusDot];
+
+    // --- Auto Layout constraints ---
+    [NSLayoutConstraint activateConstraints:@[
+        // "Behavior:" label — top-left
+        [behaviorLabel.topAnchor constraintEqualToAnchor:effectView.topAnchor constant:20],
+        [behaviorLabel.leadingAnchor constraintEqualToAnchor:effectView.leadingAnchor constant:20],
+
+        // First checkbox aligns baseline with "Behavior:" label, 8pt after label trailing
+        [openAtLogin.bottomAnchor constraintEqualToAnchor:behaviorLabel.bottomAnchor constant:-1],
+        [openAtLogin.leadingAnchor constraintEqualToAnchor:behaviorLabel.trailingAnchor constant:8],
+
+        // Remaining checkboxes stack vertically with 6pt spacing
+        [showDock.topAnchor constraintEqualToAnchor:openAtLogin.bottomAnchor constant:6],
+        [showDock.leadingAnchor constraintEqualToAnchor:behaviorLabel.trailingAnchor constant:8],
+
+        [showMenu.topAnchor constraintEqualToAnchor:showDock.bottomAnchor constant:6],
+        [showMenu.leadingAnchor constraintEqualToAnchor:behaviorLabel.trailingAnchor constant:8],
+
+        [keepOnTop.topAnchor constraintEqualToAnchor:showMenu.bottomAnchor constant:6],
+        [keepOnTop.leadingAnchor constraintEqualToAnchor:behaviorLabel.trailingAnchor constant:8],
+
+        // "Accessibility:" label — below last checkbox, right-aligned with "Behavior:" label
+        [accessibilityLabel.topAnchor constraintEqualToAnchor:keepOnTop.bottomAnchor constant:8],
+        [accessibilityLabel.leadingAnchor constraintEqualToAnchor:effectView.leadingAnchor constant:20],
+        [accessibilityLabel.trailingAnchor constraintEqualToAnchor:behaviorLabel.trailingAnchor],
+
+        // Status text vertically centered with "Accessibility:" label
+        [statusText.centerYAnchor constraintEqualToAnchor:accessibilityLabel.centerYAnchor],
+        [statusText.leadingAnchor constraintEqualToAnchor:accessibilityLabel.trailingAnchor constant:8],
+        [statusText.trailingAnchor constraintEqualToAnchor:effectView.trailingAnchor constant:-20],
+
+        // "Enable Accessibility" button below status text, aligned to its leading
+        [enableAccessButton.topAnchor constraintEqualToAnchor:statusText.bottomAnchor constant:8],
+        [enableAccessButton.leadingAnchor constraintEqualToAnchor:statusText.leadingAnchor],
+        [enableAccessButton.widthAnchor constraintEqualToConstant:200],
+
+        // Status dot centered vertically with the button, 8pt to its right
+        [statusDot.centerYAnchor constraintEqualToAnchor:enableAccessButton.centerYAnchor],
+        [statusDot.leadingAnchor constraintEqualToAnchor:enableAccessButton.trailingAnchor constant:8],
+        [statusDot.widthAnchor constraintEqualToConstant:16],
+        [statusDot.heightAnchor constraintEqualToConstant:16],
+    ]];
+
+    // --- Assign the window ---
+    [self setWindow:panel];
+
+    // --- Post-load setup (equivalent of windowDidLoad) ---
     dispatch_async(dispatch_get_main_queue(), ^{
         [self cacheIsAccessibilityEnabled];
     });
@@ -100,7 +239,6 @@ void PreferencesDarkModeSetEnabled(BOOL enabled) {
                       selector:@selector(updateFeedbackDisplay:)
                           name:NSUserDefaultsDidChangeNotification
                         object:nil];
-
 }
 
 - (void) accessibilityChanged:(NSNotification*)note {
