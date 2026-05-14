@@ -7,6 +7,8 @@
 //
 
 #import "HSChooser.h"
+#import "HSChooserRootView.h"
+#import "HSChooserVerticallyCenteringTextFieldCell.h"
 #import "chooser.h"
 
 #pragma mark - Chooser object implementation
@@ -16,7 +18,9 @@
 #pragma mark - Object initialisation
 
 - (id)initWithRefTable:(LSRefTable)refTable completionCallbackRef:(int)completionCallbackRef {
-    self = [super initWithWindowNibName:@"HSChooserWindow" owner:self];
+    // Build the window programmatically instead of loading from a nib.
+    HSChooserWindow *panel = [self createChooserWindow];
+    self = [super initWithWindow:panel];
     if (self) {
         self.refTable = refTable;
         self.selfRefCount = 0;
@@ -71,14 +75,148 @@
     return self;
 }
 
-#pragma mark - Window related methods
+#pragma mark - Programmatic window construction
 
-- (void)windowDidLoad {
-    [super windowDidLoad];
+- (HSChooserWindow *)createChooserWindow {
+    NSRect contentRect = NSMakeRect(574, 449, 509, 281);
+    NSWindowStyleMask styleMask = NSWindowStyleMaskNonactivatingPanel | NSWindowStyleMaskFullSizeContentView;
+    HSChooserWindow *panel = [[HSChooserWindow alloc] initWithContentRect:contentRect
+                                                                styleMask:styleMask
+                                                                  backing:NSBackingStoreBuffered
+                                                                    defer:YES];
+    panel.title = @"Chooser";
+    panel.releasedWhenClosed = NO;
+    panel.restorable = NO;
+    panel.animationBehavior = NSWindowAnimationBehaviorDefault;
+    panel.collectionBehavior = NSWindowCollectionBehaviorIgnoresCycle;
+    [panel setAllowsToolTipsWhenApplicationIsInactive:NO];
+    [panel setAutorecalculatesKeyViewLoop:NO];
 
-    [self.queryField setFocusRingType:NSFocusRingTypeNone];
-    [self setAutoBgLightDark];
+    panel.delegate = self;
+
+    // --- Root content view (HSChooserRootView) ---
+    HSChooserRootView *rootView = [[HSChooserRootView alloc] initWithFrame:NSMakeRect(0, 0, 509, 281)];
+    rootView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    panel.contentView = rootView;
+
+    // --- Visual effect view (frosted glass) ---
+    NSVisualEffectView *effectView = [[NSVisualEffectView alloc] initWithFrame:rootView.bounds];
+    effectView.translatesAutoresizingMaskIntoConstraints = NO;
+    effectView.wantsLayer = YES;
+    effectView.blendingMode = NSVisualEffectBlendingModeBehindWindow;
+    effectView.material = NSVisualEffectMaterialSidebar;
+    effectView.state = NSVisualEffectStateFollowsWindowActiveState;
+    [rootView addSubview:effectView];
+    self.effectView = effectView;
+
+    // Pin effectView to all edges of rootView
+    [NSLayoutConstraint activateConstraints:@[
+        [effectView.leadingAnchor constraintEqualToAnchor:rootView.leadingAnchor],
+        [effectView.trailingAnchor constraintEqualToAnchor:rootView.trailingAnchor],
+        [effectView.topAnchor constraintEqualToAnchor:rootView.topAnchor],
+        [effectView.bottomAnchor constraintEqualToAnchor:rootView.bottomAnchor],
+    ]];
+
+    // --- Query text field (31pt system font, no border) ---
+    NSTextField *queryField = [[NSTextField alloc] initWithFrame:NSZeroRect];
+    queryField.translatesAutoresizingMaskIntoConstraints = NO;
+    queryField.wantsLayer = YES;
+    queryField.font = [NSFont systemFontOfSize:31];
+    queryField.textColor = [NSColor controlTextColor];
+    queryField.backgroundColor = [NSColor textBackgroundColor];
+    queryField.bordered = NO;
+    queryField.bezeled = NO;
+    queryField.drawsBackground = NO;
+    queryField.editable = YES;
+    queryField.selectable = YES;
+    queryField.usesSingleLineMode = YES;
+    queryField.cell.scrollable = YES;
+    queryField.cell.lineBreakMode = NSLineBreakByClipping;
+    [queryField setContentHuggingPriority:750 forOrientation:NSLayoutConstraintOrientationVertical];
+    [effectView addSubview:queryField];
+    self.queryField = queryField;
+
+    // --- Separator line ---
+    NSBox *separator = [[NSBox alloc] initWithFrame:NSZeroRect];
+    separator.translatesAutoresizingMaskIntoConstraints = NO;
+    separator.boxType = NSBoxSeparator;
+    [separator setContentHuggingPriority:750 forOrientation:NSLayoutConstraintOrientationVertical];
+    [effectView addSubview:separator];
+
+    // --- Scroll view + table view ---
+    NSScrollView *scrollView = [[NSScrollView alloc] initWithFrame:NSZeroRect];
+    scrollView.translatesAutoresizingMaskIntoConstraints = NO;
+    scrollView.borderType = NSNoBorder;
+    scrollView.autohidesScrollers = YES;
+    scrollView.hasVerticalScroller = YES;
+    scrollView.hasHorizontalScroller = YES;
+    scrollView.horizontalLineScroll = 42;
+    scrollView.horizontalPageScroll = 10;
+    scrollView.verticalLineScroll = 42;
+    scrollView.verticalPageScroll = 10;
+    scrollView.usesPredominantAxisScrolling = NO;
+    scrollView.drawsBackground = NO;
+
+    HSChooserTableView *tableView = [[HSChooserTableView alloc] initWithFrame:NSZeroRect];
+    tableView.rowHeight = 40;
+    tableView.usesAutomaticRowHeights = YES;
+    tableView.allowsExpansionToolTips = YES;
+    tableView.columnAutoresizingStyle = NSTableViewLastColumnOnlyAutoresizingStyle;
+    tableView.selectionHighlightStyle = NSTableViewSelectionHighlightStyleSourceList;
+    tableView.allowsColumnReordering = NO;
+    tableView.allowsColumnResizing = NO;
+    tableView.allowsMultipleSelection = NO;
+    tableView.allowsEmptySelection = NO;
+    tableView.autosaveTableColumns = NO;
+    tableView.allowsTypeSelect = NO;
+    tableView.intercellSpacing = NSMakeSize(3, 2);
+    tableView.backgroundColor = [NSColor colorWithSRGBRed:0.0 green:0.41176470588 blue:0.85098039216 alpha:0.0];
+    tableView.gridColor = [NSColor colorWithWhite:0.8 alpha:0.0];
+    [tableView setContentHuggingPriority:750 forOrientation:NSLayoutConstraintOrientationVertical];
+
+    // Create the single table column
+    NSTableColumn *column = [[NSTableColumn alloc] initWithIdentifier:@"MainColumn"];
+    column.editable = NO;
+    column.width = 487;
+    column.minWidth = 40;
+    column.maxWidth = 99000;
+    column.resizingMask = NSTableColumnAutoresizingMask;
+    [tableView addTableColumn:column];
+
+    // Ensure header is hidden (XIB had no visible header)
+    tableView.headerView = nil;
+
+    scrollView.documentView = tableView;
+    [effectView addSubview:scrollView];
+    self.choicesTableView = tableView;
+
+    // --- Auto Layout constraints matching the XIB ---
+    // queryField: top=20, leading=20, trailing=20 from effectView; height=43
+    // separator: top=20 below queryField; leading=0, trailing=0 from effectView
+    // scrollView: top=5 below separator; leading=5, trailing=5, bottom=5 from effectView
+    [NSLayoutConstraint activateConstraints:@[
+        // Query field
+        [queryField.topAnchor constraintEqualToAnchor:effectView.topAnchor constant:20],
+        [queryField.leadingAnchor constraintEqualToAnchor:effectView.leadingAnchor constant:20],
+        [effectView.trailingAnchor constraintEqualToAnchor:queryField.trailingAnchor constant:20],
+        [queryField.heightAnchor constraintEqualToConstant:43],
+
+        // Separator
+        [separator.topAnchor constraintEqualToAnchor:queryField.bottomAnchor constant:20],
+        [separator.leadingAnchor constraintEqualToAnchor:effectView.leadingAnchor],
+        [effectView.trailingAnchor constraintEqualToAnchor:separator.trailingAnchor],
+
+        // Scroll view
+        [scrollView.topAnchor constraintEqualToAnchor:separator.bottomAnchor constant:5],
+        [scrollView.leadingAnchor constraintEqualToAnchor:effectView.leadingAnchor constant:5],
+        [effectView.trailingAnchor constraintEqualToAnchor:scrollView.trailingAnchor constant:5],
+        [effectView.bottomAnchor constraintEqualToAnchor:scrollView.bottomAnchor constant:5],
+    ]];
+
+    return panel;
 }
+
+#pragma mark - Window related methods
 
 - (void)windowDidBecomeKey:(NSNotification *)notification {
     __weak id _self = self;
@@ -143,14 +281,12 @@
 }
 
 - (BOOL)setupWindow {
-    // Create and configure our window
-
-    // NOTE: This reference to self.window is critically important - it is the getter for this property which causes the window to be instantiated. Without it, we will have no window.
-    if (!self.window || !self.windowLoaded) {
-        NSLog(@"ERROR: Unable to load hs.chooser window NIB");
+    if (!self.window) {
+        NSLog(@"ERROR: Unable to create hs.chooser window");
         return NO;
     }
 
+    // Configure delegates and actions (previously set via NIB outlets)
     self.choicesTableView.delegate = self;
     self.choicesTableView.extendedDelegate = self;
     self.choicesTableView.dataSource = self;
@@ -159,6 +295,10 @@
     self.queryField.delegate = self;
     self.queryField.target = self;
     self.queryField.action = @selector(queryDidPressEnter:);
+
+    // Previously done in windowDidLoad
+    [self.queryField setFocusRingType:NSFocusRingTypeNone];
+    [self setAutoBgLightDark];
 
     return YES;
 }
@@ -342,8 +482,16 @@
         shortcutText = @"";
     }
 
-    NSString *chooserCellIdentifier = subText ?  @"HSChooserCellSubtext" : @"HSChooserCell";
+    NSString *chooserCellIdentifier = subText ? @"HSChooserCellSubtext" : @"HSChooserCell";
     HSChooserCell *cellView = [tableView makeViewWithIdentifier:chooserCellIdentifier owner:self];
+
+    if (!cellView) {
+        if (subText) {
+            cellView = [self makeSubtextCellWithIdentifier:chooserCellIdentifier];
+        } else {
+            cellView = [self makePlainCellWithIdentifier:chooserCellIdentifier];
+        }
+    }
 
     if ([text isKindOfClass:[NSAttributedString class]]) {
         cellView.text.attributedStringValue = (NSAttributedString *)text;
@@ -372,6 +520,198 @@
     }
 
     return cellView;
+}
+
+#pragma mark - Programmatic cell construction
+
+/// Create the "HSChooserCellSubtext" cell: icon (36px) | main text (15pt) + subtext (cellTitle font) | shortcut text (25pt)
+- (HSChooserCell *)makeSubtextCellWithIdentifier:(NSString *)identifier {
+    HSChooserCell *cell = [[HSChooserCell alloc] initWithFrame:NSMakeRect(0, 0, 496, 40)];
+    cell.identifier = identifier;
+    cell.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+
+    // --- Image view (36px wide, pinned top+bottom+leading) ---
+    NSImageView *imageView = [[NSImageView alloc] initWithFrame:NSZeroRect];
+    imageView.translatesAutoresizingMaskIntoConstraints = NO;
+    imageView.wantsLayer = YES;
+    imageView.tag = 4;
+    imageView.imageScaling = NSImageScaleProportionallyUpOrDown;
+    imageView.image = [NSImage imageNamed:NSImageNameActionTemplate];
+    [cell addSubview:imageView];
+    cell.image = imageView;
+    cell.imageView = imageView;
+
+    // --- Main text field (15pt system, secondaryLabelColor) ---
+    NSTextField *textField = [[NSTextField alloc] initWithFrame:NSZeroRect];
+    textField.translatesAutoresizingMaskIntoConstraints = NO;
+    textField.tag = 1;
+    textField.bordered = NO;
+    textField.bezeled = NO;
+    textField.drawsBackground = NO;
+    textField.editable = NO;
+    textField.selectable = NO;
+    textField.allowsExpansionToolTips = YES;
+    textField.font = [NSFont systemFontOfSize:15];
+    textField.textColor = [NSColor secondaryLabelColor];
+    textField.lineBreakMode = NSLineBreakByTruncatingTail;
+    textField.cell.sendsActionOnEndEditing = YES;
+    [textField setContentHuggingPriority:750 forOrientation:NSLayoutConstraintOrientationVertical];
+    [textField setContentCompressionResistancePriority:250 forOrientation:NSLayoutConstraintOrientationHorizontal];
+    [cell addSubview:textField];
+    cell.text = textField;
+
+    // --- Subtext field (cellTitle font, tertiaryLabelColor) ---
+    NSTextField *subTextField = [[NSTextField alloc] initWithFrame:NSZeroRect];
+    subTextField.translatesAutoresizingMaskIntoConstraints = NO;
+    subTextField.tag = -1;
+    subTextField.bordered = NO;
+    subTextField.bezeled = NO;
+    subTextField.drawsBackground = NO;
+    subTextField.editable = NO;
+    subTextField.selectable = NO;
+    subTextField.allowsExpansionToolTips = YES;
+    subTextField.font = [NSFont fontWithName:[[NSFont systemFontOfSize:0] fontName] size:[NSFont smallSystemFontSize]];
+    subTextField.textColor = [NSColor tertiaryLabelColor];
+    subTextField.lineBreakMode = NSLineBreakByTruncatingMiddle;
+    subTextField.cell.truncatesLastVisibleLine = YES;
+    subTextField.cell.sendsActionOnEndEditing = YES;
+    [subTextField setContentHuggingPriority:750 forOrientation:NSLayoutConstraintOrientationVertical];
+    [subTextField setContentCompressionResistancePriority:250 forOrientation:NSLayoutConstraintOrientationHorizontal];
+    [cell addSubview:subTextField];
+    cell.subText = subTextField;
+
+    // --- Shortcut text field (25pt system, 40x40, vertically centering cell) ---
+    NSTextField *shortcutField = [[NSTextField alloc] initWithFrame:NSZeroRect];
+    shortcutField.translatesAutoresizingMaskIntoConstraints = NO;
+    shortcutField.tag = 2;
+    shortcutField.bordered = NO;
+    shortcutField.bezeled = NO;
+    shortcutField.drawsBackground = NO;
+    shortcutField.editable = NO;
+    shortcutField.selectable = NO;
+    shortcutField.allowsExpansionToolTips = YES;
+    shortcutField.cell = [[HSChooserVerticallyCenteringTextFieldCell alloc] initTextCell:@"??"];
+    shortcutField.font = [NSFont systemFontOfSize:25];
+    shortcutField.textColor = [NSColor secondaryLabelColor];
+    shortcutField.alignment = NSTextAlignmentLeft;
+    [shortcutField setContentCompressionResistancePriority:1000 forOrientation:NSLayoutConstraintOrientationVertical];
+    [shortcutField setContentHuggingPriority:750 forOrientation:NSLayoutConstraintOrientationVertical];
+    [cell addSubview:shortcutField];
+    cell.shortcutText = shortcutField;
+
+    // --- Constraints matching XIB "HSChooserCellSubtext" ---
+    [NSLayoutConstraint activateConstraints:@[
+        // Image: width=36, leading=cell.leading, top=cell.top+2, bottom=cell.bottom
+        [imageView.widthAnchor constraintEqualToConstant:36],
+        [imageView.leadingAnchor constraintEqualToAnchor:cell.leadingAnchor],
+        [imageView.topAnchor constraintEqualToAnchor:cell.topAnchor constant:2],
+        [cell.bottomAnchor constraintEqualToAnchor:imageView.bottomAnchor],
+
+        // Main text: top=cell.top+5, leading=image.trailing+5
+        [textField.topAnchor constraintEqualToAnchor:cell.topAnchor constant:5],
+        [textField.leadingAnchor constraintEqualToAnchor:imageView.trailingAnchor constant:5],
+
+        // Subtext: leading=image.trailing+5, bottom=cell.bottom-3
+        [subTextField.leadingAnchor constraintEqualToAnchor:imageView.trailingAnchor constant:5],
+        [cell.bottomAnchor constraintEqualToAnchor:subTextField.bottomAnchor constant:3],
+
+        // Main text bottom = subtext top + 2
+        [textField.bottomAnchor constraintEqualToAnchor:subTextField.topAnchor constant:2],
+
+        // Shortcut: width=40, height=40, trailing=cell.trailing, centerY=image.centerY
+        [shortcutField.widthAnchor constraintEqualToConstant:40],
+        [shortcutField.heightAnchor constraintEqualToConstant:40],
+        [cell.trailingAnchor constraintEqualToAnchor:shortcutField.trailingAnchor],
+        [shortcutField.centerYAnchor constraintEqualToAnchor:imageView.centerYAnchor],
+
+        // Shortcut leading = text.trailing+5 and subtext.trailing+5
+        [shortcutField.leadingAnchor constraintEqualToAnchor:textField.trailingAnchor constant:5],
+        [shortcutField.leadingAnchor constraintEqualToAnchor:subTextField.trailingAnchor constant:5],
+    ]];
+
+    return cell;
+}
+
+/// Create the "HSChooserCell" cell: icon (36px) | main text (20pt, vertically centering) | shortcut text (25pt)
+- (HSChooserCell *)makePlainCellWithIdentifier:(NSString *)identifier {
+    HSChooserCell *cell = [[HSChooserCell alloc] initWithFrame:NSMakeRect(0, 0, 496, 40)];
+    cell.identifier = identifier;
+    cell.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+
+    // --- Image view (36px wide) ---
+    NSImageView *imageView = [[NSImageView alloc] initWithFrame:NSZeroRect];
+    imageView.translatesAutoresizingMaskIntoConstraints = NO;
+    imageView.wantsLayer = YES;
+    imageView.tag = 4;
+    imageView.imageScaling = NSImageScaleProportionallyUpOrDown;
+    imageView.image = [NSImage imageNamed:NSImageNameActionTemplate];
+    [cell addSubview:imageView];
+    cell.image = imageView;
+    cell.imageView = imageView;
+
+    // --- Main text field (20pt, vertically centering cell, secondaryLabelColor) ---
+    NSTextField *textField = [[NSTextField alloc] initWithFrame:NSZeroRect];
+    textField.translatesAutoresizingMaskIntoConstraints = NO;
+    textField.tag = 1;
+    textField.bordered = NO;
+    textField.bezeled = NO;
+    textField.drawsBackground = NO;
+    textField.editable = NO;
+    textField.selectable = NO;
+    textField.allowsExpansionToolTips = YES;
+    textField.cell = [[HSChooserVerticallyCenteringTextFieldCell alloc] initTextCell:@""];
+    textField.font = [NSFont systemFontOfSize:20];
+    textField.textColor = [NSColor secondaryLabelColor];
+    textField.lineBreakMode = NSLineBreakByTruncatingTail;
+    textField.cell.sendsActionOnEndEditing = YES;
+    [textField setContentHuggingPriority:750 forOrientation:NSLayoutConstraintOrientationVertical];
+    [textField setContentCompressionResistancePriority:250 forOrientation:NSLayoutConstraintOrientationHorizontal];
+    [cell addSubview:textField];
+    cell.text = textField;
+
+    // --- Shortcut text field (25pt, 40x40, vertically centering cell) ---
+    NSTextField *shortcutField = [[NSTextField alloc] initWithFrame:NSZeroRect];
+    shortcutField.translatesAutoresizingMaskIntoConstraints = NO;
+    shortcutField.tag = 2;
+    shortcutField.bordered = NO;
+    shortcutField.bezeled = NO;
+    shortcutField.drawsBackground = NO;
+    shortcutField.editable = NO;
+    shortcutField.selectable = NO;
+    shortcutField.allowsExpansionToolTips = YES;
+    shortcutField.cell = [[HSChooserVerticallyCenteringTextFieldCell alloc] initTextCell:@"??"];
+    shortcutField.font = [NSFont systemFontOfSize:25];
+    shortcutField.textColor = [NSColor secondaryLabelColor];
+    shortcutField.alignment = NSTextAlignmentLeft;
+    [shortcutField setContentHuggingPriority:750 forOrientation:NSLayoutConstraintOrientationVertical];
+    [shortcutField setContentCompressionResistancePriority:1000 forOrientation:NSLayoutConstraintOrientationVertical];
+    [cell addSubview:shortcutField];
+    cell.shortcutText = shortcutField;
+
+    // --- Constraints matching XIB "HSChooserCell" ---
+    [NSLayoutConstraint activateConstraints:@[
+        // Image: width=36, leading=cell.leading, top=cell.top+2, bottom=cell.bottom
+        [imageView.widthAnchor constraintEqualToConstant:36],
+        [imageView.leadingAnchor constraintEqualToAnchor:cell.leadingAnchor],
+        [imageView.topAnchor constraintEqualToAnchor:cell.topAnchor constant:2],
+        [cell.bottomAnchor constraintEqualToAnchor:imageView.bottomAnchor],
+
+        // Text: top=cell.top+5, bottom=cell.bottom-5, leading=image.trailing+5
+        [textField.topAnchor constraintEqualToAnchor:cell.topAnchor constant:5],
+        [cell.bottomAnchor constraintEqualToAnchor:textField.bottomAnchor constant:5],
+        [textField.leadingAnchor constraintEqualToAnchor:imageView.trailingAnchor constant:5],
+
+        // Shortcut: width=40, height=40, trailing=cell.trailing, centerY=image.centerY
+        [shortcutField.widthAnchor constraintEqualToConstant:40],
+        [shortcutField.heightAnchor constraintEqualToConstant:40],
+        [cell.trailingAnchor constraintEqualToAnchor:shortcutField.trailingAnchor],
+        [shortcutField.centerYAnchor constraintEqualToAnchor:imageView.centerYAnchor],
+
+        // Shortcut leading = text.trailing+5
+        [shortcutField.leadingAnchor constraintEqualToAnchor:textField.trailingAnchor constant:5],
+    ]];
+
+    return cell;
 }
 
 #pragma mark - HSTableViewDelegate

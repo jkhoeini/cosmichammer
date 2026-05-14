@@ -47,8 +47,6 @@ targets:
         excludes: ["**/*.m", "**/*.h", "**/*.pch", Build Configs, Hammerspoon-Info.plist, "*.entitlements"]
         buildPhase: resources
       # Resources from outside Hammerspoon/
-      - path: extensions/chooser/HSChooserWindow.xib
-        buildPhase: resources
       - path: extensions/doc/lua.json
         buildPhase: resources
       - path: extensions/httpserver/timeout3

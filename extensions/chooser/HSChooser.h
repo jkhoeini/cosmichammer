@@ -16,9 +16,9 @@
 #pragma mark - Chooser definition
 @interface HSChooser : NSWindowController <NSWindowDelegate, NSTextFieldDelegate, NSTableViewDataSource, NSTableViewDelegate, HSChooserTableViewDelegate>
 
-@property (nonatomic, weak) IBOutlet NSTextField *queryField;
-@property (nonatomic, weak) IBOutlet HSChooserTableView *choicesTableView;
-@property (nonatomic, weak) IBOutlet NSVisualEffectView *effectView;
+@property (nonatomic, strong) NSTextField *queryField;
+@property (nonatomic, strong) HSChooserTableView *choicesTableView;
+@property (nonatomic, strong) NSVisualEffectView *effectView;
 
 @property (nonatomic, strong) NSMutableArray *eventMonitors;
 @property (nonatomic) BOOL hasChosen;
