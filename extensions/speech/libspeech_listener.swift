@@ -16,7 +16,7 @@ private class HSSpeechRecognizer: NSSpeechRecognizer, NSSpeechRecognizerDelegate
     // are in fact the same pointer to the reference, and not just pointers to the same reference.
     var selfRef: Int32 = LUA_NOREF
 
-    override init() {
+    override init?() {
         super.init()
         self.callbackRef = LUA_NOREF
         self.selfRef = LUA_NOREF
@@ -28,25 +28,25 @@ private class HSSpeechRecognizer: NSSpeechRecognizer, NSSpeechRecognizerDelegate
 
     func speechRecognizer(_ sender: NSSpeechRecognizer, didRecognizeCommand command: String) {
         guard let recognizer = sender as? HSSpeechRecognizer, recognizer.callbackRef != LUA_NOREF else { return }
-        let skin = LuaSkin.shared(withState: nil)
-        _lua_stackguard_entry(skin.L)
+        let skin = LuaSkin.skin(with: nil)
+        _lua_stackguard_entry(skin.l)
 
         skin.pushLuaRef(refTable, ref: recognizer.callbackRef)
         skin.pushNSObject(recognizer)
         skin.pushNSObject(command as NSString)
         skin.protectedCallAndError("hs.speech.listener callback", nargs: 2, nresults: 0)
-        _lua_stackguard_exit(skin.L)
+        _lua_stackguard_exit(skin.l)
     }
 }
 
 // MARK: - Helpers
 
-private func get_recognizerFromUserdata(_ L: OpaquePointer!, at idx: Int32) -> HSSpeechRecognizer {
+private func get_recognizerFromUserdata(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> HSSpeechRecognizer {
     let ptr = luaL_checkudata(L, idx, USERDATA_TAG)!
     return Unmanaged<HSSpeechRecognizer>.fromOpaque(ptr.load(as: UnsafeRawPointer.self)).takeUnretainedValue()
 }
 
-private func get_recognizerFromUserdata_transfer(_ L: OpaquePointer!, at idx: Int32) -> HSSpeechRecognizer {
+private func get_recognizerFromUserdata_transfer(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> HSSpeechRecognizer {
     let ptr = luaL_checkudata(L, idx, USERDATA_TAG)!
     return Unmanaged<HSSpeechRecognizer>.fromOpaque(ptr.load(as: UnsafeRawPointer.self)).takeRetainedValue()
 }
@@ -65,8 +65,8 @@ private func get_recognizerFromUserdata_transfer(_ L: OpaquePointer!, at idx: In
 ///
 /// Notes:
 ///  * You can change the title later with the `hs.speech.listener:title` method.
-private func newSpeechRecognizer(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func newSpeechRecognizer(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING | LS_TNUMBER | LS_TOPTIONAL, LS_TBREAK)
     var theTitle: String? = nil
     if lua_gettop(L) == 1 {
@@ -75,7 +75,10 @@ private func newSpeechRecognizer(_ L: OpaquePointer!) -> Int32 {
         if theTitle == nil { skin.logWarn("unable to identify title from string, defaulting to \"Hammerspoon\"") }
     }
 
-    let recognizer = HSSpeechRecognizer()
+    guard let recognizer = HSSpeechRecognizer() else {
+        lua_pushnil(L)
+        return 1
+    }
     if let title = theTitle {
         recognizer.displayedCommandsTitle = title
     }
@@ -88,9 +91,9 @@ private func newSpeechRecognizer(_ L: OpaquePointer!) -> Int32 {
 /// hs.speech.listener:commands([commandsArray]) -> recognizerObject | current value
 /// Method
 /// Get or set the commands this speech recognizer will listen for.
-private func commands(_ L: OpaquePointer!) -> Int32 {
+private func commands(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let recognizer = get_recognizerFromUserdata(L, at: 1)
-    let skin = LuaSkin.shared(withState: L)
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TTABLE | LS_TOPTIONAL, LS_TBREAK)
     if lua_gettop(L) == 2 {
         var theCommands: [String] = []
@@ -120,9 +123,9 @@ private func commands(_ L: OpaquePointer!) -> Int32 {
 /// hs.speech.listener:title([title]) -> recognizerObject | current value
 /// Method
 /// Get or set the title for a speech recognizer.
-private func displayedCommandsTitle(_ L: OpaquePointer!) -> Int32 {
+private func displayedCommandsTitle(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let recognizer = get_recognizerFromUserdata(L, at: 1)
-    let skin = LuaSkin.shared(withState: L)
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING | LS_TNUMBER | LS_TNIL | LS_TOPTIONAL, LS_TBREAK)
     if lua_gettop(L) == 2 {
         var theTitle: String? = nil
@@ -141,9 +144,9 @@ private func displayedCommandsTitle(_ L: OpaquePointer!) -> Int32 {
 /// hs.speech.listener:foregroundOnly([flag]) -> recognizerObject | current value
 /// Method
 /// Get or set whether or not the speech recognizer is active only when the Hammerspoon application is active.
-private func listensInForegroundOnly(_ L: OpaquePointer!) -> Int32 {
+private func listensInForegroundOnly(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let recognizer = get_recognizerFromUserdata(L, at: 1)
-    let skin = LuaSkin.shared(withState: L)
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
     if lua_gettop(L) == 2 {
         recognizer.listensInForegroundOnly = lua_toboolean(L, 2) != 0
@@ -157,9 +160,9 @@ private func listensInForegroundOnly(_ L: OpaquePointer!) -> Int32 {
 /// hs.speech.listener:blocksOtherRecognizers([flag]) -> recognizerObject | current value
 /// Method
 /// Get or set whether or not the speech recognizer should block other recognizers when it is active.
-private func blocksOtherRecognizers(_ L: OpaquePointer!) -> Int32 {
+private func blocksOtherRecognizers(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let recognizer = get_recognizerFromUserdata(L, at: 1)
-    let skin = LuaSkin.shared(withState: L)
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
     if lua_gettop(L) == 2 {
         recognizer.blocksOtherRecognizers = lua_toboolean(L, 2) != 0
@@ -173,9 +176,9 @@ private func blocksOtherRecognizers(_ L: OpaquePointer!) -> Int32 {
 /// hs.speech.listener:start() -> recognizerObject
 /// Method
 /// Make the speech recognizer active.
-private func startListening(_ L: OpaquePointer!) -> Int32 {
+private func startListening(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let recognizer = get_recognizerFromUserdata(L, at: 1)
-    let skin = LuaSkin.shared(withState: L)
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     recognizer.startListening()
     recognizer.isListeningFlag = true
@@ -186,9 +189,9 @@ private func startListening(_ L: OpaquePointer!) -> Int32 {
 /// hs.speech.listener:stop() -> recognizerObject
 /// Method
 /// Disables the speech recognizer.
-private func stopListening(_ L: OpaquePointer!) -> Int32 {
+private func stopListening(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let recognizer = get_recognizerFromUserdata(L, at: 1)
-    let skin = LuaSkin.shared(withState: L)
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     recognizer.stopListening()
     recognizer.isListeningFlag = false
@@ -199,9 +202,9 @@ private func stopListening(_ L: OpaquePointer!) -> Int32 {
 /// hs.speech.listener:isListening() -> boolean
 /// Method
 /// Returns a boolean value indicating whether or not the recognizer is currently enabled (started).
-private func isListening(_ L: OpaquePointer!) -> Int32 {
+private func isListening(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let recognizer = get_recognizerFromUserdata(L, at: 1)
-    let skin = LuaSkin.shared(withState: L)
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     lua_pushboolean(L, recognizer.isListeningFlag ? 1 : 0)
     return 1
@@ -210,9 +213,9 @@ private func isListening(_ L: OpaquePointer!) -> Int32 {
 /// hs.speech.listener:setCallback(fn) -> recognizerObject
 /// Method
 /// Sets or removes a callback function for the speech recognizer.
-private func setCallback(_ L: OpaquePointer!) -> Int32 {
+private func setCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let recognizer = get_recognizerFromUserdata(L, at: 1)
-    let skin = LuaSkin.shared(withState: L)
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TFUNCTION | LS_TNIL, LS_TBREAK)
     recognizer.callbackRef = skin.luaUnref(refTable, ref: recognizer.callbackRef)
     if lua_type(L, 2) == LUA_TFUNCTION {
@@ -225,8 +228,8 @@ private func setCallback(_ L: OpaquePointer!) -> Int32 {
 
 // MARK: - Lua<->NSObject Conversion Functions
 
-private func pushHSSpeechRecognizer(_ L: OpaquePointer!, obj: Any!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func pushHSSpeechRecognizer(_ L: UnsafeMutablePointer<lua_State>!, obj: Any!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     let recognizer = obj as! HSSpeechRecognizer
 
     if recognizer.selfRef == LUA_NOREF {
@@ -243,14 +246,16 @@ private func pushHSSpeechRecognizer(_ L: OpaquePointer!, obj: Any!) -> Int32 {
 
 // MARK: - Hammerspoon Infrastructure
 
-private func userdata_tostring(_ L: OpaquePointer!) -> Int32 {
+private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let recognizer = get_recognizerFromUserdata(L, at: 1)
-    let skin = LuaSkin.shared(withState: L)
-    skin.pushNSObject(NSString(format: "%s: %@ (%p)", USERDATA_TAG, (recognizer.displayedCommandsTitle ?? "Hammerspoon") as NSString, Unmanaged.passUnretained(recognizer).toOpaque()))
+    let skin = LuaSkin.skin(with: L)
+    let title = recognizer.displayedCommandsTitle ?? "Hammerspoon"
+    let ptr = Unmanaged.passUnretained(recognizer).toOpaque()
+    lua_pushstring(L, "\(USERDATA_TAG): \(title) (\(ptr))")
     return 1
 }
 
-private func userdata_eq(_ L: OpaquePointer!) -> Int32 {
+private func userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     if luaL_testudata(L, 1, USERDATA_TAG) != nil && luaL_testudata(L, 2, USERDATA_TAG) != nil {
         let rec1 = get_recognizerFromUserdata(L, at: 1)
         let rec2 = get_recognizerFromUserdata(L, at: 2)
@@ -264,9 +269,9 @@ private func userdata_eq(_ L: OpaquePointer!) -> Int32 {
 /// hs.speech.listener:delete() -> recognizerObject
 /// Method
 /// Disables the speech recognizer and removes it from the possible available speech recognizers.
-private func userdata_gc(_ L: OpaquePointer!) -> Int32 {
+private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let recognizer = get_recognizerFromUserdata_transfer(L, at: 1)
-    let skin = LuaSkin.shared(withState: L)
+    let skin = LuaSkin.skin(with: L)
 
     recognizer.callbackRef = skin.luaUnref(refTable, ref: recognizer.callbackRef)
     recognizer.selfRef = skin.luaUnref(refTable, ref: recognizer.selfRef)
@@ -304,8 +309,8 @@ private var moduleLib: [luaL_Reg] = [
 // MARK: - Module Entry Point
 
 @_cdecl("luaopen_hs_libspeechlistener")
-public func luaopen_hs_libspeechlistener(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+public func luaopen_hs_libspeechlistener(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     refTable = skin.registerLibrary(withObject: USERDATA_TAG,
                                     functions: &moduleLib,
                                     metaFunctions: nil,

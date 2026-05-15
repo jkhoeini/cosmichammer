@@ -1,244 +1,106 @@
-//
-//  MYAnonymousIdentity.swift
-//  MYUtilities
-//
-//  Created by Jens Alfke on 12/5/14.
-//  Swift translation.
-//
-
 import Foundation
 import Security
 import CommonCrypto
 
-let kMYAnonymousIdentityDefaultExpirationInterval: TimeInterval = 60 * 60 * 24 * 365.0
-
-// Key size of kCertTemplate:
-private let kKeySizeInBits: Int = 2048
-
-// These are offsets into kCertTemplate where values need to be substituted:
-private let kSerialLength: Int = 1
-private let kDateLength: Int = 13
+private let kKeySizeInBits = 2048
+private let kSerialLength = 1
+private let kDateLength = 13
 private let kPublicKeyLength: UInt = 270
-private let kCSROffset: Int = 0
+private let kCSROffset = 0
 private let kSignatureLength: UInt = 256
 
-// MARK: - Private Helpers
+private let kSerialOffset = 15
+private let kIssueDateOffset = 84
+private let kExpDateOffset = 99
+private let kPublicKeyOffset = 185
+private let kCSRLength: UInt = 524
 
-private func checkErr(_ err: OSStatus, _ outError: inout NSError?) -> Bool {
-    if err == noErr { return true }
+let kMYAnonymousIdentityDefaultExpirationInterval: TimeInterval = 60 * 60 * 24 * 365.0
 
-    let message = SecCopyErrorMessageString(err, nil) as String?
-    var info: [String: Any]? = nil
-    if let message = message {
-        info = [NSLocalizedDescriptionKey: "\(message) (\(err))"]
+private let kCertTemplate: [UInt8] = [
+    0x30,0x82,0x03,0x0D,0x30,0x82,0x01,0xF5,0xA0,0x03,0x02,0x01,0x02,0x02,0x01,0x6A,
+    0x30,0x0D,0x06,0x09,0x2A,0x86,0x48,0x86,0xF7,0x0D,0x01,0x01,0x0B,0x05,0x00,0x30,
+    0x2F,0x31,0x20,0x30,0x1E,0x06,0x03,0x55,0x04,0x03,0x0C,0x17,0x48,0x61,0x6D,0x6D,
+    0x65,0x72,0x73,0x70,0x6F,0x6F,0x6E,0x20,0x48,0x54,0x54,0x50,0x20,0x53,0x65,0x72,
+    0x76,0x65,0x72,0x31,0x0B,0x30,0x09,0x06,0x03,0x55,0x04,0x06,0x13,0x02,0x55,0x53,
+    0x30,0x1E,0x17,0x0D,0x32,0x36,0x30,0x31,0x32,0x36,0x32,0x31,0x32,0x36,0x31,0x30,
+    0x5A,0x17,0x0D,0x32,0x36,0x30,0x32,0x32,0x35,0x32,0x31,0x32,0x36,0x31,0x30,0x5A,
+    0x30,0x2F,0x31,0x20,0x30,0x1E,0x06,0x03,0x55,0x04,0x03,0x0C,0x17,0x48,0x61,0x6D,
+    0x6D,0x65,0x72,0x73,0x70,0x6F,0x6F,0x6E,0x20,0x48,0x54,0x54,0x50,0x20,0x53,0x65,
+    0x72,0x76,0x65,0x72,0x31,0x0B,0x30,0x09,0x06,0x03,0x55,0x04,0x06,0x13,0x02,0x55,
+    0x53,0x30,0x82,0x01,0x22,0x30,0x0D,0x06,0x09,0x2A,0x86,0x48,0x86,0xF7,0x0D,0x01,
+    0x01,0x01,0x05,0x00,0x03,0x82,0x01,0x0F,0x00,0x30,0x82,0x01,0x0A,0x02,0x82,0x01,
+    0x01,0x00,0xD0,0x8E,0xCB,0xC4,0xD3,0x2A,0x0C,0x48,0x97,0x88,0x01,0x84,0xA2,0x9D,
+    0x1A,0xF6,0x3A,0xEE,0xF1,0xAD,0x87,0xFC,0x84,0xCD,0x87,0x3D,0x9B,0x1A,0x2E,0x63,
+    0xF6,0x7A,0x41,0x3F,0x4D,0xBB,0xE2,0x11,0x37,0x4D,0x84,0x3D,0x20,0x5B,0xA7,0x7F,
+    0x84,0x17,0x70,0x2F,0x5D,0xF1,0xF9,0xF8,0xCF,0xAA,0x48,0x40,0x9B,0x2D,0x96,0x0F,
+    0xC2,0x99,0xA7,0x19,0xB9,0x95,0x02,0x3D,0x16,0xB8,0x63,0x02,0xA3,0x6B,0x97,0x4C,
+    0xFE,0xDF,0x0C,0xC2,0x7C,0xF0,0x01,0x93,0xE9,0x6A,0xEE,0xCE,0x07,0xCF,0x30,0xC2,
+    0x44,0x4F,0x47,0x11,0x02,0xBC,0x45,0x8A,0x99,0xC7,0xB0,0xE4,0xF4,0xB0,0x7E,0xB5,
+    0xB1,0xDA,0x4D,0xAD,0x4B,0xDB,0xEE,0x44,0xF5,0x19,0xD7,0x89,0x97,0x59,0xFA,0xF8,
+    0x1C,0x12,0xC7,0xC3,0x2F,0xFD,0xE4,0x2E,0x42,0xDD,0xA8,0x32,0xBF,0x03,0x08,0x88,
+    0x0F,0x66,0x9C,0x01,0xA4,0x69,0xA1,0x2C,0xD2,0x13,0x79,0x08,0xCE,0xA7,0xC0,0x01,
+    0xFE,0xA1,0xE5,0xF1,0x78,0x10,0x19,0x22,0x81,0xC8,0xA7,0x2C,0xF6,0x65,0xD9,0x6A,
+    0x7D,0x79,0xD4,0xC2,0x44,0x49,0x7E,0x5D,0xEE,0x26,0x8F,0x32,0xEA,0x72,0x56,0xE7,
+    0xF6,0x60,0xC0,0x65,0x27,0x7A,0x5D,0xBD,0x7A,0x72,0xEB,0x82,0x88,0xF6,0x83,0x76,
+    0xAA,0xBD,0x17,0xB7,0xD1,0x8E,0xF5,0x6E,0x8B,0x40,0xA5,0xD7,0x76,0x48,0xFD,0x7C,
+    0x72,0x2E,0x40,0x95,0x62,0x17,0xC6,0x08,0x42,0xF5,0x8B,0xA3,0x0B,0x05,0x9D,0xB9,
+    0x5F,0xEF,0x7A,0x67,0x04,0x82,0x0E,0xDE,0xD6,0xAB,0x9C,0x5C,0x34,0x76,0x0B,0x85,
+    0x8B,0x75,0x02,0x03,0x01,0x00,0x01,0xA3,0x34,0x30,0x32,0x30,0x0E,0x06,0x03,0x55,
+    0x1D,0x0F,0x01,0x01,0xFF,0x04,0x04,0x03,0x02,0x07,0x80,0x30,0x20,0x06,0x03,0x55,
+    0x1D,0x25,0x01,0x01,0xFF,0x04,0x16,0x30,0x14,0x06,0x08,0x2B,0x06,0x01,0x05,0x05,
+    0x07,0x03,0x02,0x06,0x08,0x2B,0x06,0x01,0x05,0x05,0x07,0x03,0x01,0x30,0x0D,0x06,
+    0x09,0x2A,0x86,0x48,0x86,0xF7,0x0D,0x01,0x01,0x0B,0x05,0x00,0x03,0x82,0x01,0x01,
+    0x00,0xAE,0x6F,0xCE,0x24,0xDC,0x9A,0x98,0x09,0x7F,0x0A,0x2A,0x64,0x5E,0x14,0x83,
+    0x8F,0x7A,0x27,0x18,0x50,0xF9,0x22,0x54,0xE8,0x79,0xB2,0x9C,0x23,0xB6,0xFF,0xFB,
+    0xB0,0x43,0x47,0x0E,0x03,0xFC,0x2C,0x91,0xFA,0x2B,0x73,0x4D,0x48,0x92,0x6F,0xDB,
+    0xDB,0xC5,0x72,0x32,0xB6,0xCC,0x37,0xC0,0x9F,0xB6,0xCC,0x6A,0x6F,0x1A,0x00,0xC2,
+    0xD3,0x8D,0x19,0x74,0xC0,0x04,0x34,0xBC,0xD9,0x5E,0x7B,0x61,0x55,0xD3,0x51,0xC1,
+    0x54,0x57,0x18,0x6D,0xEC,0xBE,0xBE,0x67,0x47,0xB0,0x0B,0xAE,0x95,0xD6,0x55,0xB2,
+    0x8C,0xCF,0xCD,0x3B,0x4F,0xCC,0x32,0xA8,0x77,0x91,0x9D,0x48,0xF1,0x43,0x85,0xB9,
+    0xD6,0x4B,0x76,0xAC,0xC3,0x24,0x8B,0x5E,0x58,0x42,0x15,0xD5,0x51,0x72,0x94,0xC5,
+    0xF8,0x86,0x77,0xC7,0x8F,0xE1,0x30,0x47,0xAA,0xC0,0x80,0x68,0x47,0x8F,0xC9,0x52,
+    0xC0,0xC5,0xDB,0xEE,0xF2,0xF5,0x52,0x4F,0x7F,0x8C,0x22,0x9C,0xAA,0x1D,0x37,0xEF,
+    0x0D,0x1F,0x00,0x54,0x74,0xCF,0x82,0xEF,0x12,0x0B,0x46,0xDF,0x41,0xB3,0x13,0xCC,
+    0x90,0xF3,0xD6,0xE2,0xA1,0x94,0xF6,0x20,0xA7,0x79,0xA8,0x08,0xF9,0x12,0x87,0x7C,
+    0x9B,0xD5,0xBF,0xB9,0x55,0xAD,0x54,0x20,0x65,0x24,0x2A,0x1B,0x11,0x3A,0x31,0x07,
+    0x14,0xEB,0xAF,0xFC,0x18,0x11,0x65,0x7A,0x39,0x86,0x3C,0xD9,0xF2,0x0B,0x35,0xD3,
+    0x4C,0xC8,0xB2,0x1B,0x44,0xA4,0xAC,0x5C,0x62,0x5D,0x9C,0x5A,0x78,0x61,0xEC,0x23,
+    0x32,0xCE,0x5B,0xCB,0x81,0x94,0x02,0xAB,0x3D,0xE6,0x58,0x2B,0x9F,0x1C,0xB2,0x7E,
+    0x00,
+]
+
+// MARK: - Public API
+
+func MYGetOrCreateAnonymousIdentity(_ label: String, _ expirationInterval: TimeInterval) -> SecIdentity? {
+    if let ident = findIdentity(label, expirationInterval) {
+        return ident
     }
-    outError = NSError(domain: NSOSStatusErrorDomain, code: Int(err), userInfo: info)
-    return false
-}
 
-private func generateRSAKeyPair(sizeInBits: Int, permanent: Bool, label: String,
-                                 publicKey: inout SecKey?, privateKey: inout SecKey?,
-                                 outError: inout NSError?) -> Bool {
-    let pairAttrs: [CFString: Any] = [
-        kSecAttrKeyType: kSecAttrKeyTypeRSA,
-        kSecAttrKeySizeInBits: sizeInBits,
-        kSecAttrLabel: label,
-        kSecAttrIsPermanent: permanent,
-    ]
+    NSLog("Generating new anonymous self-signed SSL identity labeled \"%@\"...", label)
 
-    var pubKey: SecKey?
-    var privKey: SecKey?
-    let err = SecKeyGeneratePair(pairAttrs as CFDictionary, &pubKey, &privKey)
-    guard checkErr(err, &outError) else { return false }
-
-    publicKey = pubKey
-    privateKey = privKey
-    return true
-}
-
-private func getPublicKeyData(_ publicKey: SecKey) -> Data? {
-    var data: CFData?
-    let err = SecItemExport(publicKey, .formatBSAFE, [], nil, &data)
-    guard err == noErr, let cfData = data else { return nil }
-    return cfData as Data
-}
-
-private func signData(_ privateKey: SecKey, _ inputData: Data) -> Data? {
-    guard let transform = SecSignTransformCreate(privateKey, nil) else { return nil }
-    defer { /* transform is managed by ARC for SecTransform */ }
-
-    guard SecTransformSetAttribute(transform, kSecDigestTypeAttribute, kSecDigestSHA1, nil),
-          SecTransformSetAttribute(transform, kSecTransformInputAttributeName, inputData as CFData, nil) else {
+    guard let (publicKey, privateKey) = generateRSAKeyPair(sizeInBits: kKeySizeInBits, permanent: true, label: label) else {
         return nil
     }
 
-    let resultData = SecTransformExecute(transform, nil)
-    return resultData as? Data
-}
-
-private func generateAnonymousCert(publicKey: SecKey, privateKey: SecKey,
-                                    expirationInterval: TimeInterval,
-                                    outError: inout NSError?) -> Data? {
-    // Read the original template certificate file:
-    let data = NSMutableData(bytes: kCertTemplate, length: MemoryLayout.size(ofValue: kCertTemplate))
-    let buf = data.mutableBytes.assumingMemoryBound(to: UInt8.self)
-
-    // Write the serial number:
-    guard SecRandomCopyBytes(kSecRandomDefault, kSerialLength, &buf[Int(kSerialOffset)]) == 0 else {
-        NSLog("SecRandomCopyBytes() failed")
-        return nil
-    }
-    buf[Int(kSerialOffset)] &= 0x7F // non-negative
-
-    // Write the issue and expiration dates:
-    let x509DateFormatter = DateFormatter()
-    x509DateFormatter.dateFormat = "yyMMddHHmmss'Z'"
-    x509DateFormatter.timeZone = TimeZone(identifier: "GMT")
-
-    var date = Date()
-    var dateStr = x509DateFormatter.string(from: date)
-    dateStr.withCString { ptr in
-        memcpy(&buf[Int(kIssueDateOffset)], ptr, kDateLength)
-    }
-
-    date = date.addingTimeInterval(expirationInterval)
-    dateStr = x509DateFormatter.string(from: date)
-    dateStr.withCString { ptr in
-        memcpy(&buf[Int(kExpDateOffset)], ptr, kDateLength)
-    }
-
-    // Copy the public key:
-    guard let keyData = getPublicKeyData(publicKey) else { return nil }
-    guard keyData.count == kPublicKeyLength else {
-        NSLog("ERROR: keyData.length (%lu) != kPublicKeyLength (%u)", keyData.count, kPublicKeyLength)
-        return nil
-    }
-    keyData.withUnsafeBytes { ptr in
-        memcpy(&buf[Int(kPublicKeyOffset)], ptr.baseAddress!, Int(kPublicKeyLength))
-    }
-
-    // Sign the cert:
-    let csr = data.subdata(with: NSRange(location: kCSROffset, length: Int(kCSRLength)))
-    guard let sig = signData(privateKey, csr) else { return nil }
-    guard sig.count == kSignatureLength else {
-        NSLog("ERROR: sig.length (%lu) != kSignatureLength (%u)", sig.count, kSignatureLength)
-        return nil
-    }
-    data.append(sig)
-
-    return data as Data
-}
-
-private func addCertToKeychain(_ certData: Data, label: String,
-                                outError: inout NSError?) -> SecCertificate? {
-    guard let certRef = SecCertificateCreateWithData(nil, certData as CFData) else {
-        _ = checkErr(errSecIO, &outError)
+    guard let certData = generateAnonymousCert(publicKey: publicKey, privateKey: privateKey, expirationInterval: expirationInterval) else {
         return nil
     }
 
-    let attrs: [CFString: Any] = [
-        kSecClass: kSecClassCertificate,
-        kSecValueRef: certRef,
-    ]
-    var result: CFTypeRef?
-    var err = SecItemAdd(attrs as CFDictionary, &result)
+    guard let certRef = addCertToKeychain(certData, label: label) else {
+        return nil
+    }
+
+    var identity: SecIdentity?
+    let err = SecIdentityCreateWithCertificate(nil, certRef, &identity)
     if err != noErr {
-        NSLog("ERROR: SecItemAdd() returned %i", err)
-    }
-
-    // kSecAttrLabel is not settable on Mac OS (it's automatically generated from the principal
-    // name.) Instead we use the "preference" mapping mechanism, which only exists on Mac OS.
-    if err == noErr {
-        err = SecCertificateSetPreferred(certRef, label as CFString, nil)
-    }
-    if err == noErr {
-        // Check if this is an identity cert, i.e. we have the corresponding private key.
-        // If so, we'll also set the preference for the resulting SecIdentityRef.
-        var identRef: SecIdentity?
-        if SecIdentityCreateWithCertificate(nil, certRef, &identRef) == noErr, let ident = identRef {
-            err = SecIdentitySetPreferred(ident, label as CFString, nil)
-        }
-    }
-    _ = checkErr(err, &outError)
-    return certRef
-}
-
-private func relativeTimeFromOID(_ values: [AnyHashable: Any], _ oid: CFString) -> Double {
-    guard let entry = values[oid as String] as? [String: Any],
-          let dateNum = entry["value"] as? Double else {
-        return 0.0
-    }
-    return dateNum - CFAbsoluteTimeGetCurrent()
-}
-
-private func checkCertValid(_ cert: SecCertificate, expirationInterval: TimeInterval) -> Bool {
-    let oids: [CFString] = [kSecOIDX509V1ValidityNotAfter, kSecOIDX509V1ValidityNotBefore]
-    guard let valuesRef = SecCertificateCopyValues(cert, oids as CFArray, nil) else { return false }
-    let values = valuesRef as! [AnyHashable: Any]
-    return relativeTimeFromOID(values, kSecOIDX509V1ValidityNotAfter) >= 0.0
-        && relativeTimeFromOID(values, kSecOIDX509V1ValidityNotBefore) <= 0.0
-}
-
-private func findIdentity(_ label: String, expirationInterval: TimeInterval) -> SecIdentity? {
-    guard let identity = SecIdentityCopyPreferred(label as CFString, nil, nil) else { return nil }
-
-    // Check that the cert hasn't expire yet:
-    var cert: SecCertificate?
-    guard SecIdentityCopyCertificate(identity, &cert) == noErr, let certRef = cert else {
-        return nil
-    }
-    if !checkCertValid(certRef, expirationInterval: expirationInterval) {
-        NSLog("SSL identity labeled \"%@\" has expired", label)
-        _ = MYDeleteAnonymousIdentity(label)
+        NSLog("MYAnonymousIdentity: Can't find identity we just created")
         return nil
     }
     return identity
 }
 
-// MARK: - Public API
-
-/// Generates a valid but anonymous X.509 certificate (with 2048-bit RSA key) that's useable for
-/// an SSL server. It's anonymous because it's self-signed and the "subject" and "issuer" strings
-/// are just fixed placeholders.
-/// The cert and key are stored in the keychain under the given label; if they already exist and
-/// haven't expired, the existing identity will be returned instead of creating a new one.
-@discardableResult
-public func MYGetOrCreateAnonymousIdentity(_ label: String,
-                                            _ expirationInterval: TimeInterval,
-                                            _ outError: inout NSError?) -> SecIdentity? {
-    precondition(!label.isEmpty)
-    if let ident = findIdentity(label, expirationInterval: expirationInterval) {
-        return ident
-    }
-
-    NSLog("Generating new anonymous self-signed SSL identity labeled \"%@\"...", label)
-    var publicKey: SecKey?
-    var privateKey: SecKey?
-    guard generateRSAKeyPair(sizeInBits: kKeySizeInBits, permanent: true, label: label,
-                              publicKey: &publicKey, privateKey: &privateKey,
-                              outError: &outError) else {
-        return nil
-    }
-    guard let certData = generateAnonymousCert(publicKey: publicKey!, privateKey: privateKey!,
-                                                expirationInterval: expirationInterval,
-                                                outError: &outError) else {
-        return nil
-    }
-    guard let certRef = addCertToKeychain(certData, label: label, outError: &outError) else {
-        return nil
-    }
-
-    var ident: SecIdentity?
-    guard checkErr(SecIdentityCreateWithCertificate(nil, certRef, &ident), &outError) else {
-        NSLog("MYAnonymousIdentity: Can't find identity we just created")
-        return nil
-    }
-    return ident
-}
-
-/// Removes an identity created by MYGetOrCreateAnonymousIdentity from the keychain.
-@discardableResult
-public func MYDeleteAnonymousIdentity(_ label: String) -> Bool {
+func MYDeleteAnonymousIdentity(_ label: String) -> Bool {
     let attrs: [CFString: Any] = [
         kSecClass: kSecClassIdentity,
         kSecAttrLabel: label,
@@ -250,35 +112,174 @@ public func MYDeleteAnonymousIdentity(_ label: String) -> Bool {
     return err == noErr
 }
 
-/// Convenience function to get the SHA-1 digest of a certificate.
-/// This is a handy way to uniquely identify the certificate.
-public func MYGetCertificateDigest(_ cert: SecCertificate) -> Data {
+func MYGetCertificateDigest(_ cert: SecCertificate) -> Data {
     let data = SecCertificateCopyData(cert) as Data
     var digest = [UInt8](repeating: 0, count: Int(CC_SHA1_DIGEST_LENGTH))
     data.withUnsafeBytes { ptr in
-        CC_SHA1(ptr.baseAddress, CC_LONG(data.count), &digest)
+        _ = CC_SHA1(ptr.baseAddress, CC_LONG(data.count), &digest)
     }
     return Data(digest)
 }
 
-/*
- Copyright (c) 2014-15, Jens Alfke <jens@mooseyard.com>. All rights reserved.
+// MARK: - Key Generation
 
- Redistribution and use in source and binary forms, with or without modification, are permitted
- provided that the following conditions are met:
+private func generateRSAKeyPair(sizeInBits: Int, permanent: Bool, label: String) -> (SecKey, SecKey)? {
+    let pairAttrs: [CFString: Any] = [
+        kSecAttrKeyType: kSecAttrKeyTypeRSA,
+        kSecAttrKeySizeInBits: sizeInBits,
+        kSecAttrLabel: label,
+        kSecAttrIsPermanent: permanent,
+    ]
 
- * Redistributions of source code must retain the above copyright notice, this list of conditions
- and the following disclaimer.
- * Redistributions in binary form must reproduce the above copyright notice, this list of conditions
- and the following disclaimer in the documentation and/or other materials provided with the
- distribution.
+    var publicKey: SecKey?
+    var privateKey: SecKey?
+    let err = SecKeyGeneratePair(pairAttrs as CFDictionary, &publicKey, &privateKey)
+    guard err == noErr, let pub = publicKey, let priv = privateKey else {
+        return nil
+    }
+    return (pub, priv)
+}
 
- THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
- IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRI-
- BUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
- (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
-  PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
- CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF
- THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- */
+// MARK: - Certificate Generation
+
+private func generateAnonymousCert(publicKey: SecKey, privateKey: SecKey, expirationInterval: TimeInterval) -> Data? {
+    var data = Data(kCertTemplate)
+
+    // Write serial number
+    guard SecRandomCopyBytes(kSecRandomDefault, kSerialLength, &data[kSerialOffset]) == errSecSuccess else {
+        NSLog("SecRandomCopyBytes() failed")
+        return nil
+    }
+    data[kSerialOffset] &= 0x7F // non-negative
+
+    // Write issue and expiration dates
+    let formatter = DateFormatter()
+    formatter.dateFormat = "yyMMddHHmmss'Z'"
+    formatter.timeZone = TimeZone(identifier: "GMT")
+
+    let now = Date()
+    let issueDateStr = formatter.string(from: now)
+    let expDateStr = formatter.string(from: now.addingTimeInterval(expirationInterval))
+
+    let issueDateBytes = Array(issueDateStr.utf8)
+    let expDateBytes = Array(expDateStr.utf8)
+    for i in 0..<kDateLength {
+        data[kIssueDateOffset + i] = issueDateBytes[i]
+        data[kExpDateOffset + i] = expDateBytes[i]
+    }
+
+    // Copy public key
+    guard let keyData = getPublicKeyData(publicKey) else { return nil }
+    guard keyData.count == kPublicKeyLength else {
+        NSLog("ERROR: keyData.length (%lu) != kPublicKeyLength (%u)", keyData.count, kPublicKeyLength)
+        return nil
+    }
+    keyData.withUnsafeBytes { ptr in
+        data.replaceSubrange(kPublicKeyOffset..<kPublicKeyOffset + Int(kPublicKeyLength),
+                             with: ptr.baseAddress!, count: Int(kPublicKeyLength))
+    }
+
+    // Sign the cert
+    let csr = data[kCSROffset..<kCSROffset + Int(kCSRLength)]
+    guard let sig = signData(privateKey: privateKey, inputData: Data(csr)) else { return nil }
+    guard sig.count == kSignatureLength else {
+        NSLog("ERROR: sig.length (%lu) != kSignatureLength (%u)", sig.count, kSignatureLength)
+        return nil
+    }
+    data.append(sig)
+
+    return data
+}
+
+private func getPublicKeyData(_ publicKey: SecKey) -> Data? {
+    var data: CFData?
+    let err = SecItemExport(publicKey, .formatBSAFE, [], nil, &data)
+    guard err == noErr, let result = data else { return nil }
+    return result as Data
+}
+
+private func signData(privateKey: SecKey, inputData: Data) -> Data? {
+    guard let transform = SecSignTransformCreate(privateKey, nil) else { return nil }
+
+    guard SecTransformSetAttribute(transform, kSecDigestTypeAttribute, kSecDigestSHA1, nil) != false,
+          SecTransformSetAttribute(transform, kSecTransformInputAttributeName, inputData as CFData, nil) != false else {
+        return nil
+    }
+
+    var error: Unmanaged<CFError>?
+    let resultData = SecTransformExecute(transform, &error)
+    guard error == nil else { return nil }
+    return resultData as? Data
+}
+
+// MARK: - Keychain Operations
+
+private func addCertToKeychain(_ certData: Data, label: String) -> SecCertificate? {
+    guard let certRef = SecCertificateCreateWithData(nil, certData as CFData) else {
+        return nil
+    }
+
+    let attrs: [CFString: Any] = [
+        kSecClass: kSecClassCertificate,
+        kSecValueRef: certRef,
+    ]
+
+    var result: CFTypeRef?
+    var err = SecItemAdd(attrs as CFDictionary, &result)
+    if err != noErr {
+        NSLog("ERROR: SecItemAdd() returned %d", err)
+    }
+
+    // Set preference mapping (macOS only mechanism)
+    if err == noErr {
+        err = SecCertificateSetPreferred(certRef, label as CFString, nil)
+    }
+    if err == noErr {
+        var identRef: SecIdentity?
+        if SecIdentityCreateWithCertificate(nil, certRef, &identRef) == noErr, let identRef = identRef {
+            _ = SecIdentitySetPreferred(identRef, label as CFString, nil)
+        }
+    }
+
+    return certRef
+}
+
+// MARK: - Identity Lookup
+
+private func findIdentity(_ label: String, _ expirationInterval: TimeInterval) -> SecIdentity? {
+    guard let identity = SecIdentityCopyPreferred(label as CFString, nil, nil) else {
+        return nil
+    }
+
+    var cert: SecCertificate?
+    guard SecIdentityCopyCertificate(identity, &cert) == noErr, let cert = cert else {
+        return nil
+    }
+
+    if !checkCertValid(cert) {
+        NSLog("SSL identity labeled \"%@\" has expired", label)
+        _ = MYDeleteAnonymousIdentity(label)
+        return nil
+    }
+
+    return identity
+}
+
+// MARK: - Certificate Validation
+
+private func relativeTimeFromOID(_ values: NSDictionary, _ oid: CFString) -> Double {
+    guard let entry = values[oid] as? NSDictionary,
+          let dateNum = entry["value" as NSString] as? NSNumber else {
+        return 0.0
+    }
+    return dateNum.doubleValue - CFAbsoluteTimeGetCurrent()
+}
+
+private func checkCertValid(_ cert: SecCertificate) -> Bool {
+    let oids: [CFString] = [kSecOIDX509V1ValidityNotAfter, kSecOIDX509V1ValidityNotBefore]
+    guard let values = SecCertificateCopyValues(cert, oids as CFArray, nil) as NSDictionary? else {
+        return false
+    }
+    return relativeTimeFromOID(values, kSecOIDX509V1ValidityNotAfter) >= 0.0
+        && relativeTimeFromOID(values, kSecOIDX509V1ValidityNotBefore) <= 0.0
+}

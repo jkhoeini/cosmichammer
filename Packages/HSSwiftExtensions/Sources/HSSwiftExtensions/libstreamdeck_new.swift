@@ -1,0 +1,1 @@
+../../../../extensions/streamdeck/libstreamdeck_new.swift

@@ -3,6 +3,73 @@ import LuaSkin
 
 private var refTable: LSRefTable = LUA_NOREF
 
+// MARK: - Runtime access to MJConsoleWindowController (lives in HSExtensions, not visible at compile time)
+
+private let HSConsoleDarkModeKey = "HSConsoleDarkModeKey"
+
+private func consoleDarkModeEnabled() -> Bool {
+    UserDefaults.standard.bool(forKey: HSConsoleDarkModeKey)
+}
+
+private func consoleDarkModeSetEnabled(_ enabled: Bool) {
+    UserDefaults.standard.set(enabled, forKey: HSConsoleDarkModeKey)
+}
+
+/// Returns the MJConsoleWindowController singleton via runtime lookup.
+private func consoleController() -> NSObject {
+    let cls: AnyClass = NSClassFromString("MJConsoleWindowController")!
+    let sel = NSSelectorFromString("singleton")
+    let result = (cls as AnyObject).perform(sel)!
+    return result.takeUnretainedValue() as! NSObject
+}
+
+/// Returns the console NSWindow.
+private func consoleWindow() -> NSWindow {
+    consoleController().value(forKey: "window") as! NSWindow
+}
+
+/// Returns the output NSTextView.
+private func consoleOutputView() -> NSTextView {
+    consoleController().value(forKey: "outputView") as! NSTextView
+}
+
+/// Returns the input NSTextField.
+private func consoleInputField() -> NSTextField {
+    consoleController().value(forKey: "inputField") as! NSTextField
+}
+
+/// Returns the console font.
+private func consoleFont() -> NSFont {
+    consoleController().value(forKey: "consoleFont") as! NSFont
+}
+
+/// Returns the stdout color.
+private func consoleColorForStdout() -> NSColor {
+    consoleController().value(forKey: "MJColorForStdout") as! NSColor
+}
+
+/// Returns the command color.
+private func consoleColorForCommand() -> NSColor {
+    consoleController().value(forKey: "MJColorForCommand") as! NSColor
+}
+
+/// Returns the result color.
+private func consoleColorForResult() -> NSColor {
+    consoleController().value(forKey: "MJColorForResult") as! NSColor
+}
+
+/// Returns the history mutable array.
+private func consoleHistory() -> NSMutableArray {
+    consoleController().value(forKey: "history") as! NSMutableArray
+}
+
+/// Returns the max console output history.
+private func consoleMaxOutputHistory() -> NSNumber {
+    consoleController().value(forKey: "maxConsoleOutputHistory") as! NSNumber
+}
+
+// MARK: - Lua Functions
+
 /// hs.console.darkMode([state]) -> bool
 /// Function
 /// Set or display whether or not the Console window should display in dark mode.
@@ -22,16 +89,17 @@ private var refTable: LSRefTable = LUA_NOREF
 ///        hs.console.alpha(.8)
 ///    end
 ///.   ```
-private func consoleDarkMode(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func consoleDarkMode(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
 
-    if lua_isboolean(L, 1) != 0 {
-        ConsoleDarkModeSetEnabled(lua_toboolean(L, 1) != 0)
-        MJConsoleWindowController.singleton().reflectDefaults()
+    if lua_isboolean(L, 1) {
+        consoleDarkModeSetEnabled(lua_toboolean(L, 1) != 0)
+        let ctrl = consoleController()
+        ctrl.perform(NSSelectorFromString("reflectDefaults"))
     }
 
-    lua_pushboolean(L, ConsoleDarkModeEnabled() ? 1 : 0)
+    lua_pushboolean(L, consoleDarkModeEnabled() ? 1 : 0)
     return 1
 }
 
@@ -48,16 +116,19 @@ private func consoleDarkMode(_ L: OpaquePointer!) -> Int32 {
 /// Notes:
 ///  * See the `hs.drawing.color` entry in the Dash documentation, or type `help.hs.drawing.color` in the Hammerspoon console to get more information on how to specify a color.
 ///  * Note this only affects future output -- anything already in the console will remain its current color.
-private func console_consolePrintColor(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func console_consolePrintColor(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
+    let ctrl = consoleController()
 
     if lua_type(L, 1) != LUA_TNONE {
         luaL_checktype(L, 1, LUA_TTABLE)
-        MJConsoleWindowController.singleton().mjColorForStdout =
-            skin.luaObjectAtIndex(1, toClass: "NSColor") as! NSColor
+        ctrl.setValue(
+            skin.luaObject(at: 1, toClass: "NSColor") as! NSColor,
+            forKey: "MJColorForStdout"
+        )
     }
 
-    skin.pushNSObject(MJConsoleWindowController.singleton().mjColorForStdout)
+    skin.pushNSObject(consoleColorForStdout())
     return 1
 }
 
@@ -74,16 +145,16 @@ private func console_consolePrintColor(_ L: OpaquePointer!) -> Int32 {
 /// Notes:
 ///  * A length value of zero will allow the history to grow infinitely
 ///  * The default console history is 100,000 characters
-private func console_maxOutputHistory(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func console_maxOutputHistory(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TNUMBER | LS_TOPTIONAL, LS_TBREAK)
 
     if lua_type(L, 1) != LUA_TNONE {
         let size = NSNumber(value: Int32(lua_tointeger(L, 1)))
-        MJConsoleWindowController.singleton().maxConsoleOutputHistory = size
+        consoleController().setValue(size, forKey: "maxConsoleOutputHistory")
     }
 
-    lua_pushinteger(L, lua_Integer(MJConsoleWindowController.singleton().maxConsoleOutputHistory.intValue))
+    lua_pushinteger(L, lua_Integer(consoleMaxOutputHistory().intValue))
     return 1
 }
 
@@ -100,16 +171,16 @@ private func console_maxOutputHistory(_ L: OpaquePointer!) -> Int32 {
 /// Notes:
 ///  * See the `hs.drawing.color` entry in the Dash documentation, or type `help.hs.drawing.color` in the Hammerspoon console to get more information on how to specify a color.
 ///  * Note this only affects future output -- anything already in the console will remain its current font.
-private func console_consoleFont(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func console_consoleFont(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
 
     if lua_type(L, 1) != LUA_TNONE {
-        if let newFont = skin.luaObjectAtIndex(1, toClass: "NSFont") as? NSFont {
-            MJConsoleWindowController.singleton().consoleFont = newFont
+        if let newFont = skin.luaObject(at: 1, toClass: "NSFont") as? NSFont {
+            consoleController().setValue(newFont, forKey: "consoleFont")
         }
     }
 
-    skin.pushNSObject(MJConsoleWindowController.singleton().consoleFont)
+    skin.pushNSObject(consoleFont())
     return 1
 }
 
@@ -126,16 +197,19 @@ private func console_consoleFont(_ L: OpaquePointer!) -> Int32 {
 /// Notes:
 ///  * See the `hs.drawing.color` entry in the Dash documentation, or type `help.hs.drawing.color` in the Hammerspoon console to get more information on how to specify a color.
 ///  * Note this only affects future output -- anything already in the console will remain its current color.
-private func console_consoleCommandColor(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func console_consoleCommandColor(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
+    let ctrl = consoleController()
 
     if lua_type(L, 1) != LUA_TNONE {
         luaL_checktype(L, 1, LUA_TTABLE)
-        MJConsoleWindowController.singleton().mjColorForCommand =
-            skin.luaObjectAtIndex(1, toClass: "NSColor") as! NSColor
+        ctrl.setValue(
+            skin.luaObject(at: 1, toClass: "NSColor") as! NSColor,
+            forKey: "MJColorForCommand"
+        )
     }
 
-    skin.pushNSObject(MJConsoleWindowController.singleton().mjColorForCommand)
+    skin.pushNSObject(consoleColorForCommand())
     return 1
 }
 
@@ -152,16 +226,19 @@ private func console_consoleCommandColor(_ L: OpaquePointer!) -> Int32 {
 /// Notes:
 ///  * See the `hs.drawing.color` entry in the Dash documentation, or type `help.hs.drawing.color` in the Hammerspoon console to get more information on how to specify a color.
 ///  * Note this only affects future output -- anything already in the console will remain its current color.
-private func console_consoleResultColor(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func console_consoleResultColor(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
+    let ctrl = consoleController()
 
     if lua_type(L, 1) != LUA_TNONE {
         luaL_checktype(L, 1, LUA_TTABLE)
-        MJConsoleWindowController.singleton().mjColorForResult =
-            skin.luaObjectAtIndex(1, toClass: "NSColor") as! NSColor
+        ctrl.setValue(
+            skin.luaObject(at: 1, toClass: "NSColor") as! NSColor,
+            forKey: "MJColorForResult"
+        )
     }
 
-    skin.pushNSObject(MJConsoleWindowController.singleton().mjColorForResult)
+    skin.pushNSObject(consoleColorForResult())
     return 1
 }
 
@@ -174,9 +251,9 @@ private func console_consoleResultColor(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * an hs.window object
-private func console_asWindow(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
-    let console = MJConsoleWindowController.singleton().window!
+private func console_asWindow(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
+    let console = consoleWindow()
 
     let windowID = CGWindowID(console.windowNumber)
     skin.requireModule("hs.window")
@@ -198,13 +275,13 @@ private func console_asWindow(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * See the `hs.drawing.color` entry in the Dash documentation, or type `help.hs.drawing.color` in the Hammerspoon console to get more information on how to specify a color.
-private func console_backgroundColor(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
-    let console = MJConsoleWindowController.singleton().window!
+private func console_backgroundColor(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
+    let console = consoleWindow()
 
     if lua_type(L, 1) != LUA_TNONE {
         luaL_checktype(L, 1, LUA_TTABLE)
-        console.backgroundColor = skin.luaObjectAtIndex(1, toClass: "NSColor") as! NSColor
+        console.backgroundColor = skin.luaObject(at: 1, toClass: "NSColor") as! NSColor
     }
 
     skin.pushNSObject(console.backgroundColor)
@@ -223,13 +300,13 @@ private func console_backgroundColor(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * See the `hs.drawing.color` entry in the Dash documentation, or type `help.hs.drawing.color` in the Hammerspoon console to get more information on how to specify a color.
-private func console_outputBackgroundColor(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
-    let output = MJConsoleWindowController.singleton().outputView!
+private func console_outputBackgroundColor(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
+    let output = consoleOutputView()
 
     if lua_type(L, 1) != LUA_TNONE {
         luaL_checktype(L, 1, LUA_TTABLE)
-        output.backgroundColor = skin.luaObjectAtIndex(1, toClass: "NSColor") as! NSColor
+        output.backgroundColor = skin.luaObject(at: 1, toClass: "NSColor") as! NSColor
     }
 
     skin.pushNSObject(output.backgroundColor)
@@ -248,13 +325,13 @@ private func console_outputBackgroundColor(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * See the `hs.drawing.color` entry in the Dash documentation, or type `help.hs.drawing.color` in the Hammerspoon console to get more information on how to specify a color.
-private func console_inputBackgroundColor(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
-    let input = MJConsoleWindowController.singleton().inputField!
+private func console_inputBackgroundColor(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
+    let input = consoleInputField()
 
     if lua_type(L, 1) != LUA_TNONE {
         luaL_checktype(L, 1, LUA_TTABLE)
-        input.backgroundColor = skin.luaObjectAtIndex(1, toClass: "NSColor") as! NSColor
+        input.backgroundColor = skin.luaObject(at: 1, toClass: "NSColor") as! NSColor
     }
 
     skin.pushNSObject(input.backgroundColor)
@@ -273,8 +350,8 @@ private func console_inputBackgroundColor(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * this only applies to future copy operations from the Hammerspoon console -- anything already in the clipboard is not affected.
-private func console_smartInsertDeleteEnabled(_ L: OpaquePointer!) -> Int32 {
-    let output = MJConsoleWindowController.singleton().outputView!
+private func console_smartInsertDeleteEnabled(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let output = consoleOutputView()
 
     if lua_type(L, 1) != LUA_TNONE {
         output.smartInsertDeleteEnabled = lua_toboolean(L, 1) != 0
@@ -293,12 +370,11 @@ private func console_smartInsertDeleteEnabled(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * an array containing the history of commands entered into the Hammerspoon console.
-private func console_getHistory(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func console_getHistory(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TBREAK)
-    let console = MJConsoleWindowController.singleton()
 
-    skin.pushNSObject(console.history)
+    skin.pushNSObject(consoleHistory())
     return 1
 }
 
@@ -314,13 +390,14 @@ private func console_getHistory(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * You can specify the console content as a string or as an `hs.styledtext` object in either userdata or table format.
-private func console_setConsole(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func console_setConsole(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TANY | LS_TOPTIONAL, LS_TBREAK)
-    let console = MJConsoleWindowController.singleton()
+    let ctrl = consoleController()
+    let outputView = consoleOutputView()
 
     if lua_gettop(L) == 0 {
-        console.outputView.textStorage?.performSelector(
+        outputView.textStorage?.performSelector(
             onMainThread: #selector(NSMutableAttributedString.setAttributedString(_:)),
             with: NSMutableAttributedString(),
             waitUntilDone: true
@@ -328,11 +405,11 @@ private func console_setConsole(_ L: OpaquePointer!) -> Int32 {
     } else {
         let theStr: NSAttributedString
         if lua_type(L, 1) == LUA_TUSERDATA && luaL_testudata(L, 1, "hs.styledtext") != nil {
-            theStr = skin.luaObjectAtIndex(1, toClass: "NSAttributedString") as! NSAttributedString
+            theStr = skin.luaObject(at: 1, toClass: "NSAttributedString") as! NSAttributedString
         } else {
             let consoleAttrs: [NSAttributedString.Key: Any] = [
-                .font: MJConsoleWindowController.singleton().consoleFont!,
-                .foregroundColor: MJConsoleWindowController.singleton().mjColorForStdout!,
+                .font: consoleFont(),
+                .foregroundColor: consoleColorForStdout(),
             ]
             luaL_tolstring(L, 1, nil)
             theStr = NSAttributedString(
@@ -341,13 +418,13 @@ private func console_setConsole(_ L: OpaquePointer!) -> Int32 {
             )
             lua_pop(L, 1)
         }
-        console.outputView.textStorage?.performSelector(
+        outputView.textStorage?.performSelector(
             onMainThread: #selector(NSMutableAttributedString.setAttributedString(_:)),
             with: theStr,
             waitUntilDone: true
         )
     }
-    console.outputView.scrollToEndOfDocument(console)
+    outputView.scrollToEndOfDocument(ctrl)
     return 0
 }
 
@@ -363,16 +440,16 @@ private func console_setConsole(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * If the text of the console is retrieved as a string, no color or style information in the console output is retrieved - only the raw text.
-private func console_getConsole(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func console_getConsole(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
-    let console = MJConsoleWindowController.singleton()
-    let styled = lua_isboolean(L, 1) != 0 ? (lua_toboolean(L, 1) != 0) : false
+    let outputView = consoleOutputView()
+    let styled = lua_isboolean(L, 1) ? (lua_toboolean(L, 1) != 0) : false
 
     if styled {
-        skin.pushNSObject(console.outputView.textStorage?.copy())
+        skin.pushNSObject(outputView.textStorage?.copy())
     } else {
-        skin.pushNSObject(console.outputView.textStorage?.string)
+        skin.pushNSObject(outputView.textStorage?.string)
     }
 
     return 1
@@ -390,13 +467,14 @@ private func console_getConsole(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * You can clear the console history by using an empty array (e.g. `hs.console.setHistory({})`
-private func console_setHistory(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func console_setHistory(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TTABLE, LS_TBREAK)
-    let console = MJConsoleWindowController.singleton()
+    let ctrl = consoleController()
 
-    console.history = skin.toNSObject(atIndex: 1) as! NSMutableArray
-    console.historyIndex = console.history.count
+    let newHistory = skin.toNSObject(atIndex: 1) as! NSMutableArray
+    ctrl.setValue(newHistory, forKey: "history")
+    ctrl.setValue(newHistory.count, forKey: "historyIndex")
     lua_pushnil(L)
     return 1
 }
@@ -420,12 +498,13 @@ private func console_setHistory(_ L: OpaquePointer!) -> Int32 {
 ///        hs.console.printStyledtext(...)
 ///    end
 /// ~~~
-private func console_printStyledText(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
-    let console = MJConsoleWindowController.singleton()
+private func console_printStyledText(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
+    let ctrl = consoleController()
+    let outputView = consoleOutputView()
     let consoleAttrs: [NSAttributedString.Key: Any] = [
-        .font: MJConsoleWindowController.singleton().consoleFont!,
-        .foregroundColor: MJConsoleWindowController.singleton().mjColorForStdout!,
+        .font: consoleFont(),
+        .foregroundColor: consoleColorForStdout(),
     ]
 
     let theStr = NSMutableAttributedString()
@@ -435,7 +514,7 @@ private func console_printStyledText(_ L: OpaquePointer!) -> Int32 {
             theStr.append(NSAttributedString(string: "\t", attributes: consoleAttrs))
         }
         if lua_type(L, i) == LUA_TUSERDATA && luaL_testudata(L, i, "hs.styledtext") != nil {
-            theStr.append(skin.luaObjectAtIndex(i, toClass: "NSAttributedString") as! NSAttributedString)
+            theStr.append(skin.luaObject(at: i, toClass: "NSAttributedString") as! NSAttributedString)
         } else {
             luaL_tolstring(L, i, nil)
             theStr.append(NSAttributedString(
@@ -447,12 +526,12 @@ private func console_printStyledText(_ L: OpaquePointer!) -> Int32 {
     }
     theStr.append(NSAttributedString(string: "\n", attributes: consoleAttrs))
 
-    console.outputView.textStorage?.performSelector(
+    outputView.textStorage?.performSelector(
         onMainThread: #selector(NSMutableAttributedString.append(_:)),
         with: theStr,
         waitUntilDone: true
     )
-    console.outputView.scrollToEndOfDocument(console)
+    outputView.scrollToEndOfDocument(ctrl)
     return 0
 }
 
@@ -468,10 +547,10 @@ private func console_printStyledText(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * see the notes for `hs.drawing.windowLevels`
-private func console_level(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func console_level(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TNUMBER | LS_TINTEGER | LS_TOPTIONAL, LS_TBREAK)
-    let console = MJConsoleWindowController.singleton().window!
+    let console = consoleWindow()
 
     if lua_gettop(L) == 1 {
         let targetLevel = lua_tointeger(L, 1)
@@ -481,7 +560,7 @@ private func console_level(_ L: OpaquePointer!) -> Int32 {
         if targetLevel >= minLevel && targetLevel <= maxLevel {
             console.level = NSWindow.Level(rawValue: Int(targetLevel))
         } else {
-            return luaL_error(L, "window level must be between %d and %d inclusive", minLevel, maxLevel)
+            return luaL_error(L, "window level must be between \(minLevel) and \(maxLevel) inclusive")
         }
     }
     lua_pushinteger(L, lua_Integer(console.level.rawValue))
@@ -497,10 +576,10 @@ private func console_level(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * the current, possibly new, value.
-private func console_alpha(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func console_alpha(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TNUMBER | LS_TOPTIONAL, LS_TBREAK)
-    let console = MJConsoleWindowController.singleton().window!
+    let console = consoleWindow()
 
     if lua_gettop(L) == 1 {
         let newLevel = CGFloat(luaL_checknumber(L, 1))
@@ -522,11 +601,11 @@ private func console_alpha(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * Window behaviors determine how the webview object is handled by Spaces and Exposé. See `hs.drawing.windowBehaviors` for more information.
-private func console_behavior(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func console_behavior(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TNUMBER | LS_TOPTIONAL, LS_TBREAK)
 
-    let console = MJConsoleWindowController.singleton().window!
+    let console = consoleWindow()
 
     if lua_gettop(L) == 1 {
         skin.checkArgs(LS_TNUMBER | LS_TINTEGER, LS_TBREAK)
@@ -551,10 +630,10 @@ private func console_behavior(_ L: OpaquePointer!) -> Int32 {
 ///  * When a toolbar is attached to the Hammerspoon console (see the `hs.webview.toolbar` module documentation), this function can be used to specify whether the Toolbar appears underneath the console window's title ("visible") or in the window's title bar itself, as seen in applications like Safari ("hidden"). When the title is hidden, the toolbar will only display the toolbar items as icons without labels, and ignores changes made with `hs.webview.toolbar:displayMode`.
 ///
 ///  * If a toolbar is attached to the console, you can achieve the same effect as this function with `hs.console.toolbar():inTitleBar(boolean)`
-private func console_titleVisibility(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func console_titleVisibility(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING | LS_TOPTIONAL, LS_TBREAK)
-    let console = MJConsoleWindowController.singleton().window!
+    let console = consoleWindow()
     let mapping: [String: NSWindow.TitleVisibility] = [
         "visible": .visible,
         "hidden": .hidden,
@@ -606,8 +685,8 @@ private var extrasLib: [luaL_Reg] = [
 ]
 
 @_cdecl("luaopen_hs_libconsole")
-public func luaopen_hs_libconsole(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+public func luaopen_hs_libconsole(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     refTable = skin.registerLibrary("hs.console", functions: &extrasLib, metaFunctions: nil)
     return 1
 }

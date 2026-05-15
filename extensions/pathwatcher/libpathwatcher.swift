@@ -9,13 +9,13 @@ private var refTable: LSRefTable = 0
 // Not so common code
 
 private struct WatcherPath {
-    var closureref: Int
+    var closureref: Int32
     var stream: FSEventStreamRef?
     var started: Bool
     var lsCanary: LSGCCanary
 }
 
-private func pusheventflagstable(_ L: OpaquePointer!, _ flags: FSEventStreamEventFlags) {
+private func pusheventflagstable(_ L: UnsafeMutablePointer<lua_State>!, _ flags: FSEventStreamEventFlags) {
     lua_newtable(L)
     if (flags & UInt32(kFSEventStreamEventFlagMustScanSubDirs))    != 0 { lua_pushboolean(L, 1); lua_setfield(L, -2, "mustScanSubDirs")    }
     if (flags & UInt32(kFSEventStreamEventFlagUserDropped))        != 0 { lua_pushboolean(L, 1); lua_setfield(L, -2, "userDropped")        }
@@ -52,10 +52,10 @@ private let event_callback: FSEventStreamCallback = {
     guard let clientCallBackInfo = clientCallBackInfo else { return }
     let pw = clientCallBackInfo.assumingMemoryBound(to: WatcherPath.self)
 
-    let skin = LuaSkin.shared(withState: nil)
-    let L = skin.L!
+    let skin = LuaSkin.skin(with: nil)
+    let L = skin.l!
 
-    if !skin.checkGCCanary(pw.pointee.lsCanary) {
+    if !skin.check(pw.pointee.lsCanary) {
         return
     }
 
@@ -117,11 +117,11 @@ private let event_callback: FSEventStreamCallback = {
 ///
 /// Notes:
 ///  * For more information about the event flags, see [the official documentation](https://developer.apple.com/reference/coreservices/1455361-fseventstreameventflags/)
-private func watcher_path_new(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func watcher_path_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING, LS_TFUNCTION, LS_TBREAK)
 
-    let path = String(cString: lua_tostring(L, 1))
+    let path = String(cString: lua_tostring(L, 1)!)
 
     let watcherPtr = lua_newuserdata(L, MemoryLayout<WatcherPath>.size)!
         .assumingMemoryBound(to: WatcherPath.self)
@@ -167,7 +167,7 @@ private func watcher_path_new(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * The `hs.pathwatcher` object
-private func watcher_path_start(_ L: OpaquePointer!) -> Int32 {
+private func watcher_path_start(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let watcherPtr = luaL_checkudata(L, 1, USERDATA_TAG)!
         .assumingMemoryBound(to: WatcherPath.self)
     lua_settop(L, 1)
@@ -192,7 +192,7 @@ private func watcher_path_start(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * None
-private func watcher_path_stop(_ L: OpaquePointer!) -> Int32 {
+private func watcher_path_stop(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let watcherPtr = luaL_checkudata(L, 1, USERDATA_TAG)!
         .assumingMemoryBound(to: WatcherPath.self)
     lua_settop(L, 1)
@@ -208,8 +208,8 @@ private func watcher_path_stop(_ L: OpaquePointer!) -> Int32 {
     return 1
 }
 
-private func watcher_path_gc(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func watcher_path_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
 
     let watcherPtr = luaL_checkudata(L, 1, USERDATA_TAG)!
         .assumingMemoryBound(to: WatcherPath.self)
@@ -225,16 +225,16 @@ private func watcher_path_gc(_ L: OpaquePointer!) -> Int32 {
     }
 
     watcherPtr.pointee.closureref = skin.luaUnref(refTable, ref: watcherPtr.pointee.closureref)
-    skin.destroyGCCanary(&watcherPtr.pointee.lsCanary)
+    skin.destroy(&watcherPtr.pointee.lsCanary)
 
     return 0
 }
 
-private func meta_gc(_ L: OpaquePointer!) -> Int32 {
+private func meta_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 0
 }
 
-private func userdata_tostring(_ L: OpaquePointer!) -> Int32 {
+private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let watcherPtr = luaL_checkudata(L, 1, USERDATA_TAG)!
         .assumingMemoryBound(to: WatcherPath.self)
     var thePath = "(unknown path)"
@@ -272,8 +272,8 @@ private let meta_gcLib: [luaL_Reg] = [
 ]
 
 @_cdecl("luaopen_hs_libpathwatcher")
-public func luaopen_hs_libpathwatcher(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+public func luaopen_hs_libpathwatcher(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     refTable = skin.registerLibrary(withObject: USERDATA_TAG, functions: pathLib, metaFunctions: meta_gcLib, objectFunctions: path_metalib)
     return 1
 }

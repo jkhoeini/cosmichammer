@@ -45,8 +45,8 @@ private func responseBodyToId(_ httpResponse: HTTPURLResponse?, _ bodyData: Data
 
     func connectionDidFinishLoading(_ connection: NSURLConnection) {
         if fn == LUA_NOREF { return }
-        let skin = LuaSkin.shared(withState: nil)
-        let L = skin.L!
+        let skin = LuaSkin.skin(with: nil)
+        let L = skin.l!
         _lua_stackguard_entry(L)
 
         skin.pushLuaRef(refTable, ref: fn)
@@ -61,24 +61,24 @@ private func responseBodyToId(_ httpResponse: HTTPURLResponse?, _ bodyData: Data
 
     func connection(_ connection: NSURLConnection, didFailWithError error: Error) {
         if fn == LUA_NOREF { return }
-        let skin = LuaSkin.shared(withState: nil)
-        _lua_stackguard_entry(skin.L)
+        let skin = LuaSkin.skin(with: nil)
+        _lua_stackguard_entry(skin.l)
 
         let errorMessage = "Connection failed: \(error.localizedDescription) - \((error as NSError).userInfo[NSURLErrorFailingURLStringErrorKey] ?? "")"
         skin.pushLuaRef(refTable, ref: fn)
-        lua_pushinteger(skin.L, -1)
+        lua_pushinteger(skin.l, -1)
         skin.pushNSObject(errorMessage as NSString)
         skin.protectedCallAndError("hs.http connectionDelegate:didFailWithError", nargs: 2, nresults: 0)
-        remove_delegate(skin.L, self)
-        _lua_stackguard_exit(skin.L)
+        remove_delegate(skin.l, self)
+        _lua_stackguard_exit(skin.l)
     }
 
-    func connection(_ connection: NSURLConnection, willSendRequest request: URLRequest, redirectResponse response: URLResponse?) -> URLRequest? {
+    func connection(_ connection: NSURLConnection, willSend request: URLRequest, redirectResponse response: URLResponse?) -> URLRequest? {
         if fn == LUA_NOREF { return nil }
 
         if let httpResp = response as? HTTPURLResponse, !enableRedirect {
-            let skin = LuaSkin.shared(withState: nil)
-            let L = skin.L!
+            let skin = LuaSkin.skin(with: nil)
+            let L = skin.l!
             _lua_stackguard_entry(L)
 
             skin.pushLuaRef(refTable, ref: fn)
@@ -106,8 +106,8 @@ private func store_delegate(_ delegate: ConnectionDelegate) {
 }
 
 /// Remove a delegate either if loading has finished or if it needs to be garbage collected.
-private func remove_delegate(_ L: OpaquePointer!, _ delegate: ConnectionDelegate) {
-    let skin = LuaSkin.shared(withState: L)
+private func remove_delegate(_ L: UnsafeMutablePointer<lua_State>!, _ delegate: ConnectionDelegate) {
+    let skin = LuaSkin.skin(with: L)
     delegate.connection?.cancel()
     delegate.fn = skin.luaUnref(refTable, ref: delegate.fn)
     delegates.remove(delegate)
@@ -116,13 +116,14 @@ private func remove_delegate(_ L: OpaquePointer!, _ delegate: ConnectionDelegate
 // MARK: - Request Helpers
 
 /// If the user specified a request body, get it from stack, add it to the request and add the content length header field
-private func getBodyFromStack(_ L: OpaquePointer!, _ index: Int32, _ request: NSMutableURLRequest) {
+private func getBodyFromStack(_ L: UnsafeMutablePointer<lua_State>!, _ index: Int32, _ request: NSMutableURLRequest) {
     if !lua_isnoneornil(L, index) {
         var postData: Data?
         if lua_type(L, index) == LUA_TSTRING {
-            postData = LuaSkin.shared(withState: L).toNSObject(atIndex: index, with: LS_NSLuaStringAsDataOnly) as? Data
+            postData = LuaSkin.skin(with: L).toNSObject(atIndex: index, withOptions: .nsLuaStringAsDataOnly) as? Data
         } else {
-            if let body = String(cString: lua_tostring(L, index), encoding: .ascii) {
+            if let cstr = lua_tostring(L, index),
+               let body = String(cString: cstr, encoding: .ascii) {
                 postData = body.data(using: .ascii, allowLossyConversion: true)
             }
         }
@@ -131,14 +132,14 @@ private func getBodyFromStack(_ L: OpaquePointer!, _ index: Int32, _ request: NS
             request.setValue(postLength, forHTTPHeaderField: "Content-Length")
             request.httpBody = postData
         } else {
-            LuaSkin.logError("hs.http - getBodyFromStack - non-nil entry at stack index \(index) but unable to convert to NSData")
+            LuaSkin.skin(with: nil).logError("hs.http - getBodyFromStack - non-nil entry at stack index \(index) but unable to convert to NSData")
         }
     }
 }
 
 /// Gets all information for the request from the stack and creates a request
-private func getRequestFromStack(_ L: OpaquePointer!, _ cachePolicy: String?) -> NSMutableURLRequest {
-    let skin = LuaSkin.shared(withState: L)
+private func getRequestFromStack(_ L: UnsafeMutablePointer<lua_State>!, _ cachePolicy: String?) -> NSMutableURLRequest {
+    let skin = LuaSkin.skin(with: L)
     let url: String = skin.toNSObject(atIndex: 1) as! String
     let method: String = skin.toNSObject(atIndex: 2) as! String
 
@@ -163,7 +164,7 @@ private func getRequestFromStack(_ L: OpaquePointer!, _ cachePolicy: String?) ->
 }
 
 /// Gets the table for the headers from stack and adds the key value pairs to the request object
-private func extractHeadersFromStack(_ L: OpaquePointer!, _ index: Int32, _ request: NSMutableURLRequest) {
+private func extractHeadersFromStack(_ L: UnsafeMutablePointer<lua_State>!, _ index: Int32, _ request: NSMutableURLRequest) {
     if !lua_isnoneornil(L, index) {
         lua_pushnil(L)
         while lua_next(L, index) != 0 {
@@ -200,8 +201,8 @@ private func extractHeadersFromStack(_ L: OpaquePointer!, _ index: Int32, _ requ
 ///  * If authentication is required in order to download the request, the required credentials must be specified as part of the URL (e.g. "http://user:password@host.com/"). If authentication fails, or credentials are missing, the connection will attempt to continue without credentials.
 ///  * If the Content-Type response header begins `text/` then the response body return value is a UTF8 string. Any other content type passes the response body, unaltered, as a stream of bytes.
 ///  * If enableRedirect is set to true, response body will be empty string. Http body will be dropped even though response has the body. This seems the limitation of 'connection:willSendRequest:redirectResponse' method.
-private func http_doAsyncRequest(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func http_doAsyncRequest(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING, LS_TSTRING, LS_TSTRING | LS_TNIL, LS_TTABLE | LS_TNIL, LS_TFUNCTION, LS_TSTRING | LS_TBOOLEAN | LS_TOPTIONAL, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
 
     var cachePolicy: String? = nil
@@ -257,8 +258,8 @@ private func http_doAsyncRequest(_ L: OpaquePointer!) -> Int32 {
 ///  * This function is synchronous and will therefore block all Lua execution until it completes. You are encouraged to use the asynchronous functions.
 ///  * If you attempt to connect to a local Hammerspoon server created with `hs.httpserver`, then Hammerspoon will block until the connection times out (60 seconds), return a failed result due to the timeout, and then the `hs.httpserver` callback function will be invoked (so any side effects of the function will occur, but it's results will be lost).  Use [hs.http.doAsyncRequest](#doAsyncRequest) to avoid this.
 ///  * If the Content-Type response header begins `text/` then the response body return value is a UTF8 string. Any other content type passes the response body, unaltered, as a stream of bytes.
-private func http_doRequest(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func http_doRequest(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING, LS_TSTRING, LS_TSTRING | LS_TNIL | LS_TOPTIONAL, LS_TTABLE | LS_TNIL | LS_TOPTIONAL, LS_TSTRING | LS_TOPTIONAL, LS_TBREAK)
 
     let cachePolicy: String? = skin.toNSObject(atIndex: 5) as? String
@@ -280,8 +281,8 @@ private func http_doRequest(_ L: OpaquePointer!) -> Int32 {
 }
 
 // NOTE: this function is wrapped in init.lua
-private func http_encodeForQuery(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func http_encodeForQuery(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     luaL_checkstring(L, 1)
     let value: String = skin.toNSObject(atIndex: 1) as! String
 
@@ -321,8 +322,8 @@ private func http_encodeForQuery(_ L: OpaquePointer!) -> Int32 {
 ///    * scheme                   - the scheme of the URL
 ///    * standardizedURL          - the URL with any instances of ".." or "." removed from its path
 ///    * user                     - the username, if specified in the URL
-private func http_urlParts(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func http_urlParts(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
 
     let theURL: NSURL
     if lua_type(L, 1) == LUA_TUSERDATA {
@@ -390,8 +391,8 @@ private func http_urlParts(_ L: OpaquePointer!) -> Int32 {
 
 // not used here yet... but they are used in hs.webview. This seems a more logical location for them.
 
-private func NSURLResponse_toLua(_ L: OpaquePointer!, _ obj: Any) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func NSURLResponse_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     let theResponse = obj as! URLResponse
 
     lua_newtable(L)
@@ -411,8 +412,8 @@ private func NSURLResponse_toLua(_ L: OpaquePointer!, _ obj: Any) -> Int32 {
     return 1
 }
 
-private func NSURLRequest_toLua(_ L: OpaquePointer!, _ obj: Any) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func NSURLRequest_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     let request = obj as! URLRequest
 
     lua_newtable(L)
@@ -450,8 +451,8 @@ private func NSURLRequest_toLua(_ L: OpaquePointer!, _ obj: Any) -> Int32 {
     return 1
 }
 
-private func table_toNSURLRequest(_ L: OpaquePointer!, _ idx: Int32) -> Any? {
-    let skin = LuaSkin.shared(withState: L)
+private func table_toNSURLRequest(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> Any? {
+    let skin = LuaSkin.skin(with: L)
     var request = NSMutableURLRequest()
 
     lua_pushvalue(L, idx)
@@ -479,7 +480,7 @@ private func table_toNSURLRequest(_ L: OpaquePointer!, _ idx: Int32) -> Any? {
         lua_pop(L, 1)
 
         if lua_getfield(L, -1, "HTTPMethod") == LUA_TSTRING {
-            request.httpMethod = skin.toNSObject(atIndex: -1) as? String
+            request.httpMethod = (skin.toNSObject(atIndex: -1) as? String) ?? "GET"
         }
         lua_pop(L, 1)
 
@@ -567,7 +568,7 @@ private func table_toNSURLRequest(_ L: OpaquePointer!, _ idx: Int32) -> Any? {
 
 // MARK: - GC
 
-private func http_gc(_ L: OpaquePointer!) -> Int32 {
+private func http_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let delegatesCopy = NSMutableArray(array: delegates)
     for delegate in delegatesCopy {
         remove_delegate(L, delegate as! ConnectionDelegate)
@@ -577,11 +578,11 @@ private func http_gc(_ L: OpaquePointer!) -> Int32 {
 
 // MARK: - C Callback Wrappers
 
-private let http_doRequest_C: @convention(c) (OpaquePointer?) -> Int32 = { L in http_doRequest(L) }
-private let http_doAsyncRequest_C: @convention(c) (OpaquePointer?) -> Int32 = { L in http_doAsyncRequest(L) }
-private let http_urlParts_C: @convention(c) (OpaquePointer?) -> Int32 = { L in http_urlParts(L) }
-private let http_encodeForQuery_C: @convention(c) (OpaquePointer?) -> Int32 = { L in http_encodeForQuery(L) }
-private let http_gc_C: @convention(c) (OpaquePointer?) -> Int32 = { L in http_gc(L) }
+private let http_doRequest_C: @convention(c) (UnsafeMutablePointer<lua_State>?) -> Int32 = { L in http_doRequest(L) }
+private let http_doAsyncRequest_C: @convention(c) (UnsafeMutablePointer<lua_State>?) -> Int32 = { L in http_doAsyncRequest(L) }
+private let http_urlParts_C: @convention(c) (UnsafeMutablePointer<lua_State>?) -> Int32 = { L in http_urlParts(L) }
+private let http_encodeForQuery_C: @convention(c) (UnsafeMutablePointer<lua_State>?) -> Int32 = { L in http_encodeForQuery(L) }
+private let http_gc_C: @convention(c) (UnsafeMutablePointer<lua_State>?) -> Int32 = { L in http_gc(L) }
 
 // Push/convert helper blocks for LuaSkin registration
 private let NSURLRequest_toLua_block: pushNSHelperFunction = { L, obj in NSURLRequest_toLua(L!, obj!) }
@@ -604,8 +605,8 @@ private var metalib: [luaL_Reg] = [
 ]
 
 @_cdecl("luaopen_hs_libhttp")
-public func luaopen_hs_libhttp(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+public func luaopen_hs_libhttp(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
 
     delegates = NSMutableArray()
     refTable = skin.registerLibrary("hs.http", functions: &httplib, metaFunctions: &metalib)

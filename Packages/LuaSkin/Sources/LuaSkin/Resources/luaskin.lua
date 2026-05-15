@@ -163,3 +163,5 @@ ls.deprecationWarning = function(module, name, message, fn)
         return fn(...)
     end
 end
+
+return ls

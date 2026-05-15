@@ -1,10 +1,11 @@
 //
-//  EDSunriseSet.swift
+//  EDSunriseSet_new.swift
 //
-//  Created by Ernesto Garcia on 20/08/11.
-//  Copyright 2011 Ernesto Garcia. All rights reserved.
+//  Created by Ernesto García on 20/08/11.
+//  Copyright 2011 Ernesto García. All rights reserved.
 //
-
+//  Swift port preserving the full public API of EDSunriseSet.h/.m.
+//
 //  C/C++ sun calculations created by Paul Schlyter
 //  sunriset.c
 //  http://stjarnhimlen.se/english.html
@@ -14,313 +15,297 @@
 //  Modified to SUNRISET.C, 1992-12-01
 //  (c) Paul Schlyter, 1989, 1992
 //  Released to the public domain by Paul Schlyter, December 1992
+//
 
 import Foundation
 
-// MARK: - Constants
-
-private let INV360 = 1.0 / 360.0
-private let RADEG  = 180.0 / .pi
-private let DEGRAD = Double.pi / 180.0
-
-// Trigonometric functions in degrees
-private func sind(_ x: Double) -> Double { sin(x * DEGRAD) }
-private func cosd(_ x: Double) -> Double { cos(x * DEGRAD) }
-private func tand(_ x: Double) -> Double { tan(x * DEGRAD) }
-private func atand(_ x: Double) -> Double { RADEG * atan(x) }
-private func asind(_ x: Double) -> Double { RADEG * asin(x) }
-private func acosd(_ x: Double) -> Double { RADEG * acos(x) }
-private func atan2d(_ y: Double, _ x: Double) -> Double { RADEG * atan2(y, x) }
-
-/// Number of days elapsed since 2000 Jan 0.0 (which is equal to 1999 Dec 31, 0h UT)
-private func daysSince2000Jan0(year y: Int, month m: Int, day d: Int) -> Double {
-    Double(367 * y - ((7 * (y + ((m + 9) / 12))) / 4) + ((275 * m) / 9) + d - 730530)
-}
-
-// MARK: - EDSunriseSet
-
 @objc class EDSunriseSet: NSObject {
 
-    // MARK: Public read-only properties
+    // MARK: - Public readonly properties
 
     @objc private(set) var date: Date
-    @objc private(set) var sunset: Date!
-    @objc private(set) var sunrise: Date!
-    @objc private(set) var civilTwilightStart: Date!
-    @objc private(set) var civilTwilightEnd: Date!
-    @objc private(set) var nauticalTwilightStart: Date!
-    @objc private(set) var nauticalTwilightEnd: Date!
-    @objc private(set) var astronomicalTwilightStart: Date!
-    @objc private(set) var astronomicalTwilightEnd: Date!
+    @objc private(set) var sunset: Date
+    @objc private(set) var sunrise: Date
+    @objc private(set) var civilTwilightStart: Date
+    @objc private(set) var civilTwilightEnd: Date
+    @objc private(set) var nauticalTwilightStart: Date
+    @objc private(set) var nauticalTwilightEnd: Date
+    @objc private(set) var astronomicalTwilightStart: Date
+    @objc private(set) var astronomicalTwilightEnd: Date
 
-    @objc private(set) var localSunrise: DateComponents!
-    @objc private(set) var localSunset: DateComponents!
-    @objc private(set) var localCivilTwilightStart: DateComponents!
-    @objc private(set) var localCivilTwilightEnd: DateComponents!
-    @objc private(set) var localNauticalTwilightStart: DateComponents!
-    @objc private(set) var localNauticalTwilightEnd: DateComponents!
-    @objc private(set) var localAstronomicalTwilightStart: DateComponents!
-    @objc private(set) var localAstronomicalTwilightEnd: DateComponents!
+    @objc private(set) var localSunrise: DateComponents
+    @objc private(set) var localSunset: DateComponents
+    @objc private(set) var localCivilTwilightStart: DateComponents
+    @objc private(set) var localCivilTwilightEnd: DateComponents
+    @objc private(set) var localNauticalTwilightStart: DateComponents
+    @objc private(set) var localNauticalTwilightEnd: DateComponents
+    @objc private(set) var localAstronomicalTwilightStart: DateComponents
+    @objc private(set) var localAstronomicalTwilightEnd: DateComponents
 
-    // MARK: Private properties
+    // MARK: - Private properties
 
     private var latitude: Double
     private var longitude: Double
     private var timezone: TimeZone
     private var calendar: Calendar
-    private var utcTimeZone: TimeZone
+    private let utcTimeZone: TimeZone
 
-    private static let kSecondsInHour: Double = 60.0 * 60.0
+    // MARK: - Constants
+
+    private static let INV360: Double = 1.0 / 360.0
+    private static let RADEG: Double  = 180.0 / .pi
+    private static let DEGRAD: Double = .pi / 180.0
+    private static let kSecondsInHour: Double = 3600.0
+
+    // MARK: - Trig helpers (degrees)
+
+    private static func sind(_ x: Double) -> Double { sin(x * DEGRAD) }
+    private static func cosd(_ x: Double) -> Double { cos(x * DEGRAD) }
+    private static func tand(_ x: Double) -> Double { tan(x * DEGRAD) }
+    private static func atand(_ x: Double) -> Double { RADEG * atan(x) }
+    private static func asind(_ x: Double) -> Double { RADEG * asin(x) }
+    private static func acosd(_ x: Double) -> Double { RADEG * acos(x) }
+    private static func atan2d(_ y: Double, _ x: Double) -> Double { RADEG * atan2(y, x) }
 
     // MARK: - Initialization
 
     @objc init(date: Date, timezone tz: TimeZone, latitude: Double, longitude: Double) {
+        self.date = date
         self.latitude = latitude
         self.longitude = longitude
         self.timezone = tz
-        self.date = date
-
         self.calendar = Calendar(identifier: .gregorian)
         self.utcTimeZone = TimeZone(abbreviation: "UTC")!
 
-        super.init()
+        // Placeholder values; will be overwritten by calculate()
+        let epoch = Date(timeIntervalSince1970: 0)
+        let emptyComps = DateComponents()
+        self.sunrise = epoch
+        self.sunset = epoch
+        self.civilTwilightStart = epoch
+        self.civilTwilightEnd = epoch
+        self.nauticalTwilightStart = epoch
+        self.nauticalTwilightEnd = epoch
+        self.astronomicalTwilightStart = epoch
+        self.astronomicalTwilightEnd = epoch
+        self.localSunrise = emptyComps
+        self.localSunset = emptyComps
+        self.localCivilTwilightStart = emptyComps
+        self.localCivilTwilightEnd = emptyComps
+        self.localNauticalTwilightStart = emptyComps
+        self.localNauticalTwilightEnd = emptyComps
+        self.localAstronomicalTwilightStart = emptyComps
+        self.localAstronomicalTwilightEnd = emptyComps
 
+        super.init()
         calculate()
     }
 
-    @objc class func sunriseset(withDate date: Date, timezone tz: TimeZone, latitude: Double, longitude: Double) -> EDSunriseSet {
+    @objc static func sunriseset(withDate date: Date, timezone tz: TimeZone,
+                                  latitude: Double, longitude: Double) -> EDSunriseSet {
         return EDSunriseSet(date: date, timezone: tz, latitude: latitude, longitude: longitude)
     }
 
-    // MARK: - Calculations (from sunriset.c)
+    // MARK: - Description
+
+    override var description: String {
+        return """
+        Date: \(date.description)
+        TimeZone: \(timezone.identifier)
+        Local Sunrise: \(localSunrise.description)
+        Local Sunset: \(localSunset.description)
+        Local Civil Twilight Start: \(localCivilTwilightStart.description)
+        Local Civil Twilight End: \(localCivilTwilightEnd.description)
+        Local Nautical Twilight Start: \(localNauticalTwilightStart.description)
+        Local Nautical Twilight End: \(localNauticalTwilightEnd.description)
+        Local Astronomical Twilight Start: \(localAstronomicalTwilightStart.description)
+        Local Astronomical Twilight End: \(localAstronomicalTwilightEnd.description)
+        """
+    }
+
+    // MARK: - Astronomical calculations
 
     /// Reduce angle to within 0..360 degrees
     private func revolution(_ x: Double) -> Double {
-        return x - 360.0 * floor(x * INV360)
+        x - 360.0 * floor(x * EDSunriseSet.INV360)
     }
 
     /// Reduce angle to within -180..+180 degrees
     private func rev180(_ x: Double) -> Double {
-        return x - 360.0 * floor(x * INV360 + 0.5)
+        x - 360.0 * floor(x * EDSunriseSet.INV360 + 0.5)
     }
 
+    /// Number of days elapsed since 2000 Jan 0.0
+    private static func daysSince2000Jan0(year y: Int, month m: Int, day d: Int) -> Int {
+        367 * y - ((7 * (y + ((m + 9) / 12))) / 4) + ((275 * m) / 9) + d - 730530
+    }
+
+    /// GMST0 — sidereal time at 0h UT
     private func gmst0(_ d: Double) -> Double {
-        // Sidtime at 0h UT = L (Sun's mean longitude) + 180.0 degr
-        // L = M + w, as defined in sunpos().
-        return revolution((180.0 + 356.0470 + 282.9404) + (0.9856002585 + 4.70935e-5) * d)
+        revolution((180.0 + 356.0470 + 282.9404) + (0.9856002585 + 4.70935e-5) * d)
     }
 
     /// Computes the Sun's ecliptic longitude and distance
-    /// at an instant given in d, number of days since 2000 Jan 0.0.
-    private func sunpos(atDay d: Double) -> (lon: Double, r: Double) {
-        // Compute mean elements
-        let M = revolution(356.0470 + 0.9856002585 * d)  // Mean anomaly of the Sun
-        let w = 282.9404 + 4.70935e-5 * d                // Mean longitude of perihelion
-        let e = 0.016709 - 1.151e-9 * d                  // Eccentricity of Earth's orbit
+    private func sunpos(d: Double) -> (lon: Double, r: Double) {
+        let M = revolution(356.0470 + 0.9856002585 * d)
+        let w = 282.9404 + 4.70935e-5 * d
+        let e = 0.016709 - 1.151e-9 * d
 
-        // Compute true longitude and radius vector
-        let E = M + e * RADEG * sind(M) * (1.0 + e * cosd(M)) // Eccentric anomaly
-        let x = cosd(E) - e
-        let y = sqrt(1.0 - e * e) * sind(E)
-        let r = sqrt(x * x + y * y)       // Solar distance
-        let v = atan2d(y, x)              // True anomaly
-        var lon = v + w                    // True solar longitude
-        if lon >= 360.0 {
-            lon -= 360.0
-        }
+        let E = M + e * EDSunriseSet.RADEG * EDSunriseSet.sind(M) * (1.0 + e * EDSunriseSet.cosd(M))
+        let x = EDSunriseSet.cosd(E) - e
+        let y = sqrt(1.0 - e * e) * EDSunriseSet.sind(E)
+        let r = sqrt(x * x + y * y)
+        let v = EDSunriseSet.atan2d(y, x)
+        var lon = v + w
+        if lon >= 360.0 { lon -= 360.0 }
         return (lon, r)
     }
 
-    private func sunRADec(atDay d: Double) -> (ra: Double, dec: Double, r: Double) {
-        // Compute Sun's ecliptical coordinates
-        let (lon, r) = sunpos(atDay: d)
+    /// Computes the Sun's RA and declination
+    private func sunRADec(d: Double) -> (ra: Double, dec: Double, r: Double) {
+        let (lon, r) = sunpos(d: d)
 
-        // Compute ecliptic rectangular coordinates
-        let xs = r * cosd(lon)
-        let ys = r * sind(lon)
-        // zs = 0 because the Sun is always in the ecliptic plane
+        let xs = r * EDSunriseSet.cosd(lon)
+        let ys = r * EDSunriseSet.sind(lon)
+        // zs = 0 (Sun is always in the ecliptic plane)
 
-        // Compute obliquity of ecliptic (inclination of Earth's axis)
-        let obl_ecl = 23.4393 - 3.563e-7 * d
+        let oblEcl = 23.4393 - 3.563e-7 * d
 
-        // Convert to equatorial rectangular coordinates - x is unchanged
         let xe = xs
-        let ye = ys * cosd(obl_ecl)
-        let ze = ys * sind(obl_ecl)
+        let ye = ys * EDSunriseSet.cosd(oblEcl)
+        let ze = ys * EDSunriseSet.sind(oblEcl)
 
-        // Convert to spherical coordinates
-        let ra = atan2d(ye, xe)
-        let dec = atan2d(ze, sqrt(xe * xe + ye * ye))
-
+        let ra  = EDSunriseSet.atan2d(ye, xe)
+        let dec = EDSunriseSet.atan2d(ze, sqrt(xe * xe + ye * ye))
         return (ra, dec, r)
     }
 
-    private func sunRiseSet(forYear year: Int, month: Int, day: Int,
-                            longitude lon: Double, latitude lat: Double) -> (rc: Int, trise: Double, tset: Double) {
-        return sunRiseSetHelper(forYear: year, month: month, day: day,
-                                longitude: lon, latitude: lat,
-                                altitude: -35.0 / 60.0, upperLimb: 1)
-    }
+    // MARK: - Rise/set core
 
-    private func civilTwilight(forYear year: Int, month: Int, day: Int,
-                               longitude lon: Double, latitude lat: Double) -> (rc: Int, trise: Double, tset: Double) {
-        return sunRiseSetHelper(forYear: year, month: month, day: day,
-                                longitude: lon, latitude: lat,
-                                altitude: -6.0, upperLimb: 0)
-    }
+    /// Core sunrise/set helper.
+    /// Returns (rise, set) in hours UT.
+    /// Return code: 0 = normal, +1 = sun always above, -1 = sun always below.
+    private func sunRiseSetHelper(year: Int, month: Int, day: Int,
+                                  lon: Double, lat: Double,
+                                  altit: Double, upperLimb: Bool) -> (rise: Double, set: Double, rc: Int) {
+        let d = Double(EDSunriseSet.daysSince2000Jan0(year: year, month: month, day: day)) + 0.5 - lon / 360.0
 
-    private func nauticalTwilight(forYear year: Int, month: Int, day: Int,
-                                  longitude lon: Double, latitude lat: Double) -> (rc: Int, trise: Double, tset: Double) {
-        return sunRiseSetHelper(forYear: year, month: month, day: day,
-                                longitude: lon, latitude: lat,
-                                altitude: -12.0, upperLimb: 0)
-    }
-
-    private func astronomicalTwilight(forYear year: Int, month: Int, day: Int,
-                                      longitude lon: Double, latitude lat: Double) -> (rc: Int, trise: Double, tset: Double) {
-        return sunRiseSetHelper(forYear: year, month: month, day: day,
-                                longitude: lon, latitude: lat,
-                                altitude: -18.0, upperLimb: 0)
-    }
-
-    /// Note: year,month,date = calendar date, 1801-2099 only.
-    ///       Eastern longitude positive, Western longitude negative
-    ///       Northern latitude positive, Southern latitude negative
-    ///       The longitude value IS critical in this function!
-    ///       altit = the altitude which the Sun should cross
-    ///               Set to -35/60 degrees for rise/set, -6 degrees
-    ///               for civil, -12 degrees for nautical and -18
-    ///               degrees for astronomical twilight.
-    ///         upper_limb: non-zero -> upper limb, zero -> center
-    ///               Set to non-zero (e.g. 1) when computing rise/set
-    ///               times, and to zero when computing start/end of
-    ///               twilight.
-    /// Return value:  0 = sun rises/sets this day
-    ///               +1 = sun above the specified "horizon" 24 hours
-    ///               -1 = sun is below the specified "horizon" 24 hours
-    private func sunRiseSetHelper(forYear year: Int, month: Int, day: Int,
-                                  longitude lon: Double, latitude lat: Double,
-                                  altitude altit: Double, upperLimb upper_limb: Int) -> (rc: Int, trise: Double, tset: Double) {
-        var altit = altit
-
-        // Days since 2000 Jan 0.0 (negative before)
-        let d = daysSince2000Jan0(year: year, month: month, day: day) + 0.5 - lon / 360.0
-
-        var rc = 0
-
-        // Compute local sidereal time of this moment
         let sidtime = revolution(gmst0(d) + 180.0 + lon)
-
-        // Compute Sun's RA + Decl at this moment
-        let (sRA, sdec, sr) = sunRADec(atDay: d)
-
-        // Compute time when Sun is at south - in hours UT
+        let (sRA, sdec, sr) = sunRADec(d: d)
         let tsouth = 12.0 - rev180(sidtime - sRA) / 15.0
-
-        // Compute the Sun's apparent radius, degrees
         let sradius = 0.2666 / sr
 
-        // Do correction to upper limb, if necessary
-        if upper_limb != 0 {
-            altit -= sradius
-        }
+        var alt = altit
+        if upperLimb { alt -= sradius }
 
-        // Compute the diurnal arc that the Sun traverses to reach
-        // the specified altitude altit:
+        let cost = (EDSunriseSet.sind(alt) - EDSunriseSet.sind(lat) * EDSunriseSet.sind(sdec))
+                 / (EDSunriseSet.cosd(lat) * EDSunriseSet.cosd(sdec))
+
         let t: Double
-        let cost = (sind(altit) - sind(lat) * sind(sdec)) / (cosd(lat) * cosd(sdec))
+        let rc: Int
         if cost >= 1.0 {
             rc = -1
-            t = 0.0       // Sun always below altit
+            t = 0.0        // Sun always below altit
         } else if cost <= -1.0 {
-            rc = +1
-            t = 12.0      // Sun always above altit
+            rc = 1
+            t = 12.0       // Sun always above altit
         } else {
-            t = acosd(cost) / 15.0   // The diurnal arc, hours
+            rc = 0
+            t = EDSunriseSet.acosd(cost) / 15.0
         }
 
-        // Store rise and set times - in hours UT
-        let trise = tsouth - t
-        let tset = tsouth + t
-
-        return (rc, trise, tset)
+        return (tsouth - t, tsouth + t, rc)
     }
 
-    // MARK: - Private helpers
+    private func sunRiseSet(year: Int, month: Int, day: Int,
+                            lon: Double, lat: Double) -> (rise: Double, set: Double, rc: Int) {
+        sunRiseSetHelper(year: year, month: month, day: day,
+                         lon: lon, lat: lat, altit: -35.0 / 60.0, upperLimb: true)
+    }
 
-    private func utcTime(_ dateComponents: DateComponents, withOffset interval: TimeInterval) -> Date {
+    private func civilTwilight(year: Int, month: Int, day: Int,
+                               lon: Double, lat: Double) -> (rise: Double, set: Double, rc: Int) {
+        sunRiseSetHelper(year: year, month: month, day: day,
+                         lon: lon, lat: lat, altit: -6.0, upperLimb: false)
+    }
+
+    private func nauticalTwilight(year: Int, month: Int, day: Int,
+                                  lon: Double, lat: Double) -> (rise: Double, set: Double, rc: Int) {
+        sunRiseSetHelper(year: year, month: month, day: day,
+                         lon: lon, lat: lat, altit: -12.0, upperLimb: false)
+    }
+
+    private func astronomicalTwilight(year: Int, month: Int, day: Int,
+                                      lon: Double, lat: Double) -> (rise: Double, set: Double, rc: Int) {
+        sunRiseSetHelper(year: year, month: month, day: day,
+                         lon: lon, lat: lat, altit: -18.0, upperLimb: false)
+    }
+
+    // MARK: - Date conversion helpers
+
+    private func utcTime(dateComponents comps: DateComponents, offset interval: TimeInterval) -> Date {
         var cal = calendar
         cal.timeZone = utcTimeZone
-        return cal.date(from: dateComponents)!.addingTimeInterval(interval)
+        return cal.date(from: comps)!.addingTimeInterval(interval)
     }
 
-    private func localTime(_ refDate: Date) -> DateComponents {
+    private func localTime(from refDate: Date) -> DateComponents {
         var cal = calendar
         cal.timeZone = timezone
         return cal.dateComponents([.hour, .minute, .second], from: refDate)
     }
 
-    override var description: String {
-        return """
-            Date: \(date.description)
-            TimeZone: \(timezone.identifier)
-            Local Sunrise: \(localSunrise.description)
-            Local Sunset: \(localSunset.description)
-            Local Civil Twilight Start: \(localCivilTwilightStart.description)
-            Local Civil Twilight End: \(localCivilTwilightEnd.description)
-            Local Nautical Twilight Start: \(localNauticalTwilightStart.description)
-            Local Nautical Twilight End: \(localNauticalTwilightEnd.description)
-            Local Astronomical Twilight Start: \(localAstronomicalTwilightStart.description)
-            Local Astronomical Twilight End: \(localAstronomicalTwilightEnd.description)
-            """
-    }
-
-    // MARK: - Calculation methods
+    // MARK: - High-level calculation
 
     private func calculateSunriseSunset() {
-        var cal = calendar
-        cal.timeZone = timezone
-        let dateComponents = cal.dateComponents([.year, .month, .day], from: date)
+        calendar.timeZone = timezone
+        let comps = calendar.dateComponents([.year, .month, .day], from: date)
+        let year  = comps.year!
+        let month = comps.month!
+        let day   = comps.day!
 
-        let (_, rise, set) = sunRiseSet(forYear: dateComponents.year!, month: dateComponents.month!, day: dateComponents.day!,
-                                        longitude: longitude, latitude: latitude)
+        let (rise, set, _) = sunRiseSet(year: year, month: month, day: day,
+                                        lon: longitude, lat: latitude)
+
         let secondsRise = rise * EDSunriseSet.kSecondsInHour
-        let secondsSet = set * EDSunriseSet.kSecondsInHour
+        let secondsSet  = set  * EDSunriseSet.kSecondsInHour
 
-        sunrise = utcTime(dateComponents, withOffset: secondsRise)
-        sunset = utcTime(dateComponents, withOffset: secondsSet)
-        localSunrise = localTime(sunrise)
-        localSunset = localTime(sunset)
+        sunrise = utcTime(dateComponents: comps, offset: secondsRise)
+        sunset  = utcTime(dateComponents: comps, offset: secondsSet)
+        localSunrise = localTime(from: sunrise)
+        localSunset  = localTime(from: sunset)
     }
 
     private func calculateTwilight() {
-        var cal = calendar
-        cal.timeZone = timezone
-        let dateComponents = cal.dateComponents([.year, .month, .day], from: date)
+        calendar.timeZone = timezone
+        let comps = calendar.dateComponents([.year, .month, .day], from: date)
+        let year  = comps.year!
+        let month = comps.month!
+        let day   = comps.day!
 
         // Civil twilight
-        var (_, start, end) = civilTwilight(forYear: dateComponents.year!, month: dateComponents.month!, day: dateComponents.day!,
-                                            longitude: longitude, latitude: latitude)
-        civilTwilightStart = utcTime(dateComponents, withOffset: start * EDSunriseSet.kSecondsInHour)
-        civilTwilightEnd = utcTime(dateComponents, withOffset: end * EDSunriseSet.kSecondsInHour)
-        localCivilTwilightStart = localTime(civilTwilightStart)
-        localCivilTwilightEnd = localTime(civilTwilightEnd)
+        let (civilStart, civilEnd, _) = civilTwilight(year: year, month: month, day: day,
+                                                      lon: longitude, lat: latitude)
+        civilTwilightStart = utcTime(dateComponents: comps, offset: civilStart * EDSunriseSet.kSecondsInHour)
+        civilTwilightEnd   = utcTime(dateComponents: comps, offset: civilEnd * EDSunriseSet.kSecondsInHour)
+        localCivilTwilightStart = localTime(from: civilTwilightStart)
+        localCivilTwilightEnd   = localTime(from: civilTwilightEnd)
 
         // Nautical twilight
-        (_, start, end) = nauticalTwilight(forYear: dateComponents.year!, month: dateComponents.month!, day: dateComponents.day!,
-                                           longitude: longitude, latitude: latitude)
-        nauticalTwilightStart = utcTime(dateComponents, withOffset: start * EDSunriseSet.kSecondsInHour)
-        nauticalTwilightEnd = utcTime(dateComponents, withOffset: end * EDSunriseSet.kSecondsInHour)
-        localNauticalTwilightStart = localTime(nauticalTwilightStart)
-        localNauticalTwilightEnd = localTime(nauticalTwilightEnd)
+        let (nautStart, nautEnd, _) = nauticalTwilight(year: year, month: month, day: day,
+                                                       lon: longitude, lat: latitude)
+        nauticalTwilightStart = utcTime(dateComponents: comps, offset: nautStart * EDSunriseSet.kSecondsInHour)
+        nauticalTwilightEnd   = utcTime(dateComponents: comps, offset: nautEnd * EDSunriseSet.kSecondsInHour)
+        localNauticalTwilightStart = localTime(from: nauticalTwilightStart)
+        localNauticalTwilightEnd   = localTime(from: nauticalTwilightEnd)
 
         // Astronomical twilight
-        (_, start, end) = astronomicalTwilight(forYear: dateComponents.year!, month: dateComponents.month!, day: dateComponents.day!,
-                                               longitude: longitude, latitude: latitude)
-        astronomicalTwilightStart = utcTime(dateComponents, withOffset: start * EDSunriseSet.kSecondsInHour)
-        astronomicalTwilightEnd = utcTime(dateComponents, withOffset: end * EDSunriseSet.kSecondsInHour)
-        localAstronomicalTwilightStart = localTime(astronomicalTwilightStart)
-        localAstronomicalTwilightEnd = localTime(astronomicalTwilightEnd)
+        let (astroStart, astroEnd, _) = astronomicalTwilight(year: year, month: month, day: day,
+                                                             lon: longitude, lat: latitude)
+        astronomicalTwilightStart = utcTime(dateComponents: comps, offset: astroStart * EDSunriseSet.kSecondsInHour)
+        astronomicalTwilightEnd   = utcTime(dateComponents: comps, offset: astroEnd * EDSunriseSet.kSecondsInHour)
+        localAstronomicalTwilightStart = localTime(from: astronomicalTwilightStart)
+        localAstronomicalTwilightEnd   = localTime(from: astronomicalTwilightEnd)
     }
 
     private func calculate() {

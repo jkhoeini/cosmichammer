@@ -42,9 +42,11 @@ targets:
         Release:
           GCC_OPTIMIZATION_LEVEL: s
     sources:
+      # Entry point for the Xcode app target (SPM uses HSApp/main.swift instead)
+      - path: Xcode/main.m
       # Resources from Hammerspoon/ (exclude code — compiled by SPM via HSExtensions)
       - path: Hammerspoon
-        excludes: ["**/*.m", "**/*.h", "**/*.pch", Build Configs, Hammerspoon-Info.plist, "*.entitlements"]
+        excludes: ["**/*.m", "**/*.h", "**/*.swift", "**/*.pch", Build Configs, Hammerspoon-Info.plist, "*.entitlements"]
         buildPhase: resources
       # Resources from outside Hammerspoon/
       - path: extensions/doc/lua.json
@@ -72,12 +74,19 @@ targets:
           copyFiles: { destination: resources, subpath: extensions/hs/hsdocs/hsminweb }
     dependencies:
       - package: HammerspoonLibs
+    postBuildScripts:
+      - script: '"${SRCROOT}/scripts/copy-extension-lua-files.sh"'
+        name: Copy Extension Lua Files
+        shell: /bin/bash
 
   Hammerspoon Tests:
     type: bundle.unit-test
     platform: macOS
     sources:
       - path: Hammerspoon Tests
+      - path: extensions
+        includes: ["**/test_*.lua"]
+        buildPhase: resources
     dependencies:
       - target: Hammerspoon
     settings:
@@ -87,8 +96,9 @@ targets:
         INFOPLIST_FILE: "Hammerspoon Tests/Info.plist"
         PRODUCT_BUNDLE_IDENTIFIER: "org.hammerspoon.$(PRODUCT_NAME:rfc1034identifier)"
         LD_RUNPATH_SEARCH_PATHS: ["$(inherited)", "@executable_path/../Frameworks", "@loader_path/../Frameworks"]
+        HEADER_SEARCH_PATHS: ["$(SRCROOT)/Hammerspoon", "$(inherited)"]
         WARNING_CFLAGS: ["-Wno-cstring-format-directive", "-Wno-padded", "-Wno-objc-missing-property-synthesis", "-Wno-gnu-statement-expression"]
-        FRAMEWORK_SEARCH_PATHS: ["$(DEVELOPER_FRAMEWORKS_DIR)", "$(inherited)"]
+        FRAMEWORK_SEARCH_PATHS: ["$(DEVELOPER_FRAMEWORKS_DIR)", "$(SDKROOT)/System/Library/PrivateFrameworks", "$(inherited)"]
         GCC_PREPROCESSOR_DEFINITIONS: ["DEBUG=1", "$(inherited)"]
 
   Hammerspoon UI Tests:

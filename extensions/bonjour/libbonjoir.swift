@@ -10,23 +10,23 @@ private var refTable: Int32 = Int32(LUA_NOREF)
 private func netServiceErrorToString(_ error: [String: Any]) -> String {
     var message = "unrecognized error dictionary:\(error)"
 
-    if let errorCode = error[NSNetServicesErrorCode as String] as? NSNumber {
+    if let errorCode = error[NetService.errorCode as String] as? NSNumber {
         switch errorCode.intValue {
-        case Int(NSNetServicesError.activityInProgress.rawValue):
+        case Int(NetService.ErrorCode.activityInProgress.rawValue):
             message = "activity in progress; cannot process new request"
-        case Int(NSNetServicesError.badArgumentError.rawValue):
+        case Int(NetService.ErrorCode.badArgumentError.rawValue):
             message = "invalid argument"
-        case Int(NSNetServicesError.cancelledError.rawValue):
+        case Int(NetService.ErrorCode.cancelledError.rawValue):
             message = "request was cancelled"
-        case Int(NSNetServicesError.collisionError.rawValue):
+        case Int(NetService.ErrorCode.collisionError.rawValue):
             message = "name already in use"
-        case Int(NSNetServicesError.invalidError.rawValue):
+        case Int(NetService.ErrorCode.invalidError.rawValue):
             message = "service improperly configured"
-        case Int(NSNetServicesError.notFoundError.rawValue):
+        case Int(NetService.ErrorCode.notFoundError.rawValue):
             message = "service could not be found"
-        case Int(NSNetServicesError.timeoutError.rawValue):
+        case Int(NetService.ErrorCode.timeoutError.rawValue):
             message = "timed out"
-        case Int(NSNetServicesError.unknownError.rawValue):
+        case Int(NetService.ErrorCode.unknownError.rawValue):
             message = "an unknown error has occurred"
         default:
             message = "unrecognized error code:\(errorCode)"
@@ -35,7 +35,7 @@ private func netServiceErrorToString(_ error: [String: Any]) -> String {
     return message
 }
 
-@objc private class HSNetServiceBrowser: NSNetServiceBrowser, NSNetServiceBrowserDelegate {
+@objc private class HSNetServiceBrowser: NetServiceBrowser, NetServiceBrowserDelegate {
     var callbackRef: Int32 = Int32(LUA_NOREF)
     var selfRefCount: Int = 0
 
@@ -44,32 +44,32 @@ private func netServiceErrorToString(_ error: [String: Any]) -> String {
         self.delegate = self
     }
 
-    func stop(withState L: OpaquePointer!) {
+    func stop(withState L: UnsafeMutablePointer<lua_State>!) {
         super.stop()
-        let skin = LuaSkin.shared(withState: L)
+        let skin = LuaSkin.skin(with: L)
         callbackRef = skin.luaUnref(refTable, ref: callbackRef)
     }
 
     func performCallback(with argument: Any?) {
         if callbackRef != Int32(LUA_NOREF) {
-            let skin = LuaSkin.shared(withState: nil)
-            let L = skin.L!
+            let skin = LuaSkin.skin(with: nil)
+            let L = skin.l!
             var argCount: Int32 = 1
             skin.pushLuaRef(refTable, ref: callbackRef)
             skin.pushNSObject(self)
             if let argument = argument {
                 if let args = argument as? [Any] {
                     for obj in args {
-                        skin.pushNSObject(obj as? NSObject, withOptions: LS_NSDescribeUnknownTypes)
+                        skin.pushNSObject(obj as? NSObject, withOptions: LS_NSConversionOptions.nsDescribeUnknownTypes.rawValue)
                     }
                     argCount += Int32(args.count)
                 } else {
-                    skin.pushNSObject(argument as? NSObject, withOptions: LS_NSDescribeUnknownTypes)
+                    skin.pushNSObject(argument as? NSObject, withOptions: LS_NSConversionOptions.nsDescribeUnknownTypes.rawValue)
                     argCount += 1
                 }
             }
             if !skin.protectedCallAndTraceback(argCount, nresults: 0) {
-                skin.logError("\(USERDATA_TAG):callback error:\(String(cString: lua_tostring(L, -1)))")
+                skin.logError("\(USERDATA_TAG):callback error:\(String(cString: lua_tostring(L, -1)!))")
                 lua_pop(L, -1)
             }
         }
@@ -77,30 +77,30 @@ private func netServiceErrorToString(_ error: [String: Any]) -> String {
 
     // MARK: Delegate Methods
 
-    func netServiceBrowser(_ browser: NSNetServiceBrowser,
+    func netServiceBrowser(_ browser: NetServiceBrowser,
                            didFindDomain domainString: String,
                            moreComing: Bool) {
         performCallback(with: ["domain", true, domainString, moreComing] as [Any])
     }
 
-    func netServiceBrowser(_ browser: NSNetServiceBrowser,
+    func netServiceBrowser(_ browser: NetServiceBrowser,
                            didRemoveDomain domainString: String,
                            moreComing: Bool) {
         performCallback(with: ["domain", false, domainString, moreComing] as [Any])
     }
 
-    func netServiceBrowser(_ browser: NSNetServiceBrowser,
+    func netServiceBrowser(_ browser: NetServiceBrowser,
                            didNotSearch errorDict: [String: NSNumber]) {
         performCallback(with: ["error", netServiceErrorToString(errorDict as [String: Any])] as [Any])
     }
 
-    func netServiceBrowser(_ browser: NSNetServiceBrowser,
+    func netServiceBrowser(_ browser: NetServiceBrowser,
                            didFind service: NetService,
                            moreComing: Bool) {
         performCallback(with: ["service", true, service, moreComing] as [Any])
     }
 
-    func netServiceBrowser(_ browser: NSNetServiceBrowser,
+    func netServiceBrowser(_ browser: NetServiceBrowser,
                            didRemove service: NetService,
                            moreComing: Bool) {
         performCallback(with: ["service", false, service, moreComing] as [Any])
@@ -118,8 +118,8 @@ private func netServiceErrorToString(_ error: [String: Any]) -> String {
 ///
 /// Returns:
 ///  * a new browserObject or nil if an error occurs
-private func browser_new(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func browser_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TBREAK)
     let browser = HSNetServiceBrowser()
     skin.pushNSObject(browser)
@@ -140,8 +140,8 @@ private func browser_new(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * This property must be set before initiating a search to have an effect.
-private func browser_includesPeerToPeer(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func browser_includesPeerToPeer(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG.utf8Start, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
     let browser: HSNetServiceBrowser = skin.toNSObject(atIndex: 1) as! HSNetServiceBrowser
     if lua_gettop(L) == 1 {
@@ -178,8 +178,8 @@ private func browser_includesPeerToPeer(_ L: OpaquePointer!) -> Int32 {
 ///
 ///  * When `moreExpected` becomes false, it is the macOS's best guess as to whether additional records are available.
 ///    * Generally macOS is fairly accurate in this regard concerning domain searches, so to reduce the impact on system resources, it is recommended that you use [hs.bonjour:stop](#stop) when this parameter is false
-private func browser_searchForBrowsableDomains(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func browser_searchForBrowsableDomains(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG.utf8Start, LS_TFUNCTION, LS_TBREAK)
     let browser: HSNetServiceBrowser = skin.toNSObject(atIndex: 1) as! HSNetServiceBrowser
     if browser.callbackRef != Int32(LUA_NOREF) { browser.stop(withState: L) }
@@ -215,8 +215,8 @@ private func browser_searchForBrowsableDomains(_ L: OpaquePointer!) -> Int32 {
 ///
 ///  * When `moreExpected` becomes false, it is the macOS's best guess as to whether additional records are available.
 ///    * Generally macOS is fairly accurate in this regard concerning domain searches, so to reduce the impact on system resources, it is recommended that you use [hs.bonjour:stop](#stop) when this parameter is false
-private func browser_searchForRegistrationDomains(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func browser_searchForRegistrationDomains(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG.utf8Start, LS_TFUNCTION, LS_TBREAK)
     let browser: HSNetServiceBrowser = skin.toNSObject(atIndex: 1) as! HSNetServiceBrowser
     if browser.callbackRef != Int32(LUA_NOREF) { browser.stop(withState: L) }
@@ -228,8 +228,8 @@ private func browser_searchForRegistrationDomains(_ L: OpaquePointer!) -> Int32 
 }
 
 // hs.bonjour:findServices is documented with its wrapper in init.lua
-private func browser_searchForServices(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func browser_searchForServices(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG.utf8Start, LS_TBREAK | LS_TVARARG)
     let browser: HSNetServiceBrowser = skin.toNSObject(atIndex: 1) as! HSNetServiceBrowser
     var service = "_services._dns-sd._udp."
@@ -268,8 +268,8 @@ private func browser_searchForServices(_ L: OpaquePointer!) -> Int32 {
 ///  * Invoking this method on an already idle browser will do nothing
 ///
 ///  * In general, when your callback function for [hs.bonjour:findBrowsableDomains](#findBrowsableDomains), [hs.bonjour:findRegistrationDomains](#findRegistrationDomains), or [hs.bonjour:findServices](#findServices) receives false for the `moreExpected` parameter, you should invoke this method on the browserObject unless there are specific reasons not to. Possible reasons you might want to extend the life of the browserObject are documented within each method.
-private func browser_stop(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func browser_stop(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG.utf8Start, LS_TBREAK)
     let browser: HSNetServiceBrowser = skin.toNSObject(atIndex: 1) as! HSNetServiceBrowser
     browser.stop(withState: L)
@@ -281,7 +281,7 @@ private func browser_stop(_ L: OpaquePointer!) -> Int32 {
 // These must not throw a lua error to ensure LuaSkin can safely be used from Objective-C
 // delegates and blocks.
 
-private func pushHSNetServiceBrowser(_ L: OpaquePointer!, _ obj: Any?) -> Int32 {
+private func pushHSNetServiceBrowser(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any?) -> Int32 {
     guard let value = obj as? HSNetServiceBrowser else { return 0 }
     value.selfRefCount += 1
     let valuePtr = lua_newuserdata(L, MemoryLayout<UnsafeMutableRawPointer>.size)!
@@ -292,8 +292,8 @@ private func pushHSNetServiceBrowser(_ L: OpaquePointer!, _ obj: Any?) -> Int32 
     return 1
 }
 
-private func toHSNetServiceBrowserFromLua(_ L: OpaquePointer!, _ idx: Int32) -> Any? {
-    let skin = LuaSkin.shared(withState: L)
+private func toHSNetServiceBrowserFromLua(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> Any? {
+    let skin = LuaSkin.skin(with: L)
     if luaL_testudata(L, idx, USERDATA_TAG_STR) != nil {
         let ptr = luaL_checkudata(L, idx, USERDATA_TAG_STR)!
             .assumingMemoryBound(to: UnsafeMutableRawPointer.self)
@@ -306,19 +306,19 @@ private func toHSNetServiceBrowserFromLua(_ L: OpaquePointer!, _ idx: Int32) -> 
 
 // MARK: - Hammerspoon/Lua Infrastructure
 
-private func userdata_tostring(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.pushNSObject("\(USERDATA_TAG): (\(String(describing: lua_topointer(L, 1))))" as NSString)
     return 1
 }
 
-private func userdata_eq(_ L: OpaquePointer!) -> Int32 {
+private func userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     // can't get here if at least one of us isn't a userdata type, and we only care if both types are ours,
     // so use luaL_testudata before the macro causes a lua error
     if luaL_testudata(L, 1, USERDATA_TAG_STR) != nil && luaL_testudata(L, 2, USERDATA_TAG_STR) != nil {
-        let skin = LuaSkin.shared(withState: L)
-        let obj1 = skin.luaObject(atIndex: 1, toClass: "HSNetServiceBrowser") as! HSNetServiceBrowser
-        let obj2 = skin.luaObject(atIndex: 2, toClass: "HSNetServiceBrowser") as! HSNetServiceBrowser
+        let skin = LuaSkin.skin(with: L)
+        let obj1 = skin.luaObject(at: 1, toClass: "HSNetServiceBrowser") as! HSNetServiceBrowser
+        let obj2 = skin.luaObject(at: 2, toClass: "HSNetServiceBrowser") as! HSNetServiceBrowser
         lua_pushboolean(L, obj1.isEqual(to: obj2) ? 1 : 0)
     } else {
         lua_pushboolean(L, 0)
@@ -326,7 +326,7 @@ private func userdata_eq(_ L: OpaquePointer!) -> Int32 {
     return 1
 }
 
-private func userdata_gc(_ L: OpaquePointer!) -> Int32 {
+private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     guard luaL_testudata(L, 1, USERDATA_TAG_STR) != nil else { return 0 }
     let ptr = luaL_checkudata(L, 1, USERDATA_TAG_STR)!
         .assumingMemoryBound(to: UnsafeMutableRawPointer.self)
@@ -362,8 +362,8 @@ private var moduleLib: [luaL_Reg] = [
 ]
 
 @_cdecl("luaopen_hs_libbonjour")
-public func luaopen_hs_libbonjour(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+public func luaopen_hs_libbonjour(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     refTable = skin.registerLibrary(withObject: USERDATA_TAG_STR,
                                     functions: &moduleLib,
                                     metaFunctions: nil,

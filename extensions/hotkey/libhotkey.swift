@@ -22,7 +22,7 @@ private struct hotkey_t {
     var repeatfn: Int32 = LUA_NOREF
     var enabled: Bool = false
     var carbonHotKey: EventHotKeyRef? = nil
-    var lsCanary: LSGCCanary = 0
+    var lsCanary: LSGCCanary = LSGCCanary()
 }
 
 // MARK: - HSKeyRepeatManager
@@ -34,7 +34,7 @@ private struct hotkey_t {
 
     func startTimer(_ theEventID: Int32, eventKind theEventKind: Int32) {
         if keyRepeatTimer != nil {
-            let skin = LuaSkin.shared(withState: nil)
+            let skin = LuaSkin.skin(with: nil)
             skin.logWarn("hs.hotkey - startTimer() called while an existing repeat timer is running. Stopping existing timer and refusing to proceed.")
             stopTimer()
             return
@@ -77,8 +77,8 @@ private struct hotkey_t {
 
 // MARK: - Hotkey Functions
 
-private func hotkey_new(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func hotkey_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
 
     luaL_checktype(L, 1, LUA_TTABLE)
     let keycode = UInt32(luaL_checkinteger(L, 2))
@@ -147,8 +147,8 @@ private func hotkey_new(_ L: OpaquePointer!) -> Int32 {
     return 1
 }
 
-private func hotkey_systemAssigned(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func hotkey_systemAssigned(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
 
     luaL_checktype(L, 1, LUA_TTABLE)
     let keycode = UInt32(luaL_checkinteger(L, 2))
@@ -166,9 +166,9 @@ private func hotkey_systemAssigned(_ L: OpaquePointer!) -> Int32 {
     }
 
     var assigned = false
-    var registeredHotKeys: CFArray?
+    var registeredHotKeys: Unmanaged<CFArray>?
     let status = CopySymbolicHotKeys(&registeredHotKeys)
-    if status == noErr, let hotKeyArray = registeredHotKeys {
+    if status == noErr, let hotKeyArray = registeredHotKeys?.takeRetainedValue() {
         let count = CFArrayGetCount(hotKeyArray)
         for i in 0..<count {
             let hotKeyInfo = unsafeBitCast(CFArrayGetValueAtIndex(hotKeyArray, i), to: CFDictionary.self)
@@ -196,8 +196,8 @@ private func hotkey_systemAssigned(_ L: OpaquePointer!) -> Int32 {
     return 1
 }
 
-private func hotkey_enable(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func hotkey_enable(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
 
     let hotkey = lua_touserdata(L, 1)!.bindMemory(to: hotkey_t.self, capacity: 1)
@@ -211,7 +211,7 @@ private func hotkey_enable(_ L: OpaquePointer!) -> Int32 {
         skin.logBreadcrumb("hs.hotkey:enable() we think the hotkey is disabled, but it has a Carbon event. Proceeding, but this is a leak.")
     }
 
-    var hotKeyID = EventHotKeyID(signature: OSType(0x484D5350), id: UInt32(hotkey.pointee.monotonicID)) // 'HMSP'
+    let hotKeyID = EventHotKeyID(signature: OSType(0x484D5350), id: UInt32(hotkey.pointee.monotonicID)) // 'HMSP'
     var carbonHotKey: EventHotKeyRef?
     let result = RegisterEventHotKey(hotkey.pointee.keycode, hotkey.pointee.mods, hotKeyID, GetEventDispatcherTarget(), OptionBits(kEventHotKeyExclusive), &carbonHotKey)
 
@@ -230,8 +230,8 @@ private func hotkey_enable(_ L: OpaquePointer!) -> Int32 {
     return 1
 }
 
-private func stop(_ L: OpaquePointer!, _ hotkey: UnsafeMutablePointer<hotkey_t>) {
-    let skin = LuaSkin.shared(withState: L)
+private func stop(_ L: UnsafeMutablePointer<lua_State>!, _ hotkey: UnsafeMutablePointer<hotkey_t>) {
+    let skin = LuaSkin.skin(with: L)
 
     if !hotkey.pointee.enabled { return }
     hotkey.pointee.enabled = false
@@ -249,21 +249,21 @@ private func stop(_ L: OpaquePointer!, _ hotkey: UnsafeMutablePointer<hotkey_t>)
     keyRepeatManager?.stopTimer()
 }
 
-private func hotkey_disable(_ L: OpaquePointer!) -> Int32 {
+private func hotkey_disable(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let hotkey = luaL_checkudata(L, 1, USERDATA_TAG)!.bindMemory(to: hotkey_t.self, capacity: 1)
     stop(L, hotkey)
     lua_pushvalue(L, 1)
     return 1
 }
 
-private func hotkey_gc(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func hotkey_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     let hotkey = luaL_checkudata(L, 1, USERDATA_TAG)!.bindMemory(to: hotkey_t.self, capacity: 1)
 
     stop(L, hotkey)
 
     hotkeys?.removeObject(forKey: NSNumber(value: UInt32(hotkey.pointee.monotonicID)))
-    skin.destroyGCCanary(&hotkey.pointee.lsCanary)
+    skin.destroy(&hotkey.pointee.lsCanary)
 
     hotkey.pointee.pressedfn = skin.luaUnref(refTable, ref: hotkey.pointee.pressedfn)
     hotkey.pointee.releasedfn = skin.luaUnref(refTable, ref: hotkey.pointee.releasedfn)
@@ -275,8 +275,8 @@ private func hotkey_gc(_ L: OpaquePointer!) -> Int32 {
 // MARK: - Carbon Event Callback
 
 private func trigger_hotkey_callback(_ eventUID: Int32, eventKind: Int32, isRepeat: Bool) -> OSStatus {
-    let skin = LuaSkin.shared(withState: nil)
-    let L = skin.L!
+    let skin = LuaSkin.skin(with: nil)
+    let L = skin.l!
 
     guard let hkValue = hotkeys?.object(forKey: NSNumber(value: UInt32(eventUID))) as? NSValue else {
         skin.logWarn("hs.hotkey system callback for an eventUID we don't know about: \(eventUID)")
@@ -284,7 +284,7 @@ private func trigger_hotkey_callback(_ eventUID: Int32, eventKind: Int32, isRepe
     }
     let hotkey = hkValue.pointerValue!.bindMemory(to: hotkey_t.self, capacity: 1)
 
-    if !skin.checkGCCanary(hotkey.pointee.lsCanary) {
+    if !skin.check(hotkey.pointee.lsCanary) {
         return noErr
     }
 
@@ -325,7 +325,7 @@ private func trigger_hotkey_callback(_ eventUID: Int32, eventKind: Int32, isRepe
 }
 
 private let hotkey_callback: EventHandlerProcPtr = { (inHandlerCallRef, inEvent, inUserData) -> OSStatus in
-    let skin = LuaSkin.shared(withState: nil)
+    let skin = LuaSkin.skin(with: nil)
     var eventID = EventHotKeyID()
 
     let result = GetEventParameter(inEvent, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID), nil, MemoryLayout<EventHotKeyID>.size, nil, &eventID)
@@ -342,7 +342,7 @@ private let hotkey_callback: EventHandlerProcPtr = { (inHandlerCallRef, inEvent,
 
 // MARK: - Meta Functions
 
-private func meta_gc(_ L: OpaquePointer!) -> Int32 {
+private func meta_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     if let handler = eventhandler {
         RemoveEventHandler(handler)
     }
@@ -352,22 +352,23 @@ private func meta_gc(_ L: OpaquePointer!) -> Int32 {
     return 0
 }
 
-private func userdata_tostring(_ L: OpaquePointer!) -> Int32 {
+private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let hotkey = luaL_checkudata(L, 1, USERDATA_TAG)!.bindMemory(to: hotkey_t.self, capacity: 1)
-    let str = String(format: "%s: keycode: %d, mods: 0x%04x (%p)", USERDATA_TAG, hotkey.pointee.keycode, hotkey.pointee.mods, lua_topointer(L, 1)!)
+    let ptrStr = String(describing: lua_topointer(L, 1)!)
+    let str = "\(USERDATA_TAG): keycode: \(hotkey.pointee.keycode), mods: 0x\(String(format: "%04x", hotkey.pointee.mods)) (\(ptrStr))"
     lua_pushstring(L, str)
     return 1
 }
 
 // MARK: - C Callback Wrappers
 
-private let hotkey_new_C: @convention(c) (OpaquePointer?) -> Int32 = { L in hotkey_new(L) }
-private let hotkey_systemAssigned_C: @convention(c) (OpaquePointer?) -> Int32 = { L in hotkey_systemAssigned(L) }
-private let hotkey_enable_C: @convention(c) (OpaquePointer?) -> Int32 = { L in hotkey_enable(L) }
-private let hotkey_disable_C: @convention(c) (OpaquePointer?) -> Int32 = { L in hotkey_disable(L) }
-private let hotkey_gc_C: @convention(c) (OpaquePointer?) -> Int32 = { L in hotkey_gc(L) }
-private let meta_gc_C: @convention(c) (OpaquePointer?) -> Int32 = { L in meta_gc(L) }
-private let userdata_tostring_C: @convention(c) (OpaquePointer?) -> Int32 = { L in userdata_tostring(L) }
+private let hotkey_new_C: @convention(c) (UnsafeMutablePointer<lua_State>?) -> Int32 = { L in hotkey_new(L) }
+private let hotkey_systemAssigned_C: @convention(c) (UnsafeMutablePointer<lua_State>?) -> Int32 = { L in hotkey_systemAssigned(L) }
+private let hotkey_enable_C: @convention(c) (UnsafeMutablePointer<lua_State>?) -> Int32 = { L in hotkey_enable(L) }
+private let hotkey_disable_C: @convention(c) (UnsafeMutablePointer<lua_State>?) -> Int32 = { L in hotkey_disable(L) }
+private let hotkey_gc_C: @convention(c) (UnsafeMutablePointer<lua_State>?) -> Int32 = { L in hotkey_gc(L) }
+private let meta_gc_C: @convention(c) (UnsafeMutablePointer<lua_State>?) -> Int32 = { L in meta_gc(L) }
+private let userdata_tostring_C: @convention(c) (UnsafeMutablePointer<lua_State>?) -> Int32 = { L in userdata_tostring(L) }
 
 // MARK: - Module Registration
 
@@ -391,8 +392,8 @@ private var hotkey_objectlib: [luaL_Reg] = [
 ]
 
 @_cdecl("luaopen_hs_libhotkey")
-public func luaopen_hs_libhotkey(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+public func luaopen_hs_libhotkey(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
 
     if hotkeys == nil {
         hotkeys = NSMutableDictionary()

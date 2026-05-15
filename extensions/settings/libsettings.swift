@@ -19,10 +19,10 @@ private class HSUserDefaultKVOWatcher: NSObject {
         guard let keyPath = keyPath, let fnCallbacks = watchedKeys[keyPath] as? NSMutableDictionary else { return }
 
         DispatchQueue.main.async {
-            let skin = LuaSkin.shared(withState: nil)
+            let skin = LuaSkin.skin(with: nil)
             _lua_stackguard_entry(skin.l)
             fnCallbacks.enumerateKeysAndObjects { watcherID, refN, _ in
-                let ref = (refN as! NSNumber).intValue
+                let ref = (refN as! NSNumber).int32Value
                 skin.pushLuaRef(refTable, ref: ref)
                 skin.pushNSObject(keyPath as NSString)
                 skin.protectedCallAndError("hs.settings:watcher \(watcherID) callback", nargs: 1, nresults: 0)
@@ -56,8 +56,8 @@ private var watcherManager: HSUserDefaultKVOWatcher!
 ///  * If no val parameter is provided, it is assumed to be nil
 ///  * This function cannot set dates or raw data types, see `hs.settings.setDate()` and `hs.settings.setData()`
 ///  * Assigning a nil value is equivalent to clearing the value with `hs.settings.clear`
-private func target_set(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func target_set(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING, LS_TANY | LS_TOPTIONAL, LS_TBREAK)
 
     guard let key = String(validatingUTF8: luaL_checkstring(L, 1)) else {
@@ -67,7 +67,7 @@ private func target_set(_ L: OpaquePointer!) -> Int32 {
     // Allow for missing second argument for backwards compatibility
     var val: Any? = nil
     if lua_gettop(L) == 2 {
-        val = skin.toNSObject(atIndex: 2, withOptions: LS_NSPreserveLuaStringExactly | LS_NSRawTables)
+        val = skin.toNSObject(atIndex: 2, withOptions: [.nsPreserveLuaStringExactly, .nsRawTables])
     }
 
     do {
@@ -86,16 +86,16 @@ private func target_set(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * None
-private func target_setData(_ L: OpaquePointer!) -> Int32 {
-    LuaSkin.shared(withState: L).checkArgs(LS_TSTRING, LS_TSTRING, LS_TBREAK)
+private func target_setData(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    LuaSkin.skin(with: L).checkArgs(LS_TSTRING, LS_TSTRING, LS_TBREAK)
 
     guard let key = String(validatingUTF8: luaL_checkstring(L, 1)) else {
         return luaL_error(L, "key must be a valid UTF8 string")
     }
 
     if lua_type(L, 2) == LUA_TSTRING {
-        let dataPtr = lua_tostring(L, 2)!
-        let sz = lua_rawlen(L, 2)
+        var sz: Int = 0
+        let dataPtr = lua_tolstring(L, 2, &sz)!
         let data = Data(bytes: dataPtr, count: sz)
         UserDefaults.standard.set(data, forKey: key)
     } else {
@@ -126,18 +126,18 @@ private func date_from_string(_ dateString: String) -> Date? {
 ///
 /// Notes:
 ///  * See `hs.settings.dateFormat` for a convenient representation of the RFC3339 format, to use with other time/date related functions
-private func target_setDate(_ L: OpaquePointer!) -> Int32 {
-    LuaSkin.shared(withState: L).checkArgs(LS_TSTRING, LS_TSTRING | LS_TNUMBER, LS_TBREAK)
+private func target_setDate(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    LuaSkin.skin(with: L).checkArgs(LS_TSTRING, LS_TSTRING | LS_TNUMBER, LS_TBREAK)
 
     guard let key = String(validatingUTF8: luaL_checkstring(L, 1)) else {
         return luaL_error(L, "key must be a valid UTF8 string")
     }
 
     let myDate: Date?
-    if lua_isnumber(L, 2) != 0 {
+    if lua_isnumber(L, 2) {
         myDate = Date(timeIntervalSince1970: TimeInterval(lua_tonumber(L, 2)))
-    } else if lua_isstring(L, 2) != 0 {
-        myDate = date_from_string(String(cString: lua_tostring(L, 2)))
+    } else if lua_isstring(L, 2) {
+        myDate = date_from_string(String(cString: lua_tostring(L, 2)!))
     } else {
         myDate = nil
     }
@@ -162,8 +162,8 @@ private func target_setDate(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * This function can load all of the datatypes supported by `hs.settings.set()`, `hs.settings.setData()` and `hs.settings.setDate()`
-private func target_get(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func target_get(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING, LS_TBREAK)
 
     guard let key = String(validatingUTF8: luaL_checkstring(L, 1)) else {
@@ -171,7 +171,7 @@ private func target_get(_ L: OpaquePointer!) -> Int32 {
     }
 
     let val = UserDefaults.standard.object(forKey: key)
-    skin.pushNSObject(val as NSObject?)
+    skin.pushNSObject(val as AnyObject?)
     return 1
 }
 
@@ -184,8 +184,8 @@ private func target_get(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * A boolean, true if the setting was deleted, otherwise false
-private func target_clear(_ L: OpaquePointer!) -> Int32 {
-    LuaSkin.shared(withState: L).checkArgs(LS_TSTRING, LS_TBREAK)
+private func target_clear(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    LuaSkin.skin(with: L).checkArgs(LS_TSTRING, LS_TBREAK)
 
     guard let key = String(validatingUTF8: luaL_checkstring(L, 1)) else {
         return luaL_error(L, "key must be a valid UTF8 string")
@@ -214,8 +214,8 @@ private func target_clear(_ L: OpaquePointer!) -> Int32 {
 /// Notes:
 ///  * Use `ipairs(hs.settings.getKeys())` to iterate over all available settings
 ///  * Use `hs.settings.getKeys()["someKey"]` to test for the existence of a particular key
-private func target_getKeys(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func target_getKeys(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TBREAK)
 
     let mainID = Bundle.main.bundleIdentifier ?? ""
@@ -249,8 +249,8 @@ private func target_getKeys(_ L: OpaquePointer!) -> Int32 {
 /// Notes:
 ///  * the identifier is required so that multiple callbacks for the same key can be registered by separate modules; it's value doesn't affect what is being watched but does need to be unique between multiple watchers of the same key.
 ///  * Does not work with keys that include a period (.) in the key name because KVO uses dot notation to specify a sequence of properties.  If you know of a way to escape periods so that they are watchable as NSUSerDefault key names, please file an issue and share!
-private func target_watchKey(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func target_watchKey(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING, LS_TSTRING, LS_TFUNCTION | LS_TNIL | LS_TOPTIONAL, LS_TBREAK)
 
     let watcherID = skin.toNSObject(atIndex: 1) as! NSString
@@ -267,13 +267,13 @@ private func target_watchKey(_ L: OpaquePointer!) -> Int32 {
 
     if lua_gettop(L) == 2 {
         if let ref = refN {
-            skin.pushLuaRef(refTable, ref: ref.intValue)
+            skin.pushLuaRef(refTable, ref: ref.int32Value)
         } else {
             lua_pushnil(L)
         }
     } else {
         if let ref = refN {
-            skin.luaUnref(refTable, ref: ref.intValue)
+            skin.luaUnref(refTable, ref: ref.int32Value)
         }
         keyWatchers[watcherID] = nil
         if lua_type(L, 3) != LUA_TNIL {
@@ -286,21 +286,21 @@ private func target_watchKey(_ L: OpaquePointer!) -> Int32 {
 }
 
 // For debugging
-private func output_watchers(_ L: OpaquePointer!) -> Int32 {
-    LuaSkin.shared(withState: L).pushNSObject(watcherManager.watchedKeys)
+private func output_watchers(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    LuaSkin.skin(with: L).pushNSObject(watcherManager.watchedKeys)
     return 1
 }
 
-private func meta_gc(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func meta_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
 
     watcherManager.watchedKeys.enumerateKeysAndObjects { keyPath, watchers, _ in
         UserDefaults.standard.removeObserver(watcherManager!, forKeyPath: keyPath as! String, context: &myKVOContext)
         (watchers as! NSMutableDictionary).enumerateKeysAndObjects { _, refN, _ in
-            skin.luaUnref(refTable, ref: (refN as! NSNumber).intValue)
+            skin.luaUnref(refTable, ref: (refN as! NSNumber).int32Value)
         }
     }
-    watcherManager.watchedKeys = nil
+    watcherManager.watchedKeys.removeAllObjects()
     watcherManager = nil
     return 0
 }
@@ -327,8 +327,8 @@ private var module_metaLib: [luaL_Reg] = [
 // MARK: - Module entry point
 
 @_cdecl("luaopen_hs_libsettings")
-public func luaopen_hs_libsettings(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+public func luaopen_hs_libsettings(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     refTable = skin.registerLibrary("hs.settings", functions: &settingslib, metaFunctions: &module_metaLib)
 
     watcherManager = HSUserDefaultKVOWatcher()

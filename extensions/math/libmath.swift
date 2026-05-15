@@ -10,8 +10,8 @@ import LuaSkin
 ///
 /// Returns:
 ///  * A random number between 0 and 1
-private func math_randomFloat(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func math_randomFloat(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TBREAK)
 
     let rand = arc4random()
@@ -31,12 +31,12 @@ private func math_randomFloat(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * A randomly chosen integer between `start` and `end`
-private func math_randomFromRange(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func math_randomFromRange(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TNUMBER, LS_TNUMBER, LS_TBREAK)
 
-    let start = Int32(lua_tointegerx(L, 1, nil))
-    let end = Int32(lua_tointegerx(L, 2, nil))
+    let start = Int32(lua_tointeger(L, 1))
+    let end = Int32(lua_tointeger(L, 2))
 
     if start < 0 || end <= 0 || end <= start {
         skin.logError("Please check the docs for hs.math.randomForRange() - your range is not acceptable (\(start) -> \(end))")
@@ -58,8 +58,8 @@ private var mathLib: [luaL_Reg] = [
 ]
 
 @_cdecl("luaopen_hs_libmath")
-func luaopen_hs_libmath(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+func luaopen_hs_libmath(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.registerLibrary("hs.math", functions: &mathLib, metaFunctions: nil)
     return 1
 }

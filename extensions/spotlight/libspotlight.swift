@@ -1,9 +1,9 @@
 import Cocoa
 import LuaSkin
 
-private let USERDATA_TAG: UnsafePointer<CChar> = "hs.spotlight"
-private let ITEM_UD_TAG: UnsafePointer<CChar>  = "hs.spotlight.item"
-private let GROUP_UD_TAG: UnsafePointer<CChar> = "hs.spotlight.group"
+private let USERDATA_TAG = "hs.spotlight"
+private let ITEM_UD_TAG  = "hs.spotlight.item"
+private let GROUP_UD_TAG = "hs.spotlight.group"
 
 private var refTable: LSRefTable = LUA_NOREF
 private var moduleSearchQueue: OperationQueue?
@@ -56,31 +56,31 @@ private class HSMetadataQuery: NSObject {
     func doCallback(for message: String, with notification: Notification) {
         DispatchQueue.main.async { [weak self] in
             guard let self = self, self.callbackRef != LUA_NOREF else { return }
-            let skin = LuaSkin.shared(withState: nil)
-            _lua_stackguard_entry(skin.L)
+            let skin = LuaSkin.skin(with: nil)
+            _lua_stackguard_entry(skin.l)
             skin.pushLuaRef(refTable, ref: self.callbackRef)
             skin.pushNSObject(self)
             skin.pushNSObject(message as NSString)
-            skin.pushNSObject(notification.userInfo as NSDictionary?, withOptions: LS_NSDescribeUnknownTypes)
+            skin.pushNSObject(notification.userInfo as NSDictionary?, withOptions: LS_NSConversionOptions.nsDescribeUnknownTypes.rawValue)
             skin.protectedCallAndError("hs.spotlight", nargs: 3, nresults: 0)
-            _lua_stackguard_exit(skin.L)
+            _lua_stackguard_exit(skin.l)
         }
     }
 }
 
 // MARK: - Helpers
 
-private func get_queryFromUserdata(_ L: OpaquePointer!, at idx: Int32) -> HSMetadataQuery {
+private func get_queryFromUserdata(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> HSMetadataQuery {
     let ptr = luaL_checkudata(L, idx, USERDATA_TAG)!
     return Unmanaged<HSMetadataQuery>.fromOpaque(ptr.load(as: UnsafeRawPointer.self)).takeUnretainedValue()
 }
 
-private func get_groupFromUserdata(_ L: OpaquePointer!, at idx: Int32) -> NSMetadataQueryResultGroup {
+private func get_groupFromUserdata(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> NSMetadataQueryResultGroup {
     let ptr = luaL_checkudata(L, idx, GROUP_UD_TAG)!
     return Unmanaged<NSMetadataQueryResultGroup>.fromOpaque(ptr.load(as: UnsafeRawPointer.self)).takeUnretainedValue()
 }
 
-private func get_itemFromUserdata(_ L: OpaquePointer!, at idx: Int32) -> NSMetadataItem {
+private func get_itemFromUserdata(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> NSMetadataItem {
     let ptr = luaL_checkudata(L, idx, ITEM_UD_TAG)!
     return Unmanaged<NSMetadataItem>.fromOpaque(ptr.load(as: UnsafeRawPointer.self)).takeUnretainedValue()
 }
@@ -90,8 +90,8 @@ private func get_itemFromUserdata(_ L: OpaquePointer!, at idx: Int32) -> NSMetad
 /// hs.spotlight.new() -> spotlightObject
 /// Constructor
 /// Creates a new spotlightObject to use for Spotlight searches.
-private func spotlight_new(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func spotlight_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TBREAK)
     skin.pushNSObject(HSMetadataQuery())
     return 1
@@ -100,8 +100,8 @@ private func spotlight_new(_ L: OpaquePointer!) -> Int32 {
 /// hs.spotlight.newWithin(spotlightObject) -> spotlightObject
 /// Constructor
 /// Creates a new spotlightObject that limits its searches to the current results of another spotlightObject.
-private func spotlight_searchWithin(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func spotlight_searchWithin(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let query = skin.toNSObject(atIndex: 1) as! HSMetadataQuery
 
@@ -117,8 +117,8 @@ private func spotlight_searchWithin(_ L: OpaquePointer!) -> Int32 {
 // MARK: - Module Methods
 
 // wrapped in init.lua
-private func spotlight_searchScopes(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func spotlight_searchScopes(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING | LS_TTABLE | LS_TOPTIONAL, LS_TBREAK)
     let query = skin.toNSObject(atIndex: 1) as! HSMetadataQuery
 
@@ -169,8 +169,8 @@ private func spotlight_searchScopes(_ L: OpaquePointer!) -> Int32 {
 /// hs.spotlight:setCallback(fn) -> spotlightObject
 /// Method
 /// Set or remove the callback function for the Spotlight search object.
-private func spotlight_callback(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func spotlight_callback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TFUNCTION | LS_TNIL, LS_TBREAK)
     let query = skin.toNSObject(atIndex: 1) as! HSMetadataQuery
 
@@ -184,8 +184,8 @@ private func spotlight_callback(_ L: OpaquePointer!) -> Int32 {
 }
 
 // wrapped in init.lua
-private func spotlight_callbackMessages(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func spotlight_callbackMessages(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING | LS_TTABLE | LS_TOPTIONAL, LS_TBREAK)
     let query = skin.toNSObject(atIndex: 1) as! HSMetadataQuery
 
@@ -226,8 +226,8 @@ private func spotlight_callbackMessages(_ L: OpaquePointer!) -> Int32 {
 /// hs.spotlight:updateInterval([interval]) -> number | spotlightObject
 /// Method
 /// Get or set the time interval at which the spotlightObject will send "didUpdate" messages during the initial gathering phase.
-private func spotlight_updateInterval(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func spotlight_updateInterval(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TNUMBER | LS_TOPTIONAL, LS_TBREAK)
     let query = skin.toNSObject(atIndex: 1) as! HSMetadataQuery
 
@@ -241,8 +241,8 @@ private func spotlight_updateInterval(_ L: OpaquePointer!) -> Int32 {
 }
 
 // wrapped in init.lua
-private func spotlight_sortDescriptors(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func spotlight_sortDescriptors(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TTABLE | LS_TSTRING | LS_TOPTIONAL, LS_TBREAK)
     let query = skin.toNSObject(atIndex: 1) as! HSMetadataQuery
 
@@ -279,8 +279,8 @@ private func spotlight_sortDescriptors(_ L: OpaquePointer!) -> Int32 {
 }
 
 // wrapped in init.lua
-private func spotlight_valueListAttributes(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func spotlight_valueListAttributes(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TTABLE | LS_TSTRING | LS_TOPTIONAL, LS_TBREAK)
     let query = skin.toNSObject(atIndex: 1) as! HSMetadataQuery
 
@@ -302,8 +302,8 @@ private func spotlight_valueListAttributes(_ L: OpaquePointer!) -> Int32 {
 }
 
 // wrapped in init.lua
-private func spotlight_groupingAttributes(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func spotlight_groupingAttributes(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TTABLE | LS_TSTRING | LS_TOPTIONAL, LS_TBREAK)
     let query = skin.toNSObject(atIndex: 1) as! HSMetadataQuery
 
@@ -327,8 +327,8 @@ private func spotlight_groupingAttributes(_ L: OpaquePointer!) -> Int32 {
 /// hs.spotlight:start() -> spotlightObject
 /// Method
 /// Begin the gathering phase of a Spotlight query.
-private func spotlight_start(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func spotlight_start(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let query = skin.toNSObject(atIndex: 1) as! HSMetadataQuery
 
@@ -337,12 +337,7 @@ private func spotlight_start(_ L: OpaquePointer!) -> Int32 {
     } else {
         if query.metadataSearch.predicate != nil {
             query.metadataSearch.operationQueue?.addOperation {
-                do {
-                    query.metadataSearch.start()
-                } catch {
-                    LuaSkin.logError("\(USERDATA_TAG):start error:\(error.localizedDescription)")
-                    query.metadataSearch.stop()
-                }
+                query.metadataSearch.start()
             }
         } else {
             return luaL_error(L, "no query defined")
@@ -355,8 +350,8 @@ private func spotlight_start(_ L: OpaquePointer!) -> Int32 {
 /// hs.spotlight:stop() -> spotlightObject
 /// Method
 /// Stop the Spotlight query.
-private func spotlight_stop(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func spotlight_stop(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let query = skin.toNSObject(atIndex: 1) as! HSMetadataQuery
 
@@ -372,8 +367,8 @@ private func spotlight_stop(_ L: OpaquePointer!) -> Int32 {
 /// hs.spotlight:isRunning() -> boolean
 /// Method
 /// Returns a boolean specifying if the query is active or inactive.
-private func spotlight_isRunning(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func spotlight_isRunning(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let query = skin.toNSObject(atIndex: 1) as! HSMetadataQuery
 
@@ -384,8 +379,8 @@ private func spotlight_isRunning(_ L: OpaquePointer!) -> Int32 {
 /// hs.spotlight:isGathering() -> boolean
 /// Method
 /// Returns a boolean specifying whether or not the query is in the active gathering phase.
-private func spotlight_isGathering(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func spotlight_isGathering(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let query = skin.toNSObject(atIndex: 1) as! HSMetadataQuery
 
@@ -396,8 +391,8 @@ private func spotlight_isGathering(_ L: OpaquePointer!) -> Int32 {
 /// hs.spotlight:queryString(query) -> spotlightObject
 /// Method
 /// Specify the query string for the spotlightObject
-private func spotlight_predicate(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func spotlight_predicate(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING | LS_TNIL | LS_TOPTIONAL, LS_TBREAK)
     let query = skin.toNSObject(atIndex: 1) as! HSMetadataQuery
 
@@ -411,17 +406,9 @@ private func spotlight_predicate(_ L: OpaquePointer!) -> Int32 {
         if lua_type(L, 2) == LUA_TNIL {
             query.metadataSearch.predicate = nil
         } else {
-            var errorMessage: String?
-            do {
-                let predicateStr = skin.toNSObject(atIndex: 2) as! String
-                let queryPredicate = NSPredicate(format: predicateStr)
-                query.metadataSearch.predicate = queryPredicate
-            } catch {
-                errorMessage = error.localizedDescription
-            }
-            if let err = errorMessage {
-                return luaL_argerror(L, 2, err)
-            }
+            let predicateStr = skin.toNSObject(atIndex: 2) as! String
+            let queryPredicate = NSPredicate(format: predicateStr)
+            query.metadataSearch.predicate = queryPredicate
         }
         lua_pushvalue(L, 1)
     }
@@ -431,8 +418,8 @@ private func spotlight_predicate(_ L: OpaquePointer!) -> Int32 {
 /// hs.spotlight:count() -> integer
 /// Method
 /// Returns the number of results for the spotlightObject's query
-private func spotlight_resultCount(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func spotlight_resultCount(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let query = skin.toNSObject(atIndex: 1) as! HSMetadataQuery
 
@@ -443,8 +430,8 @@ private func spotlight_resultCount(_ L: OpaquePointer!) -> Int32 {
 /// hs.spotlight:resultAtIndex(index) -> spotlightItemObject
 /// Method
 /// Returns the spotlightItemObject at the specified index of the spotlightObject
-private func spotlight_resultAtIndex(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func spotlight_resultAtIndex(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TNUMBER | LS_TINTEGER, LS_TBREAK)
     let query = skin.toNSObject(atIndex: 1) as! HSMetadataQuery
 
@@ -467,20 +454,20 @@ private func spotlight_resultAtIndex(_ L: OpaquePointer!) -> Int32 {
 /// hs.spotlight:valueLists() -> table
 /// Method
 /// Returns the value list summaries for the Spotlight query
-private func spotlight_valueLists(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func spotlight_valueLists(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let query = skin.toNSObject(atIndex: 1) as! HSMetadataQuery
 
-    skin.pushNSObject(query.metadataSearch.valueLists as NSArray)
+    skin.pushNSObject(query.metadataSearch.valueLists as NSDictionary)
     return 1
 }
 
 /// hs.spotlight:groupedResults() -> table
 /// Method
 /// Returns the grouped results for a Spotlight query.
-private func spotlight_groupedResults(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func spotlight_groupedResults(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let query = skin.toNSObject(atIndex: 1) as! HSMetadataQuery
 
@@ -491,8 +478,8 @@ private func spotlight_groupedResults(_ L: OpaquePointer!) -> Int32 {
 // MARK: - Module Group Methods
 
 /// hs.spotlight.group:attribute() -> string
-private func group_attribute(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func group_attribute(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, GROUP_UD_TAG, LS_TBREAK)
     let resultGroup = skin.toNSObject(atIndex: 1) as! NSMetadataQueryResultGroup
     skin.pushNSObject(resultGroup.attribute as NSString)
@@ -500,8 +487,8 @@ private func group_attribute(_ L: OpaquePointer!) -> Int32 {
 }
 
 /// hs.spotlight.group:value() -> value
-private func group_value(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func group_value(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, GROUP_UD_TAG, LS_TBREAK)
     let resultGroup = skin.toNSObject(atIndex: 1) as! NSMetadataQueryResultGroup
     skin.pushNSObject(resultGroup.value as? NSObject)
@@ -509,8 +496,8 @@ private func group_value(_ L: OpaquePointer!) -> Int32 {
 }
 
 /// hs.spotlight.group:count() -> integer
-private func group_resultCount(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func group_resultCount(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, GROUP_UD_TAG, LS_TBREAK)
     let resultGroup = skin.toNSObject(atIndex: 1) as! NSMetadataQueryResultGroup
     lua_pushinteger(L, lua_Integer(resultGroup.resultCount))
@@ -518,8 +505,8 @@ private func group_resultCount(_ L: OpaquePointer!) -> Int32 {
 }
 
 /// hs.spotlight.group:resultAtIndex(index) -> spotlightItemObject
-private func group_resultAtIndex(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func group_resultAtIndex(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, GROUP_UD_TAG, LS_TNUMBER | LS_TINTEGER, LS_TBREAK)
     let resultGroup = skin.toNSObject(atIndex: 1) as! NSMetadataQueryResultGroup
 
@@ -537,8 +524,8 @@ private func group_resultAtIndex(_ L: OpaquePointer!) -> Int32 {
 }
 
 /// hs.spotlight.group:subgroups() -> table
-private func group_subgroups(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func group_subgroups(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, GROUP_UD_TAG, LS_TBREAK)
     let resultGroup = skin.toNSObject(atIndex: 1) as! NSMetadataQueryResultGroup
     skin.pushNSObject(resultGroup.subgroups as NSArray?)
@@ -548,8 +535,8 @@ private func group_subgroups(_ L: OpaquePointer!) -> Int32 {
 // MARK: - Module Item Methods
 
 /// hs.spotlight.item:attributes() -> table
-private func item_attributes(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func item_attributes(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, ITEM_UD_TAG, LS_TBREAK)
     let item = skin.toNSObject(atIndex: 1) as! NSMetadataItem
     skin.pushNSObject(item.attributes as NSArray)
@@ -557,12 +544,12 @@ private func item_attributes(_ L: OpaquePointer!) -> Int32 {
 }
 
 /// hs.spotlight.item:valueForAttribute(attribute) -> value
-private func item_valueForAttribute(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func item_valueForAttribute(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, ITEM_UD_TAG, LS_TSTRING, LS_TBREAK)
     let item = skin.toNSObject(atIndex: 1) as! NSMetadataItem
     let attribute = skin.toNSObject(atIndex: 2) as! String
-    skin.pushNSObject(item.value(forAttribute: attribute) as? NSObject, withOptions: LS_NSDescribeUnknownTypes)
+    skin.pushNSObject(item.value(forAttribute: attribute) as? NSObject, withOptions: LS_NSConversionOptions.nsDescribeUnknownTypes.rawValue)
     return 1
 }
 
@@ -571,8 +558,8 @@ private func item_valueForAttribute(_ L: OpaquePointer!) -> Int32 {
 /// hs.spotlight.definedSearchScopes[]
 /// Constant
 /// A table of key-value pairs describing predefined search scopes for Spotlight queries
-private func push_searchScopes(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func push_searchScopes(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     lua_newtable(L)
     skin.pushNSObject(NSMetadataQueryUserHomeScope as NSString);                              lua_setfield(L, -2, "userHome")
     skin.pushNSObject(NSMetadataQueryLocalComputerScope as NSString);                         lua_setfield(L, -2, "localComputer")
@@ -588,8 +575,8 @@ private func push_searchScopes(_ L: OpaquePointer!) -> Int32 {
 /// hs.spotlight.commonAttributeKeys[]
 /// Constant
 /// A list of defined attribute keys as discovered in the macOS 10.12 SDK framework headers.
-private func push_commonAttributeKeys(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func push_commonAttributeKeys(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     lua_newtable(L)
 
     let keys: [String] = [
@@ -702,7 +689,7 @@ private func push_commonAttributeKeys(_ L: OpaquePointer!) -> Int32 {
 
 // MARK: - Lua<->NSObject Conversion Functions
 
-private func pushHSMetadataQuery(_ L: OpaquePointer!, obj: Any!) -> Int32 {
+private func pushHSMetadataQuery(_ L: UnsafeMutablePointer<lua_State>!, obj: Any!) -> Int32 {
     let value = obj as! HSMetadataQuery
     value.selfPushCount += 1
     let valuePtr = lua_newuserdata(L, MemoryLayout<UnsafeRawPointer>.size)!
@@ -712,8 +699,8 @@ private func pushHSMetadataQuery(_ L: OpaquePointer!, obj: Any!) -> Int32 {
     return 1
 }
 
-private func toHSMetadataQueryFromLua(_ L: OpaquePointer!, idx: Int32) -> Any! {
-    let skin = LuaSkin.shared(withState: L)
+private func toHSMetadataQueryFromLua(_ L: UnsafeMutablePointer<lua_State>!, idx: Int32) -> Any! {
+    let skin = LuaSkin.skin(with: L)
     if luaL_testudata(L, idx, USERDATA_TAG) != nil {
         return get_queryFromUserdata(L, at: idx)
     }
@@ -721,7 +708,7 @@ private func toHSMetadataQueryFromLua(_ L: OpaquePointer!, idx: Int32) -> Any! {
     return nil
 }
 
-private func pushNSMetadataQueryResultGroup(_ L: OpaquePointer!, obj: Any!) -> Int32 {
+private func pushNSMetadataQueryResultGroup(_ L: UnsafeMutablePointer<lua_State>!, obj: Any!) -> Int32 {
     let value = obj as! NSMetadataQueryResultGroup
     let valuePtr = lua_newuserdata(L, MemoryLayout<UnsafeRawPointer>.size)!
     valuePtr.storeBytes(of: Unmanaged.passRetained(value).toOpaque(), as: UnsafeRawPointer.self)
@@ -730,8 +717,8 @@ private func pushNSMetadataQueryResultGroup(_ L: OpaquePointer!, obj: Any!) -> I
     return 1
 }
 
-private func toNSMetadataQueryResultGroupFromLua(_ L: OpaquePointer!, idx: Int32) -> Any! {
-    let skin = LuaSkin.shared(withState: L)
+private func toNSMetadataQueryResultGroupFromLua(_ L: UnsafeMutablePointer<lua_State>!, idx: Int32) -> Any! {
+    let skin = LuaSkin.skin(with: L)
     if luaL_testudata(L, idx, GROUP_UD_TAG) != nil {
         return get_groupFromUserdata(L, at: idx)
     }
@@ -739,7 +726,7 @@ private func toNSMetadataQueryResultGroupFromLua(_ L: OpaquePointer!, idx: Int32
     return nil
 }
 
-private func pushNSMetadataItem(_ L: OpaquePointer!, obj: Any!) -> Int32 {
+private func pushNSMetadataItem(_ L: UnsafeMutablePointer<lua_State>!, obj: Any!) -> Int32 {
     let value = obj as! NSMetadataItem
     let valuePtr = lua_newuserdata(L, MemoryLayout<UnsafeRawPointer>.size)!
     valuePtr.storeBytes(of: Unmanaged.passRetained(value).toOpaque(), as: UnsafeRawPointer.self)
@@ -748,8 +735,8 @@ private func pushNSMetadataItem(_ L: OpaquePointer!, obj: Any!) -> Int32 {
     return 1
 }
 
-private func toNSMetadataItemFromLua(_ L: OpaquePointer!, idx: Int32) -> Any! {
-    let skin = LuaSkin.shared(withState: L)
+private func toNSMetadataItemFromLua(_ L: UnsafeMutablePointer<lua_State>!, idx: Int32) -> Any! {
+    let skin = LuaSkin.skin(with: L)
     if luaL_testudata(L, idx, ITEM_UD_TAG) != nil {
         return get_itemFromUserdata(L, at: idx)
     }
@@ -757,8 +744,8 @@ private func toNSMetadataItemFromLua(_ L: OpaquePointer!, idx: Int32) -> Any! {
     return nil
 }
 
-private func pushNSSortDescriptor(_ L: OpaquePointer!, obj: Any!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func pushNSSortDescriptor(_ L: UnsafeMutablePointer<lua_State>!, obj: Any!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     let descriptor = obj as! NSSortDescriptor
     lua_newtable(L)
     skin.pushNSObject(descriptor.key! as NSString); lua_setfield(L, -2, "key")
@@ -767,8 +754,8 @@ private func pushNSSortDescriptor(_ L: OpaquePointer!, obj: Any!) -> Int32 {
     return 1
 }
 
-private func toNSSortDescriptorFromLua(_ L: OpaquePointer!, idx: Int32) -> Any! {
-    let skin = LuaSkin.shared(withState: L)
+private func toNSSortDescriptorFromLua(_ L: UnsafeMutablePointer<lua_State>!, idx: Int32) -> Any! {
+    let skin = LuaSkin.skin(with: L)
     let absIdx = lua_absindex(L, idx)
     if lua_type(L, absIdx) == LUA_TSTRING {
         return NSSortDescriptor(key: skin.toNSObject(atIndex: absIdx) as? String, ascending: true)
@@ -792,8 +779,8 @@ private func toNSSortDescriptorFromLua(_ L: OpaquePointer!, idx: Int32) -> Any! 
     return nil
 }
 
-private func pushNSMetadataQueryAttributeValueTuple(_ L: OpaquePointer!, obj: Any!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func pushNSMetadataQueryAttributeValueTuple(_ L: UnsafeMutablePointer<lua_State>!, obj: Any!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     let tuple = obj as! NSMetadataQueryAttributeValueTuple
     lua_newtable(L)
     skin.pushNSObject(tuple.attribute as NSString); lua_setfield(L, -2, "attribute")
@@ -804,17 +791,17 @@ private func pushNSMetadataQueryAttributeValueTuple(_ L: OpaquePointer!, obj: An
 
 // MARK: - Hammerspoon/Lua Infrastructure
 
-private func userdata_tostring(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     let obj = skin.toNSObject(atIndex: 1) as! HSMetadataQuery
     let title = obj.metadataSearch.predicate?.predicateFormat ?? "<undefined>"
-    skin.pushNSObject(NSString(format: "%s: %@ (%p)", USERDATA_TAG, title as NSString, Unmanaged.passUnretained(obj).toOpaque()))
+    skin.pushNSObject("\(USERDATA_TAG): \(title) (\(String(describing: Unmanaged.passUnretained(obj).toOpaque())))" as NSString)
     return 1
 }
 
-private func userdata_eq(_ L: OpaquePointer!) -> Int32 {
+private func userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     if luaL_testudata(L, 1, USERDATA_TAG) != nil && luaL_testudata(L, 2, USERDATA_TAG) != nil {
-        let skin = LuaSkin.shared(withState: L)
+        let skin = LuaSkin.skin(with: L)
         let obj1 = skin.toNSObject(atIndex: 1) as! HSMetadataQuery
         let obj2 = skin.toNSObject(atIndex: 2) as! HSMetadataQuery
         lua_pushboolean(L, obj1.isEqual(to: obj2) ? 1 : 0)
@@ -824,12 +811,12 @@ private func userdata_eq(_ L: OpaquePointer!) -> Int32 {
     return 1
 }
 
-private func userdata_gc(_ L: OpaquePointer!) -> Int32 {
+private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let ptr = luaL_checkudata(L, 1, USERDATA_TAG)!
     let obj = Unmanaged<HSMetadataQuery>.fromOpaque(ptr.load(as: UnsafeRawPointer.self)).takeRetainedValue()
     obj.selfPushCount -= 1
     if obj.selfPushCount == 0 {
-        let skin = LuaSkin.shared(withState: L)
+        let skin = LuaSkin.skin(with: L)
         obj.callbackRef = skin.luaUnref(refTable, ref: obj.callbackRef)
         let nc = NotificationCenter.default
         nc.removeObserver(obj, name: .NSMetadataQueryDidFinishGathering, object: obj.metadataSearch)
@@ -843,17 +830,17 @@ private func userdata_gc(_ L: OpaquePointer!) -> Int32 {
     return 0
 }
 
-private func group_userdata_tostring(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func group_userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     let obj = skin.toNSObject(atIndex: 1) as! NSMetadataQueryResultGroup
     let title = obj.attribute
-    skin.pushNSObject(NSString(format: "%s: %@ (%p)", GROUP_UD_TAG, title as NSString, lua_topointer(L, 1)!))
+    skin.pushNSObject("\(GROUP_UD_TAG): \(title) (\(String(describing: lua_topointer(L, 1)!)))" as NSString)
     return 1
 }
 
-private func group_userdata_eq(_ L: OpaquePointer!) -> Int32 {
+private func group_userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     if luaL_testudata(L, 1, GROUP_UD_TAG) != nil && luaL_testudata(L, 2, GROUP_UD_TAG) != nil {
-        let skin = LuaSkin.shared(withState: L)
+        let skin = LuaSkin.skin(with: L)
         let obj1 = skin.toNSObject(atIndex: 1) as! NSMetadataQueryResultGroup
         let obj2 = skin.toNSObject(atIndex: 2) as! NSMetadataQueryResultGroup
         lua_pushboolean(L, obj1.isEqual(to: obj2) ? 1 : 0)
@@ -863,7 +850,7 @@ private func group_userdata_eq(_ L: OpaquePointer!) -> Int32 {
     return 1
 }
 
-private func group_userdata_gc(_ L: OpaquePointer!) -> Int32 {
+private func group_userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let ptr = luaL_checkudata(L, 1, GROUP_UD_TAG)!
     let _ = Unmanaged<NSMetadataQueryResultGroup>.fromOpaque(ptr.load(as: UnsafeRawPointer.self)).takeRetainedValue()
     lua_pushnil(L)
@@ -871,17 +858,17 @@ private func group_userdata_gc(_ L: OpaquePointer!) -> Int32 {
     return 0
 }
 
-private func item_userdata_tostring(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func item_userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     let obj = skin.toNSObject(atIndex: 1) as! NSMetadataItem
     let title = obj.value(forAttribute: NSMetadataItemFSNameKey) as? String ?? "<undefined>"
-    skin.pushNSObject(NSString(format: "%s: %@ (%p)", ITEM_UD_TAG, title as NSString, lua_topointer(L, 1)!))
+    skin.pushNSObject("\(ITEM_UD_TAG): \(title) (\(String(describing: lua_topointer(L, 1)!)))" as NSString)
     return 1
 }
 
-private func item_userdata_eq(_ L: OpaquePointer!) -> Int32 {
+private func item_userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     if luaL_testudata(L, 1, ITEM_UD_TAG) != nil && luaL_testudata(L, 2, ITEM_UD_TAG) != nil {
-        let skin = LuaSkin.shared(withState: L)
+        let skin = LuaSkin.skin(with: L)
         let obj1 = skin.toNSObject(atIndex: 1) as! NSMetadataItem
         let obj2 = skin.toNSObject(atIndex: 2) as! NSMetadataItem
         lua_pushboolean(L, obj1.isEqual(to: obj2) ? 1 : 0)
@@ -891,7 +878,7 @@ private func item_userdata_eq(_ L: OpaquePointer!) -> Int32 {
     return 1
 }
 
-private func item_userdata_gc(_ L: OpaquePointer!) -> Int32 {
+private func item_userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let ptr = luaL_checkudata(L, 1, ITEM_UD_TAG)!
     let _ = Unmanaged<NSMetadataItem>.fromOpaque(ptr.load(as: UnsafeRawPointer.self)).takeRetainedValue()
     lua_pushnil(L)
@@ -899,7 +886,7 @@ private func item_userdata_gc(_ L: OpaquePointer!) -> Int32 {
     return 0
 }
 
-private func meta_gc(_ L: OpaquePointer!) -> Int32 {
+private func meta_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     if let queue = moduleSearchQueue {
         queue.cancelAllOperations()
         queue.waitUntilAllOperationsAreFinished()
@@ -968,8 +955,8 @@ private var module_metaLib: [luaL_Reg] = [
 // MARK: - Module Entry Point
 
 @_cdecl("luaopen_hs_libspotlight")
-public func luaopen_hs_libspotlight(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+public func luaopen_hs_libspotlight(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     refTable = skin.registerLibrary(withObject: USERDATA_TAG,
                                     functions: &moduleLib_arr,
                                     metaFunctions: &module_metaLib,
@@ -978,8 +965,8 @@ public func luaopen_hs_libspotlight(_ L: OpaquePointer!) -> Int32 {
     skin.registerObject(ITEM_UD_TAG, objectFunctions: &item_userdata_metalib)
     skin.registerObject(GROUP_UD_TAG, objectFunctions: &group_userdata_metalib)
 
-    push_searchScopes(L);        lua_setfield(L, -2, "definedSearchScopes")
-    push_commonAttributeKeys(L); lua_setfield(L, -2, "commonAttributeKeys")
+    let _ = push_searchScopes(L);        lua_setfield(L, -2, "definedSearchScopes")
+    let _ = push_commonAttributeKeys(L); lua_setfield(L, -2, "commonAttributeKeys")
 
     skin.registerPushNSHelper(pushHSMetadataQuery, forClass: "HSMetadataQuery")
     skin.registerLuaObjectHelper(toHSMetadataQueryFromLua, forClass: "HSMetadataQuery",

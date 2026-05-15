@@ -10,8 +10,8 @@ import LuaSkin
 ///
 /// Returns:
 ///  * The contents of the plist as a Lua table
-private func plist_read(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func plist_read(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING, LS_TBREAK)
 
     let filePath = (skin.toNSObject(atIndex: 1) as! NSString).expandingTildeInPath
@@ -31,8 +31,8 @@ private func plist_read(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * The contents of the property list as a Lua table or `nil` if an error occurs
-private func plist_readString(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func plist_readString(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
 
     let source = skin.toNSObject(atIndex: 1) as! NSString
@@ -45,7 +45,7 @@ private func plist_readString(_ L: OpaquePointer!) -> Int32 {
 
     let plistData: Data
     if binary {
-        plistData = skin.toNSObject(atIndex: 1, withOptions: LS_NSConversionOptions.luaStringAsDataOnly) as! Data
+        plistData = skin.toNSObject(atIndex: 1, withOptions: LS_NSConversionOptions.nsLuaStringAsDataOnly) as! Data
     } else {
         plistData = (source as String).data(using: .utf8)!
     }
@@ -76,11 +76,11 @@ private func plist_readString(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * A string representing the data as a plist or nil if there was a problem with the date or serialization.
-private func plist_writeString(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func plist_writeString(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TTABLE, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
 
-    let data = skin.toNSObject(atIndex: 1, withOptions: LS_NSConversionOptions.preserveLuaStringExactly)!
+    let data = skin.toNSObject(atIndex: 1, withOptions: LS_NSConversionOptions.nsPreserveLuaStringExactly)!
     let binary = lua_gettop(L) > 1 ? (lua_toboolean(L, 2) != 0) : false
     let format: PropertyListSerialization.PropertyListFormat = binary ? .binary : .xml
 
@@ -123,12 +123,12 @@ private func plist_writeString(_ L: OpaquePointer!) -> Int32 {
 ///   * Booleans
 ///   * Tables
 ///  * You should be careful when reading a plist, modifying and writing it - Hammerspoon may not be able to preserve all of the datatypes via Lua
-private func plist_write(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func plist_write(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING, LS_TTABLE, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
 
     let filePath = (skin.toNSObject(atIndex: 1) as! NSString).expandingTildeInPath
-    let data = skin.toNSObject(atIndex: 2, withOptions: LS_NSConversionOptions.preserveLuaStringExactly)!
+    let data = skin.toNSObject(atIndex: 2, withOptions: LS_NSConversionOptions.nsPreserveLuaStringExactly)!
     let binary = lua_type(L, 3) == LUA_TBOOLEAN ? (lua_toboolean(L, 3) != 0) : false
     let format: PropertyListSerialization.PropertyListFormat = binary ? .binary : .xml
 
@@ -163,8 +163,8 @@ private let plistlib: [luaL_Reg] = [
 ]
 
 @_cdecl("luaopen_hs_libplist")
-public func luaopen_hs_libplist(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+public func luaopen_hs_libplist(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.registerLibrary("hs.plist", functions: plistlib, metaFunctions: nil)
     return 1
 }

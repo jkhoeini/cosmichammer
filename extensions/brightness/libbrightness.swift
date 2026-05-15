@@ -3,13 +3,27 @@ import Carbon
 import IOKit.graphics
 import LuaSkin
 
-// MARK: - Private framework declarations
+// MARK: - Private framework function lookups via dlsym
 
-@_silgen_name("DisplayServicesGetBrightness")
-func DisplayServicesGetBrightness(_ display: CGDirectDisplayID, _ brightness: UnsafeMutablePointer<Float>) -> Int32
+private let _displayServicesHandle: UnsafeMutableRawPointer? = dlopen(
+    "/System/Library/PrivateFrameworks/DisplayServices.framework/DisplayServices",
+    RTLD_LAZY
+)
 
-@_silgen_name("DisplayServicesSetBrightness")
-func DisplayServicesSetBrightness(_ display: CGDirectDisplayID, _ brightness: Float) -> Int32
+private typealias GetBrightnessFn = @convention(c) (CGDirectDisplayID, UnsafeMutablePointer<Float>) -> Int32
+private typealias SetBrightnessFn = @convention(c) (CGDirectDisplayID, Float) -> Int32
+
+private let _getBrightness: GetBrightnessFn? = {
+    guard let handle = _displayServicesHandle,
+          let sym = dlsym(handle, "DisplayServicesGetBrightness") else { return nil }
+    return unsafeBitCast(sym, to: GetBrightnessFn.self)
+}()
+
+private let _setBrightness: SetBrightnessFn? = {
+    guard let handle = _displayServicesHandle,
+          let sym = dlsym(handle, "DisplayServicesSetBrightness") else { return nil }
+    return unsafeBitCast(sym, to: SetBrightnessFn.self)
+}()
 
 // MARK: - Helpers
 
@@ -42,31 +56,26 @@ private func LMUtoLux(_ value: UInt64) -> UInt64 {
 ///
 ///  * On Silicon based macs, this function uses a method similar to that used by `corebrightnessdiag` to retrieve the aggregate lux as reported to `sysdiagnose`.
 ///  * On Intel based macs, the raw sensor data is converted to lux via an algorithm used by Mozilla Firefox and is not guaranteed to give an accurate lux value.
-private func brightness_ambient(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func brightness_ambient(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
 
     let serviceObject = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AppleLMUController"))
 
     if serviceObject == IO_OBJECT_NULL {
-        // M1 macs don't have such an IOService, so we have to use an undocumented class...
+        // M1+ macs don't have an AppleLMUController IOService, so we use the
+        // private DisplayServicesClient class via ObjC runtime to call
+        // -[DisplayServicesClient copyPropertyForKey:@"AggregatedLux"].
+        // NSInvocation/NSMethodSignature are unavailable in Swift, so we use
+        // performSelector to invoke the method instead.
         if let dscClass = NSClassFromString("DisplayServicesClient") as? NSObject.Type {
             let ourDSC = dscClass.init()
-            let key: NSString = "AggregatedLux"
-            // copyPropertyForKey: has same signature as NSDictionary's objectForKey:
-            let signature = NSDictionary.instanceMethodSignature(for: #selector(NSDictionary.object(forKey:)))!
-            let invocation = NSInvocation(methodSignature: signature)
-            invocation.target = ourDSC
-            invocation.selector = NSSelectorFromString("copyPropertyForKey:")
-            var keyArg: NSString? = key
-            withUnsafeMutablePointer(to: &keyArg) { ptr in
-                invocation.setArgument(ptr, at: 2)
-            }
-            invocation.invoke()
-            var tempResultValuePtr: Unmanaged<AnyObject>?
-            invocation.getReturnValue(&tempResultValuePtr)
-            if let aggregatedLux = tempResultValuePtr?.takeUnretainedValue() as? NSNumber {
-                skin.pushNSObject(aggregatedLux)
-                return 1
+            let sel = NSSelectorFromString("copyPropertyForKey:")
+            if ourDSC.responds(to: sel) {
+                let key: NSString = "AggregatedLux"
+                if let result = ourDSC.perform(sel, with: key)?.takeUnretainedValue() as? NSNumber {
+                    skin.pushNSObject(result)
+                    return 1
+                }
             }
         }
         // Fall through to push -1
@@ -112,10 +121,14 @@ private func brightness_ambient(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * True if the brightness was set, false if not
-private func brightness_set(_ L: OpaquePointer!) -> Int32 {
+private func brightness_set(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let level = Float(min(max(Double(luaL_checkinteger(L, 1)) / 100.0, 0.0), 1.0))
-    let err = DisplayServicesSetBrightness(CGMainDisplayID(), level)
-    lua_pushboolean(L, (err == Int32(kCGErrorSuccess.rawValue)) ? 1 : 0)
+    if let setBrightness = _setBrightness {
+        let err = setBrightness(CGMainDisplayID(), level)
+        lua_pushboolean(L, (err == Int32(CGError.success.rawValue)) ? 1 : 0)
+    } else {
+        lua_pushboolean(L, 0)
+    }
     return 1
 }
 
@@ -128,11 +141,15 @@ private func brightness_set(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * A number containing the brightness of the display, between 0 and 100
-private func brightness_get(_ L: OpaquePointer!) -> Int32 {
+private func brightness_get(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     var level: Float = 0
-    let err = DisplayServicesGetBrightness(CGMainDisplayID(), &level)
-    if err == Int32(kCGErrorSuccess.rawValue) {
-        lua_pushinteger(L, lua_Integer(level * 100.0))
+    if let getBrightness = _getBrightness {
+        let err = getBrightness(CGMainDisplayID(), &level)
+        if err == Int32(CGError.success.rawValue) {
+            lua_pushinteger(L, lua_Integer(level * 100.0))
+        } else {
+            lua_pushnil(L)
+        }
     } else {
         lua_pushnil(L)
     }
@@ -149,8 +166,8 @@ private let brightnessLib: [luaL_Reg] = [
 ]
 
 @_cdecl("luaopen_hs_libbrightness")
-public func luaopen_hs_libbrightness(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+public func luaopen_hs_libbrightness(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.registerLibrary("hs.brightness", functions: brightnessLib, metaFunctions: nil)
     return 1
 }

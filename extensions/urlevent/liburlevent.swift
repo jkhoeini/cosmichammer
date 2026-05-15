@@ -6,13 +6,31 @@ import LuaSkin
 private var refTable: LSRefTable = 0
 private var defaultContentTypes: [String]?
 
+// MARK: - ObjC bridge protocol
+
+/// Mirror of the HSOpenFileDelegate protocol declared in MJAppDelegate.h.
+/// The ObjC header is compiled inside the HSExtensions (ObjC) target and is
+/// not visible from the pure-Swift HSSwiftExtensions target, so we redeclare
+/// the protocol here with the same ObjC name so that the runtime recognises
+/// conformance.
+@objc protocol HSOpenFileDelegate: NSObjectProtocol {
+    @objc func callback(withURL openUrl: String, senderPID pid: pid_t)
+}
+
+/// Minimal @objc protocol exposing the MJAppDelegate properties we need.
+@objc protocol HSAppDelegateURLAccess: NSObjectProtocol {
+    @objc var startupEvent: NSAppleEventDescriptor? { get set }
+    @objc var startupFile: String? { get set }
+    @objc var openFileDelegate: (any NSObjectProtocol)? { get set }
+}
+
 // MARK: - HSURLEventHandler
 
 private class HSURLEventHandler: NSObject, HSOpenFileDelegate {
     var appleEventManager: NSAppleEventManager?
     var fnCallback: Int32 = LUA_NOREF
     var restoreHandlers: NSMutableDictionary = NSMutableDictionary()
-    weak var appDelegate: MJAppDelegate?
+    weak var appDelegate: (any HSAppDelegateURLAccess)?
 
     override init() {
         super.init()
@@ -23,12 +41,13 @@ private class HSURLEventHandler: NSObject, HSOpenFileDelegate {
                                            forEventClass: AEEventClass(kInternetEventClass),
                                            andEventID: AEEventID(kAEGetURL))
 
-        let delegate = NSApplication.shared.delegate as? MJAppDelegate
+        let delegate = NSApplication.shared.delegate as? (any HSAppDelegateURLAccess)
         delegate?.openFileDelegate = self
+        appDelegate = delegate
     }
 
-    func gc(withState L: OpaquePointer!) {
-        let skin = LuaSkin.shared(withState: L)
+    func gc(withState L: UnsafeMutablePointer<lua_State>!) {
+        let skin = LuaSkin.skin(with: L)
 
         appleEventManager?.removeEventHandler(forEventClass: AEEventClass(kInternetEventClass),
                                               andEventID: AEEventID(kAEGetURL))
@@ -91,8 +110,8 @@ private class HSURLEventHandler: NSObject, HSOpenFileDelegate {
     }
 
     func callback(withURL openUrl: String, senderPID pid: pid_t) {
-        let skin = LuaSkin.shared(withState: nil)
-        let L = skin.L!
+        let skin = LuaSkin.skin(with: nil)
+        let L = skin.l!
         _lua_stackguard_entry(L)
 
         if fnCallback == LUA_NOREF || fnCallback == LUA_REFNIL {
@@ -142,8 +161,8 @@ private var eventHandler: HSURLEventHandler?
 // MARK: - C / Lua bridge functions
 
 // Rather than manage complex callback state from C, we just have one path into Lua for all events, and events are directed to their callbacks from there
-private func urleventSetCallback(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func urleventSetCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
 
     luaL_checktype(L, 1, LUA_TFUNCTION)
     lua_pushvalue(L, 1)
@@ -165,8 +184,8 @@ private func urleventSetCallback(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * You don't have to call this function if you want Hammerspoon to permanently be your default handler. Only use this if you want the handler to be automatically reverted to something else when Hammerspoon exits/reloads.
-private func urleventsetRestoreHandler(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func urleventsetRestoreHandler(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING, LS_TSTRING, LS_TBREAK)
 
     eventHandler?.restoreHandlers[skin.toNSObject(atIndex: 1)!] = skin.toNSObject(atIndex: 2)
@@ -187,15 +206,15 @@ private func urleventsetRestoreHandler(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * Changing the default handler for http/https URLs will display a system prompt asking the user to confirm the change
-private func urleventsetDefaultHandler(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func urleventsetDefaultHandler(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING, LS_TSTRING | LS_TOPTIONAL, LS_TBREAK)
 
-    let scheme = String(cString: lua_tostring(L, 1)).lowercased()
+    let scheme = String(cString: lua_tostring(L, 1)!).lowercased()
     var bundleID = Bundle.main.bundleIdentifier ?? "org.hammerspoon.Hammerspoon"
 
     if lua_type(L, 2) == LUA_TSTRING {
-        bundleID = String(cString: lua_tostring(L, 2))
+        bundleID = String(cString: lua_tostring(L, 2)!)
     }
 
     let status = LSSetDefaultHandlerForURLScheme(scheme as CFString, bundleID as CFString)
@@ -232,11 +251,11 @@ private func urleventsetDefaultHandler(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * A string containing the bundle identifier of the current default application
-private func urleventgetDefaultHandler(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func urleventgetDefaultHandler(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING, LS_TBREAK)
 
-    let scheme = String(cString: lua_tostring(L, 1))
+    let scheme = String(cString: lua_tostring(L, 1)!)
     if let bundleID = LSCopyDefaultHandlerForURLScheme(scheme as CFString)?.takeRetainedValue() {
         lua_pushstring(L, (bundleID as String))
     } else {
@@ -254,11 +273,11 @@ private func urleventgetDefaultHandler(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * A table containing the bundle identifiers of all applications that can handle the scheme
-private func urleventgetAllHandlersForScheme(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func urleventgetAllHandlersForScheme(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING, LS_TBREAK)
 
-    let scheme = String(cString: lua_tostring(L, 1))
+    let scheme = String(cString: lua_tostring(L, 1)!)
     let array = LSCopyAllHandlersForURLScheme(scheme as CFString)?.takeRetainedValue()
 
     var i: lua_Integer = 1
@@ -286,15 +305,15 @@ private func urleventgetAllHandlersForScheme(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * True if the application was launched successfully, otherwise false
-private func urleventopenURLWithBundle(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func urleventopenURLWithBundle(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING, LS_TSTRING, LS_TBREAK)
 
     var result = false
 
     let urlString = skin.toNSObject(atIndex: 1) as? String ?? ""
     if let url = URL(string: urlString) {
-        let bundleID = String(cString: lua_tostring(L, 2))
+        let bundleID = String(cString: lua_tostring(L, 2)!)
         result = NSWorkspace.shared.open([url],
                                          withAppBundleIdentifier: bundleID,
                                          options: .default,
@@ -318,7 +337,7 @@ private func urlevent_setup() {
 
 // MARK: - Lua/hs glue
 
-private func urlevent_gc(_ L: OpaquePointer!) -> Int32 {
+private func urlevent_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     eventHandler?.gc(withState: L)
     eventHandler = nil
 
@@ -348,8 +367,8 @@ private var urlevent_gclib: [luaL_Reg] = [
          must match the require-path of this file, i.e. "hs.urlevent.internal". */
 
 @_cdecl("luaopen_hs_liburlevent")
-public func luaopen_hs_liburlevent(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+public func luaopen_hs_liburlevent(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
 
     urlevent_setup()
 

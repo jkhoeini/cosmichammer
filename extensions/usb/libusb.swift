@@ -8,7 +8,7 @@ private let vendorNameKey = kUSBVendorString as CFString
 private let productIDKey = kUSBProductID as CFString
 private let vendorIDKey = kUSBVendorID as CFString
 
-private func usb_gc(_ L: OpaquePointer!) -> Int32 {
+private func usb_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 0
 }
 
@@ -25,7 +25,7 @@ private func usb_gc(_ L: OpaquePointer!) -> Int32 {
 ///   * vendorName - A string containing the name of the device vendor
 ///   * vendorID - A number containing the Vendor ID of the device
 ///   * productID - A number containing the Product ID of the device
-private func usb_attachedDevices(_ L: OpaquePointer!) -> Int32 {
+private func usb_attachedDevices(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     guard let matchingDict = IOServiceMatching(kIOUSBDeviceClassName) else {
         lua_pushnil(L)
         return 1
@@ -92,8 +92,8 @@ private var metalib: [luaL_Reg] = [
 ]
 
 @_cdecl("luaopen_hs_libusb")
-public func luaopen_hs_libusb(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+public func luaopen_hs_libusb(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.registerLibrary("hs.usb", functions: &usblib, metaFunctions: &metalib)
     return 1
 }

@@ -14,23 +14,23 @@ private var serviceUDRecords: NSMapTable<HSNetServiceWrapper, NSNumber>!
 private func netServiceErrorToString(_ error: [String: Any]) -> String {
     var message = "unrecognized error dictionary:\(error)"
 
-    if let errorCode = error[NSNetServicesErrorCode as String] as? NSNumber {
+    if let errorCode = error[NetService.errorCode as String] as? NSNumber {
         switch errorCode.intValue {
-        case Int(NSNetServicesError.activityInProgress.rawValue):
+        case Int(NetService.ErrorCode.activityInProgress.rawValue):
             message = "activity in progress; cannot process new request"
-        case Int(NSNetServicesError.badArgumentError.rawValue):
+        case Int(NetService.ErrorCode.badArgumentError.rawValue):
             message = "invalid argument"
-        case Int(NSNetServicesError.cancelledError.rawValue):
+        case Int(NetService.ErrorCode.cancelledError.rawValue):
             message = "request was cancelled"
-        case Int(NSNetServicesError.collisionError.rawValue):
+        case Int(NetService.ErrorCode.collisionError.rawValue):
             message = "name already in use"
-        case Int(NSNetServicesError.invalidError.rawValue):
+        case Int(NetService.ErrorCode.invalidError.rawValue):
             message = "service improperly configured"
-        case Int(NSNetServicesError.notFoundError.rawValue):
+        case Int(NetService.ErrorCode.notFoundError.rawValue):
             message = "service could not be found"
-        case Int(NSNetServicesError.timeoutError.rawValue):
+        case Int(NetService.ErrorCode.timeoutError.rawValue):
             message = "timed out"
-        case Int(NSNetServicesError.unknownError.rawValue):
+        case Int(NetService.ErrorCode.unknownError.rawValue):
             message = "an unknown error has occurred"
         default:
             message = "unrecognized error code:\(errorCode)"
@@ -59,24 +59,24 @@ private func netServiceErrorToString(_ error: [String: Any]) -> String {
 
     func performCallback(with argument: Any?, usingCallback fnRef: Int32) {
         if fnRef != Int32(LUA_NOREF) {
-            let skin = LuaSkin.shared(withState: nil)
-            let L = skin.L!
+            let skin = LuaSkin.skin(with: nil)
+            let L = skin.l!
             var argCount: Int32 = 1
             skin.pushLuaRef(refTable, ref: fnRef)
             skin.pushNSObject(self)
             if let argument = argument {
                 if let args = argument as? [Any] {
                     for obj in args {
-                        skin.pushNSObject(obj as? NSObject, withOptions: LS_NSDescribeUnknownTypes)
+                        skin.pushNSObject(obj as? NSObject, withOptions: LS_NSConversionOptions.nsDescribeUnknownTypes.rawValue)
                     }
                     argCount += Int32(args.count)
                 } else {
-                    skin.pushNSObject(argument as? NSObject, withOptions: LS_NSDescribeUnknownTypes)
+                    skin.pushNSObject(argument as? NSObject, withOptions: LS_NSConversionOptions.nsDescribeUnknownTypes.rawValue)
                     argCount += 1
                 }
             }
             if !skin.protectedCallAndTraceback(argCount, nresults: 0) {
-                skin.logError("\(USERDATA_TAG):callback error:\(String(cString: lua_tostring(L, -1)))")
+                skin.logError("\(USERDATA_TAG):callback error:\(String(cString: lua_tostring(L, -1)!))")
                 lua_pop(L, -1)
             }
         }
@@ -93,7 +93,7 @@ private func netServiceErrorToString(_ error: [String: Any]) -> String {
             performCallback(with: ["error", netServiceErrorToString(errorDict as [String: Any])] as [Any],
                             usingCallback: callbackRef)
         } else {
-            LuaSkin.logWarn("\(USERDATA_TAG):publish error:\(netServiceErrorToString(errorDict as [String: Any]))")
+            LuaSkin.skin(with: nil).logWarn("\(USERDATA_TAG):publish error:\(netServiceErrorToString(errorDict as [String: Any]))")
         }
     }
 
@@ -106,7 +106,7 @@ private func netServiceErrorToString(_ error: [String: Any]) -> String {
             performCallback(with: ["error", netServiceErrorToString(errorDict as [String: Any])] as [Any],
                             usingCallback: callbackRef)
         } else {
-            LuaSkin.logWarn("\(USERDATA_TAG):resolve error:\(netServiceErrorToString(errorDict as [String: Any]))")
+            LuaSkin.skin(with: nil).logWarn("\(USERDATA_TAG):resolve error:\(netServiceErrorToString(errorDict as [String: Any]))")
         }
     }
 
@@ -125,8 +125,8 @@ private func netServiceErrorToString(_ error: [String: Any]) -> String {
 // MARK: - Module Functions
 
 // hs.bonjour.service.remote is documented with its wrapper in init.lua
-private func service_newForResolve(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func service_newForResolve(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING, LS_TSTRING, LS_TSTRING | LS_TOPTIONAL, LS_TBREAK)
     let name: String = skin.toNSObject(atIndex: 1) as! String
     let type: String = skin.toNSObject(atIndex: 2) as! String
@@ -138,8 +138,8 @@ private func service_newForResolve(_ L: OpaquePointer!) -> Int32 {
 }
 
 // hs.bonjour.service.new is documented with its wrapper in init.lua
-private func service_newForPublish(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func service_newForPublish(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING, LS_TSTRING, LS_TNUMBER | LS_TINTEGER, LS_TSTRING | LS_TOPTIONAL, LS_TBREAK)
     let name: String = skin.toNSObject(atIndex: 1) as! String
     let type: String = skin.toNSObject(atIndex: 2) as! String
@@ -167,8 +167,8 @@ private func service_newForPublish(_ L: OpaquePointer!) -> Int32 {
 /// Notes:
 ///  * for remote serviceObjects, the table will be empty if this method is invoked before [hs.bonjour.service:resolve](#resolve).
 ///  * for local (published) serviceObjects, this table will always be empty.
-private func service_addresses(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func service_addresses(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG.utf8Start, LS_TBREAK)
     let wrapper: HSNetServiceWrapper = skin.toNSObject(atIndex: 1) as! HSNetServiceWrapper
 
@@ -186,7 +186,7 @@ private func service_addresses(_ L: OpaquePointer!) -> Int32 {
                 lua_pushstring(L, addrStr)
                 lua_rawseti(L, -2, luaL_len(L, -2) + 1)
             } else {
-                lua_pushfstring(L, "** error:%s", gai_strerror(err))
+                lua_pushstring(L, "** error:\(String(cString: gai_strerror(err)!))")
             }
         }
     }
@@ -206,8 +206,8 @@ private func service_addresses(_ L: OpaquePointer!) -> Int32 {
 /// Notes:
 ///  * for remote serviceObjects, this domain will be the domain the service was discovered in.
 ///  * for local (published) serviceObjects, this domain will be the domain the service is published in; if you did not specify a domain with [hs.bonjour.service.new](#new) then this will be an empty string until [hs.bonjour.service:publish](#publish) is invoked.
-private func service_domain(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func service_domain(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG.utf8Start, LS_TBREAK)
     let wrapper: HSNetServiceWrapper = skin.toNSObject(atIndex: 1) as! HSNetServiceWrapper
     skin.pushNSObject(wrapper.service.domain as NSString)
@@ -223,8 +223,8 @@ private func service_domain(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * a string containing the name of the service represented by the serviceObject.
-private func service_name(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func service_name(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG.utf8Start, LS_TBREAK)
     let wrapper: HSNetServiceWrapper = skin.toNSObject(atIndex: 1) as! HSNetServiceWrapper
     skin.pushNSObject(wrapper.service.name as NSString)
@@ -244,8 +244,8 @@ private func service_name(_ L: OpaquePointer!) -> Int32 {
 /// Notes:
 ///  * for remote serviceObjects, this will be nil if this method is invoked before [hs.bonjour.service:resolve](#resolve).
 ///  * for local (published) serviceObjects, this method will always return nil.
-private func service_hostName(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func service_hostName(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG.utf8Start, LS_TBREAK)
     let wrapper: HSNetServiceWrapper = skin.toNSObject(atIndex: 1) as! HSNetServiceWrapper
     skin.pushNSObject(wrapper.service.hostName as NSString?)
@@ -261,8 +261,8 @@ private func service_hostName(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * a string containing the type of service represented by the serviceObject.
-private func service_type(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func service_type(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG.utf8Start, LS_TBREAK)
     let wrapper: HSNetServiceWrapper = skin.toNSObject(atIndex: 1) as! HSNetServiceWrapper
     skin.pushNSObject(wrapper.service.type as NSString)
@@ -282,8 +282,8 @@ private func service_type(_ L: OpaquePointer!) -> Int32 {
 /// Notes:
 ///  * for remote serviceObjects, this will be -1 if this method is invoked before [hs.bonjour.service:resolve](#resolve).
 ///  * for local (published) serviceObjects, this method will always return the number specified when the serviceObject was created with the [hs.bonjour.service.new](#new) constructor.
-private func service_port(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func service_port(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG.utf8Start, LS_TBREAK)
     let wrapper: HSNetServiceWrapper = skin.toNSObject(atIndex: 1) as! HSNetServiceWrapper
     lua_pushinteger(L, lua_Integer(wrapper.service.port))
@@ -305,21 +305,21 @@ private func service_port(_ L: OpaquePointer!) -> Int32 {
 ///  * setting the text record for a service replaces the existing records for the serviceObject. If the serviceObject is remote, this change is only visible on the local machine. For a service you are advertising, this change will be advertised to other machines.
 ///
 ///  * Text records are usually used to provide additional information concerning the service and their purpose and meanings are service dependant; for example, when advertising an `_http._tcp.` service, you can specify a specific path on the server by specifying a table of text records containing the "path" key.
-private func service_TXTRecordData(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func service_TXTRecordData(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG.utf8Start, LS_TTABLE | LS_TNIL | LS_TOPTIONAL, LS_TBREAK)
     let wrapper: HSNetServiceWrapper = skin.toNSObject(atIndex: 1) as! HSNetServiceWrapper
     if lua_gettop(L) == 1 {
         if let txtRecord = wrapper.service.txtRecordData() {
             let dict = NetService.dictionary(fromTXTRecord: txtRecord) as NSDictionary
-            skin.pushNSObject(dict, withOptions: LS_NSDescribeUnknownTypes)
+            skin.pushNSObject(dict, withOptions: LS_NSConversionOptions.nsDescribeUnknownTypes.rawValue)
         } else {
             lua_pushnil(L)
         }
     } else {
         var txtRecord: Data? = nil
         if lua_type(L, 2) == LUA_TTABLE {
-            let dict = skin.toNSObject(atIndex: 2, withOptions: LS_NSPreserveLuaStringExactly) as? NSDictionary
+            let dict = skin.toNSObject(atIndex: 2, withOptions: .nsPreserveLuaStringExactly) as? NSDictionary
             var errMsg: String? = nil
             if let dict = dict as? [String: Any] {
                 for (key, value) in dict {
@@ -360,8 +360,8 @@ private func service_TXTRecordData(_ L: OpaquePointer!) -> Int32 {
 ///
 ///  * for remote serviceObjects, this flag determines if resolution and text record monitoring should occur over peer-to-peer network interfaces.
 ///  * for local (published) serviceObjects, this flag determines if advertising should occur over peer-to-peer network interfaces.
-private func service_includesPeerToPeer(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func service_includesPeerToPeer(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG.utf8Start, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
     let wrapper: HSNetServiceWrapper = skin.toNSObject(atIndex: 1) as! HSNetServiceWrapper
     if lua_gettop(L) == 1 {
@@ -393,8 +393,8 @@ private func service_includesPeerToPeer(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * this method should only be called on serviceObjects which were created with [hs.bonjour.service.new](#new).
-private func service_publish(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func service_publish(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG.utf8Start, LS_TBREAK | LS_TVARARG)
     let wrapper: HSNetServiceWrapper = skin.toNSObject(atIndex: 1) as! HSNetServiceWrapper
     if !wrapper.canPublish { return luaL_error(L, "can't publish a service created for resolution") }
@@ -452,8 +452,8 @@ private func service_publish(_ L: OpaquePointer!) -> Int32 {
 ///
 ///  * For a remote service, this method must be called in order to retrieve the [addresses](#addresses), the [port](#port), the [hostname](#hostname), and any the associated [text records](#txtRecord) for the service.
 ///  * To reduce the usage of system resources, you should generally specify a timeout value or make sure to invoke [hs.bonjour.service:stop](#stop) after you have verified that you have received the details you require.
-private func service_resolveWithTimeout(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func service_resolveWithTimeout(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG.utf8Start, LS_TBREAK | LS_TVARARG)
     let wrapper: HSNetServiceWrapper = skin.toNSObject(atIndex: 1) as! HSNetServiceWrapper
     if wrapper.canPublish { return luaL_error(L, "can't resolve a service created for publishing") }
@@ -504,8 +504,8 @@ private func service_resolveWithTimeout(_ L: OpaquePointer!) -> Int32 {
 ///  * When [hs.bonjour.service:resolve](#resolve) is invoked, the text records at the time of resolution are captured for retrieval with [hs.bonjour.service:txtRecord](#txtRecord). Subsequent changes to the text records will not be reflected by [hs.bonjour.service:txtRecord](#txtRecord) unless this method has been invoked (with or without a callback function) and is currently active.
 ///
 ///  * You *can* monitor for text changes on local serviceObjects that were created by [hs.bonjour.service.new](#new) and that you are publishing. This can be used to invoke a callback when one portion of your code makes changes to the text records you are publishing and you need another portion of your code to be aware of this change.
-private func service_startMonitoring(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func service_startMonitoring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG.utf8Start, LS_TFUNCTION | LS_TOPTIONAL, LS_TBREAK)
     let wrapper: HSNetServiceWrapper = skin.toNSObject(atIndex: 1) as! HSNetServiceWrapper
 
@@ -535,8 +535,8 @@ private func service_startMonitoring(_ L: OpaquePointer!) -> Int32 {
 ///  * this method will stop the advertising of a service which has been published with [hs.bonjour.service:publish](#publish) or is being resolved with [hs.bonjour.service:resolve](#resolve).
 ///
 ///  * To reduce the usage of system resources, you should make sure to use this method when resolving a remote service if you did not specify a timeout for [hs.bonjour.service:resolve](#resolve) or specified a timeout of 0.0 once you have verified that you have the details you need.
-private func service_stop(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func service_stop(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG.utf8Start, LS_TBREAK)
     let wrapper: HSNetServiceWrapper = skin.toNSObject(atIndex: 1) as! HSNetServiceWrapper
     wrapper.callbackRef = skin.luaUnref(refTable, ref: wrapper.callbackRef)
@@ -557,8 +557,8 @@ private func service_stop(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * This method will stop updating [hs.bonjour.service:txtRecord](#txtRecord) and invoking the callback, if any, assigned with [hs.bonjour.service:monitor](#monitor).
-private func service_stopMonitoring(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func service_stopMonitoring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG.utf8Start, LS_TBREAK)
     let wrapper: HSNetServiceWrapper = skin.toNSObject(atIndex: 1) as! HSNetServiceWrapper
     wrapper.monitorCallbackRef = skin.luaUnref(refTable, ref: wrapper.monitorCallbackRef)
@@ -571,8 +571,8 @@ private func service_stopMonitoring(_ L: OpaquePointer!) -> Int32 {
 // These must not throw a lua error to ensure LuaSkin can safely be used from Objective-C
 // delegates and blocks.
 
-private func pushHSNetServiceWrapper(_ L: OpaquePointer!, _ obj: Any?) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func pushHSNetServiceWrapper(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any?) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     guard let value = obj as? HSNetServiceWrapper else { return 0 }
     if value.selfRefCount == 0 {
         let valuePtr = lua_newuserdata(L, MemoryLayout<UnsafeMutableRawPointer>.size)!
@@ -588,8 +588,8 @@ private func pushHSNetServiceWrapper(_ L: OpaquePointer!, _ obj: Any?) -> Int32 
     return 1
 }
 
-private func toHSNetServiceWrapperFromLua(_ L: OpaquePointer!, _ idx: Int32) -> Any? {
-    let skin = LuaSkin.shared(withState: L)
+private func toHSNetServiceWrapperFromLua(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> Any? {
+    let skin = LuaSkin.skin(with: L)
     if luaL_testudata(L, idx, USERDATA_TAG_STR) != nil {
         let ptr = luaL_checkudata(L, idx, USERDATA_TAG_STR)!
             .assumingMemoryBound(to: UnsafeMutableRawPointer.self)
@@ -600,8 +600,8 @@ private func toHSNetServiceWrapperFromLua(_ L: OpaquePointer!, _ idx: Int32) -> 
     return nil
 }
 
-private func pushNSNetService(_ L: OpaquePointer!, _ obj: Any?) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func pushNSNetService(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any?) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     guard let netService = obj as? NetService else { return 0 }
     var valueRef: NSNumber? = nil
     var value: HSNetServiceWrapper? = nil
@@ -632,21 +632,21 @@ private func pushNSNetService(_ L: OpaquePointer!, _ obj: Any?) -> Int32 {
 
 // MARK: - Hammerspoon/Lua Infrastructure
 
-private func userdata_tostring(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
-    let obj = skin.luaObject(atIndex: 1, toClass: "HSNetServiceWrapper") as! HSNetServiceWrapper
+private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
+    let obj = skin.luaObject(at: 1, toClass: "HSNetServiceWrapper") as! HSNetServiceWrapper
     let title = "\(obj.service.name) (\(obj.service.type)\(obj.service.domain))"
     skin.pushNSObject("\(USERDATA_TAG): \(title) (\(String(describing: lua_topointer(L, 1))))" as NSString)
     return 1
 }
 
-private func userdata_eq(_ L: OpaquePointer!) -> Int32 {
+private func userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     // can't get here if at least one of us isn't a userdata type, and we only care if both types are ours,
     // so use luaL_testudata before the macro causes a lua error
     if luaL_testudata(L, 1, USERDATA_TAG_STR) != nil && luaL_testudata(L, 2, USERDATA_TAG_STR) != nil {
-        let skin = LuaSkin.shared(withState: L)
-        let obj1 = skin.luaObject(atIndex: 1, toClass: "HSNetServiceWrapper") as! HSNetServiceWrapper
-        let obj2 = skin.luaObject(atIndex: 2, toClass: "HSNetServiceWrapper") as! HSNetServiceWrapper
+        let skin = LuaSkin.skin(with: L)
+        let obj1 = skin.luaObject(at: 1, toClass: "HSNetServiceWrapper") as! HSNetServiceWrapper
+        let obj2 = skin.luaObject(at: 2, toClass: "HSNetServiceWrapper") as! HSNetServiceWrapper
         lua_pushboolean(L, obj1.isEqual(to: obj2) ? 1 : 0)
     } else {
         lua_pushboolean(L, 0)
@@ -654,14 +654,14 @@ private func userdata_eq(_ L: OpaquePointer!) -> Int32 {
     return 1
 }
 
-private func userdata_gc(_ L: OpaquePointer!) -> Int32 {
+private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     guard luaL_testudata(L, 1, USERDATA_TAG_STR) != nil else { return 0 }
     let ptr = luaL_checkudata(L, 1, USERDATA_TAG_STR)!
         .assumingMemoryBound(to: UnsafeMutableRawPointer.self)
     let obj = Unmanaged<HSNetServiceWrapper>.fromOpaque(ptr.pointee).takeRetainedValue()
     obj.selfRefCount -= 1
     if obj.selfRefCount == 0 {
-        let skin = LuaSkin.shared(withState: L)
+        let skin = LuaSkin.skin(with: L)
         obj.callbackRef = skin.luaUnref(refTable, ref: obj.callbackRef)
         obj.monitorCallbackRef = skin.luaUnref(refTable, ref: obj.monitorCallbackRef)
         obj.service.delegate = nil
@@ -679,7 +679,7 @@ private func userdata_gc(_ L: OpaquePointer!) -> Int32 {
     return 0
 }
 
-private func meta_gc(_ L: OpaquePointer!) -> Int32 {
+private func meta_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     serviceUDRecords.removeAllObjects()
     return 0
 }
@@ -719,8 +719,8 @@ private var module_metaLib: [luaL_Reg] = [
 ]
 
 @_cdecl("luaopen_hs_libbonjourservice")
-public func luaopen_hs_libbonjourservice(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+public func luaopen_hs_libbonjourservice(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     refTable = skin.registerLibrary(withObject: USERDATA_TAG_STR,
                                     functions: &moduleLib,
                                     metaFunctions: &module_metaLib,

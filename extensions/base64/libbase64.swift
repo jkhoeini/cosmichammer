@@ -16,8 +16,8 @@ private func transformDataWithFunction(
 // hs.base64.encode(val) -> str
 // Function
 // Returns the base64 encoding of the string provided.
-private func base64_encode(_ L: OpaquePointer!) -> Int32 {
-    LuaSkin.shared(withState: L).checkArgs(LS_TNUMBER | LS_TSTRING, LS_TBREAK)
+private func base64_encode(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    LuaSkin.skin(with: L).checkArgs(LS_TNUMBER | LS_TSTRING, LS_TBREAK)
     var sz: Int = 0
     let data = luaL_tolstring(L, 1, &sz)!
     let decodedStr = NSData(bytes: data, length: sz)
@@ -30,8 +30,8 @@ private func base64_encode(_ L: OpaquePointer!) -> Int32 {
 //  hs.base64.decode(str) -> val
 // Function
 // Returns a Lua string representing the given base64 string.
-private func base64_decode(_ L: OpaquePointer!) -> Int32 {
-    LuaSkin.shared(withState: L).checkArgs(LS_TNUMBER | LS_TSTRING, LS_TBREAK)
+private func base64_decode(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    LuaSkin.skin(with: L).checkArgs(LS_TNUMBER | LS_TSTRING, LS_TBREAK)
     var sz: Int = 0
     let data = luaL_tolstring(L, 1, &sz)!
     let encodedStr = NSData(bytes: data, length: sz)
@@ -48,8 +48,8 @@ private var base64_lib: [luaL_Reg] = [
 ]
 
 @_cdecl("luaopen_hs_libbase64")
-public func luaopen_hs_libbase64(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+public func luaopen_hs_libbase64(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.registerLibrary("hs.base64", functions: &base64_lib, metaFunctions: nil)
     return 1
 }

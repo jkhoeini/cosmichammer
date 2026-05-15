@@ -1,6 +1,5 @@
-import Cocoa
+import ApplicationServices
 
-/// Check whether the app has Accessibility permissions enabled.
 @_cdecl("MJAccessibilityIsEnabled")
 func MJAccessibilityIsEnabled() -> Bool {
     let isEnabled = AXIsProcessTrusted()
@@ -8,9 +7,8 @@ func MJAccessibilityIsEnabled() -> Bool {
     return isEnabled
 }
 
-/// Prompt the user to grant Accessibility permissions.
 @_cdecl("MJAccessibilityOpenPanel")
 func MJAccessibilityOpenPanel() {
-    let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true] as CFDictionary
+    let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
     AXIsProcessTrustedWithOptions(options)
 }

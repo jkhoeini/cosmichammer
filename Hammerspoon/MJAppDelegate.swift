@@ -1,28 +1,41 @@
-//
-//  MJAppDelegate.swift
-//  Hammerspoon
-//
-//  Translated from MJAppDelegate.m
-//  Copyright (c) 2015 Hammerspoon. All rights reserved.
-//
-
 import Cocoa
 import UniformTypeIdentifiers
 
-// MARK: - HSOpenFileDelegate Protocol
+// MARK: - String constants (from variables.h)
 
-@objc protocol HSOpenFileDelegate: NSObjectProtocol {
-    func callback(withURL openUrl: String, senderPID pid: pid_t)
+private let MJShowDockIconKey            = "MJShowDockIconKey"
+private let MJShowMenuIconKey            = "MJShowMenuIconKey"
+private let HSAutoLoadExtensions         = "HSAutoLoadExtensions"
+private let HSAppleScriptEnabledKey      = "HSAppleScriptEnabledKey"
+private let HSOpenConsoleOnDockClickKey  = "HSOpenConsoleOnDockClickKey"
+private let HSPreferencesDarkModeKey     = "HSPreferencesDarkModeKey"
+private let HSConsoleDarkModeKey         = "HSConsoleDarkModeKey"
+
+// MJLuaCreate, MJLuaDestroy, MJLuaReplace, callDockIconCallback,
+// callAccessibilityStateCallback, textDroppedToDockIcon, fileDroppedToDockIcon
+// are now defined in MJLua.swift (same module) — no @_silgen_name needed.
+
+// MARK: - HSOpenFileDelegate protocol
+
+/// Protocol for handling opened files/URLs.  The ObjC version lives in
+/// MJAppDelegate.h; we redeclare it here with the same ObjC name so the
+/// runtime treats them as the same protocol.  (liburlevent.swift does the
+/// same thing in the HSSwiftExtensions target.)
+@objc(HSOpenFileDelegate) protocol HSOpenFileDelegateAppDelegate: NSObjectProtocol {
+    @objc func callback(withURL openUrl: String, senderPID pid: pid_t)
 }
 
 // MARK: - MJAppDelegate
 
-@objcMembers
+@objc(MJAppDelegate)
 class MJAppDelegate: NSObject, NSApplicationDelegate {
-    var menuBarMenu: NSMenu?
-    var startupEvent: NSAppleEventDescriptor?
-    var startupFile: String?
-    weak var openFileDelegate: HSOpenFileDelegate?
+
+    // MARK: Properties (matching MJAppDelegate.h)
+
+    @objc var menuBarMenu: NSMenu?
+    @objc var startupEvent: NSAppleEventDescriptor?
+    @objc var startupFile: String?
+    @objc weak var openFileDelegate: (NSObjectProtocol & HSOpenFileDelegateAppDelegate)?
 
     // MARK: - Programmatic Menu Construction
 
@@ -33,13 +46,11 @@ class MJAppDelegate: NSObject, NSApplicationDelegate {
         let appMenuItem = NSMenuItem(title: "Hammerspoon", action: nil, keyEquivalent: "")
         let appMenu = NSMenu(title: "Hammerspoon")
 
-        let aboutItem = appMenu.addItem(withTitle: "About Hammerspoon", action: #selector(showAboutPanel(_:)), keyEquivalent: "")
-        aboutItem.target = self
+        appMenu.addItem(withTitle: "About Hammerspoon", action: #selector(showAboutPanel(_:)), keyEquivalent: "").target = self
 
         appMenu.addItem(.separator())
 
-        let prefsItem = appMenu.addItem(withTitle: "Preferences\u{2026}", action: #selector(showPreferencesWindow(_:)), keyEquivalent: ",")
-        prefsItem.target = self
+        appMenu.addItem(withTitle: "Preferences\u{2026}", action: #selector(showPreferencesWindow(_:)), keyEquivalent: ",").target = self
 
         appMenu.addItem(.separator())
 
@@ -60,8 +71,7 @@ class MJAppDelegate: NSObject, NSApplicationDelegate {
 
         appMenu.addItem(.separator())
 
-        let quitItem = appMenu.addItem(withTitle: "Quit Hammerspoon", action: #selector(quitHammerspoon(_:)), keyEquivalent: "q")
-        quitItem.target = self
+        appMenu.addItem(withTitle: "Quit Hammerspoon", action: #selector(quitHammerspoon(_:)), keyEquivalent: "q").target = self
 
         appMenuItem.submenu = appMenu
         mainMenu.addItem(appMenuItem)
@@ -74,13 +84,11 @@ class MJAppDelegate: NSObject, NSApplicationDelegate {
         reloadItem.target = self
         reloadItem.keyEquivalentModifierMask = .command
 
-        let openConfigItem = fileMenu.addItem(withTitle: "Open Config", action: #selector(openConfig(_:)), keyEquivalent: "o")
-        openConfigItem.target = self
+        fileMenu.addItem(withTitle: "Open Config", action: #selector(openConfig(_:)), keyEquivalent: "o").target = self
 
         fileMenu.addItem(.separator())
 
-        let consoleItem = fileMenu.addItem(withTitle: "Console\u{2026}", action: #selector(showConsoleWindow(_:)), keyEquivalent: "r")
-        consoleItem.target = self
+        fileMenu.addItem(withTitle: "Console\u{2026}", action: #selector(showConsoleWindow(_:)), keyEquivalent: "r").target = self
 
         fileMenu.addItem(.separator())
 
@@ -247,7 +255,7 @@ class MJAppDelegate: NSObject, NSApplicationDelegate {
         return false
     }
 
-    func applicationWillFinishLaunching(_ aNotification: Notification) {
+    func applicationWillFinishLaunching(_ notification: Notification) {
         setupMainMenu()
         setupStatusItemMenu()
 
@@ -268,22 +276,20 @@ class MJAppDelegate: NSObject, NSApplicationDelegate {
         self.startupEvent = event
     }
 
-    func application(_ theApplication: NSApplication, openFile fileAndPath: String) -> Bool {
+    func application(_ sender: NSApplication, openFile filename: String) -> Bool {
         var typeOfFile: String? = nil
-        let fileURL = URL(fileURLWithPath: fileAndPath)
+        let fileURL = URL(fileURLWithPath: filename)
         if let contentType = try? fileURL.resourceValues(forKeys: [.contentTypeKey]).contentType {
             typeOfFile = contentType.identifier
         }
 
         if typeOfFile == "org.hammerspoon.hammerspoon.spoon" {
             // This is a Spoon, so we will attempt to copy it to the Spoons directory
-            var success = false
-            var upgrade = false
-            let spoonPath = (MJConfigDirAbsolute() as NSString).appendingPathComponent("Spoons")
-            let spoonName = (fileAndPath as NSString).lastPathComponent
+            let spoonPath = (MJConfigDirAbsolute() as String).appendingPathComponent("Spoons")
+            let spoonName = (filename as NSString).lastPathComponent
             let dstSpoonFullPath = (spoonPath as NSString).appendingPathComponent(spoonName)
 
-            if dstSpoonFullPath == fileAndPath {
+            if dstSpoonFullPath == filename {
                 NSLog("User double clicked on a Spoon in %@, skipping", MJConfigDirAbsolute())
                 return true
             }
@@ -291,18 +297,18 @@ class MJAppDelegate: NSObject, NSApplicationDelegate {
             let fileManager = FileManager.default
 
             // Remove any preexisting copy of the Spoon
+            var upgrade = false
             if fileManager.fileExists(atPath: dstSpoonFullPath) {
                 NSLog("Spoon already exists at %@, removing the old version", dstSpoonFullPath)
                 upgrade = true
                 do {
                     try fileManager.removeItem(atPath: dstSpoonFullPath)
-                    success = true
                 } catch {
                     NSLog("Unable to remove existing Spoon (%@):%@", dstSpoonFullPath, error.localizedDescription)
                     let alert = NSAlert()
                     alert.addButton(withTitle: "OK")
                     alert.messageText = "Error upgrading Spoon"
-                    alert.informativeText = "\(error.localizedDescription)\n\nSource: \(fileAndPath)\nDest: \(spoonPath)"
+                    alert.informativeText = "\(error.localizedDescription)\n\nSource: \(filename)\nDest: \(spoonPath)"
                     alert.alertStyle = .critical
                     alert.runModal()
                     return true
@@ -310,53 +316,48 @@ class MJAppDelegate: NSObject, NSApplicationDelegate {
             }
 
             do {
-                try FileManager.default.moveItem(atPath: fileAndPath, toPath: dstSpoonFullPath)
-                success = true
-            } catch {
-                NSLog("Unable to move %@ to %@: %@", fileAndPath, spoonPath, error.localizedDescription)
-                let alert = NSAlert()
-                alert.addButton(withTitle: "OK")
-                alert.messageText = "Error installing Spoon"
-                alert.informativeText = "\(error.localizedDescription)\n\nSource: \(fileAndPath)\nDest: \(spoonPath)"
-                alert.alertStyle = .critical
-                alert.runModal()
-            }
+                try fileManager.moveItem(atPath: filename, toPath: dstSpoonFullPath)
 
-            if success {
                 let notification = NSUserNotification()
                 notification.title = "Spoon \(upgrade ? "upgraded" : "installed")"
                 notification.informativeText = "\(spoonName) is now available\(upgrade ? ", reload your config" : "")"
                 notification.soundName = NSUserNotificationDefaultSoundName
                 NSUserNotificationCenter.default.deliver(notification)
+            } catch {
+                NSLog("Unable to move %@ to %@: %@", filename, spoonPath, error.localizedDescription)
+                let alert = NSAlert()
+                alert.addButton(withTitle: "OK")
+                alert.messageText = "Error installing Spoon"
+                alert.informativeText = "\(error.localizedDescription)\n\nSource: \(filename)\nDest: \(spoonPath)"
+                alert.alertStyle = .critical
+                alert.runModal()
             }
-
-            return true // Note that we always return YES here because otherwise macOS tells the user that we can't open Spoons, which is ludicrous
+            return true  // Always return true so macOS doesn't tell the user we can't open Spoons
         }
 
-        let fileExtension = (fileAndPath as NSString).pathExtension
-        guard let infoDict = Bundle.main.infoDictionary,
-              let supportedExtensions = (infoDict as NSDictionary).value(forKeyPath: "CFBundleDocumentTypes.CFBundleTypeExtensions") as? [Any] else {
-            return true
-        }
-        let flatSupportedExtensions: [String]
-        if let nested = supportedExtensions as? [[String]] {
-            flatSupportedExtensions = nested.flatMap { $0 }
-        } else if let flat = supportedExtensions as? [String] {
-            flatSupportedExtensions = flat
-        } else {
-            flatSupportedExtensions = []
-        }
+        let fileExtension = (filename as NSString).pathExtension
+        let infoDict = Bundle.main.infoDictionary as NSDictionary?
+        if let supportedExtensions = infoDict?.value(forKeyPath: "CFBundleDocumentTypes.CFBundleTypeExtensions") as? [Any] {
+            // Flatten the nested arrays
+            let flatSupportedExtensions: [String] = supportedExtensions.compactMap { item -> [String]? in
+                if let arr = item as? [String] { return arr }
+                if let str = item as? String { return [str] }
+                return nil
+            }.flatMap { $0 }
 
-        // Files to be processed by hs.urlevent
-        if flatSupportedExtensions.contains(fileExtension) {
-            if openFileDelegate == nil {
-                self.startupFile = fileAndPath
+            // Files to be processed by hs.urlevent
+            if flatSupportedExtensions.contains(fileExtension) {
+                if openFileDelegate == nil {
+                    self.startupFile = filename
+                } else {
+                    openFileDelegate?.callback(withURL: filename, senderPID: -1)
+                }
             } else {
-                openFileDelegate?.callback(withURL: fileAndPath, senderPID: -1)
+                // Trigger File Dropped to Dock Icon Callback
+                fileDroppedToDockIcon(filename as NSString)
             }
         } else {
-            // Trigger File Dropped to Dock Icon Callback
-            fileDroppedToDockIcon(fileAndPath)
+            fileDroppedToDockIcon(filename as NSString)
         }
 
         return true
@@ -366,25 +367,23 @@ class MJAppDelegate: NSObject, NSApplicationDelegate {
                      continue userActivity: NSUserActivity,
                      restorationHandler: @escaping ([any NSUserActivityRestoring]) -> Void) -> Bool {
         if userActivity.activityType == NSUserActivityTypeBrowsingWeb,
-           let webpageURL = userActivity.webpageURL {
-            NSWorkspace.shared.open(webpageURL)
+           let url = userActivity.webpageURL {
+            NSWorkspace.shared.open(url)
             return true
         }
         return false
     }
 
-    func applicationDidFinishLaunching(_ aNotification: Notification) {
+    func applicationDidFinishLaunching(_ notification: Notification) {
         // Set app icon programmatically as a fallback for non-bundle contexts
         if let icon = NSImage(named: "Hammerspoon") {
             NSApp.applicationIconImage = icon
         }
 
-        var isTesting = false
-
         // User is holding down Command (0x37) & Option (0x3A) keys:
         if CGEventSource.keyState(.combinedSessionState, key: 0x3A)
-            && CGEventSource.keyState(.combinedSessionState, key: 0x37) {
-
+            && CGEventSource.keyState(.combinedSessionState, key: 0x37)
+        {
             let alert = NSAlert()
             let deleteButton = alert.addButton(withTitle: "Delete Preferences")
             deleteButton.hasDestructiveAction = true
@@ -395,7 +394,7 @@ class MJAppDelegate: NSObject, NSApplicationDelegate {
             alert.alertStyle = .warning
 
             if alert.runModal() == .alertFirstButtonReturn {
-                // Reset Preferences:
+                // Reset Preferences
                 let allObjects = UserDefaults.standard.dictionaryRepresentation()
                 for key in allObjects.keys {
                     UserDefaults.standard.removeObject(forKey: key)
@@ -411,49 +410,38 @@ class MJAppDelegate: NSObject, NSApplicationDelegate {
             object: nil
         )
 
-        // Remove our early event manager handler so hs.urlevent can register for it later, if the user has it configured to
-        NSAppleEventManager.shared().removeEventHandler(
-            forEventClass: AEEventClass(kInternetEventClass),
-            andEventID: AEEventID(kAEGetURL)
-        )
+        // Remove our early event manager handler so hs.urlevent can register for it later
+        NSAppleEventManager.shared().removeEventHandler(forEventClass: AEEventClass(kInternetEventClass), andEventID: AEEventID(kAEGetURL))
 
         if NSClassFromString("XCTest") != nil {
             // Hammerspoon Tests
             NSLog("in testing mode!")
-            isTesting = true
 
             let mainBundle = Bundle.main
-            guard let bundle = Bundle(path: "\(mainBundle.bundlePath)/Contents/Plugins/Hammerspoon Tests.xctest"),
-                  let lsUnitPath = bundle.path(forResource: "lsunit", ofType: "lua") else {
+            if let bundle = Bundle(path: "\(mainBundle.bundlePath)/Contents/Plugins/Hammerspoon Tests.xctest"),
+               let lsUnitPath = bundle.path(forResource: "lsunit", ofType: "lua")
+            {
+                let fsPath = (lsUnitPath as NSString).fileSystemRepresentation
+                MJConfigFileSet(FileManager.default.string(withFileSystemRepresentation: fsPath, length: strlen(fsPath)) as NSString)
+            } else {
                 NSLog("Unable to find lsunit.lua in Hammerspoon Tests.xctest. We're about to crash, sorry!")
                 abort()
             }
-
-            NSLog("testing lsunit.lua")
-            let fsPath = (lsUnitPath as NSString).fileSystemRepresentation
-            MJConfigFile = FileManager.default.string(withFileSystemRepresentation: fsPath, length: strlen(fsPath))
         } else if ProcessInfo.processInfo.environment["XCTESTING"] != nil {
             // Hammerspoon UI Tests
             NSLog("in UI testing mode")
             let initPath = FileManager.default.currentDirectoryPath + "/Hammerspoon UI Tests-Runner.app/Contents/PlugIns/Hammerspoon UI Tests.xctest/Contents/Resources/init.lua"
-
-            guard FileManager.default.fileExists(atPath: initPath) else {
-                NSLog("Unable to find init.lua in Hammerspoon UI Tests. We're about to crash, sorry!")
-                abort()
-            }
-
-            NSLog("UI testing init.lua")
             let fsPath = (initPath as NSString).fileSystemRepresentation
-            MJConfigFile = FileManager.default.string(withFileSystemRepresentation: fsPath, length: strlen(fsPath))
+            MJConfigFileSet(FileManager.default.string(withFileSystemRepresentation: fsPath, length: strlen(fsPath)) as NSString)
             showConsoleWindow(nil)
         } else {
             // No test environment detected, this is a live user run
             if let userMJConfigFile = UserDefaults.standard.string(forKey: "MJConfigFile") {
-                MJConfigFile = userMJConfigFile
+                MJConfigFileSet(userMJConfigFile as NSString)
             }
 
             // Ensure we have a Spoons directory
-            let spoonsPath = (MJConfigDirAbsolute() as NSString).appendingPathComponent("Spoons")
+            let spoonsPath = (MJConfigDirAbsolute() as String).appendingPathComponent("Spoons")
             let fileManager = FileManager.default
             var spoonsPathIsDir: ObjCBool = false
             let spoonsPathExists = fileManager.fileExists(atPath: spoonsPath, isDirectory: &spoonsPathIsDir)
@@ -470,7 +458,7 @@ class MJAppDelegate: NSObject, NSApplicationDelegate {
 
             if !spoonsPathExists {
                 NSLog("Creating Spoons directory at: %@", spoonsPath)
-                try? FileManager.default.createDirectory(atPath: spoonsPath, withIntermediateDirectories: true, attributes: nil)
+                try? fileManager.createDirectory(atPath: spoonsPath, withIntermediateDirectories: true, attributes: nil)
             }
         }
 
@@ -478,11 +466,11 @@ class MJAppDelegate: NSObject, NSApplicationDelegate {
         NSApp.servicesProvider = self
 
         MJEnsureDirectoryExists(MJConfigDir())
-        FileManager.default.changeCurrentDirectoryPath(MJConfigDir())
+        FileManager.default.changeCurrentDirectoryPath(MJConfigDir() as String)
 
         registerDefaultDefaults()
 
-        MJMenuIconSetup(self.menuBarMenu)
+        MJMenuIconSetup(self.menuBarMenu!)
         MJDockIconSetup()
         MJConsoleWindowController.singleton().setup()
         MJLuaCreate()
@@ -490,23 +478,21 @@ class MJAppDelegate: NSObject, NSApplicationDelegate {
         if !MJAccessibilityIsEnabled() {
             MJPreferencesWindowController.singleton().showWindow(nil)
         }
-
-        // Suppress unused variable warning
-        _ = isTesting
     }
 
     // Dragging & Dropping of Text to Dock Item
-    @objc func processDockIconDraggedText(_ pboard: NSPasteboard, userData: String, error errorPtr: AutoreleasingUnsafeMutablePointer<NSString?>) {
+    @objc func processDockIconDraggedText(_ pboard: NSPasteboard, userData: String, error errorPointer: AutoreleasingUnsafeMutablePointer<NSString?>) {
         if let pboardString = pboard.string(forType: .string) {
-            textDroppedToDockIcon(pboardString)
+            textDroppedToDockIcon(pboardString as NSString)
         }
     }
 
     // Dragging & Dropping of File to Dock Item
-    @objc func processDockIconDraggedFile(_ pboard: NSPasteboard, userData: String, error errorPtr: AutoreleasingUnsafeMutablePointer<NSString?>) {
-        if let filePaths = pboard.propertyList(forType: NSPasteboard.PasteboardType(rawValue: "NSFilenamesPboardType")) as? [String] {
+    @objc func processDockIconDraggedFile(_ pboard: NSPasteboard, userData: String, error errorPointer: AutoreleasingUnsafeMutablePointer<NSString?>) {
+        let pasteboardType = NSPasteboard.PasteboardType(rawValue: "NSFilenamesPboardType")
+        if let filePaths = pboard.propertyList(forType: pasteboardType) as? [String] {
             for filePath in filePaths {
-                fileDroppedToDockIcon(filePath)
+                fileDroppedToDockIcon(filePath as NSString)
             }
         }
     }
@@ -536,25 +522,26 @@ class MJAppDelegate: NSObject, NSApplicationDelegate {
         ])
     }
 
+    // MARK: - Actions
+
     @IBAction func reloadConfig(_ sender: Any?) {
         MJLuaReplace()
     }
 
     @IBAction func showConsoleWindow(_ sender: Any?) {
-        NSApp.activate(ignoringOtherApps: true)
+        NSApplication.shared.activate()
         MJConsoleWindowController.singleton().showWindow(nil)
     }
 
     @IBAction func showPreferencesWindow(_ sender: Any?) {
-        NSApp.activate(ignoringOtherApps: true)
+        NSApplication.shared.activate()
         MJPreferencesWindowController.singleton().showWindow(nil)
     }
 
     @IBAction func showAboutPanel(_ sender: Any?) {
-        NSApp.activate(ignoringOtherApps: true)
-        // The ObjC version uses @try/@catch for NSException. In Swift we attempt the call
-        // and rely on the fact that orderFrontStandardAboutPanel rarely throws. If the
-        // installation is corrupt, this may crash rather than log gracefully.
+        NSApplication.shared.activate()
+        // ObjC original wrapped this in @try/@catch for NSException.
+        // Swift cannot catch ObjC exceptions, so we call it directly.
         NSApplication.shared.orderFrontStandardAboutPanel(nil)
     }
 
@@ -563,7 +550,7 @@ class MJAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @IBAction func openConfig(_ sender: Any?) {
-        let path = MJConfigFileFullPath()
+        let path = MJConfigFileFullPath() as String
 
         if !FileManager.default.fileExists(atPath: path) {
             FileManager.default.createFile(atPath: path, contents: Data(), attributes: nil)
@@ -577,9 +564,23 @@ class MJAppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
-// MARK: - Main Entry Point
+// MARK: - String helper (matching NSString appendingPathComponent)
 
-let app = NSApplication.shared
-let delegate = MJAppDelegate()
-app.delegate = delegate
-app.run()
+private extension String {
+    func appendingPathComponent(_ component: String) -> String {
+        return (self as NSString).appendingPathComponent(component)
+    }
+}
+
+// MARK: - Entry point
+
+@_cdecl("launchHammerspoon")
+func launchHammerspoon() -> Int32 {
+    autoreleasepool {
+        let app = NSApplication.shared
+        let delegate = MJAppDelegate()
+        app.delegate = delegate
+        app.run()
+    }
+    return 0
+}

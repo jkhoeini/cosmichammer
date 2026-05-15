@@ -82,152 +82,152 @@ extension NSImage {
 /// Notes:
 ///  * Image names pulled from NSImage.h
 ///  * This table has a __tostring() metamethod which allows listing it's contents in the Hammerspoon console by typing `hs.image.systemImageNames`.
-private func pushNSImageNameTable(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func pushNSImageNameTable(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     lua_newtable(L)
 
-    let imageNames: [(String, NSImage.Name)] = [
-        ("QuickLookTemplate", .quickLookTemplate),
-        ("BluetoothTemplate", .bluetoothTemplate),
-        ("IChatTheaterTemplate", .iChatTheaterTemplate),
-        ("SlideshowTemplate", .slideshowTemplate),
-        ("ActionTemplate", .actionTemplate),
-        ("SmartBadgeTemplate", .smartBadgeTemplate),
-        ("IconViewTemplate", .iconViewTemplate),
-        ("ListViewTemplate", .listViewTemplate),
-        ("ColumnViewTemplate", .columnViewTemplate),
-        ("FlowViewTemplate", .flowViewTemplate),
-        ("PathTemplate", .pathTemplate),
-        ("InvalidDataFreestandingTemplate", .invalidDataFreestandingTemplate),
-        ("LockLockedTemplate", .lockLockedTemplate),
-        ("LockUnlockedTemplate", .lockUnlockedTemplate),
-        ("GoForwardTemplate", .goForwardTemplate),
-        ("GoBackTemplate", .goBackTemplate),
-        ("GoRightTemplate", .goRightTemplate),
-        ("GoLeftTemplate", .goLeftTemplate),
-        ("RightFacingTriangleTemplate", .rightFacingTriangleTemplate),
-        ("LeftFacingTriangleTemplate", .leftFacingTriangleTemplate),
-        ("AddTemplate", .addTemplate),
-        ("RemoveTemplate", .removeTemplate),
-        ("RevealFreestandingTemplate", .revealFreestandingTemplate),
-        ("FollowLinkFreestandingTemplate", .followLinkFreestandingTemplate),
-        ("EnterFullScreenTemplate", .enterFullScreenTemplate),
-        ("ExitFullScreenTemplate", .exitFullScreenTemplate),
-        ("StopProgressTemplate", .stopProgressTemplate),
-        ("StopProgressFreestandingTemplate", .stopProgressFreestandingTemplate),
-        ("RefreshTemplate", .refreshTemplate),
-        ("RefreshFreestandingTemplate", .refreshFreestandingTemplate),
-        ("Bonjour", .bonjour),
-        ("Computer", .computer),
-        ("FolderBurnable", .folderBurnable),
-        ("FolderSmart", .folderSmart),
-        ("Folder", .folder),
-        ("Network", .network),
-        ("MobileMe", .mobileMe),
-        ("MultipleDocuments", .multipleDocuments),
-        ("UserAccounts", .userAccounts),
-        ("PreferencesGeneral", .preferencesGeneral),
-        ("Advanced", .advanced),
-        ("Info", .info),
-        ("FontPanel", .fontPanel),
-        ("ColorPanel", .colorPanel),
-        ("User", .user),
-        ("UserGroup", .userGroup),
-        ("Everyone", .everyone),
-        ("UserGuest", .userGuest),
-        ("MenuOnStateTemplate", .menuOnStateTemplate),
-        ("MenuMixedStateTemplate", .menuMixedStateTemplate),
-        ("ApplicationIcon", .applicationIcon),
-        ("TrashEmpty", .trashEmpty),
-        ("TrashFull", .trashFull),
-        ("HomeTemplate", .homeTemplate),
-        ("BookmarksTemplate", .bookmarksTemplate),
-        ("Caution", .caution),
-        ("StatusAvailable", .statusAvailable),
-        ("StatusPartiallyAvailable", .statusPartiallyAvailable),
-        ("StatusUnavailable", .statusUnavailable),
-        ("StatusNone", .statusNone),
-        ("ShareTemplate", .shareTemplate),
-        ("TouchBarAddDetailTemplate", .touchBarAddDetailTemplate),
-        ("TouchBarAddTemplate", .touchBarAddTemplate),
-        ("TouchBarAlarmTemplate", .touchBarAlarmTemplate),
-        ("TouchBarAudioInputMuteTemplate", .touchBarAudioInputMuteTemplate),
-        ("TouchBarAudioInputTemplate", .touchBarAudioInputTemplate),
-        ("TouchBarAudioOutputMuteTemplate", .touchBarAudioOutputMuteTemplate),
-        ("TouchBarAudioOutputVolumeHighTemplate", .touchBarAudioOutputVolumeHighTemplate),
-        ("TouchBarAudioOutputVolumeLowTemplate", .touchBarAudioOutputVolumeLowTemplate),
-        ("TouchBarAudioOutputVolumeMediumTemplate", .touchBarAudioOutputVolumeMediumTemplate),
-        ("TouchBarAudioOutputVolumeOffTemplate", .touchBarAudioOutputVolumeOffTemplate),
-        ("TouchBarBookmarksTemplate", .touchBarBookmarksTemplate),
-        ("TouchBarColorPickerFill", .touchBarColorPickerFill),
-        ("TouchBarColorPickerFont", .touchBarColorPickerFont),
-        ("TouchBarColorPickerStroke", .touchBarColorPickerStroke),
-        ("TouchBarCommunicationAudioTemplate", .touchBarCommunicationAudioTemplate),
-        ("TouchBarCommunicationVideoTemplate", .touchBarCommunicationVideoTemplate),
-        ("TouchBarComposeTemplate", .touchBarComposeTemplate),
-        ("TouchBarDeleteTemplate", .touchBarDeleteTemplate),
-        ("TouchBarDownloadTemplate", .touchBarDownloadTemplate),
-        ("TouchBarEnterFullScreenTemplate", .touchBarEnterFullScreenTemplate),
-        ("TouchBarExitFullScreenTemplate", .touchBarExitFullScreenTemplate),
-        ("TouchBarFastForwardTemplate", .touchBarFastForwardTemplate),
-        ("TouchBarFolderCopyToTemplate", .touchBarFolderCopyToTemplate),
-        ("TouchBarFolderMoveToTemplate", .touchBarFolderMoveToTemplate),
-        ("TouchBarFolderTemplate", .touchBarFolderTemplate),
-        ("TouchBarGetInfoTemplate", .touchBarGetInfoTemplate),
-        ("TouchBarGoBackTemplate", .touchBarGoBackTemplate),
-        ("TouchBarGoDownTemplate", .touchBarGoDownTemplate),
-        ("TouchBarGoForwardTemplate", .touchBarGoForwardTemplate),
-        ("TouchBarGoUpTemplate", .touchBarGoUpTemplate),
-        ("TouchBarHistoryTemplate", .touchBarHistoryTemplate),
-        ("TouchBarIconViewTemplate", .touchBarIconViewTemplate),
-        ("TouchBarListViewTemplate", .touchBarListViewTemplate),
-        ("TouchBarMailTemplate", .touchBarMailTemplate),
-        ("TouchBarNewFolderTemplate", .touchBarNewFolderTemplate),
-        ("TouchBarNewMessageTemplate", .touchBarNewMessageTemplate),
-        ("TouchBarOpenInBrowserTemplate", .touchBarOpenInBrowserTemplate),
-        ("TouchBarPauseTemplate", .touchBarPauseTemplate),
-        ("TouchBarPlayheadTemplate", .touchBarPlayheadTemplate),
-        ("TouchBarPlayPauseTemplate", .touchBarPlayPauseTemplate),
-        ("TouchBarPlayTemplate", .touchBarPlayTemplate),
-        ("TouchBarQuickLookTemplate", .touchBarQuickLookTemplate),
-        ("TouchBarRecordStartTemplate", .touchBarRecordStartTemplate),
-        ("TouchBarRecordStopTemplate", .touchBarRecordStopTemplate),
-        ("TouchBarRefreshTemplate", .touchBarRefreshTemplate),
-        ("TouchBarRewindTemplate", .touchBarRewindTemplate),
-        ("TouchBarRotateLeftTemplate", .touchBarRotateLeftTemplate),
-        ("TouchBarRotateRightTemplate", .touchBarRotateRightTemplate),
-        ("TouchBarSearchTemplate", .touchBarSearchTemplate),
-        ("TouchBarShareTemplate", .touchBarShareTemplate),
-        ("TouchBarSidebarTemplate", .touchBarSidebarTemplate),
-        ("TouchBarSkipAhead15SecondsTemplate", .touchBarSkipAhead15SecondsTemplate),
-        ("TouchBarSkipAhead30SecondsTemplate", .touchBarSkipAhead30SecondsTemplate),
-        ("TouchBarSkipAheadTemplate", .touchBarSkipAheadTemplate),
-        ("TouchBarSkipBack15SecondsTemplate", .touchBarSkipBack15SecondsTemplate),
-        ("TouchBarSkipBack30SecondsTemplate", .touchBarSkipBack30SecondsTemplate),
-        ("TouchBarSkipBackTemplate", .touchBarSkipBackTemplate),
-        ("TouchBarSkipToEndTemplate", .touchBarSkipToEndTemplate),
-        ("TouchBarSkipToStartTemplate", .touchBarSkipToStartTemplate),
-        ("TouchBarSlideshowTemplate", .touchBarSlideshowTemplate),
-        ("TouchBarTagIconTemplate", .touchBarTagIconTemplate),
-        ("TouchBarTextBoldTemplate", .touchBarTextBoldTemplate),
-        ("TouchBarTextBoxTemplate", .touchBarTextBoxTemplate),
-        ("TouchBarTextCenterAlignTemplate", .touchBarTextCenterAlignTemplate),
-        ("TouchBarTextItalicTemplate", .touchBarTextItalicTemplate),
-        ("TouchBarTextJustifiedAlignTemplate", .touchBarTextJustifiedAlignTemplate),
-        ("TouchBarTextLeftAlignTemplate", .touchBarTextLeftAlignTemplate),
-        ("TouchBarTextListTemplate", .touchBarTextListTemplate),
-        ("TouchBarTextRightAlignTemplate", .touchBarTextRightAlignTemplate),
-        ("TouchBarTextStrikethroughTemplate", .touchBarTextStrikethroughTemplate),
-        ("TouchBarTextUnderlineTemplate", .touchBarTextUnderlineTemplate),
-        ("TouchBarUserAddTemplate", .touchBarUserAddTemplate),
-        ("TouchBarUserGroupTemplate", .touchBarUserGroupTemplate),
-        ("TouchBarUserTemplate", .touchBarUserTemplate),
-        ("TouchBarVolumeDownTemplate", .touchBarVolumeDownTemplate),
-        ("TouchBarVolumeUpTemplate", .touchBarVolumeUpTemplate),
+    let imageNames: [(String, String)] = [
+        ("QuickLookTemplate", "NSQuickLookTemplate"),
+        ("BluetoothTemplate", "NSBluetoothTemplate"),
+        ("IChatTheaterTemplate", "NSIChatTheaterTemplate"),
+        ("SlideshowTemplate", "NSSlideshowTemplate"),
+        ("ActionTemplate", "NSActionTemplate"),
+        ("SmartBadgeTemplate", "NSSmartBadgeTemplate"),
+        ("IconViewTemplate", "NSIconViewTemplate"),
+        ("ListViewTemplate", "NSListViewTemplate"),
+        ("ColumnViewTemplate", "NSColumnViewTemplate"),
+        ("FlowViewTemplate", "NSFlowViewTemplate"),
+        ("PathTemplate", "NSPathTemplate"),
+        ("InvalidDataFreestandingTemplate", "NSInvalidDataFreestandingTemplate"),
+        ("LockLockedTemplate", "NSLockLockedTemplate"),
+        ("LockUnlockedTemplate", "NSLockUnlockedTemplate"),
+        ("GoForwardTemplate", "NSGoForwardTemplate"),
+        ("GoBackTemplate", "NSGoBackTemplate"),
+        ("GoRightTemplate", "NSGoRightTemplate"),
+        ("GoLeftTemplate", "NSGoLeftTemplate"),
+        ("RightFacingTriangleTemplate", "NSRightFacingTriangleTemplate"),
+        ("LeftFacingTriangleTemplate", "NSLeftFacingTriangleTemplate"),
+        ("AddTemplate", "NSAddTemplate"),
+        ("RemoveTemplate", "NSRemoveTemplate"),
+        ("RevealFreestandingTemplate", "NSRevealFreestandingTemplate"),
+        ("FollowLinkFreestandingTemplate", "NSFollowLinkFreestandingTemplate"),
+        ("EnterFullScreenTemplate", "NSEnterFullScreenTemplate"),
+        ("ExitFullScreenTemplate", "NSExitFullScreenTemplate"),
+        ("StopProgressTemplate", "NSStopProgressTemplate"),
+        ("StopProgressFreestandingTemplate", "NSStopProgressFreestandingTemplate"),
+        ("RefreshTemplate", "NSRefreshTemplate"),
+        ("RefreshFreestandingTemplate", "NSRefreshFreestandingTemplate"),
+        ("Bonjour", "NSBonjour"),
+        ("Computer", "NSComputer"),
+        ("FolderBurnable", "NSFolderBurnable"),
+        ("FolderSmart", "NSFolderSmart"),
+        ("Folder", "NSFolder"),
+        ("Network", "NSNetwork"),
+        ("MobileMe", "NSMobileMe"),
+        ("MultipleDocuments", "NSMultipleDocuments"),
+        ("UserAccounts", "NSUserAccounts"),
+        ("PreferencesGeneral", "NSPreferencesGeneral"),
+        ("Advanced", "NSAdvanced"),
+        ("Info", "NSInfo"),
+        ("FontPanel", "NSFontPanel"),
+        ("ColorPanel", "NSColorPanel"),
+        ("User", "NSUser"),
+        ("UserGroup", "NSUserGroup"),
+        ("Everyone", "NSEveryone"),
+        ("UserGuest", "NSUserGuest"),
+        ("MenuOnStateTemplate", "NSMenuOnStateTemplate"),
+        ("MenuMixedStateTemplate", "NSMenuMixedStateTemplate"),
+        ("ApplicationIcon", "NSApplicationIcon"),
+        ("TrashEmpty", "NSTrashEmpty"),
+        ("TrashFull", "NSTrashFull"),
+        ("HomeTemplate", "NSHomeTemplate"),
+        ("BookmarksTemplate", "NSBookmarksTemplate"),
+        ("Caution", "NSCaution"),
+        ("StatusAvailable", "NSStatusAvailable"),
+        ("StatusPartiallyAvailable", "NSStatusPartiallyAvailable"),
+        ("StatusUnavailable", "NSStatusUnavailable"),
+        ("StatusNone", "NSStatusNone"),
+        ("ShareTemplate", "NSShareTemplate"),
+        ("TouchBarAddDetailTemplate", "NSTouchBarAddDetailTemplate"),
+        ("TouchBarAddTemplate", "NSTouchBarAddTemplate"),
+        ("TouchBarAlarmTemplate", "NSTouchBarAlarmTemplate"),
+        ("TouchBarAudioInputMuteTemplate", "NSTouchBarAudioInputMuteTemplate"),
+        ("TouchBarAudioInputTemplate", "NSTouchBarAudioInputTemplate"),
+        ("TouchBarAudioOutputMuteTemplate", "NSTouchBarAudioOutputMuteTemplate"),
+        ("TouchBarAudioOutputVolumeHighTemplate", "NSTouchBarAudioOutputVolumeHighTemplate"),
+        ("TouchBarAudioOutputVolumeLowTemplate", "NSTouchBarAudioOutputVolumeLowTemplate"),
+        ("TouchBarAudioOutputVolumeMediumTemplate", "NSTouchBarAudioOutputVolumeMediumTemplate"),
+        ("TouchBarAudioOutputVolumeOffTemplate", "NSTouchBarAudioOutputVolumeOffTemplate"),
+        ("TouchBarBookmarksTemplate", "NSTouchBarBookmarksTemplate"),
+        ("TouchBarColorPickerFill", "NSTouchBarColorPickerFill"),
+        ("TouchBarColorPickerFont", "NSTouchBarColorPickerFont"),
+        ("TouchBarColorPickerStroke", "NSTouchBarColorPickerStroke"),
+        ("TouchBarCommunicationAudioTemplate", "NSTouchBarCommunicationAudioTemplate"),
+        ("TouchBarCommunicationVideoTemplate", "NSTouchBarCommunicationVideoTemplate"),
+        ("TouchBarComposeTemplate", "NSTouchBarComposeTemplate"),
+        ("TouchBarDeleteTemplate", "NSTouchBarDeleteTemplate"),
+        ("TouchBarDownloadTemplate", "NSTouchBarDownloadTemplate"),
+        ("TouchBarEnterFullScreenTemplate", "NSTouchBarEnterFullScreenTemplate"),
+        ("TouchBarExitFullScreenTemplate", "NSTouchBarExitFullScreenTemplate"),
+        ("TouchBarFastForwardTemplate", "NSTouchBarFastForwardTemplate"),
+        ("TouchBarFolderCopyToTemplate", "NSTouchBarFolderCopyToTemplate"),
+        ("TouchBarFolderMoveToTemplate", "NSTouchBarFolderMoveToTemplate"),
+        ("TouchBarFolderTemplate", "NSTouchBarFolderTemplate"),
+        ("TouchBarGetInfoTemplate", "NSTouchBarGetInfoTemplate"),
+        ("TouchBarGoBackTemplate", "NSTouchBarGoBackTemplate"),
+        ("TouchBarGoDownTemplate", "NSTouchBarGoDownTemplate"),
+        ("TouchBarGoForwardTemplate", "NSTouchBarGoForwardTemplate"),
+        ("TouchBarGoUpTemplate", "NSTouchBarGoUpTemplate"),
+        ("TouchBarHistoryTemplate", "NSTouchBarHistoryTemplate"),
+        ("TouchBarIconViewTemplate", "NSTouchBarIconViewTemplate"),
+        ("TouchBarListViewTemplate", "NSTouchBarListViewTemplate"),
+        ("TouchBarMailTemplate", "NSTouchBarMailTemplate"),
+        ("TouchBarNewFolderTemplate", "NSTouchBarNewFolderTemplate"),
+        ("TouchBarNewMessageTemplate", "NSTouchBarNewMessageTemplate"),
+        ("TouchBarOpenInBrowserTemplate", "NSTouchBarOpenInBrowserTemplate"),
+        ("TouchBarPauseTemplate", "NSTouchBarPauseTemplate"),
+        ("TouchBarPlayheadTemplate", "NSTouchBarPlayheadTemplate"),
+        ("TouchBarPlayPauseTemplate", "NSTouchBarPlayPauseTemplate"),
+        ("TouchBarPlayTemplate", "NSTouchBarPlayTemplate"),
+        ("TouchBarQuickLookTemplate", "NSTouchBarQuickLookTemplate"),
+        ("TouchBarRecordStartTemplate", "NSTouchBarRecordStartTemplate"),
+        ("TouchBarRecordStopTemplate", "NSTouchBarRecordStopTemplate"),
+        ("TouchBarRefreshTemplate", "NSTouchBarRefreshTemplate"),
+        ("TouchBarRewindTemplate", "NSTouchBarRewindTemplate"),
+        ("TouchBarRotateLeftTemplate", "NSTouchBarRotateLeftTemplate"),
+        ("TouchBarRotateRightTemplate", "NSTouchBarRotateRightTemplate"),
+        ("TouchBarSearchTemplate", "NSTouchBarSearchTemplate"),
+        ("TouchBarShareTemplate", "NSTouchBarShareTemplate"),
+        ("TouchBarSidebarTemplate", "NSTouchBarSidebarTemplate"),
+        ("TouchBarSkipAhead15SecondsTemplate", "NSTouchBarSkipAhead15SecondsTemplate"),
+        ("TouchBarSkipAhead30SecondsTemplate", "NSTouchBarSkipAhead30SecondsTemplate"),
+        ("TouchBarSkipAheadTemplate", "NSTouchBarSkipAheadTemplate"),
+        ("TouchBarSkipBack15SecondsTemplate", "NSTouchBarSkipBack15SecondsTemplate"),
+        ("TouchBarSkipBack30SecondsTemplate", "NSTouchBarSkipBack30SecondsTemplate"),
+        ("TouchBarSkipBackTemplate", "NSTouchBarSkipBackTemplate"),
+        ("TouchBarSkipToEndTemplate", "NSTouchBarSkipToEndTemplate"),
+        ("TouchBarSkipToStartTemplate", "NSTouchBarSkipToStartTemplate"),
+        ("TouchBarSlideshowTemplate", "NSTouchBarSlideshowTemplate"),
+        ("TouchBarTagIconTemplate", "NSTouchBarTagIconTemplate"),
+        ("TouchBarTextBoldTemplate", "NSTouchBarTextBoldTemplate"),
+        ("TouchBarTextBoxTemplate", "NSTouchBarTextBoxTemplate"),
+        ("TouchBarTextCenterAlignTemplate", "NSTouchBarTextCenterAlignTemplate"),
+        ("TouchBarTextItalicTemplate", "NSTouchBarTextItalicTemplate"),
+        ("TouchBarTextJustifiedAlignTemplate", "NSTouchBarTextJustifiedAlignTemplate"),
+        ("TouchBarTextLeftAlignTemplate", "NSTouchBarTextLeftAlignTemplate"),
+        ("TouchBarTextListTemplate", "NSTouchBarTextListTemplate"),
+        ("TouchBarTextRightAlignTemplate", "NSTouchBarTextRightAlignTemplate"),
+        ("TouchBarTextStrikethroughTemplate", "NSTouchBarTextStrikethroughTemplate"),
+        ("TouchBarTextUnderlineTemplate", "NSTouchBarTextUnderlineTemplate"),
+        ("TouchBarUserAddTemplate", "NSTouchBarUserAddTemplate"),
+        ("TouchBarUserGroupTemplate", "NSTouchBarUserGroupTemplate"),
+        ("TouchBarUserTemplate", "NSTouchBarUserTemplate"),
+        ("TouchBarVolumeDownTemplate", "NSTouchBarVolumeDownTemplate"),
+        ("TouchBarVolumeUpTemplate", "NSTouchBarVolumeUpTemplate"),
     ]
 
     for (field, name) in imageNames {
-        skin.pushNSObject(name.rawValue as NSString)
+        skin.pushNSObject(name as NSString)
         lua_setfield(L, -2, field)
     }
 
@@ -240,11 +240,11 @@ private func pushNSImageNameTable(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * The list of these images was pulled from a collection located in the repositories at https://github.com/hetima?tab=repositories.  As these image names are (for the most part) not formally listed in Apple's documentation or published APIs, their use cannot be guaranteed across all OS X versions.  If you identify any images which may be missing or could be added, please file an issue at https://github.com/Hammerspoon/hammerspoon.
-private func additionalImages(_ L: OpaquePointer!) -> Int32 {
+private func additionalImages(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     lua_newtable(L)
 
     // Helper to push a string array as a Lua array and set it as a field
-    func pushStringArray(_ L: OpaquePointer!, _ names: [String], _ field: String) {
+    func pushStringArray(_ L: UnsafeMutablePointer<lua_State>!, _ names: [String], _ field: String) {
         lua_newtable(L)
         for name in names {
             lua_pushstring(L, name)
@@ -447,8 +447,8 @@ private func additionalImages(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * A table of EXIF metadata, or `nil` if no metadata can be found or the file path is invalid.
-private func getExifFromPath(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func getExifFromPath(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING, LS_TBREAK)
 
     var imagePath = skin.toNSObject(atIndex: 1) as! String
@@ -485,8 +485,8 @@ private func getExifFromPath(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * An `hs.image` object, or nil if an error occurred
-private func imageFromPath(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func imageFromPath(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING, LS_TBREAK)
 
     var imagePath = skin.toNSObject(atIndex: 1) as! String
@@ -512,7 +512,7 @@ private func imageFromPath(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * This function always throws an error as the ASCIImage dependency has been removed.
-private func imageWithContextFromASCII(_ L: OpaquePointer!) -> Int32 {
+private func imageWithContextFromASCII(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return luaL_error(L, "hs.image.imageFromASCII has been removed (ASCIImage dependency dropped)")
 }
 
@@ -533,10 +533,10 @@ private func imageWithContextFromASCII(_ L: OpaquePointer!) -> Int32 {
 ///     * Hammerspoon's main application bundle
 ///     * the Application Kit framework (this is where most of the images listed in `hs.image.systemImageNames` are located)
 ///  * Image names can be assigned by the image creator or by calling the `hs.image:setName` method on an hs.image object.
-private func imageFromName(_ L: OpaquePointer!) -> Int32 {
+private func imageFromName(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let imageName = String(cString: luaL_checkstring(L, 1))
     if let newImage = NSImage(named: NSImage.Name(imageName)) {
-        LuaSkin.shared(withState: L)!.pushNSObject(newImage)
+        LuaSkin.skin(with: L).pushNSObject(newImage)
     } else {
         lua_pushnil(L)
     }
@@ -556,8 +556,8 @@ private func imageFromName(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * If a callback function is supplied, this function will return nil immediately and the image will be fetched asynchronously
-private func imageFromURL(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func imageFromURL(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING, LS_TFUNCTION | LS_TOPTIONAL, LS_TBREAK)
     guard let theURL = URL(string: skin.toNSObject(atIndex: 1) as! String) else {
         lua_pushnil(L)
@@ -567,20 +567,20 @@ private func imageFromURL(_ L: OpaquePointer!) -> Int32 {
     if lua_type(L, 2) != LUA_TFUNCTION {
         skin.pushNSObject(NSImage(contentsOf: theURL))
     } else {
-        let fnRef = skin.luaRef(refTable, atIndex: 2)
+        let fnRef = skin.luaRef(refTable, at: 2)
         backgroundCallbacks.add(NSNumber(value: fnRef))
 
         DispatchQueue.global(qos: .default).async {
             let image = NSImage(contentsOf: theURL)
             DispatchQueue.main.async {
                 if backgroundCallbacks.contains(NSNumber(value: fnRef)) {
-                    let bgSkin = LuaSkin.shared(withState: nil)!
-                    _lua_stackguard_entry(bgSkin.L)
+                    let bgSkin = LuaSkin.skin(with: nil)
+                    _lua_stackguard_entry(bgSkin.l)
                     bgSkin.pushLuaRef(refTable, ref: fnRef)
                     bgSkin.pushNSObject(image)
                     bgSkin.protectedCallAndTraceback(1, nresults: 0)
                     bgSkin.luaUnref(refTable, ref: fnRef)
-                    _lua_stackguard_exit(bgSkin.L)
+                    _lua_stackguard_exit(bgSkin.l)
                     backgroundCallbacks.remove(NSNumber(value: fnRef))
                 }
             }
@@ -600,8 +600,8 @@ private func imageFromURL(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * An `hs.image` object or nil, if no app icon was found
-private func imageFromApp(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func imageFromApp(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING, LS_TBREAK)
 
     var imagePath = ""
@@ -627,8 +627,8 @@ private func imageFromApp(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * An `hs.image` object or nil, if there was an error.  The image will be the icon for the specified file or an icon representing multiple files if an array of multiple files is specified.
-private func imageForFiles(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func imageForFiles(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TTABLE | LS_TSTRING, LS_TBREAK)
 
     var theFiles: [Any]
@@ -663,8 +663,8 @@ private func imageForFiles(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * An `hs.image` object or nil, if there was an error
-private func imageForFileType(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func imageForFileType(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING, LS_TBREAK)
 
     let theImage = NSWorkspace.shared.icon(forFileType: skin.toNSObject(atIndex: 1) as! String)
@@ -695,8 +695,8 @@ private func imageForFileType(_ L: OpaquePointer!) -> Int32 {
 ///  * This is faster than extracting image metadata and allows for obtaining artwork associated with file formats such as .flac/.ogg
 ///  * If no common album art filenames are found, it attempts to extract image metadata from the file. This works for .mp3/.m4a files
 ///  * If embedded image metadata is found, it is returned as an `hs.image` object, otherwise the filetype icon
-private func imageFromMediaFile(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func imageFromMediaFile(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING, LS_TBREAK)
     var theFilePath = skin.toNSObject(atIndex: 1) as! String
     theFilePath = (theFilePath as NSString).expandingTildeInPath
@@ -785,14 +785,14 @@ private func imageFromMediaFile(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * see also [hs.image:setName](#setName) for a variant that returns a boolean instead.
-private func getImageName(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func getImageName(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, unsafeBitCast(USERDATA_TAG, to: UnsafePointer<CChar>.self), LS_TANY | LS_TOPTIONAL, LS_TBREAK)
-    let testImage = skin.luaObject(atIndex: 1, toClass: "NSImage") as! NSImage
+    let testImage = skin.luaObject(at: 1, toClass: "NSImage") as! NSImage
     if lua_gettop(L) == 1 {
-        lua_pushstring(L, testImage.name()?.rawValue)
+        lua_pushstring(L, testImage.name())
     } else {
-        if testImage.setName(NSImage.Name(String(cString: luaL_checkstring(L, 2)))) {
+        if testImage.setName(String(cString: luaL_checkstring(L, 2))) {
             lua_pushvalue(L, 1)
         } else {
             lua_pushnil(L)
@@ -814,15 +814,15 @@ private func getImageName(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * See also [hs.image:setSize](#setSize) for creating a copy of the image at a new size.
-private func getImageSize(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func getImageSize(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, unsafeBitCast(USERDATA_TAG, to: UnsafePointer<CChar>.self), LS_TBREAK | LS_TVARARG)
-    let theImage = skin.luaObject(atIndex: 1, toClass: "NSImage") as! NSImage
+    let theImage = skin.luaObject(at: 1, toClass: "NSImage") as! NSImage
     if lua_gettop(L) == 1 {
         skin.pushNSSize(theImage.size)
     } else {
         skin.checkArgs(LS_TUSERDATA, unsafeBitCast(USERDATA_TAG, to: UnsafePointer<CChar>.self), LS_TTABLE, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
-        let destSize = skin.tableToSize(atIndex: 2)
+        let destSize = skin.tableToSize(at: 2)
         let absolute = lua_gettop(L) == 3 ? (lua_toboolean(L, 3) != 0) : false
         if absolute {
             theImage.size = destSize
@@ -845,16 +845,16 @@ private func getImageSize(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * A `hs.drawing.color` object
-private func colorAt(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func colorAt(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, unsafeBitCast(USERDATA_TAG, to: UnsafePointer<CChar>.self), LS_TTABLE, LS_TBREAK)
 
-    let theImage = skin.luaObject(atIndex: 1, toClass: "NSImage") as! NSImage
-    let point = skin.tableToPoint(atIndex: 2)
+    let theImage = skin.luaObject(at: 1, toClass: "NSImage") as! NSImage
+    let point = skin.tableToPoint(at: 2)
 
     var pixelColor: NSColor?
     autoreleasepool {
-        let cgImage = theImage.cgImage(forProposedRect: nil, context: nil, hints: nil)!
+        let cgImage = theImage.cgImage(forProposedRect: nil, context: nil, hints: nil as [NSImageRep.HintKey: Any]?)!
         let rep = NSBitmapImageRep(cgImage: cgImage)
         let imageSize = theImage.size
         let bitmapSize = rep.size
@@ -876,22 +876,20 @@ private func colorAt(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * a copy of the portion of the image specified
-private func croppedCopy(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func croppedCopy(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, unsafeBitCast(USERDATA_TAG, to: UnsafePointer<CChar>.self), LS_TTABLE, LS_TBREAK)
-    let theImage = skin.luaObject(atIndex: 1, toClass: "NSImage") as! NSImage
-    let frame = skin.tableToRect(atIndex: 2)
+    let theImage = skin.luaObject(at: 1, toClass: "NSImage") as! NSImage
+    let frame = skin.tableToRect(at: 2)
 
     // size changes may not actually affect representations until the image is composited
     let targetRect = NSRect(origin: .zero, size: theImage.size)
     let newImage = NSImage(size: targetRect.size)
     newImage.lockFocus()
-    theImage.draw(in: targetRect, from: targetRect, operation: .copy, fraction: 1.0)
+    theImage.draw(in: targetRect, from: targetRect, operation: NSCompositingOperation.copy, fraction: 1.0)
     newImage.unlockFocus()
 
-    let keys = [kCGImageSourceShouldCache]
-    let values = [kCFBooleanFalse as Any]
-    let options = NSDictionary(objects: values, forKeys: keys as [NSCopying]) as CFDictionary
+    let options = [kCGImageSourceShouldCache: kCFBooleanFalse as Any] as CFDictionary
     let source = CGImageSourceCreateWithData(newImage.tiffRepresentation! as CFData, options)!
     let maskRef = CGImageSourceCreateImageAtIndex(source, 0, nil)!
     // correct for retina displays
@@ -941,10 +939,10 @@ private func parseFileType(_ label: String) -> NSBitmapImageRep.FileType? {
 ///
 /// Notes:
 ///  * You can convert the string back into an image object with [hs.image.imageFromURL](#URL), e.g. `hs.image.imageFromURL(string)`
-private func encodeAsString(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func encodeAsString(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, unsafeBitCast(USERDATA_TAG, to: UnsafePointer<CChar>.self), LS_TBREAK | LS_TVARARG)
-    let theImage = skin.luaObject(atIndex: 1, toClass: "NSImage") as! NSImage
+    let theImage = skin.luaObject(at: 1, toClass: "NSImage") as! NSImage
 
     var scaleToPixels = false
     var typeLabel = "png"
@@ -967,7 +965,7 @@ private func encodeAsString(_ L: OpaquePointer!) -> Int32 {
     let targetRect = NSRect(origin: .zero, size: theImage.size)
     let newImage = NSImage(size: targetRect.size)
     newImage.lockFocus()
-    theImage.draw(in: targetRect, from: targetRect, operation: .copy, fraction: 1.0)
+    theImage.draw(in: targetRect, from: targetRect, operation: NSCompositingOperation.copy, fraction: 1.0)
     newImage.unlockFocus()
 
     let rep: NSBitmapImageRep
@@ -982,20 +980,23 @@ private func encodeAsString(_ L: OpaquePointer!) -> Int32 {
         rep.size = targetRect.size
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
-        newImage.draw(in: targetRect, from: .zero, operation: .copy, fraction: 1.0)
+        newImage.draw(in: targetRect, from: NSRect.zero, operation: NSCompositingOperation.copy, fraction: 1.0)
         NSGraphicsContext.restoreGraphicsState()
     } else {
         guard let tiffRep = newImage.tiffRepresentation else {
-            return luaL_error(L, "Unable to write image file: Can't create internal representation")
+            lua_pushstring(L, "Unable to write image file: Can't create internal representation")
+            return lua_error(L)
         }
         guard let r = NSBitmapImageRep(data: tiffRep) else {
-            return luaL_error(L, "Unable to write image file: Can't wrap internal representation")
+            lua_pushstring(L, "Unable to write image file: Can't wrap internal representation")
+            return lua_error(L)
         }
         rep = r
     }
 
     guard let fileData = rep.representation(using: fileType, properties: [:]) else {
-        return luaL_error(L, "Unable to write image file: Can't convert internal representation")
+        lua_pushstring(L, "Unable to write image file: Can't convert internal representation")
+        return lua_error(L)
     }
 
     let result = fileData.base64EncodedString(options: .endLineWithLineFeed)
@@ -1022,11 +1023,11 @@ private func encodeAsString(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * Saves image at the size in points (or pixels, if `scale` is true) as reported by [hs.image:size()](#size) for the image object
-private func saveToFile(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func saveToFile(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, unsafeBitCast(USERDATA_TAG, to: UnsafePointer<CChar>.self), LS_TSTRING, LS_TBREAK | LS_TVARARG)
 
-    let theImage = skin.luaObject(atIndex: 1, toClass: "NSImage") as! NSImage
+    let theImage = skin.luaObject(at: 1, toClass: "NSImage") as! NSImage
     let filePath = skin.toNSObject(atIndex: 2) as! String
 
     var scaleToPixels = false
@@ -1050,7 +1051,7 @@ private func saveToFile(_ L: OpaquePointer!) -> Int32 {
     let targetRect = NSRect(origin: .zero, size: theImage.size)
     let newImage = NSImage(size: targetRect.size)
     newImage.lockFocus()
-    theImage.draw(in: targetRect, from: targetRect, operation: .copy, fraction: 1.0)
+    theImage.draw(in: targetRect, from: targetRect, operation: NSCompositingOperation.copy, fraction: 1.0)
     newImage.unlockFocus()
 
     let rep: NSBitmapImageRep
@@ -1065,27 +1066,31 @@ private func saveToFile(_ L: OpaquePointer!) -> Int32 {
         rep.size = targetRect.size
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
-        newImage.draw(in: targetRect, from: .zero, operation: .copy, fraction: 1.0)
+        newImage.draw(in: targetRect, from: NSRect.zero, operation: NSCompositingOperation.copy, fraction: 1.0)
         NSGraphicsContext.restoreGraphicsState()
     } else {
         guard let tiffRep = newImage.tiffRepresentation else {
-            return luaL_error(L, "Unable to write image file: Can't create internal representation")
+            lua_pushstring(L, "Unable to write image file: Can't create internal representation")
+            return lua_error(L)
         }
         guard let r = NSBitmapImageRep(data: tiffRep) else {
-            return luaL_error(L, "Unable to write image file: Can't wrap internal representation")
+            lua_pushstring(L, "Unable to write image file: Can't wrap internal representation")
+            return lua_error(L)
         }
         rep = r
     }
 
     guard let fileData = rep.representation(using: fileType, properties: [:]) else {
-        return luaL_error(L, "Unable to write image file: Can't convert internal representation")
+        lua_pushstring(L, "Unable to write image file: Can't convert internal representation")
+        return lua_error(L)
     }
 
     do {
         try fileData.write(to: URL(fileURLWithPath: (filePath as NSString).expandingTildeInPath), options: .atomic)
         lua_pushboolean(L, 1)
     } catch {
-        return luaL_error(L, "Unable to write image file: %s", error.localizedDescription)
+        lua_pushstring(L, "Unable to write image file: \(error.localizedDescription)")
+        return lua_error(L)
     }
     return 1
 }
@@ -1103,10 +1108,10 @@ private func saveToFile(_ L: OpaquePointer!) -> Int32 {
 /// Notes:
 ///  * Template images consist of black and clear colors (and an alpha channel). Template images are not intended to be used as standalone images and are usually mixed with other content to create the desired final appearance.
 ///  * Images with this flag set to true usually appear lighter than they would with this flag set to false.
-private func imageTemplate(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func imageTemplate(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, unsafeBitCast(USERDATA_TAG, to: UnsafePointer<CChar>.self), LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
-    let theImage = skin.luaObject(atIndex: 1, toClass: "NSImage") as! NSImage
+    let theImage = skin.luaObject(at: 1, toClass: "NSImage") as! NSImage
     if lua_gettop(L) == 1 {
         lua_pushboolean(L, theImage.isTemplate ? 1 : 0)
     } else {
@@ -1125,10 +1130,10 @@ private func imageTemplate(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * a new hs.image object
-private func copyImage(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func copyImage(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, unsafeBitCast(USERDATA_TAG, to: UnsafePointer<CChar>.self), LS_TBREAK)
-    let theImage = skin.luaObject(atIndex: 1, toClass: "NSImage") as! NSImage
+    let theImage = skin.luaObject(at: 1, toClass: "NSImage") as! NSImage
     skin.pushNSObject(theImage.copy() as! NSImage)
     return 1
 }
@@ -1143,11 +1148,11 @@ private func copyImage(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * A string.
-private func toASCII(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func toASCII(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, unsafeBitCast(USERDATA_TAG, to: UnsafePointer<CChar>.self), LS_TNUMBER | LS_TOPTIONAL, LS_TNUMBER | LS_TOPTIONAL, LS_TBREAK)
 
-    let theImage = skin.luaObject(atIndex: 1, toClass: "NSImage") as! NSImage
+    let theImage = skin.luaObject(at: 1, toClass: "NSImage") as! NSImage
 
     let width: Int = (skin.toNSObject(atIndex: 2) as? NSNumber)?.intValue ?? Int(theImage.size.width)
     let height: Int = (skin.toNSObject(atIndex: 3) as? NSNumber)?.intValue ?? Int(theImage.size.height)
@@ -1172,10 +1177,10 @@ private func toASCII(_ L: OpaquePointer!) -> Int32 {
 ///  * a bitmap representation of an image is rendered at the specific size specified (or inherited) when it is generated -- if you later scale it to a different size, the bitmap will be scaled as larger or smaller pixels rather than smoothly.
 ///
 ///  * this method may be useful when preparing images for other devices (e.g. `hs.streamdeck`).
-private func image_bitmapRepresentation(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func image_bitmapRepresentation(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, unsafeBitCast(USERDATA_TAG, to: UnsafePointer<CChar>.self), LS_TBREAK | LS_TVARARG)
-    let theImage = skin.luaObject(atIndex: 1, toClass: "NSImage") as! NSImage
+    let theImage = skin.luaObject(at: 1, toClass: "NSImage") as! NSImage
 
     var bitmapSize = theImage.size
     var colorSpaceName: NSColorSpaceName = .calibratedRGB
@@ -1188,7 +1193,7 @@ private func image_bitmapRepresentation(_ L: OpaquePointer!) -> Int32 {
         break
     case 2:
         if lua_type(L, 2) == LUA_TTABLE {
-            bitmapSize = skin.tableToSize(atIndex: 2)
+            bitmapSize = skin.tableToSize(at: 2)
         } else if lua_type(L, 2) == LUA_TBOOLEAN {
             colorSpaceName = lua_toboolean(L, 2) != 0 ? .calibratedWhite : .calibratedRGB
         } else {
@@ -1196,7 +1201,7 @@ private func image_bitmapRepresentation(_ L: OpaquePointer!) -> Int32 {
         }
     default:
         skin.checkArgs(LS_TUSERDATA, unsafeBitCast(USERDATA_TAG, to: UnsafePointer<CChar>.self), LS_TTABLE, LS_TBOOLEAN, LS_TBREAK)
-        bitmapSize = skin.tableToSize(atIndex: 2)
+        bitmapSize = skin.tableToSize(at: 2)
         colorSpaceName = lua_toboolean(L, 3) != 0 ? .calibratedWhite : .calibratedRGB
     }
 
@@ -1227,7 +1232,7 @@ private func image_bitmapRepresentation(_ L: OpaquePointer!) -> Int32 {
     theImage.draw(
         in: NSRect(origin: .zero, size: bitmapSize),
         from: NSRect(origin: .zero, size: theImage.size),
-        operation: .copy, fraction: 1.0
+        operation: NSCompositingOperation.copy, fraction: 1.0
     )
     NSGraphicsContext.restoreGraphicsState()
 
@@ -1241,7 +1246,7 @@ private func image_bitmapRepresentation(_ L: OpaquePointer!) -> Int32 {
 
 // [skin pushNSObject:NSImage]
 // Pushes the provided NSImage onto the Lua Stack as a hs.image userdata object
-private func NSImage_tolua(_ L: OpaquePointer!, _ obj: Any!) -> Int32 {
+private func NSImage_tolua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
     let theImage = obj as! NSImage
     theImage.cacheMode = .never
     let imagePtr = lua_newuserdata(L, MemoryLayout<UnsafeMutableRawPointer>.size)!
@@ -1251,7 +1256,7 @@ private func NSImage_tolua(_ L: OpaquePointer!, _ obj: Any!) -> Int32 {
     return 1
 }
 
-private func HSImage_toNSImage(_ L: OpaquePointer!, _ idx: Int32) -> Any? {
+private func HSImage_toNSImage(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> Any? {
     guard let ptr = luaL_testudata(L, idx, USERDATA_TAG) else { return nil }
     let raw = ptr.assumingMemoryBound(to: UnsafeMutableRawPointer?.self).pointee!
     return Unmanaged<NSImage>.fromOpaque(raw).takeUnretainedValue()
@@ -1259,22 +1264,22 @@ private func HSImage_toNSImage(_ L: OpaquePointer!, _ idx: Int32) -> Any? {
 
 // MARK: - Hammerspoon/Lua Infrastructure
 
-private func image_userdata_tostring(_ L: OpaquePointer!) -> Int32 {
-    let testImage = LuaSkin.shared(withState: L)!.luaObject(atIndex: 1, toClass: "NSImage") as! NSImage
-    let theName = testImage.name()?.rawValue ?? ""
+private func image_userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let testImage = LuaSkin.skin(with: L).luaObject(at: 1, toClass: "NSImage") as! NSImage
+    let theName = testImage.name() ?? ""
     lua_pushstring(L, "\(USERDATA_TAG): \(theName) (\(String(describing: lua_topointer(L, 1))))")
     return 1
 }
 
-private func image_userdata_eq(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
-    let image1 = skin.luaObject(atIndex: 1, toClass: "NSImage") as! NSImage
-    let image2 = skin.luaObject(atIndex: 2, toClass: "NSImage") as! NSImage
+private func image_userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
+    let image1 = skin.luaObject(at: 1, toClass: "NSImage") as! NSImage
+    let image2 = skin.luaObject(at: 2, toClass: "NSImage") as! NSImage
     lua_pushboolean(L, image1 === image2 ? 1 : 0)
     return 1
 }
 
-private func image_userdata_gc(_ L: OpaquePointer!) -> Int32 {
+private func image_userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let ptr = luaL_checkudata(L, 1, USERDATA_TAG)!.assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
     if let raw = ptr.pointee {
         let image = Unmanaged<NSImage>.fromOpaque(raw).takeRetainedValue()
@@ -1284,8 +1289,8 @@ private func image_userdata_gc(_ L: OpaquePointer!) -> Int32 {
     return 0
 }
 
-private func image_meta_gc(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func image_meta_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     backgroundCallbacks.enumerateObjects { ref, _ in
         if let num = ref as? NSNumber {
             skin.luaUnref(refTable, ref: num.int32Value)
@@ -1362,8 +1367,8 @@ private var module_metaLib: [luaL_Reg] = [
 ]
 
 @_cdecl("luaopen_hs_libimage")
-public func luaopen_hs_libimage(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+public func luaopen_hs_libimage(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     refTable = skin.registerLibrary(withObject: USERDATA_TAG,
                                      functions: &moduleLib,
                                      metaFunctions: &module_metaLib,

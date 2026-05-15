@@ -1,3 +1,21 @@
+
+/// === hs.network.ping.echoRequest ===
+///
+/// Provides lower-level access to the ICMP Echo Request infrastructure used by the hs.network.ping module. In general, you should not need to use this module directly unless you have specific requirements not met by the hs.network.ping module and the `hs.network.ping` object methods.
+///
+/// This module is based heavily on Apple's SimplePing sample project which can be found at https://developer.apple.com/library/content/samplecode/SimplePing/Introduction/Intro.html.
+///
+/// When a callback function argument is specified as an ICMP table, the Lua table returned will contain the following key-value pairs:
+///  * `checksum`       - The ICMP packet checksum used to ensure data integrity.
+///  * `code`           - ICMP Control Message Code. This should always be 0 unless the callback has received a "receivedUnexpectedPacket" message.
+///  * `identifier`     - The ICMP packet identifier.  This should match the results of [hs.network.ping.echoRequest:identifier](#identifier) unless the callback has received a "receivedUnexpectedPacket" message.
+///  * `payload`        - A string containing the ICMP payload for this packet. The default payload has been constructed to cause the ICMP packet to be exactly 64 bytes to match the convention for ICMP Echo Requests.
+///  * `sequenceNumber` - The ICMP Sequence Number for this packet.
+///  * `type`           - ICMP Control Message Type. Unless the callback has received a "receivedUnexpectedPacket" message, this will be 0 (ICMPv4) or 129 (ICMPv6) for packets we receive and 8 (ICMPv4) or 128 (ICMPv6) for packets we send.
+///  * `_raw`           - A string containing the ICMP packet as raw data.
+///
+/// In cases where the callback receives a "receivedUnexpectedPacket" message because the packet is corrupted or truncated, this table may only contain the `_raw` field.
+
 import Cocoa
 import LuaSkin
 import Darwin.POSIX
@@ -7,26 +25,28 @@ import Darwin.POSIX
 private let USERDATA_TAG = "hs.network.ping.echoRequest"
 private var refTable: LSRefTable = LUA_NOREF
 
-private let ADDRESS_STYLES: [String: NSNumber] = [
-    "any":  NSNumber(value: SimplePingAddressStyle.any.rawValue),
-    "IPv4": NSNumber(value: SimplePingAddressStyle.ICMPv4.rawValue),
-    "IPv6": NSNumber(value: SimplePingAddressStyle.ICMPv6.rawValue),
+private let ADDRESS_STYLES: [String: Int] = [
+    "any":  SimplePingAddressStyle.any.rawValue,
+    "IPv4": SimplePingAddressStyle.ICMPv4.rawValue,
+    "IPv6": SimplePingAddressStyle.ICMPv6.rawValue,
 ]
 
 // MARK: - Support Functions
 
-private func pushParsedAddress(_ L: OpaquePointer!, _ addressData: NSData) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func pushParsedAddress(_ L: UnsafeMutablePointer<lua_State>!, _ addressData: Data) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     var addrStr = [CChar](repeating: 0, count: Int(NI_MAXHOST))
-    let err = getnameinfo(
-        addressData.bytes.assumingMemoryBound(to: sockaddr.self),
-        socklen_t(addressData.length),
-        &addrStr,
-        socklen_t(NI_MAXHOST),
-        nil,
-        0,
-        NI_NUMERICHOST | NI_WITHSCOPEID | NI_NUMERICSERV
-    )
+    let err = addressData.withUnsafeBytes { buf in
+        getnameinfo(
+            buf.baseAddress!.assumingMemoryBound(to: sockaddr.self),
+            socklen_t(addressData.count),
+            &addrStr,
+            socklen_t(NI_MAXHOST),
+            nil,
+            0,
+            NI_NUMERICHOST | NI_WITHSCOPEID | NI_NUMERICSERV
+        )
+    }
     if err == 0 {
         skin.pushNSObject(NSString(format: "%s", addrStr))
     } else {
@@ -35,35 +55,38 @@ private func pushParsedAddress(_ L: OpaquePointer!, _ addressData: NSData) -> In
     return 1
 }
 
-private func pushParsedICMPPayload(_ L: OpaquePointer!, _ payloadData: NSData) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
-    let packetLength = payloadData.length
-    let headerSize = MemoryLayout<ICMPHeader>.size
+private func pushParsedICMPPayload(_ L: UnsafeMutablePointer<lua_State>!, _ payloadData: Data) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
+    let packetLength = payloadData.count
 
     lua_newtable(L)
-    if packetLength >= headerSize {
-        var payloadHeader = ICMPHeader()
-        payloadData.getBytes(&payloadHeader, length: headerSize)
-        lua_pushinteger(L, lua_Integer(payloadHeader.type))
+    if packetLength >= kICMPHeaderSize {
+        var hdr = ICMPHeader(type: 0, code: 0, checksum: 0, identifier: 0, sequenceNumber: 0)
+        payloadData.withUnsafeBytes { buf in
+            withUnsafeMutableBytes(of: &hdr) { dst in
+                dst.copyMemory(from: UnsafeRawBufferPointer(start: buf.baseAddress!, count: kICMPHeaderSize))
+            }
+        }
+        lua_pushinteger(L, lua_Integer(hdr.type))
         lua_setfield(L, -2, "type")
-        lua_pushinteger(L, lua_Integer(payloadHeader.code))
+        lua_pushinteger(L, lua_Integer(hdr.code))
         lua_setfield(L, -2, "code")
-        lua_pushinteger(L, lua_Integer(OSSwapHostToBigInt16(payloadHeader.checksum)))
+        lua_pushinteger(L, lua_Integer(hdr.checksum.bigEndian))
         lua_setfield(L, -2, "checksum")
-        lua_pushinteger(L, lua_Integer(OSSwapHostToBigInt16(payloadHeader.identifier)))
+        lua_pushinteger(L, lua_Integer(hdr.identifier.bigEndian))
         lua_setfield(L, -2, "identifier")
-        lua_pushinteger(L, lua_Integer(OSSwapHostToBigInt16(payloadHeader.sequenceNumber)))
+        lua_pushinteger(L, lua_Integer(hdr.sequenceNumber.bigEndian))
         lua_setfield(L, -2, "sequenceNumber")
-        if packetLength > headerSize {
-            skin.pushNSObject(payloadData.subdata(with: NSRange(location: headerSize, length: packetLength - headerSize)) as NSData)
+        if packetLength > kICMPHeaderSize {
+            skin.pushNSObject(payloadData.subdata(in: kICMPHeaderSize..<packetLength) as NSData)
             lua_setfield(L, -2, "payload")
         }
     } else {
-        skin.logDebug(NSString(format: "malformed ICMP data:%@", payloadData))
+        skin.logDebug("malformed ICMP data:\(payloadData)")
         lua_pushstring(L, "ICMP header is too short -- malformed ICMP packet")
         lua_setfield(L, -2, "error")
     }
-    skin.pushNSObject(payloadData)
+    skin.pushNSObject(payloadData as NSData)
     lua_setfield(L, -2, "_raw")
 
     return 1
@@ -71,7 +94,7 @@ private func pushParsedICMPPayload(_ L: OpaquePointer!, _ payloadData: NSData) -
 
 // MARK: - PingableObject
 
-class PingableObject: SimplePing, SimplePingDelegate {
+private class PingableObject: SimplePing, SimplePingDelegate {
     var callbackRef: Int32 = LUA_NOREF
     var selfRef: Int32 = LUA_NOREF
     var passAllUnexpected: Bool = false
@@ -84,110 +107,108 @@ class PingableObject: SimplePing, SimplePingDelegate {
     // MARK: SimplePingDelegate Methods
 
     func simplePing(_ pinger: SimplePing, didStartWithAddress address: Data) {
-        // Clear the close-on-invalidate flag... otherwise a future stop on the object would
-        // cause all ping objects to stop at the same time.
-        if let socket = (self as SimplePing).value(forKey: "socket") as! CFSocket? {
-            var sockopt = CFSocketGetSocketFlags(socket)
-            sockopt &= ~CFSocketCallBackType.readCallBack.rawValue
-            CFSocketSetSocketFlags(socket, sockopt)
+        // Clear the close-on-invalidate flag to avoid stopping all ping objects at once
+        if let s = self.socket {
+            var sockopt = CFSocketGetSocketFlags(s)
+            sockopt &= ~kCFSocketCloseOnInvalidate
+            CFSocketSetSocketFlags(s, sockopt)
         }
 
         if callbackRef != LUA_NOREF {
-            let skin = LuaSkin.shared(withState: nil)!
-            _lua_stackguard_entry(skin.L)
+            let skin = LuaSkin.skin(with: nil)
+            _lua_stackguard_entry(skin.l)
             skin.pushLuaRef(refTable, ref: callbackRef)
-            skin.pushNSObject(pinger)
+            skin.pushNSObject(pinger as! PingableObject)
             skin.pushNSObject("didStart" as NSString)
-            _ = pushParsedAddress(skin.L, address as NSData)
+            _ = pushParsedAddress(skin.l, address)
             skin.protectedCallAndError("hs.network.ping.echoRequest:didStartWithAddress callback", nargs: 3, nresults: 0)
-            _lua_stackguard_exit(skin.L)
+            _lua_stackguard_exit(skin.l)
         }
     }
 
     func simplePing(_ pinger: SimplePing, didFailWithError error: Error) {
-        let skin = LuaSkin.shared(withState: nil)!
-        _lua_stackguard_entry(skin.L)
+        let skin = LuaSkin.skin(with: nil)
+        _lua_stackguard_entry(skin.l)
         let errorReason = error.localizedDescription
-        skin.logDebug(NSString(format: "%s:didFailWithError:%@ - ping stopped.", USERDATA_TAG, errorReason as NSString))
+        skin.logDebug("\(USERDATA_TAG):didFailWithError:\(errorReason) - ping stopped.")
         if callbackRef != LUA_NOREF {
             skin.pushLuaRef(refTable, ref: callbackRef)
-            skin.pushNSObject(pinger)
+            skin.pushNSObject(pinger as! PingableObject)
             skin.pushNSObject("didFail" as NSString)
             skin.pushNSObject(errorReason as NSString)
             skin.protectedCallAndError("hs.network.ping.echoRequest:didFailWithError callback", nargs: 3, nresults: 0)
         }
-
-        // by the time this method is invoked, SimplePing has already stopped us, so let's make sure
-        // we reflect that.
         selfRef = skin.luaUnref(refTable, ref: selfRef)
-        _lua_stackguard_exit(skin.L)
+        _lua_stackguard_exit(skin.l)
     }
 
     func simplePing(_ pinger: SimplePing, didSendPacket packet: Data, sequenceNumber: UInt16) {
         if callbackRef != LUA_NOREF {
-            let skin = LuaSkin.shared(withState: nil)!
-            _lua_stackguard_entry(skin.L)
+            let skin = LuaSkin.skin(with: nil)
+            _lua_stackguard_entry(skin.l)
             skin.pushLuaRef(refTable, ref: callbackRef)
-            skin.pushNSObject(pinger)
+            skin.pushNSObject(pinger as! PingableObject)
             skin.pushNSObject("sendPacket" as NSString)
-            _ = pushParsedICMPPayload(skin.L, packet as NSData)
-            lua_pushinteger(skin.L, lua_Integer(sequenceNumber))
+            _ = pushParsedICMPPayload(skin.l, packet)
+            lua_pushinteger(skin.l, lua_Integer(sequenceNumber))
             skin.protectedCallAndError("hs.network.ping.echoRequest:didSendPacket callback", nargs: 4, nresults: 0)
-            _lua_stackguard_exit(skin.L)
+            _lua_stackguard_exit(skin.l)
         }
     }
 
     func simplePing(_ pinger: SimplePing, didFailToSendPacket packet: Data, sequenceNumber: UInt16, error: Error) {
         if callbackRef != LUA_NOREF {
-            let skin = LuaSkin.shared(withState: nil)!
-            _lua_stackguard_entry(skin.L)
+            let skin = LuaSkin.skin(with: nil)
+            _lua_stackguard_entry(skin.l)
             skin.pushLuaRef(refTable, ref: callbackRef)
-            skin.pushNSObject(pinger)
+            skin.pushNSObject(pinger as! PingableObject)
             skin.pushNSObject("sendPacketFailed" as NSString)
-            _ = pushParsedICMPPayload(skin.L, packet as NSData)
-            lua_pushinteger(skin.L, lua_Integer(sequenceNumber))
+            _ = pushParsedICMPPayload(skin.l, packet)
+            lua_pushinteger(skin.l, lua_Integer(sequenceNumber))
             skin.pushNSObject(error.localizedDescription as NSString)
             skin.protectedCallAndError("hs.network.ping.echoRequest:didFailToSendPacket callback", nargs: 5, nresults: 0)
-            _lua_stackguard_exit(skin.L)
+            _lua_stackguard_exit(skin.l)
         }
     }
 
     func simplePing(_ pinger: SimplePing, didReceivePingResponsePacket packet: Data, sequenceNumber: UInt16) {
         if callbackRef != LUA_NOREF {
-            let skin = LuaSkin.shared(withState: nil)!
-            _lua_stackguard_entry(skin.L)
+            let skin = LuaSkin.skin(with: nil)
+            _lua_stackguard_entry(skin.l)
             skin.pushLuaRef(refTable, ref: callbackRef)
-            skin.pushNSObject(pinger)
+            skin.pushNSObject(pinger as! PingableObject)
             skin.pushNSObject("receivedPacket" as NSString)
-            _ = pushParsedICMPPayload(skin.L, packet as NSData)
-            lua_pushinteger(skin.L, lua_Integer(sequenceNumber))
+            _ = pushParsedICMPPayload(skin.l, packet)
+            lua_pushinteger(skin.l, lua_Integer(sequenceNumber))
             skin.protectedCallAndError("hs.network.ping.echoRequest:didReceivePingResponsePacket", nargs: 4, nresults: 0)
-            _lua_stackguard_exit(skin.L)
+            _lua_stackguard_exit(skin.l)
         }
     }
 
     func simplePing(_ pinger: SimplePing, didReceiveUnexpectedPacket packet: Data) {
         var notifyCallback = true
         if !passAllUnexpected {
-            let packetLength = packet.count
-            let headerSize = MemoryLayout<ICMPHeader>.size
-            if packetLength >= headerSize {
-                var payloadHeader = ICMPHeader()
-                (packet as NSData).getBytes(&payloadHeader, length: headerSize)
-                if OSSwapHostToBigInt16(payloadHeader.identifier) != self.identifier {
+            if packet.count >= kICMPHeaderSize {
+                var hdr = ICMPHeader(type: 0, code: 0, checksum: 0, identifier: 0, sequenceNumber: 0)
+                packet.withUnsafeBytes { buf in
+                    withUnsafeMutableBytes(of: &hdr) { dst in
+                        dst.copyMemory(from: UnsafeRawBufferPointer(start: buf.baseAddress!, count: kICMPHeaderSize))
+                    }
+                }
+                if hdr.identifier.bigEndian != self.identifier {
                     notifyCallback = false
                 }
             }
         }
         if notifyCallback && callbackRef != LUA_NOREF {
-            let skin = LuaSkin.shared(withState: nil)!
-            _lua_stackguard_entry(skin.L)
+            let skin = LuaSkin.skin(with: nil)
+            _lua_stackguard_entry(skin.l)
             skin.pushLuaRef(refTable, ref: callbackRef)
-            skin.pushNSObject(pinger)
+            skin.pushNSObject(pinger as! PingableObject)
             skin.pushNSObject("receivedUnexpectedPacket" as NSString)
-            _ = pushParsedICMPPayload(skin.L, packet as NSData)
+            _ = pushParsedICMPPayload(skin.l, packet)
             skin.protectedCallAndError("hs.network.ping.echoRequest:didReceiveUnexpectedPacket callback", nargs: 3, nresults: 0)
-            _lua_stackguard_exit(skin.L)
+            _lua_stackguard_exit(skin.l)
         }
     }
 }
@@ -209,7 +230,7 @@ class PingableObject: SimplePing, SimplePingDelegate {
 ///
 ///  * For convenience, you can call this constructor as `hs.network.ping.echoRequest(server)`
 private let echoRequest_new: lua_CFunction = { L in
-    let skin = LuaSkin.shared(withState: L)!
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING, LS_TBREAK)
     let pinger = PingableObject(hostName: skin.toNSObject(atIndex: 1) as! String)
     skin.pushNSObject(pinger)
@@ -276,11 +297,10 @@ private let echoRequest_new: lua_CFunction = { L in
 ///        * When using IPv6, this is especially common because IPv6 uses ICMP for network management functions like Router Advertisement and Neighbor Discovery.
 ///      * In general, it is reasonably safe to ignore these messages, unless you are having problems receiving anything else, in which case it could indicate problems on your network that need addressing.
 private let echoRequest_setCallback: lua_CFunction = { L in
-    let skin = LuaSkin.shared(withState: L)!
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TFUNCTION | LS_TNIL, LS_TBREAK)
     let pinger = skin.toNSObject(atIndex: 1) as! PingableObject
 
-    // We're either removing a callback, or setting a new one. Either way, remove existing.
     pinger.callbackRef = skin.luaUnref(refTable, ref: pinger.callbackRef)
     if lua_type(L, 2) == LUA_TFUNCTION {
         lua_pushvalue(L, 2)
@@ -300,7 +320,7 @@ private let echoRequest_setCallback: lua_CFunction = { L in
 /// Returns:
 ///  * a string containing the hostname as specified when the object was created.
 private let echoRequest_hostName: lua_CFunction = { L in
-    let skin = LuaSkin.shared(withState: L)!
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let pinger = skin.toNSObject(atIndex: 1) as! PingableObject
     skin.pushNSObject(pinger.hostName as NSString)
@@ -320,7 +340,7 @@ private let echoRequest_hostName: lua_CFunction = { L in
 /// Notes:
 ///  * ICMP Echo Replies which include this identifier will generate a "receivedPacket" message to the object callback, while replies which include a different identifier will generate a "receivedUnexpectedPacket" message.
 private let echoRequest_identifier: lua_CFunction = { L in
-    let skin = LuaSkin.shared(withState: L)!
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let pinger = skin.toNSObject(atIndex: 1) as! PingableObject
     lua_pushinteger(L, lua_Integer(pinger.identifier))
@@ -342,7 +362,7 @@ private let echoRequest_identifier: lua_CFunction = { L in
 ///  * Because of this wrap around effect, this module will generate a "receivedPacket" message to the object callback whenever the received packet has a sequence number that is within the last 120 sequence numbers we've sent and a "receivedUnexpectedPacket" otherwise.
 ///    * Per the comments in Apple's SimplePing.m file: Why 120?  Well, if we send one ping per second, 120 is 2 minutes, which is the standard "max time a packet can bounce around the Internet" value.
 private let echoRequest_nextSequenceNumber: lua_CFunction = { L in
-    let skin = LuaSkin.shared(withState: L)!
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let pinger = skin.toNSObject(atIndex: 1) as! PingableObject
     lua_pushinteger(L, lua_Integer(pinger.nextSequenceNumber))
@@ -365,23 +385,22 @@ private let echoRequest_nextSequenceNumber: lua_CFunction = { L in
 ///
 ///  * Setting a value with this method will have no immediate effect on an echoRequestObject which has already been started with [hs.network.ping.echoRequest:start](#start). You must first stop and then restart the object for any change to have an effect.
 private let echoRequest_addressStyle: lua_CFunction = { L in
-    let skin = LuaSkin.shared(withState: L)!
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING | LS_TOPTIONAL, LS_TBREAK)
     let pinger = skin.toNSObject(atIndex: 1) as! PingableObject
 
     if lua_gettop(L) == 1 {
-        let addressStyle = NSNumber(value: pinger.addressStyle.rawValue)
-        let answer = ADDRESS_STYLES.first(where: { $0.value == addressStyle })?.key
+        let answer = ADDRESS_STYLES.first(where: { $0.value == pinger.addressStyle.rawValue })?.key
         if let answer = answer {
             skin.pushNSObject(answer as NSString)
         } else {
-            skin.logError(NSString(format: "%s:unrecognized address style %@ -- notify developers", USERDATA_TAG, addressStyle))
+            skin.logError("\(USERDATA_TAG):unrecognized address style \(pinger.addressStyle.rawValue) -- notify developers")
             lua_pushnil(L)
         }
     } else {
         let key = skin.toNSObject(atIndex: 2) as! String
-        if let addressStyle = ADDRESS_STYLES[key] {
-            pinger.addressStyle = SimplePingAddressStyle(rawValue: addressStyle.integerValue)!
+        if let styleRaw = ADDRESS_STYLES[key], let style = SimplePingAddressStyle(rawValue: styleRaw) {
+            pinger.addressStyle = style
             lua_pushvalue(L, 1)
         } else {
             let allKeys = ADDRESS_STYLES.keys.joined(separator: ", ")
@@ -401,14 +420,12 @@ private let echoRequest_addressStyle: lua_CFunction = { L in
 /// Returns:
 ///  * the echoRequestObject
 private let echoRequest_start: lua_CFunction = { L in
-    let skin = LuaSkin.shared(withState: L)!
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let pinger = skin.toNSObject(atIndex: 1) as! PingableObject
 
     if pinger.selfRef == LUA_NOREF {
         pinger.start()
-
-        // assign a self ref to keep __gc from stopping us inadvertantly
         lua_pushvalue(L, 1)
         pinger.selfRef = skin.luaRef(refTable)
     }
@@ -426,14 +443,12 @@ private let echoRequest_start: lua_CFunction = { L in
 /// Returns:
 ///  * the echoRequestObject
 private let echoRequest_stop: lua_CFunction = { L in
-    let skin = LuaSkin.shared(withState: L)!
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let pinger = skin.toNSObject(atIndex: 1) as! PingableObject
 
     if pinger.selfRef != LUA_NOREF {
         pinger.stop()
-
-        // we no longer need a self ref to keep __gc from stopping us inadvertantly
         pinger.selfRef = skin.luaUnref(refTable, ref: pinger.selfRef)
     }
     lua_pushvalue(L, 1)
@@ -450,11 +465,9 @@ private let echoRequest_stop: lua_CFunction = { L in
 /// Returns:
 ///  * true if the object is currently listening for ICMP Echo Replies, or false if it is not.
 private let echoRequest_isRunning: lua_CFunction = { L in
-    let skin = LuaSkin.shared(withState: L)!
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let pinger = skin.toNSObject(atIndex: 1) as! PingableObject
-
-    // we only have a self ref when we've been started
     lua_pushboolean(L, (pinger.selfRef != LUA_NOREF) ? 1 : 0)
     return 1
 }
@@ -471,11 +484,11 @@ private let echoRequest_isRunning: lua_CFunction = { L in
 ///  * If the object has been started, but resolution is still pending, returns a boolean value of false.
 ///  * If the object has not been started, returns nil.
 private let echoRequest_hostAddress: lua_CFunction = { L in
-    let skin = LuaSkin.shared(withState: L)!
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let pinger = skin.toNSObject(atIndex: 1) as! PingableObject
     if let hostAddress = pinger.hostAddress {
-        _ = pushParsedAddress(L, hostAddress as NSData)
+        _ = pushParsedAddress(L, hostAddress)
     } else {
         if pinger.selfRef != LUA_NOREF {
             lua_pushboolean(L, 0)
@@ -501,12 +514,12 @@ private let echoRequest_hostAddress: lua_CFunction = { L in
 /// Notes:
 ///  * By convention, unless you are trying to test for specific network fragmentation or congestion problems, ICMP Echo Requests are generally 64 bytes in length (this includes the 8 byte header, giving 56 bytes of payload data).  If you do not specify a payload, a default payload which will result in a packet size of 64 bytes is constructed.
 private let echoRequest_sendPayload: lua_CFunction = { L in
-    let skin = LuaSkin.shared(withState: L)!
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING | LS_TOPTIONAL, LS_TBREAK)
     let pinger = skin.toNSObject(atIndex: 1) as! PingableObject
     var payload: Data? = nil
     if lua_gettop(L) == 2 {
-        payload = skin.toNSObject(atIndex: 2, withOptions: LS_NSLuaStringAsDataOnly) as? Data
+        payload = skin.toNSObject(at: 2, withOptions: UInt(1 << 3)) as? Data
     }
 
     if payload == nil {
@@ -542,7 +555,7 @@ private let echoRequest_sendPayload: lua_CFunction = { L in
 ///    * "IPv6"       - indicates that ICMPv6 packets are being sent and listened for.
 ///    * "unresolved" - indicates that the echoRequestObject has not been started or that address resolution is still in progress.
 private let echoRequest_addressFamily: lua_CFunction = { L in
-    let skin = LuaSkin.shared(withState: L)!
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let pinger = skin.toNSObject(atIndex: 1) as! PingableObject
 
@@ -554,7 +567,7 @@ private let echoRequest_addressFamily: lua_CFunction = { L in
     case sa_family_t(AF_UNSPEC):
         skin.pushNSObject("unresolved" as NSString)
     default:
-        skin.logError(NSString(format: "%s:unrecognized address family %d -- notify developers", USERDATA_TAG, pinger.hostAddressFamily))
+        skin.logError("\(USERDATA_TAG):unrecognized address family \(pinger.hostAddressFamily) -- notify developers")
         lua_pushnil(L)
     }
     return 1
@@ -576,7 +589,7 @@ private let echoRequest_addressFamily: lua_CFunction = { L in
 ///    * This method optionally allows the echoRequestObject to receive *all* incoming packets, even ones which are expected by another process or echoRequestObject.
 ///  * If you wish to examine ICMPv6 router advertisement and neighbor discovery packets, you should set this property to true. Note that this module does not provide the necessary tools to decode these packets at present, so you will have to decode them yourself if you wish to examine their contents.
 private let echoRequest_seeAllUnexpectedPackets: lua_CFunction = { L in
-    let skin = LuaSkin.shared(withState: L)!
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
     let pinger = skin.toNSObject(atIndex: 1) as! PingableObject
 
@@ -590,17 +603,12 @@ private let echoRequest_seeAllUnexpectedPackets: lua_CFunction = { L in
 }
 
 // MARK: - Lua<->NSObject Conversion Functions
-// These must not throw a lua error to ensure LuaSkin can safely be used from Objective-C
-// delegates and blocks.
 
-private func pushPingableObject(_ L: OpaquePointer!, _ obj: Any) -> Int32 {
+private func pushPingableObject(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any) -> Int32 {
     let value = obj as! PingableObject
 
-    // honor selfRef if it's been assigned
     if value.selfRef != LUA_NOREF {
-        LuaSkin.shared(withState: L)!.pushLuaRef(refTable, ref: value.selfRef)
-
-    // otherwise, treat this like any other NSObject -> lua userdata
+        LuaSkin.skin(with: L).pushLuaRef(refTable, ref: value.selfRef)
     } else {
         let valuePtr = lua_newuserdata(L, MemoryLayout<UnsafeMutableRawPointer>.size)!
             .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
@@ -611,15 +619,14 @@ private func pushPingableObject(_ L: OpaquePointer!, _ obj: Any) -> Int32 {
     return 1
 }
 
-private func toPingableObjectFromLua(_ L: OpaquePointer!, _ idx: Int32) -> Any? {
-    let skin = LuaSkin.shared(withState: L)!
+private func toPingableObjectFromLua(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> Any? {
+    let skin = LuaSkin.skin(with: L)
     if luaL_testudata(L, idx, USERDATA_TAG) != nil {
         let ptr = luaL_checkudata(L, idx, USERDATA_TAG)!
             .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
         return Unmanaged<PingableObject>.fromOpaque(ptr.pointee!).takeUnretainedValue()
     } else {
-        skin.logError(NSString(format: "expected %s object, found %s", USERDATA_TAG,
-                               lua_typename(L, lua_type(L, idx))))
+        skin.logError("expected \(USERDATA_TAG) object, found \(String(cString: lua_typename(L, lua_type(L, idx))))")
     }
     return nil
 }
@@ -627,21 +634,20 @@ private func toPingableObjectFromLua(_ L: OpaquePointer!, _ idx: Int32) -> Any? 
 // MARK: - Hammerspoon/Lua Infrastructure
 
 private let userdata_tostring: lua_CFunction = { L in
-    let skin = LuaSkin.shared(withState: L)!
-    let obj = skin.luaObjectAtIndex(1, toClass: "PingableObject") as! PingableObject
+    let skin = LuaSkin.skin(with: L)
+    let obj = skin.luaObject(at: 1, toClass: "PingableObject") as! PingableObject
     let title = obj.hostName
-    skin.pushNSObject(NSString(format: "%s: %@ (%p)", USERDATA_TAG, title as NSString, lua_topointer(L, 1)))
+    let ptr = lua_topointer(L, 1)
+    skin.pushNSObject("\(USERDATA_TAG): \(title) (\(String(describing: ptr)))" as NSString)
     return 1
 }
 
 private let userdata_eq: lua_CFunction = { L in
-    // can't get here if at least one of us isn't a userdata type, and we only care if both types are ours,
-    // so use luaL_testudata before the macro causes a lua error
     if luaL_testudata(L, 1, USERDATA_TAG) != nil && luaL_testudata(L, 2, USERDATA_TAG) != nil {
-        let skin = LuaSkin.shared(withState: L)!
-        let obj1 = skin.luaObjectAtIndex(1, toClass: "PingableObject") as! PingableObject
-        let obj2 = skin.luaObjectAtIndex(2, toClass: "PingableObject") as! PingableObject
-        lua_pushboolean(L, obj1.isEqual(to: obj2) ? 1 : 0)
+        let skin = LuaSkin.skin(with: L)
+        let obj1 = skin.luaObject(at: 1, toClass: "PingableObject") as! PingableObject
+        let obj2 = skin.luaObject(at: 2, toClass: "PingableObject") as! PingableObject
+        lua_pushboolean(L, (obj1 === obj2) ? 1 : 0)
     } else {
         lua_pushboolean(L, 0)
     }
@@ -649,16 +655,13 @@ private let userdata_eq: lua_CFunction = { L in
 }
 
 private let userdata_gc: lua_CFunction = { L in
-    let skin = LuaSkin.shared(withState: L)!
+    let skin = LuaSkin.skin(with: L)
     let ptr = luaL_checkudata(L, 1, USERDATA_TAG)!
         .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
     if let rawPtr = ptr.pointee {
         let obj = Unmanaged<PingableObject>.fromOpaque(rawPtr).takeRetainedValue()
         obj.callbackRef = skin.luaUnref(refTable, ref: obj.callbackRef)
 
-        // because the self ref means we have a reference in the registry, the only way we should ever
-        // actually have to do this is during a reload/quit... and even then, it's not guaranteed
-        // depending upon purge ordering and possible object resurrection, but lets be "correct" if we can
         if obj.selfRef != LUA_NOREF {
             obj.stop()
             obj.selfRef = skin.luaUnref(refTable, ref: obj.selfRef)
@@ -666,7 +669,6 @@ private let userdata_gc: lua_CFunction = { L in
         ptr.pointee = nil
     }
 
-    // Remove the Metatable so future use of the variable in Lua won't think its valid
     lua_pushnil(L)
     lua_setmetatable(L, 1)
     return 0
@@ -700,8 +702,8 @@ private var moduleLib: [luaL_Reg] = [
 ]
 
 @_cdecl("luaopen_hs_libnetworkping")
-public func luaopen_hs_libnetworkping(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+public func luaopen_hs_libnetworkping(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     refTable = skin.registerLibrary(withObject: USERDATA_TAG,
                                     functions: &moduleLib,
                                     metaFunctions: nil,

@@ -19,26 +19,26 @@ private struct BatteryWatcher {
     var t: CFRunLoopSource!
     var fn: Int32 = Int32(LUA_NOREF)
     var started: Bool = false
-    var lsCanary: LSGCCanary = 0
+    var lsCanary: LSGCCanary = LSGCCanary()
 }
 
 private func callback(_ info: UnsafeMutableRawPointer?) {
-    let skin = LuaSkin.shared(withState: nil)
+    let skin = LuaSkin.skin(with: nil)
 
     guard let info = info else { return }
     let watcher = info.assumingMemoryBound(to: BatteryWatcher.self)
 
-    if !skin.checkGCCanary(watcher.pointee.lsCanary) {
+    if !skin.check(watcher.pointee.lsCanary) {
         return
     }
 
-    _lua_stackguard_entry(skin.L)
+    _lua_stackguard_entry(skin.l)
 
     if watcher.pointee.fn != Int32(LUA_NOREF) {
         skin.pushLuaRef(refTable, ref: watcher.pointee.fn)
         skin.protectedCallAndError("hs.battery.watcher callback", nargs: 0, nresults: 0)
     }
-    _lua_stackguard_exit(skin.L)
+    _lua_stackguard_exit(skin.l)
 }
 
 /// hs.battery.watcher.new(fn) -> watcher
@@ -53,8 +53,8 @@ private func callback(_ info: UnsafeMutableRawPointer?) {
 ///
 /// Notes:
 ///  * Because the callback function accepts no arguments, tracking of state of changing battery attributes is the responsibility of the user (see https://github.com/Hammerspoon/hammerspoon/issues/166 for discussion)
-private func battery_watcher_new(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func battery_watcher_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
 
     luaL_checktype(L, 1, LUA_TFUNCTION)
 
@@ -83,7 +83,7 @@ private func battery_watcher_new(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * The `hs.battery.watcher` object
-private func battery_watcher_start(_ L: OpaquePointer!) -> Int32 {
+private func battery_watcher_start(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let watcher = luaL_checkudata(L, 1, USERDATA_TAG)!
         .assumingMemoryBound(to: BatteryWatcher.self)
 
@@ -106,7 +106,7 @@ private func battery_watcher_start(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * The `hs.battery.watcher` object
-private func battery_watcher_stop(_ L: OpaquePointer!) -> Int32 {
+private func battery_watcher_stop(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let watcher = luaL_checkudata(L, 1, USERDATA_TAG)!
         .assumingMemoryBound(to: BatteryWatcher.self)
     lua_settop(L, 1)
@@ -118,8 +118,8 @@ private func battery_watcher_stop(_ L: OpaquePointer!) -> Int32 {
     return 1
 }
 
-private func battery_watcher_gc(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func battery_watcher_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
 
     let watcher = luaL_checkudata(L, 1, USERDATA_TAG)!
         .assumingMemoryBound(to: BatteryWatcher.self)
@@ -129,17 +129,17 @@ private func battery_watcher_gc(_ L: OpaquePointer!) -> Int32 {
     lua_call(L, 1, 1)
 
     watcher.pointee.fn = skin.luaUnref(refTable, ref: watcher.pointee.fn)
-    skin.destroyGCCanary(&watcher.pointee.lsCanary)
+    skin.destroy(&watcher.pointee.lsCanary)
     CFRunLoopSourceInvalidate(watcher.pointee.t)
-    CFRelease(watcher.pointee.t)
+    // CFRelease not needed in Swift (ARC)
     return 0
 }
 
-private func meta_gc(_ L: OpaquePointer!) -> Int32 {
+private func meta_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 0
 }
 
-private func userdata_tostring(_ L: OpaquePointer!) -> Int32 {
+private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let ptr = lua_topointer(L, 1)
     lua_pushstring(L, "\(USERDATA_TAG): (\(String(describing: ptr)))")
     return 1
@@ -167,8 +167,8 @@ private var meta_gcLib: [luaL_Reg] = [
 ]
 
 @_cdecl("luaopen_hs_libbatterywatcher")
-public func luaopen_hs_libbatterywatcher(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+public func luaopen_hs_libbatterywatcher(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     refTable = skin.registerLibrary(withObject: USERDATA_TAG,
                                     functions: &batteryLib,
                                     metaFunctions: &meta_gcLib,

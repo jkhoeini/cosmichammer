@@ -6,7 +6,7 @@ import SystemConfiguration
 private let USERDATA_TAG = "hs.network.host"
 private var refTable: LSRefTable = LUA_NOREF
 
-private func getPtr(_ L: OpaquePointer!, _ idx: Int32) -> UnsafeMutablePointer<HSHostData> {
+private func getPtr(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> UnsafeMutablePointer<HSHostData> {
     return luaL_checkudata(L, idx, USERDATA_TAG)!.assumingMemoryBound(to: HSHostData.self)
 }
 
@@ -21,13 +21,12 @@ private struct HSHostData {
     var lsCanary: LSGCCanary
 }
 
-private func pushCFHost(_ L: OpaquePointer!, _ theHost: CFHost, _ resolveType: CFHostInfoType) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func pushCFHost(_ L: UnsafeMutablePointer<lua_State>!, _ theHost: CFHost, _ resolveType: CFHostInfoType) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     let thePtr = lua_newuserdata(L, MemoryLayout<HSHostData>.size)!.assumingMemoryBound(to: HSHostData.self)
     memset(thePtr, 0, MemoryLayout<HSHostData>.size)
 
     thePtr.pointee.theHostObj = theHost
-    CFRetain(theHost)
     thePtr.pointee.callbackRef = LUA_NOREF
     thePtr.pointee.resolveType = resolveType
     thePtr.pointee.selfRef = LUA_NOREF
@@ -42,8 +41,8 @@ private func pushCFHost(_ L: OpaquePointer!, _ theHost: CFHost, _ resolveType: C
     return 1
 }
 
-private func pushQueryResults(_ L: OpaquePointer!, synchronous: Bool, theHost: CFHost, typeInfo: CFHostInfoType) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func pushQueryResults(_ L: UnsafeMutablePointer<lua_State>!, synchronous: Bool, theHost: CFHost, typeInfo: CFHostInfoType) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     var available: DarwinBoolean = false
     var argCount: Int32 = synchronous ? 1 : 2
     switch typeInfo {
@@ -61,7 +60,8 @@ private func pushQueryResults(_ L: OpaquePointer!, synchronous: Bool, theHost: C
                     lua_pushstring(L, addrStr)
                     lua_rawseti(L, -2, luaL_len(L, -2) + 1)
                 } else {
-                    lua_pushfstring(L, "** error:%s", gai_strerror(err))
+                    let errMsg = "** error:\(String(cString: gai_strerror(err)!))"
+                    lua_pushstring(L, errMsg)
                 }
             }
         } else {
@@ -87,34 +87,34 @@ private func pushQueryResults(_ L: OpaquePointer!, synchronous: Bool, theHost: C
             lua_pushnil(L)
         }
     default:
-        lua_pushfstring(L, "** unknown:%d", typeInfo.rawValue)
+        lua_pushstring(L, "** unknown:\(typeInfo.rawValue)")
         argCount = 1
     }
     return argCount
 }
 
-private func expandCFStreamError(domain: CFStreamErrorDomain, errorNum: Int32) -> String {
-    if domain == CFStreamErrorDomain(kCFStreamErrorDomainNetDB) {
+private func expandCFStreamError(domain: CFIndex, errorNum: Int32) -> String {
+    if domain == CFIndex(kCFStreamErrorDomainNetDB) {
         return "Error domain:NetDB, message:\(String(cString: gai_strerror(errorNum)))"
-    } else if domain == CFStreamErrorDomain(kCFStreamErrorDomainNetServices) {
+    } else if domain == CFIndex(kCFStreamErrorDomainNetServices) {
         return "Error domain:NetServices, code:\(errorNum) (see CFNetServices.h)"
-    } else if domain == CFStreamErrorDomain(kCFStreamErrorDomainMach) {
+    } else if domain == CFIndex(kCFStreamErrorDomainMach) {
         return "Error domain:Mach, code:\(errorNum) (see mach/error.h)"
-    } else if domain == CFStreamErrorDomain(kCFStreamErrorDomainFTP) {
+    } else if domain == CFIndex(kCFStreamErrorDomainFTP) {
         return "Error domain:FTP, code:\(errorNum)"
-    } else if domain == CFStreamErrorDomain(kCFStreamErrorDomainHTTP) {
+    } else if domain == CFIndex(kCFStreamErrorDomainHTTP) {
         return "Error domain:HTTP, code:\(errorNum)"
-    } else if domain == CFStreamErrorDomain(kCFStreamErrorDomainSOCKS) {
+    } else if domain == CFIndex(kCFStreamErrorDomainSOCKS) {
         return "Error domain:SOCKS, code:\(errorNum)"
-    } else if domain == CFStreamErrorDomain(kCFStreamErrorDomainSystemConfiguration) {
+    } else if domain == CFIndex(kCFStreamErrorDomainSystemConfiguration) {
         return "Error domain:SystemConfiguration, code:\(errorNum) (see SystemConfiguration.h)"
-    } else if domain == CFStreamErrorDomain(kCFStreamErrorDomainSSL) {
+    } else if domain == CFIndex(kCFStreamErrorDomainSSL) {
         return "Error domain:SSL, code:\(errorNum) (see SecureTransport.h)"
-    } else if domain == CFStreamErrorDomain(kCFStreamErrorDomainCustom) {
+    } else if domain == -1 /* kCFStreamErrorDomainCustom */ {
         return "Error domain:Custom, code:\(errorNum)"
-    } else if domain == CFStreamErrorDomain(kCFStreamErrorDomainPOSIX) {
+    } else if domain == 1 /* kCFStreamErrorDomainPOSIX */ {
         return "Error domain:POSIX, code:\(errorNum) (see errno.h)"
-    } else if domain == CFStreamErrorDomain(kCFStreamErrorDomainMacOSStatus) {
+    } else if domain == 2 /* kCFStreamErrorDomainMacOSStatus */ {
         return "Error domain:MacOSStatus, code:\(errorNum) (see MacErrors.h)"
     } else {
         return "Unknown domain:\(domain), code:\(errorNum)"
@@ -124,7 +124,7 @@ private func expandCFStreamError(domain: CFStreamErrorDomain, errorNum: Int32) -
 private let handleCallback: CFHostClientCallBack = { theHost, typeInfo, error, info in
     guard let info = info else { return }
     let theRef = info.assumingMemoryBound(to: HSHostData.self)
-    var domain: CFStreamErrorDomain = 0
+    var domain: CFIndex = 0
     var errorNum: Int32 = 0
     if let error = error {
         domain = error.pointee.domain
@@ -132,10 +132,10 @@ private let handleCallback: CFHostClientCallBack = { theHost, typeInfo, error, i
     }
 
     DispatchQueue.main.async {
-        let skin = LuaSkin.shared(withState: nil)
+        let skin = LuaSkin.skin(with: nil)
         if theRef.pointee.callbackRef != LUA_NOREF {
-            let L = skin.L!
-            if !skin.checkGCCanary(theRef.pointee.lsCanary) {
+            let L = skin.l!
+            if !skin.check(theRef.pointee.lsCanary) {
                 return
             }
             _lua_stackguard_entry(L)
@@ -161,8 +161,8 @@ private let handleCallback: CFHostClientCallBack = { theHost, typeInfo, error, i
     }
 }
 
-private func commonConstructor(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func commonConstructor(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TFUNCTION | LS_TNIL, LS_TBREAK)
 
     let theRef = getPtr(L, 1)
@@ -173,7 +173,8 @@ private func commonConstructor(_ L: OpaquePointer!) -> Int32 {
         if CFHostStartInfoResolution(theRef.pointee.theHostObj!, theRef.pointee.resolveType, &streamError) {
             argCount = pushQueryResults(L, synchronous: true, theHost: theRef.pointee.theHostObj!, typeInfo: theRef.pointee.resolveType)
         } else {
-            return luaL_error(L, ("resolution error:" + expandCFStreamError(domain: streamError.domain, errorNum: streamError.error) as NSString).utf8String)
+            lua_pushstring(L, "resolution error:" + expandCFStreamError(domain: streamError.domain, errorNum: streamError.error))
+            return lua_error(L)
         }
     } else {
         lua_pushvalue(L, 2)
@@ -187,7 +188,8 @@ private func commonConstructor(_ L: OpaquePointer!) -> Int32 {
             } else {
                 CFHostUnscheduleFromRunLoop(theRef.pointee.theHostObj!, CFRunLoopGetCurrent(), CFRunLoopMode.defaultMode!.rawValue)
                 theRef.pointee.selfRef = skin.luaUnref(refTable, ref: theRef.pointee.selfRef)
-                return luaL_error(L, ("resolution error:" + expandCFStreamError(domain: streamError.domain, errorNum: streamError.error) as NSString).utf8String)
+                lua_pushstring(L, "resolution error:" + expandCFStreamError(domain: streamError.domain, errorNum: streamError.error))
+                return lua_error(L)
             }
         } else {
             theRef.pointee.selfRef = skin.luaUnref(refTable, ref: theRef.pointee.selfRef)
@@ -197,10 +199,10 @@ private func commonConstructor(_ L: OpaquePointer!) -> Int32 {
     return 1
 }
 
-private func commonForHostName(_ L: OpaquePointer!, _ resolveType: CFHostInfoType) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func commonForHostName(_ L: UnsafeMutablePointer<lua_State>!, _ resolveType: CFHostInfoType) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING, LS_TFUNCTION | LS_TNIL | LS_TOPTIONAL, LS_TBREAK)
-    let synchronous = lua_isnoneornil(L, 2) != 0
+    let synchronous = lua_isnoneornil(L, 2)
 
     let theHost = CFHostCreateWithName(kCFAllocatorDefault, skin.toNSObject(atIndex: 1) as! CFString).takeRetainedValue()
 
@@ -215,10 +217,10 @@ private func commonForHostName(_ L: OpaquePointer!, _ resolveType: CFHostInfoTyp
     return 1
 }
 
-private func commonForAddress(_ L: OpaquePointer!, _ resolveType: CFHostInfoType) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func commonForAddress(_ L: UnsafeMutablePointer<lua_State>!, _ resolveType: CFHostInfoType) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING | LS_TNUMBER, LS_TFUNCTION | LS_TNIL | LS_TOPTIONAL, LS_TBREAK)
-    let synchronous = lua_isnoneornil(L, 2) != 0
+    let synchronous = lua_isnoneornil(L, 2)
 
     luaL_checkstring(L, 1) // force number to be a string
     var results: UnsafeMutablePointer<addrinfo>?
@@ -229,10 +231,11 @@ private func commonForAddress(_ L: OpaquePointer!, _ resolveType: CFHostInfoType
     let ecode = getaddrinfo(addrString, nil, &hints, &results)
     if ecode != 0 {
         if results != nil { freeaddrinfo(results) }
-        return luaL_error(L, "address parse error: %s", gai_strerror(ecode))
+        lua_pushstring(L, "address parse error: \(String(cString: gai_strerror(ecode)!))")
+        return lua_error(L)
     }
 
-    let theSocket = CFDataCreate(kCFAllocatorDefault, UnsafeRawPointer(results!.pointee.ai_addr).assumingMemoryBound(to: UInt8.self), results!.pointee.ai_addrlen)!
+    let theSocket = CFDataCreate(kCFAllocatorDefault, UnsafeRawPointer(results!.pointee.ai_addr).assumingMemoryBound(to: UInt8.self), CFIndex(results!.pointee.ai_addrlen))!
     let theHost = CFHostCreateWithAddress(kCFAllocatorDefault, theSocket).takeRetainedValue()
     lua_pushcfunction(L, commonConstructor)
     _ = pushCFHost(L, theHost, resolveType)
@@ -263,7 +266,7 @@ private func commonForAddress(_ L: OpaquePointer!, _ resolveType: CFHostInfoType
 ///  * If no callback function is provided, the resolution occurs in a blocking manner which may be noticeable when network access is slow or erratic.
 ///  * If a callback function is provided, this function acts as a constructor, returning a host object and the callback function will be invoked when resolution is complete.  The callback function should take two parameters: the string "addresses", indicating that an address resolution occurred, and a table containing the IP addresses identified.
 ///  * Generates an error if network access is currently disabled or the hostname is invalid.
-private func getAddressesForHostName(_ L: OpaquePointer!) -> Int32 {
+private func getAddressesForHostName(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return commonForHostName(L, .addresses)
 }
 
@@ -282,7 +285,7 @@ private func getAddressesForHostName(_ L: OpaquePointer!) -> Int32 {
 ///  * If no callback function is provided, the resolution occurs in a blocking manner which may be noticeable when network access is slow or erratic.
 ///  * If a callback function is provided, this function acts as a constructor, returning a host object and the callback function will be invoked when resolution is complete.  The callback function should take two parameters: the string "names", indicating that hostname resolution occurred, and a table containing the hostnames identified.
 ///  * Generates an error if network access is currently disabled or the IP address is invalid.
-private func getNamesForAddress(_ L: OpaquePointer!) -> Int32 {
+private func getNamesForAddress(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return commonForAddress(L, .names)
 }
 
@@ -303,7 +306,7 @@ private func getNamesForAddress(_ L: OpaquePointer!) -> Int32 {
 ///  * Generates an error if network access is currently disabled or the IP address is invalid.
 ///  * The numeric representation is made up from a combination of the flags defined in `hs.network.reachability.flags`.
 ///  * Performs the same reachability test as `hs.network.reachability.forAddress`.
-private func getReachabilityForAddress(_ L: OpaquePointer!) -> Int32 {
+private func getReachabilityForAddress(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return commonForAddress(L, .reachability)
 }
 
@@ -324,7 +327,7 @@ private func getReachabilityForAddress(_ L: OpaquePointer!) -> Int32 {
 ///  * Generates an error if network access is currently disabled or the IP address is invalid.
 ///  * The numeric representation is made up from a combination of the flags defined in `hs.network.reachability.flags`.
 ///  * Performs the same reachability test as `hs.network.reachability.forHostName`.
-private func getReachabilityForHostName(_ L: OpaquePointer!) -> Int32 {
+private func getReachabilityForHostName(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return commonForHostName(L, .reachability)
 }
 
@@ -339,8 +342,8 @@ private func getReachabilityForHostName(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * true, if resolution is still in progress, or false if resolution has already completed.
-private func resolutionIsRunning(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func resolutionIsRunning(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let theRef = getPtr(L, 1)
     lua_pushboolean(L, theRef.pointee.running ? 1 : 0)
@@ -359,8 +362,8 @@ private func resolutionIsRunning(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * This method has no effect if the resolution has already completed.
-private func cancelResolution(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func cancelResolution(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let theRef = getPtr(L, 1)
     if theRef.pointee.running {
@@ -377,14 +380,14 @@ private func cancelResolution(_ L: OpaquePointer!) -> Int32 {
 
 // MARK: - Hammerspoon/Lua Infrastructure
 
-private func userdata_tostring(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     let ptr = lua_topointer(L, 1)
     skin.pushNSObject("\(USERDATA_TAG): (\(String(describing: ptr)))" as NSString)
     return 1
 }
 
-private func userdata_eq(_ L: OpaquePointer!) -> Int32 {
+private func userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     if luaL_testudata(L, 1, USERDATA_TAG) != nil && luaL_testudata(L, 2, USERDATA_TAG) != nil {
         let theHost1 = getPtr(L, 1).pointee.theHostObj!
         let theHost2 = getPtr(L, 2).pointee.theHostObj!
@@ -395,23 +398,20 @@ private func userdata_eq(_ L: OpaquePointer!) -> Int32 {
     return 1
 }
 
-private func userdata_gc(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     let theRef = getPtr(L, 1)
     theRef.pointee.callbackRef = skin.luaUnref(refTable, ref: theRef.pointee.callbackRef)
     // in case __gc forced by reload
     theRef.pointee.selfRef = skin.luaUnref(refTable, ref: theRef.pointee.selfRef)
-    skin.destroyGCCanary(&theRef.pointee.lsCanary)
+    skin.destroy(&theRef.pointee.lsCanary)
 
     lua_pushcfunction(L, cancelResolution)
     lua_pushvalue(L, 1)
     lua_pcall(L, 1, 1, 0)
     lua_pop(L, 1)
 
-    if let hostObj = theRef.pointee.theHostObj {
-        CFRelease(hostObj)
-        theRef.pointee.theHostObj = nil
-    }
+    theRef.pointee.theHostObj = nil
     lua_pushnil(L)
     lua_setmetatable(L, 1)
     return 0
@@ -438,8 +438,8 @@ private let moduleLib: [luaL_Reg] = [
 ]
 
 @_cdecl("luaopen_hs_libnetworkhost")
-public func luaopen_hs_libnetworkhost(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+public func luaopen_hs_libnetworkhost(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     refTable = skin.registerLibrary(withObject: USERDATA_TAG,
                                     functions: moduleLib,
                                     metaFunctions: nil,

@@ -19,14 +19,14 @@ private var colorCollectionsTable: Int32 = LUA_NOREF
 ///  * Where possible, each color node is provided as its RGB color representation.  Where this is not possible, the color node contains the keys `list` and `name` which identify the indicated color.  This means that you can use the following wherever a color parameter is expected: `hs.drawing.color.lists()["list-name"]["color-name"]`
 ///  * This function provides a tostring metatable method which allows listing the defined color lists in the Hammerspoon console with: `hs.drawing.color.lists()`
 ///  * See also `hs.drawing.color.colorsFor`
-private func getColorLists(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func getColorLists(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TBREAK)
 
     lua_newtable(L)
     for colorList in NSColorList.availableColorLists {
         skin.pushNSObject(colorList)
-        lua_setfield(L, -2, colorList.name.rawValue.utf8CString.withUnsafeBufferPointer { $0.baseAddress! })
+        lua_setfield(L, -2, colorList.name!.utf8CString.withUnsafeBufferPointer { $0.baseAddress! })
     }
     return 1
 }
@@ -43,12 +43,12 @@ private func getColorLists(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * See also `hs.drawing.color.asHSB`
-private func colorAsRGB(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func colorAsRGB(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TTABLE, LS_TBREAK)
-    let theColor = skin.luaObject(atIndex: 1, toClass: "NSColor") as! NSColor
+    let theColor = skin.luaObject(at: 1, toClass: "NSColor") as! NSColor
 
-    let safeColor = theColor.usingColorSpace(.genericRGB)
+    let safeColor = theColor.usingColorSpace(NSColorSpace.genericRGB)
 
     if let safeColor = safeColor {
         lua_newtable(L)
@@ -75,12 +75,12 @@ private func colorAsRGB(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * See also `hs.drawing.color.asRGB`
-private func colorAsHSB(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func colorAsHSB(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TTABLE, LS_TBREAK)
-    let theColor = skin.luaObject(atIndex: 1, toClass: "NSColor") as! NSColor
+    let theColor = skin.luaObject(at: 1, toClass: "NSColor") as! NSColor
 
-    let safeColor = theColor.usingColorSpace(.genericRGB)
+    let safeColor = theColor.usingColorSpace(NSColorSpace.genericRGB)
 
     if let safeColor = safeColor {
         lua_newtable(L)
@@ -98,10 +98,10 @@ private func colorAsHSB(_ L: OpaquePointer!) -> Int32 {
 // [skin pushNSObject:NSColor]
 // C-API
 // Pushes the provided NSColor onto the Lua Stack as an array meeting the color table description provided in `hs.drawing.color`
-private func NSColor_tolua(_ L: OpaquePointer!, _ obj: Any!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func NSColor_tolua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     let theColor = obj as! NSColor
-    let safeColor = theColor.usingColorSpace(.genericRGB)
+    let safeColor = theColor.usingColorSpace(NSColorSpace.genericRGB)
 
     if let safeColor = safeColor {
         lua_newtable(L)
@@ -132,14 +132,14 @@ private func NSColor_tolua(_ L: OpaquePointer!, _ obj: Any!) -> Int32 {
 // [skin pushNSObject:NSColorList]
 // C-API
 // Pushes the provided NSColorList onto the Lua Stack as a table of color tables meeting the color table description provided in `hs.drawing.color`
-private func NSColorList_tolua(_ L: OpaquePointer!, _ obj: Any!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func NSColorList_tolua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     let colorList = obj as! NSColorList
 
     lua_newtable(L)
     for key in colorList.allKeys {
         skin.pushNSObject(colorList.color(withKey: key))
-        lua_setfield(L, -2, key.rawValue.utf8CString.withUnsafeBufferPointer { $0.baseAddress! })
+        lua_setfield(L, -2, key.utf8CString.withUnsafeBufferPointer { $0.baseAddress! })
     }
 
     return 1
@@ -147,8 +147,8 @@ private func NSColorList_tolua(_ L: OpaquePointer!, _ obj: Any!) -> Int32 {
 
 private let COLOR_LOOP_LEVEL = 10
 
-private func table_toNSColorHelper(_ L: OpaquePointer!, _ idx: Int32, _ level: Int) -> NSColor {
-    let skin = LuaSkin.shared(withState: L)!
+private func table_toNSColorHelper(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32, _ level: Int) -> NSColor {
+    let skin = LuaSkin.skin(with: L)
     var red: CGFloat = 0.0, green: CGFloat = 0.0, blue: CGFloat = 0.0, alpha: CGFloat = 1.0
     var hue: CGFloat = 0.0, saturation: CGFloat = 0.0, brightness: CGFloat = 0.0
     var white: CGFloat = 0.0
@@ -254,7 +254,7 @@ private func table_toNSColorHelper(_ L: OpaquePointer!, _ idx: Int32, _ level: I
         }
 
         if let colorList = colorList, let colorName = colorName, image == nil {
-            if let holding = NSColorList(named: NSColorList.Name(rawValue: colorList as String))?.color(withKey: NSColor.Name(rawValue: colorName as String)) {
+            if let holding = NSColorList(named: colorList as String)?.color(withKey: colorName as String) {
                 return holding
             }
             if colorCollectionsTable != LUA_NOREF {
@@ -290,13 +290,13 @@ private func table_toNSColorHelper(_ L: OpaquePointer!, _ idx: Int32, _ level: I
 // [skin luaObjectAtIndex:idx toClass:"NSColor"]
 // C-API
 // Converts the table at the specified index on the Lua Stack into an NSColor and returns the NSColor.
-private func table_toNSColor(_ L: OpaquePointer!, _ idx: Int32) -> Any! {
+private func table_toNSColor(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> Any! {
     return table_toNSColorHelper(L, idx, 0)
 }
 
 // register the lookup table for Lua defined color tables
-private func registerColorCollectionsTable(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func registerColorCollectionsTable(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TTABLE, LS_TBREAK)
 
     lua_pushvalue(L, 1)
@@ -313,8 +313,8 @@ private var moduleLib: [luaL_Reg] = [
 ]
 
 @_cdecl("luaopen_hs_libdrawing_color")
-public func luaopen_hs_libdrawing_color(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+public func luaopen_hs_libdrawing_color(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     refTable = skin.registerLibrary("hs.drawing", functions: &moduleLib, metaFunctions: nil)
     colorCollectionsTable = LUA_NOREF
 

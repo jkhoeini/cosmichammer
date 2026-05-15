@@ -102,9 +102,9 @@ private class CaffeinateWatcher: NSObject {
     func callback(dict: [AnyHashable: Any]?, event: CaffeinateEvent) {
         guard object.pointee.fn != LUA_NOREF else { return }
 
-        let skin = LuaSkin.shared(withState: nil)
-        skin.checkGCCanary(object.pointee.lsCanary)
-        let L = skin.L
+        let skin = LuaSkin.skin(with: nil)
+        skin.check(object.pointee.lsCanary)
+        let L = skin.l
 
         let savedTop = lua_gettop(L)
 
@@ -231,8 +231,8 @@ private func unregister_observer(_ observer: CaffeinateWatcher) {
 ///
 /// Returns:
 ///  * An `hs.caffeinate.watcher` object
-private func caffeinate_watcher_new(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func caffeinate_watcher_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TFUNCTION, LS_TBREAK)
 
     let watcherPtr = lua_newuserdata(L, MemoryLayout<CaffeinateWatcherData>.size)!
@@ -261,8 +261,8 @@ private func caffeinate_watcher_new(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * An `hs.caffeinate.watcher` object
-private func caffeinate_watcher_start(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func caffeinate_watcher_start(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
 
     let watcherPtr = lua_touserdata(L, 1)!.assumingMemoryBound(to: CaffeinateWatcherData.self)
@@ -285,8 +285,8 @@ private func caffeinate_watcher_start(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * An `hs.caffeinate.watcher` object
-private func caffeinate_watcher_stop(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func caffeinate_watcher_stop(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
 
     let watcherPtr = lua_touserdata(L, 1)!.assumingMemoryBound(to: CaffeinateWatcherData.self)
@@ -301,15 +301,15 @@ private func caffeinate_watcher_stop(_ L: OpaquePointer!) -> Int32 {
 }
 
 // Perform cleanup if the CaffeinateWatcher is not required anymore.
-private func caffeinate_watcher_gc(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func caffeinate_watcher_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
 
     let watcherPtr = luaL_checkudata(L, 1, USERDATA_TAG)!.assumingMemoryBound(to: CaffeinateWatcherData.self)
 
     _ = caffeinate_watcher_stop(L)
 
     watcherPtr.pointee.fn = skin.luaUnref(refTable, ref: watcherPtr.pointee.fn)
-    skin.destroyGCCanary(&watcherPtr.pointee.lsCanary)
+    skin.destroy(&watcherPtr.pointee.lsCanary)
 
     // Release the retained CaffeinateWatcher
     if let obj = watcherPtr.pointee.obj {
@@ -320,24 +320,25 @@ private func caffeinate_watcher_gc(_ L: OpaquePointer!) -> Int32 {
     return 0
 }
 
-private func userdata_tostring(_ L: OpaquePointer!) -> Int32 {
-    let desc = String(format: "%s: (%p)", USERDATA_TAG, lua_topointer(L, 1)!)
+private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let ptr = lua_topointer(L, 1)
+    let desc = "\(USERDATA_TAG): (\(String(describing: ptr)))"
     lua_pushstring(L, desc)
     return 1
 }
 
-private func meta_gc(_ L: OpaquePointer!) -> Int32 {
+private func meta_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 0
 }
 
 // MARK: - Event enum registration
 
-private func add_event_value(_ L: OpaquePointer!, _ value: CaffeinateEvent, _ name: String) {
+private func add_event_value(_ L: UnsafeMutablePointer<lua_State>!, _ value: CaffeinateEvent, _ name: String) {
     lua_pushinteger(L, lua_Integer(value.rawValue))
     lua_setfield(L, -2, name)
 }
 
-private func add_event_enum(_ L: OpaquePointer!) {
+private func add_event_enum(_ L: UnsafeMutablePointer<lua_State>!) {
     add_event_value(L, .didWake, "systemDidWake")
     add_event_value(L, .willSleep, "systemWillSleep")
     add_event_value(L, .willPowerOff, "systemWillPowerOff")
@@ -377,11 +378,11 @@ private let metaGcLib: [luaL_Reg] = [
 
 // Called when loading the module. All necessary tables need to be registered here.
 @_cdecl("luaopen_hs_libcaffeinatewatcher")
-public func luaopen_hs_libcaffeinatewatcher(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+public func luaopen_hs_libcaffeinatewatcher(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     refTable = skin.registerLibrary(withObject: USERDATA_TAG, functions: caffeinateLib, metaFunctions: metaGcLib, objectFunctions: metaLib)
 
-    add_event_enum(skin.L)
+    add_event_enum(skin.l)
 
     return 1
 }

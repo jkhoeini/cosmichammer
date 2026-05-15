@@ -1,13 +1,14 @@
 import Cocoa
 import LuaSkin
 
+private let USERDATA_TAG = axuielement_USERDATA_TAG
 private var refTable: LSRefTable = LUA_NOREF
 
 // MARK: - Support Functions
 
 @_cdecl("pushAXUIElement")
 @discardableResult
-public func pushAXUIElement(_ L: OpaquePointer!, _ theElement: AXUIElement) -> Int32 {
+public func pushAXUIElement(_ L: UnsafeMutablePointer<lua_State>!, _ theElement: AXUIElement) -> Int32 {
     let thePtr = lua_newuserdata(L, MemoryLayout<AXUIElement>.size)!
         .assumingMemoryBound(to: Unmanaged<AXUIElement>.self)
     thePtr.pointee = Unmanaged.passRetained(theElement)
@@ -20,23 +21,23 @@ public func pushAXUIElement(_ L: OpaquePointer!, _ theElement: AXUIElement) -> I
 public func AXErrorAsString(_ theError: AXError) -> UnsafePointer<CChar> {
     let ans: StaticString
     switch theError {
-    case kAXErrorSuccess:                           ans = "No error occurred"
-    case kAXErrorFailure:                           ans = "A system error occurred"
-    case kAXErrorIllegalArgument:                   ans = "Illegal argument"
-    case kAXErrorInvalidUIElement:                  ans = "AXUIElementRef is invalid"
-    case kAXErrorInvalidUIElementObserver:          ans = "Not a valid observer"
-    case kAXErrorCannotComplete:                    ans = "Messaging failed"
-    case kAXErrorAttributeUnsupported:              ans = "Attribute is not supported by target"
-    case kAXErrorActionUnsupported:                 ans = "Action is not supported by target"
-    case kAXErrorNotificationUnsupported:           ans = "Notification is not supported by target"
-    case kAXErrorNotImplemented:                    ans = "Function or method not implemented"
-    case kAXErrorNotificationAlreadyRegistered:     ans = "Notification has already been registered"
-    case kAXErrorNotificationNotRegistered:         ans = "Notification is not registered yet"
-    case kAXErrorAPIDisabled:                       ans = "The accessibility API is disabled"
-    case kAXErrorNoValue:                           ans = "Requested value does not exist"
-    case kAXErrorParameterizedAttributeUnsupported: ans = "Parameterized attribute is not supported"
-    case kAXErrorNotEnoughPrecision:                ans = "Not enough precision"
-    default:                                        ans = "Unrecognized error occurred"
+    case .success:                           ans = "No error occurred"
+    case .failure:                           ans = "A system error occurred"
+    case .illegalArgument:                   ans = "Illegal argument"
+    case .invalidUIElement:                  ans = "AXUIElementRef is invalid"
+    case .invalidUIElementObserver:          ans = "Not a valid observer"
+    case .cannotComplete:                    ans = "Messaging failed"
+    case .attributeUnsupported:             ans = "Attribute is not supported by target"
+    case .actionUnsupported:                ans = "Action is not supported by target"
+    case .notificationUnsupported:          ans = "Notification is not supported by target"
+    case .notImplemented:                   ans = "Function or method not implemented"
+    case .notificationAlreadyRegistered:    ans = "Notification has already been registered"
+    case .notificationNotRegistered:        ans = "Notification is not registered yet"
+    case .apiDisabled:                      ans = "The accessibility API is disabled"
+    case .noValue:                          ans = "Requested value does not exist"
+    case .parameterizedAttributeUnsupported: ans = "Parameterized attribute is not supported"
+    case .notEnoughPrecision:               ans = "Not enough precision"
+    default:                                ans = "Unrecognized error occurred"
     }
     return UnsafeRawPointer(ans.utf8Start).assumingMemoryBound(to: CChar.self)
 }
@@ -51,13 +52,14 @@ private func isApplicationOrSystem(_ theRef: AXUIElement) -> Bool {
     return result
 }
 
-private func errorWrapper(_ L: OpaquePointer!, _ where_: NSString, _ what: NSString?, _ err: AXError) -> Int32 {
-    let axErrMsg = AXErrorAsString(err.rawValue)
+private func errorWrapper(_ L: UnsafeMutablePointer<lua_State>!, _ where_: NSString, _ what: NSString?, _ err: AXError) -> Int32 {
+    let axErrMsg = AXErrorAsString(err)
+    let skin = LuaSkin.skin(with: L)
 
     if let what = what {
-        LuaSkin.logVerbose(String(format: "%s:%@ AXError %d for %@: %s", USERDATA_TAG, where_, err.rawValue, what, axErrMsg))
+        skin.logVerbose(String(format: "%s:%@ AXError %d for %@: %s", USERDATA_TAG, where_, err.rawValue, what, String(cString: axErrMsg)))
     } else {
-        LuaSkin.logVerbose(String(format: "%s:%@ AXError %d: %s", USERDATA_TAG, where_, err.rawValue, axErrMsg))
+        skin.logVerbose(String(format: "%s:%@ AXError %d: %s", USERDATA_TAG, where_, err.rawValue, String(cString: axErrMsg)))
     }
 
     lua_pushnil(L)
@@ -79,15 +81,14 @@ private func errorWrapper(_ L: OpaquePointer!, _ where_: NSString, _ what: NSStr
 ///
 /// Notes:
 ///  * if `windowObject` is a string or number, only the first item found with `hs.window.find` will be used by this function to create an axuielementObject.
-private func axuielement_getWindowElement(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func axuielement_getWindowElement(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     // vararg here to mimic original behavior and allow constructs to use `hs.window(...)` as arg as this may
     // return more than one result
     skin.checkArgs(LS_TUSERDATA, "hs.window", LS_TBREAK | LS_TVARARG)
     let object = skin.toNSObject(atIndex: 1) as! NSObject
     if let ref = getElementRefPropertyFromClassObject(object) {
         pushAXUIElement(L, ref)
-        CFRelease(ref)
     } else {
         lua_pushnil(L)
     }
@@ -106,15 +107,14 @@ private func axuielement_getWindowElement(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * if `applicationObject` is a string or number, only the first item found with `hs.application.find` will be used by this function to create an axuielementObject.
-private func axuielement_getApplicationElement(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func axuielement_getApplicationElement(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     // vararg here to mimic original behavior and allow constructs to use `hs.application(...)` as arg as this may
     // return more than one result
     skin.checkArgs(LS_TUSERDATA, "hs.application", LS_TBREAK | LS_TVARARG)
     let object = skin.toNSObject(atIndex: 1) as! NSObject
     if let ref = getElementRefPropertyFromClassObject(object) {
         pushAXUIElement(L, ref)
-        CFRelease(ref)
     } else {
         lua_pushnil(L)
     }
@@ -130,8 +130,8 @@ private func axuielement_getApplicationElement(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * the axuielementObject for the system attributes
-private func axuielement_getSystemWideElement(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func axuielement_getSystemWideElement(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TBREAK)
     let value = AXUIElementCreateSystemWide()
     pushAXUIElement(L, value)
@@ -147,8 +147,8 @@ private func axuielement_getSystemWideElement(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * an axuielementObject for the application specified, or nil if it cannot be determined
-private func axuielement_getApplicationElementForPID(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func axuielement_getApplicationElementForPID(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TNUMBER, LS_TBREAK)
     let thePid = pid_t(luaL_checkinteger(L, 1))
     let value = AXUIElementCreateApplication(thePid)
@@ -171,8 +171,8 @@ private func axuielement_getApplicationElementForPID(_ L: OpaquePointer!) -> Int
 ///
 /// Returns:
 ///  * a new userdata object representing a new reference to the Accessibility object.
-private func axuielement_duplicateReference(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func axuielement_duplicateReference(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let theRef = get_axuielementref(L, 1, USERDATA_TAG)
     pushAXUIElement(L, theRef)
@@ -191,8 +191,8 @@ private func axuielement_duplicateReference(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * Common attribute names can be found in the [hs.axuielement.attributes](#attributes) tables; however, this method will list only those names which are supported by this object, and is not limited to just those in the referenced table.
-private func axuielement_getAttributeNames(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func axuielement_getAttributeNames(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let theRef = get_axuielementref(L, 1, USERDATA_TAG)
     var attributeNames: CFArray?
@@ -223,8 +223,8 @@ private func axuielement_getAttributeNames(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * Common action names can be found in the [hs.axuielement.actions](#actions) table; however, this method will list only those names which are supported by this object, and is not limited to just those in the referenced table.
-private func axuielement_getActionNames(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func axuielement_getActionNames(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let theRef = get_axuielementref(L, 1, USERDATA_TAG)
     var attributeNames: CFArray?
@@ -255,8 +255,8 @@ private func axuielement_getActionNames(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * The action descriptions are provided by the target application; as such their accuracy and usefulness rely on the target application's developers.
-private func axuielement_getActionDescription(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func axuielement_getActionDescription(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING, LS_TBREAK)
     let theRef = get_axuielementref(L, 1, USERDATA_TAG)
     let action = skin.toNSObject(atIndex: 2) as! NSString
@@ -283,8 +283,8 @@ private func axuielement_getActionDescription(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * the current value of the attribute, nil if the attribute has no value, or nil and an error string if an accessibility error occurred
-private func axuielement_getAttributeValue(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func axuielement_getAttributeValue(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING, LS_TBREAK)
     let theRef = get_axuielementref(L, 1, USERDATA_TAG)
     let attribute = skin.toNSObject(atIndex: 2) as! NSString
@@ -318,8 +318,8 @@ private func axuielement_getAttributeValue(_ L: OpaquePointer!) -> Int32 {
 ///    * attributes for which no value is currently assigned will be given a table value with the following key-value pairs:
 ///      * `_code` = -25212
 ///      * `error` = "Requested value does not exist"
-private func axuielement_getAllAttributeValues(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func axuielement_getAllAttributeValues(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
     let theRef = get_axuielementref(L, 1, USERDATA_TAG)
     let includeErrors = lua_gettop(L) == 2 ? (lua_toboolean(L, 2) != 0) : false
@@ -328,7 +328,7 @@ private func axuielement_getAllAttributeValues(_ L: OpaquePointer!) -> Int32 {
     var returnCount: Int32 = 1
     if errorState == .success {
         var values: CFArray?
-        errorState = AXUIElementCopyMultipleAttributeValues(theRef, attributeNames!, 0, &values)
+        errorState = AXUIElementCopyMultipleAttributeValues(theRef, attributeNames!, AXCopyMultipleAttributeOptions(rawValue: 0), &values)
         if errorState == .success {
             lua_newtable(L)
             for idx in 0..<CFArrayGetCount(attributeNames!) {
@@ -362,8 +362,8 @@ private func axuielement_getAllAttributeValues(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * the number of items in the value for the attribute, if it is an array, or nil and an error string if an accessibility error occurred
-private func axuielement_getAttributeValueCount(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func axuielement_getAttributeValueCount(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING, LS_TBREAK)
     let theRef = get_axuielementref(L, 1, USERDATA_TAG)
     let attribute = skin.toNSObject(atIndex: 2) as! NSString
@@ -388,8 +388,8 @@ private func axuielement_getAttributeValueCount(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * an array of the names of all parameterized attributes supported by the axuielementObject or nil and an error string if an accessibility error occurred
-private func axuielement_getParameterizedAttributeNames(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func axuielement_getParameterizedAttributeNames(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let theRef = get_axuielementref(L, 1, USERDATA_TAG)
     var attributeNames: CFArray?
@@ -417,8 +417,8 @@ private func axuielement_getParameterizedAttributeNames(_ L: OpaquePointer!) -> 
 ///
 /// Returns:
 ///  * a boolean value indicating whether or not the value of the parameter can be modified or nil and an error string if an accessibility error occurred
-private func axuielement_isAttributeSettable(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func axuielement_isAttributeSettable(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING, LS_TBREAK)
     let theRef = get_axuielementref(L, 1, USERDATA_TAG)
     let attribute = skin.toNSObject(atIndex: 2) as! NSString
@@ -446,8 +446,8 @@ private func axuielement_isAttributeSettable(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * an accessibilityObject can become invalid for a variety of reasons, including but not limited to the element referred to no longer being available (e.g. an element referring to a window or one of its descendants that has been closed) or the application terminating.
-private func axuielement_isValid(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func axuielement_isValid(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let theRef = get_axuielementref(L, 1, USERDATA_TAG)
     var value: CFTypeRef?
@@ -473,8 +473,8 @@ private func axuielement_isValid(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * the process ID for the application to which the accessibility object ultimately belongs or nil and an error string if an accessibility error occurred
-private func axuielement_getPid(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func axuielement_getPid(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let theRef = get_axuielementref(L, 1, USERDATA_TAG)
     var thePid: pid_t = 0
@@ -501,8 +501,8 @@ private func axuielement_getPid(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * The return value only suggests success or failure, but is not a guarantee.  The receiving application may have internal logic which prevents the action from occurring at this time for some reason, even though this method returns success (the axuielementObject).  Contrawise, the requested action may trigger a requirement for a response from the user and thus appear to time out, causing this method to return false or nil.
-private func axuielement_performAction(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func axuielement_performAction(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING, LS_TBREAK)
     let theRef = get_axuielementref(L, 1, USERDATA_TAG)
     let action = skin.toNSObject(atIndex: 2) as! NSString
@@ -536,8 +536,8 @@ private func axuielement_performAction(_ L: OpaquePointer!) -> Int32 {
 ///  * This function does hit-testing based on window z-order (that is, layering). If one window is on top of another window, the returned accessibility object comes from whichever window is topmost at the specified location.
 ///  * If this method is called on an axuielementObject representing an application, the search is restricted to the application.
 ///  * If this method is called on an axuielementObject representing the system-wide element, the search is not restricted to any particular application.  See [hs.axuielement.systemElementAtPosition](#systemElementAtPosition).
-private func axuielement_getElementAtPosition(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func axuielement_getElementAtPosition(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TNUMBER | LS_TTABLE, LS_TNUMBER | LS_TOPTIONAL, LS_TBREAK)
     let theRef = get_axuielementref(L, 1, USERDATA_TAG)
     var returnCount: Int32 = 1
@@ -545,7 +545,7 @@ private func axuielement_getElementAtPosition(_ L: OpaquePointer!) -> Int32 {
         var x: Float
         var y: Float
         if lua_type(L, 2) == LUA_TTABLE && lua_gettop(L) == 2 {
-            let thePoint = skin.tableToPoint(atIndex: 2)
+            let thePoint = skin.tableToPoint(at: 2)
             x = Float(thePoint.x)
             y = Float(thePoint.y)
         } else if lua_gettop(L) == 3 {
@@ -581,12 +581,12 @@ private func axuielement_getElementAtPosition(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * The specific parameter required for a each parameterized attribute is different and is often application specific thus requiring some experimentation. Notes regarding identified parameter types and thoughts on some still being investigated will be provided in the Hammerspoon Wiki, hopefully shortly after this module becomes part of a Hammerspoon release.
-private func axuielement_getParameterizedAttributeValue(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func axuielement_getParameterizedAttributeValue(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING, LS_TANY, LS_TBREAK)
     let theRef = get_axuielementref(L, 1, USERDATA_TAG)
     let attribute = skin.toNSObject(atIndex: 2) as! NSString
-    let parameter = lua_toCFType(L, 3)!
+    let parameter = lua_toCFType(L, 3)
     var value: CFTypeRef?
     let errorState = AXUIElementCopyParameterizedAttributeValue(theRef, attribute as CFString, parameter, &value)
     var returnCount: Int32 = 1
@@ -598,7 +598,6 @@ private func axuielement_getParameterizedAttributeValue(_ L: OpaquePointer!) -> 
         errorWrapper(L, "parameterizedAttributeValue", attribute, errorState)
         returnCount += 1
     }
-    if parameter as AnyObject !== kCFNull { CFRelease(parameter) }
     return returnCount
 }
 
@@ -612,12 +611,12 @@ private func axuielement_getParameterizedAttributeValue(_ L: OpaquePointer!) -> 
 ///
 /// Returns:
 ///  * the axuielementObject on success; nil and an error string if the attribute could not be set or an accessibility error occurred.
-private func axuielement_setAttributeValue(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func axuielement_setAttributeValue(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING, LS_TANY, LS_TBREAK)
     let theRef = get_axuielementref(L, 1, USERDATA_TAG)
     let attribute = skin.toNSObject(atIndex: 2) as! NSString
-    let value = lua_toCFType(L, 3)!
+    let value = lua_toCFType(L, 3)
     let errorState = AXUIElementSetAttributeValue(theRef, attribute as CFString, value)
     var returnCount: Int32 = 1
     if errorState == .success {
@@ -626,7 +625,6 @@ private func axuielement_setAttributeValue(_ L: OpaquePointer!) -> Int32 {
         errorWrapper(L, "setAttributeValue", attribute, errorState)
         returnCount += 1
     }
-    if value as AnyObject !== kCFNull { CFRelease(value) }
     return returnCount
 }
 
@@ -642,8 +640,8 @@ private func axuielement_setAttributeValue(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * An element is considered an application by this method if it has an AXRole of AXApplication and has a process identifier (pid).
-private func axuielement_toHSApplication(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func axuielement_toHSApplication(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let theRef = get_axuielementref(L, 1, USERDATA_TAG)
     var value: CFTypeRef?
@@ -677,8 +675,8 @@ private func axuielement_toHSApplication(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * An element is considered a window by this method if it has an AXRole of AXWindow.
-private func axuielement_toHSWindow(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func axuielement_toHSWindow(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let theRef = get_axuielementref(L, 1, USERDATA_TAG)
     var value: CFTypeRef?
@@ -709,8 +707,8 @@ private func axuielement_toHSWindow(_ L: OpaquePointer!) -> Int32 {
 ///  * To change the global timeout affecting all queries on elements which do not have a specific timeout set, use this method on the systemwide element (see [hs.axuielement.systemWideElement](#systemWideElement).
 ///  * Changing the timeout value for an axuielement object only changes the value for that specific element -- other axuieleement objects that may refer to the identical accessibility item are not affected.
 ///  * Setting the value to 0.0 resets the timeout -- if applied to the `systemWideElement`, the global default will be reset to its default value; if applied to another axuielement object, the timeout will be reset to the current global value as applied to the systemWideElement.
-private func axuielement_setTimeout(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func axuielement_setTimeout(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TNUMBER, LS_TBREAK)
     let theRef = get_axuielementref(L, 1, USERDATA_TAG)
     var returnCount: Int32 = 1
@@ -735,16 +733,16 @@ private func axuielement_setTimeout(_ L: OpaquePointer!) -> Int32 {
 /// Notes:
 ///  * This table is provided for reference only and is not intended to be comprehensive.
 ///  * You can view the contents of this table from the Hammerspoon console by typing in `hs.axuielement.attributes`
-private func axuielement_pushAttributesTable(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func axuielement_pushAttributesTable(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     lua_newtable(L)
     skin.pushNSObject(NSAccessibility.Attribute.activationPoint.rawValue as NSString);                     lua_setfield(L, -2, "activationPoint")
     skin.pushNSObject(kAXAllowedValuesAttribute as NSString);              lua_setfield(L, -2, "allowedValues")
     skin.pushNSObject(kAXAlternateUIVisibleAttribute as NSString);         lua_setfield(L, -2, "alternateUIVisible")
     skin.pushNSObject(kAXAMPMFieldAttribute as NSString);                  lua_setfield(L, -2, "AMPMField")
-    skin.pushNSObject(kAXAttachmentTextAttribute as NSString);             lua_setfield(L, -2, "attachment")
-    skin.pushNSObject(kAXAutocorrectedTextAttribute as NSString);          lua_setfield(L, -2, "autocorrected")
-    skin.pushNSObject(kAXBackgroundColorTextAttribute as NSString);        lua_setfield(L, -2, "backgroundColor")
+    skin.pushNSObject(kAXAttachmentTextAttribute.takeUnretainedValue() as String as NSString);             lua_setfield(L, -2, "attachment")
+    skin.pushNSObject(kAXAutocorrectedTextAttribute.takeUnretainedValue() as String as NSString);          lua_setfield(L, -2, "autocorrected")
+    skin.pushNSObject(kAXBackgroundColorTextAttribute.takeUnretainedValue() as String as NSString);        lua_setfield(L, -2, "backgroundColor")
     skin.pushNSObject(kAXCancelButtonAttribute as NSString);               lua_setfield(L, -2, "cancelButton")
     skin.pushNSObject(kAXChildrenAttribute as NSString);                   lua_setfield(L, -2, "children")
     skin.pushNSObject(kAXClearButtonAttribute as NSString);                lua_setfield(L, -2, "clearButton")
@@ -776,8 +774,8 @@ private func axuielement_pushAttributesTable(_ L: OpaquePointer!) -> Int32 {
     skin.pushNSObject(kAXFocusedApplicationAttribute as NSString);         lua_setfield(L, -2, "focusedApplication")
     skin.pushNSObject(kAXFocusedUIElementAttribute as NSString);           lua_setfield(L, -2, "focusedUIElement")
     skin.pushNSObject(kAXFocusedWindowAttribute as NSString);              lua_setfield(L, -2, "focusedWindow")
-    skin.pushNSObject(kAXFontTextAttribute as NSString);                   lua_setfield(L, -2, "font")
-    skin.pushNSObject(kAXForegroundColorTextAttribute as NSString);        lua_setfield(L, -2, "foregroundColor")
+    skin.pushNSObject(kAXFontTextAttribute.takeUnretainedValue() as String as NSString);                   lua_setfield(L, -2, "font")
+    skin.pushNSObject(kAXForegroundColorTextAttribute.takeUnretainedValue() as String as NSString);        lua_setfield(L, -2, "foregroundColor")
     skin.pushNSObject(kAXFrontmostAttribute as NSString);                  lua_setfield(L, -2, "frontmost")
     skin.pushNSObject(kAXFullScreenButtonAttribute as NSString);           lua_setfield(L, -2, "fullScreenButton")
     skin.pushNSObject(kAXGrowAreaAttribute as NSString);                   lua_setfield(L, -2, "growArea")
@@ -798,14 +796,14 @@ private func axuielement_pushAttributesTable(_ L: OpaquePointer!) -> Int32 {
     skin.pushNSObject(kAXIsEditableAttribute as NSString);                 lua_setfield(L, -2, "isEditable")
     skin.pushNSObject(kAXLabelUIElementsAttribute as NSString);            lua_setfield(L, -2, "labelUIElements")
     skin.pushNSObject(kAXLabelValueAttribute as NSString);                 lua_setfield(L, -2, "labelValue")
-    skin.pushNSObject(kAXLinkTextAttribute as NSString);                   lua_setfield(L, -2, "link")
+    skin.pushNSObject(kAXLinkTextAttribute.takeUnretainedValue() as String as NSString);                   lua_setfield(L, -2, "link")
     skin.pushNSObject(kAXLinkedUIElementsAttribute as NSString);           lua_setfield(L, -2, "linkedUIElements")
-    skin.pushNSObject(kAXListItemIndexTextAttribute as NSString);          lua_setfield(L, -2, "listItemIndex")
-    skin.pushNSObject(kAXListItemLevelTextAttribute as NSString);          lua_setfield(L, -2, "listItemLevel")
-    skin.pushNSObject(kAXListItemPrefixTextAttribute as NSString);         lua_setfield(L, -2, "listItemPrefix")
+    skin.pushNSObject(kAXListItemIndexTextAttribute.takeUnretainedValue() as String as NSString);          lua_setfield(L, -2, "listItemIndex")
+    skin.pushNSObject(kAXListItemLevelTextAttribute.takeUnretainedValue() as String as NSString);          lua_setfield(L, -2, "listItemLevel")
+    skin.pushNSObject(kAXListItemPrefixTextAttribute.takeUnretainedValue() as String as NSString);         lua_setfield(L, -2, "listItemPrefix")
     skin.pushNSObject(kAXMainAttribute as NSString);                       lua_setfield(L, -2, "main")
     skin.pushNSObject(kAXMainWindowAttribute as NSString);                 lua_setfield(L, -2, "mainWindow")
-    skin.pushNSObject(kAXMarkedMisspelledTextAttribute as NSString);       lua_setfield(L, -2, "markedMisspelled")
+    skin.pushNSObject(kAXMarkedMisspelledTextAttribute.takeUnretainedValue() as String as NSString);       lua_setfield(L, -2, "markedMisspelled")
     skin.pushNSObject(NSAccessibility.Attribute.markerGroupUIElement.rawValue as NSString);                lua_setfield(L, -2, "markerGroupUIElement")
     skin.pushNSObject(kAXMarkerTypeAttribute as NSString);                 lua_setfield(L, -2, "markerType")
     skin.pushNSObject(kAXMarkerTypeDescriptionAttribute as NSString);      lua_setfield(L, -2, "markerTypeDescription")
@@ -825,10 +823,10 @@ private func axuielement_pushAttributesTable(_ L: OpaquePointer!) -> Int32 {
     skin.pushNSObject(kAXMinimizedAttribute as NSString);                  lua_setfield(L, -2, "minimized")
     skin.pushNSObject(kAXMinuteFieldAttribute as NSString);                lua_setfield(L, -2, "minuteField")
     skin.pushNSObject(kAXMinValueAttribute as NSString);                   lua_setfield(L, -2, "minValue")
-    skin.pushNSObject(kAXMisspelledTextAttribute as NSString);             lua_setfield(L, -2, "misspelled")
+    skin.pushNSObject(kAXMisspelledTextAttribute.takeUnretainedValue() as String as NSString);             lua_setfield(L, -2, "misspelled")
     skin.pushNSObject(kAXModalAttribute as NSString);                      lua_setfield(L, -2, "modal")
     skin.pushNSObject(kAXMonthFieldAttribute as NSString);                 lua_setfield(L, -2, "monthField")
-    skin.pushNSObject(kAXNaturalLanguageTextAttribute as NSString);        lua_setfield(L, -2, "naturalLanguage")
+    skin.pushNSObject(kAXNaturalLanguageTextAttribute.takeUnretainedValue() as String as NSString);        lua_setfield(L, -2, "naturalLanguage")
     skin.pushNSObject(kAXNextContentsAttribute as NSString);               lua_setfield(L, -2, "nextContents")
     skin.pushNSObject(kAXNumberOfCharactersAttribute as NSString);         lua_setfield(L, -2, "numberOfCharacters")
     skin.pushNSObject(kAXOrderedByRowAttribute as NSString);               lua_setfield(L, -2, "orderedByRow")
@@ -839,7 +837,7 @@ private func axuielement_pushAttributesTable(_ L: OpaquePointer!) -> Int32 {
     skin.pushNSObject(kAXPositionAttribute as NSString);                   lua_setfield(L, -2, "position")
     skin.pushNSObject(kAXPreviousContentsAttribute as NSString);           lua_setfield(L, -2, "previousContents")
     skin.pushNSObject(kAXProxyAttribute as NSString);                      lua_setfield(L, -2, "proxy")
-    skin.pushNSObject(kAXReplacementStringTextAttribute as NSString);      lua_setfield(L, -2, "replacementString")
+    skin.pushNSObject(kAXReplacementStringTextAttribute.takeUnretainedValue() as String as NSString);      lua_setfield(L, -2, "replacementString")
     skin.pushNSObject(NSAccessibility.Attribute.required.rawValue as NSString);                            lua_setfield(L, -2, "required")
     skin.pushNSObject(kAXRoleAttribute as NSString);                       lua_setfield(L, -2, "role")
     skin.pushNSObject(kAXRoleDescriptionAttribute as NSString);            lua_setfield(L, -2, "roleDescription")
@@ -859,7 +857,7 @@ private func axuielement_pushAttributesTable(_ L: OpaquePointer!) -> Int32 {
     skin.pushNSObject(kAXSelectedTextRangeAttribute as NSString);          lua_setfield(L, -2, "selectedTextRange")
     skin.pushNSObject(kAXSelectedTextRangesAttribute as NSString);         lua_setfield(L, -2, "selectedTextRanges")
     skin.pushNSObject(kAXServesAsTitleForUIElementsAttribute as NSString); lua_setfield(L, -2, "servesAsTitleForUIElements")
-    skin.pushNSObject(kAXShadowTextAttribute as NSString);                 lua_setfield(L, -2, "shadow")
+    skin.pushNSObject(kAXShadowTextAttribute.takeUnretainedValue() as String as NSString);                 lua_setfield(L, -2, "shadow")
     skin.pushNSObject(kAXSharedCharacterRangeAttribute as NSString);       lua_setfield(L, -2, "sharedCharacterRange")
     skin.pushNSObject(kAXSharedFocusElementsAttribute as NSString);        lua_setfield(L, -2, "sharedFocusElements")
     skin.pushNSObject(kAXSharedTextUIElementsAttribute as NSString);       lua_setfield(L, -2, "sharedTextUIElements")
@@ -867,19 +865,19 @@ private func axuielement_pushAttributesTable(_ L: OpaquePointer!) -> Int32 {
     skin.pushNSObject(kAXSizeAttribute as NSString);                       lua_setfield(L, -2, "size")
     skin.pushNSObject(kAXSortDirectionAttribute as NSString);              lua_setfield(L, -2, "sortDirection")
     skin.pushNSObject(kAXSplittersAttribute as NSString);                  lua_setfield(L, -2, "splitters")
-    skin.pushNSObject(kAXStrikethroughTextAttribute as NSString);          lua_setfield(L, -2, "strikethrough")
-    skin.pushNSObject(kAXStrikethroughColorTextAttribute as NSString);     lua_setfield(L, -2, "strikethroughColor")
+    skin.pushNSObject(kAXStrikethroughTextAttribute.takeUnretainedValue() as String as NSString);          lua_setfield(L, -2, "strikethrough")
+    skin.pushNSObject(kAXStrikethroughColorTextAttribute.takeUnretainedValue() as String as NSString);     lua_setfield(L, -2, "strikethroughColor")
     skin.pushNSObject(kAXSubroleAttribute as NSString);                    lua_setfield(L, -2, "subrole")
-    skin.pushNSObject(kAXSuperscriptTextAttribute as NSString);            lua_setfield(L, -2, "superscript")
+    skin.pushNSObject(kAXSuperscriptTextAttribute.takeUnretainedValue() as String as NSString);            lua_setfield(L, -2, "superscript")
     skin.pushNSObject(kAXTabsAttribute as NSString);                       lua_setfield(L, -2, "tabs")
     skin.pushNSObject(kAXTextAttribute as NSString);                       lua_setfield(L, -2, "text")
-    skin.pushNSObject(NSAccessibility.Attribute.textAlignment.rawValue as NSString);                       lua_setfield(L, -2, "textAlignment")
+    skin.pushNSObject(NSAttributedString.Key.accessibilityAlignment.rawValue as NSString);                 lua_setfield(L, -2, "textAlignment")
     skin.pushNSObject(kAXTitleAttribute as NSString);                      lua_setfield(L, -2, "title")
     skin.pushNSObject(kAXTitleUIElementAttribute as NSString);             lua_setfield(L, -2, "titleUIElement")
     skin.pushNSObject(kAXToolbarButtonAttribute as NSString);              lua_setfield(L, -2, "toolbarButton")
     skin.pushNSObject(kAXTopLevelUIElementAttribute as NSString);          lua_setfield(L, -2, "topLevelUIElement")
-    skin.pushNSObject(kAXUnderlineTextAttribute as NSString);              lua_setfield(L, -2, "underline")
-    skin.pushNSObject(kAXUnderlineColorTextAttribute as NSString);         lua_setfield(L, -2, "underlineColor")
+    skin.pushNSObject(kAXUnderlineTextAttribute.takeUnretainedValue() as String as NSString);              lua_setfield(L, -2, "underline")
+    skin.pushNSObject(kAXUnderlineColorTextAttribute.takeUnretainedValue() as String as NSString);         lua_setfield(L, -2, "underlineColor")
     skin.pushNSObject(kAXUnitDescriptionAttribute as NSString);            lua_setfield(L, -2, "unitDescription")
     skin.pushNSObject(kAXUnitsAttribute as NSString);                      lua_setfield(L, -2, "units")
     skin.pushNSObject(kAXURLAttribute as NSString);                        lua_setfield(L, -2, "URL")
@@ -902,8 +900,8 @@ private func axuielement_pushAttributesTable(_ L: OpaquePointer!) -> Int32 {
     skin.pushNSObject(kAXYearFieldAttribute as NSString);                  lua_setfield(L, -2, "yearField")
     skin.pushNSObject(kAXZoomButtonAttribute as NSString);                 lua_setfield(L, -2, "zoomButton")
 
-    skin.pushNSObject(NSAccessibility.Attribute.annotationTextAttribute.rawValue as NSString);             lua_setfield(L, -2, "annotationText")
-    skin.pushNSObject(NSAccessibility.Attribute.customText.rawValue as NSString);                          lua_setfield(L, -2, "customText")
+    skin.pushNSObject(NSAttributedString.Key.accessibilityAnnotationTextAttribute.rawValue as NSString);   lua_setfield(L, -2, "annotationText")
+    skin.pushNSObject(NSAttributedString.Key.accessibilityCustomText.rawValue as NSString);                lua_setfield(L, -2, "customText")
 
     return 1
 }
@@ -917,8 +915,8 @@ private func axuielement_pushAttributesTable(_ L: OpaquePointer!) -> Int32 {
 ///  * you can view the contents of this table from the Hammerspoon console by typing in `hs.axuielement.parameterizedAttributes`
 ///  * Parameterized attributes are attributes that take an argument when querying the element. There is very little documentation available for most of these and application developers can implement their own for which we may never be able to get any documentation. This table contains parameterized attribute names that are defined within the Apple documentation and a few others that have been discovered.
 ///  * Documentation covering what has been discovered through experimentation about parameterized attributes is planned and should be added to the Hammerspoon wiki shortly after this module becomes part of a formal release.
-private func axuielement_pushParameterizedAttributesTable(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func axuielement_pushParameterizedAttributesTable(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     lua_newtable(L)
     skin.pushNSObject(kAXAttributedStringForRangeParameterizedAttribute as NSString);  lua_setfield(L, -2, "attributedStringForRange")
     skin.pushNSObject(kAXBoundsForRangeParameterizedAttribute as NSString);            lua_setfield(L, -2, "boundsForRange")
@@ -945,8 +943,8 @@ private func axuielement_pushParameterizedAttributesTable(_ L: OpaquePointer!) -
 /// Notes:
 ///  * this table is provided for reference only and is not intended to be comprehensive.
 ///  * you can view the contents of this table from the Hammerspoon console by typing in `hs.axuielement.actions`
-private func axuielement_pushActionsTable(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func axuielement_pushActionsTable(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     lua_newtable(L)
     skin.pushNSObject(kAXCancelAction as NSString);          lua_setfield(L, -2, "cancel")
     skin.pushNSObject(kAXConfirmAction as NSString);         lua_setfield(L, -2, "confirm")
@@ -969,8 +967,8 @@ private func axuielement_pushActionsTable(_ L: OpaquePointer!) -> Int32 {
 /// Notes:
 ///  * this table is provided for reference only and is not intended to be comprehensive.
 ///  * you can view the contents of this table from the Hammerspoon console by typing in `hs.axuielement.roles`
-private func axuielement_pushRolesTable(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func axuielement_pushRolesTable(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     lua_newtable(L)
     skin.pushNSObject(kAXApplicationRole as NSString);        lua_setfield(L, -2, "application")
     skin.pushNSObject(kAXBrowserRole as NSString);            lua_setfield(L, -2, "browser")
@@ -1031,7 +1029,7 @@ private func axuielement_pushRolesTable(_ L: OpaquePointer!) -> Int32 {
     skin.pushNSObject(kAXWindowRole as NSString);             lua_setfield(L, -2, "window")
 
     skin.pushNSObject(NSAccessibility.Role.link.rawValue as NSString);                        lua_setfield(L, -2, "link")
-    skin.pushNSObject(NSAccessibility.Role.page.rawValue as NSString);                        lua_setfield(L, -2, "page")
+    skin.pushNSObject(NSAccessibility.Role.pageRole.rawValue as NSString);                     lua_setfield(L, -2, "page")
 
     return 1
 }
@@ -1043,8 +1041,8 @@ private func axuielement_pushRolesTable(_ L: OpaquePointer!) -> Int32 {
 /// Notes:
 ///  * this table is provided for reference only and is not intended to be comprehensive.
 ///  * you can view the contents of this table from the Hammerspoon console by typing in `hs.axuielement.subroles`
-private func axuielement_pushSubrolesTable(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func axuielement_pushSubrolesTable(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     lua_newtable(L)
     skin.pushNSObject(kAXApplicationDockItemSubrole as NSString);     lua_setfield(L, -2, "applicationDockItem")
     skin.pushNSObject(kAXCloseButtonSubrole as NSString);             lua_setfield(L, -2, "closeButton")
@@ -1086,9 +1084,9 @@ private func axuielement_pushSubrolesTable(_ L: OpaquePointer!) -> Int32 {
     skin.pushNSObject(kAXURLDockItemSubrole as NSString);             lua_setfield(L, -2, "URLDockItem")
     skin.pushNSObject(kAXZoomButtonSubrole as NSString);              lua_setfield(L, -2, "zoomButton")
 
-    skin.pushNSObject(NSAccessibility.Subrole.collectionList.rawValue as NSString);                   lua_setfield(L, -2, "collectionList")
-    skin.pushNSObject(NSAccessibility.Subrole.tabButton.rawValue as NSString);                        lua_setfield(L, -2, "tabButton")
-    skin.pushNSObject(NSAccessibility.Subrole.sectionList.rawValue as NSString);                      lua_setfield(L, -2, "sectionList")
+    skin.pushNSObject(NSAccessibility.Subrole.collectionListSubrole.rawValue as NSString);             lua_setfield(L, -2, "collectionList")
+    skin.pushNSObject(NSAccessibility.Subrole.tabButtonSubrole.rawValue as NSString);                  lua_setfield(L, -2, "tabButton")
+    skin.pushNSObject(NSAccessibility.Subrole.sectionListSubrole.rawValue as NSString);                lua_setfield(L, -2, "sectionList")
 
     return 1
 }
@@ -1100,8 +1098,8 @@ private func axuielement_pushSubrolesTable(_ L: OpaquePointer!) -> Int32 {
 /// Notes:
 ///  * this table is provided for reference only and may not be comprehensive.
 ///  * you can view the contents of this table from the Hammerspoon console by typing in `hs.axuielement.orientations`
-private func axuielement_pushOrientationsTable(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func axuielement_pushOrientationsTable(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     lua_newtable(L)
     skin.pushNSObject(kAXHorizontalOrientationValue as NSString); lua_setfield(L, -2, "horizontal")
     skin.pushNSObject(kAXVerticalOrientationValue as NSString);   lua_setfield(L, -2, "vertical")
@@ -1116,8 +1114,8 @@ private func axuielement_pushOrientationsTable(_ L: OpaquePointer!) -> Int32 {
 /// Notes:
 ///  * this table is provided for reference only and may not be comprehensive.
 ///  * you can view the contents of this table from the Hammerspoon console by typing in `hs.axuielement.sortDirections`
-private func axuielement_pushSortDirectionsTable(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func axuielement_pushSortDirectionsTable(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     lua_newtable(L)
     skin.pushNSObject(kAXAscendingSortDirectionValue as NSString);  lua_setfield(L, -2, "ascending")
     skin.pushNSObject(kAXDescendingSortDirectionValue as NSString); lua_setfield(L, -2, "descending")
@@ -1132,8 +1130,8 @@ private func axuielement_pushSortDirectionsTable(_ L: OpaquePointer!) -> Int32 {
 /// Notes:
 ///  * this table is provided for reference only and may not be comprehensive.
 ///  * you can view the contents of this table from the Hammerspoon console by typing in `hs.axuielement.rulerMarkers`
-private func axuielement_pushRulerMarkerTypesTable(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func axuielement_pushRulerMarkerTypesTable(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     lua_newtable(L)
     skin.pushNSObject(NSAccessibility.RulerMarkerTypeValue.centerTabStop.rawValue as NSString);   lua_setfield(L, -2, "centerTabStop")
     skin.pushNSObject(NSAccessibility.RulerMarkerTypeValue.decimalTabStop.rawValue as NSString);  lua_setfield(L, -2, "decimalTabStop")
@@ -1153,21 +1151,21 @@ private func axuielement_pushRulerMarkerTypesTable(_ L: OpaquePointer!) -> Int32
 /// Notes:
 ///  * this table is provided for reference only and may not be comprehensive.
 ///  * you can view the contents of this table from the Hammerspoon console by typing in `hs.axuielement.units`
-private func axuielement_pushUnitsTable(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func axuielement_pushUnitsTable(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     lua_newtable(L)
-    skin.pushNSObject(NSAccessibility.UnitValue.centimeters.rawValue as NSString); lua_setfield(L, -2, "centimeters")
-    skin.pushNSObject(NSAccessibility.UnitValue.inches.rawValue as NSString);      lua_setfield(L, -2, "inches")
-    skin.pushNSObject(NSAccessibility.UnitValue.picas.rawValue as NSString);       lua_setfield(L, -2, "picas")
-    skin.pushNSObject(NSAccessibility.UnitValue.points.rawValue as NSString);      lua_setfield(L, -2, "points")
-    skin.pushNSObject(NSAccessibility.UnitValue.unknown.rawValue as NSString);     lua_setfield(L, -2, "unknown")
+    skin.pushNSObject(NSAccessibility.RulerUnitValue.centimeters.rawValue as NSString); lua_setfield(L, -2, "centimeters")
+    skin.pushNSObject(NSAccessibility.RulerUnitValue.inches.rawValue as NSString);      lua_setfield(L, -2, "inches")
+    skin.pushNSObject(NSAccessibility.RulerUnitValue.picas.rawValue as NSString);       lua_setfield(L, -2, "picas")
+    skin.pushNSObject(NSAccessibility.RulerUnitValue.points.rawValue as NSString);      lua_setfield(L, -2, "points")
+    skin.pushNSObject(NSAccessibility.RulerUnitValue.unknown.rawValue as NSString);     lua_setfield(L, -2, "unknown")
     return 1
 }
 
 // MARK: - Hammerspoon/Lua Infrastructure
 
-private func userdata_tostring(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     let theRef = get_axuielementref(L, 1, USERDATA_TAG)
     var value: CFTypeRef?
     let errorState = AXUIElementCopyAttributeValue(theRef, "AXRole" as CFString, &value)
@@ -1177,19 +1175,24 @@ private func userdata_tostring(_ L: OpaquePointer!) -> Int32 {
     } else if errorState == .invalidUIElement {
         title = "*element invalid*"
     }
-    skin.pushNSObject(NSString(format: "%s: %@ (%p)", USERDATA_TAG, title, lua_topointer(L, 1)))
+    let ptrStr: String
+    if let ptr = lua_topointer(L, 1) {
+        ptrStr = String(format: "%p", UInt(bitPattern: ptr))
+    } else {
+        ptrStr = "0x0"
+    }
+    skin.pushNSObject(NSString(format: "%s: %@ (%@)", USERDATA_TAG, title, ptrStr as NSString))
     return 1
 }
 
-private func userdata_gc(_ L: OpaquePointer!) -> Int32 {
-    let theRef = get_axuielementref(L, 1, USERDATA_TAG)
-    CFRelease(theRef)
+private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let _ = get_axuielementref(L, 1, USERDATA_TAG)
     lua_pushnil(L)
     lua_setmetatable(L, 1)
     return 0
 }
 
-private func userdata_eq(_ L: OpaquePointer!) -> Int32 {
+private func userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let theRef1 = get_axuielementref(L, 1, USERDATA_TAG)
     let theRef2 = get_axuielementref(L, 2, USERDATA_TAG)
     lua_pushboolean(L, CFEqual(theRef1, theRef2) ? 1 : 0)
@@ -1234,8 +1237,8 @@ private var moduleLib: [luaL_Reg] = [
 ]
 
 @_cdecl("luaopen_hs_libaxuielement")
-public func luaopen_hs_libaxuielement(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+public func luaopen_hs_libaxuielement(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     refTable = skin.registerLibrary(withObject: USERDATA_TAG,
                                     functions: &moduleLib,
                                     metaFunctions: nil,

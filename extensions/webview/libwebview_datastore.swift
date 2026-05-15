@@ -23,8 +23,8 @@ private var backgroundCallbacks = NSMutableSet()
 ///
 /// Returns:
 ///  * a list of strings where each string is a specific data type stored in a datastore.
-private func datastore_allWebsiteDataTypes(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func datastore_allWebsiteDataTypes(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TBREAK)
     skin.pushNSObject(WKWebsiteDataStore.allWebsiteDataTypes() as NSSet)
     return 1
@@ -42,8 +42,8 @@ private func datastore_allWebsiteDataTypes(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * this is the datastore used unless otherwise specified when creating an `hs.webview` instance.
-private func datastore_newDefaultDataStore(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func datastore_newDefaultDataStore(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TBREAK)
     skin.pushNSObject(WKWebsiteDataStore.default())
     return 1
@@ -61,8 +61,8 @@ private func datastore_newDefaultDataStore(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * The datastore represented by this object will be initially empty.  You can use this function to create a non-persistent datastore that you wish to share among multiple `hs.webview` instances.
-private func datastore_newPrivateDataStore(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func datastore_newPrivateDataStore(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TBREAK)
     skin.pushNSObject(WKWebsiteDataStore.nonPersistent())
     return 1
@@ -77,8 +77,8 @@ private func datastore_newPrivateDataStore(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * a datastoreObject
-private func datastore_fromWebview(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func datastore_fromWebview(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, "hs.webview", LS_TBREAK)
     let ptr = luaL_checkudata(L, 1, "hs.webview")!
         .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
@@ -103,8 +103,8 @@ private func datastore_fromWebview(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * the datastore object
-private func datastore_fetchRecords(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func datastore_fetchRecords(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_DS_TAG,
                    LS_TSTRING | LS_TTABLE | LS_TFUNCTION,
                    LS_TFUNCTION | LS_TOPTIONAL, LS_TBREAK)
@@ -135,7 +135,7 @@ private func datastore_fetchRecords(_ L: OpaquePointer!) -> Int32 {
     dataStore.fetchDataRecords(ofTypes: typeSet) { records in
         DispatchQueue.main.async {
             if backgroundCallbacks.contains(NSNumber(value: fnRef)) {
-                let _skin = LuaSkin.shared(withState: nil)!
+                let _skin = LuaSkin.skin(with: nil)
                 _skin.pushLuaRef(refTable, ref: fnRef)
                 _skin.pushNSObject(records as NSArray)
                 _skin.protectedCallAndError("hs.webview.datastore:fetchRecords callback",
@@ -161,8 +161,8 @@ private func datastore_fetchRecords(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * the datastore object
-private func datastore_removeRecords(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func datastore_removeRecords(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_DS_TAG,
                    LS_TTABLE | LS_TSTRING,
                    LS_TTABLE | LS_TSTRING,
@@ -208,7 +208,7 @@ private func datastore_removeRecords(_ L: OpaquePointer!) -> Int32 {
         dataStore.removeData(ofTypes: typeSet, for: targets) {
             DispatchQueue.main.async {
                 if fnRef != LUA_NOREF && backgroundCallbacks.contains(NSNumber(value: fnRef)) {
-                    let _skin = LuaSkin.shared(withState: nil)!
+                    let _skin = LuaSkin.skin(with: nil)
                     _skin.pushLuaRef(refTable, ref: fnRef)
                     _skin.protectedCallAndError("hs.webview.datastore:removeRecordsFor callback",
                                                 nargs: 0, nresults: 0)
@@ -234,8 +234,8 @@ private func datastore_removeRecords(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * the datastore object
-private func datastore_removeDataFrom(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func datastore_removeDataFrom(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_DS_TAG,
                    LS_TNUMBER | LS_TINTEGER | LS_TSTRING,
                    LS_TTABLE | LS_TSTRING,
@@ -284,7 +284,7 @@ private func datastore_removeDataFrom(_ L: OpaquePointer!) -> Int32 {
     dataStore.removeData(ofTypes: typeSet, modifiedSince: theDate) {
         DispatchQueue.main.async {
             if fnRef != LUA_NOREF && backgroundCallbacks.contains(NSNumber(value: fnRef)) {
-                let _skin = LuaSkin.shared(withState: nil)!
+                let _skin = LuaSkin.skin(with: nil)
                 _skin.pushLuaRef(refTable, ref: fnRef)
                 _skin.protectedCallAndError("hs.webview.datastore:removeRecordsAfter callback",
                                             nargs: 0, nresults: 0)
@@ -310,8 +310,8 @@ private func datastore_removeDataFrom(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * Note that this value is the inverse of `hs.webview:privateBrowsing()`, since private browsing uses a non-persistent datastore.
-private func datastore_persistent(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func datastore_persistent(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_DS_TAG, LS_TBREAK)
     let dataStore = skin.toNSObject(atIndex: 1) as! WKWebsiteDataStore
     lua_pushboolean(L, dataStore.isPersistent ? 1 : 0)
@@ -320,7 +320,7 @@ private func datastore_persistent(_ L: OpaquePointer!) -> Int32 {
 
 // MARK: - Lua<->NSObject Conversion Functions
 
-private func pushWKWebsiteDataStore(_ L: OpaquePointer!, _ obj: Any!) -> Int32 {
+private func pushWKWebsiteDataStore(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
     let value = obj as! WKWebsiteDataStore
     let valuePtr = lua_newuserdata(L, MemoryLayout<UnsafeMutableRawPointer>.size)!
         .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
@@ -330,8 +330,8 @@ private func pushWKWebsiteDataStore(_ L: OpaquePointer!, _ obj: Any!) -> Int32 {
     return 1
 }
 
-private func pushWKWebsiteDataRecord(_ L: OpaquePointer!, _ obj: Any!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func pushWKWebsiteDataRecord(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     let value = obj as! WKWebsiteDataRecord
 
     lua_newtable(L)
@@ -342,8 +342,8 @@ private func pushWKWebsiteDataRecord(_ L: OpaquePointer!, _ obj: Any!) -> Int32 
     return 1
 }
 
-private func toWKWebsiteDataStoreFromLua(_ L: OpaquePointer!, _ idx: Int32) -> Any! {
-    let skin = LuaSkin.shared(withState: L)!
+private func toWKWebsiteDataStoreFromLua(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> Any! {
+    let skin = LuaSkin.skin(with: L)
     if luaL_testudata(L, idx, USERDATA_DS_TAG) != nil {
         let ptr = luaL_checkudata(L, idx, USERDATA_DS_TAG)!
             .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
@@ -357,19 +357,21 @@ private func toWKWebsiteDataStoreFromLua(_ L: OpaquePointer!, _ idx: Int32) -> A
 
 // MARK: - Hammerspoon/Lua Infrastructure
 
-private func userdata_tostring(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
-    let obj = skin.luaObject(atIndex: 1, toClass: "WKWebsiteDataStore") as? WKWebsiteDataStore
+private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
+    let obj = skin.luaObject(at: 1, toClass: "WKWebsiteDataStore") as? WKWebsiteDataStore
     let title: String = (obj?.isPersistent ?? false) ? "persistent" : "non-persistent"
-    skin.pushNSObject(String(format: "%s: %@ (%p)", USERDATA_DS_TAG, title as NSString, lua_topointer(L, 1)!) as NSString)
+    let ptr = lua_topointer(L, 1)
+    let ptrStr = ptr.map { String(describing: $0) } ?? "nil"
+    lua_pushstring(L, "\(USERDATA_DS_TAG): \(title) (\(ptrStr))")
     return 1
 }
 
-private func userdata_eq(_ L: OpaquePointer!) -> Int32 {
+private func userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     if luaL_testudata(L, 1, USERDATA_DS_TAG) != nil && luaL_testudata(L, 2, USERDATA_DS_TAG) != nil {
-        let skin = LuaSkin.shared(withState: L)!
-        let obj1 = skin.luaObject(atIndex: 1, toClass: "WKWebsiteDataStore") as? WKWebsiteDataStore
-        let obj2 = skin.luaObject(atIndex: 2, toClass: "WKWebsiteDataStore") as? WKWebsiteDataStore
+        let skin = LuaSkin.skin(with: L)
+        let obj1 = skin.luaObject(at: 1, toClass: "WKWebsiteDataStore") as? WKWebsiteDataStore
+        let obj2 = skin.luaObject(at: 2, toClass: "WKWebsiteDataStore") as? WKWebsiteDataStore
         lua_pushboolean(L, (obj1 != nil && obj2 != nil && obj1!.isEqual(obj2!)) ? 1 : 0)
     } else {
         lua_pushboolean(L, 0)
@@ -377,7 +379,7 @@ private func userdata_eq(_ L: OpaquePointer!) -> Int32 {
     return 1
 }
 
-private func userdata_gc(_ L: OpaquePointer!) -> Int32 {
+private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let ptr = luaL_checkudata(L, 1, USERDATA_DS_TAG)!
         .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
     if let rawPtr = ptr.pointee {
@@ -389,8 +391,8 @@ private func userdata_gc(_ L: OpaquePointer!) -> Int32 {
     return 0
 }
 
-private func meta_gc(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func meta_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     backgroundCallbacks.enumerateObjects { obj, _ in
         if let ref = obj as? NSNumber {
             skin.luaUnref(refTable, ref: ref.int32Value)
@@ -428,8 +430,8 @@ private var module_metaLib: [luaL_Reg] = [
 ]
 
 @_cdecl("luaopen_hs_libwebviewdatastore")
-public func luaopen_hs_libwebviewdatastore(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+public func luaopen_hs_libwebviewdatastore(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
 
     refTable = skin.registerLibrary(withObject: USERDATA_DS_TAG,
                                     functions: &moduleLib,

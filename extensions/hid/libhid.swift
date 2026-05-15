@@ -8,6 +8,68 @@ private let CAPSLOCK_ON:     Int32 = 1
 private let CAPSLOCK_TOGGLE: Int32 = -1
 private let CAPSLOCK_QUERY:  Int32 = 9
 
+// MARK: - LED control (ported from led.m)
+
+private func _createMatchingDict(isDevice: Bool, usagePage: UInt32, usage: UInt32) -> NSMutableDictionary? {
+    let key = isDevice ? kIOHIDDeviceUsagePageKey : kIOHIDElementUsagePageKey
+    let dic = NSMutableDictionary()
+    dic[key as String] = NSNumber(value: usagePage)
+    if usage != 0 {
+        let usageKey = isDevice ? kIOHIDDeviceUsageKey : kIOHIDElementUsageKey
+        dic[usageKey as String] = NSNumber(value: usage)
+    }
+    return dic
+}
+
+private func hidled_set(_ usage: UInt32, _ targetValue: Int) -> Bool {
+    var success = false
+
+    guard let mgr = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone)) as IOHIDManager? else {
+        return false
+    }
+    defer {
+        IOHIDManagerClose(mgr, IOOptionBits(kIOHIDOptionsTypeNone))
+    }
+
+    guard let dic = _createMatchingDict(isDevice: true, usagePage: UInt32(kHIDPage_GenericDesktop), usage: UInt32(kHIDUsage_GD_Keyboard)) else {
+        return false
+    }
+    IOHIDManagerSetDeviceMatching(mgr, dic)
+
+    let err = IOHIDManagerOpen(mgr, IOOptionBits(kIOHIDOptionsTypeNone))
+    guard err == kIOReturnSuccess else { return false }
+
+    guard let deviceSet = IOHIDManagerCopyDevices(mgr) as? Set<IOHIDDevice> else {
+        return false
+    }
+
+    guard let elDic = _createMatchingDict(isDevice: false, usagePage: UInt32(kHIDPage_LEDs), usage: 0) else {
+        return false
+    }
+
+    for device in deviceSet {
+        guard IOHIDDeviceConformsTo(device, UInt32(kHIDPage_GenericDesktop), UInt32(kHIDUsage_GD_Keyboard)) else {
+            continue
+        }
+        guard let elements = IOHIDDeviceCopyMatchingElements(device, elDic, IOOptionBits(kIOHIDOptionsTypeNone)) as? [IOHIDElement] else {
+            continue
+        }
+        for element in elements {
+            let usagePage = IOHIDElementGetUsagePage(element)
+            guard usagePage == kHIDPage_LEDs else { continue }
+            let elUsage = IOHIDElementGetUsage(element)
+            if elUsage == usage {
+                let val = IOHIDValueCreateWithIntegerValue(kCFAllocatorDefault, element, 0, targetValue)
+                IOHIDDeviceSetValue(device, element, val)
+                success = true
+                break
+            }
+        }
+    }
+
+    return success
+}
+
 // Source: https://discussions.apple.com/thread/7094207
 
 private func accessCapslock(_ op: Int32) -> Int32 {
@@ -69,7 +131,7 @@ private func accessCapslock(_ op: Int32) -> Int32 {
 // hs.hid.capslock.get() -> bool
 // Function
 // Checks the state of the caps lock via HID
-private func hid_capslock_query(_ L: OpaquePointer!) -> Int32 {
+private func hid_capslock_query(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let state = accessCapslock(CAPSLOCK_QUERY)
     lua_pushboolean(L, state)
     return 1
@@ -78,7 +140,7 @@ private func hid_capslock_query(_ L: OpaquePointer!) -> Int32 {
 // hs.hid.capslock.toggle() -> bool
 // Function
 // Toggles the state of caps lock via HID
-private func hid_capslock_toggle(_ L: OpaquePointer!) -> Int32 {
+private func hid_capslock_toggle(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let state = accessCapslock(CAPSLOCK_TOGGLE)
     lua_pushboolean(L, state)
     return 1
@@ -87,7 +149,7 @@ private func hid_capslock_toggle(_ L: OpaquePointer!) -> Int32 {
 // hs.hid.capslock.set(true) -> bool
 // Function
 // Assigns capslock to the desired state
-private func hid_capslock_on(_ L: OpaquePointer!) -> Int32 {
+private func hid_capslock_on(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let state = accessCapslock(CAPSLOCK_ON)
     lua_pushboolean(L, state)
     return 1
@@ -96,14 +158,14 @@ private func hid_capslock_on(_ L: OpaquePointer!) -> Int32 {
 // hs.hid.capslock.set(false) -> bool
 // Function
 // Assigns capslock to the desired state
-private func hid_capslock_off(_ L: OpaquePointer!) -> Int32 {
+private func hid_capslock_off(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let state = accessCapslock(CAPSLOCK_OFF)
     lua_pushboolean(L, state)
     return 1
 }
 
-private func hid_led_set(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func hid_led_set(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING, LS_TBOOLEAN, LS_TBREAK)
 
     let name = skin.toNSObject(atIndex: 1) as! String
@@ -135,8 +197,8 @@ private var hid_lib: [luaL_Reg] = [
 ]
 
 @_cdecl("luaopen_hs_libhid")
-func luaopen_hs_libhid(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+func luaopen_hs_libhid(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.registerLibrary("hs.hid", functions: &hid_lib, metaFunctions: nil)
     return 1
 }

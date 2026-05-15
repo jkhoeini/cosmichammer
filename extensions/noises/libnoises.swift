@@ -11,6 +11,30 @@ private let kSampleRate: Int32 = 44100
 private let USERDATA_TAG = "hs.noises"
 private var refTable: LSRefTable = LUA_NOREF
 
+// MARK: - C++ interop (extern "C" functions from detectors.h / detectors.cpp)
+//
+// The detectors library is compiled as C++ in the HSExtensions target.
+// detectors.h exposes these three functions with extern "C" linkage.
+// Since the HSSwiftExtensions target cannot include C headers directly,
+// we forward-declare them here.  They resolve at link time because both
+// targets are linked into the same binary.
+
+// detectors_t is typedef'd as void in detectors.h -- OpaquePointer in Swift.
+@_silgen_name("detectors_new")
+private func detectors_new() -> OpaquePointer
+
+@_silgen_name("detectors_free")
+private func detectors_free(_ detectors: OpaquePointer?)
+
+@_silgen_name("detectors_process")
+private func detectors_process(_ detectors: OpaquePointer?, _ buffer: UnsafePointer<Float>?) -> Int32
+
+// Constants from detectors.h
+private let DETECTORS_BLOCK_SIZE: Int32 = 512
+private let TSS_START_CODE: Int32 = 1
+private let TSS_STOP_CODE: Int32 = 2
+private let POP_CODE: Int32 = 4
+
 // MARK: - RecordState
 
 private struct RecordState {
@@ -33,21 +57,25 @@ private func audioInputCallback(
     inPacketDescs: UnsafePointer<AudioStreamPacketDescription>?
 ) {
     guard let userData = inUserData else { return }
-    let rec = Unmanaged<Listener>.fromOpaque(userData).takeUnretainedValue()
+    let rec = Unmanaged<NoisesListener>.fromOpaque(userData).takeUnretainedValue()
     guard rec.recordState.recording else { return }
 
     AudioQueueEnqueueBuffer(rec.recordState.queue!, inBuffer, 0, nil)
-    rec.feedSamples(toEngine: inBuffer.pointee.mAudioDataBytesCapacity, audioData: inBuffer.pointee.mAudioData)
+    rec.feedSamples(toEngine: inBuffer.pointee.mAudioDataBytesCapacity,
+                    audioData: inBuffer.pointee.mAudioData)
 }
 
-// MARK: - Listener
+// MARK: - NoisesListener
 
-class Listener: NSObject {
+/// The listener class that owns the audio queue and detectors engine.
+/// Named NoisesListener (rather than Listener) to avoid symbol collisions
+/// with the ObjC Listener class in the same linkage unit.
+private class NoisesListener: NSObject {
     var fn: Int32 = LUA_NOREF
     var recordState = RecordState()
     private var detectors: OpaquePointer?
 
-    func initPlugins() -> Listener {
+    func initPlugins() -> NoisesListener {
         self.fn = LUA_NOREF
         recordState.recording = false
         detectors = detectors_new()
@@ -55,8 +83,10 @@ class Listener: NSObject {
     }
 
     deinit {
-        stopRecording() // remove callbacks if not already stopped before deallocating
-        detectors_free(detectors)
+        stopRecording()
+        if let d = detectors {
+            detectors_free(d)
+        }
     }
 
     func setupAudioFormat(_ format: inout AudioStreamBasicDescription) {
@@ -80,7 +110,7 @@ class Listener: NSObject {
             &recordState.dataFormat,
             audioInputCallback,
             Unmanaged.passUnretained(self).toOpaque(),
-            nil, // seems more responsive than CFRunLoopGetCurrent()
+            nil,
             CFRunLoopMode.commonModes.rawValue,
             0,
             &recordState.queue
@@ -88,9 +118,11 @@ class Listener: NSObject {
 
         if status == 0 {
             for i in 0..<NUM_BUFFERS {
-                AudioQueueAllocateBuffer(recordState.queue!,
-                                         UInt32(Int32(DETECTORS_BLOCK_SIZE) * Int32(MemoryLayout<Float>.size)),
-                                         &recordState.buffers[i])
+                AudioQueueAllocateBuffer(
+                    recordState.queue!,
+                    UInt32(DETECTORS_BLOCK_SIZE) * UInt32(MemoryLayout<Float>.size),
+                    &recordState.buffers[i]
+                )
                 AudioQueueEnqueueBuffer(recordState.queue!, recordState.buffers[i]!, 0, nil)
             }
 
@@ -146,8 +178,8 @@ class Listener: NSObject {
 
     @objc func runCallback(withEvent evNumber: NSNumber) {
         if fn != LUA_NOREF {
-            let skin = LuaSkin.shared(withState: nil)!
-            let L = skin.L!
+            let skin = LuaSkin.skin(with: nil)
+            let L = skin.l!
             _lua_stackguard_entry(L)
             skin.pushLuaRef(refTable, ref: fn)
             lua_pushinteger(L, lua_Integer(evNumber.intValue))
@@ -157,15 +189,14 @@ class Listener: NSObject {
     }
 }
 
-// MARK: - Lua Infrastructure
+// MARK: - Lua functions
 
-private let listener_gc: lua_CFunction = { L in
-    let skin = LuaSkin.shared(withState: L)!
-    // Have to do some contortions to make sure ARC properly frees the Listener
+private let noises_listener_gc: lua_CFunction = { L in
+    let skin = LuaSkin.skin(with: L)
     let userdata = luaL_checkudata(L, 1, USERDATA_TAG)!
         .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
     if let rawPtr = userdata.pointee {
-        let listener = Unmanaged<Listener>.fromOpaque(rawPtr).takeRetainedValue()
+        let listener = Unmanaged<NoisesListener>.fromOpaque(rawPtr).takeRetainedValue()
         listener.stopRecording()
         listener.fn = skin.luaUnref(refTable, ref: listener.fn)
         userdata.pointee = nil
@@ -182,10 +213,10 @@ private let listener_gc: lua_CFunction = { L in
 ///
 /// Returns:
 ///  * The `hs.noises` object
-private let listener_stop: lua_CFunction = { L in
+private let noises_listener_stop: lua_CFunction = { L in
     let userdata = luaL_checkudata(L, 1, USERDATA_TAG)!
         .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
-    let listener = Unmanaged<Listener>.fromOpaque(userdata.pointee!).takeUnretainedValue()
+    let listener = Unmanaged<NoisesListener>.fromOpaque(userdata.pointee!).takeUnretainedValue()
     listener.stopRecording()
     lua_settop(L, 1)
     return 1
@@ -200,16 +231,16 @@ private let listener_stop: lua_CFunction = { L in
 ///
 /// Returns:
 ///  * The `hs.noises` object
-private let listener_start: lua_CFunction = { L in
+private let noises_listener_start: lua_CFunction = { L in
     let userdata = luaL_checkudata(L, 1, USERDATA_TAG)!
         .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
-    let listener = Unmanaged<Listener>.fromOpaque(userdata.pointee!).takeUnretainedValue()
+    let listener = Unmanaged<NoisesListener>.fromOpaque(userdata.pointee!).takeUnretainedValue()
     listener.startRecording()
     lua_settop(L, 1)
     return 1
 }
 
-private let listener_eq: lua_CFunction = { L in
+private let noises_listener_eq: lua_CFunction = { L in
     let udA = luaL_checkudata(L, 1, USERDATA_TAG)!
         .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
     let udB = luaL_checkudata(L, 2, USERDATA_TAG)!
@@ -218,7 +249,7 @@ private let listener_eq: lua_CFunction = { L in
     return 1
 }
 
-private func new_listener(_ L: OpaquePointer!, _ listener: Listener) {
+private func noises_new_listener(_ L: UnsafeMutablePointer<lua_State>!, _ listener: NoisesListener) {
     let listenptr = lua_newuserdata(L, MemoryLayout<UnsafeMutableRawPointer>.size)!
         .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
     listenptr.pointee = Unmanaged.passRetained(listener).toOpaque()
@@ -236,49 +267,53 @@ private func new_listener(_ L: OpaquePointer!, _ listener: Listener) {
 ///
 /// Returns:
 ///  * An `hs.noises` object
-private let listener_new: lua_CFunction = { L in
-    let skin = LuaSkin.shared(withState: L)!
+private let noises_listener_new: lua_CFunction = { L in
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TFUNCTION, LS_TBREAK)
 
-    let listener = Listener().initPlugins()
+    let listener = NoisesListener().initPlugins()
 
     lua_pushvalue(L, 1)
     listener.fn = skin.luaRef(refTable)
-    new_listener(L, listener)
+    noises_new_listener(L, listener)
     return 1
 }
 
-private let meta_gc: lua_CFunction = { _ in
+private let noises_meta_gc: lua_CFunction = { _ in
     return 0
 }
 
+// MARK: - Lua registration tables
+
 // Metatable for created objects when _new invoked
 private var noises_metalib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("start"),  func: listener_start),
-    luaL_Reg(name: strdup("stop"),   func: listener_stop),
-    luaL_Reg(name: strdup("__gc"),   func: listener_gc),
-    luaL_Reg(name: strdup("__eq"),   func: listener_eq),
+    luaL_Reg(name: strdup("start"),  func: noises_listener_start),
+    luaL_Reg(name: strdup("stop"),   func: noises_listener_stop),
+    luaL_Reg(name: strdup("__gc"),   func: noises_listener_gc),
+    luaL_Reg(name: strdup("__eq"),   func: noises_listener_eq),
     luaL_Reg(name: nil,              func: nil),
 ]
 
 // Functions for returned object when module loads
 private var noisesLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("new"),  func: listener_new),
+    luaL_Reg(name: strdup("new"),  func: noises_listener_new),
     luaL_Reg(name: nil,            func: nil),
 ]
 
 // Metatable for returned object when module loads
-private var meta_gcLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("__gc"), func: meta_gc),
+private var noises_meta_gcLib: [luaL_Reg] = [
+    luaL_Reg(name: strdup("__gc"), func: noises_meta_gc),
     luaL_Reg(name: nil,            func: nil),
 ]
 
+// MARK: - Module entry point
+
 @_cdecl("luaopen_hs_libnoises")
-public func luaopen_hs_libnoises(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+public func luaopen_hs_libnoises(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     refTable = skin.registerLibrary(withObject: USERDATA_TAG,
                                     functions: &noisesLib,
-                                    metaFunctions: &meta_gcLib,
+                                    metaFunctions: &noises_meta_gcLib,
                                     objectFunctions: &noises_metalib)
     return 1
 }

@@ -1,0 +1,1 @@
+../../../../extensions/streamdeck/NSImage+JPEG.swift

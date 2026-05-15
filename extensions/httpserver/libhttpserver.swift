@@ -6,7 +6,6 @@ import CocoaLumberjack
 
 // MARK: - Constants
 
-// From HTTPConnection.m
 private let TIMEOUT_WRITE_ERROR: TimeInterval = 30
 private let HTTP_FINAL_RESPONSE: Int = 91
 
@@ -15,11 +14,11 @@ private var refTable: LSRefTable = 0
 
 // MARK: - Helper Functions
 
-private func get_item_arg(_ L: OpaquePointer!, _ idx: Int32) -> UnsafeMutablePointer<httpserver_t> {
+private func get_item_arg(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> UnsafeMutablePointer<httpserver_t> {
     return luaL_checkudata(L, idx, USERDATA_TAG)!.bindMemory(to: httpserver_t.self, capacity: 1)
 }
 
-private func getUserData(_ L: OpaquePointer!, _ idx: Int32) -> HSHTTPServer {
+private func getUserData(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> HSHTTPServer {
     let httpServer = get_item_arg(L, idx)
     return Unmanaged<HSHTTPServer>.fromOpaque(httpServer.pointee.server!).takeUnretainedValue()
 }
@@ -37,28 +36,28 @@ private struct httpserver_t {
 
     override func didOpen() {
         super.didOpen()
-        LuaSkin.logInfo("Opened websocket connection")
+        NSLog("Opened websocket connection")
     }
 
-    override func didReceiveData(_ msg: Data!) {
+    override func didReceive(_ msg: Data!) {
         var response: NSData? = nil
 
         let responseCallbackBlock = { [self] in
             if self.callback != LUA_NOREF {
-                let skin = LuaSkin.shared(withState: nil)
-                _lua_stackguard_entry(skin.L)
+                let skin = LuaSkin.skin(with: nil)
+                _lua_stackguard_entry(skin.l)
                 skin.pushLuaRef(refTable, ref: self.callback)
                 skin.pushNSObject(msg as NSData)
 
                 if !skin.protectedCallAndTraceback(1, nresults: 1) {
-                    let errorMsg = String(cString: lua_tostring(skin.L, -1))
+                    let errorMsg = lua_tostring(skin.l, -1).map { String(cString: $0) } ?? "unknown error"
                     skin.logError("hs.httpserver:websocket callback error: \(errorMsg)")
                 } else {
                     response = skin.toNSObject(atIndex: -1) as? NSData
                 }
 
-                lua_pop(skin.L, 1)
-                _lua_stackguard_exit(skin.L)
+                lua_pop(skin.l, 1)
+                _lua_stackguard_exit(skin.l)
             }
         }
 
@@ -76,20 +75,20 @@ private struct httpserver_t {
 
         let responseCallbackBlock = { [self] in
             if self.callback != LUA_NOREF {
-                let skin = LuaSkin.shared(withState: nil)
-                _lua_stackguard_entry(skin.L)
+                let skin = LuaSkin.skin(with: nil)
+                _lua_stackguard_entry(skin.l)
                 skin.pushLuaRef(refTable, ref: self.callback)
-                lua_pushstring(skin.L, msg)
+                lua_pushstring(skin.l, msg)
 
                 if !skin.protectedCallAndTraceback(1, nresults: 1) {
-                    let errorMsg = String(cString: lua_tostring(skin.L, -1))
+                    let errorMsg = lua_tostring(skin.l, -1).map { String(cString: $0) } ?? "unknown error"
                     skin.logError("hs.httpserver:websocket callback error: \(errorMsg)")
                 } else {
                     response = skin.toNSObject(atIndex: -1) as? NSData
                 }
 
-                lua_pop(skin.L, 1)
-                _lua_stackguard_exit(skin.L)
+                lua_pop(skin.l, 1)
+                _lua_stackguard_exit(skin.l)
             }
         }
 
@@ -104,13 +103,13 @@ private struct httpserver_t {
 
     override func didClose() {
         super.didClose()
-        LuaSkin.logInfo("Closed websocket connection")
+        NSLog("Closed websocket connection")
     }
 }
 
 @objc private class HSHTTPServer: HTTPServer {
     @objc var fn: Int32 = LUA_NOREF
-    @objc var maxBodySize: UInt = 10 * 1024 * 1024 // 10 MB
+    @objc var maxBodySize: UInt = 10 * 1024 * 1024
     @objc var sslIdentity: SecIdentity?
     @objc var httpPassword: String?
     @objc var wsCallback: Int32 = LUA_NOREF
@@ -130,8 +129,8 @@ private struct httpserver_t {
     @objc var hsStatus: Int = 0
     @objc var hsHeaders: NSDictionary?
 
-    override var status: Int { return hsStatus }
-    override var httpHeaders: [AnyHashable: Any]! { return hsHeaders as? [AnyHashable: Any] }
+    override func status() -> Int { return hsStatus }
+    override func httpHeaders() -> [AnyHashable: Any]! { return hsHeaders as? [AnyHashable: Any] }
 }
 
 @objc private class HSHTTPConnection: HTTPConnection {
@@ -145,8 +144,7 @@ private struct httpserver_t {
 
     override func handleUnknownMethod(_ method: String!) {
         if requestContentLength > (config.server as! HSHTTPServer).maxBodySize {
-            // Status code 413 - Request Entity Too Large
-            let response = HTTPMessage(responseWithStatusCode: 413, description: nil, version: HTTPVersion1_1)!
+            let response = HTTPMessage(responseWithStatusCode: 413, description: nil, version: HTTPVersion1_1_str)!
             response.setHeaderField("Content-Length", value: "0")
             response.setHeaderField("Connection", value: "close")
 
@@ -159,7 +157,7 @@ private struct httpserver_t {
 
     override func preprocessErrorResponse(_ response: HTTPMessage!) -> Data! {
         if response.statusCode() == 413 {
-            let msg = "<html><head><title>Request Entity Too Large</title><head><body><H1>HTTP/1.1 413 Request Entity Too Large</H1><br/>The \(request.method!) method is not supported for requests larger than \((config.server as! HSHTTPServer).maxBodySize) bytes.<br/><hr/></body></html>"
+            let msg = "<html><head><title>Request Entity Too Large</title><head><body><H1>HTTP/1.1 413 Request Entity Too Large</H1><br/>The \(request.method()!) method is not supported for requests larger than \((config.server as! HSHTTPServer).maxBodySize) bytes.<br/><hr/></body></html>"
             let msgData = msg.data(using: .utf8)!
             response.setBody(msgData)
             response.setHeaderField("Content-Length", value: "\(msgData.count)")
@@ -168,21 +166,20 @@ private struct httpserver_t {
     }
 
     override func processBodyData(_ postDataChunk: Data!) {
-        request.appendData(postDataChunk)
+        request.append(postDataChunk)
     }
 
-    override func httpResponse(forMethod method: String!, uri path: String!) -> (any HTTPResponse)! {
+    override func httpResponse(forMethod method: String!, uri path: String!) -> (any HTTPResponse & NSObjectProtocol)! {
         var responseCode: Int32 = 0
         var responseHeaders: NSMutableDictionary? = nil
         var responseBody: Data? = nil
 
         let responseCallbackBlock = { [self] in
             if (self.config.server as! HSHTTPServer).fn != LUA_NOREF {
-                let skin = LuaSkin.shared(withState: nil)
-                let L = skin.L!
+                let skin = LuaSkin.skin(with: nil)
+                let L = skin.l!
                 _lua_stackguard_entry(L)
 
-                // add some headers for callback function to access
                 self.request.setHeaderField("X-Remote-Addr", value: self.asyncSocket.connectedHost)
                 self.request.setHeaderField("X-Remote-Port", value: "\(self.asyncSocket.connectedPort)")
                 self.request.setHeaderField("X-Server-Addr", value: self.asyncSocket.localHost)
@@ -192,21 +189,21 @@ private struct httpserver_t {
                 lua_pushstring(L, method)
                 lua_pushstring(L, path)
                 skin.pushNSObject(self.request.allHeaderFields())
-                skin.pushNSObject(self.request.body() as NSData?, with: LS_NSLuaStringAsDataOnly)
+                skin.pushNSObject(self.request.body() as NSData?, withOptions: LS_NSConversionOptions.nsLuaStringAsDataOnly.rawValue)
 
                 if !skin.protectedCallAndTraceback(4, nresults: 3) {
-                    let errorMsg = String(cString: lua_tostring(L, -1))
+                    let errorMsg = lua_tostring(L, -1).map { String(cString: $0) } ?? "unknown error"
                     skin.logError("hs.httpserver:setCallback() callback error: \(errorMsg)")
                     responseCode = 503
                     responseBody = "An error occurred during hs.httpserver callback handling".data(using: .utf8)
-                    lua_pop(L, 1) // the error message
+                    lua_pop(L, 1)
                 } else {
                     if !(lua_type(L, -3) == LUA_TSTRING && lua_type(L, -2) == LUA_TNUMBER && lua_type(L, -1) == LUA_TTABLE) {
                         skin.logError("hs.httpserver:setCallback() callbacks must return three values. A string for the response body, an integer response code, and a table of headers")
                         responseCode = 503
                         responseBody = "Callback handler returned invalid values".data(using: .utf8)
                     } else {
-                        responseBody = skin.toNSObject(atIndex: -3, with: LS_NSLuaStringAsDataOnly) as? Data
+                        responseBody = skin.toNSObject(at: -3, withOptions: LS_NSConversionOptions.nsLuaStringAsDataOnly.rawValue) as? Data
                         responseCode = Int32(lua_tointeger(L, -2))
 
                         responseHeaders = NSMutableDictionary()
@@ -226,7 +223,7 @@ private struct httpserver_t {
                             skin.logError("hs.httpserver:setCallback() callback returned a header table that contains non-strings")
                         }
                     }
-                    lua_pop(L, 3) // our results
+                    lua_pop(L, 3)
                 }
                 _lua_stackguard_exit(L)
             }
@@ -273,17 +270,15 @@ private struct httpserver_t {
     }
 
     override func sslIdentityAndCertificates() -> [Any]! {
-        var certError: NSError?
-        guard let identity = MYGetOrCreateAnonymousIdentity("Hammerspoon HTTP Server", 20 * kMYAnonymousIdentityDefaultExpirationInterval, &certError) else {
-            NSLog("ERROR: Unable to find/generate a certificate: \(certError?.description ?? "unknown")")
+        guard let identity = MYGetOrCreateAnonymousIdentity("Hammerspoon HTTP Server", 20 * kMYAnonymousIdentityDefaultExpirationInterval) else {
+            NSLog("ERROR: Unable to find/generate a certificate")
             return nil
         }
 
-        (config.server as! HSHTTPServer).sslIdentity = identity.takeUnretainedValue()
-        return [identity.takeUnretainedValue()]
+        (config.server as! HSHTTPServer).sslIdentity = identity
+        return [identity]
     }
 
-    // We're overriding this because CocoaHTTPServer seems to have not been updated for deprecated APIs
     override func startConnection() {
         if isSecureServer() {
             let certificates = sslIdentityAndCertificates()
@@ -292,14 +287,14 @@ private struct httpserver_t {
                 let settings = NSMutableDictionary(capacity: 3)
                 settings[kCFStreamSSLIsServer as String] = NSNumber(value: true)
                 settings[kCFStreamSSLCertificates as String] = certificates
-                settings[GCDAsyncSocketSSLProtocolVersionMin] = NSNumber(value: Int32(kTLSProtocol12))
-                settings[GCDAsyncSocketSSLProtocolVersionMax] = NSNumber(value: Int32(kTLSProtocol12))
+                // kTLSProtocol12 = 8 (deprecated SSLProtocol enum value)
+                settings[GCDAsyncSocketSSLProtocolVersionMin] = NSNumber(value: Int32(8))
+                settings[GCDAsyncSocketSSLProtocolVersionMax] = NSNumber(value: Int32(8))
 
                 asyncSocket.startTLS(settings as? [String: NSObject])
             }
         }
 
-        // Call startReadingRequest via performSelector since it's not exposed
         (self as HTTPConnection).perform(Selector(("startReadingRequest")))
     }
 }
@@ -321,8 +316,8 @@ private struct httpserver_t {
 ///  * By default, the server will start on a random TCP port and advertise itself with Bonjour. You can check the port with `hs.httpserver:getPort()`
 ///  * By default, the server will listen on all network interfaces. You can override this with `hs.httpserver:setInterface()` before starting the server
 ///  * Currently, in HTTPS mode, the server will use a self-signed certificate, which most browsers will warn about. If you want/need to be able to use `hs.httpserver` with a certificate signed by a trusted Certificate Authority, please file an bug on Hammerspoon requesting support for this.
-private func httpserver_new(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func httpserver_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TBOOLEAN | LS_TOPTIONAL, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
 
     let useSSL = (lua_type(L, 1) == LUA_TBOOLEAN) ? (lua_toboolean(L, 1) != 0) : false
@@ -365,8 +360,8 @@ private func httpserver_new(_ L: OpaquePointer!) -> Int32 {
 ///  * Given a path '/mysock' and a port of 8000, the websocket URL is as follows:
 ///   * ws://localhost:8000/mysock
 ///   * wss://localhost:8000/mysock (if SSL enabled)
-private func httpserver_websocket(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func httpserver_websocket(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING, LS_TFUNCTION, LS_TBREAK)
     let server = getUserData(L, 1)
 
@@ -388,8 +383,8 @@ private func httpserver_websocket(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * The `hs.httpserver` object
-private func httpserver_send(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func httpserver_send(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING, LS_TBREAK)
     let server = getUserData(L, 1)
 
@@ -422,8 +417,8 @@ private func httpserver_send(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * A POST request, often used by HTML forms, will store the contents of the form in the body of the request.
-private func httpserver_setCallback(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func httpserver_setCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     let server = getUserData(L, 1)
 
     switch lua_type(L, 2) {
@@ -453,8 +448,8 @@ private func httpserver_setCallback(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * Because the Hammerspoon http server processes incoming requests completely in memory, this method puts a limit on the maximum size for a POST or PUT request.
-private func httpserver_maxBodySize(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func httpserver_maxBodySize(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TNUMBER | LS_TINTEGER | LS_TOPTIONAL, LS_TBREAK)
 
     let server = getUserData(L, 1)
@@ -479,8 +474,8 @@ private func httpserver_maxBodySize(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * It is not currently possible to set multiple passwords for different users, or passwords only on specific paths
-private func httpserver_setPassword(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func httpserver_setPassword(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING | LS_TNIL | LS_TOPTIONAL, LS_TBREAK)
     let server = getUserData(L, 1)
 
@@ -506,8 +501,8 @@ private func httpserver_setPassword(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * The `hs.httpserver` object
-private func httpserver_start(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func httpserver_start(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     let server = getUserData(L, 1)
 
     if server.fn == LUA_NOREF && server.wsCallback == LUA_NOREF {
@@ -533,7 +528,7 @@ private func httpserver_start(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * The `hs.httpserver` object
-private func httpserver_stop(_ L: OpaquePointer!) -> Int32 {
+private func httpserver_stop(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let server = getUserData(L, 1)
     server.stop()
 
@@ -550,7 +545,7 @@ private func httpserver_stop(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * A number containing the TCP port
-private func httpserver_getPort(_ L: OpaquePointer!) -> Int32 {
+private func httpserver_getPort(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let server = getUserData(L, 1)
     lua_pushinteger(L, lua_Integer(server.listeningPort()))
     return 1
@@ -565,7 +560,7 @@ private func httpserver_getPort(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * The `hs.httpserver` object
-private func httpserver_setPort(_ L: OpaquePointer!) -> Int32 {
+private func httpserver_setPort(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let server = getUserData(L, 1)
     server.setPort(UInt16(luaL_checkinteger(L, 2)))
     lua_pushvalue(L, 1)
@@ -581,7 +576,7 @@ private func httpserver_setPort(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * A string containing the network interface name, or nil if the server will listen on all interfaces
-private func httpserver_getInterface(_ L: OpaquePointer!) -> Int32 {
+private func httpserver_getInterface(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let server = getUserData(L, 1)
     if let iface = server.interface() {
         lua_pushstring(L, iface)
@@ -607,7 +602,7 @@ private func httpserver_getInterface(_ L: OpaquePointer!) -> Int32 {
 ///   * localhost
 ///   * loopback
 ///   * nil (which means all interfaces, and is the default)
-private func httpserver_setInterface(_ L: OpaquePointer!) -> Int32 {
+private func httpserver_setInterface(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let server = getUserData(L, 1)
     if lua_isnoneornil(L, 2) {
         server.setInterface(nil)
@@ -630,7 +625,7 @@ private func httpserver_setInterface(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * This is not the hostname of the server, just its name in Bonjour service lists (e.g. Safari's Bonjour bookmarks menu)
-private func httpserver_getName(_ L: OpaquePointer!) -> Int32 {
+private func httpserver_getName(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let server = getUserData(L, 1)
     if let name = server.name() {
         lua_pushstring(L, name)
@@ -652,8 +647,8 @@ private func httpserver_getName(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * This is not the hostname of the server, just its name in Bonjour service lists (e.g. Safari's Bonjour bookmarks menu)
-private func httpserver_setName(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func httpserver_setName(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING, LS_TBREAK)
     let server = getUserData(L, 1)
     server.setName(skin.toNSObject(atIndex: 2) as? String)
@@ -663,8 +658,8 @@ private func httpserver_setName(_ L: OpaquePointer!) -> Int32 {
 
 // MARK: - GC / Meta
 
-private func httpserver_objectGC(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func httpserver_objectGC(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     let httpServer = get_item_arg(L, 1)
     let server = Unmanaged<HSHTTPServer>.fromOpaque(httpServer.pointee.server!).takeRetainedValue()
     server.stop()
@@ -673,65 +668,46 @@ private func httpserver_objectGC(_ L: OpaquePointer!) -> Int32 {
     return 0
 }
 
-private func userdata_tostring(_ L: OpaquePointer!) -> Int32 {
+private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let server = getUserData(L, 1)
     let theName = server.name() ?? "unnamed"
     let thePort = server.listeningPort()
 
-    let str = String(format: "%s: %@:%d (%p)", USERDATA_TAG, theName, thePort, lua_topointer(L, 1)!)
+    let str = "\(USERDATA_TAG): \(theName):\(thePort) (\(String(describing: lua_topointer(L, 1)!)))"
     lua_pushstring(L, str)
     return 1
 }
 
-// MARK: - C Callback Wrappers
+// MARK: - Registration
 
-private let httpserver_new_C: @convention(c) (OpaquePointer?) -> Int32 = { L in httpserver_new(L) }
-private let httpserver_websocket_C: @convention(c) (OpaquePointer?) -> Int32 = { L in httpserver_websocket(L) }
-private let httpserver_send_C: @convention(c) (OpaquePointer?) -> Int32 = { L in httpserver_send(L) }
-private let httpserver_start_C: @convention(c) (OpaquePointer?) -> Int32 = { L in httpserver_start(L) }
-private let httpserver_stop_C: @convention(c) (OpaquePointer?) -> Int32 = { L in httpserver_stop(L) }
-private let httpserver_getPort_C: @convention(c) (OpaquePointer?) -> Int32 = { L in httpserver_getPort(L) }
-private let httpserver_setPort_C: @convention(c) (OpaquePointer?) -> Int32 = { L in httpserver_setPort(L) }
-private let httpserver_getInterface_C: @convention(c) (OpaquePointer?) -> Int32 = { L in httpserver_getInterface(L) }
-private let httpserver_setInterface_C: @convention(c) (OpaquePointer?) -> Int32 = { L in httpserver_setInterface(L) }
-private let httpserver_getName_C: @convention(c) (OpaquePointer?) -> Int32 = { L in httpserver_getName(L) }
-private let httpserver_setName_C: @convention(c) (OpaquePointer?) -> Int32 = { L in httpserver_setName(L) }
-private let httpserver_setCallback_C: @convention(c) (OpaquePointer?) -> Int32 = { L in httpserver_setCallback(L) }
-private let httpserver_setPassword_C: @convention(c) (OpaquePointer?) -> Int32 = { L in httpserver_setPassword(L) }
-private let httpserver_maxBodySize_C: @convention(c) (OpaquePointer?) -> Int32 = { L in httpserver_maxBodySize(L) }
-private let httpserver_objectGC_C: @convention(c) (OpaquePointer?) -> Int32 = { L in httpserver_objectGC(L) }
-private let userdata_tostring_C: @convention(c) (OpaquePointer?) -> Int32 = { L in userdata_tostring(L) }
-
-// MARK: - Module Registration
-
-private var httpserverLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("new"), func: httpserver_new_C),
+private let httpserverLib: [luaL_Reg] = [
+    luaL_Reg(name: strdup("new"), func: httpserver_new),
     luaL_Reg(name: nil, func: nil),
 ]
 
-private var httpserverObjectLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("websocket"),    func: httpserver_websocket_C),
-    luaL_Reg(name: strdup("send"),         func: httpserver_send_C),
-    luaL_Reg(name: strdup("start"),        func: httpserver_start_C),
-    luaL_Reg(name: strdup("stop"),         func: httpserver_stop_C),
-    luaL_Reg(name: strdup("getPort"),      func: httpserver_getPort_C),
-    luaL_Reg(name: strdup("setPort"),      func: httpserver_setPort_C),
-    luaL_Reg(name: strdup("getInterface"), func: httpserver_getInterface_C),
-    luaL_Reg(name: strdup("setInterface"), func: httpserver_setInterface_C),
-    luaL_Reg(name: strdup("getName"),      func: httpserver_getName_C),
-    luaL_Reg(name: strdup("setName"),      func: httpserver_setName_C),
-    luaL_Reg(name: strdup("setCallback"),  func: httpserver_setCallback_C),
-    luaL_Reg(name: strdup("setPassword"),  func: httpserver_setPassword_C),
-    luaL_Reg(name: strdup("maxBodySize"),  func: httpserver_maxBodySize_C),
-    luaL_Reg(name: strdup("__tostring"),   func: userdata_tostring_C),
-    luaL_Reg(name: strdup("__gc"),         func: httpserver_objectGC_C),
+private let httpserverObjectLib: [luaL_Reg] = [
+    luaL_Reg(name: strdup("websocket"),    func: httpserver_websocket),
+    luaL_Reg(name: strdup("send"),         func: httpserver_send),
+    luaL_Reg(name: strdup("start"),        func: httpserver_start),
+    luaL_Reg(name: strdup("stop"),         func: httpserver_stop),
+    luaL_Reg(name: strdup("getPort"),      func: httpserver_getPort),
+    luaL_Reg(name: strdup("setPort"),      func: httpserver_setPort),
+    luaL_Reg(name: strdup("getInterface"), func: httpserver_getInterface),
+    luaL_Reg(name: strdup("setInterface"), func: httpserver_setInterface),
+    luaL_Reg(name: strdup("getName"),      func: httpserver_getName),
+    luaL_Reg(name: strdup("setName"),      func: httpserver_setName),
+    luaL_Reg(name: strdup("setCallback"),  func: httpserver_setCallback),
+    luaL_Reg(name: strdup("setPassword"),  func: httpserver_setPassword),
+    luaL_Reg(name: strdup("maxBodySize"),  func: httpserver_maxBodySize),
+    luaL_Reg(name: strdup("__tostring"),   func: userdata_tostring),
+    luaL_Reg(name: strdup("__gc"),         func: httpserver_objectGC),
     luaL_Reg(name: nil, func: nil),
 ]
 
 @_cdecl("luaopen_hs_libhttpserver")
-public func luaopen_hs_libhttpserver(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
-    refTable = skin.registerLibrary(withObject: "hs.httpserver", functions: &httpserverLib, metaFunctions: nil, objectFunctions: &httpserverObjectLib)
+public func luaopen_hs_libhttpserver(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
+    refTable = skin.registerLibrary(withObject: "hs.httpserver", functions: httpserverLib, metaFunctions: nil, objectFunctions: httpserverObjectLib)
 
     DDLog.add(DDOSLogger.sharedInstance)
 

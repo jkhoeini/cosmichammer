@@ -1,13 +1,6 @@
 import Cocoa
 import LuaSkin
 
-// External functions declared in Hammerspoon core
-@_silgen_name("MJDockIconVisible")
-func MJDockIconVisible() -> ObjCBool
-
-@_silgen_name("MJDockIconSetVisible")
-func MJDockIconSetVisible(_ visible: ObjCBool)
-
 /// hs.dockicon.visible() -> bool
 /// Function
 /// Determine whether Hammerspoon's dock icon is visible
@@ -17,9 +10,8 @@ func MJDockIconSetVisible(_ visible: ObjCBool)
 ///
 /// Returns:
 ///  * A boolean, true if the dock icon is visible, false if not
-private func icon_visible(_ L: OpaquePointer!) -> Int32 {
-    let indock = MJDockIconVisible()
-    lua_pushboolean(L, indock.boolValue ? 1 : 0)
+private func icon_visible(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    lua_pushboolean(L, MJDockIconVisible() ? 1 : 0)
     return 1
 }
 
@@ -32,7 +24,7 @@ private func icon_visible(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * None
-private func icon_show(_ L: OpaquePointer!) -> Int32 {
+private func icon_show(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     MJDockIconSetVisible(true)
     return 0
 }
@@ -46,7 +38,7 @@ private func icon_show(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * None
-private func icon_hide(_ L: OpaquePointer!) -> Int32 {
+private func icon_hide(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     MJDockIconSetVisible(false)
     return 0
 }
@@ -60,7 +52,7 @@ private func icon_hide(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * None
-private func icon_bounce(_ L: OpaquePointer!) -> Int32 {
+private func icon_bounce(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let requestType: NSApplication.RequestUserAttentionType = lua_toboolean(L, 1) != 0 ? .criticalRequest : .informationalRequest
     NSApplication.shared.requestUserAttention(requestType)
     return 0
@@ -75,7 +67,7 @@ private func icon_bounce(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * None
-private func icon_setBadge(_ L: OpaquePointer!) -> Int32 {
+private func icon_setBadge(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let tile = NSApplication.shared.dockTile
     tile.badgeLabel = String(cString: luaL_checkstring(L, 1))
     tile.display()
@@ -98,8 +90,8 @@ private func icon_setBadge(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * If you update the canvas object by changing any of its components, it will not be reflected in the dock icon until you invoke [hs.dockicon.tileUpdate](#tileUpdate).
-private func icon_docktileCanvas(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func icon_docktileCanvas(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TANY | LS_TOPTIONAL, LS_TBREAK)
     let tile = NSApplication.shared.dockTile
 
@@ -137,8 +129,8 @@ private func icon_docktileCanvas(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * the size returned specifies the display size of the dock icon tile. If your canvas item is larger than this, then only the top left portion corresponding to the size returned will be displayed.
-private func icon_docktileSize(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func icon_docktileSize(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TBREAK)
     let tile = NSApplication.shared.dockTile
 
@@ -158,8 +150,8 @@ private func icon_docktileSize(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * Changes made to a canvas object are not reflected automatically like they are when a canvas is being displayed on the screen; you must invoke this method after making changes to the canvas for the updates to be reflected in the dock icon.
-private func icon_docktileUpdate(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func icon_docktileUpdate(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TBREAK)
     let tile = NSApplication.shared.dockTile
 
@@ -168,20 +160,20 @@ private func icon_docktileUpdate(_ L: OpaquePointer!) -> Int32 {
 }
 
 private var icon_lib: [luaL_Reg] = [
-    luaL_Reg(name: ("visible" as NSString).utf8String,    func: icon_visible),
-    luaL_Reg(name: ("show" as NSString).utf8String,       func: icon_show),
-    luaL_Reg(name: ("hide" as NSString).utf8String,       func: icon_hide),
-    luaL_Reg(name: ("bounce" as NSString).utf8String,     func: icon_bounce),
-    luaL_Reg(name: ("setBadge" as NSString).utf8String,   func: icon_setBadge),
-    luaL_Reg(name: ("tileCanvas" as NSString).utf8String, func: icon_docktileCanvas),
-    luaL_Reg(name: ("tileSize" as NSString).utf8String,   func: icon_docktileSize),
-    luaL_Reg(name: ("tileUpdate" as NSString).utf8String, func: icon_docktileUpdate),
+    luaL_Reg(name: strdup("visible"),    func: icon_visible),
+    luaL_Reg(name: strdup("show"),       func: icon_show),
+    luaL_Reg(name: strdup("hide"),       func: icon_hide),
+    luaL_Reg(name: strdup("bounce"),     func: icon_bounce),
+    luaL_Reg(name: strdup("setBadge"),   func: icon_setBadge),
+    luaL_Reg(name: strdup("tileCanvas"), func: icon_docktileCanvas),
+    luaL_Reg(name: strdup("tileSize"),   func: icon_docktileSize),
+    luaL_Reg(name: strdup("tileUpdate"), func: icon_docktileUpdate),
     luaL_Reg(name: nil, func: nil),
 ]
 
 @_cdecl("luaopen_hs_libdockicon")
-public func luaopen_hs_libdockicon(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+public func luaopen_hs_libdockicon(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.registerLibrary("hs.dockicon", functions: &icon_lib, metaFunctions: nil)
 
     return 1

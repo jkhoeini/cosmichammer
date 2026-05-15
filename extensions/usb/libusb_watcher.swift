@@ -4,6 +4,9 @@ import IOKit
 import IOKit.usb
 import LuaSkin
 
+// kIOMessageServiceIsTerminated is a C macro not bridged to Swift
+private let kIOMessageServiceIsTerminated: UInt32 = 0xE000_0010
+
 /// === hs.usb.watcher ===
 ///
 /// Watch for USB device connection/disconnection events
@@ -41,10 +44,10 @@ private func DeviceNotification(refCon: UnsafeMutableRawPointer?,
     let privateDataRef = refCon.assumingMemoryBound(to: USBPrivData.self)
     let watcher = privateDataRef.pointee.watcher
 
-    if messageType == UInt32(kIOMessageServiceIsTerminated) {
-        let skin = LuaSkin.shared(withState: nil)!
-        let L = skin.L!
-        if !skin.checkGCCanary(watcher.pointee.lsCanary) {
+    if messageType == kIOMessageServiceIsTerminated {
+        let skin = LuaSkin.skin(with: nil)
+        let L = skin.l!
+        if !skin.check(watcher.pointee.lsCanary) {
             return
         }
         _lua_stackguard_entry(L)
@@ -89,8 +92,8 @@ private func DeviceNotification(refCon: UnsafeMutableRawPointer?,
 
 // Iterate over new devices
 private func DeviceAdded(refCon: UnsafeMutableRawPointer?, iterator: io_iterator_t) {
-    let skin = LuaSkin.shared(withState: nil)!
-    let L = skin.L!
+    let skin = LuaSkin.skin(with: nil)
+    let L = skin.l!
     _lua_stackguard_entry(L)
 
     let watcher = refCon!.assumingMemoryBound(to: USBWatcher.self)
@@ -192,8 +195,8 @@ private func DeviceAdded(refCon: UnsafeMutableRawPointer?, iterator: io_iterator
 ///
 /// Returns:
 ///  * A `hs.usb.watcher` object
-private func usb_watcher_new(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func usb_watcher_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
 
     luaL_checktype(L, 1, LUA_TFUNCTION)
 
@@ -223,8 +226,8 @@ private func usb_watcher_new(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * The `hs.usb.watcher` object
-private func usb_watcher_start(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func usb_watcher_start(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     let usbwatcher = luaL_checkudata(L, 1, USERDATA_TAG)!.assumingMemoryBound(to: USBWatcher.self)
     lua_settop(L, 1)
 
@@ -266,7 +269,7 @@ private func usb_watcher_start(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * The `hs.usb.watcher` object
-private func usb_watcher_stop(_ L: OpaquePointer!) -> Int32 {
+private func usb_watcher_stop(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let usbwatcher = luaL_checkudata(L, 1, USERDATA_TAG)!.assumingMemoryBound(to: USBWatcher.self)
     lua_settop(L, 1)
 
@@ -281,8 +284,8 @@ private func usb_watcher_stop(_ L: OpaquePointer!) -> Int32 {
     return 1
 }
 
-private func usb_watcher_gc(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func usb_watcher_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     let usbwatcher = luaL_checkudata(L, 1, USERDATA_TAG)!.assumingMemoryBound(to: USBWatcher.self)
 
     lua_pushcfunction(L, usb_watcher_stop)
@@ -290,19 +293,19 @@ private func usb_watcher_gc(_ L: OpaquePointer!) -> Int32 {
     lua_call(L, 1, 1)
 
     usbwatcher.pointee.fn = skin.luaUnref(refTable, ref: usbwatcher.pointee.fn)
-    skin.destroyGCCanary(&usbwatcher.pointee.lsCanary)
+    skin.destroy(&usbwatcher.pointee.lsCanary)
 
     IONotificationPortDestroy(usbwatcher.pointee.gNotifyPort)
 
     return 0
 }
 
-private func meta_gc(_ L: OpaquePointer!) -> Int32 {
+private func meta_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 0
 }
 
-private func userdata_tostring(_ L: OpaquePointer!) -> Int32 {
-    let str = String(format: "%s: (%p)", USERDATA_TAG, lua_topointer(L, 1)!)
+private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let str = "\(USERDATA_TAG): (\(String(describing: lua_topointer(L, 1)!)))"
     lua_pushstring(L, str)
     return 1
 }
@@ -329,8 +332,8 @@ private var meta_gcLib: [luaL_Reg] = [
 ]
 
 @_cdecl("luaopen_hs_libusbwatcher")
-public func luaopen_hs_libusbwatcher(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+public func luaopen_hs_libusbwatcher(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     refTable = skin.registerLibrary(withObject: USERDATA_TAG,
                                     functions: &usbLib,
                                     metaFunctions: &meta_gcLib,

@@ -1,32 +1,32 @@
 import Cocoa
 
-@objc class HSGrowingTextField: NSTextField {
+@objc(HSGrowingTextField) public class HSGrowingTextField: NSTextField {
 
     private var hasLastIntrinsicSize = false
     private var isTextEditing = false
     private var lastIntrinsicSize: NSSize = .zero
 
-    override func textDidBeginEditing(_ notification: Notification) {
+    override public func textDidBeginEditing(_ notification: Notification) {
         super.textDidBeginEditing(notification)
         isTextEditing = true
     }
 
-    override func textDidEndEditing(_ notification: Notification) {
+    override public func textDidEndEditing(_ notification: Notification) {
         super.textDidEndEditing(notification)
         isTextEditing = false
     }
 
-    override func textDidChange(_ notification: Notification) {
+    override public func textDidChange(_ notification: Notification) {
         super.textDidChange(notification)
         invalidateIntrinsicContentSize()
     }
 
-    @objc func resetGrowth() {
+    @objc public func resetGrowth() {
         hasLastIntrinsicSize = false
         invalidateIntrinsicContentSize()
     }
 
-    override var intrinsicContentSize: NSSize {
+    override public var intrinsicContentSize: NSSize {
         var intrinsicSize = lastIntrinsicSize
 
         if isTextEditing || !hasLastIntrinsicSize {

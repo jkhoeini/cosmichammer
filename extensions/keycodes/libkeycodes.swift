@@ -2,12 +2,12 @@ import Cocoa
 import Carbon
 import LuaSkin
 
-private var USERDATA_TAG: UnsafePointer<CChar> = "hs.keycodes.callback"
+private let USERDATA_TAG = "hs.keycodes.callback"
 private var refTable: LSRefTable = LUA_NOREF
 
 // MARK: - Keycode Helpers
 
-private func pushkeycode(_ L: OpaquePointer!, _ code: Int, _ key: UnsafePointer<CChar>) {
+private func pushkeycode(_ L: UnsafeMutablePointer<lua_State>!, _ code: Int, _ key: String) {
     // t[key] = code
     lua_pushinteger(L, lua_Integer(code))
     lua_setfield(L, -2, key)
@@ -18,7 +18,7 @@ private func pushkeycode(_ L: OpaquePointer!, _ code: Int, _ key: UnsafePointer<
 }
 
 @_cdecl("keycodes_cachemap")
-public func keycodes_cachemap(_ L: OpaquePointer!) -> Int32 {
+public func keycodes_cachemap(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     lua_newtable(L)
 
     let relocatableKeyCodes: [UInt16] = [
@@ -44,7 +44,7 @@ public func keycodes_cachemap(_ L: OpaquePointer!) -> Int32 {
             let keyboardLayout = rawBuf.baseAddress!.assumingMemoryBound(to: UCKeyboardLayout.self)
             var keysDown: UInt32 = 0
             var chars = [UniChar](repeating: 0, count: 4)
-            var realLength: UniCharCount = 0
+            var realLength: Int = 0
 
             for i in 0..<relocatableKeyCodes.count {
                 let status = UCKeyTranslate(
@@ -60,7 +60,7 @@ public func keycodes_cachemap(_ L: OpaquePointer!) -> Int32 {
                     &chars
                 )
                 if status == noErr && realLength > 0 {
-                    let name = NSString(characters: &chars, length: 1).utf8String!
+                    let name = String(NSString(characters: &chars, length: 1))
                     // Ugly hack to work around an unexplained change in macOS12
                     if relocatableKeyCodes[i] != 93 && relocatableKeyCodes[i] != 94 {
                         pushkeycode(L, Int(relocatableKeyCodes[i]), name)
@@ -204,17 +204,17 @@ public func keycodes_cachemap(_ L: OpaquePointer!) -> Int32 {
 
 class MJKeycodesObserver: NSObject {
     var ref: Int32 = LUA_NOREF
-    var lsCanary: LSGCCanary = 0
+    var lsCanary: LSGCCanary = LSGCCanary()
 
     @objc func inputSourceChanged(_ note: Notification) {
         DispatchQueue.main.async { [weak self] in
             guard let self = self, self.ref != LUA_NOREF else { return }
-            let skin = LuaSkin.shared(withState: nil)!
-            guard skin.checkGCCanary(self.lsCanary) else { return }
-            _lua_stackguard_entry(skin.L)
+            let skin = LuaSkin.skin(with: nil)
+            guard skin.check(self.lsCanary) else { return }
+            _lua_stackguard_entry(skin.l)
             skin.pushLuaRef(refTable, ref: self.ref)
             skin.protectedCallAndError("hs.keycodes.inputSourceChanged", nargs: 0, nresults: 0)
-            _lua_stackguard_exit(skin.L)
+            _lua_stackguard_exit(skin.l)
         }
     }
 
@@ -238,8 +238,8 @@ class MJKeycodesObserver: NSObject {
 
 // MARK: - Callback Functions
 
-private func keycodes_newcallback(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func keycodes_newcallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
 
     luaL_checktype(L, 1, LUA_TFUNCTION)
 
@@ -260,20 +260,21 @@ private func keycodes_newcallback(_ L: OpaquePointer!) -> Int32 {
     return 1
 }
 
-private func keycodes_userdata_tostring(_ L: OpaquePointer!) -> Int32 {
-    let str = String(format: "%s: (%p)", USERDATA_TAG, lua_topointer(L, 1))
+private func keycodes_userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let ptr = lua_topointer(L, 1)
+    let str = "\(USERDATA_TAG): (0x\(String(Int(bitPattern: ptr), radix: 16)))"
     lua_pushstring(L, str)
     return 1
 }
 
-private func keycodes_callback_gc(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func keycodes_callback_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
 
     let ptr = luaL_checkudata(L, 1, USERDATA_TAG)!.assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
     let observer = Unmanaged<MJKeycodesObserver>.fromOpaque(ptr.pointee!).takeRetainedValue()
 
     var tmpCanary = observer.lsCanary
-    skin.destroyGCCanary(&tmpCanary)
+    skin.destroy(&tmpCanary)
     observer.lsCanary = tmpCanary
 
     observer.stop()
@@ -281,7 +282,7 @@ private func keycodes_callback_gc(_ L: OpaquePointer!) -> Int32 {
     return 0
 }
 
-private func keycodes_callback_stop(_ L: OpaquePointer!) -> Int32 {
+private func keycodes_callback_stop(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let ptr = luaL_checkudata(L, 1, USERDATA_TAG)!.assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
     let observer = Unmanaged<MJKeycodesObserver>.fromOpaque(ptr.pointee!).takeUnretainedValue()
     observer.stop()
@@ -304,8 +305,8 @@ private func getLayoutNameSwift(_ layout: TISInputSource) -> String? {
 }
 
 @_cdecl("pushSourceIcon")
-public func pushSourceIcon(_ L: OpaquePointer!, _ source: TISInputSource!) {
-    let skin = LuaSkin.shared(withState: L)!
+public func pushSourceIcon(_ L: UnsafeMutablePointer<lua_State>!, _ source: TISInputSource!) {
+    let skin = LuaSkin.skin(with: L)
     guard let source = source,
           let iconRef = TISGetInputSourceProperty(source, kTISPropertyIconRef) else {
         lua_pushnil(L)
@@ -349,8 +350,8 @@ private func getAllInputMethods() -> [TISInputSource]? {
 ///
 /// Returns:
 ///  * If no parameter is provided, returns a string containing the source id for the current keyboard layout or input method; if a parameter is provided, returns true or false specifying whether or not the input source was able to be changed.
-private func keycodes_sourceID(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func keycodes_sourceID(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING | LS_TOPTIONAL, LS_TBREAK)
 
     if lua_gettop(L) == 0 {
@@ -382,8 +383,8 @@ private func keycodes_sourceID(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * A string containing the name of the current keyboard layout
-private func keycodes_currentLayout(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func keycodes_currentLayout(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     let layout = TISCopyCurrentKeyboardLayoutInputSource()!.takeRetainedValue()
     skin.pushNSObject(getLayoutNameSwift(layout) as NSString?)
     return 1
@@ -398,7 +399,7 @@ private func keycodes_currentLayout(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * An hs.image object containing the icon, if available
-private func keycodes_currentLayoutIcon(_ L: OpaquePointer!) -> Int32 {
+private func keycodes_currentLayoutIcon(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let layout = TISCopyCurrentKeyboardInputSource()!.takeRetainedValue()
     pushSourceIcon(L, layout)
     return 1
@@ -416,8 +417,8 @@ private func keycodes_currentLayoutIcon(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * Only those layouts which can be explicitly switched to will be included in the table.  Keyboard layouts which are part of input methods are not included.  See `hs.keycodes.methods`.
-private func keycodes_layouts(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func keycodes_layouts(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
     let sourceIDsOnly = lua_gettop(L) == 1 ? (lua_toboolean(L, 1) != 0) : false
     let layouts = getAllLayouts()
@@ -449,8 +450,8 @@ private func keycodes_layouts(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * Keyboard layouts which are not part of an input method are not included in this table.  See `hs.keycodes.layouts`.
-private func keycodes_methods(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func keycodes_methods(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
     let sourceIDsOnly = lua_gettop(L) == 1 ? (lua_toboolean(L, 1) != 0) : false
     let methods = getAllInputMethods()
@@ -479,8 +480,8 @@ private func keycodes_methods(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * Name of current input method, or nil
-private func keycodes_currentMethod(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func keycodes_currentMethod(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     var currentMethod: String? = nil
 
     if let methods = getAllInputMethods() {
@@ -508,8 +509,8 @@ private func keycodes_currentMethod(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * A boolean, true if the layout was successfully changed, otherwise false
-private func keycodes_setLayout(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func keycodes_setLayout(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING, LS_TBREAK)
     let desiredLayout = skin.toNSObject(atIndex: 1) as! String
     var found = false
@@ -536,8 +537,8 @@ private func keycodes_setLayout(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * A boolean, true if the method was successfully changed, otherwise false
-private func keycodes_setMethod(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func keycodes_setMethod(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING, LS_TBREAK)
     let desiredLayout = skin.toNSObject(atIndex: 1) as! String
     var found = false
@@ -567,8 +568,8 @@ private func keycodes_setMethod(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * Not all layouts/methods have icons, so you should assume this will return nil at some point
-private func keycodes_getIcon(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func keycodes_getIcon(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING, LS_TBREAK)
     let sourceName = skin.toNSObject(atIndex: 1) as! String
     let layouts = getAllLayouts()
@@ -648,8 +649,8 @@ private var keycodeslib: [luaL_Reg] = [
 ]
 
 @_cdecl("luaopen_hs_libkeycodes")
-public func luaopen_hs_libkeycodes(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+public func luaopen_hs_libkeycodes(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     refTable = skin.registerLibrary(withObject: USERDATA_TAG,
                                      functions: &keycodeslib,
                                      metaFunctions: nil,

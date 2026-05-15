@@ -17,7 +17,7 @@ private var refTable: LSRefTable = 0
 // MARK: - MJScreenWatcher
 
 private class MJScreenWatcher: NSObject {
-    var fn: Int = LUA_NOREF
+    var fn: Int32 = LUA_NOREF
     var includeActive: Bool = false
 
     @objc func _screensChanged(_ note: Notification) {
@@ -27,13 +27,13 @@ private class MJScreenWatcher: NSObject {
     @objc func screensChanged(_ note: Notification) {
         guard fn != LUA_NOREF else { return }
 
-        let skin = LuaSkin.shared(withState: nil)
+        let skin = LuaSkin.skin(with: nil)
         let L = skin.l
         _lua_stackguard_entry(L)
 
         let argCount: Int32 = includeActive ? 1 : 0
 
-        skin.pushLuaRef(refTable, ref: fn)
+        skin.pushLuaRef(refTable, ref: Int32(fn))
         if includeActive {
             if note.name.rawValue == "NSWorkspaceActiveDisplayDidChangeNotification" {
                 lua_pushboolean(L, 1)
@@ -68,8 +68,8 @@ private struct ScreenWatcherData {
 ///
 /// Notes:
 ///  * A screen layout change usually involves a change that is made from the Displays Preferences Panel or when a monitor is attached or removed. It can also be caused by a change in the Dock size or presence.
-private func screen_watcher_new(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func screen_watcher_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
 
     luaL_checktype(L, 1, LUA_TFUNCTION)
 
@@ -81,7 +81,7 @@ private func screen_watcher_new(_ L: OpaquePointer!) -> Int32 {
     let fnRef = skin.luaRef(refTable)
 
     let object = MJScreenWatcher()
-    object.fn = fnRef
+    object.fn = Int32(fnRef)
     object.includeActive = false
 
     watcher.pointee.fn = Int32(fnRef)
@@ -110,8 +110,8 @@ private func screen_watcher_new(_ L: OpaquePointer!) -> Int32 {
 ///  * An active screen change indicates that the focused or main screen has changed when the user has "Displays have separate spaces" checked in the Mission Control Preferences Panel (the focused display is the display which has the active window and active menubar).
 ///    * Detecting a change in the active display relies on watching for the `NSWorkspaceActiveDisplayDidChangeNotification` message which is not documented by Apple.  While this message has been around at least since OS X 10.9, because it is undocumented, we cannot be positive that Apple won't remove it in a future OS X update.  Because this watcher works by listening for posted messages, should Apple remove this notification, your callback function will no longer receive messages about this change -- it won't crash or change behavior in any other way.  This documentation will be updated if this status changes.
 ///  * Plugging in or unplugging a monitor can cause both a screen layout callback and an active screen change callback.
-private func screen_watcher_new_with_active_screen(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func screen_watcher_new_with_active_screen(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TFUNCTION, LS_TBREAK)
 
     lua_pushcfunction(L, screen_watcher_new)
@@ -134,7 +134,7 @@ private func screen_watcher_new_with_active_screen(_ L: OpaquePointer!) -> Int32
 ///
 /// Returns:
 ///  * The `hs.screen.watcher` object
-private func screen_watcher_start(_ L: OpaquePointer!) -> Int32 {
+private func screen_watcher_start(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let ptr = luaL_checkudata(L, 1, USERDATA_TAG)!.assumingMemoryBound(to: ScreenWatcherData.self)
     lua_settop(L, 1)
 
@@ -167,7 +167,7 @@ private func screen_watcher_start(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * The `hs.screen.watcher` object
-private func screen_watcher_stop(_ L: OpaquePointer!) -> Int32 {
+private func screen_watcher_stop(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let ptr = luaL_checkudata(L, 1, USERDATA_TAG)!.assumingMemoryBound(to: ScreenWatcherData.self)
     lua_settop(L, 1)
 
@@ -189,15 +189,15 @@ private func screen_watcher_stop(_ L: OpaquePointer!) -> Int32 {
     return 1
 }
 
-private func screen_watcher_gc(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func screen_watcher_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     let ptr = luaL_checkudata(L, 1, USERDATA_TAG)!.assumingMemoryBound(to: ScreenWatcherData.self)
 
     lua_pushcfunction(L, screen_watcher_stop)
     lua_pushvalue(L, 1)
     lua_call(L, 1, 1)
 
-    skin.luaUnref(refTable, ref: Int(ptr.pointee.fn))
+    skin.luaUnref(refTable, ref: ptr.pointee.fn)
 
     if let obj = ptr.pointee.obj {
         let _ = Unmanaged<MJScreenWatcher>.fromOpaque(obj).takeRetainedValue()
@@ -207,12 +207,12 @@ private func screen_watcher_gc(_ L: OpaquePointer!) -> Int32 {
     return 0
 }
 
-private func meta_gc(_ L: OpaquePointer!) -> Int32 {
+private func meta_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 0
 }
 
-private func userdata_tostring(_ L: OpaquePointer!) -> Int32 {
-    let str = String(format: "%@: (%p)", USERDATA_TAG, lua_topointer(L, 1)!)
+private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let str = "\(USERDATA_TAG): (\(String(describing: lua_topointer(L, 1)!)))"
     lua_pushstring(L, str)
     return 1
 }
@@ -241,8 +241,8 @@ private var meta_gcLib: [luaL_Reg] = [
 // MARK: - Module entry point
 
 @_cdecl("luaopen_hs_libscreenwatcher")
-public func luaopen_hs_libscreenwatcher(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+public func luaopen_hs_libscreenwatcher(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     refTable = skin.registerLibrary(withObject: USERDATA_TAG, functions: &screenLib, metaFunctions: &meta_gcLib, objectFunctions: &screen_metalib)
 
     return 1

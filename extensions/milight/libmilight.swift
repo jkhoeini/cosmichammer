@@ -16,12 +16,12 @@ private var broadcastOption: Int32 = 1
 
 private let cmd_suffix: UInt8 = 0x55
 
-private func pushCommand(_ L: OpaquePointer!, _ cmd: UnsafePointer<CChar>, _ value: Int) {
+private func pushCommand(_ L: UnsafeMutablePointer<lua_State>!, _ cmd: UnsafePointer<CChar>, _ value: Int) {
     lua_pushinteger(L, lua_Integer(value))
     lua_setfield(L, -2, cmd)
 }
 
-func milight_cacheCommands(_ L: OpaquePointer!) -> Int32 {
+func milight_cacheCommands(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     lua_createtable(L, 0, 0)
 
     pushCommand(L, "rgbw", 0x40)
@@ -79,11 +79,11 @@ func milight_cacheCommands(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * You can not use 255.255.255.255 as the IP address, to do so requires elevated privileges for the Hammerspoon process
-private func milight_new(_ L: OpaquePointer!) -> Int32 {
+private func milight_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let ip = luaL_checkstring(L, 1)!
     let port: Int32
 
-    if lua_isnone(L, 2) != 0 {
+    if lua_isnone(L, 2) {
         port = 8899
     } else {
         port = Int32(luaL_checkinteger(L, 2))
@@ -124,7 +124,7 @@ private func milight_new(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * None
-private func milight_del(_ L: OpaquePointer!) -> Int32 {
+private func milight_del(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let bridge = luaL_checkudata(L, 1, USERDATA_TAG)!.assumingMemoryBound(to: BridgeData.self)
 
     close(bridge.pointee.socket)
@@ -145,13 +145,13 @@ private func milight_del(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * This is a low level command, you typically should use a specific method for the operation you want to perform
-private func milight_send(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func milight_send(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     let bridge = luaL_checkudata(L, 1, USERDATA_TAG)!.assumingMemoryBound(to: BridgeData.self)
 
     let cmd_key = UInt8(luaL_checkinteger(L, 2))
     let value: UInt8
-    if lua_isnone(L, 3) != 0 {
+    if lua_isnone(L, 3) {
         value = 0x0
     } else {
         value = UInt8(luaL_checkinteger(L, 3))
@@ -181,12 +181,12 @@ private func milight_send(_ L: OpaquePointer!) -> Int32 {
 }
 
 // Lua/HS glue
-private func milight_metagc(_ L: OpaquePointer!) -> Int32 {
+private func milight_metagc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     _ = milight_del(L)
     return 0
 }
 
-private func userdata_tostring(_ L: OpaquePointer!) -> Int32 {
+private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let bridge = luaL_checkudata(L, 1, USERDATA_TAG)!.assumingMemoryBound(to: BridgeData.self)
     let ptr = lua_topointer(L, 1)
     let ip = String(cString: bridge.pointee.ip!)
@@ -210,8 +210,8 @@ private let milight_objectlib: [luaL_Reg] = [
 ]
 
 @_cdecl("luaopen_hs_libmilight")
-public func luaopen_hs_libmilight(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+public func luaopen_hs_libmilight(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.registerLibrary(withObject: USERDATA_TAG, functions: milightlib, metaFunctions: nil, objectFunctions: milight_objectlib)
 
     return 1

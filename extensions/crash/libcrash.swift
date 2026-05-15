@@ -15,7 +15,7 @@ import LuaSkin
 ///
 /// Notes:
 ///  * This is for testing purposes only, you are extremely unlikely to need this in normal Hammerspoon usage
-private func burnTheWorld(_ L: OpaquePointer!) -> Int32 {
+private func burnTheWorld(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let x = UnsafeMutablePointer<Int>.allocate(capacity: 0)
     x.deinitialize(count: 0)
     x.deallocate()
@@ -38,13 +38,13 @@ private func burnTheWorld(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * Outside of a context of a Lua pcall() (or a C lua_pcall()), this will cause Hammerspoon to exit. We follow the safe behaviour of terminating the app on any unhandled Objective C exception.
-private func throwTheWorld(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func throwTheWorld(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING, LS_TSTRING, LS_TBREAK)
 
     let name = skin.toNSObject(atIndex: 1) as! String
     let message = skin.toNSObject(atIndex: 2) as! String
-    NSException.raise(NSExceptionName(rawValue: name), format: "%@", message)
+    NSException(name: NSExceptionName(rawValue: name), reason: message, userInfo: nil).raise()
 
     return 0
 }
@@ -61,8 +61,8 @@ private func throwTheWorld(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * This is probably only useful to extension developers.
-private func crashLog(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func crashLog(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.logBreadcrumb(skin.toNSObject(atIndex: 1) as! String)
 
     return 0
@@ -78,8 +78,8 @@ private func crashLog(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * None
-private func crashKV(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func crashKV(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING, LS_TSTRING, LS_TBREAK)
 
     let _ = skin.toNSObject(atIndex: 1) as! String
@@ -97,7 +97,7 @@ private func crashKV(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * An integer containing the amount of RAM in use by Hammerspoon (in bytes), or nil if an error occurred
-private func residentSize(_ L: OpaquePointer!) -> Int32 {
+private func residentSize(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     var info = task_basic_info()
     var size = mach_msg_type_number_t(MemoryLayout<task_basic_info>.size) / 4
     let kerr = withUnsafeMutablePointer(to: &info) { infoPtr in
@@ -110,7 +110,7 @@ private func residentSize(_ L: OpaquePointer!) -> Int32 {
         lua_pushinteger(L, lua_Integer(info.resident_size))
     } else {
         lua_pushnil(L)
-        NSLog("Error with task_info(): %s", mach_error_string(kerr))
+        NSLog("Error with task_info(): %@", String(cString: mach_error_string(kerr)))
     }
 
     return 1
@@ -129,8 +129,8 @@ private var crashlib: [luaL_Reg] = [
          must match the require-path of this file, i.e. "hs.crash.internal". */
 
 @_cdecl("luaopen_hs_libcrash")
-public func luaopen_hs_libcrash(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+public func luaopen_hs_libcrash(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.registerLibrary("hs.crash", functions: &crashlib, metaFunctions: nil)
     return 1
 }

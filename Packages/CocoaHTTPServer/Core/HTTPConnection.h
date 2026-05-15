@@ -38,38 +38,44 @@
 	dispatch_queue_t connectionQueue;
 	GCDAsyncSocket *asyncSocket;
 	HTTPConfig *config;
-	
+
 	BOOL started;
-	
+
 	HTTPMessage *request;
 	unsigned int numHeaderLines;
-	
+
 	BOOL sentResponseHeaders;
-	
+
 	NSString *nonce;
 	long lastNC;
-	
+
 	NSObject<HTTPResponse> *httpResponse;
-	
+
 	NSMutableArray *ranges;
 	NSMutableArray *ranges_headers;
 	NSString *ranges_boundry;
 	int rangeIndex;
-	
+
 	UInt64 requestContentLength;
 	UInt64 requestContentLengthReceived;
 	UInt64 requestChunkSize;
 	UInt64 requestChunkSizeReceived;
-  
+
 	NSMutableArray *responseDataSizes;
 }
+
+// Properties exposing ivars for Swift subclass access.
+@property (nonatomic, strong, readonly) GCDAsyncSocket *asyncSocket;
+@property (nonatomic, strong, readonly) HTTPConfig *config;
+@property (nonatomic, strong, readonly) HTTPMessage *request;
+@property (nonatomic, readonly) UInt64 requestContentLength;
 
 - (id)initWithAsyncSocket:(GCDAsyncSocket *)newSocket configuration:(HTTPConfig *)aConfig;
 
 - (void)start;
 - (void)stop;
 
-- (void)startConnection;
+- (void)startConnection NS_SWIFT_NAME(startConnection());
 
 - (BOOL)supportsMethod:(NSString *)method atPath:(NSString *)path;
 - (BOOL)expectsRequestBodyFromMethod:(NSString *)method atPath:(NSString *)path;

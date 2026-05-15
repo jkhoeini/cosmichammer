@@ -1,11 +1,13 @@
 import Foundation
 import ServiceManagement
 
-@objc func MJAutoLaunchGet() -> Bool {
+@_cdecl("MJAutoLaunchGet")
+func MJAutoLaunchGet() -> Bool {
     SMAppService.mainApp.status == .enabled
 }
 
-@objc func MJAutoLaunchSet(_ opensAtLogin: Bool) {
+@_cdecl("MJAutoLaunchSet")
+func MJAutoLaunchSet(_ opensAtLogin: Bool) {
     let service = SMAppService.mainApp
     do {
         if opensAtLogin {

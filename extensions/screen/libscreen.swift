@@ -7,7 +7,7 @@ private let USERDATA_TAG = "hs.screen"
 
 // MARK: - Helper: get NSScreen from Lua userdata
 
-private func get_screen_arg(_ L: OpaquePointer!, _ idx: Int32) -> NSScreen {
+private func get_screen_arg(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> NSScreen {
     let ptr = luaL_checkudata(L, idx, USERDATA_TAG)!
     return Unmanaged<NSScreen>.fromOpaque(ptr.assumingMemoryBound(to: UnsafeMutableRawPointer.self).pointee).takeUnretainedValue()
 }
@@ -25,25 +25,25 @@ private let hs_CGDisplayCreateImageForRect: CGDisplayCreateImageForRectFunc? = {
 // MARK: - Private API declarations
 
 @_silgen_name("CoreDisplay_Display_SetUserBrightness")
-func CoreDisplay_Display_SetUserBrightness(_ display: CGDirectDisplayID, _ brightness: Double)
+private func CoreDisplay_Display_SetUserBrightness(_ display: CGDirectDisplayID, _ brightness: Double)
 
 @_silgen_name("CoreDisplay_Display_GetUserBrightness")
-func CoreDisplay_Display_GetUserBrightness(_ display: CGDirectDisplayID) -> Double
+private func CoreDisplay_Display_GetUserBrightness(_ display: CGDirectDisplayID) -> Double
 
 @_silgen_name("DisplayServicesGetBrightness")
-func DisplayServicesGetBrightness(_ display: CGDirectDisplayID, _ brightness: UnsafeMutablePointer<Float>) -> Int32
+private func DisplayServicesGetBrightness(_ display: CGDirectDisplayID, _ brightness: UnsafeMutablePointer<Float>) -> Int32
 
 @_silgen_name("DisplayServicesSetBrightness")
-func DisplayServicesSetBrightness(_ display: CGDirectDisplayID, _ brightness: Float) -> Int32
+private func DisplayServicesSetBrightness(_ display: CGDirectDisplayID, _ brightness: Float) -> Int32
 
 // MARK: - CoreGraphics private display mode APIs
 
 private struct CGSDisplayMode {
-    var modeNumber: UInt32
-    var flags: UInt32
-    var width: UInt32
-    var height: UInt32
-    var depth: UInt32
+    var modeNumber: UInt32 = 0
+    var flags: UInt32 = 0
+    var width: UInt32 = 0
+    var height: UInt32 = 0
+    var depth: UInt32 = 0
     var unknown: (UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
                   UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
                   UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
@@ -60,40 +60,40 @@ private struct CGSDisplayMode {
                   UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
                   UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
                   UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-                  UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8) // 170 bytes
-    var freq: UInt16
+                  UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8) = (0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0) // 170 bytes
+    var freq: UInt16 = 0
     var more_unknown: (UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-                       UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8) // 16 bytes
-    var density: Float
+                       UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8) = (0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0) // 16 bytes
+    var density: Float = 0
 }
 
 @_silgen_name("CGSGetCurrentDisplayMode")
-func CGSGetCurrentDisplayMode(_ display: CGDirectDisplayID, _ modeNum: UnsafeMutablePointer<Int32>)
+private func CGSGetCurrentDisplayMode(_ display: CGDirectDisplayID, _ modeNum: UnsafeMutablePointer<Int32>)
 
 @_silgen_name("CGSConfigureDisplayMode")
-func CGSConfigureDisplayMode(_ config: CGDisplayConfigRef, _ display: CGDirectDisplayID, _ modeNum: Int32)
+private func CGSConfigureDisplayMode(_ config: CGDisplayConfigRef, _ display: CGDirectDisplayID, _ modeNum: Int32)
 
 @_silgen_name("CGSGetNumberOfDisplayModes")
-func CGSGetNumberOfDisplayModes(_ display: CGDirectDisplayID, _ nModes: UnsafeMutablePointer<Int32>)
+private func CGSGetNumberOfDisplayModes(_ display: CGDirectDisplayID, _ nModes: UnsafeMutablePointer<Int32>)
 
 @_silgen_name("CGSGetDisplayModeDescriptionOfLength")
-func CGSGetDisplayModeDescriptionOfLength(_ display: CGDirectDisplayID, _ idx: Int32, _ mode: UnsafeMutablePointer<CGSDisplayMode>, _ length: Int32)
+private func CGSGetDisplayModeDescriptionOfLength(_ display: CGDirectDisplayID, _ idx: Int32, _ mode: UnsafeMutablePointer<CGSDisplayMode>, _ length: Int32)
 
 // IOKit private constant
 private let kIOFBSetTransform: UInt32 = 0x00000400
 
 // CoreGraphics private APIs
 @_silgen_name("CGDisplayUsesForceToGray")
-func CGDisplayUsesForceToGray() -> Bool
+private func CGDisplayUsesForceToGray() -> Bool
 
 @_silgen_name("CGDisplayForceToGray")
-func CGDisplayForceToGray(_ forceToGray: Bool)
+private func CGDisplayForceToGray(_ forceToGray: Bool)
 
 @_silgen_name("CGDisplayUsesInvertedPolarity")
-func CGDisplayUsesInvertedPolarity() -> Bool
+private func CGDisplayUsesInvertedPolarity() -> Bool
 
 @_silgen_name("CGDisplaySetInvertedPolarity")
-func CGDisplaySetInvertedPolarity(_ invertedPolarity: Bool)
+private func CGDisplaySetInvertedPolarity(_ invertedPolarity: Bool)
 
 // MARK: - Module-level state
 
@@ -103,7 +103,7 @@ private var notificationQueue: DispatchQueue!
 
 // MARK: - Helpers
 
-private func geom_pushrect(_ L: OpaquePointer!, _ rect: NSRect) {
+private func geom_pushrect(_ L: UnsafeMutablePointer<lua_State>!, _ rect: NSRect) {
     lua_newtable(L)
     lua_pushnumber(L, lua_Number(rect.origin.x));    lua_setfield(L, -2, "x")
     lua_pushnumber(L, lua_Number(rect.origin.y));    lua_setfield(L, -2, "y")
@@ -117,13 +117,13 @@ private func getScreenID(_ screen: NSScreen) -> CGDirectDisplayID {
 
 // MARK: - Lua callbacks
 
-private func screen_frame(_ L: OpaquePointer!) -> Int32 {
+private func screen_frame(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let screen = get_screen_arg(L, 1)
     geom_pushrect(L, screen.frame)
     return 1
 }
 
-private func screen_visibleframe(_ L: OpaquePointer!) -> Int32 {
+private func screen_visibleframe(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let screen = get_screen_arg(L, 1)
     geom_pushrect(L, screen.visibleFrame)
     return 1
@@ -138,8 +138,8 @@ private func screen_visibleframe(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * A number containing the ID of the screen
-private func screen_id(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func screen_id(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
 
     let screen = get_screen_arg(L, 1)
@@ -156,8 +156,8 @@ private func screen_id(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * A string containing the name of the screen, or nil if an error occurred
-private func screen_name(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func screen_name(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
 
     let screen = get_screen_arg(L, 1)
@@ -180,8 +180,8 @@ private func screen_name(_ L: OpaquePointer!) -> Int32 {
 ///   * freq - A number containing the vertical refresh rate in Hz
 ///   * depth - A number containing the bit depth
 ///   * desc - A string containing a representation of the mode as used in `hs.screen:availableModes()` - e.g. "1920x1080@2x 60Hz 4bpp"
-private func screen_currentMode(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func screen_currentMode(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
 
     let screen = get_screen_arg(L, 1)
@@ -235,8 +235,8 @@ private func screen_currentMode(_ L: OpaquePointer!) -> Int32 {
 /// Notes:
 ///  * Prior to 0.9.83, only 32-bit colour modes would be returned, but now all colour depths are returned. This has necessitated changing the naming of the modes in the returned table.
 ///  * "points" are not necessarily the same as pixels, because they take the scale factor into account (e.g. "1440x900@2x" is a 2880x1800 screen resolution, with a scaling factor of 2, i.e. with HiDPI pixel-doubled rendering enabled), however, they are far more useful to work with than native pixel modes, when a Retina screen is involved. For non-retina screens, points and pixels are equivalent.
-private func screen_availableModes(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func screen_availableModes(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
 
     let screen = get_screen_arg(L, 1)
@@ -275,8 +275,8 @@ private func screen_availableModes(_ L: OpaquePointer!) -> Int32 {
     return 1
 }
 
-private func handleDisplayUpdate(_ L: OpaquePointer!, _ config: CGDisplayConfigRef, _ name: String) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func handleDisplayUpdate(_ L: UnsafeMutablePointer<lua_State>!, _ config: CGDisplayConfigRef, _ name: String) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     let anError = CGCompleteDisplayConfiguration(config, .permanently)
     if anError == .success {
         lua_pushboolean(L, 1)
@@ -303,8 +303,8 @@ private func handleDisplayUpdate(_ L: OpaquePointer!, _ config: CGDisplayConfigR
 ///
 /// Notes:
 ///  * The available widths/heights/scales can be seen in the output of `hs.screen:availableModes()`, however, it should be noted that the CoreGraphics subsystem seems to list more modes for a given screen than it is actually prepared to set, so you may find that seemingly valid modes still return false. It is not currently understood why this is so!
-private func screen_setMode(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func screen_setMode(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TNUMBER, LS_TNUMBER, LS_TNUMBER, LS_TNUMBER, LS_TNUMBER, LS_TBREAK)
 
     let screen = get_screen_arg(L, 1)
@@ -347,8 +347,8 @@ private func screen_setMode(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * This returns all displays to the gamma tables specified by the user's selected ColorSync display profiles
-private func screen_gammaRestore(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func screen_gammaRestore(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TANY | LS_TOPTIONAL, LS_TBREAK)
 
     CGDisplayRestoreColorSyncSettings()
@@ -369,8 +369,8 @@ private func screen_gammaRestore(_ L: OpaquePointer!) -> Int32 {
 ///   * red
 ///   * green
 ///   * blue
-private func screen_gammaGet(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func screen_gammaGet(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
 
     let screen = get_screen_arg(L, 1)
@@ -440,7 +440,7 @@ func storeInitialScreenGamma(_ display: CGDirectDisplayID) {
         let gammas: NSDictionary = ["red": red, "green": green, "blue": blue]
         originalGammas[NSNumber(value: display)] = gammas
     } else {
-        LuaSkin.logBreadcrumb("storeInitialScreenGamma: ERROR \(result.rawValue) on display \(display)")
+        LuaSkin.skin(with: nil).logBreadcrumb("storeInitialScreenGamma: ERROR \(result.rawValue) on display \(display)")
     }
 }
 
@@ -483,7 +483,7 @@ func screen_gammaReapply(_ display: CGDirectDisplayID) {
 
     let result = CGSetDisplayTransferByTable(display, UInt32(count), redTable, greenTable, blueTable)
     if result != .success {
-        LuaSkin.logBreadcrumb("screen_gammaReapply: ERROR: \(result.rawValue) on display: \(display)")
+        LuaSkin.skin(with: nil).logBreadcrumb("screen_gammaReapply: ERROR: \(result.rawValue) on display: \(display)")
     }
 }
 
@@ -523,8 +523,8 @@ private func displayReconfigurationCallback(_ display: CGDirectDisplayID, _ flag
 ///
 /// Notes:
 ///  * If the whitepoint and blackpoint specified, are very similar, it will be impossible to read the screen. You should exercise caution, and may wish to bind a hotkey to `hs.screen.restoreGamma()` when experimenting
-private func screen_gammaSet(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func screen_gammaSet(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TTABLE, LS_TTABLE, LS_TBREAK)
 
     let screen = get_screen_arg(L, 1)
@@ -606,8 +606,8 @@ private func screen_gammaSet(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * A floating point number between 0 and 1, containing the current brightness level, or nil if the display does not support brightness queries
-private func screen_getBrightness(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func screen_getBrightness(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
 
     let screen = get_screen_arg(L, 1)
@@ -632,15 +632,15 @@ private func screen_getBrightness(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * The `hs.screen` object
-private func screen_setBrightness(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func screen_setBrightness(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TNUMBER, LS_TBREAK)
 
     let screen = get_screen_arg(L, 1)
     let screen_id = getScreenID(screen)
 
     let brightness = Float(lua_tonumber(L, 2))
-    DisplayServicesSetBrightness(screen_id, brightness)
+    _ = DisplayServicesSetBrightness(screen_id, brightness)
 
     lua_pushvalue(L, 1)
     return 1
@@ -655,8 +655,8 @@ private func screen_setBrightness(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * A string containing the UUID, or nil if an error occurred.
-private func screen_getUUID(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func screen_getUUID(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
 
     let screen = get_screen_arg(L, 1)
@@ -683,19 +683,35 @@ private func screen_getUUID(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  *  A table containing various information, or nil if an error occurred.
-private func screen_getDisplayInfo(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func screen_getDisplayInfo(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
 
     let screen = get_screen_arg(L, 1)
     let screen_id = getScreenID(screen)
 
     var deviceInfo: NSDictionary? = nil
-    let service = CGDisplayIOServicePort(screen_id)
-    if service != 0 {
-        deviceInfo = IODisplayCreateInfoDictionary(service, UInt32(kIODisplayOnlyPreferredName)).takeRetainedValue() as NSDictionary
+    var iter: io_iterator_t = 0
+    let matching = IOServiceMatching("IODisplayConnect")
+    if IOServiceGetMatchingServices(kIOMainPortDefault, matching, &iter) == KERN_SUCCESS {
+        var service = IOIteratorNext(iter)
+        while service != 0 {
+            if let info = IODisplayCreateInfoDictionary(service, UInt32(kIODisplayOnlyPreferredName))?.takeRetainedValue() as NSDictionary? {
+                if let vendorID = info[kDisplayVendorID] as? UInt32,
+                   let productID = info[kDisplayProductID] as? UInt32,
+                   vendorID == CGDisplayVendorNumber(screen_id),
+                   productID == CGDisplayModelNumber(screen_id) {
+                    deviceInfo = info
+                    IOObjectRelease(service)
+                    break
+                }
+            }
+            IOObjectRelease(service)
+            service = IOIteratorNext(iter)
+        }
+        IOObjectRelease(iter)
     }
-    skin.pushNSObject(deviceInfo, withOptions: LS_NSPreserveLuaStringExactly)
+    skin.pushNSObject(deviceInfo, withOptions: LS_NSConversionOptions.nsPreserveLuaStringExactly.rawValue)
     return 1
 }
 
@@ -708,8 +724,8 @@ private func screen_getDisplayInfo(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * A boolean, true if the ForceToGray mode is set, otherwise false
-private func screen_getForceToGray(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func screen_getForceToGray(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TBREAK)
 
     lua_pushboolean(L, CGDisplayUsesForceToGray() ? 1 : 0)
@@ -725,8 +741,8 @@ private func screen_getForceToGray(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * None
-private func screen_setForceToGray(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func screen_setForceToGray(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TBOOLEAN, LS_TBREAK)
 
     CGDisplayForceToGray(lua_toboolean(L, 1) != 0)
@@ -742,8 +758,8 @@ private func screen_setForceToGray(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * A boolean, true if the InvertedPolarity mode is set, otherwise false
-private func screen_getInvertedPolarity(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func screen_getInvertedPolarity(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TBREAK)
 
     lua_pushboolean(L, CGDisplayUsesInvertedPolarity() ? 1 : 0)
@@ -759,28 +775,28 @@ private func screen_getInvertedPolarity(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * None
-private func screen_setInvertedPolarity(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func screen_setInvertedPolarity(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TBOOLEAN, LS_TBREAK)
 
     CGDisplaySetInvertedPolarity(lua_toboolean(L, 1) != 0)
     return 0
 }
 
-private func screen_gc(_ L: OpaquePointer!) -> Int32 {
+private func screen_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let ptr = luaL_checkudata(L, 1, USERDATA_TAG)!.assumingMemoryBound(to: UnsafeMutableRawPointer.self)
     let _ = Unmanaged<NSScreen>.fromOpaque(ptr.pointee).takeRetainedValue()
     return 0
 }
 
-private func screen_eq(_ L: OpaquePointer!) -> Int32 {
+private func screen_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let screenA = get_screen_arg(L, 1)
     let screenB = get_screen_arg(L, 2)
     lua_pushboolean(L, screenA.isEqual(screenB) ? 1 : 0)
     return 1
 }
 
-func new_screen(_ L: OpaquePointer!, _ screen: NSScreen) {
+func new_screen(_ L: UnsafeMutablePointer<lua_State>!, _ screen: NSScreen) {
     let screenPtr = lua_newuserdata(L, MemoryLayout<UnsafeMutableRawPointer>.size)!.assumingMemoryBound(to: UnsafeMutableRawPointer.self)
     screenPtr.pointee = Unmanaged.passRetained(screen).toOpaque()
 
@@ -797,8 +813,8 @@ func new_screen(_ L: OpaquePointer!, _ screen: NSScreen) {
 ///
 /// Returns:
 ///  * A table containing one or more `hs.screen` objects
-private func screen_allScreens(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func screen_allScreens(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TBREAK)
 
     lua_newtable(L)
@@ -823,8 +839,8 @@ private func screen_allScreens(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * An `hs.screen` object
-private func screen_mainScreen(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func screen_mainScreen(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TBREAK)
 
     if let main = NSScreen.main {
@@ -844,8 +860,8 @@ private func screen_mainScreen(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * A boolean, true if the operation succeeded, otherwise false
-private func screen_setPrimary(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func screen_setPrimary(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
 
     let maxDisplays: CGDisplayCount = 32
@@ -907,8 +923,8 @@ private func screen_setPrimary(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * If the rotation is being set, a boolean, true if the operation succeeded, otherwise false. If the rotation is being queried, a number will be returned
-private func screen_rotate(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func screen_rotate(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TNUMBER | LS_TOPTIONAL, LS_TBREAK)
 
     let screen = get_screen_arg(L, 1)
@@ -948,9 +964,34 @@ private func screen_rotate(_ L: OpaquePointer!) -> Int32 {
     for i in 0..<Int(displayCount) {
         let dID = onlineDisplays[i]
         if dID == screenID {
-            let service = CGDisplayIOServicePort(dID)
+            var service: io_service_t = 0
+            var iter: io_iterator_t = 0
+            let matching = IOServiceMatching("IODisplayConnect")
+            if IOServiceGetMatchingServices(kIOMainPortDefault, matching, &iter) == KERN_SUCCESS {
+                var s = IOIteratorNext(iter)
+                while s != 0 {
+                    if let info = IODisplayCreateInfoDictionary(s, UInt32(kIODisplayOnlyPreferredName))?.takeRetainedValue() as NSDictionary? {
+                        if let vendorID = info[kDisplayVendorID] as? UInt32,
+                           let productID = info[kDisplayProductID] as? UInt32,
+                           vendorID == CGDisplayVendorNumber(dID),
+                           productID == CGDisplayModelNumber(dID) {
+                            service = s
+                            break
+                        }
+                    }
+                    IOObjectRelease(s)
+                    s = IOIteratorNext(iter)
+                }
+                IOObjectRelease(iter)
+            }
+            guard service != 0 else {
+                lua_pushboolean(L, 0)
+                return 1
+            }
             let options = IOOptionBits(kIOFBSetTransform | (UInt32(rotation) << 16))
-            if IOServiceRequestProbe(service, options) != kCGErrorSuccess {
+            let result = IOServiceRequestProbe(service, options)
+            IOObjectRelease(service)
+            if result != KERN_SUCCESS {
                 lua_pushboolean(L, 0)
                 return 1
             }
@@ -972,8 +1013,8 @@ private func screen_rotate(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * true if the operation succeeded, otherwise false
-private func screen_setOrigin(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func screen_setOrigin(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TNUMBER, LS_TNUMBER, LS_TBREAK)
 
     let screen = get_screen_arg(L, 1)
@@ -1014,8 +1055,8 @@ private func screen_setOrigin(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * true if the operation succeeded, otherwise false
-private func screen_mirrorOf(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func screen_mirrorOf(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TUSERDATA, USERDATA_TAG, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
 
     let mirrorTarget = get_screen_arg(L, 1)
@@ -1043,8 +1084,8 @@ private func screen_mirrorOf(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * true if the operation succeeded, otherwise false
-private func screen_mirrorStop(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func screen_mirrorStop(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
 
     let screen = get_screen_arg(L, 1)
@@ -1060,7 +1101,7 @@ private func screen_mirrorStop(_ L: OpaquePointer!) -> Int32 {
     return 1
 }
 
-func screenRectToNSRect(_ L: OpaquePointer!, _ idx: Int32) -> NSRect {
+func screenRectToNSRect(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> NSRect {
     if lua_isnoneornil(L, idx) || lua_type(L, idx) != LUA_TTABLE {
         return NSZeroRect
     }
@@ -1118,8 +1159,8 @@ func screenToNSImage(_ screen: NSScreen, _ screenRect: NSRect) -> NSImage? {
 ///
 /// Returns:
 ///  * An `hs.image` object, or nil if an error occurred
-private func screen_snapshot(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func screen_snapshot(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TTABLE | LS_TNIL | LS_TOPTIONAL, LS_TBREAK)
 
     let screen = get_screen_arg(L, 1)
@@ -1144,8 +1185,8 @@ private func screen_snapshot(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * If the user has set a folder of pictures to be alternated as the desktop background, the path to that folder will be returned.
-private func screen_desktopImageURL(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func screen_desktopImageURL(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING | LS_TOPTIONAL, LS_TBREAK)
 
     let workspace = NSWorkspace.shared
@@ -1183,8 +1224,8 @@ private func screen_desktopImageURL(_ L: OpaquePointer!) -> Int32 {
 ///    * IncreaseContrast
 ///    * InvertColors (only available on macOS 10.12 or later)
 ///    * DifferentiateWithoutColor
-private func screen_accessibilitySettings(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func screen_accessibilitySettings(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TBREAK)
 
     let ws = NSWorkspace.shared
@@ -1200,19 +1241,20 @@ private func screen_accessibilitySettings(_ L: OpaquePointer!) -> Int32 {
     return 1
 }
 
-private func screens_gc(_ L: OpaquePointer!) -> Int32 {
+private func screens_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     CGDisplayRemoveReconfigurationCallback(displayReconfigurationCallback, nil)
     _ = screen_gammaRestore(L)
     return 0
 }
 
-private func userdata_tostring(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
 
     let screen = get_screen_arg(L, 1)
     let theName = screen.localizedName
-    let str = String(format: "%@: %@ (%p)", USERDATA_TAG, theName, lua_topointer(L, 1)!)
+    let ptr = lua_topointer(L, 1)!
+    let str = "\(USERDATA_TAG): \(theName) (0x\(String(UInt(bitPattern: ptr), radix: 16)))"
     lua_pushstring(L, str)
     return 1
 }
@@ -1266,8 +1308,8 @@ private var metalib: [luaL_Reg] = [
 // MARK: - Module entry point
 
 @_cdecl("luaopen_hs_libscreen")
-public func luaopen_hs_libscreen(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+public func luaopen_hs_libscreen(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
 
     // Initialize gamma structures, populate them, and register callbacks
     originalGammas = NSMutableDictionary()

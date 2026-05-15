@@ -2,6 +2,22 @@ import Cocoa
 import LuaSkin
 import ScriptingBridge
 
+// MARK: - ScriptingBridge Protocol Declarations
+
+@objc protocol ShortcutsEventsShortcut {
+    @objc optional var name: String { get }
+    @objc optional func id() -> String
+    @objc optional var acceptsInput: Bool { get }
+    @objc optional var actionCount: Int { get }
+    @objc optional func runWithInput(_ withInput: Any?) -> Any?
+}
+
+@objc protocol ShortcutsEventsApplication {
+    @objc optional func shortcuts() -> SBElementArray
+}
+
+extension SBApplication: ShortcutsEventsApplication {}
+
 private var refTable: LSRefTable = LUA_NOREF
 
 // MARK: - Module Functions
@@ -19,21 +35,30 @@ private var refTable: LSRefTable = LUA_NOREF
 ///   * id - A unique ID for the shortcut
 ///   * acceptsInput - A boolean indicating if the shortcut requires input
 ///   * actionCount - A number relating to how many actions are in the shortcut
-private func shortcuts_list(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func shortcuts_list(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TBREAK)
 
-    let app: ShortcutsEventsApplication = SBApplication(bundleIdentifier: "com.apple.shortcuts.events")!
+    guard let app: ShortcutsEventsApplication = SBApplication(bundleIdentifier: "com.apple.shortcuts.events") else {
+        lua_pushnil(L)
+        return 1
+    }
 
     var shortcuts: [[String: Any]] = []
-    for shortcut in app.shortcuts!() as! [ShortcutsEventsShortcut] {
-        let data: [String: Any] = [
-            "name": shortcut.name!,
-            "id": shortcut.id!(),
-            "acceptsInput": NSNumber(value: shortcut.acceptsInput),
-            "actionCount": NSNumber(value: shortcut.actionCount),
-        ]
-        shortcuts.append(data)
+    if let elements = app.shortcuts?() {
+        for item in elements {
+            guard let shortcut = item as? ShortcutsEventsShortcut else { continue }
+            var data: [String: Any] = [:]
+            if let name = shortcut.name {
+                data["name"] = name
+            }
+            if let id = shortcut.id?() {
+                data["id"] = id
+            }
+            data["acceptsInput"] = NSNumber(value: shortcut.acceptsInput ?? false)
+            data["actionCount"] = NSNumber(value: shortcut.actionCount ?? 0)
+            shortcuts.append(data)
+        }
     }
 
     skin.pushNSObject(shortcuts as NSArray)
@@ -49,17 +74,22 @@ private func shortcuts_list(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * None
-private func shortcuts_run(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func shortcuts_run(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING, LS_TBREAK)
 
-    let name = skin.toNSObjectAtIndex(1) as! String
+    let name = skin.toNSObject(at: 1) as! String
 
-    let app: ShortcutsEventsApplication = SBApplication(bundleIdentifier: "com.apple.shortcuts.events")!
-    for shortcut in app.shortcuts!() as! [ShortcutsEventsShortcut] {
-        if shortcut.name == name {
-            shortcut.runWithInput?(nil)
-            break
+    guard let app: ShortcutsEventsApplication = SBApplication(bundleIdentifier: "com.apple.shortcuts.events") else {
+        return 0
+    }
+    if let elements = app.shortcuts?() {
+        for item in elements {
+            guard let shortcut = item as? ShortcutsEventsShortcut else { continue }
+            if shortcut.name == name {
+                _ = shortcut.runWithInput?(nil)
+                break
+            }
         }
     }
 
@@ -75,8 +105,8 @@ private var moduleLib: [luaL_Reg] = [
 ]
 
 @_cdecl("luaopen_hs_libshortcuts")
-public func luaopen_hs_libshortcuts(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+public func luaopen_hs_libshortcuts(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     refTable = skin.registerLibrary("hs.shortcuts", functions: &moduleLib, metaFunctions: nil)
     return 1
 }

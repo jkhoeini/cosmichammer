@@ -24,8 +24,8 @@ private class HSSoundObject: NSObject, NSSoundDelegate {
     func sound(_ sound: NSSound, didFinishPlaying flag: Bool) {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
-            let skin = LuaSkin.shared(withState: nil)
-            let L = skin.L!
+            let skin = LuaSkin.skin(with: nil)
+            let L = skin.l!
             _lua_stackguard_entry(L)
 
             if self.callbackRef != LUA_NOREF {
@@ -57,7 +57,7 @@ private class HSSoundObject: NSObject, NSSoundDelegate {
 ///
 /// Notes:
 ///  * Example usage: `hs.inspect(hs.audiounit.getAudioEffectNames())`
-private func sound_getAudioEffectNames(_ L: OpaquePointer!) -> Int32 {
+private func sound_getAudioEffectNames(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     var description = AudioComponentDescription()
     description.componentType = kAudioUnitType_Effect
     description.componentSubType = 0
@@ -95,11 +95,11 @@ private func sound_getAudioEffectNames(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * Sounds can only be loaded by name if they are System Sounds (i.e. those found in ~/Library/Sounds, /Library/Sounds, /Network/Library/Sounds and /System/Library/Sounds) or are sound files that have previously been loaded and named
-private func sound_byname(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func sound_byname(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING | LS_TNUMBER, LS_TBREAK)
     luaL_checkstring(L, 1) // force number to be a string
-    if let theSound = NSSound(named: NSSound.Name(skin.toNSObjectAtIndex(1) as! String)) {
+    if let theSound = NSSound(named: NSSound.Name(skin.toNSObject(at: 1) as! String)) {
         skin.pushNSObject(theSound)
     } else {
         lua_pushnil(L)
@@ -116,11 +116,11 @@ private func sound_byname(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * An `hs.sound` object or nil if the file could not be loaded
-private func sound_byfile(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func sound_byfile(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING | LS_TNUMBER, LS_TBREAK)
     luaL_checkstring(L, 1) // force number to be a string
-    if let theSound = NSSound(contentsOfFile: skin.toNSObjectAtIndex(1) as! String, byReference: false) {
+    if let theSound = NSSound(contentsOfFile: skin.toNSObject(at: 1) as! String, byReference: false) {
         skin.pushNSObject(theSound)
     } else {
         lua_pushnil(L)
@@ -140,8 +140,8 @@ private func sound_byfile(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * The sounds listed by this function can be loaded using `hs.sound.getByName()`
-private func sound_systemSounds(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func sound_systemSounds(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TBREAK)
     var i: Int32 = 0
 
@@ -172,8 +172,8 @@ private func sound_systemSounds(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * A table containing the UTI sound formats that are supported by the system
-private func sound_soundUnfilteredTypes(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func sound_soundUnfilteredTypes(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TBREAK)
     skin.pushNSObject(NSSound.soundUnfilteredTypes as NSArray)
     return 1
@@ -191,8 +191,8 @@ private func sound_soundUnfilteredTypes(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * This function is unlikely to be tremendously useful, as filename extensions are essentially meaningless. The data returned by `hs.sound.soundTypes()` is far more valuable
-private func sound_soundUnfilteredFileTypes(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func sound_soundUnfilteredFileTypes(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TBREAK)
     if NSSound.responds(to: Selector(("soundUnfilteredFileTypes"))) {
         if let types = NSSound.perform(Selector(("soundUnfilteredFileTypes")))?.takeUnretainedValue() as? NSArray {
@@ -217,10 +217,10 @@ private func sound_soundUnfilteredFileTypes(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * The `hs.sound` object if the command was successful, otherwise false.
-private func sound_play(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func sound_play(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
-    let obj = skin.luaObjectAtIndex(1, toClass: "HSSoundObject") as! HSSoundObject
+    let obj = skin.luaObject(at: 1, toClass: "HSSoundObject") as! HSSoundObject
     if obj.soundObject?.play() == true {
         lua_pushvalue(L, 1)
         if obj.selfRef == LUA_NOREF {
@@ -242,10 +242,10 @@ private func sound_play(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * The `hs.sound` object if the command was successful, otherwise false.
-private func sound_pause(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func sound_pause(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
-    let obj = skin.luaObjectAtIndex(1, toClass: "NSSound") as! NSSound
+    let obj = skin.luaObject(at: 1, toClass: "NSSound") as! NSSound
     if obj.pause() {
         lua_pushvalue(L, 1)
     } else {
@@ -263,10 +263,10 @@ private func sound_pause(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * The `hs.sound` object if the command was successful, otherwise false.
-private func sound_resume(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func sound_resume(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
-    let obj = skin.luaObjectAtIndex(1, toClass: "NSSound") as! NSSound
+    let obj = skin.luaObject(at: 1, toClass: "NSSound") as! NSSound
     if obj.resume() {
         lua_pushvalue(L, 1)
     } else {
@@ -284,10 +284,10 @@ private func sound_resume(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * The `hs.sound` object if the command was successful, otherwise false.
-private func sound_stop(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func sound_stop(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
-    let obj = skin.luaObjectAtIndex(1, toClass: "NSSound") as! NSSound
+    let obj = skin.luaObject(at: 1, toClass: "NSSound") as! NSSound
     if obj.stop() {
         lua_pushvalue(L, 1)
     } else {
@@ -308,10 +308,10 @@ private func sound_stop(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * If you have registered a callback function for completion of a sound's playback, it will not be called when the sound loops
-private func sound_loopSound(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func sound_loopSound(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
-    let obj = skin.luaObjectAtIndex(1, toClass: "NSSound") as! NSSound
+    let obj = skin.luaObject(at: 1, toClass: "NSSound") as! NSSound
     if lua_gettop(L) == 2 {
         obj.loops = lua_toboolean(L, 2) != 0
         lua_pushvalue(L, 1)
@@ -333,10 +333,10 @@ private func sound_loopSound(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * This method can only be used on a named `hs.sound` object, see `hs.sound:name()`
-private func sound_stopOnRelease(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func sound_stopOnRelease(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
-    let obj = skin.luaObjectAtIndex(1, toClass: "HSSoundObject") as! HSSoundObject
+    let obj = skin.luaObject(at: 1, toClass: "HSSoundObject") as! HSSoundObject
     if lua_gettop(L) == 2 {
         if obj.soundObject?.name != nil {
             obj.stopOnRelease = lua_toboolean(L, 2) != 0
@@ -362,16 +362,16 @@ private func sound_stopOnRelease(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * If remove the sound name by specifying `nil`, the sound will automatically be set to stop when Hammerspoon is reloaded.
-private func sound_name(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func sound_name(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING | LS_TNUMBER | LS_TNIL | LS_TOPTIONAL, LS_TBREAK)
-    let obj = skin.luaObjectAtIndex(1, toClass: "HSSoundObject") as! HSSoundObject
+    let obj = skin.luaObject(at: 1, toClass: "HSSoundObject") as! HSSoundObject
     if lua_gettop(L) == 2 {
-        if lua_isnil(L, 2) != 0 {
-            obj.soundObject?.name = nil
+        if lua_isnil(L, 2) {
+            obj.soundObject?.setName(nil)
             obj.stopOnRelease = true
         } else {
-            obj.soundObject?.name = NSSound.Name(skin.toNSObjectAtIndex(2) as! String)
+            obj.soundObject?.setName(NSSound.Name(skin.toNSObject(at: 2) as! String))
         }
         lua_pushvalue(L, 1)
     } else {
@@ -396,17 +396,17 @@ private func sound_name(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * To obtain the UID of a sound device, see `hs.audiodevice:uid()`
-private func sound_device(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func sound_device(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING | LS_TNUMBER | LS_TNIL | LS_TOPTIONAL, LS_TBREAK)
-    let obj = skin.luaObjectAtIndex(1, toClass: "NSSound") as! NSSound
+    let obj = skin.luaObject(at: 1, toClass: "NSSound") as! NSSound
     if lua_gettop(L) == 2 {
         if lua_type(L, 2) == LUA_TNIL {
             obj.playbackDeviceIdentifier = nil
         } else {
             luaL_checkstring(L, 2)
             do {
-                obj.playbackDeviceIdentifier = NSSound.PlaybackDeviceIdentifier(skin.toNSObjectAtIndex(2) as! String)
+                obj.playbackDeviceIdentifier = NSSound.PlaybackDeviceIdentifier(skin.toNSObject(at: 2) as! String)
             }
         }
         lua_pushvalue(L, 1)
@@ -429,10 +429,10 @@ private func sound_device(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * If a parameter is provided, returns the sound object; otherwise returns the current position.
-private func sound_currentTime(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func sound_currentTime(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TNUMBER | LS_TOPTIONAL, LS_TBREAK)
-    let obj = skin.luaObjectAtIndex(1, toClass: "NSSound") as! NSSound
+    let obj = skin.luaObject(at: 1, toClass: "NSSound") as! NSSound
     if lua_gettop(L) == 2 {
         obj.currentTime = luaL_checknumber(L, 2)
         lua_pushvalue(L, 1)
@@ -451,10 +451,10 @@ private func sound_currentTime(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * A number containing the length of the sound, in seconds
-private func sound_duration(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func sound_duration(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
-    let obj = skin.luaObjectAtIndex(1, toClass: "NSSound") as! NSSound
+    let obj = skin.luaObject(at: 1, toClass: "NSSound") as! NSSound
     lua_pushnumber(L, obj.duration)
     return 1
 }
@@ -468,10 +468,10 @@ private func sound_duration(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * If a parameter is provided, returns the sound object; otherwise returns the current value.
-private func sound_volume(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func sound_volume(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TNUMBER | LS_TOPTIONAL, LS_TBREAK)
-    let obj = skin.luaObjectAtIndex(1, toClass: "NSSound") as! NSSound
+    let obj = skin.luaObject(at: 1, toClass: "NSSound") as! NSSound
     if lua_gettop(L) == 2 {
         obj.volume = Float(luaL_checknumber(L, 2))
         lua_pushvalue(L, 1)
@@ -490,10 +490,10 @@ private func sound_volume(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * A boolean, true if the sound is currently playing, otherwise false
-private func sound_isPlaying(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func sound_isPlaying(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
-    let obj = skin.luaObjectAtIndex(1, toClass: "NSSound") as! NSSound
+    let obj = skin.luaObject(at: 1, toClass: "NSSound") as! NSSound
     lua_pushboolean(L, obj.isPlaying ? 1 : 0)
     return 1
 }
@@ -512,10 +512,10 @@ private func sound_isPlaying(_ L: OpaquePointer!) -> Int32 {
 ///  * the callback function should accept two parameters and return none.  The parameters passed to the callback function are:
 ///    * state - a boolean flag indicating if the sound completed playing.  Returns true if playback completes properly, or false if a decoding error occurs or if the sound is stopped early with `hs.sound:stop`.
 ///    * sound - the soundObject userdata
-private func sound_callback(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func sound_callback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TFUNCTION | LS_TNIL, LS_TBREAK)
-    let obj = skin.luaObjectAtIndex(1, toClass: "HSSoundObject") as! HSSoundObject
+    let obj = skin.luaObject(at: 1, toClass: "HSSoundObject") as! HSSoundObject
     // in either case, we need to remove an existing callback, so...
     obj.callbackRef = skin.luaUnref(refTable, ref: obj.callbackRef)
     if lua_type(L, 2) == LUA_TFUNCTION {
@@ -537,8 +537,8 @@ private func sound_callback(_ L: OpaquePointer!) -> Int32 {
 // MARK: - Lua<->NSObject Conversion Functions
 
 // pushes HSSoundObject userdata onto stack, or reuses selfRef, if defined
-private func pushHSSoundObject(_ L: OpaquePointer!, obj: Any!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func pushHSSoundObject(_ L: UnsafeMutablePointer<lua_State>!, obj: Any!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     let value = obj as! HSSoundObject
     if value.selfRef != LUA_NOREF {
         skin.pushLuaRef(refTable, ref: value.selfRef)
@@ -553,8 +553,8 @@ private func pushHSSoundObject(_ L: OpaquePointer!, obj: Any!) -> Int32 {
 }
 
 // retrieves userdata on stack as HSSoundObject
-private func toHSSoundObjectFromLua(_ L: OpaquePointer!, idx: Int32) -> Any! {
-    let skin = LuaSkin.shared(withState: L)
+private func toHSSoundObjectFromLua(_ L: UnsafeMutablePointer<lua_State>!, idx: Int32) -> Any! {
+    let skin = LuaSkin.skin(with: L)
     if luaL_testudata(L, idx, USERDATA_TAG) != nil {
         let ptr = lua_touserdata(L, idx)!.assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
         return Unmanaged<HSSoundObject>.fromOpaque(ptr.pointee!).takeUnretainedValue()
@@ -565,34 +565,34 @@ private func toHSSoundObjectFromLua(_ L: OpaquePointer!, idx: Int32) -> Any! {
 }
 
 // creates new HSSoundObject from NSSound and pushes userdata onto stack
-private func pushNSSound(_ L: OpaquePointer!, obj: Any!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func pushNSSound(_ L: UnsafeMutablePointer<lua_State>!, obj: Any!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     let value = HSSoundObject(sound: obj as! NSSound)
     return skin.pushNSObject(value)
 }
 
 // retrieves userdata on stack as HSSoundObject, but returns NSSound portion only
-private func toNSSoundFromLua(_ L: OpaquePointer!, idx: Int32) -> Any! {
-    let skin = LuaSkin.shared(withState: L)
-    let value = skin.luaObjectAtIndex(idx, toClass: "HSSoundObject") as! HSSoundObject
+private func toNSSoundFromLua(_ L: UnsafeMutablePointer<lua_State>!, idx: Int32) -> Any! {
+    let skin = LuaSkin.skin(with: L)
+    let value = skin.luaObject(at: idx, toClass: "HSSoundObject") as! HSSoundObject
     return value.soundObject
 }
 
 // MARK: - Hammerspoon/Lua Infrastructure
 
-private func userdata_tostring(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
-    let obj = skin.luaObjectAtIndex(1, toClass: "HSSoundObject") as! HSSoundObject
+private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
+    let obj = skin.luaObject(at: 1, toClass: "HSSoundObject") as! HSSoundObject
     let title = obj.soundObject?.name ?? "(unnamed sound)" as NSSound.Name
     skin.pushNSObject("\(USERDATA_TAG): \(title) (\(lua_topointer(L, 1)!))" as NSString)
     return 1
 }
 
-private func userdata_eq(_ L: OpaquePointer!) -> Int32 {
+private func userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     if luaL_testudata(L, 1, USERDATA_TAG) != nil && luaL_testudata(L, 2, USERDATA_TAG) != nil {
-        let skin = LuaSkin.shared(withState: L)
-        let obj1 = skin.luaObjectAtIndex(1, toClass: "HSSoundObject") as! HSSoundObject
-        let obj2 = skin.luaObjectAtIndex(2, toClass: "HSSoundObject") as! HSSoundObject
+        let skin = LuaSkin.skin(with: L)
+        let obj1 = skin.luaObject(at: 1, toClass: "HSSoundObject") as! HSSoundObject
+        let obj2 = skin.luaObject(at: 2, toClass: "HSSoundObject") as! HSSoundObject
         lua_pushboolean(L, obj1.isEqual(obj2) ? 1 : 0)
     } else {
         lua_pushboolean(L, 0)
@@ -600,8 +600,8 @@ private func userdata_eq(_ L: OpaquePointer!) -> Int32 {
     return 1
 }
 
-private func userdata_gc(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     let ptr = lua_touserdata(L, 1)!.assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
     if let rawPtr = ptr.pointee {
         let obj: HSSoundObject = Unmanaged.fromOpaque(rawPtr).takeRetainedValue()
@@ -651,8 +651,8 @@ private var moduleLib: [luaL_Reg] = [
 ]
 
 @_cdecl("luaopen_hs_libsound")
-public func luaopen_hs_libsound(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+public func luaopen_hs_libsound(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     refTable = skin.registerLibrary(
         withObject: USERDATA_TAG,
         functions: &moduleLib,

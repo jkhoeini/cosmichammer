@@ -44,32 +44,32 @@ private class HSWifiWatcherManager: NSObject {
         let iface = interface?.interfaceName ?? ""
 
         switch type {
-        case CWWiFiClient.CWNotification.powerDidChange.rawValue:
+        case NSNotification.Name.CWPowerDidChange.rawValue:
             invokeCallbacks(for: "powerChange", withDetails: [iface])
-        case CWWiFiClient.CWNotification.ssidDidChange.rawValue:
+        case NSNotification.Name.CWSSIDDidChange.rawValue:
             invokeCallbacks(for: "SSIDChange", withDetails: [iface])
-        case CWWiFiClient.CWNotification.bssidDidChange.rawValue:
+        case NSNotification.Name.CWBSSIDDidChange.rawValue:
             invokeCallbacks(for: "BSSIDChange", withDetails: [iface])
-        case CWWiFiClient.CWNotification.countryCodeDidChange.rawValue:
+        case NSNotification.Name.CWCountryCodeDidChange.rawValue:
             invokeCallbacks(for: "countryCodeChange", withDetails: [iface])
-        case CWWiFiClient.CWNotification.linkDidChange.rawValue:
+        case NSNotification.Name.CWLinkDidChange.rawValue:
             invokeCallbacks(for: "linkChange", withDetails: [iface])
-        case CWWiFiClient.CWNotification.linkQualityDidChange.rawValue:
-            let rssi = notification.userInfo?[CWWiFiClient.CWNotification.linkQualityNotificationRSSIKey] as? NSNumber ?? NSNumber(value: 0)
-            let transmitRate = notification.userInfo?[CWWiFiClient.CWNotification.linkQualityNotificationTransmitRateKey] as? NSNumber ?? NSNumber(value: 0.0)
+        case NSNotification.Name.CWLinkQualityDidChange.rawValue:
+            let rssi = notification.userInfo?[CWLinkQualityNotificationRSSIKey] as? NSNumber ?? NSNumber(value: 0)
+            let transmitRate = notification.userInfo?[CWLinkQualityNotificationTransmitRateKey] as? NSNumber ?? NSNumber(value: 0.0)
             invokeCallbacks(for: "linkQualityChange", withDetails: [iface, rssi, transmitRate])
-        case CWWiFiClient.CWNotification.modeDidChange.rawValue:
+        case NSNotification.Name.CWModeDidChange.rawValue:
             invokeCallbacks(for: "modeChange", withDetails: [iface])
-        case CWWiFiClient.CWNotification.scanCacheDidUpdate.rawValue:
+        case NSNotification.Name.CWScanCacheDidUpdate.rawValue:
             invokeCallbacks(for: "scanCacheUpdated", withDetails: [iface])
         default:
-            LuaSkin.logWarn(String(format: "%s:identifyNotification - unrecognized notification received: %@", USERDATA_TAG, type))
+            LuaSkin.skin(with: nil).logWarn("\(USERDATA_TAG):identifyNotification - unrecognized notification received: \(type)")
         }
     }
 
     func invokeCallbacks(for message: String, withDetails details: [Any]?) {
         guard watchableTypes[message] != nil else {
-            LuaSkin.logError(String(format: "%s:invokeCallbacksFor called with unrecognized label:%@", USERDATA_TAG, message))
+            LuaSkin.skin(with: nil).logError("\(USERDATA_TAG):invokeCallbacksFor called with unrecognized label:\(message)")
             return
         }
         watchers.enumerateObjects { obj, _ in
@@ -77,8 +77,8 @@ private class HSWifiWatcherManager: NSObject {
             guard let watchingFor = aWatcher.watchingFor, watchingFor.contains(message) else { return }
             DispatchQueue.main.async {
                 if aWatcher.callbackRef != LUA_NOREF {
-                    let skin = LuaSkin.shared(withState: nil)!
-                    let L = skin.L!
+                    let skin = LuaSkin.skin(with: nil)
+                    let L = skin.l!
                     _lua_stackguard_entry(L)
                     skin.pushLuaRef(refTable, ref: aWatcher.callbackRef)
                     skin.pushNSObject(aWatcher)
@@ -89,7 +89,7 @@ private class HSWifiWatcherManager: NSObject {
                     }
                     if let details = details {
                         for argument in details {
-                            skin.pushNSObject(argument as? NSObject, withOptions: LS_NSDescribeUnknownTypes)
+                            skin.pushNSObject(argument as? NSObject, withOptions: UInt(1 << 1))
                         }
                     }
                     skin.protectedCallAndError("hs.wifi.watcher callback for \(message)",
@@ -134,8 +134,8 @@ private class HSWifiWatcher: NSObject {
 ///    * `watcher`, "modeChange", `interface` - occurs when the operating mode of the Wi-Fi interface changes
 ///    * `watcher`, "powerChange", `interface` - occurs when the power state of the Wi-Fi interface changes
 ///    * `watcher`, "scanCacheUpdated", `interface` - occurs when the scan cache of the Wi-Fi interface is updated with new information
-private func wifi_watcher_new(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func wifi_watcher_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TFUNCTION, LS_TBREAK)
     let newWatcher = HSWifiWatcher()
     lua_pushvalue(L, 1)
@@ -155,8 +155,8 @@ private func wifi_watcher_new(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * The `hs.wifi.watcher` object
-private func wifi_watcher_start(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func wifi_watcher_start(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let watcher: HSWifiWatcher = skin.toNSObject(atIndex: 1) as! HSWifiWatcher
     manager?.watchers.add(watcher)
@@ -173,8 +173,8 @@ private func wifi_watcher_start(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * The `hs.wifi.watcher` object
-private func wifi_watcher_stop(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func wifi_watcher_stop(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let watcher: HSWifiWatcher = skin.toNSObject(atIndex: 1) as! HSWifiWatcher
     manager?.watchers.remove(watcher)
@@ -195,8 +195,8 @@ private func wifi_watcher_stop(_ L: OpaquePointer!) -> Int32 {
 /// Notes:
 ///  * the possible values for this method are described in [hs.wifi.watcher.eventTypes](#eventTypes).
 ///  * the special string "all" specifies that all event types should be watched for.
-private func wifi_watcher_watchingFor(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func wifi_watcher_watchingFor(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TTABLE | LS_TOPTIONAL, LS_TBREAK)
     let watcher: HSWifiWatcher = skin.toNSObject(atIndex: 1) as! HSWifiWatcher
     if lua_gettop(L) == 1 {
@@ -225,15 +225,15 @@ private func wifi_watcher_watchingFor(_ L: OpaquePointer!) -> Int32 {
 /// hs.wifi.watcher.eventTypes[]
 /// Constant
 /// A table containing the possible event types that this watcher can monitor for.
-private func pushEventTypes(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func pushEventTypes(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.pushNSObject(Array(watchableTypes.keys) as NSArray)
     return 1
 }
 
 // MARK: - Lua<->NSObject Conversion Functions
 
-private func pushHSWifiWatcher(_ L: OpaquePointer!, _ obj: Any!) -> Int32 {
+private func pushHSWifiWatcher(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
     let value = obj as! HSWifiWatcher
     value.selfRef += 1
     let valuePtr = lua_newuserdata(L, MemoryLayout<UnsafeMutableRawPointer>.size)!
@@ -244,8 +244,8 @@ private func pushHSWifiWatcher(_ L: OpaquePointer!, _ obj: Any!) -> Int32 {
     return 1
 }
 
-private func toHSWifiWatcherFromLua(_ L: OpaquePointer!, _ idx: Int32) -> Any! {
-    let skin = LuaSkin.shared(withState: L)!
+private func toHSWifiWatcherFromLua(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> Any! {
+    let skin = LuaSkin.skin(with: L)
     if luaL_testudata(L, idx, USERDATA_TAG) != nil {
         let ptr = luaL_checkudata(L, idx, USERDATA_TAG)!
             .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
@@ -259,17 +259,17 @@ private func toHSWifiWatcherFromLua(_ L: OpaquePointer!, _ idx: Int32) -> Any! {
 
 // MARK: - Hammerspoon/Lua Infrastructure
 
-private func userdata_tostring(_ L: OpaquePointer!) -> Int32 {
-    let str = String(format: "%s: (%p)", USERDATA_TAG, lua_topointer(L, 1)!)
+private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let str = "\(USERDATA_TAG): (\(String(describing: lua_topointer(L, 1)!)))"
     lua_pushstring(L, str)
     return 1
 }
 
-private func userdata_eq(_ L: OpaquePointer!) -> Int32 {
+private func userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     if luaL_testudata(L, 1, USERDATA_TAG) != nil && luaL_testudata(L, 2, USERDATA_TAG) != nil {
-        let skin = LuaSkin.shared(withState: L)!
-        let obj1 = skin.luaObject(atIndex: 1, toClass: "HSWifiWatcher") as? HSWifiWatcher
-        let obj2 = skin.luaObject(atIndex: 2, toClass: "HSWifiWatcher") as? HSWifiWatcher
+        let skin = LuaSkin.skin(with: L)
+        let obj1 = skin.luaObject(at: 1, toClass: "HSWifiWatcher") as? HSWifiWatcher
+        let obj2 = skin.luaObject(at: 2, toClass: "HSWifiWatcher") as? HSWifiWatcher
         lua_pushboolean(L, (obj1 != nil && obj2 != nil && obj1!.isEqual(obj2!)) ? 1 : 0)
     } else {
         lua_pushboolean(L, 0)
@@ -277,14 +277,14 @@ private func userdata_eq(_ L: OpaquePointer!) -> Int32 {
     return 1
 }
 
-private func userdata_gc(_ L: OpaquePointer!) -> Int32 {
+private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let ptr = luaL_checkudata(L, 1, USERDATA_TAG)!
         .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
     if let rawPtr = ptr.pointee {
         let obj = Unmanaged<HSWifiWatcher>.fromOpaque(rawPtr).takeRetainedValue()
         obj.selfRef -= 1
         if obj.selfRef == 0 {
-            obj.callbackRef = LuaSkin.shared(withState: L)!.luaUnref(refTable, ref: obj.callbackRef)
+            obj.callbackRef = LuaSkin.skin(with: L).luaUnref(refTable, ref: obj.callbackRef)
             manager?.watchers.remove(obj)
         }
         ptr.pointee = nil
@@ -294,7 +294,7 @@ private func userdata_gc(_ L: OpaquePointer!) -> Int32 {
     return 0
 }
 
-private func meta_gc(_ L: OpaquePointer!) -> Int32 {
+private func meta_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     manager?.watchers.removeAllObjects()
     manager = nil
     return 0
@@ -324,22 +324,22 @@ private var module_metaLib: [luaL_Reg] = [
 ]
 
 @_cdecl("luaopen_hs_libwifiwatcher")
-public func luaopen_hs_libwifiwatcher(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+public func luaopen_hs_libwifiwatcher(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     refTable = skin.registerLibrary(withObject: USERDATA_TAG,
                                     functions: &moduleLib,
                                     metaFunctions: &module_metaLib,
                                     objectFunctions: &userdata_metaLib)
 
     watchableTypes = [
-        "powerChange":       CWWiFiClient.CWNotification.powerDidChange.rawValue,
-        "SSIDChange":        CWWiFiClient.CWNotification.ssidDidChange.rawValue,
-        "BSSIDChange":       CWWiFiClient.CWNotification.bssidDidChange.rawValue,
-        "countryCodeChange": CWWiFiClient.CWNotification.countryCodeDidChange.rawValue,
-        "linkChange":        CWWiFiClient.CWNotification.linkDidChange.rawValue,
-        "linkQualityChange": CWWiFiClient.CWNotification.linkQualityDidChange.rawValue,
-        "modeChange":        CWWiFiClient.CWNotification.modeDidChange.rawValue,
-        "scanCacheUpdated":  CWWiFiClient.CWNotification.scanCacheDidUpdate.rawValue,
+        "powerChange":       NSNotification.Name.CWPowerDidChange.rawValue,
+        "SSIDChange":        NSNotification.Name.CWSSIDDidChange.rawValue,
+        "BSSIDChange":       NSNotification.Name.CWBSSIDDidChange.rawValue,
+        "countryCodeChange": NSNotification.Name.CWCountryCodeDidChange.rawValue,
+        "linkChange":        NSNotification.Name.CWLinkDidChange.rawValue,
+        "linkQualityChange": NSNotification.Name.CWLinkQualityDidChange.rawValue,
+        "modeChange":        NSNotification.Name.CWModeDidChange.rawValue,
+        "scanCacheUpdated":  NSNotification.Name.CWScanCacheDidUpdate.rawValue,
     ]
 
     manager = HSWifiWatcherManager()

@@ -56,8 +56,8 @@ private func userDataFromNSFileHandle(_ fh: FileHandle) -> UnsafeMutablePointer<
 }
 
 private let writerBlock: (FileHandle) -> Void = { stdInFH in
-    dispatch_sync(DispatchQueue.main, {
-        let skin = LuaSkin.shared(withState: nil)
+    DispatchQueue.main.sync {
+        let skin = LuaSkin.skin(with: nil)
 
         // Immediately prevent being called again
         stdInFH.writeabilityHandler = nil
@@ -91,7 +91,7 @@ private let writerBlock: (FileHandle) -> Void = { stdInFH in
         if !userData.pointee.isStream {
             stdInFH.closeFile()
         }
-    })
+    }
 }
 
 private func create_task(_ userData: UnsafeMutablePointer<TaskUserdata>) {
@@ -109,9 +109,9 @@ private func create_task(_ userData: UnsafeMutablePointer<TaskUserdata>) {
     task.arguments = userData.pointee.arguments?.takeUnretainedValue() as? [String]
     task.terminationHandler = { terminatedTask in
         // Ensure this callback happens on the main thread
-        dispatch_sync(DispatchQueue.main, {
-            let skin = LuaSkin.shared(withState: nil)
-            let L = skin.L!
+        DispatchQueue.main.sync {
+            let skin = LuaSkin.skin(with: nil)
+            let L = skin.l!
             _lua_stackguard_entry(L)
 
             let stdOutFH = (terminatedTask.standardOutput as? Pipe)?.fileHandleForReading
@@ -156,7 +156,7 @@ private func create_task(_ userData: UnsafeMutablePointer<TaskUserdata>) {
             }
             ud.pointee.selfRef = skin.luaUnref(refTable, ref: ud.pointee.selfRef)
             _lua_stackguard_exit(L)
-        })
+        }
     }
 }
 
@@ -184,8 +184,8 @@ private func create_task(_ userData: UnsafeMutablePointer<TaskUserdata>) {
 /// Notes:
 ///  * The arguments are not processed via a shell, so you do not need to do any quoting or escaping. They are passed to the executable exactly as provided.
 ///  * When using a stream callback, the callback may be invoked one last time after the termination callback has already been invoked. In this case, the `task` argument to the stream callback will be `nil` rather than the task userdata object and the return value of the stream callback will be ignored.
-private func task_new(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func task_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING, LS_TFUNCTION | LS_TNIL, LS_TTABLE | LS_TFUNCTION | LS_TOPTIONAL, LS_TTABLE | LS_TOPTIONAL, LS_TBREAK)
 
     // Create our Lua userdata object
@@ -261,8 +261,8 @@ private func task_new(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * the hs.task object
-private func task_setCallback(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func task_setCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TFUNCTION | LS_TNIL, LS_TBREAK)
     let userData = lua_touserdata(L, 1)!.assumingMemoryBound(to: TaskUserdata.self)
 
@@ -289,8 +289,8 @@ private func task_setCallback(_ L: OpaquePointer!) -> Int32 {
 /// Notes:
 ///  * This method can be called before the task has been started, to prepare some input for it (particularly if it is not a streaming task)
 ///  * If this method is called multiple times, any input that has not been passed to the task already, is discarded (for streaming tasks, the data is generally consumed very quickly, but for now there is no way to synchronize this)
-private func task_setInput(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func task_setInput(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING | LS_TNUMBER, LS_TBREAK)
 
     let userData = lua_touserdata(L, 1)!.assumingMemoryBound(to: TaskUserdata.self)
@@ -310,7 +310,7 @@ private func task_setInput(_ L: OpaquePointer!) -> Int32 {
         }
 
         // Store input data
-        let inputObj = skin.toNSObject(atIndex: 2, withOptions: LS_NSPreserveLuaStringExactly) as AnyObject
+        let inputObj = skin.toNSObject(atIndex: 2, withOptions: .nsPreserveLuaStringExactly) as AnyObject
         userData.pointee.inputData = Unmanaged.passRetained(inputObj)
         stdInFH.writeabilityHandler = writerBlock
     } else {
@@ -334,8 +334,8 @@ private func task_setInput(_ L: OpaquePointer!) -> Int32 {
 /// Notes:
 ///  * This should only be called on tasks with a streaming callback - tasks without it will automatically close stdin when any data supplied via `hs.task:setInput()` has been written
 ///  * This is primarily useful for sending EOF to long-running tasks
-private func task_closeInput(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func task_closeInput(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
 
     let userData = lua_touserdata(L, 1)!.assumingMemoryBound(to: TaskUserdata.self)
@@ -362,8 +362,8 @@ private func task_closeInput(_ L: OpaquePointer!) -> Int32 {
 /// Notes:
 ///  * For information about the requirements of the callback function, see `hs.task.new()`
 ///  * If a callback is removed without it previously having returned false, any further stdout/stderr output from the task will be silently discarded
-private func task_setStreamingCallback(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func task_setStreamingCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TFUNCTION | LS_TNIL, LS_TBREAK)
     let userData = lua_touserdata(L, 1)!.assumingMemoryBound(to: TaskUserdata.self)
 
@@ -389,8 +389,8 @@ private func task_setStreamingCallback(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * This only returns the directory that the task starts in.  If the task changes the directory itself, this value will not reflect that change.
-private func task_getWorkingDirectory(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func task_getWorkingDirectory(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let userData = lua_touserdata(L, 1)!.assumingMemoryBound(to: TaskUserdata.self)
     let task = userData.pointee.nsTask!.takeUnretainedValue() as! Process
@@ -412,8 +412,8 @@ private func task_getWorkingDirectory(_ L: OpaquePointer!) -> Int32 {
 /// Notes:
 ///  * You can only set the working directory if the task has not already been started.
 ///  * This will only set the directory that the task starts in.  The task itself can change the directory while it is running.
-private func task_setWorkingDirectory(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func task_setWorkingDirectory(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING, LS_TBREAK)
     let userData = lua_touserdata(L, 1)!.assumingMemoryBound(to: TaskUserdata.self)
     let task = userData.pointee.nsTask!.takeUnretainedValue() as! Process
@@ -442,8 +442,8 @@ private func task_setWorkingDirectory(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * The PID will still be returned if the task has already completed and the process terminated
-private func task_getPID(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func task_getPID(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let userData = lua_touserdata(L, 1)!.assumingMemoryBound(to: TaskUserdata.self)
     let task = userData.pointee.nsTask!.takeUnretainedValue() as! Process
@@ -464,8 +464,8 @@ private func task_getPID(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * If the task does not start successfully, the error message will be printed to the Hammerspoon Console
-private func task_launch(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func task_launch(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let userData = lua_touserdata(L, 1)!.assumingMemoryBound(to: TaskUserdata.self)
     var result = false
@@ -517,8 +517,8 @@ private func task_launch(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * This will send SIGTERM to the process
-private func task_SIGTERM(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func task_SIGTERM(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let userData = lua_touserdata(L, 1)!.assumingMemoryBound(to: TaskUserdata.self)
     let task = userData.pointee.nsTask!.takeUnretainedValue() as! Process
@@ -545,8 +545,8 @@ private func task_SIGTERM(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * This will send SIGINT to the process
-private func task_SIGINT(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func task_SIGINT(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let userData = lua_touserdata(L, 1)!.assumingMemoryBound(to: TaskUserdata.self)
     let task = userData.pointee.nsTask!.takeUnretainedValue() as! Process
@@ -574,8 +574,8 @@ private func task_SIGINT(_ L: OpaquePointer!) -> Int32 {
 /// Notes:
 ///  * If the task is not paused, the error message will be printed to the Hammerspoon Console
 ///  * This method can be called multiple times, but a matching number of `hs.task:resume()` calls will be required to allow the process to continue
-private func task_pause(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func task_pause(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let userData = lua_touserdata(L, 1)!.assumingMemoryBound(to: TaskUserdata.self)
     let task = userData.pointee.nsTask!.takeUnretainedValue() as! Process
@@ -607,8 +607,8 @@ private func task_pause(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * If the task is not resumed successfully, the error message will be printed to the Hammerspoon Console
-private func task_resumeTask(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func task_resumeTask(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let userData = lua_touserdata(L, 1)!.assumingMemoryBound(to: TaskUserdata.self)
     let task = userData.pointee.nsTask!.takeUnretainedValue() as! Process
@@ -640,8 +640,8 @@ private func task_resumeTask(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * All Lua and Hammerspoon activity will be blocked by this method. Its use is highly discouraged.
-private func task_block(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func task_block(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let userData = lua_touserdata(L, 1)!.assumingMemoryBound(to: TaskUserdata.self)
     let task = userData.pointee.nsTask!.takeUnretainedValue() as! Process
@@ -661,8 +661,8 @@ private func task_block(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * the numeric exitCode of the task, or the boolean false if the task has not yet exited (either because it has not yet been started or because it is still running).
-private func task_terminationStatus(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func task_terminationStatus(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let userData = lua_touserdata(L, 1)!.assumingMemoryBound(to: TaskUserdata.self)
     let task = userData.pointee.nsTask!.takeUnretainedValue() as! Process
@@ -689,8 +689,8 @@ private func task_terminationStatus(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * A task which has not yet been started yet will also return false.
-private func task_isRunning(_ L: OpaquePointer!) -> Int32 {
-    LuaSkin.shared(withState: L).checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+private func task_isRunning(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    LuaSkin.skin(with: L).checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let userData = lua_touserdata(L, 1)!.assumingMemoryBound(to: TaskUserdata.self)
 
     if !userData.pointee.hasStarted {
@@ -714,8 +714,8 @@ private func task_isRunning(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * a string value of "exit" if the process exited normally or "interrupt" if it was killed by a signal.  Returns false if the termination reason is unavailable (the task is still running, or has not yet been started).
-private func task_terminationReason(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func task_terminationReason(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let userData = lua_touserdata(L, 1)!.assumingMemoryBound(to: TaskUserdata.self)
     let task = userData.pointee.nsTask!.takeUnretainedValue() as! Process
@@ -747,8 +747,8 @@ private func task_terminationReason(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * if you have not yet set an environment table with the `hs.task:setEnvironment` method, this method will return a copy of the Hammerspoon environment table, as this is what the task will inherit by default.
-private func task_getEnvironment(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func task_getEnvironment(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let userData = lua_touserdata(L, 1)!.assumingMemoryBound(to: TaskUserdata.self)
     let task = userData.pointee.nsTask!.takeUnretainedValue() as! Process
@@ -773,8 +773,8 @@ private func task_getEnvironment(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * If you do not set an environment table with this method, the task will inherit the environment variables of the Hammerspoon application.  Set this to an empty table if you wish for no variables to be set for the task.
-private func task_setEnvironment(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func task_setEnvironment(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TTABLE, LS_TBREAK)
     let userData = lua_touserdata(L, 1)!.assumingMemoryBound(to: TaskUserdata.self)
     let task = userData.pointee.nsTask!.takeUnretainedValue() as! Process
@@ -790,8 +790,8 @@ private func task_setEnvironment(_ L: OpaquePointer!) -> Int32 {
     return 1
 }
 
-private func task_toString(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func task_toString(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     let userData = lua_touserdata(L, 1)!.assumingMemoryBound(to: TaskUserdata.self)
 
     let launchPath = userData.pointee.launchPath?.takeUnretainedValue() as String? ?? ""
@@ -800,8 +800,8 @@ private func task_toString(_ L: OpaquePointer!) -> Int32 {
     return 1
 }
 
-private func task_gc(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func task_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     let userData = lua_touserdata(L, 1)!.assumingMemoryBound(to: TaskUserdata.self)
     let task = userData.pointee.nsTask!.takeRetainedValue() as! Process
     let pointerArray = pointerArrayFromNSTask(task)
@@ -833,7 +833,7 @@ private func task_gc(_ L: OpaquePointer!) -> Int32 {
     return 0
 }
 
-private func task_metagc(_ L: OpaquePointer!) -> Int32 {
+private func task_metagc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     tasks.removeAllObjects()
     if let observer = fileReadObserver {
         NotificationCenter.default.removeObserver(observer)
@@ -880,14 +880,14 @@ private var taskObjectLib: [luaL_Reg] = [
 // MARK: - Module entry point
 
 @_cdecl("luaopen_hs_libtask")
-public func luaopen_hs_libtask(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
-    refTable = skin.registerLibraryWithObject(USERDATA_TAG, functions: &taskLib, metaFunctions: &taskMetaLib, objectFunctions: &taskObjectLib)
+public func luaopen_hs_libtask(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
+    refTable = skin.registerLibrary(withObject: USERDATA_TAG, functions: &taskLib, metaFunctions: &taskMetaLib, objectFunctions: &taskObjectLib)
 
     tasks = NSMutableArray()
 
     let nc = NotificationCenter.default
-    fileReadObserver = nc.addObserver(forName: .NSFileHandleReadCompletion, object: nil, queue: nil) { note in
+    fileReadObserver = nc.addObserver(forName: FileHandle.readCompletionNotification, object: nil, queue: nil) { note in
         guard let fh = note.object as? FileHandle,
               let fhData = note.userInfo?[NSFileHandleNotificationDataItem] as? Data,
               !fhData.isEmpty else {
@@ -902,8 +902,8 @@ public func luaopen_hs_libtask(_ L: OpaquePointer!) -> Int32 {
         }
 
         if userData.pointee.luaStreamCallback != LUA_NOREF && userData.pointee.luaStreamCallback != LUA_REFNIL {
-            let _skin = LuaSkin.shared(withState: nil)
-            let _L = _skin.L!
+            let _skin = LuaSkin.skin(with: nil)
+            let _L = _skin.l!
             _lua_stackguard_entry(_L)
 
             let task = userData.pointee.nsTask!.takeUnretainedValue() as! Process
@@ -934,7 +934,7 @@ public func luaopen_hs_libtask(_ L: OpaquePointer!) -> Int32 {
             _skin.pushNSObject(stdErrArg)
 
             if !_skin.protectedCallAndTraceback(3, nresults: 1) {
-                let errorMsg = String(cString: lua_tostring(_L, -1))
+                let errorMsg = lua_tostring(_L, -1).map { String(cString: $0) } ?? "unknown error"
                 _skin.logError("hs.task:setStreamingCallback() callback error: \(errorMsg)")
                 // No lua_pop here, handled below
             }

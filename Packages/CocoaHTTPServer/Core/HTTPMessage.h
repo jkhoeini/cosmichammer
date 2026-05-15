@@ -12,6 +12,10 @@
 #define HTTPVersion1_0  ((NSString *)kCFHTTPVersion1_0)
 #define HTTPVersion1_1  ((NSString *)kCFHTTPVersion1_1)
 
+// Swift-visible constants (macros are not imported into Swift)
+static NSString * const HTTPVersion1_0_str NS_SWIFT_NAME(HTTPVersion1_0_str) = @"HTTP/1.0";
+static NSString * const HTTPVersion1_1_str NS_SWIFT_NAME(HTTPVersion1_1_str) = @"HTTP/1.1";
+
 
 @interface HTTPMessage : NSObject
 {

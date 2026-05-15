@@ -48,18 +48,18 @@ func path_to_nsurl(_ path: NSString) -> NSURL {
     return NSURL(fileURLWithPath: path.expandingTildeInPath)
 }
 
-func path_at_index(_ L: OpaquePointer!, _ i: Int32) -> UnsafePointer<CChar>? {
-    let path = LuaSkin.shared(withState: L).toNSObject(atIndex: i) as! NSString
-    return path_to_nsurl(path).path?.cString(using: String.Encoding.utf8.rawValue)
+func path_at_index(_ L: UnsafeMutablePointer<lua_State>!, _ i: Int32) -> UnsafePointer<CChar>? {
+    let path = LuaSkin.skin(with: L).toNSObject(atIndex: i) as! NSString
+    return (path_to_nsurl(path).path as NSString?)?.utf8String
 }
 
-func tags_from_lua_stack(_ L: OpaquePointer!) -> NSArray {
+func tags_from_lua_stack(_ L: UnsafeMutablePointer<lua_State>!) -> NSArray {
     let tags = NSMutableSet()
 
     lua_pushnil(L)
     while lua_next(L, 2) != 0 {
         if lua_type(L, -1) == LUA_TSTRING {
-            let tag = LuaSkin.shared(withState: L).toNSObject(atIndex: -1) as! NSString
+            let tag = LuaSkin.skin(with: L).toNSObject(atIndex: -1) as! NSString
             tags.add(tag)
         }
         lua_pop(L, 1)
@@ -67,47 +67,38 @@ func tags_from_lua_stack(_ L: OpaquePointer!) -> NSArray {
     return tags.allObjects as NSArray
 }
 
-func tags_from_file(_ L: OpaquePointer!, _ filePath: NSString) -> NSArray? {
-    let url = path_to_nsurl(filePath)
-    var tags: AnyObject?
-    var error: NSError?
+func tags_from_file(_ L: UnsafeMutablePointer<lua_State>!, _ filePath: NSString) -> NSArray? {
+    let url = path_to_nsurl(filePath) as URL
 
     do {
-        try (url as URL).getResourceValue(&tags, forKey: .tagNamesKey)
-    } catch let err as NSError {
-        error = err
-    }
-
-    if let error = error {
-        luaL_error(L, error.localizedDescription.cString(using: .utf8))
+        let values = try url.resourceValues(forKeys: [.tagNamesKey])
+        return values.tagNames as NSArray?
+    } catch {
+        luaL_error(L, error.localizedDescription)
         return nil
     }
-    return tags as? NSArray
 }
 
-func tags_to_file(_ L: OpaquePointer!, _ filePath: NSString, _ tags: NSArray) -> Bool {
-    let url = path_to_nsurl(filePath)
-    var error: NSError?
+func tags_to_file(_ L: UnsafeMutablePointer<lua_State>!, _ filePath: NSString, _ tags: NSArray) -> Bool {
+    let url = path_to_nsurl(filePath) as URL
 
     do {
-        try (url as URL).setResourceValue(tags as [AnyObject], forKey: .tagNamesKey)
-    } catch let err as NSError {
-        error = err
-    }
-
-    if let error = error {
-        luaL_error(L, error.localizedDescription.cString(using: .utf8))
+        try (url as NSURL).setResourceValue(tags, forKey: .tagNamesKey)
+    } catch {
+        luaL_error(L, error.localizedDescription)
         return false
     }
     return true
 }
 
-private func pusherror(_ L: OpaquePointer!, _ info: UnsafePointer<CChar>?) -> Int32 {
+private func pusherror(_ L: UnsafeMutablePointer<lua_State>!, _ info: UnsafePointer<CChar>?) -> Int32 {
     lua_pushnil(L)
     if info == nil {
         lua_pushstring(L, strerror(errno))
     } else {
-        lua_pushfstring(L, "%s: %s", info!, strerror(errno)!)
+        let infoStr = String(cString: info!)
+        let errStr = String(cString: strerror(errno)!)
+        lua_pushstring(L, "\(infoStr): \(errStr)")
     }
     return 2
 }
@@ -123,13 +114,15 @@ private func pusherror(_ L: OpaquePointer!, _ info: UnsafePointer<CChar>?) -> In
 ///
 /// Returns:
 ///  * If successful, returns true, otherwise returns nil and an error string
-private func change_dir(_ L: OpaquePointer!) -> Int32 {
-    LuaSkin.shared(withState: L).checkArgs(LS_TSTRING, LS_TBREAK)
+private func change_dir(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    LuaSkin.skin(with: L).checkArgs(LS_TSTRING, LS_TBREAK)
     let path = path_at_index(L, 1)
 
     if chdir(path) != 0 {
         lua_pushnil(L)
-        lua_pushfstring(L, "Unable to change working directory to '%s'\n%s\n", path!, strerror(errno)!)
+        let pathStr = String(cString: path!)
+        let errStr = String(cString: strerror(errno)!)
+        lua_pushstring(L, "Unable to change working directory to '\(pathStr)'\n\(errStr)\n")
         return 2
     } else {
         lua_pushboolean(L, 1)
@@ -146,7 +139,7 @@ private func change_dir(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * A string containing the current working directory, or if an error occurred, nil and an error string
-private func get_dir(_ L: OpaquePointer!) -> Int32 {
+private func get_dir(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     var path: UnsafeMutablePointer<CChar>? = nil
     var size = LFS_MAXPATHLEN
     var result: Int32
@@ -176,10 +169,11 @@ private func get_dir(_ L: OpaquePointer!) -> Int32 {
 /*
  ** Check if the given element on the stack is a file and returns it.
  */
-private func check_file(_ L: OpaquePointer!, _ idx: Int32, _ funcname: UnsafePointer<CChar>) -> OpaquePointer? {
+private func check_file(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32, _ funcname: UnsafePointer<CChar>) -> OpaquePointer? {
     let fh = luaL_checkudata(L, idx, "FILE*")!.assumingMemoryBound(to: luaL_Stream.self)
     if fh.pointee.closef == nil || fh.pointee.f == nil {
-        luaL_error(L, "%s: closed file", funcname)
+        let name = String(cString: funcname)
+        luaL_error(L, "\(name): closed file")
         return nil
     } else {
         return OpaquePointer(fh.pointee.f)
@@ -198,7 +192,7 @@ private func check_file(_ L: OpaquePointer!, _ idx: Int32, _ funcname: UnsafePoi
 ///
 /// Returns:
 ///  * True if the lock was obtained successfully, otherwise nil and an error string
-private func _file_lock(_ L: OpaquePointer!, _ fh: OpaquePointer, _ mode: UnsafePointer<CChar>, _ start: CLong, _ len: CLong, _ funcname: UnsafePointer<CChar>) -> Bool {
+private func _file_lock(_ L: UnsafeMutablePointer<lua_State>!, _ fh: OpaquePointer, _ mode: UnsafePointer<CChar>, _ start: CLong, _ len: CLong, _ funcname: UnsafePointer<CChar>) -> Bool {
     var f = flock()
     let modeChar = mode.pointee
     switch Int32(modeChar) {
@@ -209,7 +203,8 @@ private func _file_lock(_ L: OpaquePointer!, _ fh: OpaquePointer, _ mode: Unsafe
     case Int32(UInt8(ascii: "u")):
         f.l_type = Int16(F_UNLCK)
     default:
-        luaL_error(L, "%s: invalid mode", funcname)
+        let name = String(cString: funcname)
+        luaL_error(L, "\(name): invalid mode")
         return false
     }
     f.l_whence = Int16(SEEK_SET)
@@ -235,7 +230,7 @@ private func _file_lock(_ L: OpaquePointer!, _ fh: OpaquePointer, _ mode: Unsafe
 ///  * This is not a low level OS feature, the lock is actually a file created in the path, called `lockfile.lfs`, so the directory must be writable for this function to succeed
 ///  * The returned lock object can be freed with ```lock:free()```
 ///  * If the lock already exists and is not stale, the error string returned will be "File exists"
-private func lfs_lock_dir(_ L: OpaquePointer!) -> Int32 {
+private func lfs_lock_dir(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     var pathl: Int = 0
     let lockfile = "/lockfile.lfs"
     let path = luaL_checklstring(L, 1, &pathl)!
@@ -255,7 +250,7 @@ private func lfs_lock_dir(_ L: OpaquePointer!) -> Int32 {
     return 1
 }
 
-private func lfs_unlock_dir(_ L: OpaquePointer!) -> Int32 {
+private func lfs_unlock_dir(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let lock = luaL_checkudata(L, 1, LOCK_METATABLE)!.assumingMemoryBound(to: lfs_Lock.self)
     if lock.pointee.ln != nil {
         unlink(lock.pointee.ln)
@@ -272,7 +267,7 @@ private func lfs_unlock_dir(_ L: OpaquePointer!) -> Int32 {
  ** @param #3 Number with start position (optional).
  ** @param #4 Number with length (optional).
  */
-private func file_lock(_ L: OpaquePointer!) -> Int32 {
+private func file_lock(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let fh = check_file(L, 1, "lock")!
     let mode = luaL_checkstring(L, 2)!
     let start = CLong(luaL_optinteger(L, 3, 0))
@@ -282,7 +277,7 @@ private func file_lock(_ L: OpaquePointer!) -> Int32 {
         return 1
     } else {
         lua_pushnil(L)
-        lua_pushfstring(L, "%s", strerror(errno)!)
+        lua_pushstring(L, strerror(errno))
         return 2
     }
 }
@@ -298,7 +293,7 @@ private func file_lock(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * True if the unlock succeeded, otherwise nil and an error string
-private func file_unlock(_ L: OpaquePointer!) -> Int32 {
+private func file_unlock(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let fh = check_file(L, 1, "unlock")!
     let start = CLong(luaL_optinteger(L, 2, 0))
     let len = CLong(luaL_optinteger(L, 3, 0))
@@ -307,7 +302,7 @@ private func file_unlock(_ L: OpaquePointer!) -> Int32 {
         return 1
     } else {
         lua_pushnil(L)
-        lua_pushfstring(L, "%s", strerror(errno)!)
+        lua_pushstring(L, strerror(errno))
         return 2
     }
 }
@@ -323,8 +318,8 @@ private func file_unlock(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * True if the link was created, otherwise nil and an error string
-private func make_link(_ L: OpaquePointer!) -> Int32 {
-    LuaSkin.shared(withState: L).checkArgs(LS_TSTRING, LS_TSTRING, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
+private func make_link(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    LuaSkin.skin(with: L).checkArgs(LS_TSTRING, LS_TSTRING, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
     let oldpath = path_at_index(L, 1)
     let newpath = path_at_index(L, 2)
     var hasError: Bool
@@ -355,15 +350,15 @@ private func make_link(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * True if the directory was created, otherwise nil and an error string
-private func make_dir(_ L: OpaquePointer!) -> Int32 {
-    LuaSkin.shared(withState: L).checkArgs(LS_TSTRING, LS_TBREAK)
+private func make_dir(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    LuaSkin.skin(with: L).checkArgs(LS_TSTRING, LS_TBREAK)
     let path = path_at_index(L, 1)
 
     let fail = mkdir(path, S_IRUSR | S_IWUSR | S_IXUSR | S_IRGRP |
                      S_IWGRP | S_IXGRP | S_IROTH | S_IXOTH)
     if fail != 0 {
         lua_pushnil(L)
-        lua_pushfstring(L, "%s", strerror(errno)!)
+        lua_pushstring(L, strerror(errno))
         return 2
     }
     lua_pushboolean(L, 1)
@@ -379,15 +374,15 @@ private func make_dir(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * True if the directory was removed, otherwise nil and an error string
-private func remove_dir(_ L: OpaquePointer!) -> Int32 {
-    LuaSkin.shared(withState: L).checkArgs(LS_TSTRING, LS_TBREAK)
+private func remove_dir(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    LuaSkin.skin(with: L).checkArgs(LS_TSTRING, LS_TBREAK)
     let path = path_at_index(L, 1)
 
     let fail = rmdir(path)
 
     if fail != 0 {
         lua_pushnil(L)
-        lua_pushfstring(L, "%s", strerror(errno)!)
+        lua_pushstring(L, strerror(errno))
         return 2
     }
     lua_pushboolean(L, 1)
@@ -396,11 +391,12 @@ private func remove_dir(_ L: OpaquePointer!) -> Int32 {
 
 // MARK: - Directory iterator
 
-private func dir_iter(_ L: OpaquePointer!) -> Int32 {
+private func dir_iter(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let d = luaL_checkudata(L, 1, DIR_METATABLE)!.assumingMemoryBound(to: dir_data.self)
     luaL_argcheck(L, d.pointee.closed == 0, 1, "closed directory")
 
-    if let entry = readdir(d.pointee.dir) {
+    let dirPtr = UnsafeMutablePointer<DIR>(d.pointee.dir!)
+    if let entry = readdir(dirPtr) {
         let name = withUnsafePointer(to: &entry.pointee.d_name) { namePtr in
             namePtr.withMemoryRebound(to: CChar.self, capacity: Int(entry.pointee.d_namlen) + 1) { ptr in
                 String(cString: ptr)
@@ -409,16 +405,16 @@ private func dir_iter(_ L: OpaquePointer!) -> Int32 {
         lua_pushstring(L, name)
         return 1
     } else {
-        closedir(d.pointee.dir)
+        closedir(dirPtr)
         d.pointee.closed = 1
         return 0
     }
 }
 
-private func dir_close(_ L: OpaquePointer!) -> Int32 {
+private func dir_close(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let d = lua_touserdata(L, 1)!.assumingMemoryBound(to: dir_data.self)
-    if d.pointee.closed == 0 && d.pointee.dir != nil {
-        closedir(d.pointee.dir)
+    if d.pointee.closed == 0, let dirPtr = d.pointee.dir {
+        closedir(UnsafeMutablePointer<DIR>(dirPtr))
     }
     d.pointee.closed = 1
     return 0
@@ -457,17 +453,23 @@ private func dir_close(_ L: OpaquePointer!) -> Int32 {
 ///       end
 ///       dirObj:close() -- necessary to make sure that the directory stream is closed
 ///    ```
-private func dir_iter_factory(_ L: OpaquePointer!) -> Int32 {
-    LuaSkin.shared(withState: L).checkArgs(LS_TSTRING, LS_TBREAK)
+private func dir_iter_factory(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    LuaSkin.skin(with: L).checkArgs(LS_TSTRING, LS_TBREAK)
     let path = path_at_index(L, 1)
     lua_pushcfunction(L, dir_iter)
     let d = lua_newuserdata(L, MemoryLayout<dir_data>.size)!.assumingMemoryBound(to: dir_data.self)
     luaL_getmetatable(L, DIR_METATABLE)
     lua_setmetatable(L, -2)
     d.pointee.closed = 0
-    d.pointee.dir = opendir(path)
+    if let dirp = opendir(path) {
+        d.pointee.dir = OpaquePointer(dirp)
+    } else {
+        d.pointee.dir = nil
+    }
     if d.pointee.dir == nil {
-        return luaL_error(L, "cannot open %s: %s", path!, strerror(errno)!)
+        let pathStr = String(cString: path!)
+        let errStr = String(cString: strerror(errno)!)
+        return luaL_error(L, "cannot open \(pathStr): \(errStr)")
     }
 
     // Lua 5.4: use __close to close dir if you break the iterator
@@ -476,7 +478,7 @@ private func dir_iter_factory(_ L: OpaquePointer!) -> Int32 {
     return 4
 }
 
-private func dir_create_meta(_ L: OpaquePointer!) -> Int32 {
+private func dir_create_meta(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     luaL_newmetatable(L, DIR_METATABLE)
 
     // Method table
@@ -496,7 +498,7 @@ private func dir_create_meta(_ L: OpaquePointer!) -> Int32 {
     return 1
 }
 
-private func lock_create_meta(_ L: OpaquePointer!) -> Int32 {
+private func lock_create_meta(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     luaL_newmetatable(L, LOCK_METATABLE)
 
     // Method table
@@ -540,15 +542,15 @@ private func makeCString(_ s: StaticString) -> UnsafePointer<CChar> {
 ///
 /// Returns:
 ///  * True if the operation was successful, otherwise nil and an error string
-private func file_utime(_ L: OpaquePointer!) -> Int32 {
-    LuaSkin.shared(withState: L).checkArgs(LS_TSTRING, LS_TNUMBER | LS_TOPTIONAL, LS_TNUMBER | LS_TOPTIONAL, LS_TBREAK)
+private func file_utime(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    LuaSkin.skin(with: L).checkArgs(LS_TSTRING, LS_TNUMBER | LS_TOPTIONAL, LS_TNUMBER | LS_TOPTIONAL, LS_TBREAK)
     let file = path_at_index(L, 1)
 
     if lua_gettop(L) == 1 {
         // set to current date/time
         if utime(file, nil) != 0 {
             lua_pushnil(L)
-            lua_pushfstring(L, "%s", strerror(errno)!)
+            lua_pushstring(L, strerror(errno))
             return 2
         }
     } else {
@@ -557,7 +559,7 @@ private func file_utime(_ L: OpaquePointer!) -> Int32 {
         utb.modtime = time_t(luaL_optinteger(L, 3, lua_Integer(utb.actime)))
         if utime(file, &utb) != 0 {
             lua_pushnil(L)
-            lua_pushfstring(L, "%s", strerror(errno)!)
+            lua_pushstring(L, strerror(errno))
             return 2
         }
     }
@@ -567,46 +569,46 @@ private func file_utime(_ L: OpaquePointer!) -> Int32 {
 
 // MARK: - Stat member pushers
 
-private func push_st_mode(_ L: OpaquePointer!, _ info: UnsafePointer<stat>) {
+private func push_st_mode(_ L: UnsafeMutablePointer<lua_State>!, _ info: UnsafePointer<stat>) {
     lua_pushstring(L, mode2string(info.pointee.st_mode))
 }
-private func push_st_dev(_ L: OpaquePointer!, _ info: UnsafePointer<stat>) {
+private func push_st_dev(_ L: UnsafeMutablePointer<lua_State>!, _ info: UnsafePointer<stat>) {
     lua_pushinteger(L, lua_Integer(info.pointee.st_dev))
 }
-private func push_st_ino(_ L: OpaquePointer!, _ info: UnsafePointer<stat>) {
+private func push_st_ino(_ L: UnsafeMutablePointer<lua_State>!, _ info: UnsafePointer<stat>) {
     lua_pushinteger(L, lua_Integer(info.pointee.st_ino))
 }
-private func push_st_nlink(_ L: OpaquePointer!, _ info: UnsafePointer<stat>) {
+private func push_st_nlink(_ L: UnsafeMutablePointer<lua_State>!, _ info: UnsafePointer<stat>) {
     lua_pushinteger(L, lua_Integer(info.pointee.st_nlink))
 }
-private func push_st_uid(_ L: OpaquePointer!, _ info: UnsafePointer<stat>) {
+private func push_st_uid(_ L: UnsafeMutablePointer<lua_State>!, _ info: UnsafePointer<stat>) {
     lua_pushinteger(L, lua_Integer(info.pointee.st_uid))
 }
-private func push_st_gid(_ L: OpaquePointer!, _ info: UnsafePointer<stat>) {
+private func push_st_gid(_ L: UnsafeMutablePointer<lua_State>!, _ info: UnsafePointer<stat>) {
     lua_pushinteger(L, lua_Integer(info.pointee.st_gid))
 }
-private func push_st_rdev(_ L: OpaquePointer!, _ info: UnsafePointer<stat>) {
+private func push_st_rdev(_ L: UnsafeMutablePointer<lua_State>!, _ info: UnsafePointer<stat>) {
     lua_pushinteger(L, lua_Integer(info.pointee.st_rdev))
 }
-private func push_st_atime(_ L: OpaquePointer!, _ info: UnsafePointer<stat>) {
+private func push_st_atime(_ L: UnsafeMutablePointer<lua_State>!, _ info: UnsafePointer<stat>) {
     lua_pushinteger(L, lua_Integer(info.pointee.st_atimespec.tv_sec))
 }
-private func push_st_mtime(_ L: OpaquePointer!, _ info: UnsafePointer<stat>) {
+private func push_st_mtime(_ L: UnsafeMutablePointer<lua_State>!, _ info: UnsafePointer<stat>) {
     lua_pushinteger(L, lua_Integer(info.pointee.st_mtimespec.tv_sec))
 }
-private func push_st_ctime(_ L: OpaquePointer!, _ info: UnsafePointer<stat>) {
+private func push_st_ctime(_ L: UnsafeMutablePointer<lua_State>!, _ info: UnsafePointer<stat>) {
     lua_pushinteger(L, lua_Integer(info.pointee.st_ctimespec.tv_sec))
 }
-private func push_st_birthtime(_ L: OpaquePointer!, _ info: UnsafePointer<stat>) {
+private func push_st_birthtime(_ L: UnsafeMutablePointer<lua_State>!, _ info: UnsafePointer<stat>) {
     lua_pushinteger(L, lua_Integer(info.pointee.st_birthtimespec.tv_sec))
 }
-private func push_st_size(_ L: OpaquePointer!, _ info: UnsafePointer<stat>) {
+private func push_st_size(_ L: UnsafeMutablePointer<lua_State>!, _ info: UnsafePointer<stat>) {
     lua_pushinteger(L, lua_Integer(info.pointee.st_size))
 }
-private func push_st_blocks(_ L: OpaquePointer!, _ info: UnsafePointer<stat>) {
+private func push_st_blocks(_ L: UnsafeMutablePointer<lua_State>!, _ info: UnsafePointer<stat>) {
     lua_pushinteger(L, lua_Integer(info.pointee.st_blocks))
 }
-private func push_st_blksize(_ L: OpaquePointer!, _ info: UnsafePointer<stat>) {
+private func push_st_blksize(_ L: UnsafeMutablePointer<lua_State>!, _ info: UnsafePointer<stat>) {
     lua_pushinteger(L, lua_Integer(info.pointee.st_blksize))
 }
 
@@ -627,7 +629,7 @@ private func perm2string(_ mode: mode_t) -> UnsafePointer<CChar> {
     return UnsafePointer(perms)
 }
 
-private func push_st_perm(_ L: OpaquePointer!, _ info: UnsafePointer<stat>) {
+private func push_st_perm(_ L: UnsafeMutablePointer<lua_State>!, _ info: UnsafePointer<stat>) {
     let perms = perm2string(info.pointee.st_mode)
     lua_pushstring(L, perms)
     perms.deallocate()
@@ -635,7 +637,7 @@ private func push_st_perm(_ L: OpaquePointer!, _ info: UnsafePointer<stat>) {
 
 // MARK: - Stat member table
 
-private typealias PushFunction = (OpaquePointer!, UnsafePointer<stat>) -> Void
+private typealias PushFunction = (UnsafeMutablePointer<lua_State>?, UnsafePointer<stat>) -> Void
 
 private struct StatMember {
     let name: String
@@ -690,17 +692,19 @@ private let members: [StatMember] = [
 ///
 /// Notes:
 ///  * This function uses `stat()` internally thus if the given filepath is a symbolic link, it is followed (if it points to another link the chain is followed recursively) and the information is about the file it refers to. To obtain information about the link itself, see function `hs.fs.symlinkAttributes()`
-private func _file_info_(_ L: OpaquePointer!, _ st: @convention(c) (UnsafePointer<CChar>?, UnsafeMutablePointer<stat>?) -> Int32) -> Int32 {
-    LuaSkin.shared(withState: L).checkArgs(LS_TSTRING, LS_TSTRING | LS_TOPTIONAL, LS_TBREAK)
+private func _file_info_(_ L: UnsafeMutablePointer<lua_State>!, _ st: @convention(c) (UnsafePointer<CChar>?, UnsafeMutablePointer<stat>?) -> Int32) -> Int32 {
+    LuaSkin.skin(with: L).checkArgs(LS_TSTRING, LS_TSTRING | LS_TOPTIONAL, LS_TBREAK)
     let file = path_at_index(L, 1)
     var info = stat()
 
     if st(file, &info) != 0 {
         lua_pushnil(L)
-        lua_pushfstring(L, "cannot obtain information from file '%s': %s", file!, strerror(errno)!)
+        let fileStr = String(cString: file!)
+        let errStr = String(cString: strerror(errno)!)
+        lua_pushstring(L, "cannot obtain information from file '\(fileStr)': \(errStr)")
         return 2
     }
-    if lua_isstring(L, 2) != 0 {
+    if lua_isstring(L, 2) {
         let member = String(cString: lua_tostring(L, 2)!)
         for m in members {
             if m.name == member {
@@ -710,12 +714,13 @@ private func _file_info_(_ L: OpaquePointer!, _ st: @convention(c) (UnsafePointe
         }
         // member not found
         lua_pushnil(L)
-        lua_pushfstring(L, "invalid attribute name '%s'", lua_tostring(L, 2)!)
+        let attrName = String(cString: lua_tostring(L, 2)!)
+        lua_pushstring(L, "invalid attribute name '\(attrName)'")
         return 2
     }
     // creates a table if none is given
     lua_settop(L, 2)
-    if lua_istable(L, 2) == 0 {
+    if !lua_istable(L, 2) {
         lua_newtable(L)
     }
     // stores all members in table on top of the stack
@@ -727,12 +732,19 @@ private func _file_info_(_ L: OpaquePointer!, _ st: @convention(c) (UnsafePointe
     return 1
 }
 
-private func file_info(_ L: OpaquePointer!) -> Int32 {
-    return _file_info_(L, Darwin.stat)
+private func _call_stat(_ path: UnsafePointer<CChar>?, _ buf: UnsafeMutablePointer<stat>?) -> Int32 {
+    stat(path!, buf!)
+}
+private func _call_lstat(_ path: UnsafePointer<CChar>?, _ buf: UnsafeMutablePointer<stat>?) -> Int32 {
+    lstat(path!, buf!)
 }
 
-private func link_info(_ L: OpaquePointer!) -> Int32 {
-    return _file_info_(L, Darwin.lstat)
+private func file_info(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    return _file_info_(L, _call_stat)
+}
+
+private func link_info(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    return _file_info_(L, _call_lstat)
 }
 
 // MARK: - Tags
@@ -746,8 +758,8 @@ private func link_info(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * A table containing the list of the file's tags, or nil if the file has no tags assigned; throws a lua error if an error accessing the file occurs
-private func tagsGet(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func tagsGet(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING, LS_TBREAK)
     let path = skin.toNSObject(atIndex: 1) as! NSString
 
@@ -778,8 +790,8 @@ private func tagsGet(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * true if the tags were updated; throws a lua error if an error occurs updating the tags
-private func tagsAdd(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func tagsAdd(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING, LS_TTABLE, LS_TBREAK)
     let path = skin.toNSObject(atIndex: 1) as! NSString
 
@@ -801,8 +813,8 @@ private func tagsAdd(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * true if the tags were set; throws a lua error if an error occurs setting the new tags
-private func tagsSet(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func tagsSet(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING, LS_TTABLE, LS_TBREAK)
     let path = skin.toNSObject(atIndex: 1) as! NSString
 
@@ -822,8 +834,8 @@ private func tagsSet(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * true if the tags were updated; throws a lua error if an error occurs updating the tags
-private func tagsRemove(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func tagsRemove(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING, LS_TTABLE, LS_TBREAK)
     let path = skin.toNSObject(atIndex: 1) as! NSString
     let removeTags = NSMutableSet(array: tags_from_lua_stack(L) as [AnyObject])
@@ -846,7 +858,7 @@ private func tagsRemove(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * The path to the system designated temporary directory for the current user.
-private func hs_temporaryDirectory(_ L: OpaquePointer!) -> Int32 {
+private func hs_temporaryDirectory(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     lua_pushstring(L, NSTemporaryDirectory().cString(using: .utf8))
     return 1
 }
@@ -860,8 +872,8 @@ private func hs_temporaryDirectory(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * a string containing the Uniform Type Identifier for the file location specified or nil if an error occurred
-private func hs_fileuti(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func hs_fileuti(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING, LS_TBREAK)
     let path = NSString(utf8String: path_at_index(L, 1)!)! as String
 
@@ -894,8 +906,8 @@ private func hs_fileuti(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * the file UTI in the alternate format or nil if the UTI does not have an alternate of the specified type.
-private func hs_fileUTIalternate(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func hs_fileUTIalternate(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING, LS_TSTRING, LS_TBREAK)
     let fileUTI = skin.toNSObject(atIndex: 1) as! NSString
     let format = skin.toNSObject(atIndex: 2) as! NSString
@@ -910,7 +922,7 @@ private func hs_fileUTIalternate(_ L: OpaquePointer!) -> Int32 {
     } else if format.isEqual(to: "ostype") {
         convertTo = kUTTagClassOSType
     } else {
-        return luaL_error(L, "invalid alternate type %s specified", (format as String).cString(using: .utf8)!)
+        return luaL_error(L, "invalid alternate type \(format) specified")
     }
 
     let result = UTTypeCopyPreferredTagWithClass(fileUTI as CFString, convertTo)?.takeRetainedValue()
@@ -928,8 +940,8 @@ private func hs_fileUTIalternate(_ L: OpaquePointer!) -> Int32 {
 /// Returns:
 ///  * A string containing the absolute path of `filepath` (i.e. one that doesn't include `.`, `..` or symlinks)
 ///  * Note that symlinks will be resolved to their target file
-private func hs_pathToAbsolute(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func hs_pathToAbsolute(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING, LS_TBREAK)
 
     let filePath = skin.toNSObject(atIndex: 1) as! NSString
@@ -954,8 +966,8 @@ private func hs_pathToAbsolute(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * a string containing the display name of the file or directory at a specified path; returns nil if no file with the specified path exists.
-private func fs_displayName(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func fs_displayName(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING, LS_TBREAK)
     let filePath = skin.toNSObject(atIndex: 1) as! NSString
     if FileManager.default.fileExists(atPath: filePath.expandingTildeInPath) {
@@ -975,8 +987,8 @@ private func fs_displayName(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * Bookmark data in a binary encoded string or `nil` if path is invalid.
-private func fs_pathToBookmark(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func fs_pathToBookmark(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING, LS_TBREAK)
 
     let filePath = skin.toNSObject(atIndex: 1) as! NSString
@@ -1012,16 +1024,16 @@ private func fs_pathToBookmark(_ L: OpaquePointer!) -> Int32 {
 ///    usually continues to work if the user moves or renames the resource, or if the
 ///    user relaunches your app or restarts the system.
 ///  * No volumes are mounted during the resolution of the bookmark data.
-private func fs_pathFromBookmark(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func fs_pathFromBookmark(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING, LS_TBREAK)
 
     let data = lua_tostring(L, 1)
-    let dataLength = lua_rawlen(L, 1)
+    let dataLength: Int = lua_rawlen(L, 1)
     let bookmarkData = NSData(bytes: data, length: dataLength)
 
     do {
-        var isStale: ObjCBool = false
+        var isStale: Bool = false
         let url = try URL(resolvingBookmarkData: bookmarkData as Data,
                           options: .withoutMounting,
                           relativeTo: nil,
@@ -1055,8 +1067,8 @@ private func fs_pathFromBookmark(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * A string or `nil` if path is invalid.
-private func fs_urlFromPath(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func fs_urlFromPath(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING, LS_TBREAK)
 
     let filePath = skin.toNSObject(atIndex: 1) as! NSString
@@ -1096,8 +1108,8 @@ private func fs_urlFromPath(_ L: OpaquePointer!) -> Int32 {
 /// Notes:
 ///  * `ignore` and `except` options require the use of actual regular expressions, not the simplified pattern matching used by Lua. More details about the proper syntax for the strings to use in the tables of these options can be found at https://unicode-org.github.io/icu/userguide/strings/regexp.html.
 ///    * note that this function only checks to see if the regular expression returns a match for each filename found (not the path, just the filename component of the path). Any captures are ignored.
-private func fs_filesInPath(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func fs_filesInPath(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING,
                    LS_TTABLE | LS_TOPTIONAL,
                    LS_TBREAK)
@@ -1216,10 +1228,8 @@ private func fs_filesInPath(_ L: OpaquePointer!) -> Int32 {
         return 3
     }
 
-    let startingURL = NSURL(fileURLWithPath: path as String, isDirectory: true)
-    var startingPath: AnyObject?
-    try? (startingURL as URL).getResourceValue(&startingPath, forKey: .pathKey)
-    let startingPathStr = startingPath as! NSString
+    let startingURL = URL(fileURLWithPath: path as String, isDirectory: true)
+    let startingPathStr = (try? startingURL.resourceValues(forKeys: [.pathKey]))?.allValues[.pathKey] as? NSString ?? path
 
     let foundPaths = NSMutableArray()
     let seenDirectories = NSMutableArray()
@@ -1244,26 +1254,22 @@ private func fs_filesInPath(_ L: OpaquePointer!) -> Int32 {
         ) else { continue }
 
         for case var fileURL as URL in dirEnum {
-            var filePath: AnyObject?
-            try? fileURL.getResourceValue(&filePath, forKey: .pathKey)
-            var filePathStr = filePath as! NSString
-
-            var isSymbolicLink: AnyObject?
-            try? fileURL.getResourceValue(&isSymbolicLink, forKey: .isSymbolicLinkKey)
+            guard let vals = try? fileURL.resourceValues(forKeys: [.pathKey, .isSymbolicLinkKey]) else { continue }
+            var filePathStr = (vals.allValues[.pathKey] as? NSString) ?? (fileURL.path as NSString)
 
             let originalFilePath = filePathStr.copy() as! NSString
             let fileName = originalFilePath.lastPathComponent as NSString
 
-            if (isSymbolicLink as? NSNumber)?.boolValue == true {
+            if vals.isSymbolicLink == true {
                 if followSymlinks {
                     let newPath = (filePathStr as String).resolvingSymlinksInPath
                     if fileManager.fileExists(atPath: newPath) {
                         fileURL = URL(fileURLWithPath: newPath)
-                        var resolved: AnyObject?
-                        try? fileURL.getResourceValue(&resolved, forKey: .pathKey)
-                        filePathStr = resolved as! NSString
+                        if let resolvedVals = try? fileURL.resourceValues(forKeys: [.pathKey]) {
+                            filePathStr = (resolvedVals.allValues[.pathKey] as? NSString) ?? (fileURL.path as NSString)
+                        }
                     } else {
-                        LuaSkin.logWarn("\(USERDATA_TAG).pathList - error resolving symbolic link \(newPath)")
+                        LuaSkin.skin(with: L).logWarn("\(USERDATA_TAG).pathList - error resolving symbolic link \(newPath)")
                         continue
                     }
                 } else {
@@ -1293,9 +1299,8 @@ private func fs_filesInPath(_ L: OpaquePointer!) -> Int32 {
 
             if !keepGoing { continue }
 
-            var isRegularFile: AnyObject?
-            try? fileURL.getResourceValue(&isRegularFile, forKey: .isRegularFileKey)
-            if (isRegularFile as? NSNumber)?.boolValue == true {
+            let fileVals = try? fileURL.resourceValues(forKeys: [.isRegularFileKey, .isDirectoryKey])
+            if fileVals?.isRegularFile == true {
                 var resultPath = filePathStr
                 if !expandSymlinks {
                     resultPath = originalFilePath.replacingOccurrences(
@@ -1311,9 +1316,7 @@ private func fs_filesInPath(_ L: OpaquePointer!) -> Int32 {
                     foundPaths.add(resultPath)
                 }
             } else if subdirs {
-                var isThisDir: AnyObject?
-                try? fileURL.getResourceValue(&isThisDir, forKey: .isDirectoryKey)
-                if (isThisDir as? NSNumber)?.boolValue == true && !seenDirectories.contains(filePathStr) {
+                if fileVals?.isDirectory == true && !seenDirectories.contains(filePathStr) {
                     directories.add(NSArray(array: [filePathStr, "\(symbolicDir)/\(fileName)"]))
                 }
             }
@@ -1361,7 +1364,7 @@ private let fslib: [luaL_Reg] = [
 ]
 
 @_cdecl("luaopen_hs_libfs")
-public func luaopen_hs_libfs(_ L: OpaquePointer!) -> Int32 {
+public func luaopen_hs_libfs(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     dir_create_meta(L)
     lock_create_meta(L)
     luaL_newlib_compat(L, fslib)
@@ -1372,7 +1375,7 @@ public func luaopen_hs_libfs(_ L: OpaquePointer!) -> Int32 {
 // MARK: - Compat helper
 
 // luaL_newlib is a macro in C; we replicate it in Swift
-private func luaL_newlib_compat(_ L: OpaquePointer!, _ lib: [luaL_Reg]) {
+private func luaL_newlib_compat(_ L: UnsafeMutablePointer<lua_State>!, _ lib: [luaL_Reg]) {
     var mutableLib = lib
     luaL_checkversion(L)
     lua_createtable(L, 0, Int32(lib.count - 1))

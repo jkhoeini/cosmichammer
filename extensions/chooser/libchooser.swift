@@ -5,7 +5,7 @@ import LuaSkin
 
 private let USERDATA_TAG = "hs.chooser"
 
-private func get_objectFromUserdata<T: AnyObject>(_ type: T.Type, _ L: OpaquePointer!, _ idx: Int32, _ tag: String) -> T {
+private func get_objectFromUserdata<T: AnyObject>(_ type: T.Type, _ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32, _ tag: String) -> T {
     let ptr = luaL_checkudata(L, idx, tag)!
     return Unmanaged<T>.fromOpaque(ptr.load(as: UnsafeRawPointer.self)).takeUnretainedValue()
 }
@@ -27,7 +27,7 @@ private var refTable: LSRefTable = LUA_NOREF
 /// Notes:
 ///  * As of macOS Sierra and later, if you want a `hs.chooser` object to appear above full-screen windows you must hide the Hammerspoon Dock icon first using: `hs.dockicon.hide()`
 private let chooserNew: lua_CFunction = { L in
-    let skin = LuaSkin.shared(withState: L)
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TFUNCTION, LS_TBREAK)
 
     // Parse function arguments
@@ -53,13 +53,13 @@ private let chooserNew: lua_CFunction = { L in
 /// Returns:
 ///  * The hs.chooser object
 private let chooserShow: lua_CFunction = { L in
-    let skin = LuaSkin.shared(withState: L)
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TTABLE | LS_TOPTIONAL, LS_TBREAK)
 
     let chooser: HSChooser = skin.toNSObject(atIndex: 1) as! HSChooser
 
     if lua_type(L, 2) == LUA_TTABLE {
-        let userTopLeft = skin.tableToPoint(atIndex: 2)
+        let userTopLeft = skin.tableToPoint(at: 2)
         let topLeft = NSPoint(x: userTopLeft.x,
                               y: NSScreen.screens[0].frame.size.height - userTopLeft.y)
         chooser.showAtPoint(topLeft)
@@ -81,7 +81,7 @@ private let chooserShow: lua_CFunction = { L in
 /// Returns:
 ///  * The `hs.chooser` object
 private let chooserHide: lua_CFunction = { L in
-    let skin = LuaSkin.shared(withState: L)
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
 
     let chooser: HSChooser = skin.toNSObject(atIndex: 1) as! HSChooser
@@ -101,7 +101,7 @@ private let chooserHide: lua_CFunction = { L in
 /// Returns:
 ///  * A boolean, true if the chooser is displayed on screen, false if not
 private let chooserIsVisible: lua_CFunction = { L in
-    let skin = LuaSkin.shared(withState: L)
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
 
     let chooser: HSChooser = skin.toNSObject(atIndex: 1) as! HSChooser
@@ -130,7 +130,7 @@ private let chooserIsVisible: lua_CFunction = { L in
 ///  * If a function is given, it will be called once, when the chooser window is displayed. The results are then cached until this method is called again, or `hs.chooser:refreshChoicesCallback()` is called.
 ///  * If you're using a hs.styledtext object for text or subText choices, make sure you specify a color, otherwise your text could appear transparent depending on the bgDark setting.
 private let chooserSetChoices: lua_CFunction = { L in
-    let skin = LuaSkin.shared(withState: L)
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TFUNCTION | LS_TTABLE | LS_TNIL, LS_TBREAK)
 
     let chooser: HSChooser = skin.toNSObject(atIndex: 1) as! HSChooser
@@ -143,7 +143,7 @@ private let chooserSetChoices: lua_CFunction = { L in
         break
 
     case LUA_TFUNCTION:
-        chooser.choicesCallbackRef = skin.luaRef(refTable, atIndex: 2)
+        chooser.choicesCallbackRef = skin.luaRef(refTable, at: 2)
 
     case LUA_TTABLE:
         chooser.choicesCallbackRef = skin.luaUnref(refTable, ref: chooser.choicesCallbackRef)
@@ -189,7 +189,7 @@ private let chooserSetChoices: lua_CFunction = { L in
 ///  * This callback is called *after* the chooser is hidden.
 ///  * This callback is called *after* hs.chooser.globalCallback.
 private let chooserHideCallback: lua_CFunction = { L in
-    let skin = LuaSkin.shared(withState: L)
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TFUNCTION | LS_TOPTIONAL, LS_TBREAK)
 
     let chooser: HSChooser = skin.toNSObject(atIndex: 1) as! HSChooser
@@ -197,7 +197,7 @@ private let chooserHideCallback: lua_CFunction = { L in
     chooser.hideCallbackRef = skin.luaUnref(refTable, ref: chooser.hideCallbackRef)
 
     if lua_type(L, 2) == LUA_TFUNCTION {
-        chooser.hideCallbackRef = skin.luaRef(refTable, atIndex: 2)
+        chooser.hideCallbackRef = skin.luaRef(refTable, at: 2)
     }
 
     lua_pushvalue(L, 1)
@@ -217,7 +217,7 @@ private let chooserHideCallback: lua_CFunction = { L in
 /// Notes:
 ///  * This callback is called *after* the chooser is shown. To execute code just before it's shown (and/or after it's removed) see `hs.chooser.globalCallback`
 private let chooserShowCallback: lua_CFunction = { L in
-    let skin = LuaSkin.shared(withState: L)
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TFUNCTION | LS_TOPTIONAL, LS_TBREAK)
 
     let chooser: HSChooser = skin.toNSObject(atIndex: 1) as! HSChooser
@@ -225,7 +225,7 @@ private let chooserShowCallback: lua_CFunction = { L in
     chooser.showCallbackRef = skin.luaUnref(refTable, ref: chooser.showCallbackRef)
 
     if lua_type(L, 2) == LUA_TFUNCTION {
-        chooser.showCallbackRef = skin.luaRef(refTable, atIndex: 2)
+        chooser.showCallbackRef = skin.luaRef(refTable, at: 2)
     }
 
     lua_pushvalue(L, 1)
@@ -245,7 +245,7 @@ private let chooserShowCallback: lua_CFunction = { L in
 /// Notes:
 ///  * This method will do nothing if you have not set a function with `hs.chooser:choices()`
 private let chooserRefreshChoicesCallback: lua_CFunction = { L in
-    let skin = LuaSkin.shared(withState: L)
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
 
     let chooser: HSChooser = skin.toNSObject(atIndex: 1) as! HSChooser
@@ -278,7 +278,7 @@ private let chooserRefreshChoicesCallback: lua_CFunction = { L in
 /// Notes:
 ///  * You can provide an explicit nil or empty string to clear the current query string.
 private let chooserSetQuery: lua_CFunction = { L in
-    let skin = LuaSkin.shared(withState: L)
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING | LS_TNIL | LS_TOPTIONAL, LS_TBREAK)
 
     let chooser: HSChooser = skin.toNSObject(atIndex: 1) as! HSChooser
@@ -313,7 +313,7 @@ private let chooserSetQuery: lua_CFunction = { L in
 /// Returns:
 ///  * The hs.chooser object, or the existing placeholder text
 private let chooserPlaceholder: lua_CFunction = { L in
-    let skin = LuaSkin.shared(withState: L)
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING | LS_TNIL | LS_TOPTIONAL, LS_TBREAK)
 
     let chooser: HSChooser = skin.toNSObject(atIndex: 1) as! HSChooser
@@ -343,7 +343,7 @@ private let chooserPlaceholder: lua_CFunction = { L in
 ///  * The callback function should accept a single argument:
 ///   * A string containing the new search query
 private let chooserQueryCallback: lua_CFunction = { L in
-    let skin = LuaSkin.shared(withState: L)
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TFUNCTION | LS_TOPTIONAL, LS_TBREAK)
 
     let chooser: HSChooser = skin.toNSObject(atIndex: 1) as! HSChooser
@@ -351,7 +351,7 @@ private let chooserQueryCallback: lua_CFunction = { L in
     chooser.queryChangedCallbackRef = skin.luaUnref(refTable, ref: chooser.queryChangedCallbackRef)
 
     if lua_type(L, 2) == LUA_TFUNCTION {
-        chooser.queryChangedCallbackRef = skin.luaRef(refTable, atIndex: 2)
+        chooser.queryChangedCallbackRef = skin.luaRef(refTable, at: 2)
     }
 
     lua_pushvalue(L, 1)
@@ -372,7 +372,7 @@ private let chooserQueryCallback: lua_CFunction = { L in
 ///   * The callback may accept one argument, the row the right click occurred in or 0 if there is currently no selectable row where the right click occurred. To determine the location of the mouse pointer at the right click, see `hs.mouse`.
 ///   * To display a context menu, see `hs.menubar`, specifically the `:popupMenu()` method
 private let chooserRightClickCallback: lua_CFunction = { L in
-    let skin = LuaSkin.shared(withState: L)
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TFUNCTION | LS_TOPTIONAL, LS_TBREAK)
 
     let chooser: HSChooser = skin.toNSObject(atIndex: 1) as! HSChooser
@@ -380,7 +380,7 @@ private let chooserRightClickCallback: lua_CFunction = { L in
     chooser.rightClickCallbackRef = skin.luaUnref(refTable, ref: chooser.rightClickCallbackRef)
 
     if lua_type(L, 2) == LUA_TFUNCTION {
-        chooser.rightClickCallbackRef = skin.luaRef(refTable, atIndex: 2)
+        chooser.rightClickCallbackRef = skin.luaRef(refTable, at: 2)
     }
 
     lua_pushvalue(L, 1)
@@ -401,7 +401,7 @@ private let chooserRightClickCallback: lua_CFunction = { L in
 ///   * The callback may accept one argument, it will be a table containing whatever information you supplied for the item the user chose.
 ///   * To display a context menu, see `hs.menubar`, specifically the `:popupMenu()` method
 private let chooserInvalidCallback: lua_CFunction = { L in
-    let skin = LuaSkin.shared(withState: L)
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TFUNCTION | LS_TOPTIONAL, LS_TBREAK)
 
     let chooser: HSChooser = skin.toNSObject(atIndex: 1) as! HSChooser
@@ -409,7 +409,7 @@ private let chooserInvalidCallback: lua_CFunction = { L in
     chooser.invalidCallbackRef = skin.luaUnref(refTable, ref: chooser.invalidCallbackRef)
 
     if lua_type(L, 2) == LUA_TFUNCTION {
-        chooser.invalidCallbackRef = skin.luaRef(refTable, atIndex: 2)
+        chooser.invalidCallbackRef = skin.luaRef(refTable, at: 2)
     }
 
     lua_pushvalue(L, 1)
@@ -426,7 +426,7 @@ private let chooserInvalidCallback: lua_CFunction = { L in
 /// Returns:
 ///  * None
 private let chooserDelete: lua_CFunction = { L in
-    let skin = LuaSkin.shared(withState: L)
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
 
     // FIXME: Should we force the selfRefCount to 1 here, so the _gc call definitely deletes the ObjC object?
@@ -443,14 +443,14 @@ private let chooserDelete: lua_CFunction = { L in
 /// Returns:
 ///  * The `hs.chooser` object or a color table
 private let chooserSetFgColor: lua_CFunction = { L in
-    let skin = LuaSkin.shared(withState: L)
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TTABLE | LS_TNIL | LS_TOPTIONAL, LS_TBREAK)
 
     let chooser: HSChooser = skin.toNSObject(atIndex: 1) as! HSChooser
 
     switch lua_type(L, 2) {
     case LUA_TTABLE:
-        chooser.fgColor = skin.luaObjectAtIndex(2, toClass: "NSColor") as? NSColor
+        chooser.fgColor = skin.luaObject(at:2, toClass: "NSColor") as? NSColor
         lua_pushvalue(L, 1)
 
     case LUA_TNIL:
@@ -478,14 +478,14 @@ private let chooserSetFgColor: lua_CFunction = { L in
 /// Returns:
 ///  * The `hs.chooser` object or a color table
 private let chooserSetSubTextColor: lua_CFunction = { L in
-    let skin = LuaSkin.shared(withState: L)
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TTABLE | LS_TNIL | LS_TOPTIONAL, LS_TBREAK)
 
     let chooser: HSChooser = skin.toNSObject(atIndex: 1) as! HSChooser
 
     switch lua_type(L, 2) {
     case LUA_TTABLE:
-        chooser.subTextColor = skin.luaObjectAtIndex(2, toClass: "NSColor") as? NSColor
+        chooser.subTextColor = skin.luaObject(at:2, toClass: "NSColor") as? NSColor
         lua_pushvalue(L, 1)
 
     case LUA_TNIL:
@@ -516,7 +516,7 @@ private let chooserSetSubTextColor: lua_CFunction = { L in
 /// Notes:
 ///  * The text colors will not automatically change when you toggle the darkness of the chooser window, you should also set appropriate colors with `hs.chooser:fgColor()` and `hs.chooser:subTextColor()`
 private let chooserSetBgDark: lua_CFunction = { L in
-    let skin = LuaSkin.shared(withState: L)
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TNIL | LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
 
     let chooser: HSChooser = skin.toNSObject(atIndex: 1) as! HSChooser
@@ -555,7 +555,7 @@ private let chooserSetBgDark: lua_CFunction = { L in
 /// Notes:
 ///  * This should be used before a chooser has been displayed
 private let chooserSetEnableDefaultForQuery: lua_CFunction = { L in
-    let skin = LuaSkin.shared(withState: L)
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
 
     let chooser: HSChooser = skin.toNSObject(atIndex: 1) as! HSChooser
@@ -590,7 +590,7 @@ private let chooserSetEnableDefaultForQuery: lua_CFunction = { L in
 /// Notes:
 ///  * This should be used before a chooser has been displayed
 private let chooserSetSearchSubText: lua_CFunction = { L in
-    let skin = LuaSkin.shared(withState: L)
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
 
     let chooser: HSChooser = skin.toNSObject(atIndex: 1) as! HSChooser
@@ -625,7 +625,7 @@ private let chooserSetSearchSubText: lua_CFunction = { L in
 /// Notes:
 ///  * This should be used before a chooser has been displayed
 private let chooserSetWidth: lua_CFunction = { L in
-    let skin = LuaSkin.shared(withState: L)
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TNUMBER | LS_TOPTIONAL, LS_TBREAK)
 
     let chooser: HSChooser = skin.toNSObject(atIndex: 1) as! HSChooser
@@ -656,7 +656,7 @@ private let chooserSetWidth: lua_CFunction = { L in
 /// Returns:
 ///  * The `hs.chooser` object or a number
 private let chooserSetNumRows: lua_CFunction = { L in
-    let skin = LuaSkin.shared(withState: L)
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TNUMBER | LS_TOPTIONAL, LS_TBREAK)
 
     let chooser: HSChooser = skin.toNSObject(atIndex: 1) as! HSChooser
@@ -687,7 +687,7 @@ private let chooserSetNumRows: lua_CFunction = { L in
 /// Returns:
 ///  * If an argument is provided, returns the hs.chooser object; otherwise returns a number containing the row currently selected (i.e. the one highlighted in the UI)
 private let chooserSelectedRow: lua_CFunction = { L in
-    let skin = LuaSkin.shared(withState: L)
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TNUMBER | LS_TINTEGER | LS_TOPTIONAL, LS_TBREAK)
 
     let chooser: HSChooser = skin.toNSObject(atIndex: 1) as! HSChooser
@@ -716,7 +716,7 @@ private let chooserSelectedRow: lua_CFunction = { L in
 /// Returns:
 ///  * a table containing whatever information was supplied for the row currently selected or an empty table if no row is selected or the specified row does not exist.
 private let chooserSelectedRowContents: lua_CFunction = { L in
-    let skin = LuaSkin.shared(withState: L)
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TNUMBER | LS_TOPTIONAL, LS_TBREAK)
     let chooser: HSChooser = skin.toNSObject(atIndex: 1) as! HSChooser
 
@@ -739,7 +739,7 @@ private let chooserSelectedRowContents: lua_CFunction = { L in
 /// Returns:
 ///  * The `hs.chooser` object
 private let chooserSelect: lua_CFunction = { L in
-    let skin = LuaSkin.shared(withState: L)
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TNUMBER | LS_TOPTIONAL, LS_TBREAK)
 
     let chooser: HSChooser = skin.toNSObject(atIndex: 1) as! HSChooser
@@ -763,7 +763,7 @@ private let chooserSelect: lua_CFunction = { L in
 /// Returns:
 ///  * The `hs.chooser` object
 private let chooserCancel: lua_CFunction = { L in
-    let skin = LuaSkin.shared(withState: L)
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let chooser: HSChooser = skin.toNSObject(atIndex: 1) as! HSChooser
 
@@ -777,7 +777,7 @@ private let chooserCancel: lua_CFunction = { L in
 // These must not throw a lua error to ensure LuaSkin can safely be used from Objective-C
 // delegates and blocks.
 
-private let pushHSChooser: @convention(c) (OpaquePointer?, Any?) -> Int32 = { L, obj in
+private let pushHSChooser: @convention(c) (UnsafeMutablePointer<lua_State>?, Any?) -> Int32 = { L, obj in
     guard let chooser = obj as? HSChooser else { return 0 }
     chooser.selfRefCount += 1
     let valuePtr = lua_newuserdata(L, MemoryLayout<UnsafeRawPointer>.size)!
@@ -787,8 +787,8 @@ private let pushHSChooser: @convention(c) (OpaquePointer?, Any?) -> Int32 = { L,
     return 1
 }
 
-private let toHSChooserFromLua: @convention(c) (OpaquePointer?, Int32) -> Any? = { L, idx in
-    let skin = LuaSkin.shared(withState: L)
+private let toHSChooserFromLua: @convention(c) (UnsafeMutablePointer<lua_State>?, Int32) -> Any? = { L, idx in
+    let skin = LuaSkin.skin(with: L)
     if luaL_testudata(L, idx, USERDATA_TAG) != nil {
         return get_objectFromUserdata(HSChooser.self, L, idx, USERDATA_TAG)
     } else {
@@ -801,7 +801,7 @@ private let toHSChooserFromLua: @convention(c) (OpaquePointer?, Int32) -> Any? =
 // MARK: - Hammerspoon Infrastructure
 
 private let userdata_tostring: lua_CFunction = { L in
-    let skin = LuaSkin.shared(withState: L)
+    let skin = LuaSkin.skin(with: L)
     let chooser: HSChooser = skin.toNSObject(atIndex: 1) as! HSChooser
     skin.pushNSObject(String(format: "%@: (%@)", USERDATA_TAG, chooser) as NSString)
     return 1
@@ -811,9 +811,9 @@ private let userdata_eq: lua_CFunction = { L in
     // can't get here if at least one of us isn't a userdata type, and we only care if both types are ours,
     // so use luaL_testudata before the macro causes a lua error
     if luaL_testudata(L, 1, USERDATA_TAG) != nil && luaL_testudata(L, 2, USERDATA_TAG) != nil {
-        let skin = LuaSkin.shared(withState: L)
-        let obj1 = skin.luaObjectAtIndex(1, toClass: "HSChooser") as! HSChooser
-        let obj2 = skin.luaObjectAtIndex(2, toClass: "HSChooser") as! HSChooser
+        let skin = LuaSkin.skin(with: L)
+        let obj1 = skin.luaObject(at:1, toClass: "HSChooser") as! HSChooser
+        let obj2 = skin.luaObject(at:2, toClass: "HSChooser") as! HSChooser
         lua_pushboolean(L, obj1.isEqual(to: obj2) ? 1 : 0)
     } else {
         lua_pushboolean(L, 0)
@@ -822,7 +822,7 @@ private let userdata_eq: lua_CFunction = { L in
 }
 
 private let userdata_gc: lua_CFunction = { L in
-    let skin = LuaSkin.shared(withState: L)
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
 
     let ptr = luaL_checkudata(L, 1, USERDATA_TAG)!
@@ -894,9 +894,9 @@ private var userdataLib: [luaL_Reg] = [
 ]
 
 @_cdecl("luaopen_hs_libchooser")
-public func luaopen_hs_libchooser(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
-    refTable = skin.registerLibraryWithObject(USERDATA_TAG,
+public func luaopen_hs_libchooser(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
+    refTable = skin.registerLibrary(withObject:USERDATA_TAG,
                                               functions: &chooserLib,
                                               metaFunctions: nil,
                                               objectFunctions: &userdataLib)

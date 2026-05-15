@@ -1,0 +1,1 @@
+../../../../extensions/camera/libcamera.swift

@@ -26,11 +26,11 @@ extension NSLocale {
     @objc func localeChanged(_ notification: Notification) {
         DispatchQueue.main.async {
             if callbackRef != LUA_NOREF {
-                let skin = LuaSkin.shared(withState: nil)
-                _lua_stackguard_entry(skin.L)
+                let skin = LuaSkin.skin(with: nil)
+                _lua_stackguard_entry(skin.l)
                 skin.pushLuaRef(refTable, ref: callbackRef)
                 skin.protectedCallAndError("hs.host.locale callback", nargs: 0, nresults: 0)
-                _lua_stackguard_exit(skin.L)
+                _lua_stackguard_exit(skin.l)
             }
         }
     }
@@ -60,8 +60,8 @@ private var observerOfChanges: HSLocaleChangeObserver? = nil
 // NOTE: These may one day become valid types that we want to create module support for or subclass, so...
 //       create support tables for what we care about right now and don't register them as helpers
 
-private func pushNSCalendar(_ L: OpaquePointer!, _ obj: Any) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func pushNSCalendar(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     let calendar = obj as! NSCalendar
 
     lua_newtable(L)
@@ -92,8 +92,8 @@ private func pushNSCalendar(_ L: OpaquePointer!, _ obj: Any) -> Int32 {
     return 1
 }
 
-private func pushNSCharacterSet(_ L: OpaquePointer!, _ obj: Any) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func pushNSCharacterSet(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     let charSet = obj as! NSCharacterSet
 
     // tweaked from http://stackoverflow.com/questions/26610931/list-of-characters-in-an-nscharacterset
@@ -118,8 +118,8 @@ private func pushNSCharacterSet(_ L: OpaquePointer!, _ obj: Any) -> Int32 {
     return 1
 }
 
-private func pushNSLocale(_ L: OpaquePointer!, _ obj: Any) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func pushNSLocale(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     let locale = obj as! NSLocale
 
     lua_newtable(L)
@@ -175,8 +175,8 @@ private func pushNSLocale(_ L: OpaquePointer!, _ obj: Any) -> Int32 {
 ///
 /// Notes:
 ///  * these values can be used with [hs.host.locale.details](#details) to get details for a specific locale.
-private func locale_availableLocaleIdentifiers(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func locale_availableLocaleIdentifiers(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TBREAK)
 
     let locales = NSLocale.availableLocaleIdentifiers
@@ -193,8 +193,8 @@ private func locale_availableLocaleIdentifiers(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * an array table of strings specifying the user's preferred languages as string identifiers.
-private func locale_preferredLanguages(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func locale_preferredLanguages(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TBREAK)
 
     let languages = NSLocale.preferredLanguages
@@ -214,8 +214,8 @@ private func locale_preferredLanguages(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * this value can be used with [hs.host.locale.details](#details) to get details for the returned locale.
-private func locale_currentIdentifier(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func locale_currentIdentifier(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TBREAK)
     skin.pushNSObject(NSLocale.current.identifier as NSString)
     return 1
@@ -254,8 +254,8 @@ private func locale_currentIdentifier(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * If you specify a locale identifier as an argument, it should be based on one of the strings returned by [hs.host.locale.availableLocales](#availableLocales).
-private func locale_localeInformation(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func locale_localeInformation(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING | LS_TOPTIONAL, LS_TBREAK)
 
     let theLocale: NSLocale
@@ -284,8 +284,8 @@ private func locale_localeInformation(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * The `localeCode` and optional `baseLocaleCode` must be one of the strings returned by [hs.host.locale.availableLocales](#availableLocales).
-private func locale_localizedString(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func locale_localizedString(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING, LS_TSTRING | LS_TOPTIONAL, LS_TBREAK)
 
     let availableLocales = NSLocale.availableLocaleIdentifiers
@@ -316,8 +316,8 @@ private func locale_localizedString(_ L: OpaquePointer!) -> Int32 {
     return 2
 }
 
-private func locale_registerCallback(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func locale_registerCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TFUNCTION, LS_TBREAK)
     callbackRef = skin.luaUnref(refTable, ref: callbackRef) // should be unnecessary, but just in case
     lua_pushvalue(L, 1)
@@ -327,8 +327,8 @@ private func locale_registerCallback(_ L: OpaquePointer!) -> Int32 {
 
 // MARK: - Hammerspoon/Lua Infrastructure
 
-private func meta_gc(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func meta_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     callbackRef = skin.luaUnref(refTable, ref: callbackRef)
     observerOfChanges?.stop()
     observerOfChanges = nil
@@ -337,13 +337,13 @@ private func meta_gc(_ L: OpaquePointer!) -> Int32 {
 
 // MARK: - C Callback Wrappers
 
-private let locale_availableLocaleIdentifiers_C: @convention(c) (OpaquePointer?) -> Int32 = { L in locale_availableLocaleIdentifiers(L) }
-private let locale_localeInformation_C: @convention(c) (OpaquePointer?) -> Int32 = { L in locale_localeInformation(L) }
-private let locale_currentIdentifier_C: @convention(c) (OpaquePointer?) -> Int32 = { L in locale_currentIdentifier(L) }
-private let locale_preferredLanguages_C: @convention(c) (OpaquePointer?) -> Int32 = { L in locale_preferredLanguages(L) }
-private let locale_localizedString_C: @convention(c) (OpaquePointer?) -> Int32 = { L in locale_localizedString(L) }
-private let locale_registerCallback_C: @convention(c) (OpaquePointer?) -> Int32 = { L in locale_registerCallback(L) }
-private let meta_gc_C: @convention(c) (OpaquePointer?) -> Int32 = { L in meta_gc(L) }
+private let locale_availableLocaleIdentifiers_C: @convention(c) (UnsafeMutablePointer<lua_State>?) -> Int32 = { L in locale_availableLocaleIdentifiers(L) }
+private let locale_localeInformation_C: @convention(c) (UnsafeMutablePointer<lua_State>?) -> Int32 = { L in locale_localeInformation(L) }
+private let locale_currentIdentifier_C: @convention(c) (UnsafeMutablePointer<lua_State>?) -> Int32 = { L in locale_currentIdentifier(L) }
+private let locale_preferredLanguages_C: @convention(c) (UnsafeMutablePointer<lua_State>?) -> Int32 = { L in locale_preferredLanguages(L) }
+private let locale_localizedString_C: @convention(c) (UnsafeMutablePointer<lua_State>?) -> Int32 = { L in locale_localizedString(L) }
+private let locale_registerCallback_C: @convention(c) (UnsafeMutablePointer<lua_State>?) -> Int32 = { L in locale_registerCallback(L) }
+private let meta_gc_C: @convention(c) (UnsafeMutablePointer<lua_State>?) -> Int32 = { L in meta_gc(L) }
 
 // MARK: - Module Registration
 
@@ -363,8 +363,8 @@ private var module_metaLib: [luaL_Reg] = [
 ]
 
 @_cdecl("luaopen_hs_libhost_locale")
-public func luaopen_hs_libhost_locale(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+public func luaopen_hs_libhost_locale(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     refTable = skin.registerLibrary(USERDATA_TAG, functions: &moduleLib, metaFunctions: &module_metaLib)
 
     observerOfChanges = HSLocaleChangeObserver()

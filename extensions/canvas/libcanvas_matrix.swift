@@ -24,8 +24,8 @@ private var refTable: LSRefTable = LUA_NOREF
 /// [ 0,  1,  0 ]
 /// [ 0,  0,  1 ]
 /// ~~~
-private func matrix_identity(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func matrix_identity(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TTABLE | LS_TOPTIONAL,
                    LS_TBREAK)
     skin.pushNSObject(NSAffineTransform())
@@ -47,11 +47,11 @@ private func matrix_identity(_ L: OpaquePointer!) -> Int32 {
 /// Notes:
 ///  * Inverting a matrix which represents a series of transformations has the effect of reversing or undoing the original transformations.
 ///  * This is useful when used with [hs.canvas.matrix.append](#append) to undo a previously applied transformation without actually replacing all of the transformations which may have been applied to a canvas element.
-private func matrix_invert(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func matrix_invert(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TTABLE,
                    LS_TBREAK)
-    let transform = skin.luaObjectAtIndex(1, toClass: "NSAffineTransform") as! NSAffineTransform
+    let transform = skin.luaObject(at: 1, toClass: "NSAffineTransform") as! NSAffineTransform
     transform.invert()
     skin.pushNSObject(transform)
     return 1
@@ -70,14 +70,14 @@ private func matrix_invert(_ L: OpaquePointer!) -> Int32 {
 /// Notes:
 ///  * Mathematically this method multiples the original matrix by the new one and returns the result of the multiplication.
 ///  * You can use this method to "stack" additional transformations on top of existing transformations, without having to know what the existing transformations in effect for the canvas element are.
-private func matrix_append(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func matrix_append(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TTABLE,
                    LS_TTABLE,
                    LS_TBREAK)
-    let transform1 = skin.luaObjectAtIndex(1, toClass: "NSAffineTransform") as! NSAffineTransform
-    let transform2 = skin.luaObjectAtIndex(2, toClass: "NSAffineTransform") as! NSAffineTransform
-    transform1.append(transform2)
+    let transform1 = skin.luaObject(at: 1, toClass: "NSAffineTransform") as! NSAffineTransform
+    let transform2 = skin.luaObject(at: 2, toClass: "NSAffineTransform") as! NSAffineTransform
+    transform1.append(transform2 as AffineTransform)
     skin.pushNSObject(transform1)
     return 1
 }
@@ -95,14 +95,14 @@ private func matrix_append(_ L: OpaquePointer!) -> Int32 {
 /// Notes:
 ///  * Mathematically this method multiples the new matrix by the original one and returns the result of the multiplication.
 ///  * You can use this method to apply a transformation *before* the currently applied transformations, without having to know what the existing transformations in effect for the canvas element are.
-private func matrix_prepend(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func matrix_prepend(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TTABLE,
                    LS_TTABLE,
                    LS_TBREAK)
-    let transform1 = skin.luaObjectAtIndex(1, toClass: "NSAffineTransform") as! NSAffineTransform
-    let transform2 = skin.luaObjectAtIndex(2, toClass: "NSAffineTransform") as! NSAffineTransform
-    transform1.prepend(transform2)
+    let transform1 = skin.luaObject(at: 1, toClass: "NSAffineTransform") as! NSAffineTransform
+    let transform2 = skin.luaObject(at: 2, toClass: "NSAffineTransform") as! NSAffineTransform
+    transform1.prepend(transform2 as AffineTransform)
     skin.pushNSObject(transform1)
     return 1
 }
@@ -120,8 +120,8 @@ private func matrix_prepend(_ L: OpaquePointer!) -> Int32 {
 /// Notes:
 ///  * The rotation of an element this matrix is applied to will be rotated about the origin (zero point).  To rotate an object about another point (its center for example), prepend a translation to the point to rotate about, and append a translation reversing the initial translation.
 ///    * e.g. `hs.canvas.matrix.translate(x, y):rotate(angle):translate(-x, -y)`
-private func matrix_rotate(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func matrix_rotate(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     var transform = NSAffineTransform()
     var argsAt: Int32 = 2
     if lua_type(L, 1) == LUA_TNUMBER {
@@ -132,7 +132,7 @@ private func matrix_rotate(_ L: OpaquePointer!) -> Int32 {
         skin.checkArgs(LS_TTABLE,
                        LS_TNUMBER,
                        LS_TBREAK)
-        transform = skin.luaObjectAtIndex(1, toClass: "NSAffineTransform") as! NSAffineTransform
+        transform = skin.luaObject(at: 1, toClass: "NSAffineTransform") as! NSAffineTransform
     }
     transform.rotate(byDegrees: CGFloat(lua_tonumber(L, argsAt)))
     skin.pushNSObject(transform)
@@ -149,8 +149,8 @@ private func matrix_rotate(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * the new matrix
-private func matrix_scale(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func matrix_scale(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     var transform = NSAffineTransform()
     var argsAt: Int32 = 2
     if lua_type(L, 1) == LUA_TNUMBER {
@@ -163,7 +163,7 @@ private func matrix_scale(_ L: OpaquePointer!) -> Int32 {
                        LS_TNUMBER,
                        LS_TNUMBER | LS_TOPTIONAL,
                        LS_TBREAK)
-        transform = skin.luaObjectAtIndex(1, toClass: "NSAffineTransform") as! NSAffineTransform
+        transform = skin.luaObject(at: 1, toClass: "NSAffineTransform") as! NSAffineTransform
     }
     let scaleX = CGFloat(lua_tonumber(L, argsAt))
     let scaleY = (lua_gettop(L) == (argsAt + 1)) ? CGFloat(lua_tonumber(L, argsAt + 1)) : scaleX
@@ -182,8 +182,8 @@ private func matrix_scale(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * the new matrix
-private func matrix_shear(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func matrix_shear(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     var transform = NSAffineTransform()
     var argsAt: Int32 = 2
     if lua_type(L, 1) == LUA_TNUMBER {
@@ -196,7 +196,7 @@ private func matrix_shear(_ L: OpaquePointer!) -> Int32 {
                        LS_TNUMBER,
                        LS_TNUMBER | LS_TOPTIONAL,
                        LS_TBREAK)
-        transform = skin.luaObjectAtIndex(1, toClass: "NSAffineTransform") as! NSAffineTransform
+        transform = skin.luaObject(at: 1, toClass: "NSAffineTransform") as! NSAffineTransform
     }
     let shearX = CGFloat(lua_tonumber(L, argsAt))
     let shearY = (lua_gettop(L) == (argsAt + 1)) ? CGFloat(lua_tonumber(L, argsAt + 1)) : shearX
@@ -206,7 +206,7 @@ private func matrix_shear(_ L: OpaquePointer!) -> Int32 {
     opStruct.m12 = shearX
     opStruct.m21 = shearY
     operation.transformStruct = opStruct
-    transform.append(operation)
+    transform.append(operation as AffineTransform)
     skin.pushNSObject(transform)
     return 1
 }
@@ -221,8 +221,8 @@ private func matrix_shear(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * the new matrix
-private func matrix_translate(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func matrix_translate(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     var transform = NSAffineTransform()
     var argsAt: Int32 = 2
     if lua_type(L, 1) == LUA_TNUMBER {
@@ -235,7 +235,7 @@ private func matrix_translate(_ L: OpaquePointer!) -> Int32 {
                        LS_TNUMBER,
                        LS_TNUMBER | LS_TOPTIONAL,
                        LS_TBREAK)
-        transform = skin.luaObjectAtIndex(1, toClass: "NSAffineTransform") as! NSAffineTransform
+        transform = skin.luaObject(at: 1, toClass: "NSAffineTransform") as! NSAffineTransform
     }
     let translateX = CGFloat(lua_tonumber(L, argsAt))
     let translateY = (lua_gettop(L) == (argsAt + 1)) ? CGFloat(lua_tonumber(L, argsAt + 1)) : translateX
@@ -246,8 +246,8 @@ private func matrix_translate(_ L: OpaquePointer!) -> Int32 {
 
 // MARK: - Lua<->NSObject Conversion Functions
 
-private func pushNSAffineTransform(_ L: OpaquePointer!, obj: Any!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func pushNSAffineTransform(_ L: UnsafeMutablePointer<lua_State>!, obj: Any!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     guard let transform = obj as? NSAffineTransform else {
         skin.logError("expected NSAffineTransform, found \(type(of: obj!))")
         lua_pushnil(L)
@@ -270,8 +270,8 @@ private func pushNSAffineTransform(_ L: OpaquePointer!, obj: Any!) -> Int32 {
     return 1
 }
 
-private func toNSAffineTransformFromLua(_ L: OpaquePointer!, idx: Int32) -> Any! {
-    let skin = LuaSkin.shared(withState: L)
+private func toNSAffineTransformFromLua(_ L: UnsafeMutablePointer<lua_State>!, idx: Int32) -> Any! {
+    let skin = LuaSkin.skin(with: L)
     let value = NSAffineTransform()
     var structure = value.transformStruct
 
@@ -337,8 +337,8 @@ private var moduleLib: [luaL_Reg] = [
 ]
 
 @_cdecl("luaopen_hs_libcanvasmatrix")
-public func luaopen_hs_libcanvasmatrix(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+public func luaopen_hs_libcanvasmatrix(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     refTable = skin.registerLibrary(USERDATA_TAG, functions: &moduleLib, metaFunctions: nil)
 
     skin.registerPushNSHelper(pushNSAffineTransform, forClass: "NSAffineTransform")

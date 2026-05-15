@@ -33,8 +33,8 @@ private class SpaceWatcher: NSObject {
     // Call the lua callback function.
     func callback(dict: NSDictionary?, space: Int32) {
         if object.pointee.fn != LUA_NOREF {
-            let skin = LuaSkin.shared(withState: nil)
-            let L = skin.L!
+            let skin = LuaSkin.skin(with: nil)
+            let L = skin.l!
             _lua_stackguard_entry(L)
 
             skin.pushLuaRef(refTable, ref: object.pointee.fn)
@@ -45,17 +45,8 @@ private class SpaceWatcher: NSObject {
     }
 
     @objc func spaceChanged(_ notification: NSNotification) {
-        var currentSpace: Int32 = -1
-        // Get an array of all the windows in the current space.
-        let windowsInSpace = CGWindowListCopyWindowInfo([.optionAll, .optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
-
-        // Now loop over the array looking for a window with the kCGWindowWorkspace key.
-        for thisWindow in windowsInSpace {
-            if let potentialID = thisWindow[kCGWindowWorkspace as String] as? NSNumber {
-                currentSpace = potentialID.int32Value
-                break
-            }
-        }
+        let spaceID = SLSGetActiveSpace(SLSMainConnectionID())
+        let currentSpace = Int32(clamping: spaceID)
 
         callback(dict: notification.userInfo as NSDictionary?, space: currentSpace)
     }
@@ -72,8 +63,8 @@ private class SpaceWatcher: NSObject {
 ///
 /// Returns:
 ///  * An `hs.spaces.watcher` object
-private func space_watcher_new(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func space_watcher_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
 
     luaL_checktype(L, 1, LUA_TFUNCTION)
 
@@ -102,8 +93,8 @@ private func space_watcher_new(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * The watcher object
-private func space_watcher_start(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func space_watcher_start(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
 
     let spaceWatcher = luaL_checkudata(L, 1, USERDATA_TAG)!
         .assumingMemoryBound(to: SpaceWatcherData.self)
@@ -139,7 +130,7 @@ private func space_watcher_start(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * The watcher object
-private func space_watcher_stop(_ L: OpaquePointer!) -> Int32 {
+private func space_watcher_stop(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let spaceWatcher = luaL_checkudata(L, 1, USERDATA_TAG)!
         .assumingMemoryBound(to: SpaceWatcherData.self)
     lua_settop(L, 1)
@@ -155,8 +146,8 @@ private func space_watcher_stop(_ L: OpaquePointer!) -> Int32 {
     return 1
 }
 
-private func space_watcher_gc(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func space_watcher_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
 
     let spaceWatcher = luaL_checkudata(L, 1, USERDATA_TAG)!
         .assumingMemoryBound(to: SpaceWatcherData.self)
@@ -170,7 +161,7 @@ private func space_watcher_gc(_ L: OpaquePointer!) -> Int32 {
     return 0
 }
 
-private func userdata_tostring(_ L: OpaquePointer!) -> Int32 {
+private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     lua_pushstring(L, "\(USERDATA_TAG): (\(lua_topointer(L, 1)!))")
     return 1
 }
@@ -191,8 +182,8 @@ private var watcher_objectlib: [luaL_Reg] = [
 ]
 
 @_cdecl("luaopen_hs_libspaces_watcher")
-public func luaopen_hs_libspaces_watcher(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+public func luaopen_hs_libspaces_watcher(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     refTable = skin.registerLibrary(
         withObject: USERDATA_TAG,
         functions: &watcherlib,

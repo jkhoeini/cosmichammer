@@ -1,868 +1,927 @@
+// HSuicore.swift — Swift port of HSuicore.m
+// Compiled as part of HSSwiftExtensions (pure Swift target).
+// External access from ObjC uses @objc(ClassName) + NSClassFromString.
+
 import Foundation
 import AppKit
+import ApplicationServices
 import LuaSkin
+import CoreGraphics
+import Darwin
 
-// CGWindowListCreateImage is marked obsoleted in macOS 15 SDK but still works at runtime.
-// We load it dynamically to bypass the SDK's availability annotation until ScreenCaptureKit migration.
-private typealias CGWindowListCreateImageFunc = @convention(c) (CGRect, CGWindowListOption, CGWindowID, CGWindowImageOption) -> CGImage?
+// MARK: - Private C API declarations
 
-private let hs_CGWindowListCreateImage: CGWindowListCreateImageFunc? = {
-    guard let sym = dlsym(RTLD_DEFAULT, "CGWindowListCreateImage") else { return nil }
-    return unsafeBitCast(sym, to: CGWindowListCreateImageFunc.self)
+@_silgen_name("_AXUIElementGetWindow")
+func _AXUIElementGetWindow(_ element: AXUIElement, _ outWindowID: UnsafeMutablePointer<CGWindowID>) -> AXError
+
+@_silgen_name("CGSMainConnectionID")
+func CGSMainConnectionID() -> Int32
+
+@_silgen_name("CGSEventIsAppUnresponsive")
+func CGSEventIsAppUnresponsive(_ cid: Int32, _ psn: UnsafePointer<ProcessSerialNumber>) -> Bool
+
+// GetProcessForPID is deprecated and unavailable in Swift; load via silgen_name
+@_silgen_name("GetProcessForPID")
+@discardableResult
+func _GetProcessForPID(_ pid: pid_t, _ psn: UnsafeMutablePointer<ProcessSerialNumber>) -> OSStatus
+
+// CGWindowListCreate is marked unavailable in Swift SDK; load via silgen_name
+@_silgen_name("CGWindowListCreate")
+func _CGWindowListCreate(_ option: CGWindowListOption, _ relativeToWindow: CGWindowID) -> CFArray?
+
+// MARK: - CGWindowListCreateImage via dlsym (obsoleted in macOS 15 SDK)
+
+private let hs_CGWindowListCreateImage: ((CGRect, CGWindowListOption, CGWindowID, CGWindowImageOption) -> CGImage?)? = {
+    typealias Fn = @convention(c) (CGRect, CGWindowListOption, CGWindowID, CGWindowImageOption) -> CGImage?
+    guard let sym = dlsym(nil, "CGWindowListCreateImage") else { return nil }
+    return unsafeBitCast(sym, to: Fn.self)
 }()
 
-// MARK: - HSuielement
+// MARK: - System-wide AX element singleton
 
-@objcMembers
-class HSuielement: NSObject {
-    private(set) var elementRef: AXUIElement
-    var selfRefCount: Int32 = 0
+private let _systemWideElement: AXUIElement = AXUIElementCreateSystemWide()
 
-    var isWindow: Bool {
-        return isWindow(role: role)
-    }
+// MARK: - get_window_tabs helper
 
-    var isApplication: Bool {
-        return role == kAXApplicationRole as String
-    }
-
-    var role: String {
-        return getElementProperty(NSAccessibilityRoleAttribute, defaultValue: "") as? String ?? ""
-    }
-
-    var selectedText: String? {
-        var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(elementRef, kAXSelectedTextAttribute, &value) == .success else {
-            return nil
-        }
-        return value as? String
-    }
-
-    // MARK: Class methods
-
-    class func focusedElement() -> HSuielement? {
-        let systemWide = AXUIElementCreateSystemWide()
-        var focusedRef: CFTypeRef?
-        let error = AXUIElementCopyAttributeValue(systemWide, kAXFocusedUIElementAttribute as CFString, &focusedRef)
-        guard error == .success, let ref = focusedRef else {
-            return nil
-        }
-        // swiftlint:disable:next force_cast
-        return HSuielement(elementRef: ref as! AXUIElement)
-    }
-
-    // MARK: Initialiser
-
-    init(elementRef: AXUIElement) {
-        self.elementRef = elementRef
-        CFRetain(elementRef)
-        super.init()
-    }
-
-    deinit {
-        // No explicit CFRelease needed — Swift manages the AXUIElement retain count via ARC on CFTypeRef
-    }
-
-    // MARK: Instance methods
-
-    func newWatcher(callbackRefIndex: Int32, userdataRefIndex: Int32, luaState L: OpaquePointer) -> HSuielementWatcher {
-        let skin = LuaSkin.shared(withState: L)!
-
-        let callbackRef = skin.luaRef(LUA_REGISTRYINDEX, atIndex: callbackRefIndex)
-
-        var userDataRef = LUA_REFNIL
-        if lua_type(L, userdataRefIndex) != LUA_TNONE {
-            userDataRef = skin.luaRef(LUA_REGISTRYINDEX, atIndex: userdataRefIndex)
-        }
-
-        let watcher = HSuielementWatcher(element: self, callbackRef: callbackRef, userdataRef: userDataRef)
-        watcher.lsCanary = skin.createGCCanary()
-        return watcher
-    }
-
-    func getElementProperty(_ property: String, defaultValue: Any?) -> Any? {
-        var value: CFTypeRef?
-        if AXUIElementCopyAttributeValue(elementRef, property as CFString, &value) == .success {
-            return value
-        }
-        return defaultValue
-    }
-
-    func isWindow(role: String) -> Bool {
-        // Most windows have a role of kAXWindowRole, but some apps are weird (e.g. Emacs)
-        // so we also do a duck-typing test for an expected window attribute
-        return role == (kAXWindowRole as String)
-            || getElementProperty(NSAccessibilityMinimizedAttribute, defaultValue: nil) != nil
-    }
-}
-
-// MARK: - HSuielementWatcher
-
-/// C callback for AXObserver — bridges into the HSuielementWatcher's Lua handler.
-private func watcherObserverCallback(_ observer: AXObserver, _ element: AXUIElement,
-                                     _ notificationName: CFString, _ contextData: UnsafeMutableRawPointer?) {
-    guard let contextData else { return }
-    let watcher = Unmanaged<HSuielementWatcher>.fromOpaque(contextData).takeUnretainedValue()
-    let skin = LuaSkin.shared(withState: nil)!
-    skin.checkGCCanary(watcher.lsCanary)
-    _lua_stackguard_entry(skin.L)
-
-    skin.pushLuaRef(watcher.refTable, ref: watcher.handlerRef) // Callback function
-
-    let elementObj = HSuielement(elementRef: element)
-    let pushObj: NSObject
-    if elementObj.isWindow {
-        pushObj = HSwindow(axUIElementRef: element)
-    } else if elementObj.role == (kAXApplicationRole as String) {
-        var pid: pid_t = 0
-        AXUIElementGetPid(element, &pid)
-        if let app = HSapplication(pid: pid, state: skin.L) {
-            pushObj = app
-        } else {
-            pushObj = elementObj
-        }
-    } else {
-        // This isn't a window or an application, so we'll send it as an hs.uielement object
-        pushObj = elementObj
-    }
-
-    skin.pushNSObject(pushObj)  // Parameter 1: element
-    lua_pushstring(skin.L, CFStringGetCStringPtr(notificationName, CFStringBuiltInEncodings.ASCII.rawValue))  // Parameter 2: event
-    skin.pushLuaRef(watcher.refTable, ref: watcher.watcherRef)  // Parameter 3: watcher
-    if watcher.userDataRef == LUA_NOREF || watcher.userDataRef == LUA_REFNIL {
-        lua_pushnil(skin.L)
-    } else {
-        skin.pushLuaRef(watcher.refTable, ref: watcher.userDataRef)  // Parameter 4: userData
-    }
-
-    if !skin.protectedCallAndTraceback(4, nresults: 0) {
-        let errorMsg = String(cString: lua_tostring(skin.L, -1))
-        skin.logError(errorMsg)
-        lua_pop(skin.L, 1)  // remove error message
-    }
-
-    _lua_stackguard_exit(skin.L)
-}
-
-@objcMembers
-class HSuielementWatcher: NSObject {
-    var selfRefCount: Int32 = 0
-    var elementRef: AXUIElement
-    var refTable: LSRefTable = LUA_REGISTRYINDEX
-    var handlerRef: Int32
-    var userDataRef: Int32
-    var watcherRef: Int32 = LUA_NOREF
-    var observer: AXObserver?
-    var running: Bool = false
-    var pid: pid_t = 0
-    var watchDestroyed: Bool = false
-    var lsCanary: LSGCCanary = 0
-
-    // NOTE THAT THE LUA REF ARGUMENTS MUST BE ON LUA_REGISTRYINDEX AND NOT SOME OTHER REFTABLE
-    init(element: HSuielement, callbackRef: Int32, userdataRef: Int32) {
-        self.elementRef = element.elementRef
-        CFRetain(self.elementRef)
-        self.handlerRef = callbackRef
-        self.userDataRef = userdataRef
-        super.init()
-        AXUIElementGetPid(self.elementRef, &self.pid)
-    }
-
-    deinit {
-        // AXUIElement release handled by ARC
-    }
-
-    // MARK: Instance methods
-
-    func start(events: [String], state L: OpaquePointer) {
-        let skin = LuaSkin.shared(withState: L)!
-        guard !running else { return }
-
-        // Create our observer
-        var observerRef: AXObserver?
-        let err = AXObserverCreate(pid, { observer, element, notificationName, contextData in
-            watcherObserverCallback(observer, element, notificationName, contextData)
-        }, &observerRef)
-        guard err == .success, let observerRef else {
-            skin.logBreadcrumb("AXObserverCreate error: \(err.rawValue)")
-            return
-        }
-
-        // Add specified events to the observer
-        let selfPtr = Unmanaged.passUnretained(self).toOpaque()
-        for event in events {
-            AXObserverAddNotification(observerRef, elementRef, event as CFString, selfPtr)
-        }
-
-        self.observer = observerRef
-        self.running = true
-
-        // Begin observing events
-        CFRunLoopAddSource(RunLoop.current.getCFRunLoop(),
-                           AXObserverGetRunLoopSource(observerRef),
-                           .defaultMode)
-    }
-
-    func stop() {
-        guard running, let observer else { return }
-
-        CFRunLoopRemoveSource(RunLoop.current.getCFRunLoop(),
-                              AXObserverGetRunLoopSource(observer),
-                              .defaultMode)
-        self.observer = nil
-        self.running = false
-    }
-}
-
-// MARK: - HSapplication
-
-@objcMembers
-class HSapplication: NSObject {
-    private(set) var pid: pid_t
-    private(set) var elementRef: AXUIElement
-    private(set) var runningApp: NSRunningApplication
-    private(set) var uiElement: HSuielement
-    var selfRefCount: Int32 = 0
-
-    var isHidden: Bool {
-        get {
-            var _isHidden: CFTypeRef?
-            let result = AXUIElementCopyAttributeValue(elementRef,
-                                                       NSAccessibilityHiddenAttribute as CFString,
-                                                       &_isHidden)
-            if result == .success, let val = _isHidden as? NSNumber {
-                return val.boolValue
-            }
-            return false
-        }
-        set {
-            AXUIElementSetAttributeValue(elementRef,
-                                         NSAccessibilityHiddenAttribute as CFString,
-                                         newValue ? kCFBooleanTrue : kCFBooleanFalse)
-        }
-    }
-
-    // MARK: Class methods
-
-    class func frontmostApplication(state L: OpaquePointer) -> HSapplication? {
-        let skin = LuaSkin.shared(withState: L)!
-        guard let runningApp = NSWorkspace.shared.frontmostApplication else {
-            skin.logError("Unable to fetch frontmost application")
-            return nil
-        }
-        guard let app = HSapplication.application(for: runningApp, state: L) else {
-            skin.logError("HSapplication::frontmostApplication failed for app: \(runningApp.localizedName ?? "unknown")")
-            return nil
-        }
-        return app
-    }
-
-    class func application(for app: NSRunningApplication, state L: OpaquePointer) -> HSapplication? {
-        return HSapplication(nsRunningApplication: app, state: L)
-    }
-
-    class func application(forPID pid: pid_t, state L: OpaquePointer) -> HSapplication? {
-        return HSapplication(pid: pid, state: L)
-    }
-
-    class func name(forBundleID bundleID: String) -> String? {
-        guard let path = self.path(forBundleID: bundleID), let app = Bundle(path: path) else { return nil }
-        return app.object(forInfoDictionaryKey: kCFBundleNameKey as String) as? String
-    }
-
-    class func path(forBundleID bundleID: String) -> String? {
-        return NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID)?.path
-    }
-
-    class func info(forBundleID bundleID: String) -> [String: Any]? {
-        guard let appPath = path(forBundleID: bundleID) else { return nil }
-        return info(forBundlePath: appPath)
-    }
-
-    class func info(forBundlePath bundlePath: String) -> [String: Any]? {
-        return Bundle(path: bundlePath)?.infoDictionary
-    }
-
-    class func preferredLocalizations(forBundleID bundleID: String) -> [String]? {
-        guard let appPath = path(forBundleID: bundleID) else { return nil }
-        return preferredLocalizations(forBundlePath: appPath)
-    }
-
-    class func preferredLocalizations(forBundlePath bundlePath: String) -> [String]? {
-        return Bundle(path: bundlePath)?.preferredLocalizations
-    }
-
-    class func localizations(forBundleID bundleID: String) -> [String]? {
-        guard let appPath = path(forBundleID: bundleID) else { return nil }
-        return localizations(forBundlePath: appPath)
-    }
-
-    class func localizations(forBundlePath bundlePath: String) -> [String]? {
-        return Bundle(path: bundlePath)?.localizations
-    }
-
-    class func runningApplications(state L: OpaquePointer) -> [HSapplication] {
-        return NSWorkspace.shared.runningApplications.compactMap {
-            HSapplication.application(for: $0, state: L)
-        }
-    }
-
-    class func applications(forBundleID bundleID: String, state L: OpaquePointer) -> [HSapplication] {
-        return NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).compactMap {
-            HSapplication.application(for: $0, state: L)
-        }
-    }
-
-    @discardableResult
-    class func launch(byName name: String) -> Bool {
-        return NSWorkspace.shared.launchApplication(name)
-    }
-
-    @discardableResult
-    class func launch(byBundleID bundleID: String) -> Bool {
-        return NSWorkspace.shared.launchApplication(
-            withBundleIdentifier: bundleID,
-            options: [],
-            additionalEventParamDescriptor: nil,
-            launchIdentifier: nil
-        )
-    }
-
-    // MARK: Initialisers
-
-    init?(pid: pid_t, state L: OpaquePointer) {
-        let skin = LuaSkin.shared(withState: L)!
-
-        guard let runningApp = NSRunningApplication(processIdentifier: pid) else {
-            skin.logError("Unable to fetch NSRunningApplication for pid: \(pid)")
-            return nil
-        }
-
-        guard let result = HSapplication.makeFields(for: runningApp, skin: skin) else {
-            return nil
-        }
-        self.pid = result.pid
-        self.elementRef = result.elementRef
-        self.runningApp = runningApp
-        self.uiElement = result.uiElement
-        super.init()
-    }
-
-    init?(nsRunningApplication app: NSRunningApplication, state L: OpaquePointer) {
-        let skin = LuaSkin.shared(withState: L)!
-
-        guard let result = HSapplication.makeFields(for: app, skin: skin) else {
-            return nil
-        }
-        self.pid = result.pid
-        self.elementRef = result.elementRef
-        self.runningApp = app
-        self.uiElement = result.uiElement
-        super.init()
-    }
-
-    /// Shared initialisation logic — creates the AXUIElementRef and uiElement, or returns nil on failure.
-    private static func makeFields(for app: NSRunningApplication, skin: LuaSkin)
-        -> (pid: pid_t, elementRef: AXUIElement, uiElement: HSuielement)? {
-
-        let appRef = AXUIElementCreateApplication(app.processIdentifier)
-        // AXUIElementCreateApplication always returns non-nil, but guard for safety
-        let pid = app.processIdentifier
-        let uiElement = HSuielement(elementRef: appRef)
-        return (pid, appRef, uiElement)
-    }
-
-    deinit {
-        // AXUIElement release handled by ARC
-    }
-
-    // MARK: Instance methods
-
-    func allWindows() -> [HSwindow] {
-        var windows: CFArray?
-        let result = AXUIElementCopyAttributeValues(elementRef, kAXWindowsAttribute, 0, 100, &windows)
-        guard result == .success, let windowArray = windows else { return [] }
-
-        let count = CFArrayGetCount(windowArray)
-        var allWindows: [HSwindow] = []
-        allWindows.reserveCapacity(count)
-        for i in 0..<count {
-            let win = CFArrayGetValueAtIndex(windowArray, i)!
-            let axElement = Unmanaged<AXUIElement>.fromOpaque(win).takeUnretainedValue()
-            allWindows.append(HSwindow(axUIElementRef: axElement))
-        }
-        return allWindows
-    }
-
-    func mainWindow() -> HSwindow? {
-        var window: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(elementRef, kAXMainWindowAttribute, &window) == .success,
-              let win = window else { return nil }
-        // swiftlint:disable:next force_cast
-        return HSwindow(axUIElementRef: win as! AXUIElement)
-    }
-
-    func focusedWindow() -> HSwindow? {
-        var window: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(elementRef, kAXFocusedWindowAttribute, &window) == .success,
-              let win = window else { return nil }
-        // swiftlint:disable:next force_cast
-        return HSwindow(axUIElementRef: win as! AXUIElement)
-    }
-
-    @discardableResult
-    func activate(allWindows: Bool) -> Bool {
-        var options: NSApplication.ActivationOptions = []
-        if allWindows {
-            options.insert(.activateAllWindows)
-        }
-        return runningApp.activate(options: options)
-    }
-
-    var isResponsive: Bool {
-        // Private API declarations
-        typealias CGSConnectionID = Int32
-        typealias CGSMainConnectionIDFunc = @convention(c) () -> CGSConnectionID
-        typealias CGSEventIsAppUnresponsiveFunc = @convention(c) (CGSConnectionID, UnsafePointer<ProcessSerialNumber>) -> Bool
-
-        guard let mainConnSym = dlsym(RTLD_DEFAULT, "CGSMainConnectionID"),
-              let unrespSym = dlsym(RTLD_DEFAULT, "CGSEventIsAppUnresponsive") else {
-            return true
-        }
-
-        let CGSMainConnectionID = unsafeBitCast(mainConnSym, to: CGSMainConnectionIDFunc.self)
-        let CGSEventIsAppUnresponsive = unsafeBitCast(unrespSym, to: CGSEventIsAppUnresponsiveFunc.self)
-
-        var psn = ProcessSerialNumber()
-        GetProcessForPID(pid, &psn)
-
-        let conn = CGSMainConnectionID()
-        return !CGSEventIsAppUnresponsive(conn, &psn)
-    }
-
-    func isRunning(state L: OpaquePointer) -> Bool {
-        // FIXME: Figure out why we can't use NSRunningApplication.terminated here - it always seems to say NO
-        let test = HSapplication.application(forPID: runningApp.processIdentifier, state: L)
-        return test != nil
-    }
-
-    @discardableResult
-    func setFrontmost(allWindows: Bool) -> Bool {
-        guard let app = NSRunningApplication(processIdentifier: pid) else { return false }
-        var options: NSApplication.ActivationOptions = []
-        if allWindows {
-            options.insert(.activateAllWindows)
-        }
-        return app.activate(options: options)
-    }
-
-    var isFrontmost: Bool {
-        var _isFrontmost: CFTypeRef?
-        if AXUIElementCopyAttributeValue(elementRef,
-                                         NSAccessibilityFrontmostAttribute as CFString,
-                                         &_isFrontmost) == .success,
-           let val = _isFrontmost as? NSNumber {
-            return val.boolValue
-        }
-        return false
-    }
-
-    var title: String? {
-        return runningApp.localizedName
-    }
-
-    var bundleID: String? {
-        return runningApp.bundleIdentifier
-    }
-
-    var path: String? {
-        guard let url = runningApp.bundleURL else { return nil }
-        return Bundle(url: url)?.bundlePath
-    }
-
-    func kill() {
-        runningApp.terminate()
-    }
-
-    func kill9() {
-        runningApp.forceTerminate()
-    }
-
-    var kind: Int32 {
-        switch runningApp.activationPolicy {
-        case .accessory: return 0
-        case .prohibited: return -1
-        default: return 1
-        }
-    }
-}
-
-// MARK: - HSwindow helpers
-
-/// Returns a lazily-initialized system-wide AXUIElement.
-private let systemWideElement: AXUIElement = AXUIElementCreateSystemWide()
-
-/// Returns the tab-group element for a window, searching for AXTabGroup first, then falling back
-/// to an AXGroup that has an AXTabs attribute (Safari 14+).
+// Returns a +1 retained AXUIElement, or nil. Caller must CFRelease if non-nil.
+// In Swift we return a managed AXUIElement and rely on ARC.
 private func getWindowTabs(_ win: AXUIElement) -> AXUIElement? {
-    var children: CFArray?
-    guard AXUIElementCopyAttributeValues(win, kAXChildrenAttribute, 0, 100, &children) == AXError.success,
-          let childArray = children else {
+    var childrenRef: CFArray?
+    guard AXUIElementCopyAttributeValues(win, kAXChildrenAttribute as CFString, 0, 100, &childrenRef) == .success,
+          let children = childrenRef else {
         return nil
     }
 
-    let count = CFArrayGetCount(childArray)
+    let count = CFArrayGetCount(children)
 
-    // First pass: look for AXTabGroup
-    for i in 0..<count {
-        let child = Unmanaged<AXUIElement>.fromOpaque(CFArrayGetValueAtIndex(childArray, i)!).takeUnretainedValue()
-        var typeRef: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(child, kAXRoleAttribute, &typeRef) == AXError.success,
-              let role = typeRef as? String else { continue }
+    // First pass: look for AXTabGroup role
+    for i in 0 ..< count {
+        guard let rawPtr = CFArrayGetValueAtIndex(children, i) else { continue }
+        let child = unsafeBitCast(rawPtr, to: AXUIElement.self)
+        var roleRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(child, kAXRoleAttribute as CFString, &roleRef) == .success,
+              let role = roleRef as? String else { continue }
         if role == (kAXTabGroupRole as String) {
-            CFRetain(child)
             return child
         }
     }
 
-    // Second pass: Safari 14 puts tabs into an AXGroup, not an AXTabGroup
-    for i in 0..<count {
-        let child = Unmanaged<AXUIElement>.fromOpaque(CFArrayGetValueAtIndex(childArray, i)!).takeUnretainedValue()
-        var typeRef: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(child, kAXRoleAttribute, &typeRef) == AXError.success,
-              let role = typeRef as? String else { continue }
-        if role == (kAXGroupRole as String) {
-            var attributeNames: CFArray?
-            guard AXUIElementCopyAttributeNames(child, &attributeNames) == AXError.success,
-                  let names = attributeNames else { continue }
-            if CFArrayContainsValue(names, CFRangeMake(0, CFArrayGetCount(names)), kAXTabsAttribute) {
-                CFRetain(child)
-                return child
-            }
+    // Second pass: Safari 14+ puts tabs inside AXGroup with an AXTabs attribute
+    for i in 0 ..< count {
+        guard let rawPtr = CFArrayGetValueAtIndex(children, i) else { continue }
+        let child = unsafeBitCast(rawPtr, to: AXUIElement.self)
+        var roleRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(child, kAXRoleAttribute as CFString, &roleRef) == .success,
+              let role = roleRef as? String,
+              role == (kAXGroupRole as String) else { continue }
+        var attrNamesRef: CFArray?
+        guard AXUIElementCopyAttributeNames(child, &attrNamesRef) == .success,
+              let attrNames = attrNamesRef else { continue }
+        let tabsKey: CFString = kAXTabsAttribute as CFString
+        let range = CFRangeMake(0, CFArrayGetCount(attrNames))
+        // CFArrayContainsValue requires an UnsafeRawPointer for the value
+        let found = withUnsafePointer(to: tabsKey) { ptr in
+            CFArrayContainsValue(attrNames, range, UnsafeRawPointer(ptr))
+        }
+        if found {
+            return child
         }
     }
 
     return nil
 }
 
-// MARK: - HSwindow
+// MARK: - HSuielement
 
-@objcMembers
-class HSwindow: NSObject {
-    private(set) var pid: pid_t = 0
-    private(set) var elementRef: AXUIElement
-    private(set) var winID: CGWindowID = 0
-    private(set) var uiElement: HSuielement
-    var selfRefCount: Int32 = 0
+@objc(HSuielement) class HSuielement: NSObject, HSuielementProtocol {
 
-    var title: String {
-        return getWindowProperty(NSAccessibilityTitleAttribute, defaultValue: "") as? String ?? ""
-    }
+    // MARK: Stored properties
 
-    var role: String {
-        return getWindowProperty(NSAccessibilityRoleAttribute, defaultValue: "") as? String ?? ""
-    }
+    // AXUIElement is a CFTypeRef managed with explicit retain/release to match ObjC semantics.
+    private var _elementRef: AXUIElement
 
-    var subRole: String {
-        return getWindowProperty(NSAccessibilitySubroleAttribute, defaultValue: "") as? String ?? ""
-    }
+    @objc var elementRef: AXUIElement { _elementRef }
+    @objc var selfRefCount: Int32 = 0
 
-    var isStandard: Bool {
-        return subRole == (kAXStandardWindowSubrole as String)
-    }
+    // MARK: Init / deinit
 
-    var topLeft: NSPoint {
-        get {
-            var point = CGPoint.zero
-            var positionStorage: CFTypeRef?
-            if AXUIElementCopyAttributeValue(elementRef,
-                                             NSAccessibilityPositionAttribute as CFString,
-                                             &positionStorage) == .success,
-               let storage = positionStorage {
-                // swiftlint:disable:next force_cast
-                if !AXValueGetValue(storage as! AXValue, .cgPoint, &point) {
-                    point = .zero
-                }
-            }
-            return NSPoint(x: point.x, y: point.y)
-        }
-        set {
-            var point = newValue
-            guard let positionStorage = AXValueCreate(.cgPoint, &point) else { return }
-            AXUIElementSetAttributeValue(elementRef,
-                                         NSAccessibilityPositionAttribute as CFString,
-                                         positionStorage)
-        }
-    }
-
-    var size: NSSize {
-        get {
-            var sz = CGSize.zero
-            var sizeStorage: CFTypeRef?
-            if AXUIElementCopyAttributeValue(elementRef,
-                                             NSAccessibilitySizeAttribute as CFString,
-                                             &sizeStorage) == .success,
-               let storage = sizeStorage {
-                // swiftlint:disable:next force_cast
-                if !AXValueGetValue(storage as! AXValue, .cgSize, &sz) {
-                    sz = .zero
-                }
-            }
-            return NSSize(width: sz.width, height: sz.height)
-        }
-        set {
-            var sz = newValue
-            guard let sizeStorage = AXValueCreate(.cgSize, &sz) else { return }
-            AXUIElementSetAttributeValue(elementRef,
-                                         NSAccessibilitySizeAttribute as CFString,
-                                         sizeStorage)
-        }
-    }
-
-    var fullscreen: Bool {
-        get {
-            var _fullscreen: CFTypeRef?
-            if AXUIElementCopyAttributeValue(elementRef,
-                                             "AXFullScreen" as CFString,
-                                             &_fullscreen) == AXError.success,
-               let val = _fullscreen {
-                // swiftlint:disable:next force_cast
-                return CFBooleanGetValue(val as! CFBoolean)
-            }
-            return false
-        }
-        set {
-            AXUIElementSetAttributeValue(elementRef,
-                                         "AXFullScreen" as CFString,
-                                         newValue ? kCFBooleanTrue : kCFBooleanFalse)
-        }
-    }
-
-    var minimized: Bool {
-        get {
-            guard let val = getWindowProperty(NSAccessibilityMinimizedAttribute, defaultValue: NSNumber(value: false)) as? NSNumber else {
-                return false
-            }
-            return val.boolValue
-        }
-        set {
-            setWindowProperty(NSAccessibilityMinimizedAttribute, value: NSNumber(value: newValue))
-        }
-    }
-
-    var application: Any? {
-        return getApplication()
-    }
-
-    var zoomButtonRect: NSRect {
-        return getZoomButtonRect()
-    }
-
-    var tabCount: Int32 {
-        return getTabCount()
-    }
-
-    // MARK: Class methods
-
-    class func orderedWindowIDs() -> [NSNumber] {
-        guard let wins = CGWindowListCreate([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) else {
-            LuaSkin.logBreadcrumb("hs.window._orderedwinids CGWindowListCreate returned NULL")
-            return []
-        }
-        guard let windowDescs = CGWindowListCreateDescriptionFromArray(wins) as? [[CFString: Any]] else {
-            return []
-        }
-        var windowIDs: [NSNumber] = []
-        windowIDs.reserveCapacity(CFArrayGetCount(wins))
-        for desc in windowDescs {
-            if let winID = desc[kCGWindowNumber] as? NSNumber {
-                windowIDs.append(winID)
-            }
-        }
-        return windowIDs
-    }
-
-    class func snapshot(forID windowID: CGWindowID, keepTransparency: Bool) -> NSImage? {
-        let makeOpaque: CGWindowImageOption = keepTransparency ? [] : .shouldBeOpaque
-        let windowRect = CGRect.null
-        guard let createImage = hs_CGWindowListCreateImage,
-              let windowImage = createImage(windowRect, .optionIncludingWindow, windowID, [.boundsIgnoreFraming, makeOpaque]) else {
-            return nil
-        }
-        return NSImage(cgImage: windowImage, size: windowRect.size)
-    }
-
-    class func focusedWindow() -> HSwindow? {
-        var app: CFTypeRef?
-        AXUIElementCopyAttributeValue(systemWideElement, kAXFocusedApplicationAttribute, &app)
-        guard let appRef = app else { return nil }
-
-        var win: CFTypeRef?
-        let result = AXUIElementCopyAttributeValue(
-            // swiftlint:disable:next force_cast
-            appRef as! AXUIElement,
-            NSAccessibilityFocusedWindowAttribute as CFString,
-            &win
-        )
-        guard result == .success, let winRef = win else { return nil }
-        // swiftlint:disable:next force_cast
-        return HSwindow(axUIElementRef: winRef as! AXUIElement)
-    }
-
-    // MARK: Initialiser
-
-    init(axUIElementRef winRef: AXUIElement) {
-        CFRetain(winRef)
-        self.elementRef = winRef
-
-        var pid: pid_t = 0
-        if AXUIElementGetPid(winRef, &pid) == .success {
-            self.pid = pid
-        }
-
-        var wID: CGWindowID = 0
-        if _AXUIElementGetWindow(winRef, &wID) == AXError.success {
-            self.winID = wID
-        }
-
-        self.uiElement = HSuielement(elementRef: winRef)
+    // The designated Swift init. We use a different label to avoid ObjC selector conflict
+    // with the protocol method initWithElementRef: (which must be an instance method, not an init).
+    @objc init(withElement ref: AXUIElement) {
+        _elementRef = ref
+        _ = Unmanaged.passRetained(ref)  // bump refcount; balanced by release in deinit
+        selfRefCount = 0
         super.init()
     }
 
     deinit {
-        // AXUIElement release handled by ARC
+        Unmanaged.passUnretained(_elementRef).release()
+    }
+
+    // MARK: Protocol-required factory method matching ObjC selector initWithElementRef:
+
+    @objc(initWithElementRef:) func initWithElementRef(_ ref: AXUIElement) -> NSObject? {
+        return HSuielement(withElement: ref)
+    }
+
+    // MARK: Class methods
+
+    @objc(focusedElement) static func focusedElement() -> NSObject? {
+        let systemWide = AXUIElementCreateSystemWide()
+        var focusedRef: CFTypeRef?
+        let error = AXUIElementCopyAttributeValue(systemWide, kAXFocusedUIElementAttribute as CFString, &focusedRef)
+        guard error == .success, let focusedRef = focusedRef else { return nil }
+        // focusedRef is +1 from CopyAttributeValue.
+        // unsafeBitCast does not change retain count.
+        let element = unsafeBitCast(focusedRef, to: AXUIElement.self)
+        // HSuielement.init does CFRetain internally, so release the copy ref here.
+        let result = HSuielement(withElement: element)
+        Unmanaged.passUnretained(focusedRef).release()
+        return result
+    }
+
+    // MARK: Computed properties
+
+    @objc var isApplication: Bool {
+        role == (kAXApplicationRole as String)
+    }
+
+    @objc var isWindow: Bool {
+        isWindowForRole(role)
+    }
+
+    @objc var role: String {
+        getRole()
+    }
+
+    @objc var selectedText: String {
+        getSelectedText() ?? ""
     }
 
     // MARK: Instance methods
 
-    private func getWindowProperty(_ property: String, defaultValue: Any?) -> Any? {
-        var value: CFTypeRef?
-        if AXUIElementCopyAttributeValue(elementRef, property as CFString, &value) == .success {
-            return value
+    @objc func newWatcher(atIndex callbackRefIndex: Int32,
+                          withUserdataAtIndex userDataRefIndex: Int32,
+                          withLuaState L: UnsafeMutablePointer<lua_State>!) -> NSObject? {
+        let skin = LuaSkin.skin(with: L)
+        let callbackRef = skin.luaRef(LUA_REGISTRYINDEX_VALUE, at: callbackRefIndex)
+        var userDataRef: Int32 = LUA_REFNIL
+        if lua_type(L, userDataRefIndex) != LUA_TNONE {
+            userDataRef = skin.luaRef(LUA_REGISTRYINDEX_VALUE, at: userDataRefIndex)
+        }
+        let watcher = HSuielementWatcher(element: self,
+                                        callbackRef: callbackRef,
+                                        userdataRef: userDataRef)
+        watcher.lsCanary = skin.createGCCanary()
+        return watcher
+    }
+
+    @objc func getElementProperty(_ property: String, withDefaultValue defaultValue: Any?) -> Any? {
+        var valueRef: CFTypeRef?
+        if AXUIElementCopyAttributeValue(_elementRef, property as CFString, &valueRef) == .success,
+           let valueRef = valueRef {
+            return valueRef as AnyObject
         }
         return defaultValue
     }
 
-    @discardableResult
-    private func setWindowProperty(_ property: String, value: Any) -> Bool {
-        guard let number = value as? NSNumber else { return false }
-        return AXUIElementSetAttributeValue(elementRef, property as CFString, number) == .success
+    @objc func getRole() -> String {
+        var valueRef: CFTypeRef?
+        if AXUIElementCopyAttributeValue(_elementRef,
+                                         NSAccessibility.Attribute.role.rawValue as CFString,
+                                         &valueRef) == .success,
+           let str = valueRef as? String {
+            return str
+        }
+        return ""
     }
 
-    func setFrame(_ frame: NSRect) {
-        // Disable Enhanced UI during operation for better reliability
+    @objc func getSelectedText() -> String? {
+        var valueRef: CFTypeRef?
+        if AXUIElementCopyAttributeValue(_elementRef, kAXSelectedTextAttribute as CFString, &valueRef) == .success,
+           let str = valueRef as? String {
+            return str
+        }
+        return nil
+    }
+
+    // isWindow with explicit role parameter (matches ObjC interface)
+    @objc(isWindow:) func isWindow(_ roleParam: String) -> Bool {
+        return isWindowForRole(roleParam)
+    }
+
+    private func isWindowForRole(_ roleParam: String) -> Bool {
+        if roleParam == (kAXWindowRole as String) { return true }
+        // Duck-typing: check for minimized attribute presence
+        return getElementProperty(NSAccessibility.Attribute.minimized.rawValue, withDefaultValue: nil) != nil
+    }
+}
+
+// MARK: - Watcher callback (global C function pointer)
+
+private let watcherCallback: AXObserverCallback = { _, element, notificationName, contextData in
+    guard let contextData = contextData else { return }
+    let watcher = Unmanaged<HSuielementWatcher>.fromOpaque(contextData).takeUnretainedValue()
+
+    let skin = LuaSkin.skin(with: nil)
+    skin.check(watcher.lsCanary)
+
+    // Push callback function
+    skin.pushLuaRef(watcher.refTable, ref: watcher.handlerRef)
+
+    // Determine what kind of object to push as parameter 1
+    let elementObj = HSuielement(withElement: element)
+    let pushObj: NSObject
+    if elementObj.isWindow {
+        pushObj = HSwindow(axuiElementRef: element)
+    } else if elementObj.isApplication {
+        var pid: pid_t = 0
+        AXUIElementGetPid(element, &pid)
+        if let app = HSapplication(pid: pid, withState: skin.l) {
+            pushObj = app
+        } else {
+            pushObj = elementObj
+        }
+    } else {
+        pushObj = elementObj
+    }
+
+    skin.pushNSObject(pushObj)
+
+    // Parameter 2: event name
+    if let cstr = CFStringGetCStringPtr(notificationName, CFStringBuiltInEncodings.ASCII.rawValue) {
+        lua_pushstring(skin.l, cstr)
+    } else {
+        let str = notificationName as String
+        lua_pushstring(skin.l, str)
+    }
+
+    // Parameter 3: watcher
+    skin.pushLuaRef(watcher.refTable, ref: watcher.watcherRef)
+
+    // Parameter 4: userData
+    if watcher.userDataRef == LUA_NOREF || watcher.userDataRef == LUA_REFNIL {
+        lua_pushnil(skin.l)
+    } else {
+        skin.pushLuaRef(watcher.refTable, ref: watcher.userDataRef)
+    }
+
+    if !skin.protectedCallAndTraceback(4, nresults: 0) {
+        if let errorMsg = lua_tostring(skin.l, -1) {
+            skin.logError(String(cString: errorMsg))
+        }
+        lua_pop(skin.l, 1)
+    }
+}
+
+// MARK: - HSuielementWatcher
+
+@objc(HSuielementWatcher) class HSuielementWatcher: NSObject, HSuielementWatcherProtocol {
+
+    @objc var selfRefCount: Int32 = 0
+    private var _elementRef: AXUIElement
+    @objc var elementRef: AXUIElement {
+        get { _elementRef }
+        set {
+            Unmanaged.passUnretained(_elementRef).release()
+            _elementRef = newValue
+            _ = Unmanaged.passRetained(newValue)
+        }
+    }
+    @objc var refTable: LSRefTable
+    @objc var handlerRef: Int32
+    @objc var userDataRef: Int32
+    @objc var watcherRef: Int32
+    private var _observer: AXObserver?
+    @objc var observer: AXObserver {
+        get { _observer! }
+        set { _observer = newValue }
+    }
+    @objc var running: Bool = false
+    @objc var pid: pid_t = 0
+    @objc var watchDestroyed: Bool = false
+    @objc var lsCanary: LSGCCanary = LSGCCanary()
+
+    // NOTE: The Lua ref arguments must be on LUA_REGISTRYINDEX_VALUE, not some other reftable.
+    @objc init(element: HSuielement, callbackRef: Int32, userdataRef: Int32) {
+        refTable = LUA_REGISTRYINDEX_VALUE
+        _elementRef = element.elementRef
+        _ = Unmanaged.passRetained(_elementRef)
+        handlerRef = callbackRef
+        userDataRef = userdataRef
+        watcherRef = LUA_NOREF
+        running = false
+        watchDestroyed = false
+        super.init()
+        AXUIElementGetPid(_elementRef, &pid)
+    }
+
+    deinit {
+        Unmanaged.passUnretained(_elementRef).release()
+    }
+
+    @objc func start(_ events: [String], withState L: UnsafeMutablePointer<lua_State>!) {
+        let skin = LuaSkin.skin(with: L)
+        guard !running else { return }
+
+        var obs: AXObserver?
+        let err = AXObserverCreate(pid, watcherCallback, &obs)
+        guard err == .success, let obs = obs else {
+            skin.logBreadcrumb("AXObserverCreate error: \(err.rawValue)")
+            return
+        }
+
+        // Pass self as unretained pointer; watcher's lifetime is managed by Lua
+        let contextPtr = Unmanaged.passUnretained(self).toOpaque()
+        for event in events {
+            AXObserverAddNotification(obs, _elementRef, event as CFString, contextPtr)
+        }
+
+        _observer = obs
+        running = true
+
+        CFRunLoopAddSource(RunLoop.current.getCFRunLoop(),
+                           AXObserverGetRunLoopSource(obs),
+                           CFRunLoopMode.defaultMode)
+    }
+
+    @objc func stop() {
+        guard running, let obs = _observer else { return }
+        CFRunLoopRemoveSource(RunLoop.current.getCFRunLoop(),
+                              AXObserverGetRunLoopSource(obs),
+                              CFRunLoopMode.defaultMode)
+        running = false
+    }
+}
+
+// MARK: - HSapplication
+
+@objc(HSapplication) class HSapplication: NSObject, HSapplicationProtocol {
+
+    private var _elementRef: AXUIElement
+    @objc var elementRef: AXUIElement { _elementRef }
+    @objc private(set) var pid: pid_t
+    @objc private(set) var runningApp: NSRunningApplication
+    @objc private(set) var uiElement: NSObject
+    @objc var selfRefCount: Int32 = 0
+
+    // MARK: Init / deinit
+
+    @objc convenience init?(pid thePID: pid_t, withState L: UnsafeMutablePointer<lua_State>!) {
+        let skin = LuaSkin.skin(with: L)
+        guard let app = NSRunningApplication(processIdentifier: thePID) else {
+            skin.logError("Unable to fetch NSRunningApplication for pid: \(thePID)")
+            return nil
+        }
+        self.init(nsRunningApplication: app, withState: L)
+    }
+
+    @objc convenience init?(nsRunningApplication app: NSRunningApplication,
+                             withState L: UnsafeMutablePointer<lua_State>!) {
+        let skin = LuaSkin.skin(with: L)
+        guard let app2 = app as NSRunningApplication? else {
+            skin.logError("HSapplication::initWithNSRunningApplication called with invalid application")
+            return nil
+        }
+        let appRef = AXUIElementCreateApplication(app2.processIdentifier)
+        self.init(runningApp: app2, elementRef: appRef)
+    }
+
+    private init(runningApp app: NSRunningApplication, elementRef ref: AXUIElement) {
+        pid = app.processIdentifier
+        // AXUIElementCreateApplication returns +1. In Swift ARC owns it when assigned.
+        // We need to keep it retained, so store it and retain manually for our contract.
+        _elementRef = ref
+        _ = Unmanaged.passRetained(ref)  // match ObjC's manual retain accounting
+        runningApp = app
+        uiElement = HSuielement(withElement: ref)
+        selfRefCount = 0
+        super.init()
+    }
+
+    deinit {
+        Unmanaged.passUnretained(_elementRef).release()
+    }
+
+    // MARK: Class factory methods
+
+    @objc static func frontmostApplication(withState L: UnsafeMutablePointer<lua_State>!) -> HSapplication? {
+        let skin = LuaSkin.skin(with: L)
+        guard let app = NSWorkspace.shared.frontmostApplication else {
+            skin.logError("Unable to fetch frontmost application")
+            return nil
+        }
+        let result = HSapplication(nsRunningApplication: app, withState: L)
+        if result == nil {
+            skin.logError("HSapplication::frontmostApplication failed for app: \(app.localizedName ?? "<unknown>")")
+        }
+        return result
+    }
+
+    @objc static func application(forNSRunningApplication app: NSRunningApplication,
+                                   withState L: UnsafeMutablePointer<lua_State>!) -> HSapplication? {
+        return HSapplication(nsRunningApplication: app, withState: L)
+    }
+
+    @objc static func application(forPID thePID: pid_t,
+                                   withState L: UnsafeMutablePointer<lua_State>!) -> HSapplication? {
+        return HSapplication(pid: thePID, withState: L)
+    }
+
+    @objc static func name(forBundleID bundleID: String) -> String? {
+        guard let path = Self.path(forBundleID: bundleID),
+              let bundle = Bundle(path: path) else { return nil }
+        return bundle.object(forInfoDictionaryKey: kCFBundleNameKey as String) as? String
+    }
+
+    @objc static func path(forBundleID bundleID: String) -> String? {
+        NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID)?.path
+    }
+
+    @objc static func info(forBundleID bundleID: String) -> NSDictionary? {
+        guard let path = Self.path(forBundleID: bundleID) else { return nil }
+        return Self.info(forBundlePath: path)
+    }
+
+    @objc static func info(forBundlePath bundlePath: String) -> NSDictionary? {
+        Bundle(path: bundlePath)?.infoDictionary as NSDictionary?
+    }
+
+    @objc static func preferredLocalizations(forBundleID bundleID: String) -> [String]? {
+        guard let path = Self.path(forBundleID: bundleID) else { return nil }
+        return Self.preferredLocalizations(forBundlePath: path)
+    }
+
+    @objc static func preferredLocalizations(forBundlePath bundlePath: String) -> [String]? {
+        Bundle(path: bundlePath)?.preferredLocalizations
+    }
+
+    @objc static func localizations(forBundleID bundleID: String) -> [String]? {
+        guard let path = Self.path(forBundleID: bundleID) else { return nil }
+        return Self.localizations(forBundlePath: path)
+    }
+
+    @objc static func localizations(forBundlePath bundlePath: String) -> [String]? {
+        Bundle(path: bundlePath)?.localizations
+    }
+
+    @objc static func runningApplications(withState L: UnsafeMutablePointer<lua_State>!) -> [HSapplication] {
+        NSWorkspace.shared.runningApplications.compactMap {
+            HSapplication(nsRunningApplication: $0, withState: L)
+        }
+    }
+
+    @objc static func applications(forBundleID bundleID: String,
+                                    withState L: UnsafeMutablePointer<lua_State>!) -> [HSapplication] {
+        NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).compactMap {
+            HSapplication(nsRunningApplication: $0, withState: L)
+        }
+    }
+
+    @objc static func launchByName(_ name: String) -> Bool {
+        NSWorkspace.shared.launchApplication(name)
+    }
+
+    @objc static func launchByBundleID(_ bundleID: String) -> Bool {
+        NSWorkspace.shared.launchApplication(
+            withBundleIdentifier: bundleID,
+            options: [],
+            additionalEventParamDescriptor: nil,
+            launchIdentifier: nil)
+    }
+
+    // MARK: hidden property
+
+    // Protocol declares `hidden: Bool { get set }` — expose as a plain computed property.
+    // We also expose isHidden()/setHidden(_:) as @objc methods for ObjC compatibility.
+    @objc var hidden: Bool {
+        get { isHidden() }
+        set { _setHidden(newValue) }
+    }
+
+    @objc func isHidden() -> Bool {
+        var valueRef: CFTypeRef?
+        if AXUIElementCopyAttributeValue(_elementRef,
+                                         NSAccessibility.Attribute.hidden.rawValue as CFString,
+                                         &valueRef) == .success,
+           let num = valueRef as? NSNumber {
+            return num.boolValue
+        }
+        return false
+    }
+
+    // Renamed to avoid ObjC selector conflict with the `hidden` property setter.
+    @objc func _setHidden(_ shouldHide: Bool) {
+        AXUIElementSetAttributeValue(_elementRef,
+                                     NSAccessibility.Attribute.hidden.rawValue as CFString,
+                                     shouldHide ? kCFBooleanTrue : kCFBooleanFalse)
+    }
+
+    // MARK: Instance methods
+
+    @objc func allWindows() -> [Any]? {
+        var windowsRef: CFArray?
+        guard AXUIElementCopyAttributeValues(_elementRef, kAXWindowsAttribute as CFString, 0, 100, &windowsRef) == .success,
+              let windows = windowsRef else { return [] }
+        let count = CFArrayGetCount(windows)
+        var result: [HSwindow] = []
+        result.reserveCapacity(count)
+        for i in 0 ..< count {
+            guard let rawPtr = CFArrayGetValueAtIndex(windows, i) else { continue }
+            let win = unsafeBitCast(rawPtr, to: AXUIElement.self)
+            result.append(HSwindow(axuiElementRef: win))
+        }
+        return result
+    }
+
+    @objc func mainWindow() -> Any? {
+        var valueRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(_elementRef, kAXMainWindowAttribute as CFString, &valueRef) == .success,
+              let valueRef = valueRef else { return nil }
+        let win = unsafeBitCast(valueRef, to: AXUIElement.self)
+        // valueRef is +1; HSwindow.init does its own retain, so we release here
+        let result = HSwindow(axuiElementRef: win)
+        Unmanaged.passUnretained(valueRef).release()
+        return result
+    }
+
+    @objc func focusedWindow() -> Any? {
+        var valueRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(_elementRef, kAXFocusedWindowAttribute as CFString, &valueRef) == .success,
+              let valueRef = valueRef else { return nil }
+        let win = unsafeBitCast(valueRef, to: AXUIElement.self)
+        let result = HSwindow(axuiElementRef: win)
+        Unmanaged.passUnretained(valueRef).release()
+        return result
+    }
+
+    @objc func activate(_ allWindows: Bool) -> Bool {
+        var options: NSApplication.ActivationOptions = []
+        if allWindows { options.insert(.activateAllWindows) }
+        return runningApp.activate(options: options)
+    }
+
+    @objc func isResponsive() -> Bool {
+        var psn = ProcessSerialNumber()
+        _GetProcessForPID(pid, &psn)
+        let conn = CGSMainConnectionID()
+        return !CGSEventIsAppUnresponsive(conn, &psn)
+    }
+
+    @objc func isRunning(withState L: UnsafeMutablePointer<lua_State>!) -> Bool {
+        return HSapplication(pid: runningApp.processIdentifier, withState: L) != nil
+    }
+
+    @objc func setFrontmost(_ allWindows: Bool) -> Bool {
+        guard let app = NSRunningApplication(processIdentifier: pid) else { return false }
+        var options: NSApplication.ActivationOptions = []
+        if allWindows { options.insert(.activateAllWindows) }
+        return app.activate(options: options)
+    }
+
+    @objc func isFrontmost() -> Bool {
+        var valueRef: CFTypeRef?
+        if AXUIElementCopyAttributeValue(_elementRef,
+                                         NSAccessibility.Attribute.frontmost.rawValue as CFString,
+                                         &valueRef) == .success,
+           let num = valueRef as? NSNumber {
+            return num.boolValue
+        }
+        return false
+    }
+
+    @objc func title() -> String? {
+        return runningApp.localizedName
+    }
+
+    @objc func bundleID() -> String? {
+        return runningApp.bundleIdentifier
+    }
+
+    @objc func path() -> String? {
+        guard let url = runningApp.bundleURL else { return nil }
+        return Bundle(url: url)?.bundlePath
+    }
+
+    @objc func kill() {
+        runningApp.terminate()
+    }
+
+    @objc func kill9() {
+        runningApp.forceTerminate()
+    }
+
+    @objc func kind() -> Int32 {
+        switch runningApp.activationPolicy {
+        case .accessory:   return 0
+        case .prohibited:  return -1
+        default:           return 1
+        }
+    }
+}
+
+// MARK: - HSwindow
+
+@objc(HSwindow) class HSwindow: NSObject, HSwindowProtocol {
+
+    private var _elementRef: AXUIElement
+    @objc var elementRef: AXUIElement { _elementRef }
+    @objc private(set) var pid: pid_t = 0
+    @objc private(set) var winID: CGWindowID = 0
+    @objc private(set) var uiElement: HSuielement
+    @objc var selfRefCount: Int32 = 0
+
+    // MARK: Init / deinit
+
+    @objc(initWithAXUIElementRef:) init(axuiElementRef winRef: AXUIElement) {
+        _ = Unmanaged.passRetained(winRef)
+        _elementRef = winRef
+        uiElement = HSuielement(withElement: winRef)
+        selfRefCount = 0
+        super.init()
+
+        var thePID: pid_t = 0
+        if AXUIElementGetPid(winRef, &thePID) == .success {
+            pid = thePID
+        }
+
+        var wID: CGWindowID = 0
+        if _AXUIElementGetWindow(winRef, &wID) == .success {
+            winID = wID
+        }
+    }
+
+    deinit {
+        Unmanaged.passUnretained(_elementRef).release()
+    }
+
+    // MARK: Class methods
+
+    @objc static func orderedWindowIDs() -> [NSNumber] {
+        guard let wins = _CGWindowListCreate([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) else {
+            LuaSkin.skin(with: nil).logBreadcrumb("hs.window._orderedwinids CGWindowListCreate returned NULL")
+            return []
+        }
+        guard let windowDescs = CGWindowListCreateDescriptionFromArray(wins) else { return [] }
+        var result: [NSNumber] = []
+        let count = CFArrayGetCount(wins)
+        result.reserveCapacity(count)
+        for i in 0 ..< count {
+            guard let dictRaw = CFArrayGetValueAtIndex(windowDescs, i) else { continue }
+            let dict = unsafeBitCast(dictRaw, to: CFDictionary.self)
+            guard let numRaw = CFDictionaryGetValue(dict, Unmanaged.passUnretained(kCGWindowNumber as CFString).toOpaque()) else { continue }
+            let num = unsafeBitCast(numRaw, to: CFNumber.self)
+            result.append(num as NSNumber)
+        }
+        return result
+    }
+
+    @objc static func snapshot(forID windowID: CGWindowID, keepTransparency: Bool) -> NSImage? {
+        let imageOption: CGWindowImageOption = keepTransparency ? [] : .shouldBeOpaque
+        let windowRect = CGRect.null
+        guard let windowImage = hs_CGWindowListCreateImage?(
+            windowRect,
+            .optionIncludingWindow,
+            windowID,
+            [.boundsIgnoreFraming, imageOption]) else { return nil }
+        return NSImage(cgImage: windowImage, size: windowRect.size)
+    }
+
+    @objc static func focusedWindow() -> HSwindow? {
+        var appRef: CFTypeRef?
+        AXUIElementCopyAttributeValue(_systemWideElement, kAXFocusedApplicationAttribute as CFString, &appRef)
+        guard let appRef = appRef else { return nil }
+
+        let appElement = unsafeBitCast(appRef, to: AXUIElement.self)
+        var winRef: CFTypeRef?
+        let result = AXUIElementCopyAttributeValue(appElement,
+                                                    NSAccessibility.Attribute.focusedWindow.rawValue as CFString,
+                                                    &winRef)
+        Unmanaged.passUnretained(appRef).release()
+        guard result == .success, let winRef = winRef else { return nil }
+        let winElement = unsafeBitCast(winRef, to: AXUIElement.self)
+        let window = HSwindow(axuiElementRef: winElement)
+        Unmanaged.passUnretained(winRef).release()
+        return window
+    }
+
+    // MARK: Property helpers
+
+    @objc func getWindowProperty(_ property: String, withDefaultValue defaultValue: Any?) -> Any? {
+        var valueRef: CFTypeRef?
+        if AXUIElementCopyAttributeValue(_elementRef, property as CFString, &valueRef) == .success,
+           let valueRef = valueRef {
+            return valueRef as AnyObject
+        }
+        return defaultValue
+    }
+
+    @objc @discardableResult func setWindowProperty(_ property: String, withValue value: Any?) -> Bool {
+        guard let value = value as? NSNumber else { return false }
+        return AXUIElementSetAttributeValue(_elementRef, property as CFString, value) == .success
+    }
+
+    // MARK: Protocol methods
+
+    @objc func title() -> String? {
+        getWindowProperty(NSAccessibility.Attribute.title.rawValue, withDefaultValue: "") as? String
+    }
+
+    @objc func subRole() -> String? {
+        getWindowProperty(NSAccessibility.Attribute.subrole.rawValue, withDefaultValue: "") as? String
+    }
+
+    @objc func role() -> String? {
+        getWindowProperty(NSAccessibility.Attribute.role.rawValue, withDefaultValue: "") as? String
+    }
+
+    @objc func isStandard() -> Bool {
+        subRole() == kAXStandardWindowSubrole as String
+    }
+
+    @objc func getTopLeft() -> NSPoint {
+        var topLeft = CGPoint.zero
+        var positionRef: CFTypeRef?
+        if AXUIElementCopyAttributeValue(_elementRef,
+                                          NSAccessibility.Attribute.position.rawValue as CFString,
+                                          &positionRef) == .success,
+           let positionRef = positionRef {
+            let axValue = unsafeBitCast(positionRef, to: AXValue.self)
+            AXValueGetValue(axValue, .cgPoint, &topLeft)
+            Unmanaged.passUnretained(positionRef).release()
+        }
+        return NSPoint(x: topLeft.x, y: topLeft.y)
+    }
+
+    @objc func setTopLeft(_ topLeft: NSPoint) {
+        var point = CGPoint(x: topLeft.x, y: topLeft.y)
+        if let positionStorage = AXValueCreate(.cgPoint, &point) {
+            AXUIElementSetAttributeValue(_elementRef,
+                                          NSAccessibility.Attribute.position.rawValue as CFString,
+                                          positionStorage)
+        }
+    }
+
+    @objc func getSize() -> NSSize {
+        var size = CGSize.zero
+        var sizeRef: CFTypeRef?
+        if AXUIElementCopyAttributeValue(_elementRef,
+                                          NSAccessibility.Attribute.size.rawValue as CFString,
+                                          &sizeRef) == .success,
+           let sizeRef = sizeRef {
+            let axValue = unsafeBitCast(sizeRef, to: AXValue.self)
+            AXValueGetValue(axValue, .cgSize, &size)
+            Unmanaged.passUnretained(sizeRef).release()
+        }
+        return NSSize(width: size.width, height: size.height)
+    }
+
+    @objc func setSize(_ size: NSSize) {
+        var cgSize = CGSize(width: size.width, height: size.height)
+        if let sizeStorage = AXValueCreate(.cgSize, &cgSize) {
+            AXUIElementSetAttributeValue(_elementRef,
+                                          NSAccessibility.Attribute.size.rawValue as CFString,
+                                          sizeStorage)
+        }
+    }
+
+    @objc func setFrame(_ frame: NSRect) {
+        // Temporarily disable AXEnhancedUserInterface for reliability
         let appElement = AXUIElementCreateApplication(pid)
+        var enhancedRef: CFTypeRef?
         var hadEnhancedUI = false
 
-        var enhancedUI: CFTypeRef?
-        if AXUIElementCopyAttributeValue(appElement, "AXEnhancedUserInterface" as CFString, &enhancedUI) == .success,
-           let val = enhancedUI {
-            // swiftlint:disable:next force_cast
-            hadEnhancedUI = CFBooleanGetValue(val as! CFBoolean)
+        if AXUIElementCopyAttributeValue(appElement, "AXEnhancedUserInterface" as CFString, &enhancedRef) == .success,
+           let enhancedRef = enhancedRef,
+           let boolVal = enhancedRef as? NSNumber {
+            hadEnhancedUI = boolVal.boolValue
             if hadEnhancedUI {
                 AXUIElementSetAttributeValue(appElement, "AXEnhancedUserInterface" as CFString, kCFBooleanFalse)
             }
+            Unmanaged.passUnretained(enhancedRef).release()
         }
 
-        // Step 1: Set size first (prepares for potential cross-display move)
-        self.size = frame.size
-        // Step 2: Set position (may move window to different display)
-        self.topLeft = frame.origin
-        // Step 3: Set size again (ensures correct size on target display)
-        self.size = frame.size
+        // Size → Position → Size (handles cross-display moves)
+        setSize(frame.size)
+        setTopLeft(frame.origin)
+        setSize(frame.size)
 
         if hadEnhancedUI {
             AXUIElementSetAttributeValue(appElement, "AXEnhancedUserInterface" as CFString, kCFBooleanTrue)
         }
     }
 
-    @discardableResult
-    func pushButton(_ buttonId: CFString) -> Bool {
-        var button: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(elementRef, buttonId, &button) == AXError.success,
-              let btn = button else { return false }
-        // swiftlint:disable:next force_cast
-        return AXUIElementPerformAction(btn as! AXUIElement, kAXPressAction) == AXError.success
+    @objc @discardableResult func pushButton(_ buttonId: CFString) -> Bool {
+        var buttonRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(_elementRef, buttonId, &buttonRef) == .success,
+              let buttonRef = buttonRef else { return false }
+        let button = unsafeBitCast(buttonRef, to: AXUIElement.self)
+        let worked = AXUIElementPerformAction(button, kAXPressAction as CFString) == .success
+        Unmanaged.passUnretained(buttonRef).release()
+        return worked
     }
 
-    func toggleZoom() {
-        pushButton(kAXZoomButtonAttribute)
+    @objc func toggleZoom() {
+        pushButton(kAXZoomButtonAttribute as CFString)
     }
 
-    func getZoomButtonRect() -> NSRect {
-        var button: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(elementRef, kAXZoomButtonAttribute, &button) == AXError.success,
-              let btn = button else { return .zero }
+    @objc func getZoomButtonRect() -> NSRect {
+        var buttonRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(_elementRef,
+                                             kAXZoomButtonAttribute as CFString,
+                                             &buttonRef) == .success,
+              let buttonRef = buttonRef else { return .zero }
+        let button = unsafeBitCast(buttonRef, to: AXUIElement.self)
+        defer { Unmanaged.passUnretained(buttonRef).release() }
 
-        // swiftlint:disable:next force_cast
-        let btnElement = btn as! AXUIElement
         var pointRef: CFTypeRef?
         var sizeRef: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(btnElement, kAXPositionAttribute, &pointRef) == AXError.success,
-              AXUIElementCopyAttributeValue(btnElement, kAXSizeAttribute, &sizeRef) == AXError.success,
-              let pRef = pointRef, let sRef = sizeRef else { return .zero }
+        guard AXUIElementCopyAttributeValue(button, kAXPositionAttribute as CFString, &pointRef) == .success,
+              AXUIElementCopyAttributeValue(button, kAXSizeAttribute as CFString, &sizeRef) == .success,
+              let pointRef = pointRef,
+              let sizeRef = sizeRef else { return .zero }
 
         var point = CGPoint.zero
-        var sz = CGSize.zero
-        // swiftlint:disable:next force_cast
-        guard AXValueGetValue(pRef as! AXValue, .cgPoint, &point),
-              // swiftlint:disable:next force_cast
-              AXValueGetValue(sRef as! AXValue, .cgSize, &sz) else { return .zero }
-
-        return NSRect(x: point.x, y: point.y, width: sz.width, height: sz.height)
+        var size = CGSize.zero
+        AXValueGetValue(unsafeBitCast(pointRef, to: AXValue.self), .cgPoint, &point)
+        AXValueGetValue(unsafeBitCast(sizeRef, to: AXValue.self), .cgSize, &size)
+        Unmanaged.passUnretained(pointRef).release()
+        Unmanaged.passUnretained(sizeRef).release()
+        return NSMakeRect(point.x, point.y, size.width, size.height)
     }
 
-    @discardableResult
-    func close() -> Bool {
-        return pushButton(kAXCloseButtonAttribute)
+    @objc func close() -> Bool {
+        pushButton(kAXCloseButtonAttribute as CFString)
     }
 
-    func getTabCount() -> Int32 {
-        guard let tabs = getWindowTabs(elementRef) else { return 0 }
+    @objc func getTabCount() -> Int32 {
+        guard let tabs = getWindowTabs(_elementRef) else { return 0 }
         var count: CFIndex = 0
-        AXUIElementGetAttributeValueCount(tabs, kAXTabsAttribute, &count)
-        CFRelease(tabs)
+        AXUIElementGetAttributeValueCount(tabs, kAXTabsAttribute as CFString, &count)
         return Int32(count)
     }
 
-    @discardableResult
-    func focusTab(_ index: Int32) -> Bool {
-        guard let tabs = getWindowTabs(elementRef) else { return false }
-        defer { CFRelease(tabs) }
+    @objc func focusTab(_ index: Int32) -> Bool {
+        guard let tabs = getWindowTabs(_elementRef) else { return false }
 
-        var children: CFArray?
-        guard AXUIElementCopyAttributeValues(tabs, kAXTabsAttribute, 0, 100, &children) == AXError.success,
-              let childArray = children else { return false }
+        var childrenRef: CFArray?
+        guard AXUIElementCopyAttributeValues(tabs, kAXTabsAttribute as CFString, 0, 100, &childrenRef) == .success,
+              let children = childrenRef else { return false }
 
-        let count = CFArrayGetCount(childArray)
-        let i: CFIndex
-        if index > count || index <= 0 {
+        let count = CFArrayGetCount(children)
+        var i: CFIndex = CFIndex(index)
+        if i > count || i <= 0 {
             i = count - 1
         } else {
-            i = CFIndex(index) - 1  // adjust because Lua style indexes start at 1
+            i = i - 1  // Lua style: indices start at 1
         }
 
-        let tab = Unmanaged<AXUIElement>.fromOpaque(CFArrayGetValueAtIndex(childArray, i)!).takeUnretainedValue()
-        return AXUIElementPerformAction(tab, kAXPressAction) == AXError.success
+        guard let tabRaw = CFArrayGetValueAtIndex(children, i) else { return false }
+        let tab = unsafeBitCast(tabRaw, to: AXUIElement.self)
+        return AXUIElementPerformAction(tab, kAXPressAction as CFString) == .success
     }
 
-    func getApplication() -> HSapplication? {
-        // This is a placeholder — the ObjC version returned `id`.
-        // Callers typically use this to get the HSapplication for the window's PID.
+    @objc func isFullscreen() -> Bool {
+        var valueRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(_elementRef, "AXFullScreen" as CFString, &valueRef) == .success,
+              let valueRef = valueRef,
+              let boolVal = valueRef as? NSNumber else { return false }
+        let result = boolVal.boolValue
+        Unmanaged.passUnretained(valueRef).release()
+        return result
+    }
+
+    @objc func setFullscreen(_ fullscreen: Bool) {
+        AXUIElementSetAttributeValue(_elementRef,
+                                     "AXFullScreen" as CFString,
+                                     fullscreen ? kCFBooleanTrue : kCFBooleanFalse)
+    }
+
+    @objc func isMinimized() -> Bool {
+        let val = getWindowProperty(NSAccessibility.Attribute.minimized.rawValue, withDefaultValue: NSNumber(value: false))
+        return (val as? NSNumber)?.boolValue ?? false
+    }
+
+    @objc func setMinimized(_ minimize: Bool) {
+        setWindowProperty(NSAccessibility.Attribute.minimized.rawValue, withValue: NSNumber(value: minimize))
+    }
+
+    @objc func getApplication() -> Any? {
+        // Not implemented in ObjC source — placeholder
         return nil
     }
 
-    func becomeMain() {
-        setWindowProperty(NSAccessibilityMainAttribute, value: NSNumber(value: true))
+    @objc func becomeMain() {
+        setWindowProperty(NSAccessibility.Attribute.main.rawValue, withValue: NSNumber(value: true))
     }
 
-    func raiseWindow() {
-        AXUIElementPerformAction(elementRef, kAXRaiseAction)
+    @objc func raise() {
+        AXUIElementPerformAction(_elementRef, kAXRaiseAction as CFString)
     }
 
-    func snapshot(keepTransparency: Bool) -> NSImage? {
-        var windowID: CGWindowID = 0
-        guard _AXUIElementGetWindow(elementRef, &windowID) == .success else { return nil }
-        return HSwindow.snapshot(forID: windowID, keepTransparency: keepTransparency)
+    @objc func snapshot(_ keepTransparency: Bool) -> NSImage? {
+        var wID: CGWindowID = 0
+        guard _AXUIElementGetWindow(_elementRef, &wID) == .success else { return nil }
+        return HSwindow.snapshot(forID: wID, keepTransparency: keepTransparency)
     }
 }

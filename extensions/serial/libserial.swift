@@ -6,7 +6,7 @@ import IOKit.usb
 private let USERDATA_TAG = "hs.serial"
 private var refTable: LSRefTable = LUA_NOREF
 
-private func get_objectFromUserdata<T: AnyObject>(_ L: OpaquePointer!, _ idx: Int32, _ tag: UnsafePointer<CChar>) -> T {
+private func get_objectFromUserdata<T: AnyObject>(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32, _ tag: UnsafePointer<CChar>) -> T {
     let ptr = luaL_checkudata(L, idx, tag)!.assumingMemoryBound(to: UnsafeMutableRawPointer.self)
     return Unmanaged<T>.fromOpaque(ptr.pointee).takeUnretainedValue()
 }
@@ -77,20 +77,20 @@ class HSSerialPort: NSObject, ORSSerialPortDelegate {
     var serialPortManager: ORSSerialPortManager
     var serialPort: ORSSerialPort?
 
-    var selfRefCount: Int = 0
-    var callbackRef: Int = LUA_NOREF
+    var selfRefCount: Int32 = 0
+    var callbackRef: Int32 = Int32(LUA_NOREF)
     var callbackToken: AnyObject? = nil
-    var deviceCallbackRef: Int = LUA_NOREF
+    var deviceCallbackRef: Int32 = Int32(LUA_NOREF)
 
     var portName: String?
     var portPath: String?
 
-    var lsCanary: LSGCCanary = 0
+    var lsCanary: LSGCCanary = LSGCCanary()
 
     var parity: ORSSerialPortParity = .none
     var baudRate: NSNumber = NSNumber(value: 115200)
-    var numberOfStopBits: Int = 1
-    var numberOfDataBits: Int = 8
+    var numberOfStopBits: UInt = 1
+    var numberOfDataBits: UInt = 8
     var shouldEchoReceivedData: Bool = false
     var usesRTSCTSFlowControl: Bool = false
     var usesDTRDSRFlowControl: Bool = false
@@ -127,9 +127,9 @@ class HSSerialPort: NSObject, ORSSerialPortDelegate {
     // MARK: - ORSSerialPortDelegate
 
     func serialPortWasOpened(_ serialPort: ORSSerialPort) {
-        guard callbackRef != LUA_NOREF else { return }
-        let skin = LuaSkin.shared(withState: nil)
-        guard skin.checkGCCanary(lsCanary) else { return }
+        guard callbackRef != Int32(LUA_NOREF) else { return }
+        let skin = LuaSkin.skin(with: nil)
+        guard skin.check(lsCanary) else { return }
 
         _lua_stackguard_entry(skin.l)
         skin.pushLuaRef(refTable, ref: callbackRef)
@@ -140,9 +140,9 @@ class HSSerialPort: NSObject, ORSSerialPortDelegate {
     }
 
     func serialPortWasClosed(_ serialPort: ORSSerialPort) {
-        guard callbackRef != LUA_NOREF else { return }
-        let skin = LuaSkin.shared(withState: nil)
-        guard skin.checkGCCanary(lsCanary) else { return }
+        guard callbackRef != Int32(LUA_NOREF) else { return }
+        let skin = LuaSkin.skin(with: nil)
+        guard skin.check(lsCanary) else { return }
 
         _lua_stackguard_entry(skin.l)
         skin.pushLuaRef(refTable, ref: callbackRef)
@@ -153,9 +153,9 @@ class HSSerialPort: NSObject, ORSSerialPortDelegate {
     }
 
     func serialPort(_ serialPort: ORSSerialPort, didReceive data: Data) {
-        guard callbackRef != LUA_NOREF else { return }
-        let skin = LuaSkin.shared(withState: nil)
-        guard skin.checkGCCanary(lsCanary) else { return }
+        guard callbackRef != Int32(LUA_NOREF) else { return }
+        let skin = LuaSkin.skin(with: nil)
+        guard skin.check(lsCanary) else { return }
 
         _lua_stackguard_entry(skin.l)
         skin.pushLuaRef(refTable, ref: callbackRef)
@@ -172,9 +172,9 @@ class HSSerialPort: NSObject, ORSSerialPortDelegate {
     }
 
     func serialPortWasRemovedFromSystem(_ serialPort: ORSSerialPort) {
-        if callbackRef != LUA_NOREF {
-            let skin = LuaSkin.shared(withState: nil)
-            guard skin.checkGCCanary(lsCanary) else { return }
+        if callbackRef != Int32(LUA_NOREF) {
+            let skin = LuaSkin.skin(with: nil)
+            guard skin.check(lsCanary) else { return }
 
             _lua_stackguard_entry(skin.l)
             skin.pushLuaRef(refTable, ref: callbackRef)
@@ -188,9 +188,9 @@ class HSSerialPort: NSObject, ORSSerialPortDelegate {
     }
 
     func serialPort(_ serialPort: ORSSerialPort, didEncounterError error: Error) {
-        guard callbackRef != LUA_NOREF else { return }
-        let skin = LuaSkin.shared(withState: nil)
-        guard skin.checkGCCanary(lsCanary) else { return }
+        guard callbackRef != Int32(LUA_NOREF) else { return }
+        let skin = LuaSkin.skin(with: nil)
+        guard skin.check(lsCanary) else { return }
 
         _lua_stackguard_entry(skin.l)
         skin.pushLuaRef(refTable, ref: callbackRef)
@@ -204,9 +204,9 @@ class HSSerialPort: NSObject, ORSSerialPortDelegate {
     // MARK: - Device notifications
 
     @objc func serialPortsWereConnected(_ notification: Notification) {
-        guard deviceCallbackRef != LUA_NOREF else { return }
-        let skin = LuaSkin.shared(withState: nil)
-        guard skin.checkGCCanary(lsCanary) else { return }
+        guard deviceCallbackRef != Int32(LUA_NOREF) else { return }
+        let skin = LuaSkin.skin(with: nil)
+        guard skin.check(lsCanary) else { return }
 
         _lua_stackguard_entry(skin.l)
         skin.pushLuaRef(refTable, ref: deviceCallbackRef)
@@ -223,9 +223,9 @@ class HSSerialPort: NSObject, ORSSerialPortDelegate {
     }
 
     @objc func serialPortsWereDisconnected(_ notification: Notification) {
-        guard deviceCallbackRef != LUA_NOREF else { return }
-        let skin = LuaSkin.shared(withState: nil)
-        guard skin.checkGCCanary(lsCanary) else { return }
+        guard deviceCallbackRef != Int32(LUA_NOREF) else { return }
+        let skin = LuaSkin.skin(with: nil)
+        guard skin.check(lsCanary) else { return }
 
         _lua_stackguard_entry(skin.l)
         skin.pushLuaRef(refTable, ref: deviceCallbackRef)
@@ -324,12 +324,12 @@ class HSSerialPort: NSObject, ORSSerialPortDelegate {
         }
     }
 
-    func changeNumberOfStopBits(_ bits: Int) {
+    func changeNumberOfStopBits(_ bits: UInt) {
         numberOfStopBits = bits
         if isOpen { serialPort?.numberOfStopBits = bits }
     }
 
-    func changeNumberOfDataBits(_ bits: Int) {
+    func changeNumberOfDataBits(_ bits: UInt) {
         numberOfDataBits = bits
         if isOpen { serialPort?.numberOfDataBits = bits }
     }
@@ -391,8 +391,8 @@ class HSSerialPort: NSObject, ORSSerialPortDelegate {
 ///
 /// Notes:
 ///  * A valid port name can be found by checking `hs.serial.availablePortNames()`.
-private func serial_newFromName(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func serial_newFromName(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING, LS_TBREAK)
 
     let portName = skin.toNSObject(atIndex: 1) as! String
@@ -419,8 +419,8 @@ private func serial_newFromName(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * A valid port name can be found by checking `hs.serial.availablePortPaths()`.
-private func serial_newFromPath(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func serial_newFromPath(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING, LS_TBREAK)
 
     let path = skin.toNSObject(atIndex: 1) as! String
@@ -451,8 +451,8 @@ private func serial_newFromPath(_ L: OpaquePointer!) -> Int32 {
 ///    * `callbackType` - A string containing "opened", "closed", "received", "removed" or "error".
 ///    * `message` - If the `callbackType` is "received", then this will be the data received as a string. If the `callbackType` is "error", this will be the error message as a string.
 ///    * `hexadecimalString` - If the `callbackType` is "received", then this will be the data received as a hexadecimal string.
-private func serial_callback(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func serial_callback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TFUNCTION | LS_TNIL, LS_TBREAK)
 
     let serialPort: HSSerialPort = skin.toNSObject(atIndex: 1) as! HSSerialPort
@@ -480,8 +480,8 @@ private func serial_callback(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * A table containing the names of any connected serial port names as strings.
-private func serial_availablePortNames(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func serial_availablePortNames(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TBREAK)
 
     let portManager = ORSSerialPortManager.shared()
@@ -502,8 +502,8 @@ private func serial_availablePortNames(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * A table containing the IOKit details of any connected serial ports, organised by port name.
-private func serial_availablePortDetails(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func serial_availablePortDetails(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TBREAK)
 
     let portManager = ORSSerialPortManager.shared()
@@ -525,8 +525,8 @@ private func serial_availablePortDetails(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * A table containing the names of any connected serial port paths as strings.
-private func serial_availablePortPaths(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func serial_availablePortPaths(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TBREAK)
 
     let portManager = ORSSerialPortManager.shared()
@@ -547,8 +547,8 @@ private func serial_availablePortPaths(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * The name as a string.
-private func serial_name(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func serial_name(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let serialPort: HSSerialPort = skin.toNSObject(atIndex: 1) as! HSSerialPort
     if let name = serialPort.serialPort?.name {
@@ -568,8 +568,8 @@ private func serial_name(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * The path as a string.
-private func serial_path(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func serial_path(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let serialPort: HSSerialPort = skin.toNSObject(atIndex: 1) as! HSSerialPort
     if let path = serialPort.serialPort?.path {
@@ -589,8 +589,8 @@ private func serial_path(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * The `hs.serial` object or `nil` if the port could not be opened.
-private func serial_open(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func serial_open(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let serialPort: HSSerialPort = skin.toNSObject(atIndex: 1) as! HSSerialPort
     if serialPort.open() {
@@ -610,8 +610,8 @@ private func serial_open(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * The `hs.serial` object.
-private func serial_close(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func serial_close(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let serialPort: HSSerialPort = skin.toNSObject(atIndex: 1) as! HSSerialPort
     serialPort.close()
@@ -633,8 +633,8 @@ private func serial_close(_ L: OpaquePointer!) -> Int32 {
 /// Notes:
 ///  * This function supports the following standard baud rates as numbers: 300, 1200, 2400, 4800, 9600, 14400, 19200, 28800, 38400, 57600, 115200, 230400.
 ///  * If no baud rate is supplied, it defaults to 115200.
-private func serial_baudRate(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func serial_baudRate(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TNUMBER | LS_TOPTIONAL, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
 
     let serialPort: HSSerialPort = skin.toNSObject(atIndex: 1) as! HSSerialPort
@@ -670,8 +670,8 @@ private func serial_baudRate(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * If a value is specified, then this method returns the serial port object. Otherwise this method returns a string value of "none", "odd" or "even".
-private func serial_parity(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func serial_parity(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING | LS_TOPTIONAL, LS_TBREAK)
 
     let serialPort: HSSerialPort = skin.toNSObject(atIndex: 1) as! HSSerialPort
@@ -715,8 +715,8 @@ private func serial_parity(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * The default value is `false`.
-private func serial_usesDCDOutputFlowControl(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func serial_usesDCDOutputFlowControl(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
     let serialPort: HSSerialPort = skin.toNSObject(atIndex: 1) as! HSSerialPort
     if lua_gettop(L) == 1 {
@@ -740,8 +740,8 @@ private func serial_usesDCDOutputFlowControl(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * The default value is `false`.
-private func serial_usesDTRDSRFlowControl(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func serial_usesDTRDSRFlowControl(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
     let serialPort: HSSerialPort = skin.toNSObject(atIndex: 1) as! HSSerialPort
     if lua_gettop(L) == 1 {
@@ -765,8 +765,8 @@ private func serial_usesDTRDSRFlowControl(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * The default value is `false`.
-private func serial_usesRTSCTSFlowControl(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func serial_usesRTSCTSFlowControl(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
     let serialPort: HSSerialPort = skin.toNSObject(atIndex: 1) as! HSSerialPort
     if lua_gettop(L) == 1 {
@@ -791,8 +791,8 @@ private func serial_usesRTSCTSFlowControl(_ L: OpaquePointer!) -> Int32 {
 /// Notes:
 ///  * The default value is `false`.
 ///  * Setting this to `true` is most likely required for Arduino devices prior to opening the serial port.
-private func serial_dtr(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func serial_dtr(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
     let serialPort: HSSerialPort = skin.toNSObject(atIndex: 1) as! HSSerialPort
     if lua_gettop(L) == 1 {
@@ -817,8 +817,8 @@ private func serial_dtr(_ L: OpaquePointer!) -> Int32 {
 /// Notes:
 ///  * The default value is `false`.
 ///  * Setting this to `true` is most likely required for Arduino devices prior to opening the serial port.
-private func serial_rts(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func serial_rts(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
     let serialPort: HSSerialPort = skin.toNSObject(atIndex: 1) as! HSSerialPort
     if lua_gettop(L) == 1 {
@@ -842,8 +842,8 @@ private func serial_rts(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * The default value is `false`.
-private func serial_shouldEchoReceivedData(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func serial_shouldEchoReceivedData(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
     let serialPort: HSSerialPort = skin.toNSObject(atIndex: 1) as! HSSerialPort
     if lua_gettop(L) == 1 {
@@ -867,14 +867,14 @@ private func serial_shouldEchoReceivedData(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * The default value is 1.
-private func serial_numberOfStopBits(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func serial_numberOfStopBits(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TNUMBER | LS_TOPTIONAL, LS_TBREAK)
     let serialPort: HSSerialPort = skin.toNSObject(atIndex: 1) as! HSSerialPort
     if lua_gettop(L) == 1 {
         skin.pushNSObject(NSNumber(value: serialPort.numberOfStopBits))
     } else {
-        let proposed = Int(lua_tointeger(L, 2))
+        let proposed = UInt(lua_tointeger(L, 2))
         if proposed >= 1 && proposed <= 2 {
             serialPort.changeNumberOfStopBits(proposed)
         } else {
@@ -895,14 +895,14 @@ private func serial_numberOfStopBits(_ L: OpaquePointer!) -> Int32 {
 /// Returns:
 ///  * If a value is specified, then this method returns the serial port object. Otherwise this method returns the data bits as a number.
 ///  * The default value is 8.
-private func serial_numberOfDataBits(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func serial_numberOfDataBits(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TNUMBER | LS_TOPTIONAL, LS_TBREAK)
     let serialPort: HSSerialPort = skin.toNSObject(atIndex: 1) as! HSSerialPort
     if lua_gettop(L) == 1 {
         skin.pushNSObject(NSNumber(value: serialPort.numberOfDataBits))
     } else {
-        let proposed = Int(lua_tointeger(L, 2))
+        let proposed = UInt(lua_tointeger(L, 2))
         if proposed >= 5 && proposed <= 8 {
             serialPort.changeNumberOfDataBits(proposed)
         } else {
@@ -922,8 +922,8 @@ private func serial_numberOfDataBits(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * `true` if open, otherwise `false`.
-private func serial_isOpen(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func serial_isOpen(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let serialPort: HSSerialPort = skin.toNSObject(atIndex: 1) as! HSSerialPort
     lua_pushboolean(L, serialPort.isOpen ? 1 : 0)
@@ -939,11 +939,11 @@ private func serial_isOpen(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * None
-private func serial_sendData(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func serial_sendData(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING, LS_TBREAK)
     let serialPort: HSSerialPort = skin.toNSObject(atIndex: 1) as! HSSerialPort
-    let data = skin.toNSObject(atIndex: 2, withOptions: LS_NSLuaStringAsDataOnly) as! Data
+    let data = skin.toNSObject(atIndex: 2, withOptions: .nsLuaStringAsDataOnly) as! Data
     serialPort.sendData(data)
     return 0
 }
@@ -965,13 +965,13 @@ private var watcherDeviceManager: HSSerialPort? = nil
 /// Notes:
 ///  * The callback function should expect 1 argument and should not return anything:
 ///    * `devices` - A table containing the names of any serial ports connected as strings.
-private func serial_deviceCallback(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func serial_deviceCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TFUNCTION | LS_TNIL, LS_TBREAK)
 
     if lua_type(L, 1) == LUA_TNIL {
         guard let manager = watcherDeviceManager else { return 0 }
-        if manager.deviceCallbackRef != LUA_NOREF {
+        if manager.deviceCallbackRef != Int32(LUA_NOREF) {
             manager.deviceCallbackRef = skin.luaUnref(refTable, ref: manager.deviceCallbackRef)
         }
         manager.unwatchDevices()
@@ -984,7 +984,7 @@ private func serial_deviceCallback(_ L: OpaquePointer!) -> Int32 {
         watcherDeviceManager!.lsCanary = skin.createGCCanary()
     }
 
-    watcherDeviceManager!.deviceCallbackRef = skin.luaRef(refTable, atIndex: 1)
+    watcherDeviceManager!.deviceCallbackRef = skin.luaRef(refTable, at: 1)
     watcherDeviceManager!.watchDevices()
 
     return 0
@@ -992,7 +992,7 @@ private func serial_deviceCallback(_ L: OpaquePointer!) -> Int32 {
 
 // MARK: - Lua<->NSObject Conversion
 
-private func pushHSSerialPort(_ L: OpaquePointer!, _ obj: AnyObject!) -> Int32 {
+private func pushHSSerialPort(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
     let value = obj as! HSSerialPort
     value.selfRefCount += 1
     let ptr = lua_newuserdata(L, MemoryLayout<UnsafeMutableRawPointer>.size)!.assumingMemoryBound(to: UnsafeMutableRawPointer.self)
@@ -1002,8 +1002,8 @@ private func pushHSSerialPort(_ L: OpaquePointer!, _ obj: AnyObject!) -> Int32 {
     return 1
 }
 
-private func toHSSerialPortFromLua(_ L: OpaquePointer!, _ idx: Int32) -> AnyObject! {
-    let skin = LuaSkin.shared(withState: L)
+private func toHSSerialPortFromLua(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> Any! {
+    let skin = LuaSkin.skin(with: L)
     if luaL_testudata(L, idx, USERDATA_TAG) != nil {
         return get_objectFromUserdata(L, idx, USERDATA_TAG) as HSSerialPort
     } else {
@@ -1014,20 +1014,20 @@ private func toHSSerialPortFromLua(_ L: OpaquePointer!, _ idx: Int32) -> AnyObje
 
 // MARK: - Hammerspoon/Lua Infrastructure
 
-private func userdata_tostring(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
-    let obj = skin.luaObjectAtIndex(1, toClass: "HSSerialPort") as! HSSerialPort
+private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
+    let obj = skin.luaObject(at:1, toClass: "HSSerialPort") as! HSSerialPort
     let title = obj.portName ?? "unknown"
     let connected = obj.isOpen ? "Connected" : "Disconnected"
-    skin.pushNSObject(String(format: "%@: %@ - %@ (%p)", USERDATA_TAG, title, connected, lua_topointer(L, 1)!) as NSString)
+    skin.pushNSObject("\(USERDATA_TAG): \(title) - \(connected) (\(String(describing: lua_topointer(L, 1)!)))" as NSString)
     return 1
 }
 
-private func userdata_eq(_ L: OpaquePointer!) -> Int32 {
+private func userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     if luaL_testudata(L, 1, USERDATA_TAG) != nil && luaL_testudata(L, 2, USERDATA_TAG) != nil {
-        let skin = LuaSkin.shared(withState: L)
-        let obj1 = skin.luaObjectAtIndex(1, toClass: "HSSerialPort") as! HSSerialPort
-        let obj2 = skin.luaObjectAtIndex(2, toClass: "HSSerialPort") as! HSSerialPort
+        let skin = LuaSkin.skin(with: L)
+        let obj1 = skin.luaObject(at:1, toClass: "HSSerialPort") as! HSSerialPort
+        let obj2 = skin.luaObject(at:2, toClass: "HSSerialPort") as! HSSerialPort
         lua_pushboolean(L, obj1.isEqual(obj2) ? 1 : 0)
     } else {
         lua_pushboolean(L, 0)
@@ -1035,13 +1035,13 @@ private func userdata_eq(_ L: OpaquePointer!) -> Int32 {
     return 1
 }
 
-private func userdata_gc(_ L: OpaquePointer!) -> Int32 {
+private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let ptr = luaL_checkudata(L, 1, USERDATA_TAG)!.assumingMemoryBound(to: UnsafeMutableRawPointer.self)
     let obj = Unmanaged<HSSerialPort>.fromOpaque(ptr.pointee).takeRetainedValue()
 
     obj.selfRefCount -= 1
     if obj.selfRefCount == 0 {
-        let skin = LuaSkin.shared(withState: L)
+        let skin = LuaSkin.skin(with: L)
         obj.callbackRef = skin.luaUnref(refTable, ref: obj.callbackRef)
 
         if obj.callbackToken != nil {
@@ -1050,7 +1050,7 @@ private func userdata_gc(_ L: OpaquePointer!) -> Int32 {
         }
 
         var tmpCanary = obj.lsCanary
-        skin.destroyGCCanary(&tmpCanary)
+        skin.destroy(&tmpCanary)
         obj.lsCanary = tmpCanary
     }
 
@@ -1059,11 +1059,11 @@ private func userdata_gc(_ L: OpaquePointer!) -> Int32 {
     return 0
 }
 
-private func meta_gc(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func meta_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
 
     if let manager = watcherDeviceManager {
-        if manager.deviceCallbackRef != LUA_NOREF {
+        if manager.deviceCallbackRef != Int32(LUA_NOREF) {
             manager.deviceCallbackRef = skin.luaUnref(refTable, ref: manager.deviceCallbackRef)
         }
         manager.unwatchDevices()
@@ -1116,8 +1116,8 @@ private var module_metaLib: [luaL_Reg] = [
 // MARK: - Module entry point
 
 @_cdecl("luaopen_hs_libserial")
-public func luaopen_hs_libserial(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+public func luaopen_hs_libserial(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     refTable = skin.registerLibrary(withObject: USERDATA_TAG,
                                     functions: &moduleLib,
                                     metaFunctions: &module_metaLib,

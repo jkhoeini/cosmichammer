@@ -19,8 +19,8 @@ import IOKit
 ///
 /// Notes:
 ///  * The results will include IPv4 and IPv6 addresses
-private func hostAddresses(_ L: OpaquePointer!) -> Int32 {
-    guard let addresses = NSHost.current().addresses as [String]? else {
+private func hostAddresses(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    guard let addresses = Host.current().addresses as [String]? else {
         lua_pushnil(L)
         return 1
     }
@@ -49,8 +49,8 @@ private func hostAddresses(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * This function should be used sparingly, as it may involve blocking network access to resolve hostnames
-private func hostNames(_ L: OpaquePointer!) -> Int32 {
-    guard let names = NSHost.current().names as [String]? else {
+private func hostNames(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    guard let names = Host.current().names as [String]? else {
         lua_pushnil(L)
         return 1
     }
@@ -76,8 +76,8 @@ private func hostNames(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * A string containing the name of the current machine
-private func hostLocalizedName(_ L: OpaquePointer!) -> Int32 {
-    lua_pushstring(L, NSHost.current().localizedName)
+private func hostLocalizedName(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    lua_pushstring(L, Host.current().localizedName)
     return 1
 }
 
@@ -121,8 +121,8 @@ private func hostLocalizedName(_ L: OpaquePointer!) -> Int32 {
 ///  * The table returned has a __tostring() metamethod which allows listing it's contents in the Hammerspoon console by typing `hs.host.vmStats()`.
 ///  * Except for the addition of cacheHits, cacheLookups, pageSize and memSize, the results for this function should be identical to the OS X command `vm_stat`.
 ///  * Adapted primarily from the source code to Apple's vm_stat command located at http://www.opensource.apple.com/source/system_cmds/system_cmds-643.1.1/vm_stat.tproj/vm_stat.c
-private func hs_vmstat(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func hs_vmstat(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
 
     var mib: [Int32] = [CTL_HW, HW_PAGESIZE]
     var pagesize: UInt32 = 0
@@ -140,7 +140,7 @@ private func hs_vmstat(_ L: OpaquePointer!) -> Int32 {
         return 0
     }
 
-    var count = mach_msg_type_number_t(HOST_VM_INFO64_COUNT)
+    var count = mach_msg_type_number_t(MemoryLayout<vm_statistics64_data_t>.size / MemoryLayout<integer_t>.size)
     var vm_stat = vm_statistics64_data_t()
     let retVal = withUnsafeMutablePointer(to: &vm_stat) { ptr in
         ptr.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { intPtr in
@@ -235,8 +235,8 @@ private func hs_vmstat(_ L: OpaquePointer!) -> Int32 {
 ///  * Historically on Unix based systems, the `nice` cpu state represents processes for which the execution priority has been reduced to allow other higher priority processes access to more system resources.  The source code for the version of the [XNU Kernel](https://opensource.apple.com/source/xnu/xnu-3789.41.3/) currently provided by Apple (for macOS 10.12.3) shows this value as returned by the `host_processor_info` as hardcoded to 0.  For completeness, this value *is* included in the statistics returned by this function, but unless Apple makes a change in the future, it is not expected to provide any useful information.
 ///
 ///  * Adapted primarily from code found at http://stackoverflow.com/questions/6785069/get-cpu-percent-usage
-private func hs_cpuUsageTicks(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func hs_cpuUsageTicks(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TBREAK)
 
     var numCPUs: UInt32 = 0
@@ -311,7 +311,7 @@ private func hs_cpuUsageTicks(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * According to the OS X Developer documentation, "The operating system version string is human readable, localized, and is appropriate for displaying to the user. This string is not appropriate for parsing."
-private func hs_operatingSystemVersionString(_ L: OpaquePointer!) -> Int32 {
+private func hs_operatingSystemVersionString(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let pinfo = ProcessInfo.processInfo
     lua_pushstring(L, pinfo.operatingSystemVersionString)
     return 1
@@ -326,8 +326,8 @@ private func hs_operatingSystemVersionString(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * The system's thermal state as a human readable string
-private func hs_thermalStateString(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func hs_thermalStateString(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TBREAK)
 
     let state = ProcessInfo.processInfo.thermalState
@@ -358,7 +358,7 @@ private func hs_thermalStateString(_ L: OpaquePointer!) -> Int32 {
 ///  * Prior to 10.10 (Yosemite), there was no definitive way to reliably get an exact OS X version number without either mapping it to the Darwin kernel version, mapping it to the AppKitVersionNumber (the recommended method), or parsing the result of NSProcessingInfo's `operatingSystemVersionString` selector, which Apple states is not guaranteed to be reliably parsable.
 ///    * for OS X versions prior to 10.10, the version number is approximately determined by evaluating the AppKitVersionNumber.  For these operating systems, the `approximate` key is defined and set to true, as the exact patch level cannot be definitively determined.
 ///    * for OS X Versions starting at 10.10 and going forward, an exact value for the version number can be determined with NSProcessingInfo's `operatingSystemVersion` selector and the `exact` key is defined and set to true if this method is used.
-private func hs_operatingSystemVersion(_ L: OpaquePointer!) -> Int32 {
+private func hs_operatingSystemVersion(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let osv = ProcessInfo.processInfo.operatingSystemVersion
 
     lua_newtable(L)
@@ -382,7 +382,7 @@ private func hs_operatingSystemVersion(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * As of OS X 10.10.4, other than the default style, only "Dark" is recognized as a valid style.
-private func hs_interfaceStyle(_ L: OpaquePointer!) -> Int32 {
+private func hs_interfaceStyle(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     if let style = UserDefaults.standard.string(forKey: "AppleInterfaceStyle") {
         lua_pushstring(L, style)
     } else {
@@ -404,7 +404,7 @@ private func hs_interfaceStyle(_ L: OpaquePointer!) -> Int32 {
 /// Notes:
 ///  * See also `hs.host.globallyUniqueString`
 ///  * UUIDs (Universally Unique Identifiers), also known as GUIDs (Globally Unique Identifiers) or IIDs (Interface Identifiers), are 128-bit values. UUIDs created by NSUUID conform to RFC 4122 version 4 and are created with random bytes.
-private func hs_uuid(_ L: OpaquePointer!) -> Int32 {
+private func hs_uuid(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     lua_pushstring(L, UUID().uuidString)
     return 1
 }
@@ -423,7 +423,7 @@ private func hs_uuid(_ L: OpaquePointer!) -> Int32 {
 ///  * See also `hs.host.uuid`
 ///  * The global unique identifier for a process includes the host name, process ID, and a time stamp, which ensures that the ID is unique for the network. This property generates a new string each time it is invoked, and it uses a counter to guarantee that strings are unique.
 ///  * This is often used as a file or directory name in conjunction with `hs.host.temporaryDirectory()` when creating temporary files.
-private func hs_globallyUniqueString(_ L: OpaquePointer!) -> Int32 {
+private func hs_globallyUniqueString(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     lua_pushstring(L, ProcessInfo.processInfo.globallyUniqueString)
     return 1
 }
@@ -441,18 +441,18 @@ private func hs_globallyUniqueString(_ L: OpaquePointer!) -> Int32 {
 /// Notes:
 ///  * Idle time is defined as no mouse move nor keyboard entry, etc. and is determined by querying the HID (Human Interface Device) subsystem.
 ///  * This code is directly inspired by code found at http://www.xs-labs.com/en/archives/articles/iokit-idle-time/
-private func hs_idleTime(_ L: OpaquePointer!) -> Int32 {
+private func hs_idleTime(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     var ioPort: mach_port_t = 0
     var status = IOMainPort(mach_port_t(MACH_PORT_NULL), &ioPort)
     if status != KERN_SUCCESS {
-        luaL_error(L, "Error communicating with IOKit: %d", Int32(status))
+        luaL_error(L, "Error communicating with IOKit: \(status)")
         return 0
     }
 
     var ioIterator: io_iterator_t = 0
     status = IOServiceGetMatchingServices(ioPort, IOServiceMatching("IOHIDSystem"), &ioIterator)
     if status != KERN_SUCCESS {
-        luaL_error(L, "Error accessing IOHIDSystem: %d", Int32(status))
+        luaL_error(L, "Error accessing IOHIDSystem: \(status)")
         return 0
     }
 
@@ -467,7 +467,7 @@ private func hs_idleTime(_ L: OpaquePointer!) -> Int32 {
     status = IORegistryEntryCreateCFProperties(ioObject, &properties, kCFAllocatorDefault, 0)
     guard status == KERN_SUCCESS, let props = properties?.takeRetainedValue() as? [String: Any] else {
         IOObjectRelease(ioIterator)
-        luaL_error(L, "Cannot get system properties for IOHIDSystem: %d", Int32(status))
+        luaL_error(L, "Cannot get system properties for IOHIDSystem: \(status)")
         return 0
     }
 
@@ -523,8 +523,8 @@ private func hs_idleTime(_ L: OpaquePointer!) -> Int32 {
 ///   * NSURLVolumeLocalizedFormatDescriptionKey - Localized description of the volume
 /// * Not all keys will be present for all volumes
 /// * The meanings of NSURLVolumeIsEjectableKey and NSURLVolumeIsRemovableKey are not generally useful for determining if a drive is removable in the modern sense (e.g. a USB drive) as much of this terminology dates back to when USB didn't exist and removable drives were things like Floppy/DVD drives. If you're trying to determine if a drive is not fixed into the computer, you may need to use a combination of these keys, but which exact combination you should use, is not consistent across macOS versions.
-private func hs_volumeInformation(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func hs_volumeInformation(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
 
     let fileManager = FileManager.default
@@ -585,11 +585,11 @@ private func hs_volumeInformation(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * If your GPU reports -1.0 as the memory size, please submit an issue to the Hammerspoon github repository and include any information that you can which may be relevant, such as: Macintosh model, macOS version, is the GPU built in or a third party expansion card, the GPU model and VRAM as best you can determine (see the System Information application in the Utilities folder and look at the Graphics/Display section) and anything else that you think might be important.
-private func hs_vramSize(_ L: OpaquePointer!) -> Int32 {
+private func hs_vramSize(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     var iterator: io_iterator_t = 0
     let err = IOServiceGetMatchingServices(kIOMainPortDefault, IOServiceMatching("IOPCIDevice"), &iterator)
     if err != KERN_SUCCESS {
-        luaL_error(L, "IOServiceGetMatchingServices failed: %u", UInt32(err))
+        luaL_error(L, "IOServiceGetMatchingServices failed: \(err)")
         return 0
     }
 
@@ -652,20 +652,20 @@ private func hs_vramSize(_ L: OpaquePointer!) -> Int32 {
 
 // MARK: - C Callback Wrappers
 
-private let hostAddresses_C: @convention(c) (OpaquePointer?) -> Int32 = { L in hostAddresses(L) }
-private let hostNames_C: @convention(c) (OpaquePointer?) -> Int32 = { L in hostNames(L) }
-private let hostLocalizedName_C: @convention(c) (OpaquePointer?) -> Int32 = { L in hostLocalizedName(L) }
-private let hs_vmstat_C: @convention(c) (OpaquePointer?) -> Int32 = { L in hs_vmstat(L) }
-private let hs_cpuUsageTicks_C: @convention(c) (OpaquePointer?) -> Int32 = { L in hs_cpuUsageTicks(L) }
-private let hs_operatingSystemVersion_C: @convention(c) (OpaquePointer?) -> Int32 = { L in hs_operatingSystemVersion(L) }
-private let hs_operatingSystemVersionString_C: @convention(c) (OpaquePointer?) -> Int32 = { L in hs_operatingSystemVersionString(L) }
-private let hs_thermalStateString_C: @convention(c) (OpaquePointer?) -> Int32 = { L in hs_thermalStateString(L) }
-private let hs_interfaceStyle_C: @convention(c) (OpaquePointer?) -> Int32 = { L in hs_interfaceStyle(L) }
-private let hs_uuid_C: @convention(c) (OpaquePointer?) -> Int32 = { L in hs_uuid(L) }
-private let hs_globallyUniqueString_C: @convention(c) (OpaquePointer?) -> Int32 = { L in hs_globallyUniqueString(L) }
-private let hs_volumeInformation_C: @convention(c) (OpaquePointer?) -> Int32 = { L in hs_volumeInformation(L) }
-private let hs_idleTime_C: @convention(c) (OpaquePointer?) -> Int32 = { L in hs_idleTime(L) }
-private let hs_vramSize_C: @convention(c) (OpaquePointer?) -> Int32 = { L in hs_vramSize(L) }
+private let hostAddresses_C: @convention(c) (UnsafeMutablePointer<lua_State>?) -> Int32 = { L in hostAddresses(L) }
+private let hostNames_C: @convention(c) (UnsafeMutablePointer<lua_State>?) -> Int32 = { L in hostNames(L) }
+private let hostLocalizedName_C: @convention(c) (UnsafeMutablePointer<lua_State>?) -> Int32 = { L in hostLocalizedName(L) }
+private let hs_vmstat_C: @convention(c) (UnsafeMutablePointer<lua_State>?) -> Int32 = { L in hs_vmstat(L) }
+private let hs_cpuUsageTicks_C: @convention(c) (UnsafeMutablePointer<lua_State>?) -> Int32 = { L in hs_cpuUsageTicks(L) }
+private let hs_operatingSystemVersion_C: @convention(c) (UnsafeMutablePointer<lua_State>?) -> Int32 = { L in hs_operatingSystemVersion(L) }
+private let hs_operatingSystemVersionString_C: @convention(c) (UnsafeMutablePointer<lua_State>?) -> Int32 = { L in hs_operatingSystemVersionString(L) }
+private let hs_thermalStateString_C: @convention(c) (UnsafeMutablePointer<lua_State>?) -> Int32 = { L in hs_thermalStateString(L) }
+private let hs_interfaceStyle_C: @convention(c) (UnsafeMutablePointer<lua_State>?) -> Int32 = { L in hs_interfaceStyle(L) }
+private let hs_uuid_C: @convention(c) (UnsafeMutablePointer<lua_State>?) -> Int32 = { L in hs_uuid(L) }
+private let hs_globallyUniqueString_C: @convention(c) (UnsafeMutablePointer<lua_State>?) -> Int32 = { L in hs_globallyUniqueString(L) }
+private let hs_volumeInformation_C: @convention(c) (UnsafeMutablePointer<lua_State>?) -> Int32 = { L in hs_volumeInformation(L) }
+private let hs_idleTime_C: @convention(c) (UnsafeMutablePointer<lua_State>?) -> Int32 = { L in hs_idleTime(L) }
+private let hs_vramSize_C: @convention(c) (UnsafeMutablePointer<lua_State>?) -> Int32 = { L in hs_vramSize(L) }
 
 // MARK: - Module Registration
 
@@ -688,8 +688,8 @@ private let hostlib: [luaL_Reg] = [
 ]
 
 @_cdecl("luaopen_hs_libhost")
-public func luaopen_hs_libhost(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+public func luaopen_hs_libhost(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
 
     var lib = hostlib
     skin.registerLibrary("hs.host", functions: &lib, metaFunctions: nil)

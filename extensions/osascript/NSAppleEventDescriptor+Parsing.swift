@@ -54,7 +54,7 @@ extension NSArray {
         let numItems = desc.numberOfItems
 
         // for each item in the list, convert to Foundation object and add to the array
-        for itemIndex in 1...max(1, numItems) {
+        for itemIndex in 1...Swift.max(1, numItems) {
             guard itemIndex <= numItems else { break }
             let itemDesc = desc.atIndex(itemIndex)!
             if let objectValue = itemDesc.objectValue {

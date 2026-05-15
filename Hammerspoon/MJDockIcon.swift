@@ -1,46 +1,37 @@
 import Cocoa
 
-// MARK: - Dock Icon
-
-/// Set up the dock icon visibility from stored defaults.
-@objc func MJDockIconSetup() {
-    reflectDefaults()
+@_cdecl("MJDockIconSetup")
+func MJDockIconSetup() {
+    reflectDockDefaults()
 }
 
-/// Returns whether the dock icon is currently configured to be visible.
-@objc func MJDockIconVisible() -> Bool {
+@_cdecl("MJDockIconVisible")
+func MJDockIconVisible() -> Bool {
     UserDefaults.standard.bool(forKey: "MJShowDockIconKey")
 }
 
-/// Sets the dock icon visibility and applies the change immediately.
-@objc func MJDockIconSetVisible(_ visible: Bool) {
+@_cdecl("MJDockIconSetVisible")
+func MJDockIconSetVisible(_ visible: Bool) {
     UserDefaults.standard.set(visible, forKey: "MJShowDockIconKey")
-    reflectDefaults()
+    reflectDockDefaults()
 }
 
-// MARK: - Open Console on Dock Click
-
-/// Returns whether opening the console on dock icon click is enabled.
-@objc func HSOpenConsoleOnDockClickEnabled() -> Bool {
+@_cdecl("HSOpenConsoleOnDockClickEnabled")
+func HSOpenConsoleOnDockClickEnabled() -> Bool {
     UserDefaults.standard.bool(forKey: "HSOpenConsoleOnDockClickKey")
 }
 
-/// Sets whether opening the console on dock icon click is enabled.
-@objc func HSOpenConsoleOnDockClickSetEnabled(_ enabled: Bool) {
+@_cdecl("HSOpenConsoleOnDockClickSetEnabled")
+func HSOpenConsoleOnDockClickSetEnabled(_ enabled: Bool) {
     UserDefaults.standard.set(enabled, forKey: "HSOpenConsoleOnDockClickKey")
 }
 
-// MARK: - Private
-
-private func reflectDefaults() {
+private func reflectDockDefaults() {
     let app = NSApplication.shared
-    let currentPolicy = app.activationPolicy
+    let currentPolicy = app.activationPolicy()
     let targetPolicy: NSApplication.ActivationPolicy = MJDockIconVisible() ? .regular : .accessory
 
-    guard currentPolicy != targetPolicy else {
-        // No need to do anything, we already have the policy we want
-        return
-    }
+    guard currentPolicy != targetPolicy else { return }
 
     app.setActivationPolicy(targetPolicy)
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {

@@ -74,8 +74,8 @@ private func stringFromError(_ errorVal: UInt32) -> String? {
 }
 
 // Create an IOPM Assertion of specified type and store its ID in the specified variable
-private func caffeinate_create_assertion(_ L: OpaquePointer!, _ assertionType: CFString, _ assertionID: UnsafeMutablePointer<IOPMAssertionID>) {
-    let skin = LuaSkin.shared(withState: L)
+private func caffeinate_create_assertion(_ L: UnsafeMutablePointer<lua_State>!, _ assertionType: CFString, _ assertionID: UnsafeMutablePointer<IOPMAssertionID>) {
+    let skin = LuaSkin.skin(with: L)
 
     guard assertionID.pointee == 0 else { return }
 
@@ -83,9 +83,9 @@ private func caffeinate_create_assertion(_ L: OpaquePointer!, _ assertionType: C
         assertionType,
         "hs.caffeinate" as CFString,
         nil, nil, nil,
-        0,
+        0.0,
         nil,
-        &assertionID.pointee
+        assertionID
     )
 
     if result != kIOReturnSuccess {
@@ -94,8 +94,8 @@ private func caffeinate_create_assertion(_ L: OpaquePointer!, _ assertionType: C
 }
 
 // Release a previously stored assertion
-private func caffeinate_release_assertion(_ L: OpaquePointer!, _ assertionID: UnsafeMutablePointer<IOPMAssertionID>) {
-    let skin = LuaSkin.shared(withState: L)
+private func caffeinate_release_assertion(_ L: UnsafeMutablePointer<lua_State>!, _ assertionID: UnsafeMutablePointer<IOPMAssertionID>) {
+    let skin = LuaSkin.skin(with: L)
 
     guard assertionID.pointee != 0 else { return }
 
@@ -111,19 +111,19 @@ private func caffeinate_release_assertion(_ L: OpaquePointer!, _ assertionID: Un
 // MARK: - Functions for display sleep when user is idle
 
 // Prevent display sleep if the user goes idle (and by implication, system sleep)
-private func caffeinate_preventIdleDisplaySleep(_ L: OpaquePointer!) -> Int32 {
-    caffeinate_create_assertion(L, kIOPMAssertionTypePreventUserIdleDisplaySleep, &noIdleDisplaySleep)
+private func caffeinate_preventIdleDisplaySleep(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    caffeinate_create_assertion(L, kIOPMAssertionTypePreventUserIdleDisplaySleep as CFString, &noIdleDisplaySleep)
     return 0
 }
 
 // Allow display sleep if the user goes idle
-private func caffeinate_allowIdleDisplaySleep(_ L: OpaquePointer!) -> Int32 {
+private func caffeinate_allowIdleDisplaySleep(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     caffeinate_release_assertion(L, &noIdleDisplaySleep)
     return 0
 }
 
 // Determine if idle display sleep is currently prevented
-private func caffeinate_isIdleDisplaySleepPrevented(_ L: OpaquePointer!) -> Int32 {
+private func caffeinate_isIdleDisplaySleepPrevented(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     lua_pushboolean(L, noIdleDisplaySleep != 0 ? 1 : 0)
     return 1
 }
@@ -131,19 +131,19 @@ private func caffeinate_isIdleDisplaySleepPrevented(_ L: OpaquePointer!) -> Int3
 // MARK: - Functions for system sleep when user is idle
 
 // Prevent system sleep if the user goes idle (display may still sleep)
-private func caffeinate_preventIdleSystemSleep(_ L: OpaquePointer!) -> Int32 {
-    caffeinate_create_assertion(L, kIOPMAssertionTypePreventUserIdleSystemSleep, &noIdleSystemSleep)
+private func caffeinate_preventIdleSystemSleep(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    caffeinate_create_assertion(L, kIOPMAssertionTypePreventUserIdleSystemSleep as CFString, &noIdleSystemSleep)
     return 0
 }
 
 // Allow system sleep if the user goes idle
-private func caffeinate_allowIdleSystemSleep(_ L: OpaquePointer!) -> Int32 {
+private func caffeinate_allowIdleSystemSleep(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     caffeinate_release_assertion(L, &noIdleSystemSleep)
     return 0
 }
 
 // Determine if idle system sleep is currently prevented
-private func caffeinate_isIdleSystemSleepPrevented(_ L: OpaquePointer!) -> Int32 {
+private func caffeinate_isIdleSystemSleepPrevented(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     lua_pushboolean(L, noIdleSystemSleep != 0 ? 1 : 0)
     return 1
 }
@@ -151,16 +151,16 @@ private func caffeinate_isIdleSystemSleepPrevented(_ L: OpaquePointer!) -> Int32
 // MARK: - Functions for system sleep
 
 // Prevent system sleep
-private func caffeinate_preventSystemSleep(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func caffeinate_preventSystemSleep(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
 
     var acAndBattery = false
-    if lua_isboolean(L, 1) != 0 {
+    if lua_isboolean(L, 1) {
         acAndBattery = lua_toboolean(L, 1) != 0
     }
     lua_settop(L, 1)
 
-    caffeinate_create_assertion(L, kIOPMAssertionTypePreventSystemSleep, &noSystemSleep)
+    caffeinate_create_assertion(L, kIOPMAssertionTypePreventSystemSleep as CFString, &noSystemSleep)
 
     if noSystemSleep != 0 {
         let value: CFBoolean = acAndBattery ? kCFBooleanTrue : kCFBooleanFalse
@@ -178,13 +178,13 @@ private func caffeinate_preventSystemSleep(_ L: OpaquePointer!) -> Int32 {
 }
 
 // Allow system sleep
-private func caffeinate_allowSystemSleep(_ L: OpaquePointer!) -> Int32 {
+private func caffeinate_allowSystemSleep(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     caffeinate_release_assertion(L, &noSystemSleep)
     return 0
 }
 
 // Determine if system sleep is currently prevented
-private func caffeinate_isSystemSleepPrevented(_ L: OpaquePointer!) -> Int32 {
+private func caffeinate_isSystemSleepPrevented(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     lua_pushboolean(L, noSystemSleep != 0 ? 1 : 0)
     return 1
 }
@@ -198,7 +198,7 @@ private func caffeinate_isSystemSleepPrevented(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * None
-private func caffeinate_systemSleep(_ L: OpaquePointer!) -> Int32 {
+private func caffeinate_systemSleep(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let port = IOPMFindPowerManagement(UInt32(MACH_PORT_NULL))
     IOPMSleepSystem(port)
     IOServiceClose(port)
@@ -218,8 +218,8 @@ private func caffeinate_systemSleep(_ L: OpaquePointer!) -> Int32 {
 /// Notes:
 ///  * This is intended to simulate user activity, for example to prevent displays from sleeping, or to wake them up
 ///  * It is not mandatory to re-use assertion IDs if you are calling this function multiple times, but it is recommended that you do so if the calls are related
-private func caffeinate_declareUserActivity(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func caffeinate_declareUserActivity(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TNUMBER | LS_TINTEGER | LS_TNIL | LS_TOPTIONAL, LS_TBREAK)
 
     var assertionID = IOPMAssertionID(kIOPMNullAssertionID)
@@ -245,8 +245,8 @@ private func caffeinate_declareUserActivity(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * This function uses private Apple APIs and could therefore stop working in any given release of macOS without warning.
-private func caffeinate_lockScreen(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func caffeinate_lockScreen(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TBREAK)
 
     // Load the private API we need to call SACLockScreenImmediate()
@@ -284,8 +284,8 @@ private func caffeinate_lockScreen(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * The keys in this dictionary will vary based on the current state of the system (e.g. local vs VNC login, screen locked vs unlocked).
-private func caffeinate_sessionProperties(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func caffeinate_sessionProperties(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TBREAK)
 
     guard let ref = CGSessionCopyCurrentDictionary() else {
@@ -306,8 +306,8 @@ private func caffeinate_sessionProperties(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * A table containing information about current power assertions, with process IDs (PID) as the keys, each of which may contain multiple assertions
-private func caffeinate_currentAssertions(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func caffeinate_currentAssertions(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TBREAK)
 
     var assertions: Unmanaged<CFDictionary>?
@@ -328,23 +328,20 @@ private func caffeinate_currentAssertions(_ L: OpaquePointer!) -> Int32 {
 
 // MARK: - Lua/hs glue
 
-private func caffeinate_gc(_ L: OpaquePointer!) -> Int32 {
+private func caffeinate_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     // TODO: We should register which of the assertions we have active, somewhere that persists a reload()
     _ = caffeinate_allowIdleDisplaySleep(L)
     _ = caffeinate_allowIdleSystemSleep(L)
     _ = caffeinate_allowSystemSleep(L)
 
-    if let framework = loginFramework {
-        CFRelease(framework)
-        loginFramework = nil
-    }
+    loginFramework = nil
 
     return 0
 }
 
 // MARK: - Module registration
 
-private let caffeinatelib: [luaL_Reg] = [
+private var caffeinatelib: [luaL_Reg] = [
     luaL_Reg(name: strdup("preventIdleDisplaySleep"), func: caffeinate_preventIdleDisplaySleep),
     luaL_Reg(name: strdup("allowIdleDisplaySleep"), func: caffeinate_allowIdleDisplaySleep),
     luaL_Reg(name: strdup("isIdleDisplaySleepPrevented"), func: caffeinate_isIdleDisplaySleepPrevented),
@@ -368,14 +365,14 @@ private let caffeinatelib: [luaL_Reg] = [
     luaL_Reg(name: nil, func: nil),
 ]
 
-private let metalib: [luaL_Reg] = [
+private var metalib: [luaL_Reg] = [
     luaL_Reg(name: strdup("__gc"), func: caffeinate_gc),
     luaL_Reg(name: nil, func: nil),
 ]
 
 @_cdecl("luaopen_hs_libcaffeinate")
-public func luaopen_hs_libcaffeinate(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
-    skin.registerLibrary("hs.caffeinate", functions: caffeinatelib, metaFunctions: metalib)
+public func luaopen_hs_libcaffeinate(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
+    skin.registerLibrary("hs.caffeinate", functions: &caffeinatelib, metaFunctions: &metalib)
     return 1
 }

@@ -15,7 +15,7 @@ private class HSDistNotWatcher: NSObject {
 
     @objc func callback(_ note: NSNotification) {
         guard fnRef != LUA_NOREF && fnRef != LUA_REFNIL else { return }
-        let skin = LuaSkin.shared(withState: nil)
+        let skin = LuaSkin.skin(with: nil)
         _lua_stackguard_entry(skin.l)
         skin.pushLuaRef(refTable, ref: fnRef)
         skin.pushNSObject(note.name.rawValue)
@@ -43,12 +43,12 @@ private class HSDistNotWatcher: NSObject {
 ///
 /// Notes:
 ///  * On Catalina and above, it is no longer possible to observe all notifications - the `name` parameter is effectively now required. See https://mjtsai.com/blog/2019/10/04/nsdistributednotificationcenter-no-longer-supports-nil-names/
-private func distnot_new(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func distnot_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TFUNCTION, LS_TSTRING | LS_TNIL | LS_TOPTIONAL, LS_TSTRING | LS_TNIL | LS_TOPTIONAL, LS_TBREAK)
 
-    let name: String? = lua_isnoneornil(L, 2) != 0 ? nil : (skin.toNSObject(atIndex: 2) as? String)
-    let obj: String? = lua_isnoneornil(L, 3) != 0 ? nil : (skin.toNSObject(atIndex: 3) as? String)
+    let name: String? = lua_isnoneornil(L, 2) ? nil : (skin.toNSObject(atIndex: 2) as? String)
+    let obj: String? = lua_isnoneornil(L, 3) ? nil : (skin.toNSObject(atIndex: 3) as? String)
 
     // Allocate userdata to store a pointer to the watcher
     let userData = lua_newuserdata(L, MemoryLayout<UnsafeMutableRawPointer>.size)!
@@ -82,12 +82,12 @@ private func distnot_new(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * None
-private func distnot_post(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func distnot_post(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING, LS_TSTRING | LS_TNIL | LS_TOPTIONAL, LS_TTABLE | LS_TNIL | LS_TOPTIONAL, LS_TBREAK)
 
-    let object: String? = lua_isnoneornil(L, 2) != 0 ? nil : (skin.toNSObject(atIndex: 2) as? String)
-    let userInfo: [AnyHashable: Any]? = lua_isnoneornil(L, 3) != 0 ? nil : (skin.toNSObject(atIndex: 3) as? [AnyHashable: Any])
+    let object: String? = lua_isnoneornil(L, 2) ? nil : (skin.toNSObject(atIndex: 2) as? String)
+    let userInfo: [AnyHashable: Any]? = lua_isnoneornil(L, 3) ? nil : (skin.toNSObject(atIndex: 3) as? [AnyHashable: Any])
 
     let center = DistributedNotificationCenter.default()
     let noteName = skin.toNSObject(atIndex: 1) as! String
@@ -110,8 +110,8 @@ private func distnot_post(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * The `hs.distributednotifications` object
-private func distnot_start(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func distnot_start(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
 
     let userData = lua_touserdata(L, 1)!.assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
@@ -140,8 +140,8 @@ private func distnot_start(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * The `hs.distributednotifications` object
-private func distnot_stop(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func distnot_stop(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
 
     let userData = lua_touserdata(L, 1)!.assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
@@ -157,8 +157,8 @@ private func distnot_stop(_ L: OpaquePointer!) -> Int32 {
 
 // MARK: - Hammerspoon Infrastructure
 
-private func userdata_tostring(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
 
     let userData = lua_touserdata(L, 1)!.assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
@@ -169,8 +169,8 @@ private func userdata_tostring(_ L: OpaquePointer!) -> Int32 {
     return 1
 }
 
-private func userdata_gc(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
 
     let userData = lua_touserdata(L, 1)!.assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
@@ -205,8 +205,8 @@ private var userdata_metaLib: [luaL_Reg] = [
 ]
 
 @_cdecl("luaopen_hs_libdistributednotifications")
-public func luaopen_hs_libdistributednotifications(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+public func luaopen_hs_libdistributednotifications(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     refTable = skin.registerLibrary(USERDATA_TAG, functions: &distributednotificationslib, metaFunctions: nil)
     skin.registerObject(USERDATA_TAG, objectFunctions: &userdata_metaLib)
 

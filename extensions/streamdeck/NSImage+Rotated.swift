@@ -38,7 +38,7 @@ extension NSImage {
         rot.rotate(byDegrees: CGFloat(adjustedDegrees))
         let center = NSAffineTransform()
         center.translateX(by: maxSize.width / 2.0, yBy: maxSize.height / 2.0)
-        rot.append(center)
+        rot.append(center as AffineTransform)
 
         let image = NSImage(size: maxSize)
         image.lockFocus()

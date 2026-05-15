@@ -57,11 +57,11 @@ func docSortFunction(_ a: NSString, _ b: NSString, _ context: UnsafeMutableRawPo
                 if aNumericParts.count > bNumericParts.count { return NSInteger(ComparisonResult.orderedDescending.rawValue) }
                 return NSInteger(ComparisonResult.orderedSame.rawValue)
             } else {
-                LuaSkin.logError("\(USERDATA_TAG).docSortFunction - error initializing 2nd regex: \(error?.localizedDescription ?? "unknown")")
+                (LuaSkin.shared() as! LuaSkin).logError("\(USERDATA_TAG).docSortFunction - error initializing 2nd regex: \(error?.localizedDescription ?? "unknown")")
             }
         }
     } else {
-        LuaSkin.logError("\(USERDATA_TAG).docSortFunction - error initializing regex: \(error?.localizedDescription ?? "unknown")")
+        (LuaSkin.shared() as! LuaSkin).logError("\(USERDATA_TAG).docSortFunction - error initializing regex: \(error?.localizedDescription ?? "unknown")")
     }
     return NSInteger(a.caseInsensitiveCompare(b as String).rawValue)
 }
@@ -73,8 +73,8 @@ private extension String {
     }
 }
 
-private func processRegisteredFile(_ L: OpaquePointer!, _ path: NSString) -> Bool {
-    let skin = LuaSkin.shared(withState: L)!
+private func processRegisteredFile(_ L: UnsafeMutablePointer<lua_State>!, _ path: NSString) -> Bool {
+    let skin = LuaSkin.skin(with: L)
 
     var error: NSError?
     var rawFile: Data?
@@ -189,7 +189,7 @@ private func processRegisteredFile(_ L: OpaquePointer!, _ path: NSString) -> Boo
     return true
 }
 
-private func findUnloadedDocumentationFiles(_ L: OpaquePointer!) {
+private func findUnloadedDocumentationFiles(_ L: UnsafeMutablePointer<lua_State>!) {
     for path in registeredFiles.allKeys {
         let entry = registeredFiles[path] as! NSMutableDictionary
         if entry["json"] == nil {
@@ -225,7 +225,7 @@ func getPosInTreeFor(_ target: NSString) -> NSMutableDictionary? {
             }
         }
     } else {
-        LuaSkin.logError("\(USERDATA_TAG).getPosInTreeFor - error initializing regex: \(error?.localizedDescription ?? "unknown")")
+        (LuaSkin.shared() as! LuaSkin).logError("\(USERDATA_TAG).getPosInTreeFor - error initializing regex: \(error?.localizedDescription ?? "unknown")")
     }
 
     return pos
@@ -234,8 +234,8 @@ func getPosInTreeFor(_ target: NSString) -> NSMutableDictionary? {
 // MARK: - Module Functions
 
 // documented in init.lua
-private func doc_help(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func doc_help(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING | LS_TNIL | LS_TOPTIONAL, LS_TBREAK)
     var identifier: NSString = ""
     if lua_gettop(L) == 1 && lua_type(L, 1) == LUA_TSTRING {
@@ -323,8 +323,8 @@ private func doc_help(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * this function just registers the documentation file; it won't actually be loaded and parsed until [hs.doc.help](#help) is invoked.
-private func doc_registerJSONFile(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func doc_registerJSONFile(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
     var path = skin.toNSObject(atIndex: 1) as! NSString
     let isSpoon = lua_gettop(L) > 1 ? lua_toboolean(L, 2) != 0 : false
@@ -332,7 +332,7 @@ private func doc_registerJSONFile(_ L: OpaquePointer!) -> Int32 {
     // some tricks used to figure out if the docs.json file exists duplicate final "/" before "docs.json"
     // so rather then track them all down, just adjust it here; otherwise we have two "different" paths
     // containing the same data and get a lot of duplicate entry warnings
-    path = ((path as String).standardizingPath as NSString).resolvingSymlinksInPath as NSString
+    path = (path.standardizingPath as NSString).resolvingSymlinksInPath as NSString
 
     if registeredFiles[path] != nil {
         lua_pushboolean(L, 0)
@@ -361,8 +361,8 @@ private func doc_registerJSONFile(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * This function requires the rebuilding of the entire documentation tree for all remaining registered files, so the next time help is queried with [hs.doc.help](#help), there may be a slight one-time delay.
-private func doc_unregisterJSONFile(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func doc_unregisterJSONFile(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING, LS_TBREAK)
     let path = skin.toNSObject(atIndex: 1) as! NSString
 
@@ -391,8 +391,8 @@ private func doc_unregisterJSONFile(_ L: OpaquePointer!) -> Int32 {
 }
 
 // documented in init.lua
-private func doc_registeredFiles(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func doc_registeredFiles(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
 
     let sortedPaths = (registeredFiles.allKeys as! [String]).sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
     skin.pushNSObject(sortedPaths as NSArray)
@@ -402,8 +402,8 @@ private func doc_registeredFiles(_ L: OpaquePointer!) -> Int32 {
 // MARK: - Internal Use Functions
 
 // returns list of children in documentTree for __index and __pairs of helper table for `help`
-private func internal_arrayOfChildren(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func internal_arrayOfChildren(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING | LS_TNIL | LS_TOPTIONAL, LS_TBREAK)
     var identifier: NSString = ""
     if lua_gettop(L) == 1 && lua_type(L, 1) == LUA_TSTRING {
@@ -425,8 +425,8 @@ private func internal_arrayOfChildren(_ L: OpaquePointer!) -> Int32 {
 }
 
 // used by doc_help and when json being rebuilt for hsdocs
-private func internal_loadRegisteredFiles(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func internal_loadRegisteredFiles(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TBREAK)
 
     findUnloadedDocumentationFiles(L)
@@ -434,8 +434,8 @@ private func internal_loadRegisteredFiles(_ L: OpaquePointer!) -> Int32 {
 }
 
 // used to register lua function to trigger `hs.watchable` change counter so hsdocs knows when doc files have been updated
-private func internal_registerTriggerFunction(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func internal_registerTriggerFunction(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TFUNCTION, LS_TBREAK)
 
     if refTriggerFn != LUA_NOREF && refTriggerFn != LUA_REFNIL {
@@ -449,23 +449,23 @@ private func internal_registerTriggerFunction(_ L: OpaquePointer!) -> Int32 {
 // MARK: - objectWrapper Constructors
 
 // returns objectWrapper for registeredFiles
-private func internal_registeredFiles(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
-    skin.pushNSObject(registeredFiles, withOptions: LS_WithObjectWrapper | LS_NSDescribeUnknownTypes)
+private func internal_registeredFiles(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
+    skin.pushNSObject(registeredFiles, withOptions: LS_NSConversionOptions.withObjectWrapper.rawValue | LS_NSConversionOptions.nsDescribeUnknownTypes.rawValue)
     return 1
 }
 
 // returns objectWrapper for documentationTree
-private func internal_documentationTree(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
-    skin.pushNSObject(documentationTree, withOptions: LS_WithObjectWrapper | LS_NSDescribeUnknownTypes)
+private func internal_documentationTree(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
+    skin.pushNSObject(documentationTree, withOptions: LS_NSConversionOptions.withObjectWrapper.rawValue | LS_NSConversionOptions.nsDescribeUnknownTypes.rawValue)
     return 1
 }
 
 // MARK: - Hammerspoon/Lua Infrastructure
 
-private func meta_gc(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func meta_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     refTriggerFn = skin.luaUnref(refTable, ref: refTriggerFn)
 
     // probably overkill, but lets just be official about it
@@ -497,8 +497,8 @@ private var module_metaLib: [luaL_Reg] = [
 ]
 
 @_cdecl("luaopen_hs_libdoc")
-public func luaopen_hs_libdoc(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+public func luaopen_hs_libdoc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     refTable = skin.registerLibrary(USERDATA_TAG, functions: &moduleLib, metaFunctions: &module_metaLib)
 
     registeredFiles = NSMutableDictionary()

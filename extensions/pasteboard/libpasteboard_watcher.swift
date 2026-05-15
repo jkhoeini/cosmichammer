@@ -16,12 +16,12 @@ private var pollingInterval: Double = 0.25
 private var sharedPasteboardTimerCount: Int = 0
 private var sharedPasteboardTimer: Timer?
 
-private func get_objectFromUserdata<T: AnyObject>(_ L: OpaquePointer!, _ idx: Int32, _ tag: String) -> T? {
+private func get_objectFromUserdata<T: AnyObject>(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32, _ tag: String) -> T? {
     guard let ptr = luaL_checkudata(L, idx, tag) else { return nil }
     return Unmanaged<T>.fromOpaque(ptr.load(as: UnsafeRawPointer.self)).takeUnretainedValue()
 }
 
-private func get_objectFromUserdata_transfer<T: AnyObject>(_ L: OpaquePointer!, _ idx: Int32, _ tag: String) -> T? {
+private func get_objectFromUserdata_transfer<T: AnyObject>(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32, _ tag: String) -> T? {
     guard let ptr = luaL_checkudata(L, idx, tag) else { return nil }
     return Unmanaged<T>.fromOpaque(ptr.load(as: UnsafeRawPointer.self)).takeRetainedValue()
 }
@@ -29,7 +29,7 @@ private func get_objectFromUserdata_transfer<T: AnyObject>(_ L: OpaquePointer!, 
 class HSPasteboardTimer: NSObject {
     var t: Timer?
     var pbName: String?
-    var fnRef: Int = LUA_NOREF
+    var fnRef: Int32 = LUA_NOREF
     var changeCount: Int = 0
     var isRunning: Bool = false
 
@@ -59,8 +59,8 @@ class HSPasteboardTimer: NSObject {
         changeCount = currentChangeCount
 
         // Trigger Lua Callback Function:
-        let skin = LuaSkin.shared(withState: nil)
-        let L = skin.L!
+        let skin = LuaSkin.skin(with: nil)
+        let L = skin.l!
         _lua_stackguard_entry(L)
 
         skin.pushLuaRef(refTable, ref: fnRef)
@@ -73,7 +73,7 @@ class HSPasteboardTimer: NSObject {
         }
 
         if !skin.protectedCallAndTraceback(1, nresults: 0) {
-            let errorMsg = String(cString: lua_tostring(L, -1))
+            let errorMsg = String(cString: lua_tostring(L, -1)!)
             skin.logBreadcrumb("hs.pasteboard.watcher callback error: \(errorMsg)")
             skin.logError("hs.pasteboard.watcher callback error: \(errorMsg)")
             lua_pop(L, 1) // clear error message from stack
@@ -171,8 +171,8 @@ class HSPasteboardTimer: NSObject {
 ///  specialPBWatcher = hs.pasteboard.watcher.new(function(v) print(string.format("Special Pasteboard Contents: %s", v)) end, "special")
 ///  hs.pasteboard.writeObjects("This is on the general pasteboard.")
 ///  hs.pasteboard.writeObjects("This is on the special pasteboard.", "special")```
-private func pasteboardwatcher_new(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func pasteboardwatcher_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TFUNCTION, LS_TSTRING | LS_TOPTIONAL, LS_TBREAK)
 
     let pbName = skin.toNSObject(atIndex: 2) as? String
@@ -207,8 +207,8 @@ private func pasteboardwatcher_new(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * The `hs.pasteboard.watcher` object
-private func pasteboardwatcher_start(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func pasteboardwatcher_start(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
 
     let timer: HSPasteboardTimer? = get_objectFromUserdata(L, 1, USERDATA_TAG)
@@ -229,8 +229,8 @@ private func pasteboardwatcher_start(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * A boolean value indicating whether or not the timer is currently running.
-private func pasteboardwatcher_running(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func pasteboardwatcher_running(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let timer: HSPasteboardTimer? = get_objectFromUserdata(L, 1, USERDATA_TAG)
 
@@ -248,8 +248,8 @@ private func pasteboardwatcher_running(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * The `hs.pasteboard.watcher` object
-private func pasteboardwatcher_stop(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func pasteboardwatcher_stop(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let timer: HSPasteboardTimer? = get_objectFromUserdata(L, 1, USERDATA_TAG)
     lua_settop(L, 1)
@@ -273,8 +273,8 @@ private func pasteboardwatcher_stop(_ L: OpaquePointer!) -> Int32 {
 /// Notes:
 ///  * This only affects new watchers, not existing/running ones.
 ///  * The default value is 0.25.
-private func pasteboardwatcher_interval(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func pasteboardwatcher_interval(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TNUMBER | LS_TOPTIONAL, LS_TBREAK)
     if lua_gettop(L) == 1 {
         pollingInterval = lua_tonumber(L, 1)
@@ -283,8 +283,8 @@ private func pasteboardwatcher_interval(_ L: OpaquePointer!) -> Int32 {
     return 1
 }
 
-private func pasteboardwatcher_gc(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func pasteboardwatcher_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     let timer: HSPasteboardTimer? = get_objectFromUserdata_transfer(L, 1, USERDATA_TAG)
 
     if let timer = timer {
@@ -301,7 +301,7 @@ private func pasteboardwatcher_gc(_ L: OpaquePointer!) -> Int32 {
     return 0
 }
 
-private func meta_gc(_ L: OpaquePointer!) -> Int32 {
+private func meta_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     if let timer = sharedPasteboardTimer {
         timer.invalidate()
         sharedPasteboardTimer = nil
@@ -309,8 +309,8 @@ private func meta_gc(_ L: OpaquePointer!) -> Int32 {
     return 0
 }
 
-private func userdata_tostring(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let timer: HSPasteboardTimer? = get_objectFromUserdata(L, 1, USERDATA_TAG)
 
@@ -350,8 +350,8 @@ private let meta_gcLib: [luaL_Reg] = [
 ]
 
 @_cdecl("luaopen_hs_libpasteboardwatcher")
-public func luaopen_hs_libpasteboardwatcher(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+public func luaopen_hs_libpasteboardwatcher(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     refTable = skin.registerLibrary(USERDATA_TAG, functions: pasteboardWatcher_lib, metaFunctions: meta_gcLib)
     skin.registerObject(USERDATA_TAG, objectFunctions: pasteboardWatcher_metalib)
     return 1

@@ -3,24 +3,24 @@ import Cocoa
 private var statusItem: NSStatusItem?
 private var menuItemMenu: NSMenu?
 
-/// Set up the menu bar icon with the given menu.
-@objc func MJMenuIconSetup(_ menu: NSMenu) {
+@_cdecl("MJMenuIconSetup")
+func MJMenuIconSetup(_ menu: NSMenu) {
     menuItemMenu = menu
-    reflectDefaults()
+    reflectMenuDefaults()
 }
 
-/// Whether the menu bar icon is currently visible (per user defaults).
-@objc func MJMenuIconVisible() -> Bool {
+@_cdecl("MJMenuIconVisible")
+func MJMenuIconVisible() -> Bool {
     UserDefaults.standard.bool(forKey: "MJShowMenuIconKey")
 }
 
-/// Show or hide the menu bar icon and persist the choice.
-@objc func MJMenuIconSetVisible(_ visible: Bool) {
+@_cdecl("MJMenuIconSetVisible")
+func MJMenuIconSetVisible(_ visible: Bool) {
     UserDefaults.standard.set(visible, forKey: "MJShowMenuIconKey")
-    reflectDefaults()
+    reflectMenuDefaults()
 }
 
-private func reflectDefaults() {
+private func reflectMenuDefaults() {
     if MJMenuIconVisible() {
         guard let icon = NSImage(named: "statusicon") else { return }
         icon.isTemplate = true

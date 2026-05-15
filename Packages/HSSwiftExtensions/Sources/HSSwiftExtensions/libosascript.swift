@@ -1,0 +1,1 @@
+../../../../extensions/osascript/libosascript.swift

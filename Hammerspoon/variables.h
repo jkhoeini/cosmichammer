@@ -8,4 +8,6 @@
 #define HSConsoleDarkModeKey         @"HSConsoleDarkModeKey"
 #define HSPreferencesDarkModeKey     @"HSPreferencesDarkModeKey"
 
-extern NSString* MJConfigFile;
+extern NSString* MJConfigFileGet(void);
+extern void MJConfigFileSet(NSString* path);
+#define MJConfigFile MJConfigFileGet()

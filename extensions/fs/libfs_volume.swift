@@ -58,7 +58,7 @@ private class VolumeWatcher: NSObject {
 
     // Call the lua callback function and pass the event type and info dict.
     func callback(_ dict: [AnyHashable: Any], withEvent event: VolumeEvent) {
-        let skin = LuaSkin.shared(withState: nil)
+        let skin = LuaSkin.skin(with: nil)
         let L = skin.l
         _lua_stackguard_entry(L)
 
@@ -76,13 +76,13 @@ private class VolumeWatcher: NSObject {
             if let url = dict[NSWorkspace.volumeURLUserInfoKey] {
                 tableArg["path"] = url
             }
-            if let name = dict[NSWorkspace.volumeLocalizedNameUserInfoKey] {
+            if let name = dict[NSWorkspace.localizedVolumeNameUserInfoKey] {
                 tableArg["name"] = name
             }
-            if let oldURL = dict[NSWorkspace.volumeOldURLUserInfoKey] {
+            if let oldURL = dict[NSWorkspace.oldVolumeURLUserInfoKey] {
                 tableArg["oldPath"] = oldURL
             }
-            if let oldName = dict[NSWorkspace.volumeOldLocalizedNameUserInfoKey] {
+            if let oldName = dict[NSWorkspace.oldLocalizedVolumeNameUserInfoKey] {
                 tableArg["oldName"] = oldName
             }
         }
@@ -151,8 +151,8 @@ private func unregister_observer(_ observer: VolumeWatcher) {
 /// Returns:
 ///  * A boolean, true if the volume was ejected, otherwise false
 ///  * A string, empty if the volume was ejected, otherwise it will contain the error message
-private func volume_eject(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func volume_eject(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING, LS_TBREAK)
 
     let workspace = NSWorkspace.shared
@@ -181,8 +181,8 @@ private func volume_eject(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * An `hs.fs.volume` object
-private func volume_watcher_new(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func volume_watcher_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TFUNCTION, LS_TBREAK)
 
     let watcher = lua_newuserdata(L, MemoryLayout<VolumeWatcher_t>.size)!
@@ -209,8 +209,8 @@ private func volume_watcher_new(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * An `hs.fs.volume` object
-private func volume_watcher_start(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func volume_watcher_start(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
 
     let watcher = lua_touserdata(L, 1)!.assumingMemoryBound(to: VolumeWatcher_t.self)
@@ -235,8 +235,8 @@ private func volume_watcher_start(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * An `hs.fs.volume` object
-private func volume_watcher_stop(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func volume_watcher_stop(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
 
     let watcher = lua_touserdata(L, 1)!.assumingMemoryBound(to: VolumeWatcher_t.self)
@@ -253,8 +253,8 @@ private func volume_watcher_stop(_ L: OpaquePointer!) -> Int32 {
 }
 
 // Perform cleanup if the VolumeWatcher is not required anymore.
-private func volume_watcher_gc(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func volume_watcher_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
 
     let watcher = luaL_checkudata(L, 1, USERDATA_TAG)!.assumingMemoryBound(to: VolumeWatcher_t.self)
 
@@ -269,24 +269,24 @@ private func volume_watcher_gc(_ L: OpaquePointer!) -> Int32 {
     return 0
 }
 
-private func userdata_tostring(_ L: OpaquePointer!) -> Int32 {
-    let desc = String(format: "%s: (%p)", USERDATA_TAG, lua_topointer(L, 1)!)
+private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let desc = "\(USERDATA_TAG): (\(String(describing: lua_topointer(L, 1)!)))"
     lua_pushstring(L, desc)
     return 1
 }
 
-private func meta_gc(_ L: OpaquePointer!) -> Int32 {
+private func meta_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 0
 }
 
 // MARK: - Event enum helpers
 
-private func add_event_value(_ L: OpaquePointer!, _ value: VolumeEvent, _ name: String) {
+private func add_event_value(_ L: UnsafeMutablePointer<lua_State>!, _ value: VolumeEvent, _ name: String) {
     lua_pushinteger(L, lua_Integer(value.rawValue))
     lua_setfield(L, -2, name)
 }
 
-private func add_event_enum(_ L: OpaquePointer!) {
+private func add_event_enum(_ L: UnsafeMutablePointer<lua_State>!) {
     add_event_value(L, .didMount, "didMount")
     add_event_value(L, .didUnmount, "didUnmount")
     add_event_value(L, .willUnmount, "willUnmount")
@@ -320,8 +320,8 @@ private let metaGcLib: [luaL_Reg] = [
 // MARK: - Module entry point
 
 @_cdecl("luaopen_hs_libfsvolume")
-public func luaopen_hs_libfsvolume(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+public func luaopen_hs_libfsvolume(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     refTable = skin.registerLibrary(withObject: USERDATA_TAG,
                                     functions: appLib,
                                     metaFunctions: metaGcLib,

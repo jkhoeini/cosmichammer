@@ -54,7 +54,7 @@ class HSModuleNotificationManager: NSObject, NSUserNotificationCenterDelegate {
     func userNotificationCenter(_ center: NSUserNotificationCenter, didActivate notification: NSUserNotification) {
         // if it's ours, we've copied the necessary info into the userInfo dictionary...
         guard let gus = notification.userInfo?[KEY_ID] as? String else {
-            LuaSkin.logError(NSString(format: "%s passing off to original handler", USERDATA_TAG))
+            LuaSkin.skin(with: nil).logError("\(USERDATA_TAG) passing off to original handler")
             if let delegate = old_delegate, delegate.responds(to: #selector(NSUserNotificationCenterDelegate.userNotificationCenter(_:didActivate:))) {
                 delegate.userNotificationCenter?(center, didActivate: notification)
             }
@@ -68,13 +68,12 @@ class HSModuleNotificationManager: NSObject, NSUserNotificationCenterDelegate {
         let userInfo = ourNotificationSpecifics[gus] as! NSMutableDictionary
         userInfo[KEY_DELIVERED] = true // just in case its a holdover from before a reload/relaunch
 
-        let skin = LuaSkin.shared(withState: nil)!
-        let L = skin.L!
+        let skin = LuaSkin.skin(with: nil)
+        let L = skin.l!
 
         _lua_stackguard_entry(L)
         if !skin.requireModule(USERDATA_TAG) {
-            skin.logError(NSString(format: "%s:_didActivateNotification - unable to load tag handler: %s",
-                                   USERDATA_TAG, lua_tostring(L, -1)))
+            skin.logError("\(USERDATA_TAG):_didActivateNotification - unable to load tag handler: \(String(cString: lua_tostring(L, -1)!))")
             lua_pop(L, 1) // remove error message
             _lua_stackguard_exit(L)
             return
@@ -83,7 +82,7 @@ class HSModuleNotificationManager: NSObject, NSUserNotificationCenterDelegate {
         skin.pushNSObject(userInfo[KEY_FNTAG])
         skin.pushNSObject(notification)
 
-        if !skin.protectedCallAndError(NSString(format: "%s callback", USERDATA_TAG) as String, nargs: 2, nresults: 0) {
+        if !skin.protectedCallAndError("\(USERDATA_TAG) callback", nargs: 2, nresults: 0) {
             lua_pop(L, 1) // pop the hs.notify module
             _lua_stackguard_exit(L)
             return
@@ -101,7 +100,7 @@ class HSModuleNotificationManager: NSObject, NSUserNotificationCenterDelegate {
             NSUserNotificationCenter.default.removeDeliveredNotification(notification)
             NSUserNotificationCenter.default.removeScheduledNotification(notification)
         }
-        _lua_stackguard_exit(skin.L)
+        _lua_stackguard_exit(skin.l)
     }
 
     // Should notification show, even if we're the foremost application?
@@ -119,7 +118,7 @@ private func notification_delegate_setup() {
     // Get and store old (core app) delegate. If it hasn't been setup yet, do so.
     old_delegate = NSUserNotificationCenter.default.delegate
     if old_delegate == nil {
-        _ = MJUserNotificationManager.shared()
+        _ = MJUserNotificationManager.sharedManager
         old_delegate = NSUserNotificationCenter.default.delegate
     }
     // Create our delegate
@@ -137,7 +136,7 @@ private func date_from_string(_ dateString: String) -> Date? {
 
 // MARK: - Helper: get_objectFromUserdata
 
-private func getNotification(_ L: OpaquePointer!, _ idx: Int32) -> NSUserNotification {
+private func getNotification(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> NSUserNotification {
     let ptr = luaL_checkudata(L, idx, USERDATA_TAG)!
         .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
     return Unmanaged<NSUserNotification>.fromOpaque(ptr.pointee!).takeUnretainedValue()
@@ -158,7 +157,7 @@ private func getNotification(_ L: OpaquePointer!, _ idx: Int32) -> NSUserNotific
 /// Notes:
 ///  * This will withdraw all notifications for Hammerspoon, including those not sent by this module or that linger from a previous load of Hammerspoon.
 private let notification_withdraw_all: lua_CFunction = { L in
-    let skin = LuaSkin.shared(withState: L)!
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TBREAK)
     NSUserNotificationCenter.default.removeAllDeliveredNotifications()
     return 0
@@ -174,7 +173,7 @@ private let notification_withdraw_all: lua_CFunction = { L in
 /// Returns:
 ///  * None
 private let notification_withdraw_allScheduled: lua_CFunction = { L in
-    let skin = LuaSkin.shared(withState: L)!
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TBREAK)
     NSUserNotificationCenter.default.scheduledNotifications = []
     return 0
@@ -211,7 +210,7 @@ private let notification_withdraw_allScheduled: lua_CFunction = { L in
 /// end)
 /// ~~~
 private let notification_deliveredNotifications: lua_CFunction = { L in
-    let skin = LuaSkin.shared(withState: L)!
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TBREAK)
     let deliveredNotifications = NSUserNotificationCenter.default.deliveredNotifications
 
@@ -242,7 +241,7 @@ private let notification_deliveredNotifications: lua_CFunction = { L in
 ///
 ///  * You can use this function along with [hs.notify:getFunctionTag](#getFunctionTag) to re=register necessary callback functions with [hs.notify.register](#register) when Hammerspoon is restarted.
 private let notification_scheduledNotifications: lua_CFunction = { L in
-    let skin = LuaSkin.shared(withState: L)!
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TBREAK)
     skin.pushNSObject(NSUserNotificationCenter.default.scheduledNotifications as NSArray)
     return 1
@@ -253,7 +252,7 @@ private let notification_scheduledNotifications: lua_CFunction = { L in
 // Constructor
 // Returns a new notification object with the specified information and the assigned callback function.
 private let notification_new: lua_CFunction = { L in
-    let skin = LuaSkin.shared(withState: L)!
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING, LS_TBREAK)
     let gus = ProcessInfo.processInfo.globallyUniqueString
 
@@ -295,7 +294,7 @@ private let notification_new: lua_CFunction = { L in
 ///  * If a notification has been modified, then this will resend it.
 ///  * You can invoke this multiple times if you wish to repeat the same notification.
 private let notification_send: lua_CFunction = { L in
-    let skin = LuaSkin.shared(withState: L)!
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let notification = skin.toNSObject(atIndex: 1) as! NSUserNotification
 
@@ -326,21 +325,21 @@ private let notification_send: lua_CFunction = { L in
 ///  * See also hs.notify:send()
 ///  * hs.settings.dateFormat specifies a lua format string which can be used with `os.date()` to properly present the date and time as a string for use with this method.
 private let notification_scheduleNotification: lua_CFunction = { L in
-    let skin = LuaSkin.shared(withState: L)!
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING | LS_TNUMBER, LS_TBREAK)
     let notification = skin.toNSObject(atIndex: 1) as! NSUserNotification
 
     let myDate: Date?
-    if lua_isnumber(L, 2) != 0 {
+    if lua_isnumber(L, 2) {
         myDate = Date(timeIntervalSince1970: lua_tonumber(L, 2))
-    } else if lua_isstring(L, 2) != 0 {
-        myDate = date_from_string(String(cString: lua_tostring(L, 2)))
+    } else if lua_isstring(L, 2) {
+        myDate = date_from_string(String(cString: lua_tostring(L, 2)!))
     } else {
         myDate = nil
     }
 
     guard let date = myDate else {
-        return luaL_error(L, "-- %s:schedule: improper date specified: must be a number (# of seconds since 1970-01-01 00:00:00Z) or string in the format of 'YYYY-MM-DD[T]HH:MM:SS[Z]' (rfc3339)", USERDATA_TAG)
+        return luaL_error(L, "-- \(USERDATA_TAG):schedule: improper date specified: must be a number (# of seconds since 1970-01-01 00:00:00Z) or string in the format of 'YYYY-MM-DD[T]HH:MM:SS[Z]' (rfc3339)")
     }
     notification.deliveryDate = date
 
@@ -369,7 +368,7 @@ private let notification_scheduleNotification: lua_CFunction = { L in
 ///  * This method allows you to unlock a dispatched notification so that it can be modified and resent.
 ///  * if the notification was not created by this module, it will still be withdrawn if possible
 private let notification_withdraw: lua_CFunction = { L in
-    let skin = LuaSkin.shared(withState: L)!
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let notification = skin.toNSObject(atIndex: 1) as! NSUserNotification
 
@@ -404,7 +403,7 @@ private let notification_withdraw: lua_CFunction = { L in
 /// Returns:
 ///  * The notification object, if titleText is present; otherwise the current setting.
 private let notification_title: lua_CFunction = { L in
-    let skin = LuaSkin.shared(withState: L)!
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING | LS_TNIL | LS_TOPTIONAL, LS_TBREAK)
     let notification = skin.toNSObject(atIndex: 1) as! NSUserNotification
 
@@ -412,11 +411,11 @@ private let notification_title: lua_CFunction = { L in
     let userInfo = gus != nil ? ourNotificationSpecifics[gus!] as? NSMutableDictionary : nil
     let isLocked = (userInfo?[KEY_LOCKED] as? NSNumber)?.boolValue ?? false
 
-    if lua_isnone(L, 2) != 0 {
+    if lua_isnone(L, 2) {
         skin.pushNSObject(notification.title as NSString?)
     } else if let _ = gus {
         if !isLocked {
-            if lua_isnil(L, 2) != 0 {
+            if lua_isnil(L, 2) {
                 notification.title = ""
             } else {
                 notification.title = skin.toNSObject(atIndex: 2) as? String
@@ -441,7 +440,7 @@ private let notification_title: lua_CFunction = { L in
 /// Returns:
 ///  * The notification object, if subtitleText is present; otherwise the current setting.
 private let notification_subtitle: lua_CFunction = { L in
-    let skin = LuaSkin.shared(withState: L)!
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING | LS_TNIL | LS_TOPTIONAL, LS_TBREAK)
     let notification = skin.toNSObject(atIndex: 1) as! NSUserNotification
 
@@ -449,11 +448,11 @@ private let notification_subtitle: lua_CFunction = { L in
     let userInfo = gus != nil ? ourNotificationSpecifics[gus!] as? NSMutableDictionary : nil
     let isLocked = (userInfo?[KEY_LOCKED] as? NSNumber)?.boolValue ?? false
 
-    if lua_isnone(L, 2) != 0 {
+    if lua_isnone(L, 2) {
         skin.pushNSObject(notification.subtitle as NSString?)
     } else if let _ = gus {
         if !isLocked {
-            if lua_isnil(L, 2) != 0 {
+            if lua_isnil(L, 2) {
                 notification.subtitle = nil
             } else {
                 notification.subtitle = skin.toNSObject(atIndex: 2) as? String
@@ -478,7 +477,7 @@ private let notification_subtitle: lua_CFunction = { L in
 /// Returns:
 ///  * The notification object, if informativeText is present; otherwise the current setting.
 private let notification_informativeText: lua_CFunction = { L in
-    let skin = LuaSkin.shared(withState: L)!
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING | LS_TNIL | LS_TOPTIONAL, LS_TBREAK)
     let notification = skin.toNSObject(atIndex: 1) as! NSUserNotification
 
@@ -486,11 +485,11 @@ private let notification_informativeText: lua_CFunction = { L in
     let userInfo = gus != nil ? ourNotificationSpecifics[gus!] as? NSMutableDictionary : nil
     let isLocked = (userInfo?[KEY_LOCKED] as? NSNumber)?.boolValue ?? false
 
-    if lua_isnone(L, 2) != 0 {
+    if lua_isnone(L, 2) {
         skin.pushNSObject(notification.informativeText as NSString?)
     } else if let _ = gus {
         if !isLocked {
-            if lua_isnil(L, 2) != 0 {
+            if lua_isnil(L, 2) {
                 notification.informativeText = nil
             } else {
                 notification.informativeText = skin.toNSObject(atIndex: 2) as? String
@@ -519,7 +518,7 @@ private let notification_informativeText: lua_CFunction = { L in
 ///  * The affects of this method only apply if the user has set Hammerspoon notifications to `Alert` in the Notification Center pane of System Preferences
 ///  * This value is ignored if [hs.notify:hasReplyButton](#hasReplyButton) is true.
 private let notification_actionButtonTitle: lua_CFunction = { L in
-    let skin = LuaSkin.shared(withState: L)!
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING | LS_TNIL | LS_TOPTIONAL, LS_TBREAK)
     let notification = skin.toNSObject(atIndex: 1) as! NSUserNotification
 
@@ -527,11 +526,11 @@ private let notification_actionButtonTitle: lua_CFunction = { L in
     let userInfo = gus != nil ? ourNotificationSpecifics[gus!] as? NSMutableDictionary : nil
     let isLocked = (userInfo?[KEY_LOCKED] as? NSNumber)?.boolValue ?? false
 
-    if lua_isnone(L, 2) != 0 {
+    if lua_isnone(L, 2) {
         skin.pushNSObject(notification.actionButtonTitle as NSString?)
     } else if let _ = gus {
         if !isLocked {
-            if lua_isnil(L, 2) != 0 {
+            if lua_isnil(L, 2) {
                 notification.actionButtonTitle = ""
             } else {
                 notification.actionButtonTitle = skin.toNSObject(atIndex: 2) as? String ?? ""
@@ -560,7 +559,7 @@ private let notification_actionButtonTitle: lua_CFunction = { L in
 ///  * The affects of this method only apply if the user has set Hammerspoon notifications to `Alert` in the Notification Center pane of System Preferences
 ///  * Due to OSX limitations, it is NOT possible to get a callback for this button.
 private let notification_otherButtonTitle: lua_CFunction = { L in
-    let skin = LuaSkin.shared(withState: L)!
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING | LS_TNIL | LS_TOPTIONAL, LS_TBREAK)
     let notification = skin.toNSObject(atIndex: 1) as! NSUserNotification
 
@@ -568,11 +567,11 @@ private let notification_otherButtonTitle: lua_CFunction = { L in
     let userInfo = gus != nil ? ourNotificationSpecifics[gus!] as? NSMutableDictionary : nil
     let isLocked = (userInfo?[KEY_LOCKED] as? NSNumber)?.boolValue ?? false
 
-    if lua_isnone(L, 2) != 0 {
+    if lua_isnone(L, 2) {
         skin.pushNSObject(notification.otherButtonTitle as NSString?)
     } else if let _ = gus {
         if !isLocked {
-            if lua_isnil(L, 2) != 0 {
+            if lua_isnil(L, 2) {
                 notification.otherButtonTitle = ""
             } else {
                 notification.otherButtonTitle = skin.toNSObject(atIndex: 2) as? String ?? ""
@@ -600,7 +599,7 @@ private let notification_otherButtonTitle: lua_CFunction = { L in
 /// Notes:
 ///  * The affects of this method only apply if the user has set Hammerspoon notifications to `Alert` in the Notification Center pane of System Preferences
 private let notification_hasActionButton: lua_CFunction = { L in
-    let skin = LuaSkin.shared(withState: L)!
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
     let notification = skin.toNSObject(atIndex: 1) as! NSUserNotification
 
@@ -608,7 +607,7 @@ private let notification_hasActionButton: lua_CFunction = { L in
     let userInfo = gus != nil ? ourNotificationSpecifics[gus!] as? NSMutableDictionary : nil
     let isLocked = (userInfo?[KEY_LOCKED] as? NSNumber)?.boolValue ?? false
 
-    if lua_isnone(L, 2) != 0 {
+    if lua_isnone(L, 2) {
         lua_pushboolean(L, notification.hasActionButton ? 1 : 0)
     } else if let _ = gus {
         if !isLocked {
@@ -639,7 +638,7 @@ private let notification_hasActionButton: lua_CFunction = { L in
 ///
 ///  * if the notification was not created by this module, this method will return nil
 private let notification_alwaysPresent: lua_CFunction = { L in
-    let skin = LuaSkin.shared(withState: L)!
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
     let notification = skin.toNSObject(atIndex: 1) as! NSUserNotification
 
@@ -647,7 +646,7 @@ private let notification_alwaysPresent: lua_CFunction = { L in
     let userInfo = gus != nil ? ourNotificationSpecifics[gus!] as? NSMutableDictionary : nil
     let isLocked = (userInfo?[KEY_LOCKED] as? NSNumber)?.boolValue ?? false
 
-    if lua_isnone(L, 2) != 0 {
+    if lua_isnone(L, 2) {
         if gus != nil {
             let alwaysPresent = (userInfo?[KEY_ALWAYSPRESENT] as? NSNumber)?.boolValue ?? true
             lua_pushboolean(L, alwaysPresent ? 1 : 0)
@@ -656,7 +655,7 @@ private let notification_alwaysPresent: lua_CFunction = { L in
         }
     } else if let _ = gus {
         if !isLocked {
-            userInfo![KEY_ALWAYSPRESENT] = lua_toboolean(L, 2) != 0
+            userInfo![KEY_ALWAYSPRESENT] = lua_toboolean(L, 2)
             lua_pushvalue(L, 1)
         } else {
             return luaL_error(L, "notification has been dispatched and can no longer be modified")
@@ -682,7 +681,7 @@ private let notification_alwaysPresent: lua_CFunction = { L in
 ///
 ///  * if the notification was not created by this module, this method will return nil
 private let notification_getFunctionTag: lua_CFunction = { L in
-    let skin = LuaSkin.shared(withState: L)!
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let notification = skin.toNSObject(atIndex: 1) as! NSUserNotification
 
@@ -711,7 +710,7 @@ private let notification_getFunctionTag: lua_CFunction = { L in
 ///
 ///  * if the notification was not created by this module, this method will return nil
 private let notification_autoWithdraw: lua_CFunction = { L in
-    let skin = LuaSkin.shared(withState: L)!
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
     let notification = skin.toNSObject(atIndex: 1) as! NSUserNotification
 
@@ -719,7 +718,7 @@ private let notification_autoWithdraw: lua_CFunction = { L in
     let userInfo = gus != nil ? ourNotificationSpecifics[gus!] as? NSMutableDictionary : nil
     let isLocked = (userInfo?[KEY_LOCKED] as? NSNumber)?.boolValue ?? false
 
-    if lua_isnone(L, 2) != 0 {
+    if lua_isnone(L, 2) {
         if gus != nil {
             let autoWithdraw = (userInfo?[KEY_AUTOWITHDRAW] as? NSNumber)?.boolValue ?? true
             lua_pushboolean(L, autoWithdraw ? 1 : 0)
@@ -728,7 +727,7 @@ private let notification_autoWithdraw: lua_CFunction = { L in
         }
     } else if let _ = gus {
         if !isLocked {
-            userInfo![KEY_AUTOWITHDRAW] = lua_toboolean(L, 2) != 0
+            userInfo![KEY_AUTOWITHDRAW] = lua_toboolean(L, 2)
             lua_pushvalue(L, 1)
         } else {
             return luaL_error(L, "notification has been dispatched and can no longer be modified")
@@ -756,7 +755,7 @@ private let notification_autoWithdraw: lua_CFunction = { L in
 ///   * `/Network/Sounds`
 ///   * `/System/Library/Sounds`
 private let notification_soundName: lua_CFunction = { L in
-    let skin = LuaSkin.shared(withState: L)!
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING | LS_TNIL | LS_TOPTIONAL, LS_TBREAK)
     let notification = skin.toNSObject(atIndex: 1) as! NSUserNotification
 
@@ -764,11 +763,11 @@ private let notification_soundName: lua_CFunction = { L in
     let userInfo = gus != nil ? ourNotificationSpecifics[gus!] as? NSMutableDictionary : nil
     let isLocked = (userInfo?[KEY_LOCKED] as? NSNumber)?.boolValue ?? false
 
-    if lua_isnone(L, 2) != 0 {
+    if lua_isnone(L, 2) {
         skin.pushNSObject(notification.soundName as NSString?)
     } else if let _ = gus {
         if !isLocked {
-            if lua_isnil(L, 2) != 0 {
+            if lua_isnil(L, 2) {
                 notification.soundName = nil
             } else {
                 notification.soundName = skin.toNSObject(atIndex: 2) as? String
@@ -785,7 +784,7 @@ private let notification_soundName: lua_CFunction = { L in
 
 // NOTE: THIS FUNCTION IS WRAPPED IN init.lua
 private let notification_contentImage: lua_CFunction = { L in
-    let skin = LuaSkin.shared(withState: L)!
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK | LS_TVARARG)
     let notification = skin.toNSObject(atIndex: 1) as! NSUserNotification
 
@@ -793,7 +792,7 @@ private let notification_contentImage: lua_CFunction = { L in
     let userInfo = gus != nil ? ourNotificationSpecifics[gus!] as? NSMutableDictionary : nil
     let isLocked = (userInfo?[KEY_LOCKED] as? NSNumber)?.boolValue ?? false
 
-    if lua_isnone(L, 2) != 0 {
+    if lua_isnone(L, 2) {
         skin.pushNSObject(notification.contentImage)
     } else if let _ = gus {
         if !isLocked {
@@ -811,7 +810,7 @@ private let notification_contentImage: lua_CFunction = { L in
 
 // NOTE: THIS FUNCTION IS WRAPPED IN init.lua
 private let notification_setIdImage: lua_CFunction = { L in
-    let skin = LuaSkin.shared(withState: L)!
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TUSERDATA, "hs.image", LS_TBOOLEAN, LS_TBREAK)
     let notification = skin.toNSObject(atIndex: 1) as! NSUserNotification
 
@@ -822,13 +821,13 @@ private let notification_setIdImage: lua_CFunction = { L in
     if let _ = gus {
         if !isLocked {
             let idImage = skin.toNSObject(atIndex: 2) as! NSImage
-            let hasBorder = lua_toboolean(L, 3) != 0
+            let hasBorder = lua_toboolean(L, 3)
 
             if notification.responds(to: Selector(("set_identityImage:"))) && notification.responds(to: Selector(("_identityImageHasBorder"))) {
                 notification.perform(Selector(("set_identityImage:")), with: idImage)
                 notification.setValue(hasBorder, forKey: "_identityImageHasBorder")
             } else {
-                skin.logInfo(NSString(format: "%s:setIdImage() is not supported on this machine or macOS version. Please file an issue", USERDATA_TAG))
+                skin.logInfo("\(USERDATA_TAG):setIdImage() is not supported on this machine or macOS version. Please file an issue")
             }
             lua_pushvalue(L, 1)
         } else {
@@ -855,7 +854,7 @@ private let notification_setIdImage: lua_CFunction = { L in
 ///  * [hs.notify:hasActionButton](#hasActionButton) must also be true or the "Reply" button will not be displayed.
 ///  * If this is set to true, the action button will be "Reply" even if you have set another one with [hs.notify:actionButtonTitle](#actionButtonTitle).
 private let notification_hasReplyButton: lua_CFunction = { L in
-    let skin = LuaSkin.shared(withState: L)!
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
     let notification = skin.toNSObject(atIndex: 1) as! NSUserNotification
 
@@ -863,7 +862,7 @@ private let notification_hasReplyButton: lua_CFunction = { L in
     let userInfo = gus != nil ? ourNotificationSpecifics[gus!] as? NSMutableDictionary : nil
     let isLocked = (userInfo?[KEY_LOCKED] as? NSNumber)?.boolValue ?? false
 
-    if lua_isnone(L, 2) != 0 {
+    if lua_isnone(L, 2) {
         lua_pushboolean(L, notification.hasReplyButton ? 1 : 0)
     } else if let _ = gus {
         if !isLocked {
@@ -893,7 +892,7 @@ private let notification_hasReplyButton: lua_CFunction = { L in
 ///  * [hs.notify:additionalActions](#additionalActions) must also be used for this method to have any effect.
 ///  * **WARNING:** This method uses a private API. It could break at any time. Please file an issue if it does.
 private let notification_alwaysShowAdditionalActions: lua_CFunction = { L in
-    let skin = LuaSkin.shared(withState: L)!
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
     let notification = skin.toNSObject(atIndex: 1) as! NSUserNotification
 
@@ -902,12 +901,12 @@ private let notification_alwaysShowAdditionalActions: lua_CFunction = { L in
     let isLocked = (userInfo?[KEY_LOCKED] as? NSNumber)?.boolValue ?? false
 
     if notification.responds(to: Selector(("_alwaysShowAlternateActionMenu"))) {
-        if lua_isnone(L, 2) != 0 {
+        if lua_isnone(L, 2) {
             let val = notification.value(forKey: "_alwaysShowAlternateActionMenu") as? Bool ?? false
             lua_pushboolean(L, val ? 1 : 0)
         } else if let _ = gus {
             if !isLocked {
-                notification.setValue(lua_toboolean(L, 2) != 0, forKey: "_alwaysShowAlternateActionMenu")
+                notification.setValue(lua_toboolean(L, 2), forKey: "_alwaysShowAlternateActionMenu")
                 lua_pushvalue(L, 1)
             } else {
                 return luaL_error(L, "notification has been dispatched and can no longer be modified")
@@ -916,7 +915,7 @@ private let notification_alwaysShowAdditionalActions: lua_CFunction = { L in
             return luaL_error(L, "notification was not created by this module")
         }
     } else {
-        skin.logInfo(NSString(format: "%s:alwaysShowAdditionalActions() is not supported on this machine or macOS version. Please file an issue", USERDATA_TAG))
+        skin.logInfo("\(USERDATA_TAG):alwaysShowAdditionalActions() is not supported on this machine or macOS version. Please file an issue")
     }
     return 1
 }
@@ -937,7 +936,7 @@ private let notification_alwaysShowAdditionalActions: lua_CFunction = { L in
 ///
 ///  * if the notification was not created by this module, this method will return nil
 private let notification_withdrawAfter: lua_CFunction = { L in
-    let skin = LuaSkin.shared(withState: L)!
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TNUMBER | LS_TOPTIONAL, LS_TBREAK)
     let notification = skin.toNSObject(atIndex: 1) as! NSUserNotification
 
@@ -945,7 +944,7 @@ private let notification_withdrawAfter: lua_CFunction = { L in
     let userInfo = gus != nil ? ourNotificationSpecifics[gus!] as? NSMutableDictionary : nil
     let isLocked = (userInfo?[KEY_LOCKED] as? NSNumber)?.boolValue ?? false
 
-    if lua_isnone(L, 2) != 0 {
+    if lua_isnone(L, 2) {
         if gus != nil {
             skin.pushNSObject(userInfo?[KEY_WITHDRAWAFTER])
         } else {
@@ -978,7 +977,7 @@ private let notification_withdrawAfter: lua_CFunction = { L in
 ///  * In macOS 10.13, this text appears so light that it is almost unreadable; so far no workaround has been found.
 ///  * See also [hs.notify:hasReplyButton](#hasReplyButton)
 private let notification_responsePlaceholder: lua_CFunction = { L in
-    let skin = LuaSkin.shared(withState: L)!
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING | LS_TNIL | LS_TOPTIONAL, LS_TBREAK)
     let notification = skin.toNSObject(atIndex: 1) as! NSUserNotification
 
@@ -986,11 +985,11 @@ private let notification_responsePlaceholder: lua_CFunction = { L in
     let userInfo = gus != nil ? ourNotificationSpecifics[gus!] as? NSMutableDictionary : nil
     let isLocked = (userInfo?[KEY_LOCKED] as? NSNumber)?.boolValue ?? false
 
-    if lua_isnone(L, 2) != 0 {
+    if lua_isnone(L, 2) {
         skin.pushNSObject(notification.responsePlaceholder as NSString?)
     } else if let _ = gus {
         if !isLocked {
-            if lua_isnil(L, 2) != 0 {
+            if lua_isnil(L, 2) {
                 notification.responsePlaceholder = ""
             } else {
                 notification.responsePlaceholder = skin.toNSObject(atIndex: 2) as? String
@@ -1019,7 +1018,7 @@ private let notification_responsePlaceholder: lua_CFunction = { L in
 ///  * [hs.notify:activationType](#activationType) will equal `hs.notify.activationTypes.replied` if the user clicked on the Reply button and then clicks on Send.
 ///  * See also [hs.notify:hasReplyButton](#hasReplyButton)
 private let notification_response: lua_CFunction = { L in
-    let skin = LuaSkin.shared(withState: L)!
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let notification = skin.toNSObject(atIndex: 1) as! NSUserNotification
 
@@ -1047,7 +1046,7 @@ private let notification_response: lua_CFunction = { L in
 ///  * If the user selects one of the additional actions, [hs.notify:activationType](#activationType) will equal `hs.notify.activationTypes.additionalActionClicked`
 ///  * See also [hs.notify:additionalActivationAction](#additionalActivationAction)
 private let notification_additionalActions: lua_CFunction = { L in
-    let skin = LuaSkin.shared(withState: L)!
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TTABLE | LS_TOPTIONAL, LS_TBREAK)
     let notification = skin.toNSObject(atIndex: 1) as! NSUserNotification
 
@@ -1060,7 +1059,7 @@ private let notification_additionalActions: lua_CFunction = { L in
         lua_newtable(L)
         if let actions = actions {
             for (i, action) in actions.enumerated() {
-                skin.pushNSObject(action.title as NSString)
+                skin.pushNSObject(action.title as NSString?)
                 lua_rawseti(L, -2, lua_Integer(i + 1))
             }
         }
@@ -1109,12 +1108,12 @@ private let notification_additionalActions: lua_CFunction = { L in
 ///  * If the user selects one of the additional actions, [hs.notify:activationType](#activationType) will equal `hs.notify.activationTypes.additionalActionClicked`
 ///  * See also [hs.notify:additionalActions](#additionalActions)
 private let notification_additionalActivationAction: lua_CFunction = { L in
-    let skin = LuaSkin.shared(withState: L)!
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let notification = skin.toNSObject(atIndex: 1) as! NSUserNotification
 
     if let action = notification.additionalActivationAction {
-        skin.pushNSObject(action.title as NSString)
+        skin.pushNSObject(action.title as NSString?)
     } else {
         lua_pushnil(L)
     }
@@ -1134,7 +1133,7 @@ private let notification_additionalActivationAction: lua_CFunction = { L in
 /// Notes:
 ///  * Examples of why the users Notification Center would choose not to display a notification would be if Hammerspoon is the currently focussed application, being attached to a projector, or the user having set Do Not Disturb.
 private let notification_presented: lua_CFunction = { L in
-    let skin = LuaSkin.shared(withState: L)!
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let notification = skin.toNSObject(atIndex: 1) as! NSUserNotification
 
@@ -1152,7 +1151,7 @@ private let notification_presented: lua_CFunction = { L in
 /// Returns:
 ///  * A boolean indicating whether the notification has been delivered to the users Notification Center
 private let notification_delivered: lua_CFunction = { L in
-    let skin = LuaSkin.shared(withState: L)!
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let notification = skin.toNSObject(atIndex: 1) as! NSUserNotification
 
@@ -1177,7 +1176,7 @@ private let notification_delivered: lua_CFunction = { L in
 /// Returns:
 ///  * the integer value corresponding to how the notification was activated by the user.  See the table `hs.notify.activationTypes[]` for more information.
 private let notification_activationType: lua_CFunction = { L in
-    let skin = LuaSkin.shared(withState: L)!
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let notification = skin.toNSObject(atIndex: 1) as! NSUserNotification
 
@@ -1198,7 +1197,7 @@ private let notification_activationType: lua_CFunction = { L in
 /// Notes:
 ///  * You can turn epoch times into a human readable string or a table of date elements with the `os.date()` function.
 private let notification_actualDeliveryDate: lua_CFunction = { L in
-    let skin = LuaSkin.shared(withState: L)!
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let notification = skin.toNSObject(atIndex: 1) as! NSUserNotification
 
@@ -1208,7 +1207,7 @@ private let notification_actualDeliveryDate: lua_CFunction = { L in
 
 #if DEBUG
 private let showMyDict: lua_CFunction = { L in
-    let skin = LuaSkin.shared(withState: L)!
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
     let notification = skin.toNSObject(atIndex: 1) as! NSUserNotification
 
@@ -1226,7 +1225,7 @@ private let showMyDict: lua_CFunction = { L in
 
 // MARK: - Module Constants
 
-private func notification_activationTypesTable(_ L: OpaquePointer!) -> Int32 {
+private func notification_activationTypesTable(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.notify.activationTypes[]
 /// Constant
 /// Convenience array of the possible activation types for a notification, and their reverse for reference.
@@ -1256,7 +1255,7 @@ private func notification_activationTypesTable(_ L: OpaquePointer!) -> Int32 {
 // These must not throw a lua error to ensure LuaSkin can safely be used from Objective-C
 // delegates and blocks.
 
-private func pushNSUserNotification(_ L: OpaquePointer!, _ obj: Any) -> Int32 {
+private func pushNSUserNotification(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any) -> Int32 {
     let value = obj as! NSUserNotification
 
     if let userInfoDict = value.userInfo {
@@ -1281,13 +1280,12 @@ private func pushNSUserNotification(_ L: OpaquePointer!, _ obj: Any) -> Int32 {
     return 1
 }
 
-private func toNSUserNotificationFromLua(_ L: OpaquePointer!, _ idx: Int32) -> Any? {
-    let skin = LuaSkin.shared(withState: L)!
+private func toNSUserNotificationFromLua(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> Any? {
+    let skin = LuaSkin.skin(with: L)
     if luaL_testudata(L, idx, USERDATA_TAG) != nil {
         return getNotification(L, idx)
     } else {
-        skin.logError(NSString(format: "expected %s object, found %s", USERDATA_TAG,
-                               lua_typename(L, lua_type(L, idx))))
+        skin.logError("expected \(USERDATA_TAG) object, found \(String(cString: lua_typename(L, lua_type(L, idx))!))")
     }
     return nil
 }
@@ -1295,10 +1293,11 @@ private func toNSUserNotificationFromLua(_ L: OpaquePointer!, _ idx: Int32) -> A
 // MARK: - Hammerspoon/Lua Infrastructure
 
 private let userdata_tostring: lua_CFunction = { L in
-    let skin = LuaSkin.shared(withState: L)!
-    let obj = skin.luaObjectAtIndex(1, toClass: "NSUserNotification") as! NSUserNotification
+    let skin = LuaSkin.skin(with: L)
+    let obj = skin.luaObject(at: 1, toClass: "NSUserNotification") as! NSUserNotification
     let title = obj.title ?? ""
-    skin.pushNSObject(NSString(format: "%s: %@ (%p)", USERDATA_TAG, title as NSString, lua_topointer(L, 1)))
+    let ptr = lua_topointer(L, 1)
+    skin.pushNSObject(NSString(string: "\(USERDATA_TAG): \(title) (\(String(describing: ptr)))"))
     return 1
 }
 
@@ -1306,9 +1305,9 @@ private let userdata_eq: lua_CFunction = { L in
     // can't get here if at least one of us isn't a userdata type, and we only care if both types are ours,
     // so use luaL_testudata before the macro causes a lua error
     if luaL_testudata(L, 1, USERDATA_TAG) != nil && luaL_testudata(L, 2, USERDATA_TAG) != nil {
-        let skin = LuaSkin.shared(withState: L)!
-        let obj1 = skin.luaObjectAtIndex(1, toClass: "NSUserNotification") as! NSUserNotification
-        let obj2 = skin.luaObjectAtIndex(2, toClass: "NSUserNotification") as! NSUserNotification
+        let skin = LuaSkin.skin(with: L)
+        let obj1 = skin.luaObject(at: 1, toClass: "NSUserNotification") as! NSUserNotification
+        let obj2 = skin.luaObject(at: 2, toClass: "NSUserNotification") as! NSUserNotification
         lua_pushboolean(L, obj1.isEqual(to: obj2) ? 1 : 0)
     } else {
         lua_pushboolean(L, 0)
@@ -1410,8 +1409,8 @@ private var module_metaLib: [luaL_Reg] = [
 ]
 
 @_cdecl("luaopen_hs_libnotify")
-public func luaopen_hs_libnotify(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+public func luaopen_hs_libnotify(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     refTable = skin.registerLibrary(withObject: USERDATA_TAG,
                                     functions: &moduleLib,
                                     metaFunctions: &module_metaLib,

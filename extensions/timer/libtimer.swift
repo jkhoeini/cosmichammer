@@ -15,21 +15,21 @@ class HSTimer: NSObject {
     var continueOnError: Bool = false
     var repeats: Bool = false
     var interval: TimeInterval = 0
-    var lsCanary: LSGCCanary = 0
+    var lsCanary: LSGCCanary = LSGCCanary()
 
     func create(_ interval: TimeInterval, repeat shouldRepeat: Bool) {
         t = Timer(timeInterval: interval, target: self, selector: #selector(callback(_:)), userInfo: nil, repeats: shouldRepeat)
     }
 
     @objc func callback(_ timer: Timer) {
-        let skin = LuaSkin.shared(withState: nil)
+        let skin = LuaSkin.skin(with: nil)
 
-        if !skin.checkGCCanary(lsCanary) {
+        if !skin.check(lsCanary) {
             stop()
             return
         }
 
-        let L = skin.L!
+        let L = skin.l!
         _lua_stackguard_entry(L)
 
         if !timer.isValid {
@@ -44,7 +44,7 @@ class HSTimer: NSObject {
 
         skin.pushLuaRef(refTable, ref: fnRef)
         if !skin.protectedCallAndTraceback(0, nresults: 0) {
-            let errorMsg = String(cString: lua_tostring(L, -1))
+            let errorMsg = String(cString: lua_tostring(L, -1)!)
             skin.logBreadcrumb("hs.timer callback error: \(errorMsg)")
             skin.logError("hs.timer callback error: \(errorMsg)")
             lua_pop(L, 1) // clear error message from stack
@@ -106,7 +106,7 @@ private func createHSTimer(_ interval: TimeInterval, callbackRef: Int32, continu
     timer.interval = interval
     timer.create(interval, repeat: shouldRepeat)
 
-    let skin = LuaSkin.shared(withState: nil)
+    let skin = LuaSkin.skin(with: nil)
     timer.lsCanary = skin.createGCCanary()
 
     return timer
@@ -114,12 +114,12 @@ private func createHSTimer(_ interval: TimeInterval, callbackRef: Int32, continu
 
 // MARK: - Helper to extract HSTimer from userdata
 
-private func getTimer(from L: OpaquePointer!, at idx: Int32) -> HSTimer {
+private func getTimer(from L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> HSTimer {
     let ptr = luaL_checkudata(L, idx, USERDATA_TAG)!
     return Unmanaged<HSTimer>.fromOpaque(ptr.assumingMemoryBound(to: UnsafeMutableRawPointer.self).pointee).takeUnretainedValue()
 }
 
-private func getTimerTransfer(from L: OpaquePointer!, at idx: Int32) -> HSTimer {
+private func getTimerTransfer(from L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> HSTimer {
     let ptr = luaL_checkudata(L, idx, USERDATA_TAG)!
     return Unmanaged<HSTimer>.fromOpaque(ptr.assumingMemoryBound(to: UnsafeMutableRawPointer.self).pointee).takeRetainedValue()
 }
@@ -142,8 +142,8 @@ private func getTimerTransfer(from L: OpaquePointer!, at idx: Int32) -> HSTimer 
 ///  * The returned object does not start its timer until its `:start()` method is called
 ///  * If `interval` is 0, the timer will not repeat (because if it did, it would be repeating as fast as your machine can manage, which seems generally unwise)
 ///  * For non-zero intervals, the lowest acceptable value for the interval is 0.00001s. Values >0 and <0.00001 will be coerced to 0.00001
-private func timer_new(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func timer_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TNUMBER, LS_TFUNCTION, LS_TBOOLEAN | LS_TNIL | LS_TOPTIONAL, LS_TBREAK)
 
     var sec = lua_tonumber(L, 1)
@@ -155,7 +155,7 @@ private func timer_new(_ L: OpaquePointer!) -> Int32 {
     let callbackRef = skin.luaRef(refTable)
 
     let continueOnError: Bool
-    if lua_isboolean(L, 3) != 0 {
+    if lua_isboolean(L, 3) {
         continueOnError = lua_toboolean(L, 3) != 0
     } else {
         continueOnError = false
@@ -187,8 +187,8 @@ private func timer_new(_ L: OpaquePointer!) -> Int32 {
 /// Notes:
 ///  * The timer will not call the callback immediately, the timer will wait until it fires
 ///  * If the callback function results in an error, the timer will be stopped to prevent repeated error notifications (see the `continueOnError` parameter to `hs.timer.new()` to override this)
-private func timer_start(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func timer_start(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
 
     let timer = getTimer(from: L, at: 1)
@@ -215,8 +215,8 @@ private func timer_start(_ L: OpaquePointer!) -> Int32 {
 /// Notes:
 ///  * There is no need to call `:start()` on the returned object, the timer will be already running.
 ///  * The callback can be cancelled by calling the `:stop()` method on the returned object before `sec` seconds have passed.
-private func timer_doAfter(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func timer_doAfter(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TNUMBER, LS_TFUNCTION, LS_TBREAK)
 
     let sec = lua_tonumber(L, 1)
@@ -249,8 +249,8 @@ private func timer_doAfter(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * Use of this function is strongly discouraged, as it blocks all main-thread execution in Hammerspoon. This means no hotkeys or events will be processed in that time, no GUI updates will happen, and no Lua will execute. This is only provided as a last resort, or for extremely short sleeps. For all other purposes, you really should be splitting up your code into multiple functions and calling `hs.timer.doAfter()`
-private func timer_usleep(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func timer_usleep(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TNUMBER, LS_TBREAK)
     let microsecs = useconds_t(lua_tointeger(L, 1))
     usleep(microsecs)
@@ -266,8 +266,8 @@ private func timer_usleep(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * A boolean value indicating whether or not the timer is currently running.
-private func timer_running(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func timer_running(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let timer = getTimer(from: L, at: 1)
 
@@ -289,8 +289,8 @@ private func timer_running(_ L: OpaquePointer!) -> Int32 {
 ///  * The return value may be a negative integer in two circumstances:
 ///   * Hammerspoon's runloop is backlogged and is catching up on missed timer triggers
 ///   * The timer object is not currently running. In this case, the return value of this method is the number of seconds since the last firing (you can check if the timer is running or not, with `hs.timer:running()`
-private func timer_nextTrigger(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func timer_nextTrigger(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let timer = getTimer(from: L, at: 1)
 
@@ -310,8 +310,8 @@ private func timer_nextTrigger(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * If the timer is not already running, this will start it
-private func timer_setNextTrigger(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func timer_setNextTrigger(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TNUMBER, LS_TBREAK)
     let timer = getTimer(from: L, at: 1)
 
@@ -339,8 +339,8 @@ private func timer_setNextTrigger(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * This cannot be used on a timer which has already stopped running
-private func timer_trigger(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func timer_trigger(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let timer = getTimer(from: L, at: 1)
 
@@ -359,8 +359,8 @@ private func timer_trigger(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * The `hs.timer` object
-private func timer_stop(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func timer_stop(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let timer = getTimer(from: L, at: 1)
     lua_settop(L, 1)
@@ -370,8 +370,8 @@ private func timer_stop(_ L: OpaquePointer!) -> Int32 {
     return 1
 }
 
-private func timer_gc(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func timer_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     let timer = getTimerTransfer(from: L, at: 1)
 
     timer.stop()
@@ -379,7 +379,7 @@ private func timer_gc(_ L: OpaquePointer!) -> Int32 {
     timer.t = nil
 
     var tmpLSUUID = timer.lsCanary
-    skin.destroyGCCanary(&tmpLSUUID)
+    skin.destroy(&tmpLSUUID)
     timer.lsCanary = tmpLSUUID
 
     // Remove the Metatable so future use of the variable in Lua won't think its valid
@@ -389,12 +389,12 @@ private func timer_gc(_ L: OpaquePointer!) -> Int32 {
     return 0
 }
 
-private func meta_gc(_ L: OpaquePointer!) -> Int32 {
+private func meta_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 0
 }
 
-private func userdata_tostring(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let timer = getTimer(from: L, at: 1)
 
@@ -423,8 +423,8 @@ private func userdata_tostring(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * This has much better precision than `os.time()`, which is limited to whole seconds.
-private func timer_getSecondsSinceEpoch(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func timer_getSecondsSinceEpoch(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TBREAK)
 
     var v = timeval()
@@ -446,7 +446,7 @@ private func timer_getSecondsSinceEpoch(_ L: OpaquePointer!) -> Int32 {
 /// Notes:
 ///  * this value does not include time that the system has spent asleep
 ///  * this value is used for the timestamps in system generated events.
-private func timer_absoluteTime(_ L: OpaquePointer!) -> Int32 {
+private func timer_absoluteTime(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     var timebase = mach_timebase_info_data_t()
     mach_timebase_info(&timebase)
     let absTime = mach_absolute_time()
@@ -488,8 +488,8 @@ private var meta_gcLib: [luaL_Reg] = [
 // MARK: - Module entry point
 
 @_cdecl("luaopen_hs_libtimer")
-public func luaopen_hs_libtimer(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+public func luaopen_hs_libtimer(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     refTable = skin.registerLibrary(USERDATA_TAG, functions: &timerLib, metaFunctions: &meta_gcLib)
     skin.registerObject(USERDATA_TAG, objectFunctions: &timer_metalib)
 

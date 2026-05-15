@@ -15,21 +15,21 @@ import LuaSkin
 ///  * An object containing the parsed output that can be any type, or nil if unsuccessful
 ///  * A string containing the raw output of the code and/or its errors
 private let runosascript: lua_CFunction = { L in
-    let skin = LuaSkin.shared(withState: L)!
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING, LS_TSTRING, LS_TBREAK)
 
-    let source = skin.toNSObject(atIndex: 1) as! String
-    let language = skin.toNSObject(atIndex: 2) as! String
+    let source = skin.toNSObject(atIndex: 1) as! NSString as String
+    let language = skin.toNSObject(atIndex: 2) as! NSString as String
 
     let osa = OSAScript(source: source, language: OSALanguage(forName: language))
     var compileError: NSDictionary?
     osa.compileAndReturnError(&compileError)
 
     if let compileError = compileError {
-        lua_pushboolean(skin.L, 0)
-        lua_pushnil(skin.L)
+        lua_pushboolean(skin.l, 0)
+        lua_pushnil(skin.l)
         skin.pushNSObject(NSString(format: "%@", compileError))
-        skin.logError(NSString(format: "Unable to initialize script: %@", compileError))
+        skin.logError(NSString(format: "Unable to initialize script: %@", compileError) as String)
         return 3
     }
 
@@ -37,7 +37,7 @@ private let runosascript: lua_CFunction = { L in
     let result = osa.executeAndReturnError(&error)
     let didSucceed = (result != nil)
 
-    lua_pushboolean(skin.L, didSucceed ? 1 : 0)
+    lua_pushboolean(skin.l, didSucceed ? 1 : 0)
     if didSucceed {
         skin.pushNSObject(result!.objectValue)
     } else {
@@ -53,8 +53,8 @@ private var scriptlib: [luaL_Reg] = [
 ]
 
 @_cdecl("luaopen_hs_libosascript")
-public func luaopen_hs_libosascript(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+public func luaopen_hs_libosascript(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.registerLibrary("hs.osascript", functions: &scriptlib, metaFunctions: nil)
 
     return 1

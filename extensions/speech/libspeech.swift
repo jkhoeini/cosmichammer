@@ -69,8 +69,8 @@ private class HSSpeechSynthesizer: NSSpeechSynthesizer, NSSpeechSynthesizerDeleg
 
     func speechSynthesizer(_ sender: NSSpeechSynthesizer, willSpeakWord wordToSpeak: NSRange, of text: String) {
         guard let synth = sender as? HSSpeechSynthesizer, synth.callbackRef != LUA_NOREF else { return }
-        let skin = LuaSkin.shared(withState: nil)
-        let _L = skin.L!
+        let skin = LuaSkin.skin(with: nil)
+        let _L = skin.l!
         _lua_stackguard_entry(_L)
         let charMap = luaByteToObjCharMap(text)
 
@@ -92,8 +92,8 @@ private class HSSpeechSynthesizer: NSSpeechSynthesizer, NSSpeechSynthesizerDeleg
 
     func speechSynthesizer(_ sender: NSSpeechSynthesizer, willSpeakPhoneme phonemeOpcode: Int16) {
         guard let synth = sender as? HSSpeechSynthesizer, synth.callbackRef != LUA_NOREF else { return }
-        let skin = LuaSkin.shared(withState: nil)
-        let _L = skin.L!
+        let skin = LuaSkin.skin(with: nil)
+        let _L = skin.l!
         _lua_stackguard_entry(_L)
 
         skin.pushLuaRef(refTable, ref: synth.callbackRef)
@@ -107,8 +107,8 @@ private class HSSpeechSynthesizer: NSSpeechSynthesizer, NSSpeechSynthesizerDeleg
     func speechSynthesizer(_ sender: NSSpeechSynthesizer, didEncounterErrorAt characterIndex: Int, of text: String, message errorMessage: String) {
         NSLog("In error delegate")
         guard let synth = sender as? HSSpeechSynthesizer, synth.callbackRef != LUA_NOREF else { return }
-        let skin = LuaSkin.shared(withState: nil)
-        let _L = skin.L!
+        let skin = LuaSkin.skin(with: nil)
+        let _L = skin.l!
         _lua_stackguard_entry(_L)
         let charMap = luaByteToObjCharMap(text)
 
@@ -128,8 +128,8 @@ private class HSSpeechSynthesizer: NSSpeechSynthesizer, NSSpeechSynthesizerDeleg
 
     func speechSynthesizer(_ sender: NSSpeechSynthesizer, didEncounterSyncMessage errorMessage: String) {
         guard let synth = sender as? HSSpeechSynthesizer, synth.callbackRef != LUA_NOREF else { return }
-        let skin = LuaSkin.shared(withState: nil)
-        let _L = skin.L!
+        let skin = LuaSkin.skin(with: nil)
+        let _L = skin.l!
         _lua_stackguard_entry(_L)
         skin.pushLuaRef(refTable, ref: synth.callbackRef)
         skin.pushNSObject(synth)
@@ -137,23 +137,24 @@ private class HSSpeechSynthesizer: NSSpeechSynthesizer, NSSpeechSynthesizerDeleg
         // "errorMessage" as a string seems to be broken or at least odd since at least as far back as 10.5:
         //      see https://openradar.appspot.com/6524554
         // We'll use "recentSync" property instead, though it does introduce the possibility of an error being generated.
-        var getError: NSError?
-        let syncValue = sender.object(forProperty: NSSpeechSynthesizer.SpeechPropertyKey.recentSyncProperty, error: &getError)
-        skin.pushNSObject(syncValue as? NSObject)
-        if let err = getError {
-            skin.logWarn("Error getting sync # for callback -> \(err.localizedDescription)")
+        do {
+            let syncValue = try sender.object(forProperty: NSSpeechSynthesizer.SpeechPropertyKey.recentSync)
+            skin.pushNSObject(syncValue as? NSObject)
+        } catch {
+            skin.pushNSObject(nil as NSObject?)
+            skin.logWarn("Error getting sync # for callback -> \(error.localizedDescription)")
         }
         skin.protectedCallAndError("hs.speech:didEncounterSync callback", nargs: 3, nresults: 0)
         _lua_stackguard_exit(_L)
     }
 
     func speechSynthesizer(_ sender: NSSpeechSynthesizer, didFinishSpeaking success: Bool) {
-        let skin = LuaSkin.shared(withState: nil)
-        _lua_stackguard_entry(skin.L)
+        let skin = LuaSkin.skin(with: nil)
+        _lua_stackguard_entry(skin.l)
         let synth = sender as! HSSpeechSynthesizer
 
         if synth.callbackRef != LUA_NOREF {
-            let _L = skin.L!
+            let _L = skin.l!
             skin.pushLuaRef(refTable, ref: synth.callbackRef)
             skin.pushNSObject(synth)
             lua_pushstring(_L, "didFinish")
@@ -164,18 +165,18 @@ private class HSSpeechSynthesizer: NSSpeechSynthesizer, NSSpeechSynthesizerDeleg
             synth.udReferenceCount -= 1
             synth.selfRef = skin.luaUnref(refTable, ref: synth.selfRef)
         }
-        _lua_stackguard_exit(skin.L)
+        _lua_stackguard_exit(skin.l)
     }
 }
 
 // MARK: - Helpers
 
-private func get_synthFromUserdata(_ L: OpaquePointer!, at idx: Int32) -> HSSpeechSynthesizer {
+private func get_synthFromUserdata(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> HSSpeechSynthesizer {
     let ptr = luaL_checkudata(L, idx, USERDATA_TAG)!
     return Unmanaged<HSSpeechSynthesizer>.fromOpaque(ptr.load(as: UnsafeRawPointer.self)).takeUnretainedValue()
 }
 
-private func get_synthFromUserdata_transfer(_ L: OpaquePointer!, at idx: Int32) -> HSSpeechSynthesizer {
+private func get_synthFromUserdata_transfer(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> HSSpeechSynthesizer {
     let ptr = luaL_checkudata(L, idx, USERDATA_TAG)!
     return Unmanaged<HSSpeechSynthesizer>.fromOpaque(ptr.load(as: UnsafeRawPointer.self)).takeRetainedValue()
 }
@@ -194,11 +195,11 @@ private func get_synthFromUserdata_transfer(_ L: OpaquePointer!, at idx: Int32) 
 ///
 /// Notes:
 ///  * All of the names that have been encountered thus far follow this pattern for their full name:  `com.apple.speech.synthesis.voice.*name*`.  This prefix is normally suppressed unless you pass in true.
-private func availableVoices(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func availableVoices(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
 
-    let displayFullName = lua_isboolean(L, 1) != 0 ? (lua_toboolean(L, 1) != 0) : false
+    let displayFullName = lua_isboolean(L, 1) ? (lua_toboolean(L, 1) != 0) : false
 
     lua_newtable(L)
     for aVoice in NSSpeechSynthesizer.availableVoices {
@@ -225,8 +226,8 @@ private func availableVoices(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * All of the names that have been encountered thus far follow this pattern for their full name:  `com.apple.speech.synthesis.voice.*name*`.  You can provide this suffix or not as you prefer when specifying a voice name.
-private func attributesForVoice(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func attributesForVoice(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING | LS_TNUMBER | LS_TNIL, LS_TBREAK)
 
     if lua_type(L, 1) != LUA_TNIL { luaL_checkstring(L, 1) }
@@ -249,10 +250,10 @@ private func attributesForVoice(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * All of the names that have been encountered thus far follow this pattern for their full name:  `com.apple.speech.synthesis.voice.*name*`.  This prefix is normally suppressed unless you pass in true.
-private func defaultVoice(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func defaultVoice(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
-    let displayFullName = lua_isboolean(L, 1) != 0 ? (lua_toboolean(L, 1) != 0) : false
+    let displayFullName = lua_isboolean(L, 1) ? (lua_toboolean(L, 1) != 0) : false
 
     let voiceName = NSSpeechSynthesizer.defaultVoice.rawValue
     if displayFullName {
@@ -275,8 +276,8 @@ private func defaultVoice(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * See also `hs.speech:speaking`.
-private func isAnyApplicationSpeaking(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func isAnyApplicationSpeaking(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TBREAK)
 
     lua_pushboolean(L, NSSpeechSynthesizer.isAnyApplicationSpeaking ? 1 : 0)
@@ -296,8 +297,8 @@ private func isAnyApplicationSpeaking(_ L: OpaquePointer!) -> Int32 {
 /// Notes:
 ///  * All of the names that have been encountered thus far follow this pattern for their full name:  `com.apple.speech.synthesis.voice.*name*`.  You can provide this suffix or not as you prefer when specifying a voice name.
 ///  * You can change the voice later with the `hs.speech:voice` method.
-private func newSpeechSynthesizer(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func newSpeechSynthesizer(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING | LS_TNUMBER | LS_TOPTIONAL, LS_TBREAK)
 
     var voiceName: NSSpeechSynthesizer.VoiceName? = nil
@@ -326,8 +327,8 @@ private func newSpeechSynthesizer(_ L: OpaquePointer!) -> Int32 {
 /// hs.speech:usesFeedbackWindow([flag]) -> synthesizerObject | boolean
 /// Method
 /// Gets or sets whether or not the synthesizer uses the speech feedback window.
-private func usesFeedbackWindow(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func usesFeedbackWindow(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
     let synth = get_synthFromUserdata(L, at: 1)
 
@@ -343,8 +344,8 @@ private func usesFeedbackWindow(_ L: OpaquePointer!) -> Int32 {
 /// hs.speech:voice([full] | [voice]) -> synthesizerObject | voice
 /// Method
 /// Gets or sets the active voice for a synthesizer.
-private func voice(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func voice(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBOOLEAN | LS_TSTRING | LS_TNUMBER | LS_TNIL | LS_TOPTIONAL, LS_TBREAK)
     let synth = get_synthFromUserdata(L, at: 1)
 
@@ -366,7 +367,7 @@ private func voice(_ L: OpaquePointer!) -> Int32 {
             lua_pushnil(L)
         }
     } else {
-        let displayFullName = lua_isboolean(L, 2) != 0 ? (lua_toboolean(L, 2) != 0) : false
+        let displayFullName = lua_isboolean(L, 2) ? (lua_toboolean(L, 2) != 0) : false
         let currentVoice = synth.voice()?.rawValue
         if displayFullName {
             skin.pushNSObject(currentVoice as NSString?)
@@ -380,8 +381,8 @@ private func voice(_ L: OpaquePointer!) -> Int32 {
 /// hs.speech:rate([rate]) -> synthesizerObject | rate
 /// Method
 /// Gets or sets the synthesizers speaking rate (words per minute).
-private func rate(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func rate(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TNUMBER | LS_TOPTIONAL, LS_TBREAK)
     let synth = get_synthFromUserdata(L, at: 1)
 
@@ -397,8 +398,8 @@ private func rate(_ L: OpaquePointer!) -> Int32 {
 /// hs.speech:volume([volume]) -> synthesizerObject | volume
 /// Method
 /// Gets or sets the synthesizers speaking volume.
-private func volume(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func volume(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TNUMBER | LS_TOPTIONAL, LS_TBREAK)
     let synth = get_synthFromUserdata(L, at: 1)
 
@@ -419,8 +420,8 @@ private func volume(_ L: OpaquePointer!) -> Int32 {
 /// hs.speech:speaking() -> boolean
 /// Method
 /// Returns whether or not this synthesizer is currently generating speech.
-private func speaking(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func speaking(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let synth = get_synthFromUserdata(L, at: 1)
 
@@ -431,8 +432,8 @@ private func speaking(_ L: OpaquePointer!) -> Int32 {
 /// hs.speech:setCallback(fn) -> synthesizerObject
 /// Method
 /// Sets or removes a callback function for the synthesizer.
-private func setCallback(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func setCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TFUNCTION | LS_TNIL, LS_TBREAK)
     let synth = get_synthFromUserdata(L, at: 1)
 
@@ -448,8 +449,8 @@ private func setCallback(_ L: OpaquePointer!) -> Int32 {
 /// hs.speech:speak(textToSpeak) -> synthesizerObject
 /// Method
 /// Starts speaking the provided text through the system's current audio device.
-private func startSpeakingString(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func startSpeakingString(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING | LS_TNUMBER, LS_TBREAK)
     let synth = get_synthFromUserdata(L, at: 1)
 
@@ -474,8 +475,8 @@ private func startSpeakingString(_ L: OpaquePointer!) -> Int32 {
 /// hs.speech:speakToFile(textToSpeak, destination) -> synthesizerObject
 /// Method
 /// Starts speaking the provided text and saves the audio as an AIFF file.
-private func startSpeakingStringToURL(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func startSpeakingStringToURL(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING | LS_TNUMBER, LS_TSTRING | LS_TNUMBER, LS_TBREAK)
     let synth = get_synthFromUserdata(L, at: 1)
 
@@ -503,7 +504,7 @@ private func startSpeakingStringToURL(_ L: OpaquePointer!) -> Int32 {
     return 1
 }
 
-private func parseBoundary(_ L: OpaquePointer!, at idx: Int32, skin: LuaSkin, label: String) -> NSSpeechSynthesizer.Boundary {
+private func parseBoundary(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32, skin: LuaSkin, label: String) -> NSSpeechSynthesizer.Boundary {
     var boundary = NSSpeechSynthesizer.Boundary.immediateBoundary
     if lua_gettop(L) >= idx {
         luaL_checkstring(L, idx)
@@ -522,8 +523,8 @@ private func parseBoundary(_ L: OpaquePointer!, at idx: Int32, skin: LuaSkin, la
 /// hs.speech:pause([where]) -> synthesizerObject
 /// Method
 /// Pauses the output of the speech synthesizer.
-private func pauseSpeakingAtBoundary(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func pauseSpeakingAtBoundary(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING | LS_TNUMBER | LS_TOPTIONAL, LS_TBREAK)
     let synth = get_synthFromUserdata(L, at: 1)
 
@@ -536,8 +537,8 @@ private func pauseSpeakingAtBoundary(_ L: OpaquePointer!) -> Int32 {
 /// hs.speech:stop([where]) -> synthesizerObject
 /// Method
 /// Stops the output of the speech synthesizer.
-private func stopSpeakingAtBoundary(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func stopSpeakingAtBoundary(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING | LS_TNUMBER | LS_TOPTIONAL, LS_TBREAK)
     let synth = get_synthFromUserdata(L, at: 1)
 
@@ -554,8 +555,8 @@ private func stopSpeakingAtBoundary(_ L: OpaquePointer!) -> Int32 {
 /// hs.speech:continue() -> synthesizerObject
 /// Method
 /// Resumes a paused speech synthesizer.
-private func continueSpeaking(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func continueSpeaking(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let synth = get_synthFromUserdata(L, at: 1)
 
@@ -567,8 +568,8 @@ private func continueSpeaking(_ L: OpaquePointer!) -> Int32 {
 /// hs.speech:phonemes(text) -> string
 /// Method
 /// Returns the phonemes which would be spoken if the text were to be synthesized.
-private func phonemesFromText(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func phonemesFromText(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING | LS_TNUMBER, LS_TBREAK)
     let synth = get_synthFromUserdata(L, at: 1)
 
@@ -584,20 +585,21 @@ private func phonemesFromText(_ L: OpaquePointer!) -> Int32 {
 /// hs.speech:isSpeaking() -> boolean | nil
 /// Method
 /// Returns whether or not the synthesizer is currently speaking, either to an audio device or to a file.
-private func isSpeaking(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func isSpeaking(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let synth = get_synthFromUserdata(L, at: 1)
 
-    var theError: NSError?
-    let status = synth.object(forProperty: .statusProperty, error: &theError) as? NSDictionary
-    if let err = theError {
-        skin.logInfo("Unable to query synthesizer status -> \(err.localizedDescription)")
-        lua_pushnil(L)
-    } else if let result = status?[NSSpeechSynthesizer.SpeechPropertyKey.StatusKey.outputBusy] as? NSNumber {
-        lua_pushboolean(L, result.boolValue ? 1 : 0)
-    } else {
-        skin.logInfo("Key \"\(NSSpeechSynthesizer.SpeechPropertyKey.StatusKey.outputBusy)\" missing from synthesizer status")
+    do {
+        let status = try synth.object(forProperty: .status) as? NSDictionary
+        if let result = status?[NSSpeechSynthesizer.SpeechPropertyKey.StatusKey.outputBusy] as? NSNumber {
+            lua_pushboolean(L, result.boolValue ? 1 : 0)
+        } else {
+            skin.logInfo("Key \"\(NSSpeechSynthesizer.SpeechPropertyKey.StatusKey.outputBusy)\" missing from synthesizer status")
+            lua_pushnil(L)
+        }
+    } catch {
+        skin.logInfo("Unable to query synthesizer status -> \(error.localizedDescription)")
         lua_pushnil(L)
     }
     return 1
@@ -606,20 +608,21 @@ private func isSpeaking(_ L: OpaquePointer!) -> Int32 {
 /// hs.speech:isPaused() -> boolean | nil
 /// Method
 /// Returns whether or not the synthesizer is currently paused.
-private func isPaused(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func isPaused(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let synth = get_synthFromUserdata(L, at: 1)
 
-    var theError: NSError?
-    let status = synth.object(forProperty: .statusProperty, error: &theError) as? NSDictionary
-    if let err = theError {
-        skin.logInfo("Unable to query synthesizer status -> \(err.localizedDescription)")
-        lua_pushnil(L)
-    } else if let result = status?[NSSpeechSynthesizer.SpeechPropertyKey.StatusKey.outputPaused] as? NSNumber {
-        lua_pushboolean(L, result.boolValue ? 1 : 0)
-    } else {
-        skin.logInfo("Key \"\(NSSpeechSynthesizer.SpeechPropertyKey.StatusKey.outputPaused)\" missing from synthesizer status")
+    do {
+        let status = try synth.object(forProperty: .status) as? NSDictionary
+        if let result = status?[NSSpeechSynthesizer.SpeechPropertyKey.StatusKey.outputPaused] as? NSNumber {
+            lua_pushboolean(L, result.boolValue ? 1 : 0)
+        } else {
+            skin.logInfo("Key \"\(NSSpeechSynthesizer.SpeechPropertyKey.StatusKey.outputPaused)\" missing from synthesizer status")
+            lua_pushnil(L)
+        }
+    } catch {
+        skin.logInfo("Unable to query synthesizer status -> \(error.localizedDescription)")
         lua_pushnil(L)
     }
     return 1
@@ -628,18 +631,17 @@ private func isPaused(_ L: OpaquePointer!) -> Int32 {
 /// hs.speech:phoneticSymbols() -> array | nil
 /// Method
 /// Returns an array of the phonetic symbols recognized by the synthesizer for the current voice.
-private func phoneticSymbols(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func phoneticSymbols(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let synth = get_synthFromUserdata(L, at: 1)
 
-    var theError: NSError?
-    let phoneticList = synth.object(forProperty: .phonemeSymbolsProperty, error: &theError)
-    if let err = theError {
-        skin.logInfo("Unable to query synthesizer for phonetic symbols -> \(err.localizedDescription)")
-        lua_pushnil(L)
-    } else {
+    do {
+        let phoneticList = try synth.object(forProperty: .phonemeSymbols)
         skin.pushNSObject(phoneticList as? NSObject)
+    } catch {
+        skin.logInfo("Unable to query synthesizer for phonetic symbols -> \(error.localizedDescription)")
+        lua_pushnil(L)
     }
     return 1
 }
@@ -647,27 +649,26 @@ private func phoneticSymbols(_ L: OpaquePointer!) -> Int32 {
 /// hs.speech:pitch([pitch]) -> synthesizerObject | pitch | nil
 /// Method
 /// Gets or sets the base pitch for the synthesizer's voice.
-private func pitchBase(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func pitchBase(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TNUMBER | LS_TOPTIONAL, LS_TBREAK)
     let synth = get_synthFromUserdata(L, at: 1)
 
-    var theError: NSError?
     if lua_gettop(L) == 2 {
-        let result = synth.setObject(NSNumber(value: lua_tonumber(L, 2)), forProperty: .pitchBaseProperty, error: &theError)
-        if let err = theError {
-            skin.logWarn("Error setting pitchBase -> \(err.localizedDescription)")
-            lua_pushnil(L)
-        } else if result {
+        do {
+            try synth.setObject(NSNumber(value: lua_tonumber(L, 2)), forProperty: .pitchBase)
             lua_pushvalue(L, 1)
-        } else {
+        } catch {
+            skin.logWarn("Error setting pitchBase -> \(error.localizedDescription)")
             lua_pushnil(L)
         }
     } else {
-        let value = synth.object(forProperty: .pitchBaseProperty, error: &theError)
-        skin.pushNSObject(value as? NSObject)
-        if let err = theError {
-            skin.logInfo("Error getting pitchBase -> \(err.localizedDescription)")
+        do {
+            let value = try synth.object(forProperty: .pitchBase)
+            skin.pushNSObject(value as? NSObject)
+        } catch {
+            skin.pushNSObject(nil as NSObject?)
+            skin.logInfo("Error getting pitchBase -> \(error.localizedDescription)")
         }
     }
     return 1
@@ -676,27 +677,26 @@ private func pitchBase(_ L: OpaquePointer!) -> Int32 {
 /// hs.speech:modulation([modulation]) -> synthesizerObject | modulation | nil
 /// Method
 /// Gets or sets the pitch modulation for the synthesizer's voice.
-private func pitchMod(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func pitchMod(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TNUMBER | LS_TOPTIONAL, LS_TBREAK)
     let synth = get_synthFromUserdata(L, at: 1)
 
-    var theError: NSError?
     if lua_gettop(L) == 2 {
-        let result = synth.setObject(NSNumber(value: lua_tonumber(L, 2)), forProperty: .pitchModProperty, error: &theError)
-        if let err = theError {
-            skin.logWarn("Error setting pitchMod -> \(err.localizedDescription)")
-            lua_pushnil(L)
-        } else if result {
+        do {
+            try synth.setObject(NSNumber(value: lua_tonumber(L, 2)), forProperty: .pitchMod)
             lua_pushvalue(L, 1)
-        } else {
+        } catch {
+            skin.logWarn("Error setting pitchMod -> \(error.localizedDescription)")
             lua_pushnil(L)
         }
     } else {
-        let value = synth.object(forProperty: .pitchModProperty, error: &theError)
-        skin.pushNSObject(value as? NSObject)
-        if let err = theError {
-            skin.logInfo("Error getting pitchMod -> \(err.localizedDescription)")
+        do {
+            let value = try synth.object(forProperty: .pitchMod)
+            skin.pushNSObject(value as? NSObject)
+        } catch {
+            skin.pushNSObject(nil as NSObject?)
+            skin.logInfo("Error getting pitchMod -> \(error.localizedDescription)")
         }
     }
     return 1
@@ -705,19 +705,16 @@ private func pitchMod(_ L: OpaquePointer!) -> Int32 {
 /// hs.speech:reset() -> synthesizerObject | nil
 /// Method
 /// Reset a synthesizer back to its default state.
-private func reset(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func reset(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let synth = get_synthFromUserdata(L, at: 1)
 
-    var theError: NSError?
-    let result = synth.setObject(nil, forProperty: .resetProperty, error: &theError)
-    if let err = theError {
-        skin.logWarn("Error resetting synthesizer -> \(err.localizedDescription)")
-        lua_pushnil(L)
-    } else if result {
+    do {
+        try synth.setObject(nil, forProperty: .reset)
         lua_pushvalue(L, 1)
-    } else {
+    } catch {
+        skin.logWarn("Error resetting synthesizer -> \(error.localizedDescription)")
         lua_pushnil(L)
     }
     return 1
@@ -725,7 +722,7 @@ private func reset(_ L: OpaquePointer!) -> Int32 {
 
 // MARK: - Lua<->NSObject Conversion Functions
 
-private func pushHSSpeechSynthesizer(_ L: OpaquePointer!, obj: Any!) -> Int32 {
+private func pushHSSpeechSynthesizer(_ L: UnsafeMutablePointer<lua_State>!, obj: Any!) -> Int32 {
     let synth = obj as! HSSpeechSynthesizer
     synth.udReferenceCount += 1
     let synthPtr = lua_newuserdata(L, MemoryLayout<UnsafeRawPointer>.size)!
@@ -737,15 +734,16 @@ private func pushHSSpeechSynthesizer(_ L: OpaquePointer!, obj: Any!) -> Int32 {
 
 // MARK: - Hammerspoon Infrastructure
 
-private func userdata_tostring(_ L: OpaquePointer!) -> Int32 {
+private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let synth = get_synthFromUserdata(L, at: 1)
-    let skin = LuaSkin.shared(withState: L)
+    let skin = LuaSkin.skin(with: L)
     let voiceName = synth.voice()?.rawValue ?? "unknown"
-    skin.pushNSObject(NSString(format: "%s: %@ (%p)", USERDATA_TAG, voiceName as NSString, Unmanaged.passUnretained(synth).toOpaque()))
+    let ptr = Unmanaged.passUnretained(synth).toOpaque()
+    lua_pushstring(L, "\(USERDATA_TAG): \(voiceName) (\(ptr))")
     return 1
 }
 
-private func userdata_eq(_ L: OpaquePointer!) -> Int32 {
+private func userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     if luaL_testudata(L, 1, USERDATA_TAG) != nil && luaL_testudata(L, 2, USERDATA_TAG) != nil {
         let synth1 = get_synthFromUserdata(L, at: 1)
         let synth2 = get_synthFromUserdata(L, at: 2)
@@ -756,9 +754,9 @@ private func userdata_eq(_ L: OpaquePointer!) -> Int32 {
     return 1
 }
 
-private func userdata_gc(_ L: OpaquePointer!) -> Int32 {
+private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let synth = get_synthFromUserdata_transfer(L, at: 1)
-    let skin = LuaSkin.shared(withState: L)
+    let skin = LuaSkin.skin(with: L)
     synth.udReferenceCount -= 1
 
     if synth.udReferenceCount == 0 {
@@ -813,8 +811,8 @@ private var moduleLib: [luaL_Reg] = [
 // MARK: - Module Entry Point
 
 @_cdecl("luaopen_hs_libspeech")
-public func luaopen_hs_libspeech(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+public func luaopen_hs_libspeech(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     refTable = skin.registerLibrary(withObject: USERDATA_TAG,
                                     functions: &moduleLib,
                                     metaFunctions: nil,

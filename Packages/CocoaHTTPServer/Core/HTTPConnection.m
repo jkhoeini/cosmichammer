@@ -93,6 +93,11 @@ static const int httpLogLevel = HTTP_LOG_LEVEL_WARN; // | HTTP_LOG_FLAG_TRACE;
 
 @implementation HTTPConnection
 
+@synthesize asyncSocket = asyncSocket;
+@synthesize config = config;
+@synthesize request = request;
+@synthesize requestContentLength = requestContentLength;
+
 static dispatch_queue_t recentNonceQueue;
 static NSMutableArray *recentNonces;
 

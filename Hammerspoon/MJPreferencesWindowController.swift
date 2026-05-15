@@ -1,68 +1,73 @@
 import Cocoa
 
-// MARK: - Preferences Dark Mode
+// MARK: - String constants (from variables.h)
 
-/// Returns whether preferences dark mode is enabled.
+private let MJShowDockIconKey           = "MJShowDockIconKey"
+private let MJShowMenuIconKey           = "MJShowMenuIconKey"
+private let HSAutoLoadExtensions        = "HSAutoLoadExtensions"
+private let HSAppleScriptEnabledKey     = "HSAppleScriptEnabledKey"
+private let HSOpenConsoleOnDockClickKey = "HSOpenConsoleOnDockClickKey"
+private let HSPreferencesDarkModeKey    = "HSPreferencesDarkModeKey"
+private let MJHasRunAlreadyKey          = "MJHasRunAlreadyKey"
+private let MJSkipDockMenuIconProblemAlertKey = "MJSkipDockMenuIconProblemAlertKey"
+
+// MARK: - Preferences dark mode C interface (declared in MJPreferencesWindowController.h)
+
 @_cdecl("PreferencesDarkModeEnabled")
 func PreferencesDarkModeEnabled() -> Bool {
-    UserDefaults.standard.bool(forKey: HSPreferencesDarkModeKey as String)
+    UserDefaults.standard.bool(forKey: HSPreferencesDarkModeKey)
 }
 
-/// Sets whether preferences dark mode is enabled.
 @_cdecl("PreferencesDarkModeSetEnabled")
 func PreferencesDarkModeSetEnabled(_ enabled: Bool) {
-    UserDefaults.standard.set(enabled, forKey: HSPreferencesDarkModeKey as String)
+    UserDefaults.standard.set(enabled, forKey: HSPreferencesDarkModeKey)
 }
-
-private let MJSkipDockMenuIconProblemAlertKey = "MJSkipDockMenuIconProblemAlertKey"
 
 // MARK: - MJPreferencesWindowController
 
-@objcMembers
+@objc(MJPreferencesWindowController)
 class MJPreferencesWindowController: NSWindowController {
 
-    // MARK: Properties
-
+    // MARK: Private UI outlets
     private var openAtLoginCheckbox: NSButton!
     private var showDockIconCheckbox: NSButton!
     private var showMenuIconCheckbox: NSButton!
     private var keepConsoleOnTopCheckbox: NSButton!
 
-    @objc dynamic var isAccessibilityEnabled: Bool = false
+    // MARK: KVO-observable accessibility state
+    @objc dynamic var isAccessibilityEnabled: Bool = false {
+        didSet {
+            // KVO-driven bindings on statusText/enableAccessButton update automatically
+        }
+    }
 
     // MARK: Singleton
 
-    private static let _singleton = MJPreferencesWindowController()
-
     @objc class func singleton() -> MJPreferencesWindowController {
-        return _singleton
+        struct S { static let instance = MJPreferencesWindowController() }
+        return S.instance
     }
 
-    // MARK: Initialization
+    // MARK: Init
 
-    override init() {
-        super.init()
-        // NSWindowController -init calls -initWithWindow:nil which marks
-        // isWindowLoaded=YES, preventing loadWindow from ever running.
-        // Force it to run here.
+    @objc override init(window: NSWindow?) {
+        super.init(window: window)
         loadWindow()
     }
 
-    @available(*, unavailable)
     required init?(coder: NSCoder) {
-        fatalError("init(coder:) is not supported")
+        super.init(coder: coder)
     }
 
-    // MARK: Setup
+    // MARK: - Setup
 
-    func setup() {
+    @objc func setup() {
         reflectDefaults()
     }
 
-    // MARK: Reflect Defaults
+    // MARK: - reflectDefaults
 
-    private func reflectDefaults() {
-        // Dark Mode:
+    @objc func reflectDefaults() {
         if PreferencesDarkModeEnabled() {
             window?.appearance = NSAppearance(named: .vibrantDark)
             window?.titlebarAppearsTransparent = true
@@ -72,28 +77,17 @@ class MJPreferencesWindowController: NSWindowController {
         }
     }
 
-    // MARK: Feedback Display
+    // MARK: - showWindow
 
-    @objc private func updateFeedbackDisplay(_ notification: Notification) {
-        DispatchQueue.main.async { [self] in
-            openAtLoginCheckbox.state = MJAutoLaunchGet() ? .on : .off
-            showDockIconCheckbox.state = MJDockIconVisible() ? .on : .off
-            showMenuIconCheckbox.state = MJMenuIconVisible() ? .on : .off
-            keepConsoleOnTopCheckbox.state = MJConsoleWindowAlwaysOnTop() ? .on : .off
-        }
-    }
-
-    // MARK: Show Window
-
-    override func showWindow(_ sender: Any?) {
-        if !(window?.isVisible ?? false) {
+    @objc override func showWindow(_ sender: Any?) {
+        if window?.isVisible == false {
             window?.center()
         }
         super.showWindow(sender)
         reflectDefaults()
     }
 
-    // MARK: Load Window
+    // MARK: - loadWindow
 
     override func loadWindow() {
         // --- Panel ---
@@ -105,7 +99,7 @@ class MJPreferencesWindowController: NSWindowController {
         )
         panel.title = "Hammerspoon Preferences"
         panel.isReleasedWhenClosed = false
-        panel.frameAutosaveName = "prefs"
+        panel.setFrameAutosaveName("prefs")
         panel.titlebarAppearsTransparent = true
         panel.titleVisibility = .hidden
         panel.animationBehavior = .default
@@ -118,8 +112,7 @@ class MJPreferencesWindowController: NSWindowController {
         effectView.state = .followsWindowActiveState
         effectView.translatesAutoresizingMaskIntoConstraints = false
 
-        // Replace the content view's subview hierarchy -- pin the effect view to fill
-        guard let contentView = panel.contentView else { return }
+        let contentView = panel.contentView!
         contentView.addSubview(effectView)
         NSLayoutConstraint.activate([
             effectView.topAnchor.constraint(equalTo: contentView.topAnchor),
@@ -132,7 +125,7 @@ class MJPreferencesWindowController: NSWindowController {
         let behaviorLabel = NSTextField(labelWithString: "Behavior:")
         behaviorLabel.translatesAutoresizingMaskIntoConstraints = false
         behaviorLabel.alignment = .right
-        behaviorLabel.font = NSFont.systemFont(ofSize: 0) // system default size
+        behaviorLabel.font = NSFont.systemFont(ofSize: 0)
         effectView.addSubview(behaviorLabel)
 
         // --- Checkboxes ---
@@ -171,14 +164,14 @@ class MJPreferencesWindowController: NSWindowController {
         accessibilityLabel.font = NSFont.systemFont(ofSize: 0)
         effectView.addSubview(accessibilityLabel)
 
-        // --- Accessibility status text (bound) ---
+        // --- Accessibility status text (bound via KVC) ---
         let statusText = NSTextField(labelWithString: "")
         statusText.translatesAutoresizingMaskIntoConstraints = false
         statusText.font = NSFont.systemFont(ofSize: 0)
         statusText.bind(.value, to: self, withKeyPath: "maybeEnableAccessibilityString", options: nil)
         effectView.addSubview(statusText)
 
-        // --- "Enable Accessibility" button (bound) ---
+        // --- "Enable Accessibility" button (bound via KVC) ---
         let enableAccessButton = NSButton(frame: .zero)
         enableAccessButton.translatesAutoresizingMaskIntoConstraints = false
         enableAccessButton.title = "Enable Accessibility"
@@ -186,10 +179,10 @@ class MJPreferencesWindowController: NSWindowController {
         enableAccessButton.target = self
         enableAccessButton.action = #selector(openAccessibility(_:))
         enableAccessButton.bind(.enabled, to: self, withKeyPath: "isAccessibilityEnabled",
-                                options: [.valueTransformerName: NSValueTransformerName.negateBooleanTransformerName])
+                                options: [NSBindingOption.valueTransformerName: NSValueTransformerName.negateBooleanTransformerName])
         effectView.addSubview(enableAccessButton)
 
-        // --- Status dot image view (bound) ---
+        // --- Status dot image view (bound via KVC) ---
         let statusDot = NSImageView(frame: .zero)
         statusDot.translatesAutoresizingMaskIntoConstraints = false
         statusDot.bind(.value, to: self, withKeyPath: "isAccessibilityEnabledImage", options: nil)
@@ -197,7 +190,7 @@ class MJPreferencesWindowController: NSWindowController {
 
         // --- Auto Layout constraints ---
         NSLayoutConstraint.activate([
-            // "Behavior:" label -- top-left
+            // "Behavior:" label — top-left
             behaviorLabel.topAnchor.constraint(equalTo: effectView.topAnchor, constant: 20),
             behaviorLabel.leadingAnchor.constraint(equalTo: effectView.leadingAnchor, constant: 20),
 
@@ -215,7 +208,7 @@ class MJPreferencesWindowController: NSWindowController {
             keepOnTop.topAnchor.constraint(equalTo: showMenu.bottomAnchor, constant: 6),
             keepOnTop.leadingAnchor.constraint(equalTo: behaviorLabel.trailingAnchor, constant: 8),
 
-            // "Accessibility:" label -- below last checkbox, right-aligned with "Behavior:" label
+            // "Accessibility:" label — below last checkbox, right-aligned with "Behavior:" label
             accessibilityLabel.topAnchor.constraint(equalTo: keepOnTop.bottomAnchor, constant: 8),
             accessibilityLabel.leadingAnchor.constraint(equalTo: effectView.leadingAnchor, constant: 20),
             accessibilityLabel.trailingAnchor.constraint(equalTo: behaviorLabel.trailingAnchor),
@@ -240,9 +233,9 @@ class MJPreferencesWindowController: NSWindowController {
         // --- Assign the window ---
         self.window = panel
 
-        // --- Post-load setup (equivalent of windowDidLoad) ---
-        DispatchQueue.main.async { [self] in
-            cacheIsAccessibilityEnabled()
+        // --- Post-load setup ---
+        DispatchQueue.main.async {
+            self.cacheIsAccessibilityEnabled()
         }
 
         DistributedNotificationCenter.default().addObserver(
@@ -265,100 +258,93 @@ class MJPreferencesWindowController: NSWindowController {
         )
     }
 
-    // MARK: Accessibility
+    // MARK: - Notification handlers
 
-    @objc private func accessibilityChanged(_ note: Notification) {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [self] in
-            cacheIsAccessibilityEnabled()
+    @objc func accessibilityChanged(_ note: Notification) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+            self.cacheIsAccessibilityEnabled()
         }
     }
 
-    private func cacheIsAccessibilityEnabled() {
+    @objc func updateFeedbackDisplay(_ notification: Notification) {
+        DispatchQueue.main.async {
+            self.openAtLoginCheckbox.state = MJAutoLaunchGet() ? .on : .off
+            self.showDockIconCheckbox.state = MJDockIconVisible() ? .on : .off
+            self.showMenuIconCheckbox.state = MJMenuIconVisible() ? .on : .off
+            self.keepConsoleOnTopCheckbox.state = MJConsoleWindowAlwaysOnTop() ? .on : .off
+        }
+    }
+
+    // MARK: - Accessibility helpers
+
+    @objc func cacheIsAccessibilityEnabled() {
         isAccessibilityEnabled = MJAccessibilityIsEnabled()
     }
 
-    /// KVO-dependent computed property: status string reflecting accessibility state.
     @objc var maybeEnableAccessibilityString: String {
         isAccessibilityEnabled
             ? "Accessibility is enabled. You're all set!"
             : "WARNING! Accessibility is not enabled!"
     }
 
-    /// KVO-dependent computed property: status image reflecting accessibility state.
     @objc var isAccessibilityEnabledImage: NSImage? {
-        isAccessibilityEnabled
-            ? NSImage(named: NSImage.statusAvailableName)
-            : NSImage(named: NSImage.statusUnavailableName)
+        NSImage(named: isAccessibilityEnabled ? NSImage.statusAvailableName : NSImage.statusUnavailableName)
     }
 
-    // KVO dependency declarations
-    @objc class var keyPathsForValuesAffectingMaybeEnableAccessibilityString: Set<String> {
-        ["isAccessibilityEnabled"]
+    @objc class func keyPathsForValuesAffectingMaybeEnableAccessibilityString() -> NSSet {
+        NSSet(array: ["isAccessibilityEnabled"])
     }
 
-    @objc class var keyPathsForValuesAffectingIsAccessibilityEnabledImage: Set<String> {
-        ["isAccessibilityEnabled"]
+    @objc class func keyPathsForValuesAffectingIsAccessibilityEnabledImage() -> NSSet {
+        NSSet(array: ["isAccessibilityEnabled"])
     }
 
-    // MARK: Actions
+    // MARK: - Actions
 
-    @IBAction func openAccessibility(_ sender: Any?) {
+    @objc func openAccessibility(_ sender: Any?) {
         MJAccessibilityOpenPanel()
     }
 
-    @IBAction func toggleOpensAtLogin(_ sender: NSButton) {
+    @objc func toggleOpensAtLogin(_ sender: NSButton) {
         MJAutoLaunchSet(sender.state == .on)
     }
 
-    @IBAction func toggleShowDockIcon(_ sender: NSButton) {
-        Self.cancelPreviousPerformRequests(withTarget: self,
-                                           selector: #selector(actuallyToggleShowDockIcon),
-                                           object: nil)
+    @objc func toggleShowDockIcon(_ sender: NSButton) {
+        NSObject.cancelPreviousPerformRequests(withTarget: self,
+                                              selector: #selector(actuallyToggleShowDockIcon),
+                                              object: nil)
         perform(#selector(actuallyToggleShowDockIcon), with: nil, afterDelay: 0.3)
     }
 
-    @objc private func actuallyToggleShowDockIcon() {
-        MJDockIconSetVisible(showDockIconCheckbox.state == .on)
+    @objc func actuallyToggleShowDockIcon() {
+        let enabled = showDockIconCheckbox.state == .on
+        MJDockIconSetVisible(enabled)
         maybeWarnAboutDockMenuProblem()
     }
 
-    @IBAction func toggleMenuDockIcon(_ sender: NSButton) {
+    @objc func toggleMenuDockIcon(_ sender: NSButton) {
         MJMenuIconSetVisible(sender.state == .on)
         maybeWarnAboutDockMenuProblem()
     }
 
-    @IBAction func toggleKeepConsoleOnTop(_ sender: NSButton) {
+    @objc func toggleKeepConsoleOnTop(_ sender: NSButton) {
         MJConsoleWindowSetAlwaysOnTop(sender.state == .on)
     }
 
-    // MARK: Dock/Menu Warning
-
-    private func dockMenuProblemAlertDidEnd(_ alert: NSAlert, returnCode: NSInteger) {
-        let skipNextTime = alert.suppressionButton?.state == .on
-        UserDefaults.standard.set(skipNextTime, forKey: MJSkipDockMenuIconProblemAlertKey)
-    }
+    // MARK: - Dock/menu icon problem alert
 
     private func maybeWarnAboutDockMenuProblem() {
-        guard !MJDockIconVisible(), !MJMenuIconVisible() else { return }
-
-        if UserDefaults.standard.bool(forKey: MJSkipDockMenuIconProblemAlertKey) {
-            return
-        }
+        guard !MJMenuIconVisible() && !MJDockIconVisible() else { return }
+        guard !UserDefaults.standard.bool(forKey: MJSkipDockMenuIconProblemAlertKey) else { return }
 
         let alert = NSAlert()
         alert.alertStyle = .warning
         alert.messageText = "How to get back to this window"
-        alert.informativeText = """
-            When both the dock icon and menu icon are disabled, you can get back to this \
-            Preferences window by activating Hammerspoon from Spotlight or by running \
-            `open -a Hammerspoon` from Terminal, and then pressing Command + Comma.
-            """
+        alert.informativeText = "When both the dock icon and menu icon are disabled, you can get back to this Preferences window by activating Hammerspoon from Spotlight or by running `open -a Hammerspoon` from Terminal, and then pressing Command + Comma."
         alert.showsSuppressionButton = true
-
-        guard let window = self.window else { return }
-        alert.beginSheetModal(for: window) { [weak self] returnCode in
-            guard let self else { return }
-            self.dockMenuProblemAlertDidEnd(alert, returnCode: returnCode.rawValue)
+        alert.beginSheetModal(for: window!) { _ in
+            let skip = alert.suppressionButton?.state == .on
+            UserDefaults.standard.set(skip, forKey: MJSkipDockMenuIconProblemAlertKey)
         }
     }
 }

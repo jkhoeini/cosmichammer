@@ -1,19 +1,40 @@
 import Foundation
 
-/// Returns the directory containing the user's Hammerspoon config file.
-@_cdecl("MJConfigDir")
-func MJConfigDir() -> NSString {
-    return (MJConfigFileFullPath() as NSString).deletingLastPathComponent as NSString
+private var _MJConfigFile: NSString = "~/.hammerspoon/init.lua"
+
+@_cdecl("MJConfigFileGet")
+func MJConfigFileGet() -> NSString {
+    return _MJConfigFile
 }
 
-/// Returns the absolute (symlink-resolved) path to the config directory.
-@_cdecl("MJConfigDirAbsolute")
-func MJConfigDirAbsolute() -> NSString {
-    return (MJConfigDir() as String as NSString).resolvingSymlinksInPath as NSString
+@_cdecl("MJConfigFileSet")
+func MJConfigFileSet(_ path: NSString) {
+    _MJConfigFile = path
 }
 
-/// Returns the full, standardized path to the Hammerspoon config file.
 @_cdecl("MJConfigFileFullPath")
 func MJConfigFileFullPath() -> NSString {
-    return (MJConfigFile as String as NSString).standardizingPath as NSString
+    return (_MJConfigFile as String).standardizingPath as NSString
+}
+
+@_cdecl("MJConfigDir")
+func MJConfigDir() -> NSString {
+    return (MJConfigFileFullPath() as String).deletingLastPathComponent as NSString
+}
+
+@_cdecl("MJConfigDirAbsolute")
+func MJConfigDirAbsolute() -> NSString {
+    return (MJConfigDir() as String).resolvingSymlinksInPath as NSString
+}
+
+private extension String {
+    var standardizingPath: String {
+        return (self as NSString).standardizingPath
+    }
+    var deletingLastPathComponent: String {
+        return (self as NSString).deletingLastPathComponent
+    }
+    var resolvingSymlinksInPath: String {
+        return (self as NSString).resolvingSymlinksInPath
+    }
 }

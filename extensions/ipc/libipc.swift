@@ -15,7 +15,7 @@ class HSIPCMessagePort: NSObject {
 private var callbackInProgress: Int = 0
 
 private let ipc_callback: CFMessagePortCallBack = { (local, msgid, data, info) -> Unmanaged<CFData>? in
-    let skin = LuaSkin.shared(withState: nil)!
+    let skin = LuaSkin.skin(with: nil)
     let port = Unmanaged<HSIPCMessagePort>.fromOpaque(info!).takeUnretainedValue()
     var outdata: Unmanaged<CFData>? = nil
 
@@ -26,9 +26,9 @@ private let ipc_callback: CFMessagePortCallBack = { (local, msgid, data, info) -
 
     callbackInProgress += 1
 
-    _lua_stackguard_entry(skin.L)
+    _lua_stackguard_entry(skin.l)
     if port.callbackRef != LUA_NOREF {
-        let L = skin.L!
+        let L = skin.l!
         skin.pushLuaRef(refTable, ref: port.callbackRef)
         skin.pushNSObject(port)
         lua_pushinteger(L, lua_Integer(msgid))
@@ -41,13 +41,13 @@ private let ipc_callback: CFMessagePortCallBack = { (local, msgid, data, info) -
 
         luaL_tolstring(L, -1, nil) // make sure it's a string
         let portName = port.messagePort.flatMap { CFMessagePortGetName($0) as String? } ?? "unknown"
-        skin.logDebug("ipc_callback \(portName) debug: \(String(cString: lua_tostring(L, -1)))")
+        skin.logDebug("ipc_callback \(portName) debug: \(String(cString: lua_tostring(L, -1)!))")
         let result = NSMutableData()
-        if let obj = skin.toNSObject(atIndex: -1, withOptions: LS_NSLuaStringAsDataOnly) as? Data {
+        if let obj = skin.toNSObject(atIndex: -1, withOptions: .nsLuaStringAsDataOnly) as? Data {
             result.append(obj)
         }
         if !status {
-            skin.logError("\(USERDATA_TAG):callback - error during callback for \(portName): \(String(cString: lua_tostring(L, -2)))")
+            skin.logError("\(USERDATA_TAG):callback - error during callback for \(portName): \(String(cString: lua_tostring(L, -2)!))")
         }
         lua_pop(L, 2) // remove the result and the luaL_tostring() version
 
@@ -60,7 +60,7 @@ private let ipc_callback: CFMessagePortCallBack = { (local, msgid, data, info) -
     }
 
     callbackInProgress -= 1
-    _lua_stackguard_exit(skin.L)
+    _lua_stackguard_exit(skin.l)
     return outdata
 }
 
@@ -79,8 +79,8 @@ private let ipc_callback: CFMessagePortCallBack = { (local, msgid, data, info) -
 ///
 /// Notes:
 ///  * a remote port can send messages at any time to a local port; a local port can only respond to messages from a remote port
-private func ipc_localPort(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func ipc_localPort(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING, LS_TFUNCTION, LS_TBREAK)
     let portName = skin.toNSObject(atIndex: 1) as! String
 
@@ -98,7 +98,6 @@ private func ipc_localPort(_ L: OpaquePointer!) -> Int32 {
 
     if shouldFreeInfo.boolValue {
         let errorMsg = port.messagePort != nil ? "local port name already in use" : "failed to create new local port"
-        if let mp = port.messagePort { CFRelease(mp) }
         port.messagePort = nil
         return luaL_error(L, errorMsg)
     }
@@ -108,7 +107,6 @@ private func ipc_localPort(_ L: OpaquePointer!) -> Int32 {
     }
 
     guard let runLoopSource = CFMessagePortCreateRunLoopSource(nil, mp, 0) else {
-        CFRelease(mp)
         port.messagePort = nil
         return luaL_error(L, "unable to create runloop source for local port")
     }
@@ -130,8 +128,8 @@ private func ipc_localPort(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * a remote port can send messages at any time to a local port; a local port can only respond to messages from a remote port
-private func ipc_remotePort(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func ipc_remotePort(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING, LS_TBREAK)
     let portName = skin.toNSObject(atIndex: 1) as! String
 
@@ -155,8 +153,8 @@ private func ipc_remotePort(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * the port name as a string
-private func ipc_name(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func ipc_name(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, unsafeBitCast(USERDATA_TAG, to: UnsafePointer<CChar>.self), LS_TBREAK)
     let port = skin.toNSObject(atIndex: 1) as! HSIPCMessagePort
 
@@ -177,8 +175,8 @@ private func ipc_name(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * a remote port can send messages at any time to a local port; a local port can only respond to messages from a remote port
-private func ipc_isRemote(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func ipc_isRemote(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, unsafeBitCast(USERDATA_TAG, to: UnsafePointer<CChar>.self), LS_TBREAK)
     let port = skin.toNSObject(atIndex: 1) as! HSIPCMessagePort
 
@@ -195,8 +193,8 @@ private func ipc_isRemote(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * true if the object is a valid port, otherwise false
-private func ipc_isValid(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func ipc_isValid(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, unsafeBitCast(USERDATA_TAG, to: UnsafePointer<CChar>.self), LS_TBREAK)
     let port = skin.toNSObject(atIndex: 1) as! HSIPCMessagePort
 
@@ -217,8 +215,8 @@ private func ipc_isValid(_ L: OpaquePointer!) -> Int32 {
 /// Returns:
 ///  * status   - a boolean indicating whether or not the local port responded before the timeout (true) or if an error or timeout occurred waiting for the response (false)
 ///  * response - the response from the local port, usually a string, but may be nil if there was no response returned.  If status is false, will contain an error message describing the error.
-private func ipc_sendMessage(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func ipc_sendMessage(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, unsafeBitCast(USERDATA_TAG, to: UnsafePointer<CChar>.self),
                    LS_TANY,
                    LS_TNUMBER | LS_TINTEGER,
@@ -235,15 +233,15 @@ private func ipc_sendMessage(_ L: OpaquePointer!) -> Int32 {
     }
 
     luaL_tolstring(L, 2, nil) // make sure it's a string
-    let data = skin.toNSObject(atIndex: -1, withOptions: LS_NSLuaStringAsDataOnly) as? Data
+    let data = skin.toNSObject(atIndex: -1, withOptions: .nsLuaStringAsDataOnly) as? Data
     lua_pop(L, 1)
 
     let msgID = lua_tointeger(L, 3)
 
-    let waitTimeout: CFTimeInterval = (lua_gettop(L) >= 4 && lua_isnumber(L, 4) != 0)
+    let waitTimeout: CFTimeInterval = (lua_gettop(L) >= 4 && lua_isnumber(L, 4))
         ? CFTimeInterval(lua_tonumber(L, 4)) : 2.0
 
-    let oneWay = lua_isboolean(L, -1) != 0 ? (lua_toboolean(L, -1) != 0) : false
+    let oneWay = lua_isboolean(L, -1) ? (lua_toboolean(L, -1) != 0) : false
 
     let portName = CFMessagePortGetName(port.messagePort) as String? ?? "unknown"
     skin.logDebug("ipc_sendMessage on \(portName)")
@@ -261,7 +259,7 @@ private func ipc_sendMessage(_ L: OpaquePointer!) -> Int32 {
         oneWay ? nil : CFRunLoopMode.defaultMode.rawValue,
         &returnedData
     )
-    let status = (code == kCFMessagePortSuccess.rawValue)
+    let status = (code == kCFMessagePortSuccess)
 
     var response: Data?
     if status {
@@ -271,12 +269,12 @@ private func ipc_sendMessage(_ L: OpaquePointer!) -> Int32 {
     } else {
         let errMsg: String
         switch code {
-        case kCFMessagePortSendTimeout.rawValue:        errMsg = "send timeout"
-        case kCFMessagePortReceiveTimeout.rawValue:     errMsg = "receive timeout"
-        case kCFMessagePortIsInvalid.rawValue:          errMsg = "message port invalid"
-        case kCFMessagePortTransportError.rawValue:     errMsg = "error during transport"
-        case kCFMessagePortBecameInvalidError.rawValue: errMsg = "message port was invalidated"
-        default:                                        errMsg = "unrecognized error: \(code)"
+        case kCFMessagePortSendTimeout:        errMsg = "send timeout"
+        case kCFMessagePortReceiveTimeout:     errMsg = "receive timeout"
+        case kCFMessagePortIsInvalid:          errMsg = "message port invalid"
+        case kCFMessagePortTransportError:     errMsg = "error during transport"
+        case kCFMessagePortBecameInvalidError: errMsg = "message port was invalidated"
+        default:                               errMsg = "unrecognized error: \(code)"
         }
         response = errMsg.data(using: .utf8)
     }
@@ -288,7 +286,7 @@ private func ipc_sendMessage(_ L: OpaquePointer!) -> Int32 {
 
 // MARK: - Lua<->NSObject Conversion Functions
 
-private func pushHSIPCMessagePort(_ L: OpaquePointer!, _ obj: Any!) -> Int32 {
+private func pushHSIPCMessagePort(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
     let value = obj as! HSIPCMessagePort
     value.selfRef += 1
     let valuePtr = lua_newuserdata(L, MemoryLayout<UnsafeMutableRawPointer>.size)!
@@ -298,8 +296,8 @@ private func pushHSIPCMessagePort(_ L: OpaquePointer!, _ obj: Any!) -> Int32 {
     return 1
 }
 
-private func toHSIPCMessagePortFromLua(_ L: OpaquePointer!, _ idx: Int32) -> Any? {
-    let skin = LuaSkin.shared(withState: L)!
+private func toHSIPCMessagePortFromLua(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> Any? {
+    let skin = LuaSkin.skin(with: L)
     guard luaL_testudata(L, idx, USERDATA_TAG) != nil else {
         skin.logError("expected \(USERDATA_TAG) object, found \(String(cString: lua_typename(L, lua_type(L, idx))))")
         return nil
@@ -310,9 +308,9 @@ private func toHSIPCMessagePortFromLua(_ L: OpaquePointer!, _ idx: Int32) -> Any
 
 // MARK: - Hammerspoon/Lua Infrastructure
 
-private func userdata_tostring(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
-    let obj = skin.luaObject(atIndex: 1, toClass: "HSIPCMessagePort") as! HSIPCMessagePort
+private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
+    let obj = skin.luaObject(at: 1, toClass: "HSIPCMessagePort") as! HSIPCMessagePort
     let portName = obj.messagePort.flatMap { CFMessagePortGetName($0) as String? } ?? "unknown"
     let locality = obj.messagePort.flatMap { CFMessagePortIsRemote($0) ? "remote" : "local" } ?? "unknown"
     let title = "\(portName), \(locality)"
@@ -320,11 +318,11 @@ private func userdata_tostring(_ L: OpaquePointer!) -> Int32 {
     return 1
 }
 
-private func userdata_eq(_ L: OpaquePointer!) -> Int32 {
+private func userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     if luaL_testudata(L, 1, USERDATA_TAG) != nil && luaL_testudata(L, 2, USERDATA_TAG) != nil {
-        let skin = LuaSkin.shared(withState: L)!
-        let obj1 = skin.luaObject(atIndex: 1, toClass: "HSIPCMessagePort") as! HSIPCMessagePort
-        let obj2 = skin.luaObject(atIndex: 2, toClass: "HSIPCMessagePort") as! HSIPCMessagePort
+        let skin = LuaSkin.skin(with: L)
+        let obj1 = skin.luaObject(at: 1, toClass: "HSIPCMessagePort") as! HSIPCMessagePort
+        let obj2 = skin.luaObject(at: 2, toClass: "HSIPCMessagePort") as! HSIPCMessagePort
         lua_pushboolean(L, obj1.isEqual(obj2) ? 1 : 0)
     } else {
         lua_pushboolean(L, 0)
@@ -341,13 +339,13 @@ private func userdata_eq(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * None
-private func userdata_gc(_ L: OpaquePointer!) -> Int32 {
+private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let ptr = lua_touserdata(L, 1)!.assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
     if let raw = ptr.pointee {
         let obj = Unmanaged<HSIPCMessagePort>.fromOpaque(raw).takeRetainedValue()
         obj.selfRef -= 1
         if obj.selfRef == 0 {
-            let skin = LuaSkin.shared(withState: L)!
+            let skin = LuaSkin.skin(with: L)
             obj.callbackRef = skin.luaUnref(refTable, ref: obj.callbackRef)
             if let mp = obj.messagePort {
                 CFMessagePortInvalidate(mp)
@@ -394,8 +392,8 @@ private var moduleLib: [luaL_Reg] = [
 ]
 
 @_cdecl("luaopen_hs_libipc")
-public func luaopen_hs_libipc(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+public func luaopen_hs_libipc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     callbackInProgress = 0
     refTable = skin.registerLibrary(withObject: USERDATA_TAG,
                                      functions: &moduleLib,

@@ -45,20 +45,20 @@ private class HSmouse {
 
         let hidman = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
         IOHIDManagerRegisterDeviceMatchingCallback(hidman, enum_callback, nil)
-        IOHIDManagerScheduleWithRunLoop(hidman, CFRunLoopGetCurrent(), HSmouse.RUNLOOPMODE!.rawValue)
+        IOHIDManagerScheduleWithRunLoop(hidman, CFRunLoopGetCurrent(), HSmouse.RUNLOOPMODE.rawValue)
         IOHIDManagerSetDeviceMatching(hidman, matchingDict as CFDictionary)
         IOHIDManagerOpen(hidman, IOOptionBits(kIOHIDOptionsTypeNone))
 
         mice = NSMutableArray()
 
         // Run a sub-runloop until the initial enumeration of mice is completed
-        while CFRunLoopRunInMode(HSmouse.RUNLOOPMODE!, 0, true) == .handledSource {
+        while CFRunLoopRunInMode(HSmouse.RUNLOOPMODE, 0, true) == .handledSource {
             // Do nothing
         }
 
         // Remove our callback and unschedule from the runloop
         IOHIDManagerRegisterDeviceMatchingCallback(hidman, nil, nil)
-        IOHIDManagerUnscheduleFromRunLoop(hidman, CFRunLoopGetCurrent(), HSmouse.RUNLOOPMODE!.rawValue)
+        IOHIDManagerUnscheduleFromRunLoop(hidman, CFRunLoopGetCurrent(), HSmouse.RUNLOOPMODE.rawValue)
         IOHIDManagerClose(hidman, IOOptionBits(kIOHIDOptionsTypeNone))
 
         return (mice as? [String]) ?? []
@@ -140,8 +140,8 @@ private class HSmouse {
 /// Notes:
 ///  * This function leverages code from [ManyMouse](http://icculus.org/manymouse/).
 ///  * This function considers any mouse labelled as "Apple Internal Keyboard / Trackpad" to be an internal mouse.
-private func mouse_count(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func mouse_count(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     let includeInternal = lua_toboolean(L, 1) != 0
 
     let mouseManager = HSmouse()
@@ -151,7 +151,7 @@ private func mouse_count(_ L: OpaquePointer!) -> Int32 {
         mouseCount -= 1
     }
 
-    lua_pushinteger(skin.L, lua_Integer(mouseCount))
+    lua_pushinteger(skin.l, lua_Integer(mouseCount))
     return 1
 }
 
@@ -167,8 +167,8 @@ private func mouse_count(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * This function leverages code from [ManyMouse](http://icculus.org/manymouse/).
-private func mouse_names(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func mouse_names(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     let mouseManager = HSmouse()
 
     skin.pushNSObject(mouseManager.getNames() as NSArray)
@@ -187,12 +187,12 @@ private func mouse_names(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * If no parameters are supplied, the current position will be returned. If a point table parameter is supplied, the mouse pointer position will be set and the new co-ordinates returned
-private func mouse_absolutePosition(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func mouse_absolutePosition(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     let mouseManager = HSmouse()
 
-    if lua_type(skin.L, 1) == LUA_TTABLE {
-        let point = skin.tableToPoint(atIndex: 1)
+    if lua_type(skin.l, 1) == LUA_TTABLE {
+        let point = skin.tableToPoint(at: 1)
         mouseManager.absolutePosition = point
     }
 
@@ -216,8 +216,8 @@ private func mouse_absolutePosition(_ L: OpaquePointer!) -> Int32 {
 ///  * Note that not all values will work, they should map to the steps defined in the System Preferences app, which are:
 ///    * 0.0, 0.125, 0.5, 0.6875, 0.875, 1.0, 1.5, 2.0, 2.5, 3.0
 ///  * Note that changes to this value will not be noticed immediately by macOS
-private func mouse_mouseAcceleration(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func mouse_mouseAcceleration(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
 
     let mouseManager = HSmouse()
 
@@ -248,8 +248,8 @@ private func mouse_mouseAcceleration(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * A string, either "natural" or "normal"
-private func mouse_scrollDirection(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func mouse_scrollDirection(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     let mouseManager = HSmouse()
 
     skin.pushNSObject(mouseManager.isScrollDirectionNatural ? "natural" : "normal")
@@ -269,8 +269,8 @@ private func mouse_scrollDirection(_ L: OpaquePointer!) -> Int32 {
 /// Notes:
 ///  * Possible values include: arrowCursor, contextualMenuCursor, closedHandCursor, crosshairCursor, disappearingItemCursor, dragCopyCursor, dragLinkCursor, IBeamCursor, operationNotAllowedCursor, pointingHandCursor, resizeDownCursor, resizeLeftCursor, resizeLeftRightCursor, resizeRightCursor, resizeUpCursor, resizeUpDownCursor, IBeamCursorForVerticalLayout or unknown if the cursor type cannot be determined.
 ///  * This function can also return daVinciResolveHorizontalArrows, when hovering over mouse-draggable text-boxes in DaVinci Resolve. This is determined using the "hotspot" value of the cursor.
-private func mouse_currentCursorType(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func mouse_currentCursorType(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
 
     var value: NSString = "unknown"
 
@@ -326,20 +326,20 @@ private func mouse_currentCursorType(_ L: OpaquePointer!) -> Int32 {
 
 // Note to future authors, there is no function to use kIOHIDTrackpadAccelerationType because it doesn't appear to do anything on modern systems.
 
-private let mouseLib: [luaL_Reg] = [
-    luaL_Reg(name: ("absolutePosition" as NSString).utf8String, func: mouse_absolutePosition),
-    luaL_Reg(name: ("trackingSpeed" as NSString).utf8String, func: mouse_mouseAcceleration),
-    luaL_Reg(name: ("scrollDirection" as NSString).utf8String, func: mouse_scrollDirection),
-    luaL_Reg(name: ("currentCursorType" as NSString).utf8String, func: mouse_currentCursorType),
-    luaL_Reg(name: ("count" as NSString).utf8String, func: mouse_count),
-    luaL_Reg(name: ("names" as NSString).utf8String, func: mouse_names),
+private var mouseLib: [luaL_Reg] = [
+    luaL_Reg(name: strdup("absolutePosition"), func: mouse_absolutePosition),
+    luaL_Reg(name: strdup("trackingSpeed"), func: mouse_mouseAcceleration),
+    luaL_Reg(name: strdup("scrollDirection"), func: mouse_scrollDirection),
+    luaL_Reg(name: strdup("currentCursorType"), func: mouse_currentCursorType),
+    luaL_Reg(name: strdup("count"), func: mouse_count),
+    luaL_Reg(name: strdup("names"), func: mouse_names),
     luaL_Reg(name: nil, func: nil),
 ]
 
 @_cdecl("luaopen_hs_libmouse")
-public func luaopen_hs_libmouse(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
-    skin.registerLibrary("hs.mouse", functions: mouseLib, metaFunctions: nil)
+public func luaopen_hs_libmouse(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
+    skin.registerLibrary("hs.mouse", functions: &mouseLib, metaFunctions: nil)
 
     return 1
 }

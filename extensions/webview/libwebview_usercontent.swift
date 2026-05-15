@@ -24,12 +24,12 @@ private class HSUserContentController: WKUserContentController, WKScriptMessageH
     func userContentController(_ userContentController: WKUserContentController,
                                didReceive message: WKScriptMessage) {
         if message.name == name && userContentCallback != LUA_NOREF {
-            let skin = LuaSkin.shared(withState: nil)!
-            _lua_stackguard_entry(skin.L)
+            let skin = LuaSkin.skin(with: nil)
+            _lua_stackguard_entry(skin.l)
             skin.pushLuaRef(refTable, ref: userContentCallback)
             skin.pushNSObject(message)
             skin.protectedCallAndError("hs.webview.usercontent callback", nargs: 1, nresults: 0)
-            _lua_stackguard_exit(skin.L)
+            _lua_stackguard_exit(skin.l)
         }
     }
 }
@@ -49,8 +49,8 @@ private class HSUserContentController: WKUserContentController, WKScriptMessageH
 /// Notes:
 ///  * This object should be provided as the final argument to the `hs.webview.new` constructor in order to tie the webview to this content controller.  All new windows which are created from this parent webview will also use this controller.
 ///  * See `hs.webview.usercontent:setCallback` for more information about the message port.
-private func ucc_new(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func ucc_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING, LS_TBREAK)
 
     let theName = skin.toNSObject(atIndex: 1) as! String
@@ -71,14 +71,14 @@ private func ucc_new(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * the usercontentControllerObject or nil if the script table was malformed in some way.
-private func ucc_inject(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func ucc_inject(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_UCC_TAG, LS_TTABLE, LS_TBREAK)
     let ptr = luaL_checkudata(L, 1, USERDATA_UCC_TAG)!
         .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
     let ucc = Unmanaged<HSUserContentController>.fromOpaque(ptr.pointee!).takeUnretainedValue()
 
-    let userScript = skin.luaObject(atIndex: 2, toClass: "WKUserScript") as? WKUserScript
+    let userScript = skin.luaObject(at: 2, toClass: "WKUserScript") as? WKUserScript
     if let userScript = userScript {
         ucc.addUserScript(userScript)
         lua_pushvalue(L, 1)
@@ -103,8 +103,8 @@ private func ucc_inject(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * Because the WKUserContentController class only allows for removing all scripts, you can use this method to generate a list of all scripts, modify it, and then use it in a loop to reapply the scripts if you need to remove just a few scripts.
-private func ucc_userScripts(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func ucc_userScripts(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_UCC_TAG, LS_TBREAK)
     let ptr = luaL_checkudata(L, 1, USERDATA_UCC_TAG)!
         .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
@@ -125,8 +125,8 @@ private func ucc_userScripts(_ L: OpaquePointer!) -> Int32 {
 ///  * the usercontentControllerObject
 /// Notes:
 ///  * The WKUserContentController class only allows for removing all scripts.  If you need finer control, make a copy of the current scripts with `hs.webview.usercontent.userScripts()` first so you can recreate the scripts you want to keep.
-private func ucc_removeAllScripts(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func ucc_removeAllScripts(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_UCC_TAG, LS_TBREAK)
     let ptr = luaL_checkudata(L, 1, USERDATA_UCC_TAG)!
         .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
@@ -157,8 +157,8 @@ private func ucc_removeAllScripts(_ L: OpaquePointer!) -> Int32 {
 ///      }
 ///
 ///  * Where *name* matches the name specified in the constructor and *message-object* is the object to post to the function.  This object can be a number, string, date, array, dictionary(table), or nil.
-private func ucc_setCallback(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func ucc_setCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_UCC_TAG, LS_TFUNCTION | LS_TNIL, LS_TBREAK)
     let ptr = luaL_checkudata(L, 1, USERDATA_UCC_TAG)!
         .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
@@ -177,8 +177,8 @@ private func ucc_setCallback(_ L: OpaquePointer!) -> Int32 {
 
 // MARK: - NSObject <-> Lua converters
 
-private func HSUserContentController_toLua(_ L: OpaquePointer!, _ obj: Any!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func HSUserContentController_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     let ucc = obj as! HSUserContentController
 
     if ucc.udRef == LUA_NOREF {
@@ -194,8 +194,8 @@ private func HSUserContentController_toLua(_ L: OpaquePointer!, _ obj: Any!) -> 
     return 1
 }
 
-private func WKUserScript_toLua(_ L: OpaquePointer!, _ obj: Any!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func WKUserScript_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     let script = obj as! WKUserScript
 
     lua_newtable(L)
@@ -212,8 +212,8 @@ private func WKUserScript_toLua(_ L: OpaquePointer!, _ obj: Any!) -> Int32 {
     return 1
 }
 
-private func WKScriptMessage_toLua(_ L: OpaquePointer!, _ obj: Any!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func WKScriptMessage_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     let message = obj as! WKScriptMessage
 
     lua_newtable(L)
@@ -228,8 +228,8 @@ private func WKScriptMessage_toLua(_ L: OpaquePointer!, _ obj: Any!) -> Int32 {
     return 1
 }
 
-private func table_toWKUserScript(_ L: OpaquePointer!, _ idx: Int32) -> Any! {
-    let skin = LuaSkin.shared(withState: L)!
+private func table_toWKUserScript(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> Any! {
+    let skin = LuaSkin.skin(with: L)
 
     if lua_type(L, idx) == LUA_TTABLE {
         var mainFrame: Bool = true
@@ -275,7 +275,7 @@ private func table_toWKUserScript(_ L: OpaquePointer!, _ idx: Int32) -> Any! {
 
 // MARK: - Lua infrastructure support
 
-private func userdata_tostring(_ L: OpaquePointer!) -> Int32 {
+private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let ptr = luaL_checkudata(L, 1, USERDATA_UCC_TAG)!
         .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
     var name: String
@@ -285,12 +285,12 @@ private func userdata_tostring(_ L: OpaquePointer!) -> Int32 {
     } else {
         name = "<deleted>"
     }
-    let str = String(format: "%s: %@ (%p)", USERDATA_UCC_TAG, name as NSString, lua_topointer(L, 1)!)
+    let str = "\(USERDATA_UCC_TAG): \(name) (\(lua_topointer(L, 1)!))"
     lua_pushstring(L, str)
     return 1
 }
 
-private func userdata_eq(_ L: OpaquePointer!) -> Int32 {
+private func userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let ptr1 = luaL_checkudata(L, 1, USERDATA_UCC_TAG)!
         .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
     let ptr2 = luaL_checkudata(L, 2, USERDATA_UCC_TAG)!
@@ -305,8 +305,8 @@ private func userdata_eq(_ L: OpaquePointer!) -> Int32 {
     return 1
 }
 
-private func userdata_gc(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     let ptr = luaL_checkudata(L, 1, USERDATA_UCC_TAG)!
         .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
 
@@ -342,8 +342,8 @@ private var moduleLib: [luaL_Reg] = [
 ]
 
 @_cdecl("luaopen_hs_libwebviewusercontent")
-public func luaopen_hs_libwebviewusercontent(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+public func luaopen_hs_libwebviewusercontent(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
 
     refTable = skin.registerLibrary(withObject: USERDATA_UCC_TAG,
                                     functions: &moduleLib,

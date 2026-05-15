@@ -52,8 +52,8 @@ private class HSWifiScan: NSObject {
 
     @objc func invokeCallback(_ object: Any?) {
         if fnRef != LUA_NOREF {
-            let skin = LuaSkin.shared(withState: nil)!
-            _lua_stackguard_entry(skin.L)
+            let skin = LuaSkin.skin(with: nil)
+            _lua_stackguard_entry(skin.l)
             skin.pushLuaRef(refTable, ref: fnRef)
             if let error = object as? NSError {
                 skin.logInfo(error.localizedDescription)
@@ -61,10 +61,10 @@ private class HSWifiScan: NSObject {
             } else if let networks = object as? Set<CWNetwork> {
                 skin.pushNSObject(networks as NSSet)
             } else {
-                lua_pushnil(skin.L)
+                lua_pushnil(skin.l)
             }
             skin.protectedCallAndError("hs.wifi callback", nargs: 1, nresults: 0)
-            _lua_stackguard_exit(skin.L)
+            _lua_stackguard_exit(skin.l)
         }
     }
 }
@@ -81,8 +81,8 @@ private class HSWifiScan: NSObject {
 ///
 /// Returns:
 ///  * True if the power change was successful, or false and an error string if an error occurred attempting to set the power state.  Returns nil if there is a problem attaching to the interface.
-private func setPower(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func setPower(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TBOOLEAN, LS_TSTRING | LS_TOPTIONAL, LS_TBREAK)
     let powerState = lua_toboolean(L, 1) != 0
     var theName: String?
@@ -116,8 +116,8 @@ private func setPower(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * None
-private func disassociate(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func disassociate(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING | LS_TOPTIONAL, LS_TBREAK)
     var theName: String?
     if lua_gettop(L) == 1 {
@@ -145,8 +145,8 @@ private func disassociate(_ L: OpaquePointer!) -> Int32 {
 ///  * Enterprise WiFi networks are not currently supported. Please file an issue on GitHub if you need support for enterprise networks
 ///  * This function blocks Hammerspoon until the operation is completed
 ///  * If multiple access points are available with the same SSID, one will be chosen at random to connect to
-private func associate(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func associate(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING, LS_TSTRING, LS_TSTRING | LS_TOPTIONAL, LS_TBREAK)
 
     var success = false
@@ -161,7 +161,7 @@ private func associate(_ L: OpaquePointer!) -> Int32 {
     let networks = try? interface?.scanForNetworks(withName: ssid)
     if let network = networks?.first {
         let password = skin.toNSObject(atIndex: 2) as? String ?? ""
-        success = (try? interface?.associate(toNetwork: network, password: password)) != nil
+        success = (try? interface?.associate(to: network, password: password)) != nil
     }
 
     lua_pushboolean(L, success ? 1 : 0)
@@ -180,12 +180,12 @@ private func associate(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * For most systems, this will be one interface, but the result is still returned as an array.
-private func wifi_interfaces(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func wifi_interfaces(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TBREAK)
     let sharedClient = CWWiFiClient.shared()
     if let names = sharedClient.interfaceNames() {
-        skin.pushNSObject(names as NSSet)
+        skin.pushNSObject(NSSet(array: names))
     } else {
         lua_pushnil(L)
     }
@@ -204,8 +204,8 @@ private func wifi_interfaces(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * WARNING: This function will block all Lua execution until the scan has completed. It's probably not very sensible to use this function very much, if at all.
-private func wifi_scan(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func wifi_scan(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING | LS_TOPTIONAL, LS_TBREAK)
     var theName: String?
     if lua_gettop(L) == 1 {
@@ -240,8 +240,8 @@ private func wifi_scan(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * returns a scan object
-private func wifi_scan_background(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func wifi_scan_background(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TFUNCTION | LS_TNIL, LS_TSTRING | LS_TOPTIONAL, LS_TBREAK)
 
     var callbackRef: Int32 = LUA_NOREF
@@ -274,8 +274,8 @@ private func wifi_scan_background(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * A string containing the SSID of the WiFi network currently joined, or nil if no there is no WiFi connection
-private func wifi_current_ssid(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func wifi_current_ssid(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING | LS_TOPTIONAL, LS_TBREAK)
     var theName: String?
     if lua_gettop(L) == 1 {
@@ -301,8 +301,8 @@ private func wifi_current_ssid(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * A table containing details about the interface.
-private func interfaceDetails(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func interfaceDetails(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING | LS_TOPTIONAL, LS_TBREAK)
     var theName: String?
     if lua_gettop(L) == 1 {
@@ -330,8 +330,8 @@ private func interfaceDetails(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * a boolean value indicating whether or not the scan has been completed.
-private func backgroundScanIsDone(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func backgroundScanIsDone(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let scannerPtr = luaL_checkudata(L, 1, USERDATA_TAG)!
         .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
@@ -342,8 +342,8 @@ private func backgroundScanIsDone(_ L: OpaquePointer!) -> Int32 {
 
 // MARK: - Lua<->NSObject Conversion Functions
 
-private func pushCWInterface(_ L: OpaquePointer!, _ obj: Any!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func pushCWInterface(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     let theInterface = obj as! CWInterface
     lua_newtable(L)
 
@@ -375,6 +375,11 @@ private func pushCWInterface(_ L: OpaquePointer!, _ obj: Any!) -> Int32 {
     case .wpaEnterpriseMixed:  securityStr = "WPA Enterprise Mixed"
     case .wpa2Enterprise:      securityStr = "WPA2 Enterprise"
     case .enterprise:          securityStr = "Enterprise"
+    case .wpa3Personal:        securityStr = "WPA3 Personal"
+    case .wpa3Enterprise:      securityStr = "WPA3 Enterprise"
+    case .wpa3Transition:      securityStr = "WPA3 Transition"
+    case .OWE:                 securityStr = "OWE"
+    case .oweTransition:       securityStr = "OWE Transition"
     case .unknown:             securityStr = "Unknown"
     @unknown default:          securityStr = "unrecognized (\(theInterface.security().rawValue))"
     }
@@ -420,6 +425,8 @@ private func pushCWInterface(_ L: OpaquePointer!, _ obj: Any!) -> Int32 {
     case .mode11g:  phyStr = "G"
     case .mode11n:  phyStr = "N"
     case .mode11ac: phyStr = "AC"
+    case .mode11ax: phyStr = "AX"
+    case .mode11be: phyStr = "BE"
     @unknown default: phyStr = "unrecognized (\(theInterface.activePHYMode().rawValue))"
     }
     lua_pushstring(L, phyStr)
@@ -428,7 +435,7 @@ private func pushCWInterface(_ L: OpaquePointer!, _ obj: Any!) -> Int32 {
     return 1
 }
 
-private func pushCWChannel(_ L: OpaquePointer!, _ obj: Any!) -> Int32 {
+private func pushCWChannel(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
     let theChannel = obj as! CWChannel
     lua_newtable(L)
 
@@ -451,6 +458,7 @@ private func pushCWChannel(_ L: OpaquePointer!, _ obj: Any!) -> Int32 {
     switch theChannel.channelBand {
     case .band2GHz:    bandStr = "2GHz"
     case .band5GHz:    bandStr = "5GHz"
+    case .band6GHz:    bandStr = "6GHz"
     case .bandUnknown: bandStr = "unknown"
     @unknown default:  bandStr = "unrecognized (\(theChannel.channelBand.rawValue))"
     }
@@ -460,8 +468,8 @@ private func pushCWChannel(_ L: OpaquePointer!, _ obj: Any!) -> Int32 {
     return 1
 }
 
-private func pushCWConfiguration(_ L: OpaquePointer!, _ obj: Any!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func pushCWConfiguration(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     let theConfig = obj as! CWConfiguration
     lua_newtable(L)
     lua_pushboolean(L, theConfig.requireAdministratorForPower ? 1 : 0)
@@ -478,8 +486,8 @@ private func pushCWConfiguration(_ L: OpaquePointer!, _ obj: Any!) -> Int32 {
     return 1
 }
 
-private func pushCWNetwork(_ L: OpaquePointer!, _ obj: Any!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func pushCWNetwork(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     let theNetwork = obj as! CWNetwork
     lua_newtable(L)
 
@@ -547,8 +555,8 @@ private func pushCWNetwork(_ L: OpaquePointer!, _ obj: Any!) -> Int32 {
     return 1
 }
 
-private func pushCWNetworkProfile(_ L: OpaquePointer!, _ obj: Any!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func pushCWNetworkProfile(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     let theProfile = obj as! CWNetworkProfile
     lua_newtable(L)
 
@@ -570,6 +578,11 @@ private func pushCWNetworkProfile(_ L: OpaquePointer!, _ obj: Any!) -> Int32 {
     case .wpaEnterpriseMixed:  securityStr = "WPA Enterprise Mixed"
     case .wpa2Enterprise:      securityStr = "WPA2 Enterprise"
     case .enterprise:          securityStr = "Enterprise"
+    case .wpa3Personal:        securityStr = "WPA3 Personal"
+    case .wpa3Enterprise:      securityStr = "WPA3 Enterprise"
+    case .wpa3Transition:      securityStr = "WPA3 Transition"
+    case .OWE:                 securityStr = "OWE"
+    case .oweTransition:       securityStr = "OWE Transition"
     case .unknown:             securityStr = "Unknown"
     @unknown default:          securityStr = "unrecognized (\(theProfile.security.rawValue))"
     }
@@ -581,8 +594,8 @@ private func pushCWNetworkProfile(_ L: OpaquePointer!, _ obj: Any!) -> Int32 {
 
 // MARK: - Hammerspoon Infrastructure
 
-private func userdata_tostring(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     let scannerPtr = luaL_checkudata(L, 1, USERDATA_TAG)!
         .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
     let scanner = Unmanaged<HSWifiScan>.fromOpaque(scannerPtr.pointee!).takeUnretainedValue()
@@ -590,11 +603,11 @@ private func userdata_tostring(_ L: OpaquePointer!) -> Int32 {
     return 1
 }
 
-private func userdata_gc(_ L: OpaquePointer!) -> Int32 {
+private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let scannerPtr = luaL_checkudata(L, 1, USERDATA_TAG)!
         .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
     let scanner = Unmanaged<HSWifiScan>.fromOpaque(scannerPtr.pointee!).takeRetainedValue()
-    let skin = LuaSkin.shared(withState: L)!
+    let skin = LuaSkin.skin(with: L)
 
     scanner.fnRef = skin.luaUnref(refTable, ref: scanner.fnRef)
 
@@ -625,8 +638,8 @@ private var userdata_metaLib: [luaL_Reg] = [
 ]
 
 @_cdecl("luaopen_hs_libwifi")
-public func luaopen_hs_libwifi(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)!
+public func luaopen_hs_libwifi(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     refTable = skin.registerLibrary(withObject: USERDATA_TAG,
                                     functions: &wifilib,
                                     metaFunctions: nil,

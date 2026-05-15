@@ -919,8 +919,18 @@ nextarg:
 
 - (BOOL)canPushNSObject:(id)obj {
     if (obj) {
+        NSString *objClassName = NSStringFromClass([obj class]);
         for (id key in self.registeredNSHelperFunctions) {
-            if ([obj isKindOfClass: NSClassFromString(key)]) return YES ;
+            Class cls = NSClassFromString(key);
+            if (cls) {
+                if ([obj isKindOfClass:cls]) return YES;
+            } else {
+                NSRange dotRange = [objClassName rangeOfString:@"." options:NSBackwardsSearch];
+                if (dotRange.location != NSNotFound) {
+                    NSString *shortName = [objClassName substringFromIndex:dotRange.location + 1];
+                    if ([shortName isEqualToString:key]) return YES;
+                }
+            }
         }
     }
     return NO ;
@@ -1265,8 +1275,23 @@ nextarg:
         // check for registered helpers
 
         // first check for exact class match
+        NSString *objClassName = NSStringFromClass([obj class]);
         for (id key in self.registeredNSHelperFunctions) {
-            if ([obj isMemberOfClass: NSClassFromString(key)]) {
+            Class cls = NSClassFromString(key);
+            if (!cls) {
+                // Swift classes are registered with short names (e.g. "HSToolbar")
+                // but the runtime uses module-qualified names (e.g. "HSSwiftExtensions.HSToolbar").
+                // Match by comparing the short name against the suffix of the runtime class name.
+                NSRange dotRange = [objClassName rangeOfString:@"." options:NSBackwardsSearch];
+                if (dotRange.location != NSNotFound) {
+                    NSString *shortName = [objClassName substringFromIndex:dotRange.location + 1];
+                    if ([shortName isEqualToString:key]) {
+                        pushNSHelperFunction theFunc = (pushNSHelperFunction)[self.registeredNSHelperFunctions[key] pointerValue];
+                        int resultAnswer = theFunc(self.L, obj);
+                        if (resultAnswer > -1) return resultAnswer;
+                    }
+                }
+            } else if ([obj isMemberOfClass:cls]) {
                 pushNSHelperFunction theFunc = (pushNSHelperFunction)[self.registeredNSHelperFunctions[key] pointerValue] ;
                 int resultAnswer = theFunc(self.L, obj) ;
                 if (resultAnswer > -1) return resultAnswer ;
@@ -1275,7 +1300,18 @@ nextarg:
 
         // if we're still here, check for kind of class (i.e. possible superclass of object)
         for (id key in self.registeredNSHelperFunctions) {
-            if ([obj isKindOfClass: NSClassFromString(key)]) {
+            Class cls = NSClassFromString(key);
+            if (!cls) {
+                NSRange dotRange = [objClassName rangeOfString:@"." options:NSBackwardsSearch];
+                if (dotRange.location != NSNotFound) {
+                    NSString *shortName = [objClassName substringFromIndex:dotRange.location + 1];
+                    if ([shortName isEqualToString:key]) {
+                        pushNSHelperFunction theFunc = (pushNSHelperFunction)[self.registeredNSHelperFunctions[key] pointerValue];
+                        int resultAnswer = theFunc(self.L, obj);
+                        if (resultAnswer > -1) return resultAnswer;
+                    }
+                }
+            } else if ([obj isKindOfClass:cls]) {
                 pushNSHelperFunction theFunc = (pushNSHelperFunction)[self.registeredNSHelperFunctions[key] pointerValue] ;
                 int resultAnswer = theFunc(self.L, obj) ;
                 if (resultAnswer > -1) return resultAnswer ;

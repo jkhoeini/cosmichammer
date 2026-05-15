@@ -1,33 +1,39 @@
 import Cocoa
 
-// MARK: - Console Dark Mode
+// MARK: - String constants (from variables.h)
+
+private let HSConsoleDarkModeKey = "HSConsoleDarkModeKey"
+private let MJKeepConsoleOnTopKey = "MJKeepConsoleOnTopKey"
+
+// MARK: - C-visible functions (imported by ObjC via MJConsoleWindowController.h)
 
 @_cdecl("ConsoleDarkModeEnabled")
-func ConsoleDarkModeEnabled() -> Bool {
-    UserDefaults.standard.bool(forKey: "HSConsoleDarkModeKey")
+public func ConsoleDarkModeEnabled() -> Bool {
+    UserDefaults.standard.bool(forKey: HSConsoleDarkModeKey)
 }
 
 @_cdecl("ConsoleDarkModeSetEnabled")
-func ConsoleDarkModeSetEnabled(_ enabled: Bool) {
-    UserDefaults.standard.set(enabled, forKey: "HSConsoleDarkModeKey")
+public func ConsoleDarkModeSetEnabled(_ enabled: Bool) {
+    UserDefaults.standard.set(enabled, forKey: HSConsoleDarkModeKey)
 }
 
-// MARK: - Console Always-On-Top
-
 @_cdecl("MJConsoleWindowAlwaysOnTop")
-func MJConsoleWindowAlwaysOnTop() -> Bool {
-    UserDefaults.standard.bool(forKey: "MJKeepConsoleOnTopKey")
+public func MJConsoleWindowAlwaysOnTop() -> Bool {
+    UserDefaults.standard.bool(forKey: MJKeepConsoleOnTopKey)
 }
 
 @_cdecl("MJConsoleWindowSetAlwaysOnTop")
-func MJConsoleWindowSetAlwaysOnTop(_ alwaysOnTop: Bool) {
-    UserDefaults.standard.set(alwaysOnTop, forKey: "MJKeepConsoleOnTopKey")
+public func MJConsoleWindowSetAlwaysOnTop(_ alwaysOnTop: Bool) {
+    UserDefaults.standard.set(alwaysOnTop, forKey: MJKeepConsoleOnTopKey)
     MJConsoleWindowController.singleton().reflectDefaults()
 }
 
+// MJLuaSetupLogHandler, MJLuaRunString, MJLuaCompletionsForWord
+// are now defined in MJLua.swift (same module) — no @_silgen_name needed.
+
 // MARK: - MJReplLineType
 
-private enum MJReplLineType: UInt {
+enum MJReplLineType {
     case command
     case result
     case stdout
@@ -35,104 +41,92 @@ private enum MJReplLineType: UInt {
 
 // MARK: - MJConsoleWindowController
 
-@objcMembers
-class MJConsoleWindowController: NSWindowController, NSTextFieldDelegate {
+@objc(MJConsoleWindowController)
+public class MJConsoleWindowController: NSWindowController, NSTextFieldDelegate {
 
-    // MARK: Public properties (match header)
+    // MARK: Public properties (declared in .h)
 
-    var mjColorForStdout: NSColor = .black
-    var mjColorForCommand: NSColor = .black
-    var mjColorForResult: NSColor = .black
-    var consoleFont: NSFont = NSFont.systemFont(ofSize: 12)
-    var maxConsoleOutputHistory: NSNumber = NSNumber(value: 100_000)
+    @objc public var MJColorForStdout: NSColor?
+    @objc public var MJColorForCommand: NSColor?
+    @objc public var MJColorForResult: NSColor?
+    @objc public var consoleFont: NSFont?
+    @objc public var maxConsoleOutputHistory: NSNumber?
 
     // MARK: Private properties
 
-    private var history: [String] = []
+    @objc private var history: NSMutableArray = NSMutableArray()
     private var historyIndex: Int = 0
-    private var outputView: NSTextView!
-    private var inputField: NSTextField!
-    private var preshownStdouts: [String] = []
-    private var dateFormatter: DateFormatter = DateFormatter()
-    private var outputBuffer: [NSAttributedString] = []
+    @objc private var outputView: NSTextView?
+    @objc private var inputField: NSTextField?
+    private var preshownStdouts: NSMutableArray = NSMutableArray()
+    private var dateFormatter: DateFormatter
+    private var outputBuffer: NSMutableArray
     private var outputTimer: Timer?
 
-    // MARK: - Singleton
+    // MARK: Singleton
 
-    private static var _singleton: MJConsoleWindowController?
-
-    @objc static func singleton() -> MJConsoleWindowController {
-        if let existing = _singleton {
-            return existing
-        }
-        let instance = MJConsoleWindowController()
-        _singleton = instance
-        return instance
+    @objc public class func singleton() -> MJConsoleWindowController {
+        return _shared
     }
 
-    // MARK: - Init
+    private static let _shared = MJConsoleWindowController()
 
-    override init() {
-        super.init(window: nil)
+    // MARK: Init
 
+    public override init(window: NSWindow?) {
+        let df = DateFormatter()
         let enUSPOSIX = Locale(identifier: "en_US_POSIX")
-        dateFormatter.locale = enUSPOSIX
-        dateFormatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        df.locale = enUSPOSIX
+        df.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        self.dateFormatter = df
+        self.outputBuffer = NSMutableArray(capacity: 1000)
 
-        outputBuffer.reserveCapacity(1000)
+        super.init(window: window)
 
-        // Strings that we want to add to the console window are batched up in outputBuffer and this timer drains them
-        outputTimer = Timer(timeInterval: 0.2, repeats: true) { [weak self] _ in
-            guard let self = self, !self.outputBuffer.isEmpty else { return }
-
+        // Start the drain timer
+        let timer = Timer(timeInterval: 0.2, repeats: true) { [weak self] _ in
+            guard let self = self, self.outputBuffer.count > 0 else { return }
             autoreleasepool {
-                let storage = self.outputView.textStorage!
+                guard let storage = self.outputView?.textStorage else { return }
                 storage.beginEditing()
-
-                for attrstr in self.outputBuffer {
+                let maxLength = self.maxConsoleOutputHistory?.intValue ?? 100000
+                for case let attrStr as NSAttributedString in self.outputBuffer {
                     let curLength = storage.length
-                    let maxLength = self.maxConsoleOutputHistory.intValue
-                    let addLength = attrstr.length
-
-                    storage.append(attrstr)
-                    if curLength > maxLength, maxLength > 0 {
+                    let addLength = attrStr.length
+                    storage.append(attrStr)
+                    if curLength > maxLength && maxLength > 0 {
                         storage.deleteCharacters(in: NSRange(location: 0, length: curLength - maxLength + addLength))
                     }
                 }
-
-                self.outputBuffer.removeAll()
+                self.outputBuffer.removeAllObjects()
                 storage.endEditing()
-                self.outputView.scrollToEndOfDocument(nil)
+                self.outputView?.scrollToEndOfDocument(self)
             }
         }
-        RunLoop.main.add(outputTimer!, forMode: .common)
+        RunLoop.main.add(timer, forMode: .common)
+        self.outputTimer = timer
 
         initializeConsoleColorsAndFont()
 
-        // NSWindowController -init calls -initWithWindow:nil which marks
-        // isWindowLoaded=YES, preventing loadWindow from ever running.
-        // Force it to run here.
+        // NSWindowController.init(window:nil) marks isWindowLoaded = YES,
+        // preventing loadWindow() from ever being called automatically.
+        // Force it here.
         loadWindow()
 
-        // Post-load setup (windowDidLoad equivalent)
+        // Post-load setup (equivalent to windowDidLoad)
         shouldCascadeWindows = false
-        history = []
-        appendString(
-            "Welcome to the Hammerspoon Console!\n"
-            + "You can run any Lua code in here.\n\n",
-            type: .stdout
-        )
+        history = NSMutableArray()
+        appendString("\nWelcome to the Hammerspoon Console!\nYou can run any Lua code in here.\n\n",
+                     type: .stdout)
     }
 
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) is not supported")
+    public required init?(coder: NSCoder) {
+        fatalError("init(coder:) is not supported for MJConsoleWindowController")
     }
 
     // MARK: - Programmatic window construction
 
-    override func loadWindow() {
-        // --- Window ---
+    public override func loadWindow() {
         let styleMask: NSWindow.StyleMask = [.titled, .closable, .miniaturizable, .resizable]
         let contentRect = NSRect(x: 916, y: 704, width: 510, height: 389)
         let window = NSWindow(
@@ -144,13 +138,13 @@ class MJConsoleWindowController: NSWindowController, NSTextFieldDelegate {
         window.title = "Hammerspoon Console"
         window.isReleasedWhenClosed = false
         window.minSize = NSSize(width: 340, height: 200)
-        window.frameAutosaveName = "console"
+        window.setFrameAutosaveName("console")
         window.collectionBehavior = .fullScreenPrimary
         window.animationBehavior = .default
         window.autorecalculatesKeyViewLoop = false
         window.allowsToolTipsWhenApplicationIsInactive = false
 
-        let contentView = window.contentView!
+        guard let contentView = window.contentView else { return }
 
         // --- ScrollView + TextView (output) ---
         let scrollView = NSScrollView(frame: .zero)
@@ -174,137 +168,120 @@ class MJConsoleWindowController: NSWindowController, NSTextFieldDelegate {
         textView.textColor = .textColor
         textView.backgroundColor = .textBackgroundColor
 
-        // Let the text view track the scroll view's clip width but grow vertically
         textView.textContainer?.containerSize = NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
         textView.textContainer?.widthTracksTextView = true
         textView.autoresizingMask = [.width, .height]
 
         scrollView.documentView = textView
         contentView.addSubview(scrollView)
-        outputView = textView
+        self.outputView = textView
 
-        // --- Input field ---
-        let input = HSGrowingTextField(frame: .zero)
-        input.translatesAutoresizingMaskIntoConstraints = false
-        input.font = NSFont(name: "Menlo-Regular", size: 12.0)
-        input.textColor = .controlTextColor
-        input.backgroundColor = .textBackgroundColor
-        input.drawsBackground = true
-        input.isBordered = true
-        input.isBezeled = true
-        input.bezelStyle = .squareBezel
-        input.isEditable = true
-        input.isSelectable = true
-        input.focusRingType = .none
-        input.setContentCompressionResistancePriority(
-            NSLayoutConstraint.Priority(250),
+        // --- Input field (HSGrowingTextField) ---
+        let inputField = HSGrowingTextField(frame: .zero)
+        inputField.translatesAutoresizingMaskIntoConstraints = false
+        inputField.font = NSFont(name: "Menlo-Regular", size: 12.0)
+        inputField.textColor = .controlTextColor
+        inputField.backgroundColor = .textBackgroundColor
+        inputField.drawsBackground = true
+        inputField.isBordered = true
+        inputField.isBezeled = true
+        inputField.bezelStyle = .squareBezel
+        inputField.isEditable = true
+        inputField.isSelectable = true
+        inputField.focusRingType = .none
+        inputField.setContentCompressionResistancePriority(
+            NSLayoutConstraint.Priority(rawValue: 250),
             for: .horizontal
         )
-        input.target = self
-        input.action = #selector(tryMessage(_:))
-        input.delegate = self
-        contentView.addSubview(input)
-        inputField = input
+        inputField.target = self
+        inputField.action = #selector(tryMessage(_:))
+        inputField.delegate = self
+        contentView.addSubview(inputField)
+        self.inputField = inputField
 
-        // --- Auto Layout constraints (matching XIB: 20pt margins, 8pt gap) ---
+        // --- Auto Layout constraints ---
         NSLayoutConstraint.activate([
-            // Scroll view edges
             scrollView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 20),
             scrollView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 20),
             scrollView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -20),
 
-            // Input field edges
-            input.leadingAnchor.constraint(equalTo: scrollView.leadingAnchor),
-            input.trailingAnchor.constraint(equalTo: scrollView.trailingAnchor),
-            input.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -20),
+            inputField.leadingAnchor.constraint(equalTo: scrollView.leadingAnchor),
+            inputField.trailingAnchor.constraint(equalTo: scrollView.trailingAnchor),
+            inputField.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -20),
 
-            // 8pt gap between scroll view bottom and input field top
-            input.topAnchor.constraint(equalTo: scrollView.bottomAnchor, constant: 8),
+            inputField.topAnchor.constraint(equalTo: scrollView.bottomAnchor, constant: 8),
         ])
 
-        window.initialFirstResponder = input
+        window.initialFirstResponder = inputField
         self.window = window
     }
 
-    // MARK: - Console colors and font
+    // MARK: - Public API
 
-    @objc func initializeConsoleColorsAndFont() {
-        mjColorForStdout = NSColor(calibratedHue: 0.88, saturation: 1.0, brightness: 0.6, alpha: 1.0)
-        mjColorForCommand = .black
-        mjColorForResult = NSColor(calibratedHue: 0.54, saturation: 1.0, brightness: 0.7, alpha: 1.0)
-        consoleFont = NSFont(name: "Menlo", size: 12.0) ?? NSFont.systemFont(ofSize: 12.0)
-        maxConsoleOutputHistory = NSNumber(value: 100_000)
+    @objc public func initializeConsoleColorsAndFont() {
+        MJColorForStdout  = NSColor(calibratedHue: 0.88, saturation: 1.0, brightness: 0.6, alpha: 1.0)
+        MJColorForCommand = .black
+        MJColorForResult  = NSColor(calibratedHue: 0.54, saturation: 1.0, brightness: 0.7, alpha: 1.0)
+        consoleFont       = NSFont(name: "Menlo", size: 12.0)
+        maxConsoleOutputHistory = NSNumber(value: 100000)
     }
 
-    // MARK: - Setup
-
-    @objc func setup() {
-        preshownStdouts = []
+    @objc public func setup() {
+        preshownStdouts = NSMutableArray()
         MJLuaSetupLogHandler { [weak self] str in
-            guard let self = self, let str = str else { return }
+            guard let self = self else { return }
             if self.outputView != nil {
-                self.appendString(str, type: .stdout)
-                self.outputView.scrollToEndOfDocument(nil)
+                self.appendString(str as String, type: .stdout)
+                self.outputView?.scrollToEndOfDocument(self)
             } else {
-                self.preshownStdouts.append(str)
+                self.preshownStdouts.add(str)
             }
         }
         reflectDefaults()
     }
 
-    // MARK: - Reflect defaults
-
-    @objc func reflectDefaults() {
-        // Dark Mode:
+    @objc public func reflectDefaults() {
         if ConsoleDarkModeEnabled() {
             window?.appearance = NSAppearance(named: .vibrantDark)
             window?.titlebarAppearsTransparent = true
-            outputView.enclosingScrollView?.drawsBackground = false
+            outputView?.enclosingScrollView?.drawsBackground = false
         } else {
             window?.appearance = NSAppearance(named: .vibrantLight)
             window?.titlebarAppearsTransparent = false
-            outputView.enclosingScrollView?.drawsBackground = true
+            outputView?.enclosingScrollView?.drawsBackground = true
         }
-
-        let level: NSWindow.Level = MJConsoleWindowAlwaysOnTop() ? .floating : .normal
-        window?.level = level
+        window?.level = MJConsoleWindowAlwaysOnTop() ? .floating : .normal
     }
 
-    // MARK: - Append string
+    // MARK: - Internal helpers
 
-    private func appendString(_ str: String?, type: MJReplLineType) {
-        guard var str = str else { return }
-
-        let color: NSColor
+    private func appendString(_ str: String, type: MJReplLineType) {
+        var color = MJColorForStdout ?? .textColor
         switch type {
-        case .stdout:  color = mjColorForStdout
-        case .command: color = mjColorForCommand
-        case .result:  color = mjColorForResult
+        case .stdout:  color = MJColorForStdout  ?? .textColor
+        case .command: color = MJColorForCommand ?? .textColor
+        case .result:  color = MJColorForResult  ?? .textColor
         }
 
+        var displayStr = str
         if type == .stdout {
-            str = "\(dateFormatter.string(from: Date())): \(str)"
+            let dateStr = dateFormatter.string(from: Date())
+            displayStr = "\(dateStr): \(str)"
         }
 
         let attrs: [NSAttributedString.Key: Any] = [
-            .font: consoleFont,
+            .font: consoleFont ?? NSFont.systemFont(ofSize: 12),
             .foregroundColor: color,
         ]
-        let attrstr = NSAttributedString(string: str, attributes: attrs)
-
-        // We don't actually append the string immediately, it goes into a buffer that drains on a timer (see above)
-        outputBuffer.append(attrstr)
+        let attrStr = NSAttributedString(string: displayStr, attributes: attrs)
+        outputBuffer.add(attrStr)
     }
 
-    // MARK: - Run command
-
-    @objc func run(_ command: String) -> String {
-        return MJLuaRunString(command) ?? ""
+    private func run(_ command: String) -> String {
+        return MJLuaRunString(command as NSString) as String
     }
 
-    // MARK: - Try message (action from input field)
-
-    @objc func tryMessage(_ sender: NSTextField) {
+    @objc private func tryMessage(_ sender: NSTextField) {
         let command = sender.stringValue
         appendString("\n> \(command)\n", type: .command)
 
@@ -315,13 +292,11 @@ class MJConsoleWindowController: NSWindowController, NSTextFieldDelegate {
         (sender as? HSGrowingTextField)?.resetGrowth()
 
         saveToHistory(command)
-        outputView.scrollToEndOfDocument(nil)
+        outputView?.scrollToEndOfDocument(self)
     }
 
-    // MARK: - History
-
     private func saveToHistory(_ cmd: String) {
-        history.append(cmd)
+        history.add(cmd)
         historyIndex = history.count
         useCurrentHistoryIndex()
     }
@@ -340,12 +315,13 @@ class MJConsoleWindowController: NSWindowController, NSTextFieldDelegate {
         (inputField as? HSGrowingTextField)?.resetGrowth()
 
         if historyIndex == history.count {
-            inputField.stringValue = ""
+            inputField?.stringValue = ""
         } else {
-            inputField.stringValue = history[historyIndex]
+            inputField?.stringValue = (history[historyIndex] as? String) ?? ""
         }
 
-        if let editor = inputField.window?.fieldEditor(true, for: inputField) as? NSText {
+        if let win = inputField?.window,
+           let editor = win.fieldEditor(true, for: inputField) as? NSText {
             let length = editor.string.count
             editor.selectedRange = NSRange(location: length, length: 0)
         }
@@ -353,58 +329,48 @@ class MJConsoleWindowController: NSWindowController, NSTextFieldDelegate {
 
     // MARK: - NSTextFieldDelegate
 
-    func control(
-        _ control: NSControl,
-        textView: NSTextView,
-        doCommandBy commandSelector: Selector
-    ) -> Bool {
-        if commandSelector == #selector(NSResponder.moveUp(_:)) {
+    @objc public func control(_ control: NSControl,
+                              textView: NSTextView,
+                              doCommandBy command: Selector) -> Bool {
+        if command == #selector(NSResponder.moveUp(_:)) {
             goPrevHistory()
             return true
-        } else if commandSelector == #selector(NSResponder.moveDown(_:)) {
+        } else if command == #selector(NSResponder.moveDown(_:)) {
             goNextHistory()
             return true
-        } else if commandSelector == #selector(NSResponder.insertTab(_:)) {
-            inputField.currentEditor()?.complete(nil)
+        } else if command == #selector(NSResponder.insertTab(_:)) {
+            inputField?.currentEditor()?.complete(nil)
             return true
         }
         return false
     }
 
-    func control(
-        _ control: NSControl,
-        textView: NSTextView,
-        completions words: [String],
-        forPartialWordRange charRange: NSRange,
-        indexOfSelectedItem index: UnsafeMutablePointer<Int>
-    ) -> [String] {
+    @objc public func control(_ control: NSControl,
+                              textView: NSTextView,
+                              completions words: [String],
+                              forPartialWordRange charRange: NSRange,
+                              indexOfSelectedItem index: UnsafeMutablePointer<Int>) -> [String] {
         let currentText = textView.string
-        let nsText = currentText as NSString
-        let textBeforeCursor = nsText.substring(to: NSMaxRange(charRange))
-        let textAfterCursor = nsText.substring(from: NSMaxRange(charRange))
-        let completionWord = nsText.substring(with: charRange)
+        let nsCurrentText = currentText as NSString
+        let maxRange = NSMaxRange(charRange)
+        let textBeforeCursor = nsCurrentText.substring(to: maxRange)
+        let textAfterCursor  = nsCurrentText.substring(from: maxRange)
+        let completionWord   = nsCurrentText.substring(with: charRange)
 
-        guard let completions = MJLuaCompletionsForWord(completionWord) as? [String] else {
-            return []
-        }
+        let completions = MJLuaCompletionsForWord(completionWord as NSString) as! [String]
 
         if completions.count == 1 {
-            // We have only one completion, so we should just insert it into the text field
             let completeWith = completions[0]
             var stringToAdd = ""
-
             if completeWith.hasPrefix(completionWord) {
-                stringToAdd = String(completeWith.dropFirst(completionWord.count))
+                let startIdx = completeWith.index(completeWith.startIndex,
+                                                  offsetBy: completionWord.count)
+                stringToAdd = String(completeWith[startIdx...])
             }
-
             textView.string = "\(textBeforeCursor)\(stringToAdd)\(textAfterCursor)"
-            textView.setSelectedRange(NSRange(
-                location: NSMaxRange(charRange) + (stringToAdd as NSString).length,
-                length: 0
-            ))
+            textView.setSelectedRange(NSRange(location: maxRange + stringToAdd.count, length: 0))
             return []
         }
-
         return completions
     }
 }

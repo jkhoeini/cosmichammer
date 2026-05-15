@@ -27,8 +27,8 @@ private var refTable: LSRefTable = LUA_NOREF
 
 // MARK: - Support Functions
 
-private func parseOptionsTable(_ L: OpaquePointer!, _ idx: Int32) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func parseOptionsTable(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     let optionList: NSArray
     if lua_type(L, idx) == LUA_TTABLE {
         optionList = skin.toNSObject(atIndex: idx) as? NSArray ?? NSArray()
@@ -67,7 +67,7 @@ private func parseOptionsTable(_ L: OpaquePointer!, _ idx: Int32) -> Int32 {
     return options
 }
 
-private func expandErrno(_ L: OpaquePointer!) -> Int32 {
+private func expandErrno(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let msg: String
     switch errno {
     case ENOTSUP:      msg = "filesystem does not support extended attributes"
@@ -106,8 +106,8 @@ private func expandErrno(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * True if the operation succeeds; otherwise throws a Lua error with a description of reason for failure.
-private func xattr_setxattr(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func xattr_setxattr(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING, LS_TSTRING, LS_TSTRING, LS_TTABLE | LS_TOPTIONAL, LS_TNUMBER | LS_TINTEGER | LS_TOPTIONAL, LS_TBREAK)
 
     var path = skin.toNSObject(atIndex: 1) as! NSString
@@ -115,7 +115,7 @@ private func xattr_setxattr(_ L: OpaquePointer!) -> Int32 {
 
     let attribute = skin.toNSObject(atIndex: 2) as! NSString
 
-    let value = skin.toNSObject(atIndex: 3, with: LS_NSLuaStringAsDataOnly) as! NSData
+    let value = skin.toNSObject(atIndex: 3, withOptions: .nsLuaStringAsDataOnly) as! NSData
 
     let options = parseOptionsTable(L, 4)
 
@@ -143,8 +143,8 @@ private func xattr_setxattr(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * True if the operation succeeds; otherwise throws a Lua error with a description of reason for failure.
-private func xattr_removexattr(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func xattr_removexattr(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING, LS_TSTRING, LS_TTABLE | LS_TOPTIONAL, LS_TBREAK)
 
     var path = skin.toNSObject(atIndex: 1) as! NSString
@@ -177,8 +177,8 @@ private func xattr_removexattr(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Notes:
 ///  * See also [hs.fs.xattr.getHumanReadable](#getHumanReadable).
-private func xattr_getxattr(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func xattr_getxattr(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING, LS_TSTRING, LS_TTABLE | LS_TOPTIONAL, LS_TNUMBER | LS_TINTEGER | LS_TOPTIONAL, LS_TBREAK)
 
     var path = skin.toNSObject(atIndex: 1) as! NSString
@@ -224,8 +224,8 @@ private func xattr_getxattr(_ L: OpaquePointer!) -> Int32 {
 ///
 /// Returns:
 ///  * a table containing an array of strings identifying the extended attributes currently defined for the file or directory; note that the order of the attributes is nondeterministic and is not guaranteed to be the same for future queries.  Throws a Lua error on failure with a description of the reason for the failure.
-private func xattr_listxattr(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+private func xattr_listxattr(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING, LS_TTABLE | LS_TOPTIONAL, LS_TBREAK)
 
     var path = skin.toNSObject(atIndex: 1) as! NSString
@@ -269,8 +269,8 @@ private let moduleLib: [luaL_Reg] = [
 ]
 
 @_cdecl("luaopen_hs_libfsxattr")
-public func luaopen_hs_libfsxattr(_ L: OpaquePointer!) -> Int32 {
-    let skin = LuaSkin.shared(withState: L)
+public func luaopen_hs_libfsxattr(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
     refTable = skin.registerLibrary("hs.fs.xattr", functions: moduleLib, metaFunctions: nil)
 
     return 1
