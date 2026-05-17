@@ -9,10 +9,10 @@
       system = "aarch64-darwin";
       pkgs = nixpkgs.legacyPackages.${system};
 
-      version = "0.1.1";
+      version = "0.2.0";
       src = pkgs.fetchurl {
         url = "https://github.com/jkhoeini/hammerspoon/releases/download/v${version}/Hammerspoon-${version}-macos-arm64.dmg";
-        hash = "sha256-+g6Em6TOFckzmgYfAT2Pa1GmildU2H4ToFzOSzmzhk0=";
+        hash = "sha256-NQPACC+N9DlUABrgm1TYecNPaIvYHB1C9pQ8ZuQ6VzU=";
       };
 
       hammerspoon = pkgs.stdenvNoCC.mkDerivation {
