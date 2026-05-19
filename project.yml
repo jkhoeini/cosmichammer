@@ -74,10 +74,6 @@ targets:
           copyFiles: { destination: resources, subpath: extensions/hs/hsdocs/hsminweb }
     dependencies:
       - package: HammerspoonLibs
-    postBuildScripts:
-      - script: '"${SRCROOT}/scripts/copy-extension-lua-files.sh"'
-        name: Copy Extension Lua Files
-        shell: /bin/bash
 
   Hammerspoon Tests:
     type: bundle.unit-test
@@ -114,3 +110,83 @@ targets:
         INFOPLIST_FILE: HammerspoonUITests/Info.plist
         PRODUCT_BUNDLE_IDENTIFIER: org.hammerspoon.HammerspoonUITests
         LD_RUNPATH_SEARCH_PATHS: ["$(inherited)", "@executable_path/../Frameworks", "@loader_path/../Frameworks"]
+
+schemes:
+  Hammerspoon:
+    build:
+      targets:
+        Hammerspoon: all
+        Hammerspoon Tests: [testing, profiling, analyzing]
+    run:
+      config: Debug
+      enableAddressSanitizer: true
+      enableASanStackUseAfterReturn: true
+      enableUBSanitizer: true
+      commandLineArguments:
+        "-NSConstraintBasedLayoutVisualizeMutuallyExclusiveConstraints YES": true
+      environmentVariables:
+        - variable: NSZombieEnabled
+          value: "YES"
+          isEnabled: true
+        - variable: MallocScribble
+          value: ""
+          isEnabled: true
+    test:
+      config: Debug
+      gatherCoverageData: true
+      enableAddressSanitizer: true
+      enableASanStackUseAfterReturn: true
+      enableUBSanitizer: true
+      environmentVariables:
+        - variable: NSZombieEnabled
+          value: "YES"
+          isEnabled: true
+        - variable: MallocScribble
+          value: ""
+          isEnabled: true
+      targets:
+        - name: Hammerspoon Tests
+          randomExecutionOrder: true
+          location: "London, England"
+    profile:
+      config: Profile
+    analyze:
+      config: Debug
+    archive:
+      config: Release
+      revealArchiveInOrganizer: true
+
+  Release:
+    build:
+      targets:
+        Hammerspoon: all
+        Hammerspoon Tests: [testing]
+    run:
+      config: Release
+      disableMainThreadChecker: true
+      enableGPUValidationMode: true
+    test:
+      config: Debug
+      gatherCoverageData: true
+      enableAddressSanitizer: true
+      enableASanStackUseAfterReturn: true
+      enableUBSanitizer: true
+      environmentVariables:
+        - variable: NSZombieEnabled
+          value: "YES"
+          isEnabled: true
+        - variable: MallocScribble
+          value: ""
+          isEnabled: true
+      targets:
+        - name: Hammerspoon Tests
+          randomExecutionOrder: true
+        - name: Hammerspoon UI Tests
+          skipped: true
+    profile:
+      config: Release
+    analyze:
+      config: Debug
+    archive:
+      config: Release
+      revealArchiveInOrganizer: true

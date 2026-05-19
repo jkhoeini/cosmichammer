@@ -30,6 +30,28 @@ replaced.
 
 *** TODO Generate a new app icon
 
+* TODO — Xcode Build Vestiges
+
+*** DONE Move "Copy Extension Lua Files" Run Script phase to justfile
+    ~project.yml~ still has one ~postBuildScripts~ entry calling
+    ~scripts/copy-extension-lua-files.sh~ from inside Xcode. Move it to a
+    post-build step in the justfile like the other phases.
+
+*** TODO Move Copy Files build phases to justfile
+    Three ~copyFiles~ directives in ~project.yml~ (manpage, docs, hsminweb
+    assets) translate into Xcode Copy Files phases. Consolidate into the
+    justfile build recipe.
+
+*** TODO Replace Xcode-style ~$(VARIABLE)~ placeholders in Info.plist
+    ~Hammerspoon-Info.plist~ uses Xcode substitution syntax
+    (~$(MARKETING_VERSION)~, ~${EXECUTABLE_NAME}~, etc.) even though the
+    justfile already ~sed~-replaces them. Use a simpler template format.
+
+*** TODO Migrate ~just test~ from ~xcodebuild~ to ~swift test~
+    The ~test~ recipe shells out to ~xcodebuild~ directly. Replace with
+    Swift's native test runner to eliminate the dependency on the generated
+    Xcode project for testing.
+
 * Investigated — not worth doing
 
 ** SKIP Make generators Xcode build-time phases
@@ -98,3 +120,4 @@ replaced.
 ** DONE Replace all 4 XIBs with programmatic UI
 ** DONE Replace ~xcassets~ with pre-compiled ~.icns~ file
 ** DONE Move entitlements from Xcode to ~codesign~ in justfile
+** DONE Gitignore ~Hammerspoon.xcworkspace/~ (including shared xcschemes)

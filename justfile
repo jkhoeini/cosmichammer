@@ -149,7 +149,18 @@ test config="Debug":
         -destination "platform=macOS" \
         -derivedDataPath {{ build_dir }}/DerivedData \
         -resultBundlePath {{ build_dir }}/TestResults \
-        test 2>&1 | tee {{ build_dir }}/test.log
+        build-for-testing 2>&1 | tee {{ build_dir }}/test.log
+    SRCROOT="$(pwd)" \
+    BUILT_PRODUCTS_DIR="{{ build_dir }}/DerivedData/Build/Products/{{ config }}" \
+    UNLOCALIZED_RESOURCES_FOLDER_PATH="Hammerspoon.app/Contents/Resources" \
+    ./scripts/copy-extension-lua-files.sh
+    xcodebuild -workspace {{ workspace }} \
+        -scheme {{ scheme }} \
+        -configuration {{ config }} \
+        -destination "platform=macOS" \
+        -derivedDataPath {{ build_dir }}/DerivedData \
+        -resultBundlePath {{ build_dir }}/TestResults \
+        test-without-building 2>&1 | tee -a {{ build_dir }}/test.log
 
 # Build all documentation
 docs:
@@ -177,9 +188,24 @@ docs-lint:
     fi
     "$DOCSTOOL" --lint Hammerspoon extensions/
 
-# Generate Xcode project from project.yml
+# Generate Xcode project and workspace from project.yml
 generate:
+    #!/usr/bin/env bash
+    set -euo pipefail
     xcodegen generate
+    rm -rf Hammerspoon.xcworkspace
+    mkdir -p Hammerspoon.xcworkspace/xcshareddata/xcschemes
+    cat > Hammerspoon.xcworkspace/contents.xcworkspacedata << 'XCWS'
+    <?xml version="1.0" encoding="UTF-8"?>
+    <Workspace
+       version = "1.0">
+       <FileRef
+          location = "group:Hammerspoon.xcodeproj">
+       </FileRef>
+    </Workspace>
+    XCWS
+    mv Hammerspoon.xcodeproj/xcshareddata/xcschemes/*.xcscheme \
+       Hammerspoon.xcworkspace/xcshareddata/xcschemes/
 
 # Full rebuild: clean + build
 rebuild: clean build
