@@ -1,7 +1,7 @@
-name: Hammerspoon
+name: CosmicHammer
 
 options:
-  bundleIdPrefix: org.hammerspoon
+  bundleIdPrefix: org.cosmic-hammer
   deploymentTarget:
     macOS: "26.0"
   xcodeVersion: "1600"
@@ -13,9 +13,9 @@ configs:
 
 settings:
   configFiles:
-    Debug: Hammerspoon/Build Configs/Project-Base.xcconfig
-    Profile: Hammerspoon/Build Configs/Project-Base.xcconfig
-    Release: Hammerspoon/Build Configs/Project-Base.xcconfig
+    Debug: CosmicHammer/Build Configs/Project-Base.xcconfig
+    Profile: CosmicHammer/Build Configs/Project-Base.xcconfig
+    Release: CosmicHammer/Build Configs/Project-Base.xcconfig
   configs:
     Release:
       GCC_OPTIMIZATION_LEVEL: s
@@ -28,12 +28,12 @@ packages:
     path: Packages
 
 targets:
-  Hammerspoon:
+  CosmicHammer:
     type: application
     platform: macOS
     configFiles:
-      Debug: Hammerspoon/Build Configs/Hammerspoon-Base.xcconfig
-      Profile: Hammerspoon/Build Configs/Hammerspoon-Profile.xcconfig
+      Debug: CosmicHammer/Build Configs/CosmicHammer-Base.xcconfig
+      Profile: CosmicHammer/Build Configs/CosmicHammer-Profile.xcconfig
     settings:
       base:
         LD_RUNPATH_SEARCH_PATHS: ["$(inherited)", "@executable_path/../Frameworks"]
@@ -44,11 +44,11 @@ targets:
     sources:
       # Entry point for the Xcode app target (SPM uses HSApp/main.swift instead)
       - path: Xcode/main.swift
-      # Resources from Hammerspoon/ (exclude code — compiled by SPM via HSExtensions)
-      - path: Hammerspoon
-        excludes: ["**/*.m", "**/*.h", "**/*.swift", "**/*.pch", Build Configs, Hammerspoon-Info.plist, "*.entitlements"]
+      # Resources from CosmicHammer/ (exclude code — compiled by SPM via HSExtensions)
+      - path: CosmicHammer
+        excludes: ["**/*.m", "**/*.h", "**/*.swift", "**/*.pch", Build Configs, CosmicHammer-Info.plist, "*.entitlements"]
         buildPhase: resources
-      # Resources from outside Hammerspoon/
+      # Resources from outside CosmicHammer/
       - path: extensions/doc/lua.json
         buildPhase: resources
       - path: extensions/httpserver/timeout3
@@ -75,25 +75,25 @@ targets:
     dependencies:
       - package: HammerspoonLibs
 
-  Hammerspoon UI Tests:
+  CosmicHammer UI Tests:
     type: bundle.ui-testing
     platform: macOS
     sources:
-      - path: HammerspoonUITests
+      - path: CosmicHammerUITests
     dependencies:
-      - target: Hammerspoon
+      - target: CosmicHammer
     settings:
       base:
-        TEST_TARGET_NAME: Hammerspoon
-        INFOPLIST_FILE: HammerspoonUITests/Info.plist
-        PRODUCT_BUNDLE_IDENTIFIER: org.hammerspoon.HammerspoonUITests
+        TEST_TARGET_NAME: CosmicHammer
+        INFOPLIST_FILE: CosmicHammerUITests/Info.plist
+        PRODUCT_BUNDLE_IDENTIFIER: org.cosmic-hammer.CosmicHammerUITests
         LD_RUNPATH_SEARCH_PATHS: ["$(inherited)", "@executable_path/../Frameworks", "@loader_path/../Frameworks"]
 
 schemes:
-  Hammerspoon:
+  CosmicHammer:
     build:
       targets:
-        Hammerspoon: all
+        CosmicHammer: all
     run:
       config: Debug
       enableAddressSanitizer: true
@@ -133,7 +133,7 @@ schemes:
   Release:
     build:
       targets:
-        Hammerspoon: all
+        CosmicHammer: all
     run:
       config: Release
       disableMainThreadChecker: true
@@ -152,7 +152,7 @@ schemes:
           value: ""
           isEnabled: true
       targets:
-        - name: Hammerspoon UI Tests
+        - name: CosmicHammer UI Tests
           skipped: true
     profile:
       config: Release

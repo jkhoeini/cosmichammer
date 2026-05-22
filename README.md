@@ -1,46 +1,49 @@
-# Hammerspoon
-[![Downloads current release](https://img.shields.io/github/downloads/Hammerspoon/hammerspoon/latest/total.svg)](https://github.com/Hammerspoon/hammerspoon/releases)
-[![Downloads all releases](https://img.shields.io/github/downloads/Hammerspoon/hammerspoon/total.svg?maxAge=2592000)](https://github.com/Hammerspoon/hammerspoon/releases)
-[![Latest tag](https://img.shields.io/github/tag/Hammerspoon/hammerspoon.svg)](https://github.com/Hammerspoon/hammerspoon/tags)
-[![Latest release](https://img.shields.io/github/release/Hammerspoon/hammerspoon.svg)](https://github.com/Hammerspoon/hammerspoon/releases/latest)
+# Cosmic Hammer
+
+<p align="center">
+  <img src="CosmicHammer.svg" alt="Cosmic Hammer" width="200" height="200"/>
+</p>
+
+<p align="center">
+  <strong>Powerful macOS automation, forged in the cosmos.</strong>
+</p>
 
 Discord: [Click to join](https://discord.gg/vxchqkRbkR)
 
-## What is Hammerspoon?
+## What is Cosmic Hammer?
 
-This is a tool for powerful automation of OS X. At its core, Hammerspoon is just a bridge between the operating system and a Lua scripting engine.
+This is a tool for powerful automation of macOS. At its core, Cosmic Hammer is just a bridge between the operating system and a Lua scripting engine.
 
-What gives Hammerspoon its power is a set of extensions that expose specific pieces of system functionality, to the user. With these, you can write Lua scripts to control many aspects of your OS X environment.
+What gives Cosmic Hammer its power is a set of extensions that expose specific pieces of system functionality, to the user. With these, you can write Lua scripts to control many aspects of your macOS environment.
 
 ## How do I install it?
 
 ### Manually
 
  * Download the [latest release](https://github.com/Hammerspoon/hammerspoon/releases/latest)
- * Drag `Hammerspoon.app` from your `Downloads` folder to `Applications`
+ * Drag `Cosmic Hammer.app` from your `Downloads` folder to `Applications`
 
 ### Homebrew
 
-  * `brew install hammerspoon --cask`
+  * `brew install cosmic-hammer --cask`
 
 ## What next?
 
-Out of the box, Hammerspoon does nothing - you will need to create `~/.hammerspoon/init.lua` and fill it with useful code. There are several resources which can help you:
+Out of the box, Cosmic Hammer does nothing - you will need to create `~/.cosmic-hammer/init.lua` and fill it with useful code. There are several resources which can help you:
  * [Getting Started Guide](https://www.hammerspoon.org/go/)
  * [API docs](https://www.hammerspoon.org/docs/)
  * [FAQ](https://www.hammerspoon.org/faq/)
  * [Sample Configurations](https://github.com/Hammerspoon/hammerspoon/wiki/Sample-Configurations) supplied by various users
  * [Contribution Guide](https://github.com/Hammerspoon/hammerspoon/blob/master/CONTRIBUTING.md) for developers looking to get involved
- * An IRC channel for general chat/support/development (#hammerspoon on Libera)
- * [Google Group](https://groups.google.com/forum/#!forum/hammerspoon/) for support
+ * An IRC channel for general chat/support/development (#cosmic-hammer on Libera)
 
 ## What is the history of the project?
 
-Hammerspoon is a fork of [Mjolnir](https://github.com/mjolnirapp/mjolnir). Mjolnir aims to be a very minimal application, with its extensions hosted externally and managed using a Lua package manager. We wanted to provide a more integrated experience.
+Cosmic Hammer is a fork of [Hammerspoon](https://github.com/Hammerspoon/hammerspoon), which is itself a fork of [Mjolnir](https://github.com/mjolnirapp/mjolnir). Mjolnir aims to be a very minimal application, with its extensions hosted externally and managed using a Lua package manager. We wanted to provide a more integrated experience.
 
 ## What is the future of the project?
 
-Our intentions for Hammerspoon broadly fall into these categories:
+Our intentions for Cosmic Hammer broadly fall into these categories:
  * Ever wider coverage of system APIs in Extensions
  * Tighter integration between extensions
  * Smoother user experience

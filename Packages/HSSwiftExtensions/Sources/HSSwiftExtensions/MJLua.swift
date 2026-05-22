@@ -1,1 +1,1 @@
-../../../../Hammerspoon/MJLua.swift
+../../../../CosmicHammer/MJLua.swift

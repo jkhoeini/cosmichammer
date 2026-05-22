@@ -1,1 +1,1 @@
-../../../../Hammerspoon/MJDockIcon.swift
+../../../../CosmicHammer/MJDockIcon.swift

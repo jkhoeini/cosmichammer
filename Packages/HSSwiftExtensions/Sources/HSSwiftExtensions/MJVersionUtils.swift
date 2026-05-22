@@ -1,1 +1,1 @@
-../../../../Hammerspoon/MJVersionUtils.swift
+../../../../CosmicHammer/MJVersionUtils.swift

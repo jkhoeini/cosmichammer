@@ -1,1 +1,1 @@
-../../../../Hammerspoon/HSAppleScript.swift
+../../../../CosmicHammer/HSAppleScript.swift

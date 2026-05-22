@@ -1,6 +1,6 @@
-# Contributing to Hammerspoon
+# Contributing to Cosmic Hammer
 
-- [Contributing to Hammerspoon](#contributing-to-hammerspoon)
+- [Contributing to Cosmic Hammer](#contributing-to-cosmic-hammer)
   - [How is everything built?](#how-is-everything-built)
     - [Making frequent local rebuilds more convenient](#making-frequent-local-rebuilds-more-convenient)
   - [Contributing to the core app or LuaSkin](#contributing-to-the-core-app-or-luaskin)
@@ -15,13 +15,13 @@
     - [Testing](#testing)
     - [Third party extension distribution](#third-party-extension-distribution)
 
-Hammerspoon is composed of three separate logical areas - a Lua runtime wrapper framework called [LuaSkin](http://www.hammerspoon.org/docs/LuaSkin/Classes/LuaSkin/index.html#), the core Hammerspoon app which houses the LuaSkin/Lua runtime and provides the ability to load extensions, and [various extension modules](https://github.com/Hammerspoon/hammerspoon/tree/master/extensions) that [expose system APIs](http://www.hammerspoon.org/docs/) to the user's Lua code.
+Cosmic Hammer is composed of three separate logical areas - a Lua runtime wrapper framework called [LuaSkin](http://www.cosmichammer.org/docs/LuaSkin/Classes/LuaSkin/index.html#), the core Cosmic Hammer app which houses the LuaSkin/Lua runtime and provides the ability to load extensions, and [various extension modules](https://github.com/cosmichammer/cosmic-hammer/tree/master/extensions) that [expose system APIs](http://www.cosmichammer.org/docs/) to the user's Lua code.
 
 ## How is everything built?
 
-The app itself is built using Xcode. You must open `Hammerspoon.xcworkspace` rather than `Hammerspoon.xcodeproj`. If you open the latter, your build will fail because the workspace includes the LuaSkin sub-project and Swift Package Manager dependencies, which are resolved automatically by Xcode.
+The app itself is built using Xcode. You must open `CosmicHammer.xcworkspace` rather than `CosmicHammer.xcodeproj`. If you open the latter, your build will fail because the workspace includes the LuaSkin sub-project and Swift Package Manager dependencies, which are resolved automatically by Xcode.
 
-The extension modules are built before the core Hammerspoon binary as target dependencies. Each extension is defined as an Xcode target in its own right, although there is usually no reason to build these targets manually.
+The extension modules are built before the core Cosmic Hammer binary as target dependencies. Each extension is defined as an Xcode target in its own right, although there is usually no reason to build these targets manually.
 
 ### Making frequent local rebuilds more convenient
 [Self-signing your builds](https://github.com/Hammerspoon/hammerspoon/issues/643#issuecomment-158291705) will keep you from having to re-enable permissions for your locally built copy.

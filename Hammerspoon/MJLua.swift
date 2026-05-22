@@ -1,9 +1,9 @@
 //
 //  MJLua.swift
-//  Hammerspoon
+//  Cosmic Hammer
 //
 //  Ported from MJLua.m by Mohammad Sadegh Khoeini.
-//  Copyright © 2026 Hammerspoon. All rights reserved.
+//  Copyright © 2026 Cosmic Hammer. All rights reserved.
 //
 
 import Cocoa
@@ -39,13 +39,13 @@ func MJLuaSetupLogHandler(_ blk: @escaping @convention(block) (NSString) -> Void
 
 /// hs.autoLaunch([state]) -> bool
 /// Function
-/// Set or display the "Launch on Login" status for Hammerspoon.
+/// Set or display the "Launch on Login" status for Cosmic Hammer.
 ///
 /// Parameters:
-///  * state - an optional boolean which will set whether or not Hammerspoon should be launched automatically when you log into your computer.
+///  * state - an optional boolean which will set whether or not Cosmic Hammer should be launched automatically when you log into your computer.
 ///
 /// Returns:
-///  * True if Hammerspoon is currently (or has just been) set to launch on login or False if Hammerspoon is not.
+///  * True if Cosmic Hammer is currently (or has just been) set to launch on login or False if Cosmic Hammer is not.
 private func core_autolaunch(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     if lua_isboolean(L, 1) { MJAutoLaunchSet(lua_toboolean(L, 1) != 0) }
     lua_pushboolean(L, MJAutoLaunchGet() ? 1 : 0)
@@ -54,10 +54,10 @@ private func core_autolaunch(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 /// hs.menuIcon([state]) -> bool
 /// Function
-/// Set or display whether or not the Hammerspoon menu icon is visible.
+/// Set or display whether or not the Cosmic Hammer menu icon is visible.
 ///
 /// Parameters:
-///  * state - an optional boolean which will set whether or not the Hammerspoon menu icon should be visible.
+///  * state - an optional boolean which will set whether or not the Cosmic Hammer menu icon should be visible.
 ///
 /// Returns:
 ///  * True if the icon is currently set (or has just been) to be visible or False if it is not.
@@ -69,10 +69,10 @@ private func core_menuicon(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 /// hs.consoleOnTop([state]) -> bool
 /// Function
-/// Set or display whether or not the Hammerspoon console is always on top when visible.
+/// Set or display whether or not the Cosmic Hammer console is always on top when visible.
 ///
 /// Parameters:
-///  * state - an optional boolean which will set whether or not the Hammerspoon console is always on top when visible.
+///  * state - an optional boolean which will set whether or not the Cosmic Hammer console is always on top when visible.
 ///
 /// Returns:
 ///  * True if the console is currently set (or has just been) to be always on top when visible or False if it is not.
@@ -84,7 +84,7 @@ private func core_consoleontop(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 /// hs.openAbout()
 /// Function
-/// Displays the OS X About panel for Hammerspoon; implicitly focuses Hammerspoon.
+/// Displays the OS X About panel for Cosmic Hammer; implicitly focuses Cosmic Hammer.
 ///
 /// Parameters:
 ///  * None
@@ -99,7 +99,7 @@ private func core_openabout(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 /// hs.openPreferences()
 /// Function
-/// Displays the Hammerspoon Preferences panel; implicitly focuses Hammerspoon.
+/// Displays the Cosmic Hammer Preferences panel; implicitly focuses Cosmic Hammer.
 ///
 /// Parameters:
 ///  * None
@@ -114,7 +114,7 @@ private func core_openpreferences(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
 
 /// hs.closePreferences()
 /// Function
-/// Closes the Hammerspoon Preferences window
+/// Closes the Cosmic Hammer Preferences window
 ///
 /// Parameters:
 ///  * None
@@ -128,7 +128,7 @@ private func core_closepreferences(_ L: UnsafeMutablePointer<lua_State>!) -> Int
 
 /// hs.openConsole([bringToFront])
 /// Function
-/// Opens the Hammerspoon Console window and optionally focuses it.
+/// Opens the Cosmic Hammer Console window and optionally focuses it.
 ///
 /// Parameters:
 ///  * bringToFront - if true (default), the console will be focused as well as opened.
@@ -145,7 +145,7 @@ private func core_openconsole(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 /// hs.closeConsole()
 /// Function
-/// Closes the Hammerspoon Console window
+/// Closes the Cosmic Hammer Console window
 ///
 /// Parameters:
 ///  * None
@@ -196,7 +196,7 @@ private func core_reload(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 /// hs.processInfo
 /// Constant
-/// A table containing read-only information about the Hammerspoon application instance currently running.
+/// A table containing read-only information about the Cosmic Hammer application instance currently running.
 private func push_hammerAppInfo(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
 
@@ -250,16 +250,16 @@ private func push_hammerAppInfo(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 
 /// hs.accessibilityState(shouldPrompt) -> isEnabled
 /// Function
-/// Checks the Accessibility Permissions for Hammerspoon, and optionally allows you to prompt for permissions.
+/// Checks the Accessibility Permissions for Cosmic Hammer, and optionally allows you to prompt for permissions.
 ///
 /// Parameters:
-///  * shouldPrompt - an optional boolean value indicating if the dialog box asking if the System Preferences application should be opened should be presented when Accessibility is not currently enabled for Hammerspoon.  Defaults to false.
+///  * shouldPrompt - an optional boolean value indicating if the dialog box asking if the System Preferences application should be opened should be presented when Accessibility is not currently enabled for Cosmic Hammer.  Defaults to false.
 ///
 /// Returns:
-///  * True or False indicating whether or not Accessibility is enabled for Hammerspoon.
+///  * True or False indicating whether or not Accessibility is enabled for Cosmic Hammer.
 ///
 /// Notes:
-///  * Since this check is done automatically when Hammerspoon loads, it is probably of limited use except for skipping things that are known to fail when Accessibility is not enabled.  Evettaps which try to capture keyUp and keyDown events, for example, will fail until Accessibility is enabled and the Hammerspoon application is relaunched.
+///  * Since this check is done automatically when Cosmic Hammer loads, it is probably of limited use except for skipping things that are known to fail when Accessibility is not enabled.  Evettaps which try to capture keyUp and keyDown events, for example, will fail until Accessibility is enabled and the Cosmic Hammer application is relaunched.
 private func core_accessibilityState(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let shouldprompt = lua_toboolean(L, 1) != 0
     let enabled = MJAccessibilityIsEnabled()
@@ -308,13 +308,13 @@ private func isScreenRecordingEnabled() -> Bool {
 
 /// hs.screenRecordingState(shouldPrompt) -> isEnabled
 /// Function
-/// Checks the Screen Recording Permissions for Hammerspoon, and optionally allows you to prompt for permissions.
+/// Checks the Screen Recording Permissions for Cosmic Hammer, and optionally allows you to prompt for permissions.
 ///
 /// Parameters:
-///  * shouldPrompt - an optional boolean value indicating if the dialog box asking if the System Preferences application should be opened should be presented when Screen Recording is not currently enabled for Hammerspoon.  Defaults to false.
+///  * shouldPrompt - an optional boolean value indicating if the dialog box asking if the System Preferences application should be opened should be presented when Screen Recording is not currently enabled for Cosmic Hammer.  Defaults to false.
 ///
 /// Returns:
-///  * True or False indicating whether or not Screen Recording is enabled for Hammerspoon.
+///  * True or False indicating whether or not Screen Recording is enabled for Cosmic Hammer.
 ///
 /// Notes:
 ///  * If you trigger the prompt and the user denies it, you cannot bring up the prompt again - the user must manually enable it in System Preferences.
@@ -346,13 +346,13 @@ private func core_screenRecordingState(_ L: UnsafeMutablePointer<lua_State>!) ->
 
 /// hs.microphoneState(shouldPrompt) -> boolean
 /// Function
-/// Checks the Microphone Permissions for Hammerspoon, and optionally allows you to prompt for permissions.
+/// Checks the Microphone Permissions for Cosmic Hammer, and optionally allows you to prompt for permissions.
 ///
 /// Parameters:
 ///  * shouldPrompt - an optional boolean value indicating if we should request microphone access. Defaults to false.
 ///
 /// Returns:
-///  * `true` or `false` indicating whether or not Microphone access is enabled for Hammerspoon.
+///  * `true` or `false` indicating whether or not Microphone access is enabled for Cosmic Hammer.
 ///
 /// Notes:
 ///  * Will always return `true` on macOS 10.13 or earlier.
@@ -367,7 +367,7 @@ private func core_microphoneState(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
         if shouldprompt {
             AVCaptureDevice.requestAccess(for: .audio) { granted in
                 if !granted {
-                    skin.logWarn("Hammerspoon has been declined Microphone access by the user.")
+                    skin.logWarn("Cosmic Hammer has been declined Microphone access by the user.")
                 }
             }
         }
@@ -382,13 +382,13 @@ private func core_microphoneState(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
 
 /// hs.cameraState(shouldPrompt) -> boolean
 /// Function
-/// Checks the Camera Permissions for Hammerspoon, and optionally allows you to prompt for permissions.
+/// Checks the Camera Permissions for Cosmic Hammer, and optionally allows you to prompt for permissions.
 ///
 /// Parameters:
 ///  * shouldPrompt - an optional boolean value indicating if we should request camera access. Defaults to false.
 ///
 /// Returns:
-///  * `true` or `false` indicating whether or not Camera access is enabled for Hammerspoon.
+///  * `true` or `false` indicating whether or not Camera access is enabled for Cosmic Hammer.
 ///
 /// Notes:
 ///  * Will always return `true` on macOS 10.13 or earlier.
@@ -403,7 +403,7 @@ private func core_cameraState(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
         if shouldprompt {
             AVCaptureDevice.requestAccess(for: .video) { granted in
                 if !granted {
-                    skin.logWarn("Hammerspoon has been declined Camera access by the user.")
+                    skin.logWarn("Cosmic Hammer has been declined Camera access by the user.")
                 }
             }
         }
@@ -440,26 +440,26 @@ private func preferencesDarkMode(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 
 /// hs.allowAppleScript([state]) -> bool
 /// Function
-/// Set or display whether or not external Hammerspoon AppleScript commands are allowed.
+/// Set or display whether or not external Cosmic Hammer AppleScript commands are allowed.
 ///
 /// Parameters:
-///  * state - an optional boolean which will set whether or not external Hammerspoon's AppleScript commands are allowed.
+///  * state - an optional boolean which will set whether or not external Cosmic Hammer's AppleScript commands are allowed.
 ///
 /// Returns:
-///  * A boolean, `true` if Hammerspoon's AppleScript commands are (or has just been) allowed, otherwise `false`.
+///  * A boolean, `true` if Cosmic Hammer's AppleScript commands are (or has just been) allowed, otherwise `false`.
 ///
 /// Notes:
 ///  * AppleScript access is disallowed by default.
-///  * However due to the way AppleScript support works, Hammerspoon will always allow AppleScript commands that are part of the "Standard Suite", such as `name`, `quit`, `version`, etc. However, Hammerspoon will only allow commands from the "Hammerspoon Suite" if `hs.allowAppleScript()` is set to `true`.
+///  * However due to the way AppleScript support works, Cosmic Hammer will always allow AppleScript commands that are part of the "Standard Suite", such as `name`, `quit`, `version`, etc. However, Cosmic Hammer will only allow commands from the "Cosmic Hammer Suite" if `hs.allowAppleScript()` is set to `true`.
 ///  * For a full list of AppleScript Commands:
 ///      - Open `/Applications/Utilities/Script Editor.app`
 ///      - Click `File > Open Dictionary...`
-///      - Select Hammerspoon from the list of Applications
-///      - This will now open a Dictionary containing all of the available Hammerspoon AppleScript commands.
+///      - Select Cosmic Hammer from the list of Applications
+///      - This will now open a Dictionary containing all of the available Cosmic Hammer AppleScript commands.
 ///  * Note that strings within the Lua code you pass from AppleScript can be delimited by `[[` and `]]` rather than normal quotes
 ///  * Example:
 ///    ```lua
-///    tell application "Hammerspoon"
+///    tell application "Cosmic Hammer"
 ///      execute lua code "hs.alert([[Hello from AppleScript]])"
 ///    end tell```
 private func core_appleScript(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
@@ -476,7 +476,7 @@ private func core_appleScript(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 /// hs.openConsoleOnDockClick([state]) -> bool
 /// Function
-/// Set or display whether or not the Console window will open when the Hammerspoon dock icon is clicked
+/// Set or display whether or not the Console window will open when the Cosmic Hammer dock icon is clicked
 ///
 /// Parameters:
 ///  * state - An optional boolean, true if the console window should open, false if not
@@ -485,7 +485,7 @@ private func core_appleScript(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * A boolean, true if the console window will open when the dock icon
 ///
 /// Notes:
-///  * This only refers to dock icon clicks while Hammerspoon is already running. The console window is not opened by launching the app
+///  * This only refers to dock icon clicks while Cosmic Hammer is already running. The console window is not opened by launching the app
 private func core_openConsoleOnDockClick(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
@@ -500,7 +500,7 @@ private func core_openConsoleOnDockClick(_ L: UnsafeMutablePointer<lua_State>!) 
 
 /// hs.focus()
 /// Function
-/// Makes Hammerspoon the foreground app.
+/// Makes Cosmic Hammer the foreground app.
 ///
 /// Parameters:
 ///  * None
@@ -530,7 +530,7 @@ private func core_getObjectMetatable(_ L: UnsafeMutablePointer<lua_State>!) -> I
 
 /// hs.cleanUTF8forConsole(inString) -> outString
 /// Function
-/// Returns a copy of the incoming string that can be displayed in the Hammerspoon console.  Invalid UTF8 sequences are converted to the Unicode Replacement Character and NULL (0x00) is converted to the Unicode Empty Set character.
+/// Returns a copy of the incoming string that can be displayed in the Cosmic Hammer console.  Invalid UTF8 sequences are converted to the Unicode Replacement Character and NULL (0x00) is converted to the Unicode Empty Set character.
 ///
 /// Parameters:
 ///  * inString - the string to be cleaned up
@@ -539,7 +539,7 @@ private func core_getObjectMetatable(_ L: UnsafeMutablePointer<lua_State>!) -> I
 ///  * outString - the cleaned up version of the input string.
 ///
 /// Notes:
-///  * This function is applied automatically to all output which appears in the Hammerspoon console, but not to the output provided by the `hs` command line tool.
+///  * This function is applied automatically to all output which appears in the Cosmic Hammer console, but not to the output provided by the `hs` command line tool.
 ///  * This function does not modify the original string - to actually replace it, assign the result of this function to the original string.
 ///  * This function is a more specifically targeted version of the `hs.utf8.fixUTF8(...)` function.
 private func core_cleanUTF8(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
@@ -731,8 +731,8 @@ func MJLuaInit() {
         NSLog("Unable to find setup.lua in bundle. Terminating")
         let alert = NSAlert()
         alert.addButton(withTitle: "OK")
-        alert.messageText = "Hammerspoon installation is corrupted"
-        alert.informativeText = "Please re-install Hammerspoon"
+        alert.messageText = "Cosmic Hammer installation is corrupted"
+        alert.informativeText = "Please re-install Cosmic Hammer"
         alert.alertStyle = .critical
         alert.runModal()
         NSApplication.shared.terminate(nil)

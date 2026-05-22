@@ -56,7 +56,7 @@ GEN_EXT="scripts/generate-hsextensions.sh"
 
 OUT_PRELOAD_H="Packages/HSExtensions/Sources/HSExtensions/include/HSExtensions/HSExtensions+Preload.h"
 OUT_REGISTER_M="Packages/HSExtensions/Sources/HSExtensions/HSExtensions.m"
-OUT_KEEPALIVE_M="Hammerspoon/HSExtensionsRegistry.m"
+OUT_KEEPALIVE_M="CosmicHammer/HSExtensionsRegistry.m"
 
 [[ -f "$GEN_EXT" ]]   || die "generator not found: $GEN_EXT"
 [[ -f "$OUT_PRELOAD_H" ]] || die "output not found: $OUT_PRELOAD_H"
@@ -68,7 +68,7 @@ trap 'rm -rf "$tmpdir_ext"' EXIT
 
 # Create a mirror directory structure so the generator writes to predictable paths.
 mkdir -p "$tmpdir_ext/Packages/HSExtensions/Sources/HSExtensions/include/HSExtensions"
-mkdir -p "$tmpdir_ext/Hammerspoon"
+mkdir -p "$tmpdir_ext/CosmicHammer"
 
 # Copy the manifest so the generator finds it.
 mkdir -p "$tmpdir_ext/Packages/HSExtensions"

@@ -1,1 +1,1 @@
-../../../../Hammerspoon/MJConfigUtils.swift
+../../../../CosmicHammer/MJConfigUtils.swift

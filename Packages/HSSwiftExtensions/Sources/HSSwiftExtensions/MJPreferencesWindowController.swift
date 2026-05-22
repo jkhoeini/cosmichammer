@@ -1,1 +1,1 @@
-../../../../Hammerspoon/MJPreferencesWindowController.swift
+../../../../CosmicHammer/MJPreferencesWindowController.swift

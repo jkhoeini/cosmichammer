@@ -1,1 +1,1 @@
-../../../../Hammerspoon/MJAutoLaunch.swift
+../../../../CosmicHammer/MJAutoLaunch.swift

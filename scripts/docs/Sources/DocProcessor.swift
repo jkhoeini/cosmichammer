@@ -27,14 +27,13 @@ let typeDesc: [String: String] = [
 ]
 
 let links: [[String: String]] = [
-    ["name": "Website", "url": "https://www.hammerspoon.org/"],
-    ["name": "GitHub page", "url": "https://github.com/Hammerspoon/hammerspoon"],
-    ["name": "Getting Started Guide", "url": "https://www.hammerspoon.org/go/"],
-    ["name": "Spoon Plugin Documentation", "url": "https://github.com/Hammerspoon/hammerspoon/blob/master/SPOONS.md"],
-    ["name": "Official Spoon repository", "url": "https://www.hammerspoon.org/Spoons"],
+    ["name": "Website", "url": "https://www.cosmichammer.org/"],
+    ["name": "GitHub page", "url": "https://github.com/cosmichammer/cosmic-hammer"],
+    ["name": "Getting Started Guide", "url": "https://www.cosmichammer.org/go/"],
+    ["name": "Spoon Plugin Documentation", "url": "https://github.com/cosmichammer/cosmic-hammer/blob/master/SPOONS.md"],
+    ["name": "Official Spoon repository", "url": "https://www.cosmichammer.org/Spoons"],
     ["name": "Discord server", "url": "https://discord.gg/vxchqkRbkR"],
-    ["name": "Mailing list", "url": "https://groups.google.com/forum/#!forum/hammerspoon/"],
-    ["name": "LuaSkin API docs", "url": "https://www.hammerspoon.org/docs/LuaSkin/"],
+    ["name": "LuaSkin API docs", "url": "https://www.cosmichammer.org/docs/LuaSkin/"],
 ]
 
 // MARK: - Chunk indices

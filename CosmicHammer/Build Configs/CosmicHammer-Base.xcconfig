@@ -1,0 +1,55 @@
+//
+//  CosmicHammer-Base.xcconfig
+//  Cosmic Hammer
+//
+//  Created by Chris Jones on 30/10/2021.
+//  Copyright © 2021 Cosmic Hammer. All rights reserved.
+//
+
+// Configuration settings file format documentation can be found at:
+// https://help.apple.com/xcode/#/dev745c5c974
+
+// Packaging
+INFOPLIST_FILE = CosmicHammer/CosmicHammer-Info.plist
+PRODUCT_NAME = Cosmic Hammer
+PRODUCT_BUNDLE_IDENTIFIER = org.cosmic-hammer.${PRODUCT_NAME:rfc1034identifier}
+WRAPPER_EXTENSION = app
+
+// Version information. This is expected to be overridden later based on git tag/commit
+CURRENT_PROJECT_VERSION = 1
+MARKETING_VERSION = 1.0
+
+// Header Search Paths
+HEADER_SEARCH_PATHS = $(inherited)/** "$(SDKROOT)/usr/include/libxml2" "$(SDK_DIR)"/usr/include/libxml2
+// User Header Search Paths
+USER_HEADER_SEARCH_PATHS = $(inherited)/**
+
+// Code Signing Entitlements — applied via codesign in the justfile post-build
+// step rather than by Xcode, so CODE_SIGN_ENTITLEMENTS is intentionally unset.
+
+// Code Signing Identity
+CODE_SIGN_IDENTITY = -
+
+// Development Team
+DEVELOPMENT_TEAM =
+
+// Enable Hardened Runtime
+ENABLE_HARDENED_RUNTIME = YES
+
+// Prefix Header — removed. Cocoa.h is implicitly available via CLANG_ENABLE_MODULES
+// and LUA_USE_MACOSX is defined in LuaSkin's Package.swift.
+GCC_PRECOMPILE_PREFIX_HEADER = NO
+
+// All Run Script build phases have been moved to justfile recipes.
+// ENABLE_USER_SCRIPT_SANDBOXING is no longer overridden here; the
+// project-wide YES (from Project-Base.xcconfig) applies.
+
+// The Xcode app target's Sources build phase is empty (all .m files are
+// compiled by the HSExtensions SPM package). When scheme-level sanitizers
+// or code-coverage are enabled, SPM compiles with instrumentation but Xcode
+// no longer infers the matching linker flags from compiled sources. Add them
+// explicitly so the link step succeeds regardless of scheme settings.
+OTHER_LDFLAGS = $(inherited) -fobjc-arc -fobjc-link-runtime -fprofile-instr-generate -fsanitize=address -fsanitize=undefined -framework SkyLight -framework DisplayServices -framework CoreDisplay
+
+// Private frameworks consumed by the brightness/screen/spaces extensions.
+FRAMEWORK_SEARCH_PATHS = $(inherited) $(SDKROOT)/System/Library/PrivateFrameworks

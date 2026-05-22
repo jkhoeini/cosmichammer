@@ -1,1 +1,1 @@
-../../../../Hammerspoon/MJAccessibilityUtils.swift
+../../../../CosmicHammer/MJAccessibilityUtils.swift

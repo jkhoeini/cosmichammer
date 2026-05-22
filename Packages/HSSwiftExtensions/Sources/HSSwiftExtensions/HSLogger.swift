@@ -1,1 +1,1 @@
-../../../../Hammerspoon/HSLogger.swift
+../../../../CosmicHammer/HSLogger.swift

@@ -1,7 +1,7 @@
 // swift-tools-version:6.2
 import PackageDescription
 
-// Unified SPM package for Hammerspoon.
+// Unified SPM package for Cosmic Hammer.
 //
 // Three internal targets compiled into one executable product:
 //
@@ -13,10 +13,10 @@ import PackageDescription
 // by `swift build --package-path Packages/hs` in the justfile.
 
 let package = Package(
-    name: "Hammerspoon",
+    name: "CosmicHammer",
     platforms: [.macOS(.v26)],
     products: [
-        .executable(name: "Hammerspoon", targets: ["HSApp"]),
+        .executable(name: "CosmicHammer", targets: ["HSApp"]),
         .library(name: "HammerspoonLibs", type: .static, targets: ["HSExtensions", "HSSwiftExtensions"]),
     ],
     dependencies: [
@@ -74,8 +74,8 @@ let package = Package(
         // HSExtensions — 90+ extensions + core app .m files
         // ---------------------------------------------------------------
         // SPM auto-discovers sources under HSExtensions/Sources/HSExtensions/
-        // by following symlinks into extensions/<name>/ and Hammerspoon/.
-        // Non-source files inside Hammerspoon/ (XIBs, plists, assets, etc.)
+        // by following symlinks into extensions/<name>/ and CosmicHammer/.
+        // Non-source files inside CosmicHammer/ (XIBs, plists, assets, etc.)
         // are individually excluded.  "ipc/cli" is the standalone hs CLI
         // (built by Packages/hs/).  "sqlite3/lsqlite3.c" is compiled as
         // Objective-C via lsqlite3_wrapper.m — excluding it avoids
@@ -92,18 +92,18 @@ let package = Package(
             ],
             path: "HSExtensions/Sources/HSExtensions",
             exclude: [
-                // Non-source files inside Hammerspoon/ that must not be
+                // Non-source files inside CosmicHammer/ that must not be
                 // compiled or treated as SPM resources.
-                "Hammerspoon/Build Configs",
-                "Hammerspoon/Credits.rtf",
-                "Hammerspoon/Hammerspoon-Info.plist",
-                "Hammerspoon/Hammerspoon-dev.entitlements",
-                "Hammerspoon/Hammerspoon.entitlements",
-                "Hammerspoon/Hammerspoon.icns",
-                "Hammerspoon/Hammerspoon.sdef",
-                "Hammerspoon/Spoon.icns",
-                "Hammerspoon/setup.lua",
-                "Hammerspoon/statusicon.pdf",
+                "CosmicHammer/Build Configs",
+                "CosmicHammer/Credits.rtf",
+                "CosmicHammer/CosmicHammer-Info.plist",
+                "CosmicHammer/CosmicHammer-dev.entitlements",
+                "CosmicHammer/CosmicHammer.entitlements",
+                "CosmicHammer/CosmicHammer.icns",
+                "CosmicHammer/CosmicHammer.sdef",
+                "CosmicHammer/Spoon.icns",
+                "CosmicHammer/setup.lua",
+                "CosmicHammer/statusicon.pdf",
                 // Other excludes carried forward from before.
                 "ipc/cli",
                 "sqlite3/lsqlite3.c",
@@ -114,22 +114,22 @@ let package = Package(
                 "streamdeck/NSImage+Flipped.swift",
                 "streamdeck/NSImage+JPEG.swift",
                 "streamdeck/NSImage+Rotated.swift",
-                "Hammerspoon/MJConsoleWindowController.swift",
-                "Hammerspoon/HSAppleScript.swift",
-                "Hammerspoon/HSuicore.swift",
-                "Hammerspoon/HSGrowingTextField.swift",
-                "Hammerspoon/MJAccessibilityUtils.swift",
-                "Hammerspoon/MJAutoLaunch.swift",
-                "Hammerspoon/MJFileUtils.swift",
-                "Hammerspoon/MJVersionUtils.swift",
-                "Hammerspoon/MJDockIcon.swift",
-                "Hammerspoon/MJMenuIcon.swift",
-                "Hammerspoon/MJPreferencesWindowController.swift",
-                "Hammerspoon/MJUserNotificationManager.swift",
-                "Hammerspoon/MJConfigUtils.swift",
-                "Hammerspoon/MJAppDelegate.swift",
-                "Hammerspoon/HSLogger.swift",
-                "Hammerspoon/MJLua.swift",
+                "CosmicHammer/MJConsoleWindowController.swift",
+                "CosmicHammer/HSAppleScript.swift",
+                "CosmicHammer/HSuicore.swift",
+                "CosmicHammer/HSGrowingTextField.swift",
+                "CosmicHammer/MJAccessibilityUtils.swift",
+                "CosmicHammer/MJAutoLaunch.swift",
+                "CosmicHammer/MJFileUtils.swift",
+                "CosmicHammer/MJVersionUtils.swift",
+                "CosmicHammer/MJDockIcon.swift",
+                "CosmicHammer/MJMenuIcon.swift",
+                "CosmicHammer/MJPreferencesWindowController.swift",
+                "CosmicHammer/MJUserNotificationManager.swift",
+                "CosmicHammer/MJConfigUtils.swift",
+                "CosmicHammer/MJAppDelegate.swift",
+                "CosmicHammer/HSLogger.swift",
+                "CosmicHammer/MJLua.swift",
                 "osascript/NSAppleEventDescriptor+Parsing.swift",
                 "hash/algorithms.swift",
                 "base64/libbase64.swift",
@@ -235,7 +235,7 @@ let package = Package(
                 // Header search paths so #import "Foo.h" resolves for extensions
                 // that include sibling files relatively or that share helper
                 // headers under the main app source tree.
-                .headerSearchPath("Hammerspoon"),
+                .headerSearchPath("CosmicHammer"),
                 .headerSearchPath("axuielement"),
                 .headerSearchPath("canvas"),
                 .headerSearchPath("chooser"),

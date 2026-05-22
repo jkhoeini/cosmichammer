@@ -27,7 +27,7 @@ cd "$repo_root"
 MANIFEST="Packages/HSExtensions/extensions.manifest"
 OUT_PRELOAD_H="Packages/HSExtensions/Sources/HSExtensions/include/HSExtensions/HSExtensions+Preload.h"
 OUT_REGISTER_M="Packages/HSExtensions/Sources/HSExtensions/HSExtensions.m"
-OUT_KEEPALIVE_M="Hammerspoon/HSExtensionsRegistry.m"
+OUT_KEEPALIVE_M="CosmicHammer/HSExtensionsRegistry.m"
 
 if [[ ! -f "$MANIFEST" ]]; then
     echo "error: manifest not found: $MANIFEST" >&2

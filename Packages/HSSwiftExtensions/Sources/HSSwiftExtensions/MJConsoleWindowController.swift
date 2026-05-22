@@ -1,1 +1,1 @@
-../../../../Hammerspoon/MJConsoleWindowController.swift
+../../../../CosmicHammer/MJConsoleWindowController.swift

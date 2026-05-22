@@ -27,7 +27,7 @@ func fatal(_ msg: String) -> Never {
 struct BuildDocs: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "BuildDocs",
-        abstract: "Hammerspoon API Documentation Builder"
+        abstract: "Cosmic Hammer API Documentation Builder"
     )
 
     @Flag(name: [.short, .customLong("validate")], help: "Ensure all docstrings are valid")
@@ -61,10 +61,10 @@ struct BuildDocs: ParsableCommand {
     var templateDir: String = "scripts/docs/templates"
 
     @Option(name: [.customShort("i"), .customLong("title")], help: "Title for the index page")
-    var title: String = "Hammerspoon"
+    var title: String = "Cosmic Hammer"
 
     @Option(name: [.customShort("u"), .customLong("source_url_base")], help: "Base URL for source links")
-    var sourceUrlBase: String = "https://github.com/Hammerspoon/hammerspoon/blob/master/"
+    var sourceUrlBase: String = "https://github.com/cosmichammer/cosmic-hammer/blob/master/"
 
     @Argument(help: "Directories to search")
     var dirs: [String] = []

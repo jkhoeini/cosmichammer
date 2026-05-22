@@ -42,11 +42,11 @@ class MJAppDelegate: NSObject, NSApplicationDelegate {
     private func setupMainMenu() {
         let mainMenu = NSMenu(title: "Main Menu")
 
-        // -- Hammerspoon (application) menu --
-        let appMenuItem = NSMenuItem(title: "Hammerspoon", action: nil, keyEquivalent: "")
-        let appMenu = NSMenu(title: "Hammerspoon")
+        // -- Cosmic Hammer (application) menu --
+        let appMenuItem = NSMenuItem(title: "Cosmic Hammer", action: nil, keyEquivalent: "")
+        let appMenu = NSMenu(title: "Cosmic Hammer")
 
-        appMenu.addItem(withTitle: "About Hammerspoon", action: #selector(showAboutPanel(_:)), keyEquivalent: "").target = self
+        appMenu.addItem(withTitle: "About Cosmic Hammer", action: #selector(showAboutPanel(_:)), keyEquivalent: "").target = self
 
         appMenu.addItem(.separator())
 
@@ -62,7 +62,7 @@ class MJAppDelegate: NSObject, NSApplicationDelegate {
 
         appMenu.addItem(.separator())
 
-        appMenu.addItem(withTitle: "Hide Hammerspoon", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+        appMenu.addItem(withTitle: "Hide Cosmic Hammer", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
 
         let hideOthersItem = appMenu.addItem(withTitle: "Hide Others", action: #selector(NSApplication.hideOtherApplications(_:)), keyEquivalent: "h")
         hideOthersItem.keyEquivalentModifierMask = [.command, .option]
@@ -71,7 +71,7 @@ class MJAppDelegate: NSObject, NSApplicationDelegate {
 
         appMenu.addItem(.separator())
 
-        appMenu.addItem(withTitle: "Quit Hammerspoon", action: #selector(quitHammerspoon(_:)), keyEquivalent: "q").target = self
+        appMenu.addItem(withTitle: "Quit Cosmic Hammer", action: #selector(quitHammerspoon(_:)), keyEquivalent: "q").target = self
 
         appMenuItem.submenu = appMenu
         mainMenu.addItem(appMenuItem)
@@ -221,7 +221,7 @@ class MJAppDelegate: NSObject, NSApplicationDelegate {
         let helpMenuItem = NSMenuItem(title: "Help", action: nil, keyEquivalent: "")
         let helpMenu = NSMenu(title: "Help")
 
-        helpMenu.addItem(withTitle: "Hammerspoon Help", action: #selector(NSApplication.showHelp(_:)), keyEquivalent: "?")
+        helpMenu.addItem(withTitle: "Cosmic Hammer Help", action: #selector(NSApplication.showHelp(_:)), keyEquivalent: "?")
 
         helpMenuItem.submenu = helpMenu
         mainMenu.addItem(helpMenuItem)
@@ -239,8 +239,8 @@ class MJAppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(withTitle: "Console\u{2026}", action: #selector(showConsoleWindow(_:)), keyEquivalent: "").target = self
         menu.addItem(withTitle: "Preferences\u{2026}", action: #selector(showPreferencesWindow(_:)), keyEquivalent: "").target = self
         menu.addItem(.separator())
-        menu.addItem(withTitle: "About Hammerspoon", action: #selector(showAboutPanel(_:)), keyEquivalent: "").target = self
-        menu.addItem(withTitle: "Quit Hammerspoon", action: #selector(quitHammerspoon(_:)), keyEquivalent: "").target = self
+        menu.addItem(withTitle: "About Cosmic Hammer", action: #selector(showAboutPanel(_:)), keyEquivalent: "").target = self
+        menu.addItem(withTitle: "Quit Cosmic Hammer", action: #selector(quitHammerspoon(_:)), keyEquivalent: "").target = self
 
         self.menuBarMenu = menu
     }
@@ -390,7 +390,7 @@ class MJAppDelegate: NSObject, NSApplicationDelegate {
 
             alert.addButton(withTitle: "Cancel")
             alert.messageText = "Do you want to delete the preferences?"
-            alert.informativeText = "Deleting the preferences will reset all Hammerspoon settings (including everything that uses hs.settings) to their defaults. This does not remove anything in ~/.hammerspoon/"
+            alert.informativeText = "Deleting the preferences will reset all Cosmic Hammer settings (including everything that uses hs.settings) to their defaults. This does not remove anything in ~/.hammerspoon/"
             alert.alertStyle = .warning
 
             if alert.runModal() == .alertFirstButtonReturn {
@@ -414,7 +414,7 @@ class MJAppDelegate: NSObject, NSApplicationDelegate {
         NSAppleEventManager.shared().removeEventHandler(forEventClass: AEEventClass(kInternetEventClass), andEventID: AEEventID(kAEGetURL))
 
         if ProcessInfo.processInfo.environment["XCTESTING"] != nil {
-            // Hammerspoon UI Tests
+            // Cosmic Hammer UI Tests
             NSLog("in UI testing mode")
             let initPath = FileManager.default.currentDirectoryPath + "/Hammerspoon UI Tests-Runner.app/Contents/PlugIns/Hammerspoon UI Tests.xctest/Contents/Resources/init.lua"
             let fsPath = (initPath as NSString).fileSystemRepresentation

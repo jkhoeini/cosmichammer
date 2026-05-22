@@ -43,7 +43,7 @@ return {setup=function(...)
 
 --- hs.configdir
 --- Constant
---- A string containing Hammerspoon's configuration directory. Typically `~/.hammerspoon/`
+--- A string containing Cosmic Hammer's configuration directory. Typically `~/.cosmic-hammer/`
   hs.configdir = configdir
 
 --- hs.dockIconClickCallback
@@ -643,8 +643,8 @@ coroutine.applicationYield = hs.coroutineApplicationYield
   if not hasinitfile then
     local notify = require("hs.notify")
     local printf = hs.printf
-    notify.register("__noinitfile", function() os.execute("open https://www.hammerspoon.org/go/") end)
-    notify.show("Hammerspoon", "No config file found", "Click here for the Getting Started Guide", "__noinitfile")
+    notify.register("__noinitfile", function() os.execute("open https://www.cosmichammer.org/go/") end)
+    notify.show("Cosmic Hammer", "No config file found", "Click here for the Getting Started Guide", "__noinitfile")
     printf("-- Can't find %s; create it and reload your config.", prettypath)
     return hs.completionsForInputString, runstring
   end

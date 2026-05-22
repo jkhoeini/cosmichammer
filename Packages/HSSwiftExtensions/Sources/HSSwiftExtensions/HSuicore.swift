@@ -1,1 +1,1 @@
-../../../../Hammerspoon/HSuicore.swift
+../../../../CosmicHammer/HSuicore.swift

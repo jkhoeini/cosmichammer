@@ -1,9 +1,9 @@
-# Hammerspoon build tasks
+# Cosmic Hammer build tasks
 
 set shell := ["bash", "-euo", "pipefail", "-c"]
 
-workspace := "Hammerspoon.xcworkspace"
-scheme    := "Hammerspoon"
+workspace := "CosmicHammer.xcworkspace"
+scheme    := "CosmicHammer"
 build_dir := "build"
 
 default:
@@ -14,7 +14,7 @@ clean:
     rm -rf {{ build_dir }}
     rm -rf Packages/.build
 
-# Build Hammerspoon.app (config: Debug or Release)
+# Build Cosmic Hammer.app (config: Debug or Release)
 build config="Debug":
     #!/usr/bin/env bash
     set -euo pipefail
@@ -43,7 +43,7 @@ build config="Debug":
 
     # --- Pre-build: compile docs.json ---
     if [ -f ./scripts/docs/.build/release/BuildDocs ]; then
-        ./scripts/docs/.build/release/BuildDocs -o ./build/ --json Hammerspoon extensions
+        ./scripts/docs/.build/release/BuildDocs -o ./build/ --json CosmicHammer extensions
     else
         echo "warning: BuildDocs not built, skipping docs.json. Run: swift build -c release --package-path scripts/docs"
         touch ./build/docs.json
@@ -52,7 +52,7 @@ build config="Debug":
     # --- Pre-build: build hs CLI ---
     swift build -c release --package-path Packages/hs
 
-    # --- Main build: compile Hammerspoon executable via SPM ---
+    # --- Main build: compile Cosmic Hammer executable via SPM ---
     # Map Xcode-style config names to SPM -c values.
     if [ "{{ config }}" = "Release" ]; then
         spm_config="release"
@@ -62,13 +62,13 @@ build config="Debug":
 
     SDK_PATH="$(xcrun --show-sdk-path)"
     swift build --package-path Packages \
-        --product Hammerspoon \
+        --product CosmicHammer \
         -c "${spm_config}" \
         -Xlinker -F -Xlinker "${SDK_PATH}/System/Library/PrivateFrameworks" \
         2>&1 | tee {{ build_dir }}/{{ config }}-build.log
 
     # --- Assemble .app bundle ---
-    APP_DIR="{{ build_dir }}/Hammerspoon.app"
+    APP_DIR="{{ build_dir }}/Cosmic Hammer.app"
     CONTENTS="${APP_DIR}/Contents"
     MACOS="${CONTENTS}/MacOS"
     RESOURCES="${CONTENTS}/Resources"
@@ -77,27 +77,27 @@ build config="Debug":
     mkdir -p "${MACOS}" "${RESOURCES}" "${CONTENTS}/Frameworks/hs"
 
     # Copy executable
-    cp "Packages/.build/${spm_config}/Hammerspoon" "${MACOS}/Hammerspoon"
+    cp "Packages/.build/${spm_config}/CosmicHammer" "${MACOS}/CosmicHammer"
 
     # Generate Info.plist from template
-    sed -e 's/${EXECUTABLE_NAME}/Hammerspoon/g' \
-        -e 's/$(PRODUCT_BUNDLE_IDENTIFIER)/org.hammerspoon.Hammerspoon/g' \
-        -e 's/${PRODUCT_NAME}/Hammerspoon/g' \
+    sed -e 's/${EXECUTABLE_NAME}/CosmicHammer/g' \
+        -e 's/$(PRODUCT_BUNDLE_IDENTIFIER)/org.cosmic-hammer.CosmicHammer/g' \
+        -e 's/${PRODUCT_NAME}/Cosmic Hammer/g' \
         -e "s/\$(MARKETING_VERSION)/${version}/g" \
         -e "s/\$(CURRENT_PROJECT_VERSION)/${build_num}/g" \
         -e 's/${MACOSX_DEPLOYMENT_TARGET}/26.0/g' \
-        Hammerspoon/Hammerspoon-Info.plist > "${CONTENTS}/Info.plist"
+        CosmicHammer/CosmicHammer-Info.plist > "${CONTENTS}/Info.plist"
 
     # PkgInfo
     printf 'APPL????' > "${CONTENTS}/PkgInfo"
 
     # Copy app resources
-    cp Hammerspoon/Hammerspoon.icns "${RESOURCES}/"
-    cp Hammerspoon/Spoon.icns       "${RESOURCES}/"
-    cp Hammerspoon/Credits.rtf      "${RESOURCES}/"
-    cp Hammerspoon/Hammerspoon.sdef "${RESOURCES}/"
-    cp Hammerspoon/setup.lua        "${RESOURCES}/"
-    cp Hammerspoon/statusicon.pdf   "${RESOURCES}/"
+    cp CosmicHammer/CosmicHammer.icns "${RESOURCES}/"
+    cp CosmicHammer/Spoon.icns        "${RESOURCES}/"
+    cp CosmicHammer/Credits.rtf       "${RESOURCES}/"
+    cp CosmicHammer/CosmicHammer.sdef "${RESOURCES}/"
+    cp CosmicHammer/setup.lua         "${RESOURCES}/"
+    cp CosmicHammer/statusicon.pdf    "${RESOURCES}/"
 
     # Extension resources
     cp extensions/doc/lua.json         "${RESOURCES}/"
@@ -126,14 +126,14 @@ build config="Debug":
     # Copy extension Lua files
     SRCROOT="$(pwd)" \
     BUILT_PRODUCTS_DIR="{{ build_dir }}" \
-    UNLOCALIZED_RESOURCES_FOLDER_PATH="Hammerspoon.app/Contents/Resources" \
+    UNLOCALIZED_RESOURCES_FOLDER_PATH="Cosmic Hammer.app/Contents/Resources" \
     ./scripts/copy-extension-lua-files.sh
 
     # Codesign with entitlements
     if [ "{{ config }}" = "Release" ]; then
-        ENTITLEMENTS="Hammerspoon/Hammerspoon.entitlements"
+        ENTITLEMENTS="CosmicHammer/CosmicHammer.entitlements"
     else
-        ENTITLEMENTS="Hammerspoon/Hammerspoon-dev.entitlements"
+        ENTITLEMENTS="CosmicHammer/CosmicHammer-dev.entitlements"
     fi
     /usr/bin/codesign --force --sign - --deep --entitlements "${ENTITLEMENTS}" "${APP_DIR}"
 
@@ -158,7 +158,7 @@ docs:
     mkdir -p {{ build_dir }}
     for fmt in json markdown html sql; do
         echo "Building docs $fmt..."
-        "$DOCSTOOL" -o {{ build_dir }} --$fmt Hammerspoon extensions/
+        "$DOCSTOOL" -o {{ build_dir }} --$fmt CosmicHammer extensions/
     done
 
 # Lint documentation without building
@@ -170,26 +170,26 @@ docs-lint:
         echo "Building docs tool..."
         swift build -c release --package-path scripts/docs
     fi
-    "$DOCSTOOL" --lint Hammerspoon extensions/
+    "$DOCSTOOL" --lint CosmicHammer extensions/
 
 # Generate Xcode project and workspace from project.yml
 generate:
     #!/usr/bin/env bash
     set -euo pipefail
     xcodegen generate
-    rm -rf Hammerspoon.xcworkspace
-    mkdir -p Hammerspoon.xcworkspace/xcshareddata/xcschemes
-    cat > Hammerspoon.xcworkspace/contents.xcworkspacedata << 'XCWS'
+    rm -rf CosmicHammer.xcworkspace
+    mkdir -p CosmicHammer.xcworkspace/xcshareddata/xcschemes
+    cat > CosmicHammer.xcworkspace/contents.xcworkspacedata << 'XCWS'
     <?xml version="1.0" encoding="UTF-8"?>
     <Workspace
        version = "1.0">
        <FileRef
-          location = "group:Hammerspoon.xcodeproj">
+          location = "group:CosmicHammer.xcodeproj">
        </FileRef>
     </Workspace>
     XCWS
-    mv Hammerspoon.xcodeproj/xcshareddata/xcschemes/*.xcscheme \
-       Hammerspoon.xcworkspace/xcshareddata/xcschemes/
+    mv CosmicHammer.xcodeproj/xcshareddata/xcschemes/*.xcscheme \
+       CosmicHammer.xcworkspace/xcshareddata/xcschemes/
 
 # Full rebuild: clean + build
 rebuild: clean build
@@ -200,7 +200,7 @@ release version:
     set -euo pipefail
 
     TAG="v{{ version }}"
-    DMG_NAME="Hammerspoon-{{ version }}-macos-arm64.dmg"
+    DMG_NAME="CosmicHammer-{{ version }}-macos-arm64.dmg"
     OUTPUT_DIR="release"
 
     # ── Preflight ─────────────────────────────────────────────────────────
@@ -221,7 +221,7 @@ release version:
     git push origin "$TAG"
 
     # ── Build Release ─────────────────────────────────────────────────────
-    echo "===> Building Hammerspoon {{ version }} (Release)"
+    echo "===> Building Cosmic Hammer {{ version }} (Release)"
     just build Release
 
     # ── Package DMG ───────────────────────────────────────────────────────
@@ -230,31 +230,31 @@ release version:
     mkdir -p "$OUTPUT_DIR"
 
     create-dmg \
-        --volname "Hammerspoon" \
+        --volname "Cosmic Hammer" \
         --window-pos 200 120 \
         --window-size 600 380 \
         --icon-size 100 \
-        --icon "Hammerspoon.app" 150 180 \
-        --hide-extension "Hammerspoon.app" \
+        --icon "Cosmic Hammer.app" 150 180 \
+        --hide-extension "Cosmic Hammer.app" \
         --app-drop-link 450 180 \
         --no-internet-enable \
         "$OUTPUT_DIR/$DMG_NAME" \
-        "{{ build_dir }}/Hammerspoon.app"
+        "{{ build_dir }}/Cosmic Hammer.app"
 
     echo "===> DMG ready:"
     ls -lh "$OUTPUT_DIR/$DMG_NAME"
 
     # ── Publish GitHub release ────────────────────────────────────────────
     RELEASE_NOTES="$(cat <<NOTES
-    ## Hammerspoon {{ version }}
+    ## Cosmic Hammer {{ version }}
 
     ### Install
 
-    Download \`$DMG_NAME\`, open the DMG, and drag **Hammerspoon** to Applications.
+    Download \`$DMG_NAME\`, open the DMG, and drag **Cosmic Hammer** to Applications.
 
     If macOS blocks the app on first launch:
     \`\`\`
-    xattr -dr com.apple.quarantine /Applications/Hammerspoon.app
+    xattr -dr com.apple.quarantine /Applications/Cosmic\ Hammer.app
     \`\`\`
 
     ### Requirements

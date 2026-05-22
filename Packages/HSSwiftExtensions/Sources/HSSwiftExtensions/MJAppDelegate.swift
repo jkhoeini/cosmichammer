@@ -1,1 +1,1 @@
-../../../../Hammerspoon/MJAppDelegate.swift
+../../../../CosmicHammer/MJAppDelegate.swift
