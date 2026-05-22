@@ -93,6 +93,8 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: "org.hammerspoon.$(PRODUCT_NAME:rfc1034identifier)"
         LD_RUNPATH_SEARCH_PATHS: ["$(inherited)", "@executable_path/../Frameworks", "@loader_path/../Frameworks"]
         HEADER_SEARCH_PATHS: ["$(SRCROOT)/Hammerspoon", "$(inherited)"]
+        SWIFT_VERSION: "6.0"
+        SWIFT_OBJC_BRIDGING_HEADER: "Hammerspoon Tests/HammerspoonTests-Bridging-Header.h"
         WARNING_CFLAGS: ["-Wno-cstring-format-directive", "-Wno-padded", "-Wno-objc-missing-property-synthesis", "-Wno-gnu-statement-expression"]
         FRAMEWORK_SEARCH_PATHS: ["$(DEVELOPER_FRAMEWORKS_DIR)", "$(SDKROOT)/System/Library/PrivateFrameworks", "$(inherited)"]
         GCC_PREPROCESSOR_DEFINITIONS: ["DEBUG=1", "$(inherited)"]
