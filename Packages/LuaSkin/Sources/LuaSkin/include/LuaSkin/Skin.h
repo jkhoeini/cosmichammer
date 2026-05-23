@@ -193,6 +193,10 @@ NSString *specMaskToString(int spec);
  */
 @interface LuaSkin : NSObject
 
+#pragma mark - Resource path override (for SPM tests)
+
+@property (class, nonatomic, copy, nullable) NSString *resourceSearchPath;
+
 #pragma mark - Skin Properties
 
 @property (nonatomic, weak) id  delegate;

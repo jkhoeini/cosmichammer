@@ -5,11 +5,12 @@ let isHeadless: Bool = ProcessInfo.processInfo.environment["HEADLESS"] != nil
 
 @MainActor
 func runLua(_ code: String) -> String? {
-    MJLuaRunString(code)
+    luaRunString(code)
 }
 
 @MainActor
 func loadLuaModule(_ name: String) throws {
+    bootstrapLuaForTesting()
     let result = runLua("require('\(name)')")
     try #require(result == "true", "Unable to load \(name).lua")
 }

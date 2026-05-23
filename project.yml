@@ -75,30 +75,6 @@ targets:
     dependencies:
       - package: HammerspoonLibs
 
-  Hammerspoon Tests:
-    type: bundle.unit-test
-    platform: macOS
-    sources:
-      - path: Hammerspoon Tests
-      - path: extensions
-        includes: ["**/test_*.lua"]
-        buildPhase: resources
-    dependencies:
-      - target: Hammerspoon
-    settings:
-      base:
-        BUNDLE_LOADER: "$(TEST_HOST)"
-        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Hammerspoon.app/Contents/MacOS/Hammerspoon"
-        INFOPLIST_FILE: "Hammerspoon Tests/Info.plist"
-        PRODUCT_BUNDLE_IDENTIFIER: "org.hammerspoon.$(PRODUCT_NAME:rfc1034identifier)"
-        LD_RUNPATH_SEARCH_PATHS: ["$(inherited)", "@executable_path/../Frameworks", "@loader_path/../Frameworks"]
-        HEADER_SEARCH_PATHS: ["$(SRCROOT)/Hammerspoon", "$(inherited)"]
-        SWIFT_VERSION: "6.0"
-        SWIFT_OBJC_BRIDGING_HEADER: "Hammerspoon Tests/HammerspoonTests-Bridging-Header.h"
-        WARNING_CFLAGS: ["-Wno-cstring-format-directive", "-Wno-padded", "-Wno-objc-missing-property-synthesis", "-Wno-gnu-statement-expression"]
-        FRAMEWORK_SEARCH_PATHS: ["$(DEVELOPER_FRAMEWORKS_DIR)", "$(SDKROOT)/System/Library/PrivateFrameworks", "$(inherited)"]
-        GCC_PREPROCESSOR_DEFINITIONS: ["DEBUG=1", "$(inherited)"]
-
   Hammerspoon UI Tests:
     type: bundle.ui-testing
     platform: macOS
@@ -118,7 +94,6 @@ schemes:
     build:
       targets:
         Hammerspoon: all
-        Hammerspoon Tests: [testing, profiling, analyzing]
     run:
       config: Debug
       enableAddressSanitizer: true
@@ -147,7 +122,7 @@ schemes:
           value: ""
           isEnabled: true
       targets:
-        - name: Hammerspoon Tests
+        - name: HammerspoonTests
           randomExecutionOrder: true
           location: "London, England"
     profile:
@@ -162,7 +137,6 @@ schemes:
     build:
       targets:
         Hammerspoon: all
-        Hammerspoon Tests: [testing]
     run:
       config: Release
       disableMainThreadChecker: true
@@ -181,7 +155,7 @@ schemes:
           value: ""
           isEnabled: true
       targets:
-        - name: Hammerspoon Tests
+        - name: HammerspoonTests
           randomExecutionOrder: true
         - name: Hammerspoon UI Tests
           skipped: true

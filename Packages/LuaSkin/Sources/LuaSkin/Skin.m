@@ -147,6 +147,16 @@ static LuaSkin *_sharedLuaSkin ;
     return _sharedLuaSkin ;
 }
 
+static NSString *_resourceSearchPath ;
+
++ (NSString *)resourceSearchPath {
+    return _resourceSearchPath ;
+}
+
++ (void)setResourceSearchPath:(NSString *)path {
+    _resourceSearchPath = [path copy] ;
+}
+
 #pragma mark - Class lifecycle
 
 static NSMutableSet *_sharedWarnings ;
@@ -269,7 +279,17 @@ static NSMutableSet *_sharedWarnings ;
     lua_getglobal(LuaSkin.mainLuaState, "debug") ;
     self.debugLibraryRef = luaL_ref(LuaSkin.mainLuaState, LUA_REGISTRYINDEX) ;
 
-    NSString *luaSkinLua = [[NSBundle mainBundle] pathForResource:@"luaskin" ofType:@"lua"];
+    NSString *luaSkinLua = nil;
+    if (_resourceSearchPath) {
+        luaSkinLua = [_resourceSearchPath stringByAppendingPathComponent:@"luaskin.lua"];
+        if (![[NSFileManager defaultManager] fileExistsAtPath:luaSkinLua]) {
+            luaSkinLua = [[_resourceSearchPath stringByAppendingPathComponent:@"extensions/hs"] stringByAppendingPathComponent:@"luaskin.lua"];
+        }
+        if (![[NSFileManager defaultManager] fileExistsAtPath:luaSkinLua]) luaSkinLua = nil;
+    }
+    if (!luaSkinLua) {
+        luaSkinLua = [[NSBundle mainBundle] pathForResource:@"luaskin" ofType:@"lua"];
+    }
     if (!luaSkinLua) {
         luaSkinLua = [[NSBundle mainBundle] pathForResource:@"luaskin" ofType:@"lua" inDirectory:@"extensions/hs"];
     }

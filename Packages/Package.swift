@@ -337,5 +337,19 @@ let package = Package(
             dependencies: ["HSExtensions"],
             path: "HSApp/Sources/HSApp"
         ),
+        // ---------------------------------------------------------------
+        // HammerspoonTests — Swift Testing suite for all Lua-bridged tests.
+        // Uses MJLuaInitWithPaths to bootstrap a Lua state without the
+        // full app, then delegates to the same Lua test functions the
+        // old XCTest suite used.
+        // ---------------------------------------------------------------
+        .testTarget(
+            name: "HammerspoonTests",
+            dependencies: ["HSExtensions", "HSSwiftExtensions", "LuaSkin"],
+            path: "HammerspoonTests",
+            swiftSettings: [
+                .swiftLanguageMode(.v6),
+            ]
+        ),
     ]
 )

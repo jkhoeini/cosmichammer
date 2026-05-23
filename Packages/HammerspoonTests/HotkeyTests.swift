@@ -1,4 +1,5 @@
 import Testing
+import Foundation
 
 extension HammerspoonTests {
     @Suite @MainActor final class Hotkey {

@@ -671,9 +671,19 @@ func MJLuaAlloc() {
     oldPanicFunction = lua_atpanic(skin.l, MJLuaAtPanic)
 }
 
-/// Configure a Lua environment that has already been created by LuaSkin
-@_cdecl("MJLuaInit")
-func MJLuaInit() {
+/// Configure a Lua environment that has already been created by LuaSkin.
+/// Accepts explicit paths so callers outside the app bundle (e.g. SPM tests) can provide their own.
+@_cdecl("MJLuaInitWithPaths")
+func MJLuaInitWithPaths(
+    _ setupLuaPath: UnsafePointer<CChar>,
+    _ extensionsPath: UnsafePointer<CChar>,
+    _ configFile: UnsafePointer<CChar>,
+    _ configFileFull: UnsafePointer<CChar>,
+    _ configDir: UnsafePointer<CChar>,
+    _ docsJsonPath: UnsafePointer<CChar>?,
+    _ configFileExists: Bool,
+    _ autoLoadExtensions: Bool
+) {
     let skin = LuaSkin.shared(with: nil) as! LuaSkin
     let L = skin.l!
 
@@ -683,15 +693,42 @@ func MJLuaInit() {
 
     lua_setglobal(L, "hs")
 
-    // Register every bundled hs.lib<name> entry point into package.preload before setup.lua runs.
     HSExtensionsRegisterAll(L)
 
-    let setupPath = Bundle.main.path(forResource: "setup", ofType: "lua")
-    let loadresult: Int32 = (setupPath as NSString?)?.fileSystemRepresentation.withMemoryRebound(to: CChar.self, capacity: 1) { fsRep in
-        luaL_loadfilex(L, fsRep, nil)
-    } ?? LUA_ERRFILE
+    let loadresult = luaL_loadfilex(L, setupLuaPath, nil)
     if loadresult != 0 {
-        NSLog("Unable to load setup.lua from bundle. Terminating")
+        NSLog("Unable to load setup.lua from: %s", setupLuaPath)
+        return
+    }
+
+    lua_pushstring(L, extensionsPath)
+    lua_pushstring(L, configFile)
+    lua_pushstring(L, configFileFull)
+    lua_pushstring(L, configDir)
+    lua_pushstring(L, docsJsonPath)
+    lua_pushboolean(L, configFileExists ? 1 : 0)
+    lua_pushboolean(L, autoLoadExtensions ? 1 : 0)
+
+    if lua_pcall(L, 7, 2, 0) != LUA_OK {
+        let errorMessage = lua_tostring(L, -1).flatMap { String(cString: $0) } ?? "(unknown error)"
+        lua_pop(L, 1)
+        NSLog("Error running setup.lua: %@", errorMessage)
+    } else {
+        if lua_gettop(L) != 2 || lua_type(L, -1) != LUA_TFUNCTION || lua_type(L, -2) != LUA_TFUNCTION {
+            let debugPart = "setup.lua returned this: \(lua_gettop(L)):\(lua_gettop(L) >= 1 ? lua_type(L, -1) : -10):\(lua_gettop(L) >= 2 ? lua_type(L, -2) : -10)"
+            skin.logBreadcrumb("setup.lua returned incorrectly: \(debugPart)")
+        }
+        evalfn = Int32(skin.luaRef(refTable))
+        completionsForWordFn = Int32(skin.luaRef(refTable))
+        skin.logBreadcrumb("setup.lua completed")
+    }
+}
+
+/// Configure a Lua environment using Bundle.main paths (app entry point).
+@_cdecl("MJLuaInit")
+func MJLuaInit() {
+    guard let setupPath = Bundle.main.path(forResource: "setup", ofType: "lua") else {
+        NSLog("Unable to find setup.lua in bundle. Terminating")
         let alert = NSAlert()
         alert.addButton(withTitle: "OK")
         alert.messageText = "Hammerspoon installation is corrupted"
@@ -699,52 +736,27 @@ func MJLuaInit() {
         alert.alertStyle = .critical
         alert.runModal()
         NSApplication.shared.terminate(nil)
+        return
     }
 
-    let extensionsPath = Bundle.main.path(forResource: "extensions", ofType: nil)
-    lua_pushstring(L, (extensionsPath as NSString?)?.fileSystemRepresentation)
-    lua_pushstring(L, (MJConfigFileGet() as String).cString(using: .utf8))
-    lua_pushstring(L, (MJConfigFileFullPath() as String).cString(using: .utf8))
-    lua_pushstring(L, (MJConfigDir() as String).cString(using: .utf8))
+    let extensionsPath = Bundle.main.path(forResource: "extensions", ofType: nil) ?? ""
     let docsPath = Bundle.main.path(forResource: "docs", ofType: "json")
-    lua_pushstring(L, (docsPath as NSString?)?.fileSystemRepresentation)
-    lua_pushboolean(L, FileManager.default.fileExists(atPath: MJConfigFileFullPath() as String) ? 1 : 0)
-    lua_pushboolean(L, UserDefaults.standard.bool(forKey: HSAutoLoadExtensions) ? 1 : 0)
 
-    if lua_pcall(L, 7, 2, 0) != LUA_OK {
-        let errorMessage: String
-        if let cStr = lua_tostring(L, -1) {
-            errorMessage = String(cString: cStr)
-        } else {
-            errorMessage = "(unknown error)"
+    setupPath.withCString { setup in
+        extensionsPath.withCString { ext in
+            (MJConfigFileGet() as String).withCString { cfg in
+                (MJConfigFileFullPath() as String).withCString { cfgFull in
+                    (MJConfigDir() as String).withCString { cfgDir in
+                        let docsPtr = docsPath.flatMap { ($0 as NSString).fileSystemRepresentation }
+                        MJLuaInitWithPaths(
+                            setup, ext, cfg, cfgFull, cfgDir, docsPtr,
+                            FileManager.default.fileExists(atPath: MJConfigFileFullPath() as String),
+                            UserDefaults.standard.bool(forKey: HSAutoLoadExtensions)
+                        )
+                    }
+                }
+            }
         }
-        lua_pop(L, 1) // Pop the error message off the stack
-        NSLog("Error running setup.lua:%@", errorMessage)
-        let alert = NSAlert()
-        alert.addButton(withTitle: "OK")
-        alert.messageText = "Hammerspoon initialization failed"
-        alert.informativeText = errorMessage
-        alert.alertStyle = .critical
-        alert.runModal()
-    } else {
-        if lua_gettop(L) != 2 || lua_type(L, -1) != LUA_TFUNCTION || lua_type(L, -2) != LUA_TFUNCTION {
-            let debugPart = "setup.lua returned this: \(lua_gettop(L)):\(lua_gettop(L) >= 1 ? lua_type(L, -1) : -10):\(lua_gettop(L) >= 2 ? lua_type(L, -2) : -10)"
-
-            let errorMessage = "setup.lua failed to return the two items it is supposed to.\nThis is a severe bug. We would really appreciate your help in getting this fixed - please relaunch Hammerspoon so a crash report can be uploaded, then contact the Hammerspoon developers via GitHub."
-            let alert = NSAlert()
-            alert.addButton(withTitle: "OK")
-            alert.messageText = "Critical startup failure bug"
-            alert.informativeText = errorMessage
-            alert.alertStyle = .critical
-            alert.runModal()
-
-            skin.logBreadcrumb("setup.lua returned incorrectly: \(debugPart)")
-
-            // Fall through this, so we crash, so we can get the crash report
-        }
-        evalfn = Int32(skin.luaRef(refTable))
-        completionsForWordFn = Int32(skin.luaRef(refTable))
-        skin.logBreadcrumb("setup.lua completed")
     }
 }
 
