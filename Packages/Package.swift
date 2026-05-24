@@ -347,6 +347,7 @@ let package = Package(
             name: "HammerspoonTests",
             dependencies: ["HSExtensions", "HSSwiftExtensions", "LuaSkin"],
             path: "HammerspoonTests",
+            exclude: ["lsunit.lua", "testinit.lua"],
             swiftSettings: [
                 .swiftLanguageMode(.v6),
             ]

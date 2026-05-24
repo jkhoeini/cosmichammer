@@ -18,7 +18,7 @@ function testEncodeDecode()
 end
 
 function testEncodeDecodeFailures()
-  local status, _ = pcall(hs.json.encode(notATable))
+  local status, _ = pcall(hs.json.encode, notATable)
   -- assert an error was raised
   assertFalse(status)
 

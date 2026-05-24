@@ -6,10 +6,7 @@ extension HammerspoonTests {
 
         @Test func testEncodeDecode() { runLuaTest() }
 
-        @Test func testEncodeDecodeFailures() {
-            let result = runLua("testEncodeDecodeFailures()")
-            #expect(result != "Success", "Expected failure but got Success")
-        }
+        @Test func testEncodeDecodeFailures() { runLuaTest() }
 
         @Test func testReadWrite() { runLuaTest() }
     }
