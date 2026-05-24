@@ -1,14 +1,6 @@
 // swift-tools-version:6.2
 import PackageDescription
 
-// The `hs` command-line tool. A self-contained Objective-C executable that
-// talks to a running Hammerspoon.app via CFMessagePort. It has no LuaSkin
-// dependency.
-//
-// The source-of-truth lives at extensions/ipc/cli/hs.m. Sources/hs is a
-// symlink to that directory (same pattern as Packages/HSExtensions) so SPM
-// (which forbids `..` in source paths) can compile it in place.
-
 let package = Package(
     name: "hs",
     platforms: [.macOS(.v26)],
@@ -16,19 +8,20 @@ let package = Package(
         .executable(name: "hs", targets: ["hs"]),
     ],
     targets: [
+        .systemLibrary(
+            name: "CEditline",
+            path: "Sources/CEditline"
+        ),
         .executableTarget(
             name: "hs",
+            dependencies: ["CEditline"],
             path: "Sources/hs",
-            exclude: ["hs.man"],
-            sources: ["hs.m"],
-            cSettings: [
-                .unsafeFlags([
-                    "-Wno-everything",
-                ]),
+            exclude: ["hs.man", "hs.m"],
+            swiftSettings: [
+                .swiftLanguageMode(.v5),
             ],
             linkerSettings: [
                 .linkedFramework("AppKit"),
-                .linkedFramework("Foundation"),
                 .linkedFramework("CoreFoundation"),
                 .linkedLibrary("edit"),
             ]

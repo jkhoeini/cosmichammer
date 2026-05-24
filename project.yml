@@ -43,7 +43,7 @@ targets:
           GCC_OPTIMIZATION_LEVEL: s
     sources:
       # Entry point for the Xcode app target (SPM uses HSApp/main.swift instead)
-      - path: Xcode/main.m
+      - path: Xcode/main.swift
       # Resources from Hammerspoon/ (exclude code — compiled by SPM via HSExtensions)
       - path: Hammerspoon
         excludes: ["**/*.m", "**/*.h", "**/*.swift", "**/*.pch", Build Configs, Hammerspoon-Info.plist, "*.entitlements"]
