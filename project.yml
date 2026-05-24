@@ -121,10 +121,7 @@ schemes:
         - variable: MallocScribble
           value: ""
           isEnabled: true
-      targets:
-        - name: HammerspoonTests
-          randomExecutionOrder: true
-          location: "London, England"
+      targets: []
     profile:
       config: Profile
     analyze:
@@ -155,8 +152,6 @@ schemes:
           value: ""
           isEnabled: true
       targets:
-        - name: HammerspoonTests
-          randomExecutionOrder: true
         - name: Hammerspoon UI Tests
           skipped: true
     profile:

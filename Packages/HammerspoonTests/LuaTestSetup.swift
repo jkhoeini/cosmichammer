@@ -127,10 +127,13 @@ func bootstrapLuaForTesting() {
     })
 
     hs._extensions = {}
-    for k, _ in pairs(package.preload) do
-        local m = k:match('^hs%.(.+)')
-        if m and not m:match('^lib') then
-            hs._extensions[m] = true
+    local hsDir = '\(extEsc)/hs'
+    for entry in lfs.dir(hsDir) do
+        if entry ~= '.' and entry ~= '..' then
+            local name = entry:match('^(.+)%.lua$') or entry
+            if name:sub(1,1) ~= '_' then
+                hs._extensions[name] = true
+            end
         end
     end
 

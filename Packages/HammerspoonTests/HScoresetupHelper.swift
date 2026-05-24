@@ -10,7 +10,8 @@ private let verifyShutdown: lua_CFunction = { L in
 enum HScoresetupHelper {
     @MainActor static func registerShutdownLib() {
         var shutdownLib: [luaL_Reg] = [
-            luaL_Reg(name: strdup("verifyShutdown"), func: verifyShutdown),
+            luaL_Reg(name: UnsafeRawPointer(("verifyShutdown" as StaticString).utf8Start)
+                .assumingMemoryBound(to: CChar.self), func: verifyShutdown),
             luaL_Reg(name: nil, func: nil),
         ]
         let skin = LuaSkin.shared(with: nil) as! LuaSkin

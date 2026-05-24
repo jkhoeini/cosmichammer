@@ -137,30 +137,14 @@ build config="Debug":
     fi
     /usr/bin/codesign --force --sign - --deep --entitlements "${ENTITLEMENTS}" "${APP_DIR}"
 
-# Run tests (uses xcodebuild; requires `just generate` first)
-test config="Debug":
+# Run tests (SPM test target; requires `just build` first for Lua resources)
+test:
     #!/usr/bin/env bash
-    set +e
-    set -uo pipefail
-    mkdir -p {{ build_dir }}/reports
-    xcodebuild -workspace {{ workspace }} \
-        -scheme {{ scheme }} \
-        -configuration {{ config }} \
-        -destination "platform=macOS" \
-        -derivedDataPath {{ build_dir }}/DerivedData \
-        -resultBundlePath {{ build_dir }}/TestResults \
-        build-for-testing 2>&1 | tee {{ build_dir }}/test.log
-    SRCROOT="$(pwd)" \
-    BUILT_PRODUCTS_DIR="{{ build_dir }}/DerivedData/Build/Products/{{ config }}" \
-    UNLOCALIZED_RESOURCES_FOLDER_PATH="Hammerspoon.app/Contents/Resources" \
-    ./scripts/copy-extension-lua-files.sh
-    xcodebuild -workspace {{ workspace }} \
-        -scheme {{ scheme }} \
-        -configuration {{ config }} \
-        -destination "platform=macOS" \
-        -derivedDataPath {{ build_dir }}/DerivedData \
-        -resultBundlePath {{ build_dir }}/TestResults \
-        test-without-building 2>&1 | tee -a {{ build_dir }}/test.log
+    set -euo pipefail
+    SDK_PATH="$(xcrun --show-sdk-path)"
+    cd Packages && swift test \
+        -Xlinker -F -Xlinker "${SDK_PATH}/System/Library/PrivateFrameworks" \
+        2>&1 | tee ../{{ build_dir }}/test.log
 
 # Build all documentation
 docs:

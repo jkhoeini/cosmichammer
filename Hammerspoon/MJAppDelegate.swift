@@ -413,21 +413,7 @@ class MJAppDelegate: NSObject, NSApplicationDelegate {
         // Remove our early event manager handler so hs.urlevent can register for it later
         NSAppleEventManager.shared().removeEventHandler(forEventClass: AEEventClass(kInternetEventClass), andEventID: AEEventID(kAEGetURL))
 
-        if NSClassFromString("XCTest") != nil {
-            // Hammerspoon Tests
-            NSLog("in testing mode!")
-
-            let mainBundle = Bundle.main
-            if let bundle = Bundle(path: "\(mainBundle.bundlePath)/Contents/Plugins/Hammerspoon Tests.xctest"),
-               let lsUnitPath = bundle.path(forResource: "lsunit", ofType: "lua")
-            {
-                let fsPath = (lsUnitPath as NSString).fileSystemRepresentation
-                MJConfigFileSet(FileManager.default.string(withFileSystemRepresentation: fsPath, length: strlen(fsPath)) as NSString)
-            } else {
-                NSLog("Unable to find lsunit.lua in Hammerspoon Tests.xctest. We're about to crash, sorry!")
-                abort()
-            }
-        } else if ProcessInfo.processInfo.environment["XCTESTING"] != nil {
+        if ProcessInfo.processInfo.environment["XCTESTING"] != nil {
             // Hammerspoon UI Tests
             NSLog("in UI testing mode")
             let initPath = FileManager.default.currentDirectoryPath + "/Hammerspoon UI Tests-Runner.app/Contents/PlugIns/Hammerspoon UI Tests.xctest/Contents/Resources/init.lua"
