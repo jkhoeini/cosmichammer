@@ -705,7 +705,7 @@ func MJLuaInitWithPaths(
     lua_pushstring(L, configFile)
     lua_pushstring(L, configFileFull)
     lua_pushstring(L, configDir)
-    lua_pushstring(L, docsJsonPath)
+    if let docsJsonPath { lua_pushstring(L, docsJsonPath) } else { lua_pushnil(L) }
     lua_pushboolean(L, configFileExists ? 1 : 0)
     lua_pushboolean(L, autoLoadExtensions ? 1 : 0)
 
@@ -747,12 +747,14 @@ func MJLuaInit() {
             (MJConfigFileGet() as String).withCString { cfg in
                 (MJConfigFileFullPath() as String).withCString { cfgFull in
                     (MJConfigDir() as String).withCString { cfgDir in
-                        let docsPtr = docsPath.flatMap { ($0 as NSString).fileSystemRepresentation }
-                        MJLuaInitWithPaths(
-                            setup, ext, cfg, cfgFull, cfgDir, docsPtr,
-                            FileManager.default.fileExists(atPath: MJConfigFileFullPath() as String),
-                            UserDefaults.standard.bool(forKey: HSAutoLoadExtensions)
-                        )
+                        (docsPath ?? "").withCString { docsC in
+                            MJLuaInitWithPaths(
+                                setup, ext, cfg, cfgFull, cfgDir,
+                                docsPath != nil ? docsC : nil,
+                                FileManager.default.fileExists(atPath: MJConfigFileFullPath() as String),
+                                UserDefaults.standard.bool(forKey: HSAutoLoadExtensions)
+                            )
+                        }
                     }
                 }
             }

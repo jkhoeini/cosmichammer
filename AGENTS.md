@@ -25,7 +25,7 @@ Builds **must** go through the workspace, not the bare project. `xcodebuild -wor
 
 The `project.pbxproj` is **generated** from `project.yml` (XcodeGen) and gitignored. After cloning or modifying project structure, run `just generate` before opening Xcode or building. The 124-line YAML replaces a ~2900-line binary plist — edit `project.yml`, not the pbxproj.
 
-To run a single Lua-side test, use Xcode's test navigator on the `Hammerspoon Tests` target — there is no per-extension test runner on the CLI.
+To run a single test suite, use `swift test --filter <SuiteName>` from `Packages/` (with the private framework linker flag — see `justfile`). To run all tests: `just test`.
 
 ## Architecture
 
@@ -63,7 +63,7 @@ Key pieces of this model — preserve them when adding extensions:
 4. Run `scripts/generate-hsextensions.sh`.
 5. `just build`.
 
-The Xcode project no longer needs per-extension targets — there are 3 targets total (`Hammerspoon`, `Hammerspoon Tests`, `HammerspoonUITests`). The `hs` CLI is built by SPM (`Packages/hs/`) and copied into `Hammerspoon.app/Contents/Frameworks/hs/hs` by `just build` (post-build step).
+The Xcode project no longer needs per-extension targets — there are 2 Xcode targets (`Hammerspoon`, `HammerspoonUITests`). Unit tests live in the SPM package as `HammerspoonTests` (a `.testTarget` in `Packages/Package.swift`). The `hs` CLI is built by SPM (`Packages/hs/`) and copied into `Hammerspoon.app/Contents/Frameworks/hs/hs` by `just build` (post-build step).
 
 ### Other notable bits
 
