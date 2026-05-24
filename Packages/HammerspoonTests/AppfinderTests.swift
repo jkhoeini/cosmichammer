@@ -1,7 +1,7 @@
 import Testing
 
 extension HammerspoonTests {
-    @Suite @MainActor final class Appfinder {
+    @Suite(.serialized) @MainActor final class Appfinder {
         init() throws { try loadLuaModule("test_appfinder") }
 
         @Test func testAppFromName() { runLuaTest() }

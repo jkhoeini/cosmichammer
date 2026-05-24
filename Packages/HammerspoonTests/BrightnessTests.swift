@@ -1,7 +1,7 @@
 import Testing
 
 extension HammerspoonTests {
-    @Suite @MainActor final class Brightness {
+    @Suite(.serialized) @MainActor final class Brightness {
         init() throws { try loadLuaModule("test_brightness") }
 
         @Test(.skipInHeadless) func testGet() { runLuaTest() }

@@ -1,7 +1,7 @@
 import Testing
 
 extension HammerspoonTests {
-    @Suite @MainActor final class TestCaseSelf {
+    @Suite(.serialized) @MainActor final class TestCaseSelf {
         @Test func testrunLua() {
             let result = runLua("return 'hello world!'")
             #expect(result == "hello world!", "Lua code evaluation is not working")

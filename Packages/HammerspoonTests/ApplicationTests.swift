@@ -2,7 +2,7 @@ import Testing
 import Foundation
 
 extension HammerspoonTests {
-    @Suite @MainActor final class Application {
+    @Suite(.serialized) @MainActor final class Application {
         init() throws { try loadLuaModule("test_application") }
 
         @Test func testInitWithPidFailures() { runLuaTest() }

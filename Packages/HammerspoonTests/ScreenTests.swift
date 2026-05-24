@@ -1,7 +1,7 @@
 import Testing
 
 extension HammerspoonTests {
-    @Suite @MainActor final class Screen {
+    @Suite(.serialized) @MainActor final class Screen {
         init() throws { try loadLuaModule("test_screen") }
 
         @Test func testMainScreen() { runLuaTest() }

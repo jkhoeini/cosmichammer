@@ -2,7 +2,7 @@ import Testing
 import Foundation
 
 extension HammerspoonTests {
-    @Suite @MainActor final class Uielement {
+    @Suite(.serialized) @MainActor final class Uielement {
         init() throws { try loadLuaModule("test_uielement") }
 
         @Test(.skipInHeadless) func testWindowWatcher() {

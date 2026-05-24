@@ -2,7 +2,7 @@ import Testing
 import Foundation
 
 extension HammerspoonTests {
-    @Suite @MainActor final class Socket {
+    @Suite(.serialized) @MainActor final class Socket {
         init() throws { try loadLuaModule("test_socket") }
 
         @Test func testTcpSocketInstanceCreation() { runLuaTest() }

@@ -1,7 +1,7 @@
 import Testing
 
 extension HammerspoonTests {
-    @Suite @MainActor final class Alert {
+    @Suite(.serialized) @MainActor final class Alert {
         init() throws { try loadLuaModule("test_alert") }
 
         @Test func testAlert() { runLuaTest() }

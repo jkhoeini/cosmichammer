@@ -2,7 +2,7 @@ import Testing
 import Foundation
 
 extension HammerspoonTests {
-    @Suite @MainActor final class Http {
+    @Suite(.serialized) @MainActor final class Http {
         init() throws { try loadLuaModule("test_http") }
 
         @Test func testHttpDoAsyncRequestWithCachePolicyParam() {

@@ -47,10 +47,17 @@ replaced.
     (~$(MARKETING_VERSION)~, ~${EXECUTABLE_NAME}~, etc.) even though the
     justfile already ~sed~-replaces them. Use a simpler template format.
 
-*** TODO Migrate ~just test~ from ~xcodebuild~ to ~swift test~
-    The ~test~ recipe shells out to ~xcodebuild~ directly. Replace with
-    Swift's native test runner to eliminate the dependency on the generated
-    Xcode project for testing.
+*** DONE Migrate ~just test~ from ~xcodebuild~ to ~swift test~
+    Replaced with SPM ~.testTarget~ in ~Packages/Package.swift~, Swift
+    Testing framework, and ~swift test~ in the justfile.
+
+*** TODO Fix failing SPM test suites that need macOS system APIs
+    20 of 30 suites fail because the pure SPM test runner has no host app.
+    Extensions that call AppKit, accessibility, audio, screen, or window
+    APIs get nil/crash without ~NSApplication~.  Options: (a) stub the
+    missing ~hs.*~ core functions in ~LuaTestSetup.swift~, (b) mark
+    system-dependent tests with a trait and skip them in ~swift test~,
+    (c) add a second hosted-test target for integration tests.
 
 * Investigated — not worth doing
 

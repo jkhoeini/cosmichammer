@@ -1,7 +1,7 @@
 import Testing
 
 extension HammerspoonTests {
-    @Suite @MainActor final class Math {
+    @Suite(.serialized) @MainActor final class Math {
         init() throws { try loadLuaModule("test_math") }
 
         @Test func testRandomFloat() { runLuaTest() }

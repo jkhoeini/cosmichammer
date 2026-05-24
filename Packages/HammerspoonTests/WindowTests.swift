@@ -2,7 +2,7 @@ import Testing
 import Foundation
 
 extension HammerspoonTests {
-    @Suite @MainActor final class Window {
+    @Suite(.serialized) @MainActor final class Window {
         init() throws { try loadLuaModule("test_window") }
         @Test func testAllWindows() { runLuaTest() }
         @Test(.skipInHeadless) func testDesktop() { runLuaTest() }

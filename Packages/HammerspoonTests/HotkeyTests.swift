@@ -2,7 +2,7 @@ import Testing
 import Foundation
 
 extension HammerspoonTests {
-    @Suite @MainActor final class Hotkey {
+    @Suite(.serialized) @MainActor final class Hotkey {
         init() throws { try loadLuaModule("test_hotkey") }
 
         @Test func testAssignable() { runLuaTest() }

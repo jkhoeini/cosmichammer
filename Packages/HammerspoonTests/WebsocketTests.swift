@@ -2,7 +2,7 @@ import Testing
 import Foundation
 
 extension HammerspoonTests {
-    @Suite @MainActor final class Websocket {
+    @Suite(.serialized) @MainActor final class Websocket {
         init() throws {
             try loadLuaModule("test_websocket")
             _ = runLua("startEchoServer()")

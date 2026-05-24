@@ -1,7 +1,7 @@
 import Testing
 
 extension HammerspoonTests {
-    @Suite @MainActor final class Serial {
+    @Suite(.serialized) @MainActor final class Serial {
         init() throws { try loadLuaModule("test_serial") }
 
         @Test func testAvailablePortNames() { runLuaTest() }

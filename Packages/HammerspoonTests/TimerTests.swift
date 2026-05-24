@@ -2,7 +2,7 @@ import Testing
 import Foundation
 
 extension HammerspoonTests {
-    @Suite @MainActor final class Timer {
+    @Suite(.serialized) @MainActor final class Timer {
         init() throws { try loadLuaModule("test_timer") }
 
         @Test func testDays() { runLuaTest() }

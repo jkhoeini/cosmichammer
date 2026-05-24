@@ -1,7 +1,7 @@
 import Testing
 
 extension HammerspoonTests {
-    @Suite @MainActor final class Json {
+    @Suite(.serialized) @MainActor final class Json {
         init() throws { try loadLuaModule("test_json") }
 
         @Test func testEncodeDecode() { runLuaTest() }

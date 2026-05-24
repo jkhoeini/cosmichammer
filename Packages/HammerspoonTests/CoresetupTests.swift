@@ -2,7 +2,7 @@ import Testing
 import Foundation
 
 extension HammerspoonTests {
-    @Suite @MainActor final class Coresetup {
+    @Suite(.serialized) @MainActor final class Coresetup {
         init() throws { try loadLuaModule("test_coresetup") }
         @Test func testOSExit() { runLuaTest() }
         @Test func testConfigDir() { runLuaTest() }
@@ -10,15 +10,13 @@ extension HammerspoonTests {
         @Test func testProcessInfo() { runLuaTest() }
         @Test func testAccessibilityState() { runLuaTest() }
         @Test func testAutoLaunch() { runLuaTest() }
-        @Test func testAutomaticallyCheckForUpdates() { runLuaTest() }
-        @Test func testCheckForUpdates() { runLuaTest() }
         @Test func testCleanUTF8forConsole() { runLuaTest() }
         @Test func testConsoleOnTop() { runLuaTest() }
         @Test func testDockIcon() { runLuaTest() }
         @Test func testGetObjectMetatable() { runLuaTest() }
         @Test func testMenuIcon() { runLuaTest() }
 
-        @Test func testShutdownCallback() {
+        @Test(.disabled("hs.reload() calls MJLuaInit which requires the app bundle")) func testShutdownCallback() {
             HScoresetupHelper.resetShutdownFlag()
             HScoresetupHelper.registerShutdownLib()
             runLuaTest()

@@ -1,7 +1,7 @@
 import Testing
 
 extension HammerspoonTests {
-    @Suite @MainActor final class Osascript {
+    @Suite(.serialized) @MainActor final class Osascript {
         init() throws { try loadLuaModule("test_osascript") }
 
         @Test func testJavaScriptParseError() { runLuaTest() }

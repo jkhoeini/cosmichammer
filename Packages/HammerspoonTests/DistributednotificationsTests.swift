@@ -2,7 +2,7 @@ import Testing
 import Foundation
 
 extension HammerspoonTests {
-    @Suite @MainActor final class Distributednotifications {
+    @Suite(.serialized) @MainActor final class Distributednotifications {
         init() throws { try loadLuaModule("test_distributednotifications") }
 
         @Test func testdistributednotifications() {

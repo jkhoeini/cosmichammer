@@ -2,7 +2,7 @@ import Testing
 import Foundation
 
 extension HammerspoonTests {
-    @Suite @MainActor final class Audiodevice {
+    @Suite(.serialized) @MainActor final class Audiodevice {
         init() throws { try loadLuaModule("test_audiodevice") }
 
         @Test func testGetDefaultEffect() { runLuaTest() }

@@ -1,7 +1,7 @@
 import Testing
 
 extension HammerspoonTests {
-    @Suite @MainActor final class Mouse {
+    @Suite(.serialized) @MainActor final class Mouse {
         init() throws { try loadLuaModule("test_mouse") }
 
         @Test(.skipInHeadless) func testMouseCount() { runLuaTest() }

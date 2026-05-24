@@ -14,7 +14,7 @@ private let repoRoot: URL = {
         .deletingLastPathComponent()  // repo root
 }()
 
-private nonisolated(unsafe) var luaBootstrapped = false
+@MainActor private var luaBootstrapped = false
 
 private func doLuaString(_ L: UnsafeMutablePointer<lua_State>, _ s: String) -> Int32 {
     let load = luaL_loadstring(L, s)
@@ -45,7 +45,9 @@ func luaRunString(_ code: String) -> String? {
         case LUA_TNIL:
             return nil
         default:
-            return String(cString: luaL_tolstring(L, idx, nil))
+            let s = String(cString: luaL_tolstring(L, idx, nil))
+            lua_settop(L, lua_gettop(L) - 1)
+            return s
         }
     }
 
