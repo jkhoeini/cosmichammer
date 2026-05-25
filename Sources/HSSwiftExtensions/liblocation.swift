@@ -688,7 +688,7 @@ private func clgeocoder_lookupAddressNear(_ L: UnsafeMutablePointer<lua_State>!)
 ///  * a boolean indicating if the geocoding process is still active.  If false, then the callback function either has already been called or will be as soon as the main thread of Cosmic Hammer becomes idle again.
 private func clgeocoder_isGeocoding(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, UnsafeMutablePointer(mutating: (GEOCODE_UD_TAG as NSString).utf8String!), LS_TBREAK)
+    skin.checkArgs(LS_TUSERDATA, GEOCODE_UD_TAG, LS_TBREAK)
     let geoItem: CLGeocoder = skin.toNSObject(at:1) as! CLGeocoder
     lua_pushboolean(L, geoItem.isGeocoding ? 1 : 0)
     return 1
@@ -708,7 +708,7 @@ private func clgeocoder_isGeocoding(_ L: UnsafeMutablePointer<lua_State>!) -> In
 ///  * This method has no effect if the geocoding process has already completed.
 private func clgeocoder_cancelGeocoding(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, UnsafeMutablePointer(mutating: (GEOCODE_UD_TAG as NSString).utf8String!), LS_TBREAK)
+    skin.checkArgs(LS_TUSERDATA, GEOCODE_UD_TAG, LS_TBREAK)
     let geoItem: CLGeocoder = skin.toNSObject(at:1) as! CLGeocoder
     geoItem.cancelGeocode()
     lua_pushnil(L)

@@ -98,7 +98,7 @@ private func sound_getAudioEffectNames(_ L: UnsafeMutablePointer<lua_State>!) ->
 private func sound_byname(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING | LS_TNUMBER, LS_TBREAK)
-    luaL_checkstring(L, 1) // force number to be a string
+    _ = luaL_checkstring(L, 1) // force number to be a string
     if let theSound = NSSound(named: NSSound.Name(skin.toNSObject(at: 1) as! String)) {
         skin.pushNSObject(theSound)
     } else {
@@ -119,7 +119,7 @@ private func sound_byname(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 private func sound_byfile(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING | LS_TNUMBER, LS_TBREAK)
-    luaL_checkstring(L, 1) // force number to be a string
+    _ = luaL_checkstring(L, 1) // force number to be a string
     if let theSound = NSSound(contentsOfFile: skin.toNSObject(at: 1) as! String, byReference: false) {
         skin.pushNSObject(theSound)
     } else {
@@ -404,7 +404,7 @@ private func sound_device(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
         if lua_type(L, 2) == LUA_TNIL {
             obj.playbackDeviceIdentifier = nil
         } else {
-            luaL_checkstring(L, 2)
+            _ = luaL_checkstring(L, 2)
             do {
                 obj.playbackDeviceIdentifier = NSSound.PlaybackDeviceIdentifier(skin.toNSObject(at: 2) as! String)
             }

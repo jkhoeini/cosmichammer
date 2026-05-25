@@ -38,7 +38,7 @@ private class HSWebSocketDelegate: NSObject, URLSessionWebSocketDelegate {
     }
 
     func listenForMessages() {
-        weak var weakSelf = self
+        weak let weakSelf = self
         webSocket?.receive { [weak weakSelf] result in
             guard let strongSelf = weakSelf else { return }
             if strongSelf.fn == LUA_NOREF { return }

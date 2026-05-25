@@ -787,7 +787,7 @@ private func imageFromMediaFile(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 ///  * see also [hs.image:setName](#setName) for a variant that returns a boolean instead.
 private func getImageName(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, unsafeBitCast(USERDATA_TAG, to: UnsafePointer<CChar>.self), LS_TANY | LS_TOPTIONAL, LS_TBREAK)
+    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TANY | LS_TOPTIONAL, LS_TBREAK)
     let testImage = skin.luaObject(at: 1, toClass: "NSImage") as! NSImage
     if lua_gettop(L) == 1 {
         lua_pushstring(L, testImage.name())
@@ -816,12 +816,12 @@ private func getImageName(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * See also [hs.image:setSize](#setSize) for creating a copy of the image at a new size.
 private func getImageSize(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, unsafeBitCast(USERDATA_TAG, to: UnsafePointer<CChar>.self), LS_TBREAK | LS_TVARARG)
+    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK | LS_TVARARG)
     let theImage = skin.luaObject(at: 1, toClass: "NSImage") as! NSImage
     if lua_gettop(L) == 1 {
         skin.pushNSSize(theImage.size)
     } else {
-        skin.checkArgs(LS_TUSERDATA, unsafeBitCast(USERDATA_TAG, to: UnsafePointer<CChar>.self), LS_TTABLE, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
+        skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TTABLE, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
         let destSize = skin.tableToSize(at: 2)
         let absolute = lua_gettop(L) == 3 ? (lua_toboolean(L, 3) != 0) : false
         if absolute {
@@ -847,7 +847,7 @@ private func getImageSize(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * A `hs.drawing.color` object
 private func colorAt(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, unsafeBitCast(USERDATA_TAG, to: UnsafePointer<CChar>.self), LS_TTABLE, LS_TBREAK)
+    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TTABLE, LS_TBREAK)
 
     let theImage = skin.luaObject(at: 1, toClass: "NSImage") as! NSImage
     let point = skin.tableToPoint(at: 2)
@@ -878,7 +878,7 @@ private func colorAt(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * a copy of the portion of the image specified
 private func croppedCopy(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, unsafeBitCast(USERDATA_TAG, to: UnsafePointer<CChar>.self), LS_TTABLE, LS_TBREAK)
+    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TTABLE, LS_TBREAK)
     let theImage = skin.luaObject(at: 1, toClass: "NSImage") as! NSImage
     let frame = skin.tableToRect(at: 2)
 
@@ -941,7 +941,7 @@ private func parseFileType(_ label: String) -> NSBitmapImageRep.FileType? {
 ///  * You can convert the string back into an image object with [hs.image.imageFromURL](#URL), e.g. `hs.image.imageFromURL(string)`
 private func encodeAsString(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, unsafeBitCast(USERDATA_TAG, to: UnsafePointer<CChar>.self), LS_TBREAK | LS_TVARARG)
+    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK | LS_TVARARG)
     let theImage = skin.luaObject(at: 1, toClass: "NSImage") as! NSImage
 
     var scaleToPixels = false
@@ -1025,7 +1025,7 @@ private func encodeAsString(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * Saves image at the size in points (or pixels, if `scale` is true) as reported by [hs.image:size()](#size) for the image object
 private func saveToFile(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, unsafeBitCast(USERDATA_TAG, to: UnsafePointer<CChar>.self), LS_TSTRING, LS_TBREAK | LS_TVARARG)
+    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING, LS_TBREAK | LS_TVARARG)
 
     let theImage = skin.luaObject(at: 1, toClass: "NSImage") as! NSImage
     let filePath = skin.toNSObject(atIndex: 2) as! String
@@ -1110,7 +1110,7 @@ private func saveToFile(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * Images with this flag set to true usually appear lighter than they would with this flag set to false.
 private func imageTemplate(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, unsafeBitCast(USERDATA_TAG, to: UnsafePointer<CChar>.self), LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
+    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
     let theImage = skin.luaObject(at: 1, toClass: "NSImage") as! NSImage
     if lua_gettop(L) == 1 {
         lua_pushboolean(L, theImage.isTemplate ? 1 : 0)
@@ -1132,7 +1132,7 @@ private func imageTemplate(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * a new hs.image object
 private func copyImage(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, unsafeBitCast(USERDATA_TAG, to: UnsafePointer<CChar>.self), LS_TBREAK)
+    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let theImage = skin.luaObject(at: 1, toClass: "NSImage") as! NSImage
     skin.pushNSObject(theImage.copy() as! NSImage)
     return 1
@@ -1150,7 +1150,7 @@ private func copyImage(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * A string.
 private func toASCII(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, unsafeBitCast(USERDATA_TAG, to: UnsafePointer<CChar>.self), LS_TNUMBER | LS_TOPTIONAL, LS_TNUMBER | LS_TOPTIONAL, LS_TBREAK)
+    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TNUMBER | LS_TOPTIONAL, LS_TNUMBER | LS_TOPTIONAL, LS_TBREAK)
 
     let theImage = skin.luaObject(at: 1, toClass: "NSImage") as! NSImage
 
@@ -1179,7 +1179,7 @@ private func toASCII(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * this method may be useful when preparing images for other devices (e.g. `hs.streamdeck`).
 private func image_bitmapRepresentation(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, unsafeBitCast(USERDATA_TAG, to: UnsafePointer<CChar>.self), LS_TBREAK | LS_TVARARG)
+    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK | LS_TVARARG)
     let theImage = skin.luaObject(at: 1, toClass: "NSImage") as! NSImage
 
     var bitmapSize = theImage.size
@@ -1200,7 +1200,7 @@ private func image_bitmapRepresentation(_ L: UnsafeMutablePointer<lua_State>!) -
             fallthrough
         }
     default:
-        skin.checkArgs(LS_TUSERDATA, unsafeBitCast(USERDATA_TAG, to: UnsafePointer<CChar>.self), LS_TTABLE, LS_TBOOLEAN, LS_TBREAK)
+        skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TTABLE, LS_TBOOLEAN, LS_TBREAK)
         bitmapSize = skin.tableToSize(at: 2)
         colorSpaceName = lua_toboolean(L, 3) != 0 ? .calibratedWhite : .calibratedRGB
     }

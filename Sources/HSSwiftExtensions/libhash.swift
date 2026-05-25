@@ -240,7 +240,7 @@ private func md5Init(_ key: Data?) -> UnsafeMutableRawPointer {
 
 private func md5Append(_ context: UnsafeMutableRawPointer, _ data: Data) {
     let ctx = context.assumingMemoryBound(to: CC_MD5_CTX.self)
-    data.withUnsafeBytes { bufPtr in
+    _ = data.withUnsafeBytes { bufPtr in
         CC_MD5_Update(ctx, bufPtr.baseAddress!, CC_LONG(data.count))
     }
 }
@@ -263,7 +263,7 @@ private func sha1Init(_ key: Data?) -> UnsafeMutableRawPointer {
 
 private func sha1Append(_ context: UnsafeMutableRawPointer, _ data: Data) {
     let ctx = context.assumingMemoryBound(to: CC_SHA1_CTX.self)
-    data.withUnsafeBytes { bufPtr in
+    _ = data.withUnsafeBytes { bufPtr in
         CC_SHA1_Update(ctx, bufPtr.baseAddress!, CC_LONG(data.count))
     }
 }
@@ -286,7 +286,7 @@ private func sha256Init(_ key: Data?) -> UnsafeMutableRawPointer {
 
 private func sha256Append(_ context: UnsafeMutableRawPointer, _ data: Data) {
     let ctx = context.assumingMemoryBound(to: CC_SHA256_CTX.self)
-    data.withUnsafeBytes { bufPtr in
+    _ = data.withUnsafeBytes { bufPtr in
         CC_SHA256_Update(ctx, bufPtr.baseAddress!, CC_LONG(data.count))
     }
 }
@@ -309,7 +309,7 @@ private func sha512Init(_ key: Data?) -> UnsafeMutableRawPointer {
 
 private func sha512Append(_ context: UnsafeMutableRawPointer, _ data: Data) {
     let ctx = context.assumingMemoryBound(to: CC_SHA512_CTX.self)
-    data.withUnsafeBytes { bufPtr in
+    _ = data.withUnsafeBytes { bufPtr in
         CC_SHA512_Update(ctx, bufPtr.baseAddress!, CC_LONG(data.count))
     }
 }

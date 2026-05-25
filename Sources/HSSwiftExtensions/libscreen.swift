@@ -667,8 +667,7 @@ private func screen_getUUID(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
         return 1
     }
 
-    let uuid = CFUUIDCreateString(nil, cfUUID.takeUnretainedValue()) as String? ?? ""
-    cfUUID.release()
+    let uuid = CFUUIDCreateString(nil, cfUUID.takeRetainedValue()) as String? ?? ""
 
     skin.pushNSObject(uuid as NSString)
     return 1

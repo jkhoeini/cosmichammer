@@ -283,7 +283,7 @@ private func http_doRequest(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 // NOTE: this function is wrapped in init.lua
 private func http_encodeForQuery(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    luaL_checkstring(L, 1)
+    _ = luaL_checkstring(L, 1)
     let value: String = skin.toNSObject(atIndex: 1) as! String
 
     let encoded = value.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? value
@@ -334,7 +334,7 @@ private func http_urlParts(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
         let theView = theWindow.contentView as! WKWebView
         theURL = theView.url! as NSURL
     } else {
-        luaL_checkstring(L, 1)
+        _ = luaL_checkstring(L, 1)
         theURL = NSURL(string: skin.toNSObject(atIndex: 1) as! String)!
     }
 

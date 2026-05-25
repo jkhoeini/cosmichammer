@@ -230,7 +230,7 @@ private func attributesForVoice(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
     let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING | LS_TNUMBER | LS_TNIL, LS_TBREAK)
 
-    if lua_type(L, 1) != LUA_TNIL { luaL_checkstring(L, 1) }
+    if lua_type(L, 1) != LUA_TNIL { _ = luaL_checkstring(L, 1) }
     let voiceName = skin.toNSObject(atIndex: 1) as? String
     let corrected = correctForVoiceShortCut(voiceName)
     let voiceNameObj = corrected.map { NSSpeechSynthesizer.VoiceName(rawValue: $0) }
@@ -303,7 +303,7 @@ private func newSpeechSynthesizer(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
 
     var voiceName: NSSpeechSynthesizer.VoiceName? = nil
     if lua_gettop(L) == 1 {
-        luaL_checkstring(L, 1)
+        _ = luaL_checkstring(L, 1)
         if let str = skin.toNSObject(atIndex: 1) as? String {
             if let corrected = correctForVoiceShortCut(str) {
                 voiceName = NSSpeechSynthesizer.VoiceName(rawValue: corrected)
@@ -352,7 +352,7 @@ private func voice(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     if lua_gettop(L) == 2 && lua_type(L, 2) != LUA_TBOOLEAN {
         var voiceName: NSSpeechSynthesizer.VoiceName? = nil
         if lua_type(L, 2) != LUA_TNIL {
-            luaL_checkstring(L, 2)
+            _ = luaL_checkstring(L, 2)
             if let str = skin.toNSObject(atIndex: 2) as? String {
                 if let corrected = correctForVoiceShortCut(str) {
                     voiceName = NSSpeechSynthesizer.VoiceName(rawValue: corrected)
@@ -454,7 +454,7 @@ private func startSpeakingString(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING | LS_TNUMBER, LS_TBREAK)
     let synth = get_synthFromUserdata(L, at: 1)
 
-    luaL_checkstring(L, 2)
+    _ = luaL_checkstring(L, 2)
     guard let theText = skin.toNSObject(atIndex: 2) as? String else {
         luaL_error(L, "invalid speech text, evaluates to nil")
         return 0
@@ -480,8 +480,8 @@ private func startSpeakingStringToURL(_ L: UnsafeMutablePointer<lua_State>!) -> 
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING | LS_TNUMBER, LS_TSTRING | LS_TNUMBER, LS_TBREAK)
     let synth = get_synthFromUserdata(L, at: 1)
 
-    luaL_checkstring(L, 2)
-    luaL_checkstring(L, 3)
+    _ = luaL_checkstring(L, 2)
+    _ = luaL_checkstring(L, 3)
     guard let theText = skin.toNSObject(atIndex: 2) as? String else {
         luaL_error(L, "invalid speech text, evaluates to nil")
         return 0
@@ -507,7 +507,7 @@ private func startSpeakingStringToURL(_ L: UnsafeMutablePointer<lua_State>!) -> 
 private func parseBoundary(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32, skin: LuaSkin, label: String) -> NSSpeechSynthesizer.Boundary {
     var boundary = NSSpeechSynthesizer.Boundary.immediateBoundary
     if lua_gettop(L) >= idx {
-        luaL_checkstring(L, idx)
+        _ = luaL_checkstring(L, idx)
         if let where_ = skin.toNSObject(atIndex: idx) as? String {
             switch where_ {
             case "immediate": boundary = .immediateBoundary
@@ -573,7 +573,7 @@ private func phonemesFromText(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING | LS_TNUMBER, LS_TBREAK)
     let synth = get_synthFromUserdata(L, at: 1)
 
-    luaL_checkstring(L, 2)
+    _ = luaL_checkstring(L, 2)
     guard let theText = skin.toNSObject(atIndex: 2) as? String else {
         luaL_error(L, "invalid speech text, evaluates to nil")
         return 0

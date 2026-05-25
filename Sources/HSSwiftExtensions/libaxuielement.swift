@@ -205,7 +205,7 @@ private func axuielement_getAttributeNames(_ L: UnsafeMutablePointer<lua_State>!
             lua_rawseti(L, -2, luaL_len(L, -2) + 1)
         }
     } else {
-        errorWrapper(L, "attributeNames", nil, errorState)
+        _ = errorWrapper(L, "attributeNames", nil, errorState)
         returnCount += 1
     }
     return returnCount
@@ -237,7 +237,7 @@ private func axuielement_getActionNames(_ L: UnsafeMutablePointer<lua_State>!) -
             lua_rawseti(L, -2, luaL_len(L, -2) + 1)
         }
     } else {
-        errorWrapper(L, "actionNames", nil, errorState)
+        _ = errorWrapper(L, "actionNames", nil, errorState)
         returnCount += 1
     }
     return returnCount
@@ -268,7 +268,7 @@ private func axuielement_getActionDescription(_ L: UnsafeMutablePointer<lua_Stat
     } else if errorState == .noValue {
         lua_pushnil(L)
     } else {
-        errorWrapper(L, "actionDescription", action, errorState)
+        _ = errorWrapper(L, "actionDescription", action, errorState)
         returnCount += 1
     }
     return returnCount
@@ -296,7 +296,7 @@ private func axuielement_getAttributeValue(_ L: UnsafeMutablePointer<lua_State>!
     } else if errorState == .noValue {
         lua_pushnil(L)
     } else {
-        errorWrapper(L, "attributeValue", attribute, errorState)
+        _ = errorWrapper(L, "attributeValue", attribute, errorState)
         returnCount += 1
     }
     return returnCount
@@ -343,11 +343,11 @@ private func axuielement_getAllAttributeValues(_ L: UnsafeMutablePointer<lua_Sta
                 lua_setfield(L, -2, name.utf8String)
             }
         } else {
-            errorWrapper(L, "allAttributeValues", "retrieving attribute values", errorState)
+            _ = errorWrapper(L, "allAttributeValues", "retrieving attribute values", errorState)
             returnCount += 1
         }
     } else {
-        errorWrapper(L, "allAttributeValues", "retrieving attribute names", errorState)
+        _ = errorWrapper(L, "allAttributeValues", "retrieving attribute names", errorState)
         returnCount += 1
     }
     return returnCount
@@ -373,7 +373,7 @@ private func axuielement_getAttributeValueCount(_ L: UnsafeMutablePointer<lua_St
     if errorState == .success {
         lua_pushinteger(L, lua_Integer(count))
     } else {
-        errorWrapper(L, "attributeValueCount", attribute, errorState)
+        _ = errorWrapper(L, "attributeValueCount", attribute, errorState)
         returnCount += 1
     }
     return returnCount
@@ -402,7 +402,7 @@ private func axuielement_getParameterizedAttributeNames(_ L: UnsafeMutablePointe
             lua_rawseti(L, -2, luaL_len(L, -2) + 1)
         }
     } else {
-        errorWrapper(L, "parameterizedAttributeNames", nil, errorState)
+        _ = errorWrapper(L, "parameterizedAttributeNames", nil, errorState)
         returnCount += 1
     }
     return returnCount
@@ -428,7 +428,7 @@ private func axuielement_isAttributeSettable(_ L: UnsafeMutablePointer<lua_State
     if errorState == .success {
         lua_pushboolean(L, settable.boolValue ? 1 : 0)
     } else {
-        errorWrapper(L, "isAttributeSettable", attribute, errorState)
+        _ = errorWrapper(L, "isAttributeSettable", attribute, errorState)
         returnCount += 1
     }
     return returnCount
@@ -458,7 +458,7 @@ private func axuielement_isValid(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
     } else if errorState == .invalidUIElement {
         lua_pushboolean(L, 0)
     } else {
-        errorWrapper(L, "pid", nil, errorState)
+        _ = errorWrapper(L, "pid", nil, errorState)
         returnCount += 1
     }
     return returnCount
@@ -483,7 +483,7 @@ private func axuielement_getPid(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
     if errorState == .success {
         lua_pushinteger(L, lua_Integer(thePid))
     } else {
-        errorWrapper(L, "pid", nil, errorState)
+        _ = errorWrapper(L, "pid", nil, errorState)
         returnCount += 1
     }
     return returnCount
@@ -513,7 +513,7 @@ private func axuielement_performAction(_ L: UnsafeMutablePointer<lua_State>!) ->
     } else if errorState == .cannotComplete {
         lua_pushboolean(L, 0)
     } else {
-        errorWrapper(L, "performAction", action, errorState)
+        _ = errorWrapper(L, "performAction", action, errorState)
         returnCount += 1
     }
     return returnCount
@@ -559,7 +559,7 @@ private func axuielement_getElementAtPosition(_ L: UnsafeMutablePointer<lua_Stat
         if errorState == .success {
             pushAXUIElement(L, value!)
         } else {
-            errorWrapper(L, "elementAtPosition", nil, errorState)
+            _ = errorWrapper(L, "elementAtPosition", nil, errorState)
             returnCount += 1
         }
     } else {
@@ -595,7 +595,7 @@ private func axuielement_getParameterizedAttributeValue(_ L: UnsafeMutablePointe
     } else if errorState == .noValue {
         lua_pushnil(L)
     } else {
-        errorWrapper(L, "parameterizedAttributeValue", attribute, errorState)
+        _ = errorWrapper(L, "parameterizedAttributeValue", attribute, errorState)
         returnCount += 1
     }
     return returnCount
@@ -622,7 +622,7 @@ private func axuielement_setAttributeValue(_ L: UnsafeMutablePointer<lua_State>!
     if errorState == .success {
         lua_pushvalue(L, 1)
     } else {
-        errorWrapper(L, "setAttributeValue", attribute, errorState)
+        _ = errorWrapper(L, "setAttributeValue", attribute, errorState)
         returnCount += 1
     }
     return returnCount
@@ -718,7 +718,7 @@ private func axuielement_setTimeout(_ L: UnsafeMutablePointer<lua_State>!) -> In
     if errorState == .success {
         lua_pushvalue(L, 1)
     } else {
-        errorWrapper(L, "setTimeout", nil, errorState)
+        _ = errorWrapper(L, "setTimeout", nil, errorState)
         returnCount += 1
     }
     return returnCount

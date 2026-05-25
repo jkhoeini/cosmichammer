@@ -70,7 +70,7 @@ private func newSpeechRecognizer(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
     skin.checkArgs(LS_TSTRING | LS_TNUMBER | LS_TOPTIONAL, LS_TBREAK)
     var theTitle: String? = nil
     if lua_gettop(L) == 1 {
-        luaL_checkstring(L, 1)
+        _ = luaL_checkstring(L, 1)
         theTitle = skin.toNSObject(atIndex: 1) as? String
         if theTitle == nil { skin.logWarn("unable to identify title from string, defaulting to \"Cosmic Hammer\"") }
     }
@@ -101,7 +101,7 @@ private func commands(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
         for i in 0..<len {
             let type = lua_rawgeti(L, 2, i + 1)
             if type == LUA_TSTRING || type == LUA_TNUMBER {
-                luaL_checkstring(L, -1)
+                _ = luaL_checkstring(L, -1)
                 if let cmd = skin.toNSObject(atIndex: -1) as? String {
                     theCommands.append(cmd)
                 } else {
@@ -130,7 +130,7 @@ private func displayedCommandsTitle(_ L: UnsafeMutablePointer<lua_State>!) -> In
     if lua_gettop(L) == 2 {
         var theTitle: String? = nil
         if lua_type(L, 2) != LUA_TNIL {
-            luaL_checkstring(L, 2)
+            _ = luaL_checkstring(L, 2)
             theTitle = skin.toNSObject(atIndex: 2) as? String
         }
         recognizer.displayedCommandsTitle = theTitle ?? "Cosmic Hammer"

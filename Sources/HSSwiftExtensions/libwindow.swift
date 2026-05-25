@@ -418,7 +418,6 @@ private func window_uielement_newWatcher(_ L: UnsafeMutablePointer<lua_State>!) 
     let element = HSuielement(withElement: win.elementRef)
     let watcher = element.newWatcher(atIndex: 2, withUserdataAtIndex: 3, withLuaState: L)
     skin.pushNSObject(watcher)
-    lua_pushnil(L)
     return 1
 }
 

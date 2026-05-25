@@ -1069,7 +1069,7 @@ private let notification_additionalActions: lua_CFunction = { L in
             var newActions: [NSUserNotificationAction] = []
             var errorMsg: String? = nil
 
-            if let actions = actions as? [Any] {
+            if let actions = actions {
                 for (idx, item) in actions.enumerated() {
                     guard let str = item as? String else {
                         errorMsg = "expected string at index \(idx + 1)"

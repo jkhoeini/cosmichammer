@@ -200,7 +200,7 @@ class HSWebViewWindow: NSPanel, NSWindowDelegate {
 
     func fadeOut(_ fadeTime: TimeInterval, andDelete deleteWindow: Bool, withState L: UnsafeMutablePointer<lua_State>!) {
         NSAnimationContext.beginGrouping()
-        weak var bself = self
+        weak let bself = self
 
         let outerSkin = LuaSkin.skin(with: L)
         let lsCanary = outerSkin.createGCCanary()

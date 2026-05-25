@@ -960,7 +960,7 @@ private func canvas_orderHelper(_ L: UnsafeMutablePointer<lua_State>!, mode: NSW
 
         let alphaSetting = self.alphaValue
         NSAnimationContext.beginGrouping()
-        weak var bself = self
+        weak let bself = self
         let canary = skin.createGCCanary()
 
         NSAnimationContext.current.duration = fadeTime
@@ -1740,7 +1740,7 @@ private func canvas_orderHelper(_ L: UnsafeMutablePointer<lua_State>!, mode: NSW
             } else if keyName == "imageAnimates" {
                 if let currentImage = (elementList[Int(index)] as? NSDictionary)?["image"] as? NSImage {
                     let shouldAnimate = (massaged as? NSNumber)?.boolValue ?? false
-                    var animator = imageAnimations.object(forKey: currentImage) as? HSGifAnimator
+                    var animator = imageAnimations.object(forKey: currentImage)
                     if shouldAnimate {
                         if animator == nil {
                             animator = HSGifAnimator(image: currentImage, forCanvas: self)
@@ -1753,7 +1753,7 @@ private func canvas_orderHelper(_ L: UnsafeMutablePointer<lua_State>!, mode: NSW
                 }
             } else if keyName == "image" {
                 if let currentImage = (elementList[Int(index)] as? NSDictionary)?["image"] as? NSImage {
-                    if let animator = imageAnimations.object(forKey: currentImage) as? HSGifAnimator {
+                    if let animator = imageAnimations.object(forKey: currentImage) {
                         animator.stopAnimating()
                         imageAnimations.removeObject(forKey: currentImage)
                     }
@@ -1810,7 +1810,7 @@ private func canvas_orderHelper(_ L: UnsafeMutablePointer<lua_State>!, mode: NSW
             } else if keyName == "imageAnimates" {
                 if let currentImage = (elementList[Int(index)] as? NSDictionary)?["image"] as? NSImage {
                     let shouldAnimate = (getDefaultValue(for: "imageAnimates", onlyIfSet: false) as? NSNumber)?.boolValue ?? false
-                    var animator = imageAnimations.object(forKey: currentImage) as? HSGifAnimator
+                    var animator = imageAnimations.object(forKey: currentImage)
                     if shouldAnimate {
                         if animator == nil {
                             animator = HSGifAnimator(image: currentImage, forCanvas: self)
@@ -1823,7 +1823,7 @@ private func canvas_orderHelper(_ L: UnsafeMutablePointer<lua_State>!, mode: NSW
                 }
             } else if keyName == "image" {
                 if let currentImage = (elementList[Int(index)] as? NSDictionary)?["image"] as? NSImage {
-                    if let animator = imageAnimations.object(forKey: currentImage) as? HSGifAnimator {
+                    if let animator = imageAnimations.object(forKey: currentImage) {
                         animator.stopAnimating()
                         imageAnimations.removeObject(forKey: currentImage)
                     }
@@ -1852,16 +1852,16 @@ private func canvas_orderHelper(_ L: UnsafeMutablePointer<lua_State>!, mode: NSW
         NSBezierPath.defaultFlatness = (getDefaultValue(for: "flatness", onlyIfSet: false) as? NSNumber)?.doubleValue ?? 0.6
 
         if let ljs = getDefaultValue(for: "strokeJoinStyle", onlyIfSet: false) as? String {
-            NSBezierPath.defaultLineJoinStyle = NSBezierPath.LineJoinStyle(rawValue: (STROKE_JOIN_STYLES[ljs] as? NSNumber)?.uintValue ?? 0) ?? .miter
+            NSBezierPath.defaultLineJoinStyle = NSBezierPath.LineJoinStyle(rawValue: STROKE_JOIN_STYLES[ljs]?.uintValue ?? 0) ?? .miter
         }
         if let lcs = getDefaultValue(for: "strokeCapStyle", onlyIfSet: false) as? String {
-            NSBezierPath.defaultLineCapStyle = NSBezierPath.LineCapStyle(rawValue: (STROKE_CAP_STYLES[lcs] as? NSNumber)?.uintValue ?? 0) ?? .butt
+            NSBezierPath.defaultLineCapStyle = NSBezierPath.LineCapStyle(rawValue: STROKE_CAP_STYLES[lcs]?.uintValue ?? 0) ?? .butt
         }
         if let wr = getDefaultValue(for: "windingRule", onlyIfSet: false) as? String {
-            NSBezierPath.defaultWindingRule = NSBezierPath.WindingRule(rawValue: (WINDING_RULES[wr] as? NSNumber)?.uintValue ?? 0) ?? .nonZero
+            NSBezierPath.defaultWindingRule = NSBezierPath.WindingRule(rawValue: WINDING_RULES[wr]?.uintValue ?? 0) ?? .nonZero
         }
         let CS = getDefaultValue(for: "compositeRule", onlyIfSet: false) as? String ?? "sourceOver"
-        gc.compositingOperation = NSCompositingOperation(rawValue: (COMPOSITING_TYPES[CS] as? NSNumber)?.uintValue ?? 2) ?? .sourceOver
+        gc.compositingOperation = NSCompositingOperation(rawValue: COMPOSITING_TYPES[CS]?.uintValue ?? 2) ?? .sourceOver
 
         (getDefaultValue(for: "fillColor", onlyIfSet: false) as? NSColor)?.setFill()
         (getDefaultValue(for: "strokeColor", onlyIfSet: false) as? NSColor)?.setStroke()
@@ -1905,7 +1905,7 @@ private func canvas_orderHelper(_ L: UnsafeMutablePointer<lua_State>!, mode: NSW
                     gc.shouldAntialias = shouldAntialias.boolValue
                 }
                 if let compositingString = self.getElementValue(for: "compositeRule", atIndex: UInt(idx), onlyIfSet: true) as? String {
-                    gc.compositingOperation = NSCompositingOperation(rawValue: (COMPOSITING_TYPES[compositingString] as? NSNumber)?.uintValue ?? 2) ?? .sourceOver
+                    gc.compositingOperation = NSCompositingOperation(rawValue: COMPOSITING_TYPES[compositingString]?.uintValue ?? 2) ?? .sourceOver
                 }
                 if let fillColor = self.getElementValue(for: "fillColor", atIndex: UInt(idx), onlyIfSet: true) as? NSColor {
                     fillColor.setFill()
@@ -1931,7 +1931,7 @@ private func canvas_orderHelper(_ L: UnsafeMutablePointer<lua_State>!, mode: NSW
                     if elementType == "image" {
                         if let theImage = self.elementList[idx] as? NSDictionary, let img = theImage["image"] as? NSImage {
                             self.drawImage(img, atIndex: UInt(idx), inRect: frameRect,
-                                           operation: UInt((COMPOSITING_TYPES[CS] as? NSNumber)?.uintValue ?? 2))
+                                           operation: UInt(COMPOSITING_TYPES[CS]?.uintValue ?? 2))
                             self.elementBounds.add([
                                 "index": NSNumber(value: idx),
                                 "frame": NSValue(rect: frameRect),
@@ -1949,10 +1949,10 @@ private func canvas_orderHelper(_ L: UnsafeMutablePointer<lua_State>!, mode: NSW
                             let mySize = (self.getElementValue(for: "textSize", atIndex: UInt(idx), onlyIfSet: false) as? NSNumber)?.doubleValue ?? 27.0
                             let theParagraphStyle = (NSParagraphStyle.default.mutableCopy() as! NSMutableParagraphStyle)
                             if let alignment = self.getElementValue(for: "textAlignment", atIndex: UInt(idx), onlyIfSet: false) as? String {
-                                theParagraphStyle.alignment = NSTextAlignment(rawValue: (TEXTALIGNMENT_TYPES[alignment] as? NSNumber)?.intValue ?? 0) ?? .left
+                                theParagraphStyle.alignment = NSTextAlignment(rawValue: TEXTALIGNMENT_TYPES[alignment]?.intValue ?? 0) ?? .left
                             }
                             if let wrap = self.getElementValue(for: "textLineBreak", atIndex: UInt(idx), onlyIfSet: false) as? String {
-                                theParagraphStyle.lineBreakMode = NSLineBreakMode(rawValue: UInt((TEXTWRAP_TYPES[wrap] as? NSNumber)?.intValue ?? 0)) ?? .byWordWrapping
+                                theParagraphStyle.lineBreakMode = NSLineBreakMode(rawValue: UInt(TEXTWRAP_TYPES[wrap]?.intValue ?? 0)) ?? .byWordWrapping
                             }
                             let color = self.getElementValue(for: "textColor", atIndex: UInt(idx), onlyIfSet: false) as? NSColor ?? .white
                             let attributes: [NSAttributedString.Key: Any] = [
@@ -2013,7 +2013,7 @@ private func canvas_orderHelper(_ L: UnsafeMutablePointer<lua_State>!, mode: NSW
                         currentPath = currentPath.reversed
                     }
                     if let windingRule = self.getElementValue(for: "windingRule", atIndex: UInt(idx), onlyIfSet: true) as? String {
-                        currentPath.windingRule = NSBezierPath.WindingRule(rawValue: (WINDING_RULES[windingRule] as? NSNumber)?.uintValue ?? 0) ?? .nonZero
+                        currentPath.windingRule = NSBezierPath.WindingRule(rawValue: WINDING_RULES[windingRule]?.uintValue ?? 0) ?? .nonZero
                     }
 
                     if renderPath != nil {
@@ -2063,10 +2063,10 @@ private func canvas_orderHelper(_ L: UnsafeMutablePointer<lua_State>!, mode: NSW
                                 renderPath!.lineWidth = CGFloat(strokeWidth.doubleValue)
                             }
                             if let lineJoinStyle = self.getElementValue(for: "strokeJoinStyle", atIndex: UInt(idx), onlyIfSet: true) as? String {
-                                renderPath!.lineJoinStyle = NSBezierPath.LineJoinStyle(rawValue: (STROKE_JOIN_STYLES[lineJoinStyle] as? NSNumber)?.uintValue ?? 0) ?? .miter
+                                renderPath!.lineJoinStyle = NSBezierPath.LineJoinStyle(rawValue: STROKE_JOIN_STYLES[lineJoinStyle]?.uintValue ?? 0) ?? .miter
                             }
                             if let lineCapStyle = self.getElementValue(for: "strokeCapStyle", atIndex: UInt(idx), onlyIfSet: true) as? String {
-                                renderPath!.lineCapStyle = NSBezierPath.LineCapStyle(rawValue: (STROKE_CAP_STYLES[lineCapStyle] as? NSNumber)?.uintValue ?? 0) ?? .butt
+                                renderPath!.lineCapStyle = NSBezierPath.LineCapStyle(rawValue: STROKE_CAP_STYLES[lineCapStyle]?.uintValue ?? 0) ?? .butt
                             }
                             if let strokeDashes = self.getElementValue(for: "strokeDashPattern", atIndex: UInt(idx)) as? [NSNumber], strokeDashes.count > 0 {
                                 let phase = (self.getElementValue(for: "strokeDashPhase", atIndex: UInt(idx)) as? NSNumber)?.doubleValue ?? 0
@@ -2141,7 +2141,7 @@ private func canvas_orderHelper(_ L: UnsafeMutablePointer<lua_State>!, mode: NSW
 
         let alphaSetting = self.alphaValue
         NSAnimationContext.beginGrouping()
-        weak var bself = self
+        weak let bself = self
         NSAnimationContext.current.duration = fadeTime
         NSAnimationContext.current.completionHandler = {
             guard let mySelf = bself else { return }
@@ -2297,10 +2297,10 @@ private func canvas_orderHelper(_ L: UnsafeMutablePointer<lua_State>!, mode: NSW
         guard !cellFrame.isEmpty else { return }
 
         let alignmentString = getElementValue(for: "imageAlignment", atIndex: idx, onlyIfSet: false) as? String ?? "center"
-        let alignment = NSImageAlignment(rawValue: (IMAGEALIGNMENT_TYPES[alignmentString] as? NSNumber)?.uintValue ?? 0) ?? .alignCenter
+        let alignment = NSImageAlignment(rawValue: IMAGEALIGNMENT_TYPES[alignmentString]?.uintValue ?? 0) ?? .alignCenter
 
         let scalingString = getElementValue(for: "imageScaling", atIndex: idx, onlyIfSet: false) as? String ?? "none"
-        let scaling = NSImageScaling(rawValue: (IMAGESCALING_TYPES[scalingString] as? NSNumber)?.uintValue ?? 0) ?? .scaleNone
+        let scaling = NSImageScaling(rawValue: IMAGESCALING_TYPES[scalingString]?.uintValue ?? 0) ?? .scaleNone
 
         let alpha: Double
         if theImage.isTemplate {
@@ -2926,8 +2926,8 @@ private func canvas_getTextElementSize(_ L: UnsafeMutablePointer<lua_State>!) ->
         }
 
         let paragraphStyle = NSParagraphStyle.default.mutableCopy() as! NSMutableParagraphStyle
-        paragraphStyle.alignment = NSTextAlignment(rawValue: (TEXTALIGNMENT_TYPES[alignment] as? NSNumber)?.intValue ?? 0) ?? .natural
-        paragraphStyle.lineBreakMode = NSLineBreakMode(rawValue: UInt((TEXTWRAP_TYPES[wrap] as? NSNumber)?.intValue ?? 0)) ?? .byWordWrapping
+        paragraphStyle.alignment = NSTextAlignment(rawValue: TEXTALIGNMENT_TYPES[alignment]?.intValue ?? 0) ?? .natural
+        paragraphStyle.lineBreakMode = NSLineBreakMode(rawValue: UInt(TEXTWRAP_TYPES[wrap]?.intValue ?? 0)) ?? .byWordWrapping
         let attributes: [NSAttributedString.Key: Any] = [
             .foregroundColor: color,
             .font: NSFont(name: myFont, size: CGFloat(mySize.doubleValue)) ?? NSFont.systemFont(ofSize: CGFloat(mySize.doubleValue)),

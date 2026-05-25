@@ -184,7 +184,7 @@ private func pushCFTypeHamster(
         alreadySeen[seenKey] = seenRef
         skin.pushLuaRef(refTable, ref: seenRef.int32Value)
         for thing in (theItem as! NSArray) {
-            pushCFTypeHamster(L, thing as CFTypeRef, alreadySeen, refTable)
+            _ = pushCFTypeHamster(L, thing as CFTypeRef, alreadySeen, refTable)
             lua_rawseti(L, -2, luaL_len(L, -2) + 1)
         }
     } else if theType == CFDictionaryGetTypeID() {
@@ -202,8 +202,8 @@ private func pushCFTypeHamster(
         let keys = dict.allKeys
         let values = dict.allValues
         for i in 0..<keys.count {
-            pushCFTypeHamster(L, keys[i] as CFTypeRef, alreadySeen, refTable)
-            pushCFTypeHamster(L, values[i] as CFTypeRef, alreadySeen, refTable)
+            _ = pushCFTypeHamster(L, keys[i] as CFTypeRef, alreadySeen, refTable)
+            _ = pushCFTypeHamster(L, values[i] as CFTypeRef, alreadySeen, refTable)
             lua_settable(L, -3)
         }
     } else if theType == AXValueGetTypeID() {
@@ -484,7 +484,7 @@ private var kCFTypeDictionaryValueCallBacks_ = kCFTypeDictionaryValueCallBacks
 public func pushCFTypeToLua(_ L: UnsafeMutablePointer<lua_State>!, _ theItem: CFTypeRef?, _ refTable: LSRefTable) -> Int32 {
     let skin = LuaSkin.skin(with: L)
     let alreadySeen = NSMutableDictionary()
-    pushCFTypeHamster(L, theItem, alreadySeen, refTable)
+    _ = pushCFTypeHamster(L, theItem, alreadySeen, refTable)
     for entry in alreadySeen {
         if let seenRef = entry.value as? NSNumber {
             skin.luaUnref(refTable, ref: seenRef.int32Value)

@@ -110,7 +110,7 @@ private func datastore_fetchRecords(_ L: UnsafeMutablePointer<lua_State>!) -> In
                    LS_TFUNCTION | LS_TOPTIONAL, LS_TBREAK)
 
     let dataStore = skin.toNSObject(atIndex: 1) as! WKWebsiteDataStore
-    var dataTypes: [String] = WKWebsiteDataStore.allWebsiteDataTypes().map { $0 as! String }
+    var dataTypes: [String] = Array(WKWebsiteDataStore.allWebsiteDataTypes())
 
     lua_pushvalue(L, lua_gettop(L))
     let fnRef = skin.luaRef(refTable)
@@ -128,7 +128,7 @@ private func datastore_fetchRecords(_ L: UnsafeMutablePointer<lua_State>!) -> In
     }
 
     let typeSet = Set(dataTypes)
-    if !typeSet.isSubset(of: WKWebsiteDataStore.allWebsiteDataTypes() as! Set<String>) {
+    if !typeSet.isSubset(of: WKWebsiteDataStore.allWebsiteDataTypes()) {
         return luaL_argerror(L, 3, "invalid datastore data type specified")
     }
 
@@ -193,7 +193,7 @@ private func datastore_removeRecords(_ L: UnsafeMutablePointer<lua_State>!) -> I
     }
 
     let typeSet = Set(recordTypes)
-    if !typeSet.isSubset(of: WKWebsiteDataStore.allWebsiteDataTypes() as! Set<String>) {
+    if !typeSet.isSubset(of: WKWebsiteDataStore.allWebsiteDataTypes()) {
         return luaL_argerror(L, 3, "invalid datastore data type specified")
     }
 
@@ -271,7 +271,7 @@ private func datastore_removeDataFrom(_ L: UnsafeMutablePointer<lua_State>!) -> 
     }
 
     let typeSet = Set(recordTypes)
-    if !typeSet.isSubset(of: WKWebsiteDataStore.allWebsiteDataTypes() as! Set<String>) {
+    if !typeSet.isSubset(of: WKWebsiteDataStore.allWebsiteDataTypes()) {
         return luaL_argerror(L, 3, "invalid datastore data type specified")
     }
 

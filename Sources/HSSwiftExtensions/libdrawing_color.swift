@@ -177,23 +177,22 @@ private func table_toNSColorHelper(_ L: UnsafeMutablePointer<lua_State>!, _ idx:
                 if hexString.hasPrefix("#")  { hexString = hexString.substring(from: 1) as NSString }
                 if hexString.hasPrefix("0x") { hexString = hexString.substring(from: 2) as NSString }
                 var isBadHex = true
-                var rHex: UInt32 = 0, gHex: UInt32 = 0, bHex: UInt32 = 0
+                var rHex: UInt64 = 0, gHex: UInt64 = 0, bHex: UInt64 = 0
 
                 let scanner = Scanner(string: hexString as String)
-                var dummy: UInt32 = 0
-                if scanner.scanHexInt32(&dummy) {
+                if scanner.scanHexInt64(nil) {
                     if hexString.length == 3 {
-                        Scanner(string: hexString.substring(with: NSRange(location: 0, length: 1))).scanHexInt32(&rHex)
-                        Scanner(string: hexString.substring(with: NSRange(location: 1, length: 1))).scanHexInt32(&gHex)
-                        Scanner(string: hexString.substring(with: NSRange(location: 2, length: 1))).scanHexInt32(&bHex)
+                        Scanner(string: hexString.substring(with: NSRange(location: 0, length: 1))).scanHexInt64(&rHex)
+                        Scanner(string: hexString.substring(with: NSRange(location: 1, length: 1))).scanHexInt64(&gHex)
+                        Scanner(string: hexString.substring(with: NSRange(location: 2, length: 1))).scanHexInt64(&bHex)
                         rHex = rHex * 0x11
                         gHex = gHex * 0x11
                         bHex = bHex * 0x11
                         isBadHex = false
                     } else if hexString.length == 6 {
-                        Scanner(string: hexString.substring(with: NSRange(location: 0, length: 2))).scanHexInt32(&rHex)
-                        Scanner(string: hexString.substring(with: NSRange(location: 2, length: 2))).scanHexInt32(&gHex)
-                        Scanner(string: hexString.substring(with: NSRange(location: 4, length: 2))).scanHexInt32(&bHex)
+                        Scanner(string: hexString.substring(with: NSRange(location: 0, length: 2))).scanHexInt64(&rHex)
+                        Scanner(string: hexString.substring(with: NSRange(location: 2, length: 2))).scanHexInt64(&gHex)
+                        Scanner(string: hexString.substring(with: NSRange(location: 4, length: 2))).scanHexInt64(&bHex)
                         isBadHex = false
                     }
                 }

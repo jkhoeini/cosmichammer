@@ -121,16 +121,12 @@ private func create_task(_ userData: UnsafeMutablePointer<TaskUserdata>) {
             var stdOutStr: String?
             var stdErrStr: String?
 
-            do {
-                if let data = try stdOutFH?.availableData ?? stdOutFH?.readDataToEndOfFile() {
-                    stdOutStr = String(data: data, encoding: .utf8)
-                }
-                // Re-read to end for full output
-                stdOutStr = String(data: stdOutFH?.readDataToEndOfFile() ?? Data(), encoding: .utf8)
-                stdErrStr = String(data: stdErrFH?.readDataToEndOfFile() ?? Data(), encoding: .utf8)
-            } catch {
-                skin.logWarn("hs.task terminationHandler block encountered an exception: \(error)")
+            if let data = stdOutFH?.availableData ?? stdOutFH?.readDataToEndOfFile() {
+                stdOutStr = String(data: data, encoding: .utf8)
             }
+            // Re-read to end for full output
+            stdOutStr = String(data: stdOutFH?.readDataToEndOfFile() ?? Data(), encoding: .utf8)
+            stdErrStr = String(data: stdErrFH?.readDataToEndOfFile() ?? Data(), encoding: .utf8)
             stdOutFH?.closeFile()
             stdErrFH?.closeFile()
 
@@ -301,7 +297,7 @@ private func task_setInput(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
         let stdInFH = stdIn.fileHandleForWriting
 
         // Force numerical input to be rendered to a string
-        luaL_checkstring(L, 2)
+        _ = luaL_checkstring(L, 2)
 
         // Discard any previous input data
         if let oldRef = userData.pointee.inputData {
@@ -419,13 +415,8 @@ private func task_setWorkingDirectory(_ L: UnsafeMutablePointer<lua_State>!) -> 
     let task = userData.pointee.nsTask!.takeUnretainedValue() as! Process
     let thePath = skin.toNSObject(atIndex: 2) as! String
 
-    do {
-        task.currentDirectoryPath = thePath
-        lua_pushvalue(L, 1)
-    } catch {
-        skin.logWarn("hs.task:setWorkingDirectory() Unable to set the working directory for task: \(error)")
-        lua_pushboolean(L, 0)
-    }
+    task.currentDirectoryPath = thePath
+    lua_pushvalue(L, 1)
 
     return 1
 }
@@ -523,11 +514,7 @@ private func task_SIGTERM(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let userData = lua_touserdata(L, 1)!.assumingMemoryBound(to: TaskUserdata.self)
     let task = userData.pointee.nsTask!.takeUnretainedValue() as! Process
 
-    do {
-        task.terminate()
-    } catch {
-        skin.logWarn("hs.task:terminate() Unable to terminate hs.task process: \(error)")
-    }
+    task.terminate()
 
     lua_pushvalue(L, 1)
     return 1
@@ -551,11 +538,7 @@ private func task_SIGINT(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let userData = lua_touserdata(L, 1)!.assumingMemoryBound(to: TaskUserdata.self)
     let task = userData.pointee.nsTask!.takeUnretainedValue() as! Process
 
-    do {
-        task.interrupt()
-    } catch {
-        skin.logWarn("hs.task:interrupt() Unable to interrupt hs.task process: \(error)")
-    }
+    task.interrupt()
 
     lua_pushvalue(L, 1)
     return 1
@@ -579,13 +562,7 @@ private func task_pause(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let userData = lua_touserdata(L, 1)!.assumingMemoryBound(to: TaskUserdata.self)
     let task = userData.pointee.nsTask!.takeUnretainedValue() as! Process
-    var result = false
-
-    do {
-        result = task.suspend()
-    } catch {
-        skin.logWarn("hs.task:pause() Unable to pause hs.task process: \(error)")
-    }
+    let result = task.suspend()
 
     if result {
         lua_pushvalue(L, 1)
@@ -612,13 +589,7 @@ private func task_resumeTask(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let userData = lua_touserdata(L, 1)!.assumingMemoryBound(to: TaskUserdata.self)
     let task = userData.pointee.nsTask!.takeUnretainedValue() as! Process
-    var result = false
-
-    do {
-        result = task.resume()
-    } catch {
-        skin.logWarn("hs.task:resume() Unable to resume hs.task process: \(error)")
-    }
+    let result = task.resume()
 
     if result {
         lua_pushvalue(L, 1)

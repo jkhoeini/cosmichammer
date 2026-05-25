@@ -6,7 +6,7 @@ import LuaSkin
 private func lua_to_pasteboard(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> NSPasteboard {
     let skin = LuaSkin.skin(with: L)
     if !lua_isnoneornil(L, idx) {
-        luaL_checkstring(L, idx) // force number to string
+        _ = luaL_checkstring(L, idx) // force number to string
         let name = skin.toNSObject(atIndex: idx) as! NSPasteboard.Name
         return NSPasteboard(name: name)
     } else {
@@ -159,7 +159,7 @@ private func pasteboard_changeCount(_ L: UnsafeMutablePointer<lua_State>!) -> In
 private func pasteboard_delete(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING | LS_TNUMBER, LS_TBREAK) // prevents nil from being specified
-    luaL_checkstring(L, 1) // coerce number to string
+    _ = luaL_checkstring(L, 1) // coerce number to string
     let pbName = skin.toNSObject(atIndex: 1) as! String
     let systemNames: [NSPasteboard.Name] = [.general, .font, .ruler, .find, .drag]
     for sysName in systemNames {

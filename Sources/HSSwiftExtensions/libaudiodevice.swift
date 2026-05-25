@@ -67,7 +67,7 @@ private func audiodevice_callback(
     let result = withUnsafeMutablePointer(to: &deviceUID) { ptr in
         AudioObjectGetPropertyData(deviceID, &propertyAddress, 0, nil, &propertySize, ptr)
     }
-    if result == noErr, let uid = deviceUID?.takeUnretainedValue() {
+    if result == noErr, let uid = deviceUID?.takeRetainedValue() {
         deviceUIDNS = uid as String
     }
 

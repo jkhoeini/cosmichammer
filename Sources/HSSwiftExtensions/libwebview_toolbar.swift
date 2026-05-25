@@ -361,30 +361,22 @@ private func isBoolNumber(_ value: Any?) -> Bool {
         if let keyValue = itemDefinition["searchfield"] {
             if isBoolNumber(keyValue) {
                 if (keyValue as! NSNumber).boolValue {
-                    if !(itemView is HSToolbarSearchField) {
-                        if itemView == nil {
-                            let sf = HSToolbarSearchField()
-                            sf.toolbarItem = item
-                            sf.target = self
-                            sf.action = #selector(performCallback(_:))
-                            item.view = sf
-                            itemView = sf
-                            if !inGroup {
-                                item.minSize = sf.frame.size
-                                item.maxSize = sf.frame.size
-                            }
-                        } else {
-                            skin.logWarn("\(USERDATA_TB_TAG):view for toolbar item \(identifier) is not our searchfield... cowardly avoiding replacement")
+                    if itemView == nil {
+                        let sf = HSToolbarSearchField()
+                        sf.toolbarItem = item
+                        sf.target = self
+                        sf.action = #selector(performCallback(_:))
+                        item.view = sf
+                        itemView = sf
+                        if !inGroup {
+                            item.minSize = sf.frame.size
+                            item.maxSize = sf.frame.size
                         }
                     }
                 } else {
                     if itemView != nil {
-                        if !(itemView is HSToolbarSearchField) {
-                            skin.logWarn("\(USERDATA_TB_TAG):view for toolbar item \(identifier) is not our searchfield... cowardly avoiding removal")
-                        } else {
-                            item.view = nil
-                            itemView = nil
-                        }
+                        item.view = nil
+                        itemView = nil
                     }
                 }
             } else {
@@ -532,7 +524,7 @@ private func isBoolNumber(_ value: Any?) -> Bool {
                     }
                     itemDefinition.removeObject(forKey: keyName)
                 }
-            } else if keyName == "searchWidth", itemView is HSToolbarSearchField {
+            } else if keyName == "searchWidth", itemView != nil {
                 if let num = keyValue as? NSNumber {
                     if !inGroup {
                         var fieldFrame = itemView!.frame
@@ -551,7 +543,7 @@ private func isBoolNumber(_ value: Any?) -> Bool {
                     skin.logWarn("\(USERDATA_TB_TAG):\(keyName) for \(identifier) must be a boolean")
                     itemDefinition.removeObject(forKey: keyName)
                 }
-            } else if keyName == "searchText", itemView is HSToolbarSearchField {
+            } else if keyName == "searchText", itemView != nil {
                 if let str = keyValue as? String {
                     itemView!.stringValue = str
                 } else if let num = keyValue as? NSNumber {
@@ -560,7 +552,7 @@ private func isBoolNumber(_ value: Any?) -> Bool {
                     skin.logWarn("\(USERDATA_TB_TAG):\(keyName) for \(identifier) must be a string")
                     itemDefinition.removeObject(forKey: keyName)
                 }
-            } else if keyName == "searchPredefinedSearches", itemView is HSToolbarSearchField {
+            } else if keyName == "searchPredefinedSearches", itemView != nil {
                 if let arr = keyValue as? [String] {
                     let searchMenu = createCoreSearchFieldMenu()
                     let predefinedSearchMenu = NSMenu(title: "Predefined Search Menu")
@@ -597,21 +589,21 @@ private func isBoolNumber(_ value: Any?) -> Bool {
                     }
                     itemDefinition.removeObject(forKey: keyName)
                 }
-            } else if keyName == "searchHistoryLimit", itemView is HSToolbarSearchField {
+            } else if keyName == "searchHistoryLimit", itemView != nil {
                 if let num = keyValue as? NSNumber {
                     (itemView!.cell as? NSSearchFieldCell)?.maximumRecents = num.intValue
                 } else {
                     skin.logWarn("\(USERDATA_TB_TAG):\(keyName) for \(identifier) must be an integer")
                     itemDefinition.removeObject(forKey: keyName)
                 }
-            } else if keyName == "searchHistory", itemView is HSToolbarSearchField {
+            } else if keyName == "searchHistory", itemView != nil {
                 if let arr = keyValue as? [String] {
                     (itemView!.cell as? NSSearchFieldCell)?.recentSearches = arr
                 } else {
                     skin.logWarn("\(USERDATA_TB_TAG):\(keyName) for \(identifier) must be an array of strings")
                     itemDefinition.removeObject(forKey: keyName)
                 }
-            } else if keyName == "searchHistoryAutosaveName", itemView is HSToolbarSearchField {
+            } else if keyName == "searchHistoryAutosaveName", itemView != nil {
                 if let str = keyValue as? String {
                     (itemView!.cell as? NSSearchFieldCell)?.recentsAutosaveName = str
                     _ = (itemView!.cell as? NSSearchFieldCell)?.recentSearches
@@ -1234,7 +1226,7 @@ private func toolbar_itemDetails(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
     lua_pushboolean(L, (fnRef != nil && fnRef!.int32Value != LUA_NOREF) ? 1 : 0)
     lua_setfield(L, -2, "privateCallback")
 
-    if ourItem is NSToolbarItem {
+    if ourItem != nil {
         skin.pushNSObject((toolbar.itemDefDictionary[identifier] as? NSDictionary)?["searchPredefinedMenuTitle"])
         lua_setfield(L, -2, "searchPredefinedMenuTitle")
         skin.pushNSObject((toolbar.itemDefDictionary[identifier] as? NSDictionary)?["searchPredefinedSearches"])

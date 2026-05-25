@@ -155,7 +155,7 @@ private func ipc_remotePort(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * the port name as a string
 private func ipc_name(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, unsafeBitCast(USERDATA_TAG, to: UnsafePointer<CChar>.self), LS_TBREAK)
+    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let port = skin.toNSObject(atIndex: 1) as! HSIPCMessagePort
 
     let name = CFMessagePortGetName(port.messagePort) as String?
@@ -177,7 +177,7 @@ private func ipc_name(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * a remote port can send messages at any time to a local port; a local port can only respond to messages from a remote port
 private func ipc_isRemote(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, unsafeBitCast(USERDATA_TAG, to: UnsafePointer<CChar>.self), LS_TBREAK)
+    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let port = skin.toNSObject(atIndex: 1) as! HSIPCMessagePort
 
     lua_pushboolean(L, CFMessagePortIsRemote(port.messagePort) ? 1 : 0)
@@ -195,7 +195,7 @@ private func ipc_isRemote(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * true if the object is a valid port, otherwise false
 private func ipc_isValid(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, unsafeBitCast(USERDATA_TAG, to: UnsafePointer<CChar>.self), LS_TBREAK)
+    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let port = skin.toNSObject(atIndex: 1) as! HSIPCMessagePort
 
     lua_pushboolean(L, CFMessagePortIsValid(port.messagePort) ? 1 : 0)
@@ -217,7 +217,7 @@ private func ipc_isValid(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * response - the response from the local port, usually a string, but may be nil if there was no response returned.  If status is false, will contain an error message describing the error.
 private func ipc_sendMessage(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, unsafeBitCast(USERDATA_TAG, to: UnsafePointer<CChar>.self),
+    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG,
                    LS_TANY,
                    LS_TNUMBER | LS_TINTEGER,
                    LS_TNUMBER | LS_TBOOLEAN | LS_TOPTIONAL,

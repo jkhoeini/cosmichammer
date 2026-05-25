@@ -222,7 +222,7 @@ private func commonForAddress(_ L: UnsafeMutablePointer<lua_State>!, _ resolveTy
     skin.checkArgs(LS_TSTRING | LS_TNUMBER, LS_TFUNCTION | LS_TNIL | LS_TOPTIONAL, LS_TBREAK)
     let synchronous = lua_isnoneornil(L, 2)
 
-    luaL_checkstring(L, 1) // force number to be a string
+    _ = luaL_checkstring(L, 1) // force number to be a string
     var results: UnsafeMutablePointer<addrinfo>?
     var hints = addrinfo()
     hints.ai_flags = AI_NUMERICHOST | AI_NUMERICSERV | AI_V4MAPPED_CFG

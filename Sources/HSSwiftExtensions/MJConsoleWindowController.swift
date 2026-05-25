@@ -321,7 +321,7 @@ public class MJConsoleWindowController: NSWindowController, NSTextFieldDelegate 
         }
 
         if let win = inputField?.window,
-           let editor = win.fieldEditor(true, for: inputField) as? NSText {
+           let editor = win.fieldEditor(true, for: inputField) {
             let length = editor.string.count
             editor.selectedRange = NSRange(location: length, length: 0)
         }

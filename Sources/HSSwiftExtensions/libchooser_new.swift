@@ -426,9 +426,9 @@ import LuaSkin
     // MARK: - Window related methods
 
     func windowDidBecomeKey(_ notification: Notification) {
-        weak var _self = self
-        weak var _tableView = choicesTableView
-        weak var _window = window
+        weak let _self = self
+        weak let _tableView = choicesTableView
+        weak let _window = window
 
         if reloadWhenVisible {
             choicesTableView.reloadData()
@@ -676,8 +676,6 @@ import LuaSkin
         if let st = subText, !(st is String) && !(st is NSAttributedString) {
             subText = "\(st)"
         }
-        if image != nil && !(image is NSImage) { image = nil }
-
         if row >= 0 && row < 9 {
             shortcutText = "\u{2318}\(row + 1)"
         } else {

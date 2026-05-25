@@ -72,7 +72,7 @@ private func brightness_ambient(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
             let sel = NSSelectorFromString("copyPropertyForKey:")
             if ourDSC.responds(to: sel) {
                 let key: NSString = "AggregatedLux"
-                if let result = ourDSC.perform(sel, with: key)?.takeUnretainedValue() as? NSNumber {
+                if let result = ourDSC.perform(sel, with: key)?.takeRetainedValue() as? NSNumber {
                     skin.pushNSObject(result)
                     return 1
                 }

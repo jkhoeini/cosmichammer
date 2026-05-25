@@ -78,7 +78,7 @@ private class HSCamera: NSObject {
         self.uid = getCameraUID()
         self.name = getCameraName()
 
-        weak var weakSelf = self
+        weak let weakSelf = self
         self.propertyWatcherBlock = { (numberAddresses: UInt32, addresses: UnsafePointer<CMIOObjectPropertyAddress>?) in
             guard let addresses = addresses else { return }
             var events: [[String: Any]] = []

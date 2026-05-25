@@ -97,7 +97,6 @@ private func getWindowTabs(_ win: AXUIElement) -> AXUIElement? {
 
     // MARK: Stored properties
 
-    // AXUIElement is a CFTypeRef managed with explicit retain/release to match ObjC semantics.
     private var _elementRef: AXUIElement
 
     @objc var elementRef: AXUIElement { _elementRef }
@@ -105,17 +104,10 @@ private func getWindowTabs(_ win: AXUIElement) -> AXUIElement? {
 
     // MARK: Init / deinit
 
-    // The designated Swift init. We use a different label to avoid ObjC selector conflict
-    // with the protocol method initWithElementRef: (which must be an instance method, not an init).
     @objc init(withElement ref: AXUIElement) {
         _elementRef = ref
-        _ = Unmanaged.passRetained(ref)  // bump refcount; balanced by release in deinit
         selfRefCount = 0
         super.init()
-    }
-
-    deinit {
-        Unmanaged.passUnretained(_elementRef).release()
     }
 
     // MARK: Protocol-required factory method matching ObjC selector initWithElementRef:
@@ -131,13 +123,7 @@ private func getWindowTabs(_ win: AXUIElement) -> AXUIElement? {
         var focusedRef: CFTypeRef?
         let error = AXUIElementCopyAttributeValue(systemWide, kAXFocusedUIElementAttribute as CFString, &focusedRef)
         guard error == .success, let focusedRef = focusedRef else { return nil }
-        // focusedRef is +1 from CopyAttributeValue.
-        // unsafeBitCast does not change retain count.
-        let element = unsafeBitCast(focusedRef, to: AXUIElement.self)
-        // HSuielement.init does CFRetain internally, so release the copy ref here.
-        let result = HSuielement(withElement: element)
-        Unmanaged.passUnretained(focusedRef).release()
-        return result
+        return HSuielement(withElement: unsafeBitCast(focusedRef, to: AXUIElement.self))
     }
 
     // MARK: Computed properties
@@ -282,11 +268,7 @@ private let watcherCallback: AXObserverCallback = { _, element, notificationName
     private var _elementRef: AXUIElement
     @objc var elementRef: AXUIElement {
         get { _elementRef }
-        set {
-            Unmanaged.passUnretained(_elementRef).release()
-            _elementRef = newValue
-            _ = Unmanaged.passRetained(newValue)
-        }
+        set { _elementRef = newValue }
     }
     @objc var refTable: LSRefTable
     @objc var handlerRef: Int32
@@ -306,7 +288,6 @@ private let watcherCallback: AXObserverCallback = { _, element, notificationName
     @objc init(element: HSuielement, callbackRef: Int32, userdataRef: Int32) {
         refTable = LUA_REGISTRYINDEX_VALUE
         _elementRef = element.elementRef
-        _ = Unmanaged.passRetained(_elementRef)
         handlerRef = callbackRef
         userDataRef = userdataRef
         watcherRef = LUA_NOREF
@@ -314,10 +295,6 @@ private let watcherCallback: AXObserverCallback = { _, element, notificationName
         watchDestroyed = false
         super.init()
         AXUIElementGetPid(_elementRef, &pid)
-    }
-
-    deinit {
-        Unmanaged.passUnretained(_elementRef).release()
     }
 
     @objc func start(_ events: [String], withState L: UnsafeMutablePointer<lua_State>!) {
@@ -389,18 +366,11 @@ private let watcherCallback: AXObserverCallback = { _, element, notificationName
 
     private init(runningApp app: NSRunningApplication, elementRef ref: AXUIElement) {
         pid = app.processIdentifier
-        // AXUIElementCreateApplication returns +1. In Swift ARC owns it when assigned.
-        // We need to keep it retained, so store it and retain manually for our contract.
         _elementRef = ref
-        _ = Unmanaged.passRetained(ref)  // match ObjC's manual retain accounting
         runningApp = app
         uiElement = HSuielement(withElement: ref)
         selfRefCount = 0
         super.init()
-    }
-
-    deinit {
-        Unmanaged.passUnretained(_elementRef).release()
     }
 
     // MARK: Class factory methods
@@ -538,21 +508,14 @@ private let watcherCallback: AXObserverCallback = { _, element, notificationName
         var valueRef: CFTypeRef?
         guard AXUIElementCopyAttributeValue(_elementRef, kAXMainWindowAttribute as CFString, &valueRef) == .success,
               let valueRef = valueRef else { return nil }
-        let win = unsafeBitCast(valueRef, to: AXUIElement.self)
-        // valueRef is +1; HSwindow.init does its own retain, so we release here
-        let result = HSwindow(axuiElementRef: win)
-        Unmanaged.passUnretained(valueRef).release()
-        return result
+        return HSwindow(axuiElementRef: unsafeBitCast(valueRef, to: AXUIElement.self))
     }
 
     @objc func focusedWindow() -> Any? {
         var valueRef: CFTypeRef?
         guard AXUIElementCopyAttributeValue(_elementRef, kAXFocusedWindowAttribute as CFString, &valueRef) == .success,
               let valueRef = valueRef else { return nil }
-        let win = unsafeBitCast(valueRef, to: AXUIElement.self)
-        let result = HSwindow(axuiElementRef: win)
-        Unmanaged.passUnretained(valueRef).release()
-        return result
+        return HSwindow(axuiElementRef: unsafeBitCast(valueRef, to: AXUIElement.self))
     }
 
     @objc func activate(_ allWindows: Bool) -> Bool {
@@ -634,7 +597,6 @@ private let watcherCallback: AXObserverCallback = { _, element, notificationName
     // MARK: Init / deinit
 
     @objc(initWithAXUIElementRef:) init(axuiElementRef winRef: AXUIElement) {
-        _ = Unmanaged.passRetained(winRef)
         _elementRef = winRef
         uiElement = HSuielement(withElement: winRef)
         selfRefCount = 0
@@ -649,10 +611,6 @@ private let watcherCallback: AXObserverCallback = { _, element, notificationName
         if _AXUIElementGetWindow(winRef, &wID) == .success {
             winID = wID
         }
-    }
-
-    deinit {
-        Unmanaged.passUnretained(_elementRef).release()
     }
 
     // MARK: Class methods
@@ -697,12 +655,8 @@ private let watcherCallback: AXObserverCallback = { _, element, notificationName
         let result = AXUIElementCopyAttributeValue(appElement,
                                                     NSAccessibility.Attribute.focusedWindow.rawValue as CFString,
                                                     &winRef)
-        Unmanaged.passUnretained(appRef).release()
         guard result == .success, let winRef = winRef else { return nil }
-        let winElement = unsafeBitCast(winRef, to: AXUIElement.self)
-        let window = HSwindow(axuiElementRef: winElement)
-        Unmanaged.passUnretained(winRef).release()
-        return window
+        return HSwindow(axuiElementRef: unsafeBitCast(winRef, to: AXUIElement.self))
     }
 
     // MARK: Property helpers
@@ -746,9 +700,7 @@ private let watcherCallback: AXObserverCallback = { _, element, notificationName
                                           NSAccessibility.Attribute.position.rawValue as CFString,
                                           &positionRef) == .success,
            let positionRef = positionRef {
-            let axValue = unsafeBitCast(positionRef, to: AXValue.self)
-            AXValueGetValue(axValue, .cgPoint, &topLeft)
-            Unmanaged.passUnretained(positionRef).release()
+            AXValueGetValue(unsafeBitCast(positionRef, to: AXValue.self), .cgPoint, &topLeft)
         }
         return NSPoint(x: topLeft.x, y: topLeft.y)
     }
@@ -769,9 +721,7 @@ private let watcherCallback: AXObserverCallback = { _, element, notificationName
                                           NSAccessibility.Attribute.size.rawValue as CFString,
                                           &sizeRef) == .success,
            let sizeRef = sizeRef {
-            let axValue = unsafeBitCast(sizeRef, to: AXValue.self)
-            AXValueGetValue(axValue, .cgSize, &size)
-            Unmanaged.passUnretained(sizeRef).release()
+            AXValueGetValue(unsafeBitCast(sizeRef, to: AXValue.self), .cgSize, &size)
         }
         return NSSize(width: size.width, height: size.height)
     }
@@ -798,7 +748,6 @@ private let watcherCallback: AXObserverCallback = { _, element, notificationName
             if hadEnhancedUI {
                 AXUIElementSetAttributeValue(appElement, "AXEnhancedUserInterface" as CFString, kCFBooleanFalse)
             }
-            Unmanaged.passUnretained(enhancedRef).release()
         }
 
         // Size → Position → Size (handles cross-display moves)
@@ -815,10 +764,7 @@ private let watcherCallback: AXObserverCallback = { _, element, notificationName
         var buttonRef: CFTypeRef?
         guard AXUIElementCopyAttributeValue(_elementRef, buttonId, &buttonRef) == .success,
               let buttonRef = buttonRef else { return false }
-        let button = unsafeBitCast(buttonRef, to: AXUIElement.self)
-        let worked = AXUIElementPerformAction(button, kAXPressAction as CFString) == .success
-        Unmanaged.passUnretained(buttonRef).release()
-        return worked
+        return AXUIElementPerformAction(unsafeBitCast(buttonRef, to: AXUIElement.self), kAXPressAction as CFString) == .success
     }
 
     @objc func toggleZoom() {
@@ -832,7 +778,6 @@ private let watcherCallback: AXObserverCallback = { _, element, notificationName
                                              &buttonRef) == .success,
               let buttonRef = buttonRef else { return .zero }
         let button = unsafeBitCast(buttonRef, to: AXUIElement.self)
-        defer { Unmanaged.passUnretained(buttonRef).release() }
 
         var pointRef: CFTypeRef?
         var sizeRef: CFTypeRef?
@@ -845,8 +790,6 @@ private let watcherCallback: AXObserverCallback = { _, element, notificationName
         var size = CGSize.zero
         AXValueGetValue(unsafeBitCast(pointRef, to: AXValue.self), .cgPoint, &point)
         AXValueGetValue(unsafeBitCast(sizeRef, to: AXValue.self), .cgSize, &size)
-        Unmanaged.passUnretained(pointRef).release()
-        Unmanaged.passUnretained(sizeRef).release()
         return NSMakeRect(point.x, point.y, size.width, size.height)
     }
 
@@ -886,9 +829,7 @@ private let watcherCallback: AXObserverCallback = { _, element, notificationName
         guard AXUIElementCopyAttributeValue(_elementRef, "AXFullScreen" as CFString, &valueRef) == .success,
               let valueRef = valueRef,
               let boolVal = valueRef as? NSNumber else { return false }
-        let result = boolVal.boolValue
-        Unmanaged.passUnretained(valueRef).release()
-        return result
+        return boolVal.boolValue
     }
 
     @objc func setFullscreen(_ fullscreen: Bool) {

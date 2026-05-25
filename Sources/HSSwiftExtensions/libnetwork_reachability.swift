@@ -87,7 +87,7 @@ private func reachabilityForAddress(_ L: UnsafeMutablePointer<lua_State>!) -> In
     let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING | LS_TNUMBER, LS_TBREAK)
 
-    luaL_checkstring(L, 1) // force number to be a string
+    _ = luaL_checkstring(L, 1) // force number to be a string
     var results: UnsafeMutablePointer<addrinfo>?
     var hints = addrinfo()
     hints.ai_flags = AI_NUMERICHOST | AI_NUMERICSERV
@@ -121,7 +121,7 @@ private func reachabilityForAddressPair(_ L: UnsafeMutablePointer<lua_State>!) -
     let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING | LS_TNUMBER, LS_TSTRING | LS_TNUMBER, LS_TBREAK)
 
-    luaL_checkstring(L, 1) // force number to be a string
+    _ = luaL_checkstring(L, 1) // force number to be a string
     var results1: UnsafeMutablePointer<addrinfo>?
     var hints = addrinfo()
     hints.ai_flags = AI_NUMERICHOST | AI_NUMERICSERV
@@ -132,7 +132,7 @@ private func reachabilityForAddressPair(_ L: UnsafeMutablePointer<lua_State>!) -
         return luaL_error(L, "local address parse error: \(String(cString: gai_strerror(ecode1)!))")
     }
 
-    luaL_checkstring(L, 2) // force number to be a string
+    _ = luaL_checkstring(L, 2) // force number to be a string
     var results2: UnsafeMutablePointer<addrinfo>?
     let ecode2 = getaddrinfo((skin.toNSObject(atIndex: 2) as! NSString).utf8String, nil, &hints, &results2)
     if ecode2 != 0 {

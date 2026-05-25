@@ -47,13 +47,7 @@ private class AppWatcher: NSObject {
 
         lua_pushinteger(L, lua_Integer(event.rawValue))
 
-        // Create HSapplication via NSClassFromString + perform selector
-        if let appClass = HSuicore.applicationClass {
-            let application = (appClass as AnyObject).perform(
-                Selector(("applicationForNSRunningApplication:withState:")),
-                with: app,
-                with: L
-            )?.takeUnretainedValue()
+        if let application = HSapplication(nsRunningApplication: app, withState: L) {
             skin.pushNSObject(application)
         } else {
             lua_pushnil(L)
