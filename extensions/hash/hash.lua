@@ -1,6 +1,6 @@
 --- === hs.hash ===
 ---
---- This module provides various hashing algorithms for use within Hammerspoon.
+--- This module provides various hashing algorithms for use within Cosmic Hammer.
 ---
 --- The currently supported hash types can be viewed by examining the [hs.hash.types](#types) constant.
 ---

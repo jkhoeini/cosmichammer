@@ -27,7 +27,7 @@ private class HSLocation: NSObject, CLLocationManagerDelegate {
     override init() {
         super.init()
         manager = CLLocationManager()
-        manager.purpose = "Hammerspoon location extension"
+        manager.purpose = "Cosmic Hammer location extension"
         manager.delegate = self
     }
 
@@ -192,20 +192,20 @@ private func location_locationServicesEnabled(_ L: UnsafeMutablePointer<lua_Stat
 
 /// hs.location.authorizationStatus() -> string
 /// Function
-/// Returns a string describing the authorization status of Hammerspoon's use of Location Services.
+/// Returns a string describing the authorization status of Cosmic Hammer's use of Location Services.
 ///
 /// Parameters:
 ///  * None
 ///
 /// Returns:
 ///  * a string matching one of the following:
-///    * "undefined"  - The user has not yet made a choice regarding whether Hammerspoon can use location services.
-///    * "restricted" - Hammerspoon is not authorized to use location services. The user cannot change this status, possibly due to active restrictions such as parental controls being in place.
-///    * "denied"     - The user explicitly denied the use of location services for Hammerspoon or location services are currently disabled in System Preferences.
-///    * "authorized" - Hammerspoon is authorized to use location services.
+///    * "undefined"  - The user has not yet made a choice regarding whether Cosmic Hammer can use location services.
+///    * "restricted" - Cosmic Hammer is not authorized to use location services. The user cannot change this status, possibly due to active restrictions such as parental controls being in place.
+///    * "denied"     - The user explicitly denied the use of location services for Cosmic Hammer or location services are currently disabled in System Preferences.
+///    * "authorized" - Cosmic Hammer is authorized to use location services.
 ///
 /// Notes:
-///  * The first time you use a function which requires Location Services, you will be prompted to grant Hammerspoon access. If you wish to change this permission after the initial prompt, you may do so from the Location Services section of the Security & Privacy section in the System Preferences application.
+///  * The first time you use a function which requires Location Services, you will be prompted to grant Cosmic Hammer access. If you wish to change this permission after the initial prompt, you may do so from the Location Services section of the Security & Privacy section in the System Preferences application.
 private func location_authorizationStatus(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TBREAK)
@@ -236,7 +236,7 @@ private func location_authorizationStatus(_ L: UnsafeMutablePointer<lua_State>!)
 ///  * A number containing the distance between `from` and `to` in meters. The measurement is made by tracing a line that follows an idealised curvature of the earth
 ///
 /// Notes:
-///  * This function does not require Location Services to be enabled for Hammerspoon.
+///  * This function does not require Location Services to be enabled for Cosmic Hammer.
 private func location_distanceBetween(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TTABLE, LS_TTABLE, LS_TBREAK)
@@ -272,8 +272,8 @@ private func location_stopWatching(_ L: UnsafeMutablePointer<lua_State>!) -> Int
 ///  * If successful, a locationTable as described in the module header, otherwise nil.
 ///
 /// Notes:
-///  * This function activates Location Services for Hammerspoon, so the first time you call this, you may be prompted to authorise Hammerspoon to use Location Services.
-///  * If access to Location Services is enabled for Hammerspoon, this function will return the most recent cached data for the computer's location.
+///  * This function activates Location Services for Cosmic Hammer, so the first time you call this, you may be prompted to authorise Cosmic Hammer to use Location Services.
+///  * If access to Location Services is enabled for Cosmic Hammer, this function will return the most recent cached data for the computer's location.
 ///    * Internally, the Location Services cache is updated whenever additional WiFi networks are detected or lost (not necessarily joined). When update tracking is enabled with the [hs.location.start](#start) function, calculations based upon the RSSI of all currently seen networks are preformed more often to provide a more precise fix, but it's still based on the WiFi networks near you.
 private func location_getLocation(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
@@ -544,7 +544,7 @@ private func location_sunset(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Notes:
 ///  * This constructor requires internet access and the callback will be invoked with an error message if the internet is not currently accessible.
-///  * This constructor does not require Location Services to be enabled for Hammerspoon.
+///  * This constructor does not require Location Services to be enabled for Cosmic Hammer.
 private func clgeocoder_lookupLocation(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TTABLE, LS_TFUNCTION, LS_TBREAK)
@@ -589,7 +589,7 @@ private func clgeocoder_lookupLocation(_ L: UnsafeMutablePointer<lua_State>!) ->
 ///
 /// Notes:
 ///  * This constructor requires internet access and the callback will be invoked with an error message if the internet is not currently accessible.
-///  * This constructor does not require Location Services to be enabled for Hammerspoon.
+///  * This constructor does not require Location Services to be enabled for Cosmic Hammer.
 private func clgeocoder_lookupAddress(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING, LS_TFUNCTION, LS_TBREAK)
@@ -625,7 +625,7 @@ private func clgeocoder_lookupAddress(_ L: UnsafeMutablePointer<lua_State>!) -> 
 ///
 /// Parameters:
 ///  * `address`     - a string containing address information as commonly expressed in your locale.
-///  * `regionTable` - an optional regionTable as described in the `hs.location` header used to prioritize the order of the results found.  If this parameter is not provided and Location Services is enabled for Hammerspoon, a region containing current location is used.
+///  * `regionTable` - an optional regionTable as described in the `hs.location` header used to prioritize the order of the results found.  If this parameter is not provided and Location Services is enabled for Cosmic Hammer, a region containing current location is used.
 ///  * `fn`          - A callback function which should expect 2 arguments and return none:
 ///    * `state`  - a boolean indicating whether or not geocoding data was provided
 ///    * `result` - if `state` is true indicating that geocoding was successful, this argument will be a table containing one or more placemarkTables (as described in the module header) containing the geocoding data available for the location.  If `state` is false, this argument will be a string containing an error message describing the problem encountered.
@@ -635,7 +635,7 @@ private func clgeocoder_lookupAddress(_ L: UnsafeMutablePointer<lua_State>!) -> 
 ///
 /// Notes:
 ///  * This constructor requires internet access and the callback will be invoked with an error message if the internet is not currently accessible.
-///  * This constructor does not require Location Services to be enabled for Hammerspoon.
+///  * This constructor does not require Location Services to be enabled for Cosmic Hammer.
 ///  * While a partial address can be given, the more information you provide, the more likely the results will be useful.  The `regionTable` only determines sort order if multiple entries are returned, it does not constrain the search.
 private func clgeocoder_lookupAddressNear(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
@@ -685,7 +685,7 @@ private func clgeocoder_lookupAddressNear(_ L: UnsafeMutablePointer<lua_State>!)
 ///  * None
 ///
 /// Returns:
-///  * a boolean indicating if the geocoding process is still active.  If false, then the callback function either has already been called or will be as soon as the main thread of Hammerspoon becomes idle again.
+///  * a boolean indicating if the geocoding process is still active.  If false, then the callback function either has already been called or will be as soon as the main thread of Cosmic Hammer becomes idle again.
 private func clgeocoder_isGeocoding(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, UnsafeMutablePointer(mutating: (GEOCODE_UD_TAG as NSString).utf8String!), LS_TBREAK)
@@ -860,7 +860,7 @@ private func pushCLPlacemark(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!)
     return 1
 }
 
-// MARK: - Hammerspoon/Lua Infrastructure
+// MARK: - Cosmic Hammer/Lua Infrastructure
 
 private func clgeocoder_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)

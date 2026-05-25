@@ -1,9 +1,9 @@
 //
 //  HScrash.m
-//  Hammerspoon
+//  Cosmic Hammer
 //
 //  Created by Chris Jones on 03/07/2017.
-//  Copyright © 2017 Hammerspoon. All rights reserved.
+//  Copyright © 2017 Cosmic Hammer. All rights reserved.
 //
 
 #import "HSTestCase.h"

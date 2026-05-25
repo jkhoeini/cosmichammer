@@ -1,9 +1,9 @@
 //
 //  HSAppleScript.h
-//  Hammerspoon
+//  Cosmic Hammer
 //
 //  Created by Chris Hocking on 5/4/17.
-//  Copyright © 2017 Hammerspoon. All rights reserved.
+//  Copyright © 2017 Cosmic Hammer. All rights reserved.
 //
 
 #import <Foundation/Foundation.h>

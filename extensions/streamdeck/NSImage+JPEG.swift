@@ -3,7 +3,7 @@
 //  streamdeck
 //
 //  Created by Chris Jones on 28/11/2019.
-//  Copyright © 2019 Hammerspoon. All rights reserved.
+//  Copyright © 2019 Cosmic Hammer. All rights reserved.
 //
 
 import Foundation

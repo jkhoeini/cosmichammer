@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copies every Lua file listed in Packages/HSExtensions/extensions.manifest
-# into the built Hammerspoon.app bundle under
+# into the built Cosmic Hammer.app bundle under
 # Contents/Resources/extensions/hs/<basename>.lua.
 #
 # This is the build-time replacement for the legacy "Copy Extension Lua files"
@@ -27,7 +27,7 @@ if [[ -z "${BUILT_PRODUCTS_DIR:-}" || -z "${UNLOCALIZED_RESOURCES_FOLDER_PATH:-}
 fi
 
 # UNLOCALIZED_RESOURCES_FOLDER_PATH for an .app expands to
-# "Hammerspoon.app/Contents/Resources" — the destination the legacy
+# "Cosmic Hammer.app/Contents/Resources" — the destination the legacy
 # PBXCopyFilesBuildPhase used (dstSubfolderSpec 7 = Resources).
 DEST_DIR="${BUILT_PRODUCTS_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/extensions/hs"
 

@@ -28,7 +28,7 @@
 ---    * `"[X,Y WxH]"` or `"[X1,Y1 X2,Y2]"` or variations (note the square brackets) creates a unit rect where x=X/100, y=Y/100, w=W/100, h=H/100
 ---  * a point and a size `"X Y","WxH"` or `{x=X,y=Y},{w=W,h=H}` create a rect
 ---
---- You can use any of these anywhere an hs.geometry object is expected in Hammerspoon; the constructor will be called for you.
+--- You can use any of these anywhere an hs.geometry object is expected in Cosmic Hammer; the constructor will be called for you.
 
 -- remove copy-on-new
 --  * another `hs.geometry` object - creates a copy of that object

@@ -1,18 +1,18 @@
 //
-//  HammerspoonUITests.m
-//  HammerspoonUITests
+//  Cosmic HammerUITests.m
+//  Cosmic HammerUITests
 //
 //  Created by Chris Jones on 14/12/2015.
-//  Copyright © 2015 Hammerspoon. All rights reserved.
+//  Copyright © 2015 Cosmic Hammer. All rights reserved.
 //
 
 #import <XCTest/XCTest.h>
 
-@interface HammerspoonUITests : XCTestCase
+@interface Cosmic HammerUITests : XCTestCase
 
 @end
 
-@implementation HammerspoonUITests
+@implementation Cosmic HammerUITests
 
 - (void)setUp {
     [super setUp];
@@ -37,16 +37,16 @@
 - (void)testPreferencesWindow {
     // TODO: Do some XCTAssert()ing based on what the defaults should be. Each checkbox can be inspected with .value (0 or 1).
     XCUIApplication *app = [[XCUIApplication alloc] init];
-    XCUIElement *hammerspoonConsoleWindow = app.windows[@"Hammerspoon Console"];
-    XCUIElement *textField = [hammerspoonConsoleWindow childrenMatchingType:XCUIElementTypeTextField].element;
+    XCUIElement *cosmicHammerConsoleWindow = app.windows[@"Cosmic Hammer Console"];
+    XCUIElement *textField = [cosmicHammerConsoleWindow childrenMatchingType:XCUIElementTypeTextField].element;
 
-    [hammerspoonConsoleWindow click];
+    [cosmicHammerConsoleWindow click];
     [textField typeText:@"hs.openPreferences()\r"];
-    [app.staticTexts[@"Hammerspoon Preferences"] click];
+    [app.staticTexts[@"Cosmic Hammer Preferences"] click];
 
-//    XCUIElement *launchHammerspoonAtLoginCheckBox = app.checkBoxes[@"Launch Hammerspoon at login"];
-//    [launchHammerspoonAtLoginCheckBox click];
-//    [launchHammerspoonAtLoginCheckBox click];
+//    XCUIElement *launchCosmicHammerAtLoginCheckBox = app.checkBoxes[@"Launch Cosmic Hammer at login"];
+//    [launchCosmicHammerAtLoginCheckBox click];
+//    [launchCosmicHammerAtLoginCheckBox click];
 //    
 //    XCUIElement *showDockIconCheckBox = app.checkBoxes[@"Show dock icon"];
 //    [showDockIconCheckBox click];
@@ -68,17 +68,17 @@
 
 - (void)testWindowMove {
     XCUIApplication *app = [[XCUIApplication alloc] init];
-    XCUIElement *hammerspoonConsoleWindow = app.windows[@"Hammerspoon Console"];
-    CGRect frame = hammerspoonConsoleWindow.frame;
+    XCUIElement *cosmicHammerConsoleWindow = app.windows[@"Cosmic Hammer Console"];
+    CGRect frame = cosmicHammerConsoleWindow.frame;
     NSLog(@"Initial Console window: %f,%f %fx%f", frame.origin.x, frame.origin.y, frame.size.width, frame.size.height);
-    XCUIElement *textField = [hammerspoonConsoleWindow childrenMatchingType:XCUIElementTypeTextField].element;
+    XCUIElement *textField = [cosmicHammerConsoleWindow childrenMatchingType:XCUIElementTypeTextField].element;
 
-    [hammerspoonConsoleWindow click];
+    [cosmicHammerConsoleWindow click];
     [textField typeText:@"hs.window.focusedWindow()"];
     [textField typeKey:@";" modifierFlags:XCUIKeyModifierShift];
     [textField typeText:@"setFrame(hs.geometry.rect(0,50,400,300), 0)\r"];
 
-    CGRect newFrame = hammerspoonConsoleWindow.frame;
+    CGRect newFrame = cosmicHammerConsoleWindow.frame;
 
     XCTAssertTrue(CGRectEqualToRect(newFrame, CGRectMake(0.0, 50.0, 400.0, 300.0)), @"hs.window:move() failed");
 }

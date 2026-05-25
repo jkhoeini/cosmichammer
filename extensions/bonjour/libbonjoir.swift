@@ -304,7 +304,7 @@ private func toHSNetServiceBrowserFromLua(_ L: UnsafeMutablePointer<lua_State>!,
     return nil
 }
 
-// MARK: - Hammerspoon/Lua Infrastructure
+// MARK: - Cosmic Hammer/Lua Infrastructure
 
 private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)

@@ -1,11 +1,11 @@
 
 --- === hs.doc ===
 ---
---- Create documentation objects for interactive help within Hammerspoon
+--- Create documentation objects for interactive help within Cosmic Hammer
 ---
 --- The documentation object created is a table with tostring metamethods allowing access to a specific functions documentation by appending the path to the method or function to the object created.
 ---
---- From the Hammerspoon console:
+--- From the Cosmic Hammer console:
 ---
 ---       doc = require("hs.doc")
 ---       doc.hs.application
@@ -117,12 +117,12 @@ helperMT = {
 ---  * a table containing the list of registered JSON files
 ---
 --- Notes:
----  * The table returned by this function has a metatable including a __tostring method which allows you to see the list of registered files by simply typing `hs.doc.registeredFiles()` in the Hammerspoon Console.
+---  * The table returned by this function has a metatable including a __tostring method which allows you to see the list of registered files by simply typing `hs.doc.registeredFiles()` in the Cosmic Hammer Console.
 ---
 ---  * By default, the internal core documentation and portions of the Lua 5.3 manual, located at http://www.lua.org/manual/5.3/manual.html, are already registered for inclusion within this documentation object.
 ---
 ---  * You can unregister these defaults if you wish to start with a clean slate with the following commands:
----    * `hs.doc.unregisterJSONFile(hs.docstrings_json_file)` -- to unregister the Hammerspoon API docs
+---    * `hs.doc.unregisterJSONFile(hs.docstrings_json_file)` -- to unregister the Cosmic Hammer API docs
 ---    * `hs.doc.unregisterJSONFile((hs.docstrings_json_file:gsub("/docs.json$","/lua.json")))` -- to unregister the Lua 5.3 Documentation.
 module.registeredFiles = function(...)
     return setmetatable(_registeredFilesFunction(...), {
@@ -138,16 +138,16 @@ end
 
 --- hs.doc.help(identifier)
 --- Function
---- Prints the documentation for some part of Hammerspoon's API and Lua 5.3.  This function has also been aliased as `hs.help` and `help` as a shorthand for use within the Hammerspoon console.
+--- Prints the documentation for some part of Cosmic Hammer's API and Lua 5.3.  This function has also been aliased as `hs.help` and `help` as a shorthand for use within the Cosmic Hammer console.
 ---
 --- Parameters:
----  * identifier - A string containing the signature of some part of Hammerspoon's API (e.g. `"hs.reload"`)
+---  * identifier - A string containing the signature of some part of Cosmic Hammer's API (e.g. `"hs.reload"`)
 ---
 --- Returns:
 ---  * None
 ---
 --- Notes:
----  * This function is mainly for runtime API help while using Hammerspoon's Console
+---  * This function is mainly for runtime API help while using Cosmic Hammer's Console
 ---
 ---  * Documentation files registered with [hs.doc.registerJSONFile](#registerJSONFile) or [hs.doc.preloadSpoonDocs](#preloadSpoonDocs) that have not yet been actually loaded will be loaded when this command is invoked in any of the forms described below.
 ---
@@ -155,9 +155,9 @@ end
 ---    * help("prefix.path") -- quotes are required, e.g. `help("hs.reload")`
 ---    * help.prefix.path -- no quotes are required, e.g. `help.hs.reload`
 ---      * `prefix` can be one of the following:
----        * `hs`    - provides documentation for Hammerspoon's builtin commands and modules
+---        * `hs`    - provides documentation for Cosmic Hammer's builtin commands and modules
 ---        * `spoon` - provides documentation for the Spoons installed on your system
----        * `lua`   - provides documentation for the version of lua Hammerspoon is using, currently 5.3
+---        * `lua`   - provides documentation for the version of lua Cosmic Hammer is using, currently 5.3
 ---          * `lua._man` - provides the table of contents for the Lua 5.3 manual.  You can pull up a specific section of the lua manual by including the chapter (and subsection) like this: `lua._man._3_4_8`.
 ---          * `lua._C`   - provides documentation specifically about the Lua C API for use when developing modules which require external libraries.
 ---      * `path` is one or more components, separated by a period specifying the module, submodule, function, or method you wish to view documentation for.

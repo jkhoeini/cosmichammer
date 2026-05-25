@@ -2,7 +2,7 @@
 ---
 --- Manipulate screens (i.e. monitors)
 ---
---- The macOS coordinate system used by Hammerspoon assumes a grid that spans all the screens (positioned as per
+--- The macOS coordinate system used by Cosmic Hammer assumes a grid that spans all the screens (positioned as per
 --- System Preferences->Displays->Arrangement). The origin `0,0` is at the top left corner of the *primary screen*.
 --- (Screens to the left of the primary screen, or above it, and windows on these screens, will have negative coordinates)
 
@@ -245,7 +245,7 @@ end
 
 --- hs.screen:localToAbsolute(geom) -> hs.geometry object
 --- Method
---- Transforms from the screen's local coordinate space, where `0,0` is at the screen's top left corner, to the absolute coordinate space used by OSX/Hammerspoon
+--- Transforms from the screen's local coordinate space, where `0,0` is at the screen's top left corner, to the absolute coordinate space used by OSX/Cosmic Hammer
 ---
 --- Parameters:
 ---  * geom - an hs.geometry point or rect, or arguments to construct one
@@ -258,7 +258,7 @@ end
 
 --- hs.screen:absoluteToLocal(geom) -> hs.geometry object
 --- Method
---- Transforms from the absolute coordinate space used by OSX/Hammerspoon to the screen's local coordinate space, where `0,0` is at the screen's top left corner
+--- Transforms from the absolute coordinate space used by OSX/Cosmic Hammer to the screen's local coordinate space, where `0,0` is at the screen's top left corner
 ---
 --- Parameters:
 ---  * geom - an hs.geometry point or rect, or arguments to construct one

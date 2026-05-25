@@ -1,9 +1,9 @@
 //
 //  HSmath.m
-//  Hammerspoon Tests
+//  Cosmic Hammer Tests
 //
 //  Created by Chris Jones on 23/12/2019.
-//  Copyright © 2019 Hammerspoon. All rights reserved.
+//  Copyright © 2019 Cosmic Hammer. All rights reserved.
 //
 
 #import "HSTestCase.h"

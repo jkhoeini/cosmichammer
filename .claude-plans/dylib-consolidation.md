@@ -1,4 +1,4 @@
-# Plan: Consolidate Hammerspoon's 91 Extension Dylibs into a Single Statically-Linked SPM Target
+# Plan: Consolidate Cosmic Hammer's 91 Extension Dylibs into a Single Statically-Linked SPM Target
 
 ## Executive Summary
 
@@ -584,10 +584,10 @@ Pick 3 extensions of varying complexity:
      HSExtensionsRegisterAll(L);
      ```
 7. **Wire HSExtensions into the main app via xcodeproj.** This is the most fragile step. Two approaches:
-   - **(Preferred)** Use Xcode UI manually: File → Add Package Dependencies → Add Local → choose `Packages/HSExtensions`. Then in the Hammerspoon target → General → Frameworks/Libraries, add `HSExtensions`. Xcode rewrites pbxproj cleanly. Verify pbxproj changes look like:
+   - **(Preferred)** Use Xcode UI manually: File → Add Package Dependencies → Add Local → choose `Packages/HSExtensions`. Then in the Cosmic Hammer target → General → Frameworks/Libraries, add `HSExtensions`. Xcode rewrites pbxproj cleanly. Verify pbxproj changes look like:
      - New `XCLocalSwiftPackageReference` block for HSExtensions (mirror existing `LuaSkin` block at line 11776).
      - New entry in `packageReferences` of the project root (around line 6708).
-     - New entry in `packageProductDependencies` of the Hammerspoon target (around line 6211, alongside `LuaSkin`).
+     - New entry in `packageProductDependencies` of the Cosmic Hammer target (around line 6211, alongside `LuaSkin`).
      - New entry in `Hammerspoon /* Frameworks */` build phase (around line 2548).
    - **(Fallback if Xcode UI is unavailable)** Hand-edit pbxproj following the `LuaSkin` pattern exactly. Use UUIDs from `uuidgen | tr -d '-' | cut -c1-24`.
 8. **Add the dead-strip-prevention file to the main app target**: in Xcode UI, drag `Hammerspoon/HSExtensionsRegistry.m` into the `Hammerspoon` group, ensuring it's added to the `Hammerspoon` target (not Tests). (Alternative: hand-edit pbxproj to add a PBXBuildFile entry referencing it in the Sources phase at line 7528.) Until phase 3, this file should only reference the 3 POC symbols.
@@ -600,7 +600,7 @@ Pick 3 extensions of varying complexity:
 11. **Move the 3 POC dylibs out of `Frameworks/hs/`** to force the new path to be exercised. Either:
     - Temporarily remove the 3 dylibs from the "Copy Extension Dylibs" phase (drag-remove in Xcode); OR
     - After build, manually `rm build/Build/Products/Debug/Hammerspoon.app/Contents/Frameworks/hs/lib{base64,math,window}.dylib`.
-12. **Launch the built app** and open the Hammerspoon console (Cmd-Shift-D or via menubar):
+12. **Launch the built app** and open the Cosmic Hammer console (Cmd-Shift-D or via menubar):
     ```
     print(hs.window.focusedWindow():title())
     print(hs.math.minFloat)
@@ -609,7 +609,7 @@ Pick 3 extensions of varying complexity:
     for k in pairs(package.preload) do print(k) end
     -- Should include hs.libbase64, hs.libmath, hs.libwindow
     ```
-13. **Verify there's no dlopen** (informative; relies on Activity Monitor → Open Files & Ports for the running Hammerspoon process).
+13. **Verify there's no dlopen** (informative; relies on Activity Monitor → Open Files & Ports for the running Cosmic Hammer process).
 
 **Commit**: `jj new -m "POC: link base64/math/window statically via HSExtensions"`.
 
@@ -670,7 +670,7 @@ Once the POC works for 3 extensions, mechanically expand to all of them.
    ```
    Expected: 91 (or whatever the generated count is — confirm against `wc -l < Packages/HSExtensions/extensions.list`).
 
-**Commit**: `jj new -m "Link all 91 extensions statically into Hammerspoon binary"`.
+**Commit**: `jj new -m "Link all 91 extensions statically into Cosmic Hammer binary"`.
 
 At this point the app still **also** copies the 91 dylibs into `Frameworks/hs/`. Both code paths coexist. Test thoroughly here — see Phase 5 — **before** deleting the dylib targets.
 
@@ -710,8 +710,8 @@ Use Xcode UI for the removals when possible — Xcode handles the cross-referenc
 
 In Xcode:
 1. Select all 91 extension targets in the project navigator (Cmd-click each in the target list, or filter by product type "Dynamic Library" if Xcode supports it).
-2. Right-click → Delete → "Remove References". This removes the targets but **keeps the source files** in the project. The `.m` files now belong only to the Hammerspoon Tests target (for HSTestCase fixtures) or no target at all — that's fine, they're still on disk and SPM picks them up via the symlinks.
-3. Open the Hammerspoon target → Build Phases → "Copy Extension Dylibs" → click the X. Remove the entire phase.
+2. Right-click → Delete → "Remove References". This removes the targets but **keeps the source files** in the project. The `.m` files now belong only to the Cosmic Hammer Tests target (for HSTestCase fixtures) or no target at all — that's fine, they're still on disk and SPM picks them up via the symlinks.
+3. Open the Cosmic Hammer target → Build Phases → "Copy Extension Dylibs" → click the X. Remove the entire phase.
 4. Same target → Build Phases → "Copy Extension Lua files" — **DO NOT REMOVE**. Lua files still need to be bundled.
 5. In `Hammerspoon-Base.xcconfig` (the `OTHER_LDFLAGS = -undefined dynamic_lookup` line in `Project-Base.xcconfig`): consider tightening, but **leave for now** — removing this may surface latent issues in legitimate dependencies. Tackle in a follow-up.
 
@@ -784,7 +784,7 @@ The **actual** risk is what happens with extensions that have multiple `.m` file
 **Recommended technique** (belt-and-suspenders): combine the keep-alive array (`HSExtensionsRegistry.m`) with `-Wl,-force_load,<path-to-libHSExtensions.a>` in the main app's `OTHER_LDFLAGS`. The keep-alive array gives the linker explicit references to every `luaopen_*`. `-force_load` is the brute-force fallback that pulls in every object file unconditionally; the runtime cost is zero (the static archive's objects all end up in the binary either way; force_load just removes the dead-code-elimination opportunity).
 
 How to add `-force_load`:
-1. In Xcode UI, select the Hammerspoon target → Build Settings → `OTHER_LDFLAGS`.
+1. In Xcode UI, select the Cosmic Hammer target → Build Settings → `OTHER_LDFLAGS`.
 2. Add (for Debug, Release, Profile configurations): `-Wl,-force_load,$(BUILT_PRODUCTS_DIR)/PackageFrameworks/HSExtensions.framework/HSExtensions`. **Note**: SPM products show up under `$(BUILT_PRODUCTS_DIR)/PackageFrameworks/<name>.framework/<name>` when built as `.library(type: .static, ...)`. Verify this path empirically by looking inside `build/Build/Products/Debug/` after a build.
 
 The exact format may need adjustment. An alternative tested form:
@@ -824,11 +824,11 @@ Run each check. The plan **must pass each** before merging.
    # Expected: == wc -l < Packages/HSExtensions/extensions.list
    ```
 5. **Binary size is in expected range**: the new binary should be ~30–80 MB larger than before (static linking pulls in all the ObjC class metadata that was previously per-dylib). If it's only a few MB bigger, something is being dead-stripped.
-6. **`Hammerspoon Tests` target builds**: `just test Debug` runs the LuaSkin-based test suite.
+6. **`Cosmic Hammer Tests` target builds**: `just test Debug` runs the LuaSkin-based test suite.
 
 ### Runtime checks (launch the built app)
 
-7. **Preload table contains all extensions**. In the Hammerspoon console:
+7. **Preload table contains all extensions**. In the Cosmic Hammer console:
    ```lua
    local count = 0
    for k, _ in pairs(package.preload) do
@@ -850,7 +850,7 @@ Run each check. The plan **must pass each** before merging.
 
 ### Spot-test one Lua snippet per extension
 
-Run each in the Hammerspoon console. Each should return a sensible value (or no error). If any errors, investigate the extension's static-link issue specifically.
+Run each in the Cosmic Hammer console. Each should return a sensible value (or no error). If any errors, investigate the extension's static-link issue specifically.
 
 (See full Lua spot-test snippets in section appended to plan during execution.)
 
@@ -871,7 +871,7 @@ The plan is sequenced so each phase is a discrete jj commit, and any phase can b
 Recommended commit sequence (one per phase, plus a few inline fixes):
 1. `Add empty HSExtensions SPM package scaffold` (Phase 1)
 2. `POC: link base64/math/window statically via HSExtensions` (Phase 2)
-3. `Link all 91 extensions statically into Hammerspoon binary` (Phase 3)
+3. `Link all 91 extensions statically into Cosmic Hammer binary` (Phase 3)
 4. `Verify static-linked extensions work without dylib fallback` (Phase 5)
 5. `Remove 91 dylib targets and Frameworks/hs copy phase from xcodeproj` (Phase 6)
 6. `Remove unused Extensions-Base.xcconfig and Extensions-Ideal.xcconfig` (Phase 7)
@@ -915,9 +915,9 @@ The flag `-Wno-everything` is needed because every extension was built with `-We
 
 1. **SPM symlink-followed sources don't reach the LuaSkin headers** — clang complains it can't find `lua/lua.h`. **Diagnosis**: run `swift build --verbose` in `Packages/HSExtensions/` and look at the actual `-I` flags clang gets. **Fix**: in `Package.swift`, add explicit `.headerSearchPath("../LuaSkin/Sources/LuaSkin/include")` entries. The relative path from `Packages/HSExtensions/Sources/HSExtensions/` to LuaSkin's headers is `../../../LuaSkin/Sources/LuaSkin/include`. SPM normally autowires this via the dependency, but symlinked source trees confuse the heuristic.
 2. **`-force_load` references a non-existent path** — Xcode warns/errors that `$(BUILT_PRODUCTS_DIR)/libHSExtensions.a` doesn't exist. **Diagnosis**: after a build, run `find build -name '*HSExtensions*'` to find where SPM actually wrote the archive. **Fix**: substitute the actual path into `OTHER_LDFLAGS`. Likely candidates: `$(BUILT_PRODUCTS_DIR)/PackageFrameworks/HSExtensions.framework/HSExtensions`, `$(BUILT_PRODUCTS_DIR)/PackageProducts/libHSExtensions.a`, or `$(OBJROOT)/Build/Intermediates.noindex/.../HSExtensions.build/HSExtensions.a`. If the keep-alive array is doing its job, `-force_load` is unnecessary and can be dropped.
-3. **An extension's runtime behaviour diverges** despite the API working — e.g., `hs.hotkey.bind(...)` registers but never fires. **Diagnosis**: this could be the `+load` / `+initialize` ordering issue (U3 above). **Fix**: check macOS Console.app for `objc[pid]:` warnings at Hammerspoon launch. If a category is being silently replaced, rename the conflicting method.
-4. **Static binary is large enough to hit Mach-O segment limits** (very unlikely — Hammerspoon is well under 1 GB). **Diagnosis**: `ld` error about LC_SEGMENT size or DYLD_RPATH overflow. **Fix**: split off a couple of heavyweight extensions into a second SPM static library, each still preloaded the same way.
-5. **`Hammerspoon Tests` target stops finding extensions** — tests use `BUNDLE_LOADER = $(TEST_HOST)`, which means they run in-process within Hammerspoon.app. As long as the app has preload entries set up correctly, tests inherit them. **Diagnosis**: a specific test like `HSwindowTests` fails with "module hs.libwindow not found". **Fix**: confirm `HSExtensionsRegisterAll` is called by `MJLuaInit`, and `MJLuaInit` runs before any test code that requires modules.
+3. **An extension's runtime behaviour diverges** despite the API working — e.g., `hs.hotkey.bind(...)` registers but never fires. **Diagnosis**: this could be the `+load` / `+initialize` ordering issue (U3 above). **Fix**: check macOS Console.app for `objc[pid]:` warnings at Cosmic Hammer launch. If a category is being silently replaced, rename the conflicting method.
+4. **Static binary is large enough to hit Mach-O segment limits** (very unlikely — Cosmic Hammer is well under 1 GB). **Diagnosis**: `ld` error about LC_SEGMENT size or DYLD_RPATH overflow. **Fix**: split off a couple of heavyweight extensions into a second SPM static library, each still preloaded the same way.
+5. **`Cosmic Hammer Tests` target stops finding extensions** — tests use `BUNDLE_LOADER = $(TEST_HOST)`, which means they run in-process within Cosmic Hammer.app. As long as the app has preload entries set up correctly, tests inherit them. **Diagnosis**: a specific test like `HSwindowTests` fails with "module hs.libwindow not found". **Fix**: confirm `HSExtensionsRegisterAll` is called by `MJLuaInit`, and `MJLuaInit` runs before any test code that requires modules.
 
 ---
 
@@ -949,7 +949,7 @@ The static archive surfaces three colocations that previously linked separately:
 These were latent bugs masked by `-undefined dynamic_lookup`; the fix is harmless and applies whether or not consolidation moves forward.
 
 ### F5. LuaSkin pattern is package-product-only
-LuaSkin is wired into the Hammerspoon target via `packageProductDependencies` *only* — there is no `PBXBuildFile` entry referencing it from the `Frameworks` build phase. Xcode auto-links SPM package product dependencies. HSExtensions follows the same pattern. The plan's hint about adding HSExtensions to the `PBXFrameworksBuildPhase` is unnecessary.
+LuaSkin is wired into the Cosmic Hammer target via `packageProductDependencies` *only* — there is no `PBXBuildFile` entry referencing it from the `Frameworks` build phase. Xcode auto-links SPM package product dependencies. HSExtensions follows the same pattern. The plan's hint about adding HSExtensions to the `PBXFrameworksBuildPhase` is unnecessary.
 
 ### F6. Test infrastructure has a pre-existing crash
 `just test Debug` fails to bootstrap with `dyld: terminating because inserted dylib '.../libclang_rt.asan_osx_dynamic.dylib' could not be loaded`. This is a pre-existing environment issue (the asan runtime can't be located in this SDK) and is unrelated to the consolidation. Both Debug and Release `just build` succeed; runtime verification of the static-linked extensions requires launching the app in the GUI.

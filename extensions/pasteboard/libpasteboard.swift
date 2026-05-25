@@ -334,8 +334,8 @@ private func readPropertyListForType(_ L: UnsafeMutablePointer<lua_State>!) -> I
 ///
 /// Notes:
 ///  * NSKeyedArchiver specifies an architecture-independent format that is often used in OS X applications to store and transmit objects between applications and when storing data to a file. It works by recording information about the object types and key-value pairs which make up the objects being stored.
-///  * Only objects which have conversion functions built into Hammerspoon can be converted. A string representation describing unrecognized types wil be returned. If you find a common data type that you believe may be of interest to Hammerspoon users, feel free to contribute a conversion function or make a request in the Hammerspoon Google group or GitHub site.
-///  * Some applications may define their own classes which can be archived.  Hammerspoon will be unable to recognize these types if the application does not make the object type available in one of its frameworks.  You *may* be able to load the necessary framework with `package.loadlib("/Applications/appname.app/Contents/Frameworks/frameworkname.framework/frameworkname", "*")` before retrieving the data, but a full representation of the data in Hammerspoon is probably not possible without support from the Application's developers.
+///  * Only objects which have conversion functions built into Cosmic Hammer can be converted. A string representation describing unrecognized types wil be returned. If you find a common data type that you believe may be of interest to Cosmic Hammer users, feel free to contribute a conversion function or make a request in the Cosmic Hammer Google group or GitHub site.
+///  * Some applications may define their own classes which can be archived.  Cosmic Hammer will be unable to recognize these types if the application does not make the object type available in one of its frameworks.  You *may* be able to load the necessary framework with `package.loadlib("/Applications/appname.app/Contents/Frameworks/frameworkname.framework/frameworkname", "*")` before retrieving the data, but a full representation of the data in Cosmic Hammer is probably not possible without support from the Application's developers.
 private func readArchivedDataForType(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
     var pb: NSPasteboard
@@ -389,7 +389,7 @@ private func readArchivedDataForType(_ L: UnsafeMutablePointer<lua_State>!) -> I
 /// Parameters:
 ///  * name - an optional string indicating the pasteboard name.  If nil or not present, defaults to the system pasteboard.
 ///  * uti  - a string specifying the UTI of the pasteboard item to set.
-///  * data - any type representable in Lua which will be converted into the appropriate NSObject types and archived with NSKeyedArchiver.  All Lua basic types are supported as well as those NSObject types handled by Hammerspoon modules (NSColor, NSStyledText, NSImage, etc.)
+///  * data - any type representable in Lua which will be converted into the appropriate NSObject types and archived with NSKeyedArchiver.  All Lua basic types are supported as well as those NSObject types handled by Cosmic Hammer modules (NSColor, NSStyledText, NSImage, etc.)
 ///  * add  - an optional boolean value specifying if data with other UTI values should retain.  This value must be strictly either true or false if given, to avoid ambiguity with preceding parameters.
 ///
 /// Returns:
@@ -397,8 +397,8 @@ private func readArchivedDataForType(_ L: UnsafeMutablePointer<lua_State>!) -> I
 ///
 /// Notes:
 ///  * NSKeyedArchiver specifies an architecture-independent format that is often used in OS X applications to store and transmit objects between applications and when storing data to a file. It works by recording information about the object types and key-value pairs which make up the objects being stored.
-///  * Only objects which have conversion functions built into Hammerspoon can be converted.
-///  * A full list of NSObjects supported directly by Hammerspoon is planned in a future Wiki article.
+///  * Only objects which have conversion functions built into Cosmic Hammer can be converted.
+///  * A full list of NSObjects supported directly by Cosmic Hammer is planned in a future Wiki article.
 private func writeArchivedDataForType(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
     var pb: NSPasteboard
@@ -930,7 +930,7 @@ private func typesOnPasteboard(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 1
 }
 
-// MARK: - Hammerspoon/Lua Infrastructure
+// MARK: - Cosmic Hammer/Lua Infrastructure
 
 private let pasteboardLib: [luaL_Reg] = [
     luaL_Reg(name: strdup("changeCount"),      func: { L in pasteboard_changeCount(L) }),

@@ -122,10 +122,10 @@ private func spaces_getActiveSpace(_ L: UnsafeMutablePointer<lua_State>!) -> Int
 ///  * a table containing the window IDs for *all* windows on the specified space
 ///
 /// Notes:
-///  * the table returned has its __tostring metamethod set to `hs.inspect` to simplify inspecting the results when using the Hammerspoon Console.
+///  * the table returned has its __tostring metamethod set to `hs.inspect` to simplify inspecting the results when using the Cosmic Hammer Console.
 ///  * The list of windows includes all items which are considered "windows" by macOS -- this includes visual elements usually considered unimportant like overlays, tooltips, graphics, off-screen windows, etc. so expect a lot of false positives in the results.
 ///  * In addition, due to the way Accessibility objects work, only those window IDs that are present on the currently visible spaces will be finable with `hs.window` or exist within `hs.window.allWindows()`.
-///  * This function *will* prune Hammerspoon canvas elements from the list because we "own" these and can identify their window ID's programmatically. This does not help with other applications, however.
+///  * This function *will* prune Cosmic Hammer canvas elements from the list because we "own" these and can identify their window ID's programmatically. This does not help with other applications, however.
 ///  * Reviewing how third-party applications have generally pruned this list, I believe it will be necessary to use `hs.window.filter` to prune the list and access `hs.window` objects that are on the non-visible spaces.
 ///    * as `hs.window.filter` is scheduled to undergo a re-write soon to (hopefully) dramatically speed it up, I am providing this function *as is* at present for those who wish to experiment with it; however, I hope to make it more useful in the coming months and the contents may change in the future (the format won't, but hopefully the useless extras will disappear requiring less pruning logic on your end).
 private func spaces_windowsForSpace(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
@@ -230,7 +230,7 @@ private func spaces_moveWindowToSpace(_ L: UnsafeMutablePointer<lua_State>!) -> 
 ///  * a table containing the space IDs of all spaces the window is on, or nil and an error message if an error occurs.
 ///
 /// Notes:
-///  * the table returned has its __tostring metamethod set to `hs.inspect` to simplify inspecting the results when using the Hammerspoon Console.
+///  * the table returned has its __tostring metamethod set to `hs.inspect` to simplify inspecting the results when using the Cosmic Hammer Console.
 ///  * If the window ID does not specify a valid window, then an empty array will be returned.
 ///  * For most windows, this will be a single element table; however some applications may create "sticky" windows that may appear on more than one space.
 ///    * For example, the container windows for `hs.canvas` objects which have the `canJoinAllSpaces` behavior set will appear on all spaces and the table returned by this function will contain all spaceIDs for the screen which displays the canvas.

@@ -71,7 +71,7 @@ class MJAppDelegate: NSObject, NSApplicationDelegate {
 
         appMenu.addItem(.separator())
 
-        appMenu.addItem(withTitle: "Quit Cosmic Hammer", action: #selector(quitHammerspoon(_:)), keyEquivalent: "q").target = self
+        appMenu.addItem(withTitle: "Quit Cosmic Hammer", action: #selector(quitCosmicHammer(_:)), keyEquivalent: "q").target = self
 
         appMenuItem.submenu = appMenu
         mainMenu.addItem(appMenuItem)
@@ -240,7 +240,7 @@ class MJAppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(withTitle: "Preferences\u{2026}", action: #selector(showPreferencesWindow(_:)), keyEquivalent: "").target = self
         menu.addItem(.separator())
         menu.addItem(withTitle: "About Cosmic Hammer", action: #selector(showAboutPanel(_:)), keyEquivalent: "").target = self
-        menu.addItem(withTitle: "Quit Cosmic Hammer", action: #selector(quitHammerspoon(_:)), keyEquivalent: "").target = self
+        menu.addItem(withTitle: "Quit Cosmic Hammer", action: #selector(quitCosmicHammer(_:)), keyEquivalent: "").target = self
 
         self.menuBarMenu = menu
     }
@@ -283,7 +283,7 @@ class MJAppDelegate: NSObject, NSApplicationDelegate {
             typeOfFile = contentType.identifier
         }
 
-        if typeOfFile == "org.hammerspoon.hammerspoon.spoon" {
+        if typeOfFile == "org.cosmic-hammer.cosmichammer.spoon" {
             // This is a Spoon, so we will attempt to copy it to the Spoons directory
             let spoonPath = (MJConfigDirAbsolute() as String).appendingPathComponent("Spoons")
             let spoonName = (filename as NSString).lastPathComponent
@@ -545,7 +545,7 @@ class MJAppDelegate: NSObject, NSApplicationDelegate {
         NSApplication.shared.orderFrontStandardAboutPanel(nil)
     }
 
-    @IBAction func quitHammerspoon(_ sender: Any?) {
+    @IBAction func quitCosmicHammer(_ sender: Any?) {
         NSApplication.shared.terminate(nil)
     }
 
@@ -574,8 +574,8 @@ private extension String {
 
 // MARK: - Entry point
 
-@_cdecl("launchHammerspoon")
-func launchHammerspoon() -> Int32 {
+@_cdecl("launchCosmicHammer")
+func launchCosmicHammer() -> Int32 {
     autoreleasepool {
         let app = NSApplication.shared
         let delegate = MJAppDelegate()

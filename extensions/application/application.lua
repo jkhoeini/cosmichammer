@@ -216,7 +216,7 @@ end
 ---  * the `hs.application` object for the launched or activated application; `nil` if not found
 ---
 --- Notes:
----  * the `wait` parameter will *block all Hammerspoon activity* in order to return the application object "synchronously"; only use it if you
+---  * the `wait` parameter will *block all Cosmic Hammer activity* in order to return the application object "synchronously"; only use it if you
 ---    a) have no time-critical event processing happening elsewhere in your `init.lua` and b) need to act on the application object, or on
 ---    its window(s), right away
 ---  * when launching a "windowless" app (background daemon, menulet, etc.) make sure to omit `waitForFirstWindow`
@@ -305,11 +305,11 @@ end
 ---  * "F19", -- kMenuF16Glyph, 0x92, F19 key (available in SnowLeopard and later)
 ---
 --- Notes:
----  * a `__tostring` metamethod is provided for this table so you can view its current contents by typing `hs.application.menuGlyphs` into the Hammerspoon console.
+---  * a `__tostring` metamethod is provided for this table so you can view its current contents by typing `hs.application.menuGlyphs` into the Cosmic Hammer console.
 ---  * This table is provided as a variable so that you can change any representation if you feel you know of a better or more appropriate one for you usage at runtime.
 ---
 ---  * The glyphs provided are defined in the Carbon framework headers in the Menus.h file, located (as of 10.11) at /System/Library/Frameworks/Carbon.framework/Frameworks/HIToolbox.framework/Headers/Menus.h.
----  * The following constants are defined in Menus.h, but do not seem to correspond to a visible UTF8 character or well defined representation that I could discover.  If you believe that you know of a (preferably sanctioned by Apple) proper visual representation, please submit an issue detailing it at the Hammerspoon repository on GitHub.
+---  * The following constants are defined in Menus.h, but do not seem to correspond to a visible UTF8 character or well defined representation that I could discover.  If you believe that you know of a (preferably sanctioned by Apple) proper visual representation, please submit an issue detailing it at the Cosmic Hammer repository on GitHub.
 ---    * kMenuNullGlyph, 0x00, Null (always glyph 1)
 ---    * kMenuNonmarkingReturnGlyph, 0x0D, Nonmarking return key
 ---    * kMenuParagraphKoreanGlyph, 0x15, Unassigned (paragraph in Korean)
@@ -437,7 +437,7 @@ end
 ---  * the current, possibly changed, state
 ---
 --- Notes:
----  * This setting is persistent across reloading and restarting Hammerspoon.
+---  * This setting is persistent across reloading and restarting Cosmic Hammer.
 ---  * If this was set to true and you set it to true again, it will purge the alternate name map and rebuild it from scratch.
 ---  * You can disable Spotlight alternate name mapping by setting this value to false or nil. If you set this to false, then the notifications indicating that more results might be possible if Spotlight is enabled will be suppressed.
 application.enableSpotlightForNameSearches = function(...)

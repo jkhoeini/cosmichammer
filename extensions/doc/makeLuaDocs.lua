@@ -283,7 +283,7 @@ print("++ Parsing manual...")
             doc   = [[
 Built in ]].._VERSION..[[ functions and variables.
 
-The text for this documentation is originally from ]]..luaDocsBaseURL..[[ but has been programmatically parsed and rearranged for use with the Hammerspoon internal documentation system.  Any errors, mistakes, or omissions are likely the result of this processing and is in no way a reflection on Lua.org or their work.  If in doubt about anything presented in this lua section of the Hammerspoon documentation, please check the above web site for the authoritative answer.
+The text for this documentation is originally from ]]..luaDocsBaseURL..[[ but has been programmatically parsed and rearranged for use with the Cosmic Hammer internal documentation system.  Any errors, mistakes, or omissions are likely the result of this processing and is in no way a reflection on Lua.org or their work.  If in doubt about anything presented in this lua section of the Cosmic Hammer documentation, please check the above web site for the authoritative answer.
 ]],
             items = {}
         },
@@ -372,7 +372,7 @@ The text for this documentation is originally from ]]..luaDocsBaseURL..[[ but ha
     end
 
 -- Sort, because hs.doc is stupid about overwriting previously created subtables.
--- I know, I know... I ported/modified the %^$^%$& thing myself to make it work with Hammerspoon,
+-- I know, I know... I ported/modified the %^$^%$& thing myself to make it work with Cosmic Hammer,
 -- so I've no one to blame but, well, myself... I'll get around to it.
     table.sort(documentFormatArray, function(m,n)
         return m.name < n.name

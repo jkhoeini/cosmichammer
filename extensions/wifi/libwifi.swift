@@ -143,7 +143,7 @@ private func disassociate(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Notes:
 ///  * Enterprise WiFi networks are not currently supported. Please file an issue on GitHub if you need support for enterprise networks
-///  * This function blocks Hammerspoon until the operation is completed
+///  * This function blocks Cosmic Hammer until the operation is completed
 ///  * If multiple access points are available with the same SSID, one will be chosen at random to connect to
 private func associate(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
@@ -592,7 +592,7 @@ private func pushCWNetworkProfile(_ L: UnsafeMutablePointer<lua_State>!, _ obj: 
     return 1
 }
 
-// MARK: - Hammerspoon Infrastructure
+// MARK: - Cosmic Hammer Infrastructure
 
 private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)

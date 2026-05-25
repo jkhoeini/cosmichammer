@@ -15,7 +15,7 @@ import Darwin.POSIX.sys.xattr
 ///  * "createOnly"     - when setting an attribute value, fail if the attribute already exists
 ///  * "replaceOnly"    - when setting an attribute value, fail if the attribute does not already exist
 ///
-/// Note that the following options did not seem to be valid for the initial tests performed when developing this module and may refer the kernel level features not available to Hammerspoon; they are included here for full compatibility with the library as defined in its header. If you have more information about these options or can provide examples or documentation about their use, please submit an issue to the Hammerspoon github repository so we can provide better documentation here.
+/// Note that the following options did not seem to be valid for the initial tests performed when developing this module and may refer the kernel level features not available to Cosmic Hammer; they are included here for full compatibility with the library as defined in its header. If you have more information about these options or can provide examples or documentation about their use, please submit an issue to the Cosmic Hammer github repository so we can provide better documentation here.
 ///
 ///  * "noSecurity"      - bypass authorization checking
 ///  * "noDefault"       - bypass the default extended attribute file (dot-underscore file)

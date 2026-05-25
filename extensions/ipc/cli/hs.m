@@ -16,7 +16,7 @@
 
 // MAYBE:
 //   different color for returned values? Currently uses output color
-// * Prompt for launch Hammerspoon?
+// * Prompt for launch Cosmic Hammer?
 // *   How do we wait until it's actually running? Since the only check we really have is whether the module is loaded or not
 // * flag to suppress prompt?
 
@@ -28,9 +28,9 @@
 #include <editline/readline.h>
 
 // static NSString          *defaultPortName = @"hsCommandLine" ;
-static NSString          *defaultPortName = @"Hammerspoon" ;
+static NSString          *defaultPortName = @"Cosmic Hammer" ;
 static CFTimeInterval    defaultTimeout   = 4.0 ;
-static const CFStringRef hammerspoonBundle = CFSTR("org.hammerspoon.Hammerspoon") ;
+static const CFStringRef hammerspoonBundle = CFSTR("org.cosmic-hammer.CosmicHammer") ;
 
 @class HSClient ;
 
@@ -152,7 +152,7 @@ static const char *portError(SInt32 code) {
     @autoreleasepool {
         _remotePort = CFMessagePortCreateRemote(NULL, (__bridge CFStringRef)_remoteName) ;
         if (!_remotePort) {
-            fprintf(stderr, "error: can't access Hammerspoon message port %s; is it running with the ipc module loaded?\n", _remoteName.UTF8String) ;
+            fprintf(stderr, "error: can't access Cosmic Hammer message port %s; is it running with the ipc module loaded?\n", _remoteName.UTF8String) ;
             _exitCode = EX_UNAVAILABLE ;
             [self cancel] ;
             return ;
@@ -227,7 +227,7 @@ static const char *portError(SInt32 code) {
             }
         }
         if (!newPort) {
-            fprintf(stderr, "error: can't access Hammerspoon; is it running?\n") ;
+            fprintf(stderr, "error: can't access Cosmic Hammer; is it running?\n") ;
             _exitCode = EX_UNAVAILABLE ;
             [self cancel] ;
             [self performSelector:@selector(poke:) onThread:self withObject:nil waitUntilDone:NO] ;
@@ -319,7 +319,7 @@ static const char *portError(SInt32 code) {
         NSError *error = nil ;
         [self sendToRemote:registration msgID:MSGID_REGISTER wantResponse:YES error:&error] ;
         if (error) {
-            fprintf(stderr, "error registering CLI instance with Hammerspoon: %s\n", portError((SInt32)error.code)) ;
+            fprintf(stderr, "error registering CLI instance with Cosmic Hammer: %s\n", portError((SInt32)error.code)) ;
             return NO ;
         }
     }
@@ -331,7 +331,7 @@ static const char *portError(SInt32 code) {
         NSError *error = nil ;
         [self sendToRemote:_localName msgID:MSGID_UNREGISTER wantResponse:NO error:&error] ;
         if (error) {
-            fprintf(stderr, "error unregistering CLI instance with Hammerspoon: %s (transport errors are normal if Hammerspoon is reloading)\n", portError((SInt32)error.code)) ;
+            fprintf(stderr, "error unregistering CLI instance with Cosmic Hammer: %s (transport errors are normal if Cosmic Hammer is reloading)\n", portError((SInt32)error.code)) ;
             return NO ;
         }
     }
@@ -342,7 +342,7 @@ static const char *portError(SInt32 code) {
     NSError *error ;
     NSData *response = [self sendToRemote:command msgID:(_localPort ? MSGID_COMMAND : MSGID_LEGACY) wantResponse:YES error:&error] ;
     if (error) {
-        fprintf(stderr, "error communicating with Hammerspoon: %s\n", portError((SInt32)error.code)) ;
+        fprintf(stderr, "error communicating with Cosmic Hammer: %s\n", portError((SInt32)error.code)) ;
         _exitCode = EX_UNAVAILABLE ;
         return NO ;
     } else {
@@ -424,20 +424,20 @@ static void printUsage(const char *cmd) {
     printf("\n") ;
     printf("usage: %s [arguments] [file]\n", cmd) ;
     printf("\n") ;
-    printf("    -A         Auto launch Hammerspoon if it is not currently running.  The default behavior is to prompt the user for confirmation before launching.\n") ;
-    printf("    -c cmd     Specifies a Hammerspoon command to execute. May be specified more than once and commands will be executed in the order they appear. Disables colorized output unless -N is present. Disables interactive mode unless -i is present. If -i is present or if stdin is a pipe, these commands will be executed first.\n") ;
-    printf("    -C         Enable print cloning from the Hammerspoon Console to this instance. Disables -P.\n") ;
+    printf("    -A         Auto launch Cosmic Hammer if it is not currently running.  The default behavior is to prompt the user for confirmation before launching.\n") ;
+    printf("    -c cmd     Specifies a Cosmic Hammer command to execute. May be specified more than once and commands will be executed in the order they appear. Disables colorized output unless -N is present. Disables interactive mode unless -i is present. If -i is present or if stdin is a pipe, these commands will be executed first.\n") ;
+    printf("    -C         Enable print cloning from the Cosmic Hammer Console to this instance. Disables -P.\n") ;
     printf("    -h         Displays this help and exits.\n") ;
     printf("    -i         Enable interactive mode. Default unless -c argument is present, stdin is a pipe, output is redirected, or if a file path is specified.\n") ;
     printf("    -m name    Specify the name of the remote port to connect to. Defaults to %s.\n", defaultPortName.UTF8String) ;
     printf("    -n         Disable colorized output. Automatic if stdin is a pipe, output is redirected, or if a file path is specified.\n") ;
     printf("    -N         Force colorized output even when it would normally not be enabled.\n") ;
-    printf("    -P         Enable print mirroring from this instance to the Hammerspoon Console. Disables -C.\n") ;
+    printf("    -P         Enable print mirroring from this instance to the Cosmic Hammer Console. Disables -C.\n") ;
     printf("    -q         Enable quiet mode.  In quiet mode, the only output to the instance will be errors and the final result of any command executed.\n") ;
     printf("    -s         Read stdin for the contents to execute and exit.  Included for backwards compatibility as this tool now detects when stdin is a pipe automatically. Disables colorized output unless -N is present. Disables interactive mode.\n") ;
     printf("    -t sec     Specifies the send and receive timeouts in seconds.  Defaults to %f seconds.\n", defaultTimeout) ;
     printf("    --         Ignore all arguments following, allowing custom arguments to be passed into the cli instance.\n") ;
-    printf("    /path/file Specifies a file containing Hammerspoon code to load and execute. Must start with  ~, ./, or / and be a file readable by the user.  Disables colorized output unless -N is present.  Disables interactive mode unless -i is present. Like --, all arguments after this are passed in unparsed.\n") ;
+    printf("    /path/file Specifies a file containing Cosmic Hammer code to load and execute. Must start with  ~, ./, or / and be a file readable by the user.  Disables colorized output unless -N is present.  Disables interactive mode unless -i is present. Like --, all arguments after this are passed in unparsed.\n") ;
     printf("\n") ;
     printf("Within the instance, all arguments passed to the %s executable are available as strings in the `_cli._args` array.  If the -- argument or a file path is present, that argument and all arguments that follow will be available as strings in the `_cli.args` array; otherwise the `_cli.args` array will be a mirror of `_cli._args`.\n", cmd) ;
     printf("\n") ;
@@ -564,8 +564,8 @@ int main()
                 NSAlert *alert = [[NSAlert alloc] init] ;
                 [alert addButtonWithTitle:@"Launch"] ;
                 [alert addButtonWithTitle:@"Cancel"] ;
-                alert.messageText = @"Hammerspoon is not running" ;
-                alert.informativeText = @"Hammerspoon is not running. Would you like to launch it now?" ;
+                alert.messageText = @"Cosmic Hammer is not running" ;
+                alert.informativeText = @"Cosmic Hammer is not running. Would you like to launch it now?" ;
 
                 NSString *imagePath = @"";
                 NSURL *url = [[NSWorkspace sharedWorkspace] URLForApplicationWithBundleIdentifier:(__bridge NSString *)hammerspoonBundle];
@@ -596,7 +596,7 @@ int main()
                 count++ ;
             }
             if (notReady) {
-                fprintf(stderr, "error: can't access Hammerspoon message port %s; is it running with the ipc module loaded?\n", portName.UTF8String) ;
+                fprintf(stderr, "error: can't access Cosmic Hammer message port %s; is it running with the ipc module loaded?\n", portName.UTF8String) ;
                 exit(EX_UNAVAILABLE) ;
             }
         }
@@ -698,13 +698,13 @@ int main()
             int  historyLimit = CFhistoryLimit ? [(__bridge_transfer NSNumber *)CFhistoryLimit intValue] : 1000 ;
 
             CFStringRef CFhsDir   = CFPreferencesCopyAppValue(CFSTR("MJConfigFile"), hammerspoonBundle) ;
-            NSString    *confFile = CFhsDir ? (__bridge_transfer NSString *)CFhsDir : @"~/.hammerspoon/init.lua" ;
+            NSString    *confFile = CFhsDir ? (__bridge_transfer NSString *)CFhsDir : @"~/.cosmic-hammer/init.lua" ;
             confFile = [[confFile substringToIndex:(confFile.length - 8)] stringByAppendingFormat:@".cli.history"] ;
             confFile = confFile.stringByExpandingTildeInPath ;
 
             if (saveHistory) read_history(confFile.UTF8String) ;
 
-            printf("%sHammerspoon interactive prompt.%s\n", core.colorBanner.UTF8String, core.colorReset.UTF8String) ;
+            printf("%sCosmic Hammer interactive prompt.%s\n", core.colorBanner.UTF8String, core.colorReset.UTF8String) ;
 
             rl_attempted_completion_function = hs_completion ;
             rl_completion_append_character = '\0' ; // no space after completion

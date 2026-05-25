@@ -45,8 +45,8 @@ function testAttributesFromBundleID()
 end
 
 function testBasicAttributes()
-  local appName = "Hammerspoon"
-  local bundleID = "org.hammerspoon.Hammerspoon"
+  local appName = "Cosmic Hammer"
+  local bundleID = "org.cosmic-hammer.CosmicHammer"
   local currentPID = hs.processInfo.processID
 
   assertIsNil(hs.application.applicationForPID(1))
@@ -208,10 +208,10 @@ function testWindowsValues()
 end
 
 function testMenus()
-  local app = hs.application.get("Hammerspoon")
+  local app = hs.application.get("Cosmic Hammer")
   local menus = app:getMenuItems()
   assertIsTable(menus)
-  assertIsEqual("Hammerspoon", menus[1]["AXTitle"])
+  assertIsEqual("Cosmic Hammer", menus[1]["AXTitle"])
 
   local item = app:findMenuItem({"Edit", "Cut"})
   assertIsTable(item)
@@ -237,7 +237,7 @@ function testMenus()
 end
 
 function testMenusAsync()
-  local app = hs.application.get("Hammerspoon")
+  local app = hs.application.get("Cosmic Hammer")
   local value = app:getMenuItems(function(menutable) menuTestValue = menutable end)
   assertIsUserdataOfType("hs.application", value)
   return success()
@@ -245,7 +245,7 @@ end
 
 function testMenusAsyncValues()
   assertIsTable(menuTestValue)
-  assertIsEqual("Hammerspoon", menuTestValue[1]["AXTitle"])
+  assertIsEqual("Cosmic Hammer", menuTestValue[1]["AXTitle"])
   return success()
 end
 

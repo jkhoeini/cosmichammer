@@ -306,7 +306,7 @@ private func toHSIPCMessagePortFromLua(_ L: UnsafeMutablePointer<lua_State>!, _ 
     return Unmanaged<HSIPCMessagePort>.fromOpaque(ptr).takeUnretainedValue()
 }
 
-// MARK: - Hammerspoon/Lua Infrastructure
+// MARK: - Cosmic Hammer/Lua Infrastructure
 
 private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)

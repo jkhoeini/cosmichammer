@@ -325,7 +325,7 @@ private func locale_registerCallback(_ L: UnsafeMutablePointer<lua_State>!) -> I
     return 0
 }
 
-// MARK: - Hammerspoon/Lua Infrastructure
+// MARK: - Cosmic Hammer/Lua Infrastructure
 
 private func meta_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)

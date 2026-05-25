@@ -748,7 +748,7 @@ end
 ---
 --- Notes:
 ---  * While you can customize the default windowfilter, it's usually advisable to make your customizations on a local copy via `mywf=hs.window.filter.new()`;
----    the default windowfilter can potentially be used in several Hammerspoon modules and changing it might have unintended consequences.
+---    the default windowfilter can potentially be used in several Cosmic Hammer modules and changing it might have unintended consequences.
 ---    Common customizations:
 ---    * to exclude fullscreen windows: `nofs_wf=hs.window.filter.new():setOverrideFilter{fullscreen=false}`
 ---    * to include invisible windows: `inv_wf=windowfilter.new():setDefaultFilter{}`
@@ -782,7 +782,7 @@ windowfilter.isGuiApp = function(appname)
   if not appname then return true
   elseif windowfilter.ignoreAlways[appname] then return false
   elseif ssub(appname,1,12)=='QTKitServer-' then return false
-    --  elseif appname=='Hammerspoon' then return false
+    --  elseif appname=='Cosmic Hammer' then return false
   else return true end
 end
 
@@ -1384,7 +1384,7 @@ appWindowEvent=function(win,event,_,pid,retry)
   end
   local appname = app:name()
   local role=win.subrole and win:subrole()
-  if appname=='Hammerspoon' and (not role or role=='AXUnknown') then return end
+  if appname=='Cosmic Hammer' and (not role or role=='AXUnknown') then return end
   local id = win.id and win:id()
   log.vf('%s (%s) <= %s (appwindow event)',appname,id or '?',event)
   if event==uiwatcher.windowCreated then
@@ -1494,7 +1494,7 @@ local spacesDone = {}
 ---  * Only use this function if "Displays have separate Spaces" and "Automatically rearrange Spaces" are OFF in System Preferences>Mission Control
 ---  * Calling this function will set `hs.window.filter.forceRefreshOnSpaceChange` to `false`
 ---  * If you defined one or more Spaces-aware windowfilters (i.e. when the `currentSpace` field of a filter is present), windows need refreshing at every space change anyway, so using this callback will not result in improved performance
----  * See `hs.window.filter.forceRefreshOnSpaceChange` for an overview of Spaces limitations in Hammerspoon. If you often (or always) change Space via the "numbered" Mission Control keyboard shortcuts (by default, `ctrl-1` etc.), you can call this function from your `init.lua` when intercepting these shortcuts; for example:
+---  * See `hs.window.filter.forceRefreshOnSpaceChange` for an overview of Spaces limitations in Cosmic Hammer. If you often (or always) change Space via the "numbered" Mission Control keyboard shortcuts (by default, `ctrl-1` etc.), you can call this function from your `init.lua` when intercepting these shortcuts; for example:
 ---  ```
 ---  hs.hotkey.bind('ctrl','1',nil,function()hs.window.filter.switchedToSpace(1)end)
 ---  hs.hotkey.bind('ctrl','2',nil,function()hs.window.filter.switchedToSpace(2)end)
@@ -1523,7 +1523,7 @@ end
 --- Variable
 --- Tells all windowfilters whether to refresh all windows when the user switches to a different Mission Control Space.
 ---
---- Due to OS X limitations Hammerspoon cannot directly query for windows in Spaces other than the current one;
+--- Due to OS X limitations Cosmic Hammer cannot directly query for windows in Spaces other than the current one;
 --- therefore when a windowfilter is initially instantiated, it doesn't know about many of these windows.
 ---
 --- If this variable is set to `true`, windowfilters will re-query applications for all their windows whenever a Space change
@@ -2092,8 +2092,8 @@ local function makeDefault()
     for appname in pairs(windowfilter.ignoreInDefaultFilter) do
       defaultwf:rejectApp(appname)
     end
-    defaultwf:setAppFilter('Hammerspoon',{allowTitles={'Preferences','Console'},allowRoles='AXStandardWindow'})
-    --    defaultwf:rejectApp'Hammerspoon'
+    defaultwf:setAppFilter('Cosmic Hammer',{allowTitles={'Preferences','Console'},allowRoles='AXStandardWindow'})
+    --    defaultwf:rejectApp'Cosmic Hammer'
     defaultwf:setDefaultFilter{visible=true}
     defaultwf.log.i('default windowfilter instantiated')
   end

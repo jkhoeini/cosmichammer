@@ -17,7 +17,7 @@ private var colorCollectionsTable: Int32 = LUA_NOREF
 ///
 /// Notes:
 ///  * Where possible, each color node is provided as its RGB color representation.  Where this is not possible, the color node contains the keys `list` and `name` which identify the indicated color.  This means that you can use the following wherever a color parameter is expected: `hs.drawing.color.lists()["list-name"]["color-name"]`
-///  * This function provides a tostring metatable method which allows listing the defined color lists in the Hammerspoon console with: `hs.drawing.color.lists()`
+///  * This function provides a tostring metatable method which allows listing the defined color lists in the Cosmic Hammer console with: `hs.drawing.color.lists()`
 ///  * See also `hs.drawing.color.colorsFor`
 private func getColorLists(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)

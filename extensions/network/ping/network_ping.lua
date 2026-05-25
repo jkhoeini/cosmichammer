@@ -359,7 +359,7 @@ end
 ---  * For convenience, you can call this constructor as `hs.network.ping(server, ...)`
 ---  * the full ping process will take at most `count` * `interval` + `timeout` seconds from `didStart` to `didFinish`.
 ---
----  * the default callback function, if `fn` is not specified, prints the results of each echo reply as they are received to the Hammerspoon console and a summary once completed. The output should be familiar to anyone who has used `ping` from the command line.
+---  * the default callback function, if `fn` is not specified, prints the results of each echo reply as they are received to the Cosmic Hammer console and a summary once completed. The output should be familiar to anyone who has used `ping` from the command line.
 ---
 ---  * If you provide your own callback function, it should expect between 2 and 4 arguments and return none. The possible arguments which are sent will be one of the following:
 ---

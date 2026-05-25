@@ -1,9 +1,9 @@
 //
 //  HSbase64.m
-//  Hammerspoon
+//  Cosmic Hammer
 //
 //  Created by Chris Jones on 10/02/2016.
-//  Copyright © 2016 Hammerspoon. All rights reserved.
+//  Copyright © 2016 Cosmic Hammer. All rights reserved.
 //
 
 #import "HSTestCase.h"

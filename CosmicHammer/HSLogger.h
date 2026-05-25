@@ -1,9 +1,9 @@
 //
 //  HSLogger.h
-//  Hammerspoon
+//  Cosmic Hammer
 //
 //  Created by Chris Jones on 22/01/2018.
-//  Copyright © 2018 Hammerspoon. All rights reserved.
+//  Copyright © 2018 Cosmic Hammer. All rights reserved.
 //
 
 #import <LuaSkin/LuaSkin.h>

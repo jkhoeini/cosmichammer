@@ -1228,7 +1228,7 @@ static int db_create_collation(lua_State *L) {
 
 /* Thanks to Wolfgang Oertl...
 */
-/* NOTE:(cmsj) This is disabled in Hammerspoon as Apple's libsqlite3.dylib does not include extension loading support
+/* NOTE:(cmsj) This is disabled in Cosmic Hammer as Apple's libsqlite3.dylib does not include extension loading support
 static int db_load_extension(lua_State *L) {
     sdb *db=lsqlite_checkdb(L,1);
     const char *extname=luaL_optstring(L,2,NULL);
@@ -2252,7 +2252,7 @@ static const luaL_Reg dblib[] = {
     {"create_function",     db_create_function      },
     {"create_aggregate",    db_create_aggregate     },
     {"create_collation",    db_create_collation     },
-//    {"load_extension",      db_load_extension       }, NOTE:(cmsj) This is disabled in Hammerspoon as Apple's libsqlite3.dylib does not include extension loading support
+//    {"load_extension",      db_load_extension       }, NOTE:(cmsj) This is disabled in Cosmic Hammer as Apple's libsqlite3.dylib does not include extension loading support
 
     {"trace",               db_trace                },
     {"progress_handler",    db_progress_handler     },

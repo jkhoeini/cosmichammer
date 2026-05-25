@@ -1,6 +1,6 @@
 //
 //  HShttp.m
-//  Hammerspoon
+//  Cosmic Hammer
 //
 //  Created by Alex Chen on 08/21/2022.
 

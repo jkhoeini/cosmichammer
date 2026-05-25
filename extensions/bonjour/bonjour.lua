@@ -1,7 +1,7 @@
 
 --- === hs.bonjour ===
 ---
---- Find and publish network services advertised by multicast DNS (Bonjour) with Hammerspoon.
+--- Find and publish network services advertised by multicast DNS (Bonjour) with Cosmic Hammer.
 ---
 --- This module will allow you to discover services advertised on your network through multicast DNS and publish services offered by your computer.
 
@@ -9,7 +9,7 @@
 ---
 --- Represents the service records that are discovered or published by the hs.bonjour module.
 ---
---- This module allows you to explore the details of discovered services including ip addresses and text records, and to publish your own multicast DNS advertisements for services on your computer. This can be useful to advertise network services provided by other Hammerspoon modules or other applications on your computer which do not publish their own advertisements already.
+--- This module allows you to explore the details of discovered services including ip addresses and text records, and to publish your own multicast DNS advertisements for services on your computer. This can be useful to advertise network services provided by other Cosmic Hammer modules or other applications on your computer which do not publish their own advertisements already.
 ---
 --- This module will *not* allow you to publish proxy records for other hosts on your local network.
 --- Additional submodules which may address this limitation as well as provide additional functions available with Apple's dns-sd library are being considered but there is no estimated timeframe at present.
@@ -171,7 +171,7 @@ end
 ---
 --- Parameters:
 ---  * `callback` - a callback function which will be invoked when the services query has completed. The callback should expect one argument: an array of strings specifying the service types discovered on the local network.
----  * `timeout`  - an optional number, default 5, specifying the maximum number of seconds after the most recently received service type Hammerspoon should wait trying to identify advertised service types before finishing its query and invoking the callback.
+---  * `timeout`  - an optional number, default 5, specifying the maximum number of seconds after the most recently received service type Cosmic Hammer should wait trying to identify advertised service types before finishing its query and invoking the callback.
 ---
 --- Returns:
 ---  * None
@@ -252,7 +252,7 @@ end
 --- Notes:
 ---  * This list was generated from the output of `avahi-browse -b` and `avahi-browse -bk` from the avahi-daemon/stable,now 0.7-4+b1 armhf package under Raspbian GNU/Linux 10.
 ---  * This list is by no means complete and is provided solely for the purposes of providing examples. Additional service types can be discovered quite easily using Google or other search engines.
----  * You can view the contents of this table in the Hammerspoon Console by entering `require("hs.bonjour").serviceTypes` into the input field.
+---  * You can view the contents of this table in the Cosmic Hammer Console by entering `require("hs.bonjour").serviceTypes` into the input field.
 module.serviceTypes = ls.makeConstantsTable({
     ["PulseAudio Sound Server"]                     = "_pulse-server._tcp.",
     ["PostgreSQL Server"]                           = "_postgresql._tcp.",

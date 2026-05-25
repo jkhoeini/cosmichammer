@@ -270,7 +270,7 @@ private struct httpserver_t {
     }
 
     override func sslIdentityAndCertificates() -> [Any]! {
-        guard let identity = MYGetOrCreateAnonymousIdentity("Hammerspoon HTTP Server", 20 * kMYAnonymousIdentityDefaultExpirationInterval) else {
+        guard let identity = MYGetOrCreateAnonymousIdentity("Cosmic Hammer HTTP Server", 20 * kMYAnonymousIdentityDefaultExpirationInterval) else {
             NSLog("ERROR: Unable to find/generate a certificate")
             return nil
         }
@@ -315,7 +315,7 @@ private struct httpserver_t {
 /// Notes:
 ///  * By default, the server will start on a random TCP port and advertise itself with Bonjour. You can check the port with `hs.httpserver:getPort()`
 ///  * By default, the server will listen on all network interfaces. You can override this with `hs.httpserver:setInterface()` before starting the server
-///  * Currently, in HTTPS mode, the server will use a self-signed certificate, which most browsers will warn about. If you want/need to be able to use `hs.httpserver` with a certificate signed by a trusted Certificate Authority, please file an bug on Hammerspoon requesting support for this.
+///  * Currently, in HTTPS mode, the server will use a self-signed certificate, which most browsers will warn about. If you want/need to be able to use `hs.httpserver` with a certificate signed by a trusted Certificate Authority, please file an bug on Cosmic Hammer requesting support for this.
 private func httpserver_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TBOOLEAN | LS_TOPTIONAL, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
@@ -447,7 +447,7 @@ private func httpserver_setCallback(_ L: UnsafeMutablePointer<lua_State>!) -> In
 ///  * If a new size is specified, returns the `hs.httpserver` object; otherwise the current value.
 ///
 /// Notes:
-///  * Because the Hammerspoon http server processes incoming requests completely in memory, this method puts a limit on the maximum size for a POST or PUT request.
+///  * Because the Cosmic Hammer http server processes incoming requests completely in memory, this method puts a limit on the maximum size for a POST or PUT request.
 private func httpserver_maxBodySize(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TNUMBER | LS_TINTEGER | LS_TOPTIONAL, LS_TBREAK)

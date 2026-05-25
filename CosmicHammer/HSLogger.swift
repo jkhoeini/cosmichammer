@@ -1,9 +1,9 @@
 //
 //  HSLogger.swift
-//  Hammerspoon
+//  Cosmic Hammer
 //
 //  Created by Mohammad Sadegh Khoeini on 15/05/2026.
-//  Copyright © 2026 Hammerspoon. All rights reserved.
+//  Copyright © 2026 Cosmic Hammer. All rights reserved.
 //
 
 import Foundation

@@ -1,6 +1,6 @@
 --- === hs.canvas ===
 ---
---- A different approach to drawing in Hammerspoon
+--- A different approach to drawing in Cosmic Hammer
 ---
 --- `hs.canvas` approaches graphical images as independent primitives, each "shape" being a separate drawing object based on the core primitives: ellipse, rectangle, point, line, text, etc.  This model works well with graphical elements that are expected to be managed individually and don't have complex clipping interactions, but does not scale well when more complex combinations or groups of drawing elements need to be moved or manipulated as a group, and only allows for simple inclusionary clipping regions.
 ---
@@ -296,7 +296,7 @@ end
 ---  * The canvas object
 ---
 --- Notes:
----  * As of macOS Sierra and later, if you want a `hs.canvas` object to appear above full-screen windows you must hide the Hammerspoon Dock icon first using: `hs.dockicon.hide()`
+---  * As of macOS Sierra and later, if you want a `hs.canvas` object to appear above full-screen windows you must hide the Cosmic Hammer Dock icon first using: `hs.dockicon.hide()`
 canvasMT.bringToFront = function(obj, ...)
     local args = table.pack(...)
 
@@ -627,7 +627,7 @@ end
 ---
 --- Attributes which have a string specified as their `id` attribute can also be accessed as if the `id` where a `key` in the table-like canvas: e.g. `a.part2.action = "skip"`
 ---
---- It is important to note that these methods are a convenience and that the canvas object is not a true table.  The tables are generated dynamically as needed; as such `hs.inspect` cannot properly display them; however, you can just type in the element or element attribute you wish to see expanded in the Hammerspoon console (or in a `print` command) to see the assigned attributes, e.g. `a[1]` or `a[2].fillColor`, and an inspect-like output will be provided.
+--- It is important to note that these methods are a convenience and that the canvas object is not a true table.  The tables are generated dynamically as needed; as such `hs.inspect` cannot properly display them; however, you can just type in the element or element attribute you wish to see expanded in the Cosmic Hammer console (or in a `print` command) to see the assigned attributes, e.g. `a[1]` or `a[2].fillColor`, and an inspect-like output will be provided.
 ---
 --- Attributes which allow using a string to specify a percentage (see [percentages](#percentages)) can also be retrieved as their actual number for the canvas's current size by appending `_raw` to the attribute name, e.g. `a[2].frame_raw`.
 ---
@@ -721,7 +721,7 @@ end
 ---  * `attribute` - an optional string specifying an element attribute. If this argument is not provided, all attributes are listed.
 ---
 --- Returns:
----  * a string containing some of the information provided by the [hs.canvas.elementSpec](#elementSpec) in a manner that is easy to reference from the Hammerspoon console.
+---  * a string containing some of the information provided by the [hs.canvas.elementSpec](#elementSpec) in a manner that is easy to reference from the Cosmic Hammer console.
 module.help = function(what)
     local help = module.elementSpec()
     if what and help[what] then what, help = nil, help[what] end

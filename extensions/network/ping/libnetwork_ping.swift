@@ -525,7 +525,7 @@ private let echoRequest_sendPayload: lua_CFunction = { L in
     if payload == nil {
         let padLen = max(0, 56 - 24 - USERDATA_TAG.count)
         let padStr = String(repeating: " ", count: padLen)
-        let defaultPayload = String(format: "Hammerspoon %s %s0x%04x:%04x", USERDATA_TAG, padStr, pinger.identifier, pinger.nextSequenceNumber)
+        let defaultPayload = String(format: "Cosmic Hammer %s %s0x%04x:%04x", USERDATA_TAG, padStr, pinger.identifier, pinger.nextSequenceNumber)
         payload = defaultPayload.data(using: .ascii)
     }
 
@@ -631,7 +631,7 @@ private func toPingableObjectFromLua(_ L: UnsafeMutablePointer<lua_State>!, _ id
     return nil
 }
 
-// MARK: - Hammerspoon/Lua Infrastructure
+// MARK: - Cosmic Hammer/Lua Infrastructure
 
 private let userdata_tostring: lua_CFunction = { L in
     let skin = LuaSkin.skin(with: L)

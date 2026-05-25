@@ -1,4 +1,4 @@
-# Hammerspoon Spoon Plugins Documentation
+# Cosmic Hammer Spoon Plugins Documentation
 
 * [What is a Spoon?](#what-is-a-spoon)
 * [Where do I get Spoons from?](#where-do-i-get-spoons-from)
@@ -23,14 +23,14 @@
 
 ## What is a Spoon?
 
-Spoons are intended to be pure-Lua plugins for users to use in their Hammerspoon configs.
+Spoons are intended to be pure-Lua plugins for users to use in their Cosmic Hammer configs.
 
-As a community, we have created many great configurations for Hammerspoon, but sharing code between them is hard and fragile. Spoons have been created as a way to address these issues.
+As a community, we have created many great configurations for Cosmic Hammer, but sharing code between them is hard and fragile. Spoons have been created as a way to address these issues.
 Users should be able to download a Spoon and quickly integrate it into their config without worrying about what it is doing internally.
 
 This is possible because of two things:
 
- * Infrastructure within Hammerspoon for loading Lua code from Spoons
+ * Infrastructure within Cosmic Hammer for loading Lua code from Spoons
  * The authors of Spoons sticking, wherever possible, to a standard API for users to use
 
 ## Where do I get Spoons from?
@@ -39,23 +39,23 @@ The official repository of Spoons is [https://www.hammerspoon.org/Spoons](https:
 
 ## How do I install a Spoon?
 
-Spoons should be distributed as `.zip` files. Simply download one, uncompress it (if your browser hasn't done that part automatically) and double click on the Spoon. Hammerspoon will install it for you in `~/.hammerspoon/Spoons/`
+Spoons should be distributed as `.zip` files. Simply download one, uncompress it (if your browser hasn't done that part automatically) and double click on the Spoon. Cosmic Hammer will install it for you in `~/.cosmic-hammer/Spoons/`
 
 ## How do I use a Spoon?
 
 There are two parts to this, loading the spoon, and integrating it into your configuration.
-Hopefully the Spoon came with some documentation, either on its homepage or in `~/.hammerspoon/Spoons/NAME.spoon`. There you should find some documentation of the API offered by the Spoon, and any special requirements it has.
+Hopefully the Spoon came with some documentation, either on its homepage or in `~/.cosmic-hammer/Spoons/NAME.spoon`. There you should find some documentation of the API offered by the Spoon, and any special requirements it has.
 
 ### Loading a Spoon
 
-For most Spoons, simply add `hs.loadSpoon("NAME")` to your Hammerspoon config (note that `NAME` should *not* include the `.spoon` extension). This will make the spoon available in the global Lua namespace as `spoon.NAME`.
+For most Spoons, simply add `hs.loadSpoon("NAME")` to your Cosmic Hammer config (note that `NAME` should *not* include the `.spoon` extension). This will make the spoon available in the global Lua namespace as `spoon.NAME`.
 
 After loading a Spoon, you are responsible for calling its `start()` method if it has one before using it.
 
 Note that `hs.loadSpoon()` uses `package.path` to find Spoons. Hence you can have it look for Spoons in other paths by adding those paths to `package.path` as follows:
 
 ```lua
--- Look for Spoons in ~/.hammerspoon/MySpoons as well
+-- Look for Spoons in ~/.cosmic-hammer/MySpoons as well
 package.path = package.path .. ";" ..  hs.configdir .. "/MySpoons/?.spoon/init.lua"
 ```
 
@@ -92,7 +92,7 @@ Many Spoons will offer additional API points on top of these, and you should con
 
 Ultimately a Spoon can be as little as a directory whose name ends `.spoon`, with an `init.lua` inside it.
 
-However, Spoons offer the most value to users of Hammerspoon when they conform to an API convention, allowing users to interact with all of their Spoons in very similar ways.
+However, Spoons offer the most value to users of Cosmic Hammer when they conform to an API convention, allowing users to interact with all of their Spoons in very similar ways.
 
 ### API Conventions
 
@@ -103,11 +103,11 @@ However, Spoons offer the most value to users of Hammerspoon when they conform t
 
 #### Initialisation
 
-When a user calls `hs.loadSpoon()`, Hammerspoon will load and execute `init.lua` from the relevant Spoon.
+When a user calls `hs.loadSpoon()`, Cosmic Hammer will load and execute `init.lua` from the relevant Spoon.
 
 You should generally not perform any work, map any hotkeys, start any timers/watchers/etc. in the main scope of your `init.lua`. Instead, it should simply prepare an object with methods to be used later, then return the object.
 
-If the object you return has an `:init()` method, Hammerspoon will call it automatically (although users can override this behaviour, so be sure to document your `:init()` method).
+If the object you return has an `:init()` method, Cosmic Hammer will call it automatically (although users can override this behaviour, so be sure to document your `:init()` method).
 
 In the `:init()` method, you should do any work that is necessary to prepare resources for later use, although generally you should not be starting any timers/watchers/etc. or mapping any hotkeys here.
 
@@ -167,7 +167,7 @@ You can present any other methods you want, and while they are all technically a
 
 #### Writing
 
-Spoon methods/variables/etc. should be documented using the same docstring format that Hammerspoon uses for its own API. An example of a method for adding a USB device to a Spoon that takes actions when USB devices are connected, might look like this:
+Spoon methods/variables/etc. should be documented using the same docstring format that Cosmic Hammer uses for its own API. An example of a method for adding a USB device to a Spoon that takes actions when USB devices are connected, might look like this:
 
 ```lua
 --- USBObserver:addDevice(vendorID, productID[, name])
@@ -183,12 +183,12 @@ Spoon methods/variables/etc. should be documented using the same docstring forma
 ---  * A boolean, true if the device was added, otherwise false
 ```
 
-By convention in Hammerspoon, methods tend to return the object they belong to (so methods can be chained, e.g. `foo:bar():baz()`), but this isn't always appropriate.
+By convention in Cosmic Hammer, methods tend to return the object they belong to (so methods can be chained, e.g. `foo:bar():baz()`), but this isn't always appropriate.
 
 #### Generating
 
-Several tools are able to operate on the docstrings used by Hammerspoon and Spoons. In the simplest case, each Spoon should include a `docs.json` file which is little more than the various docstrings collected together.
-This file can be generated using the Hammerspoon command line tool (see [https://www.hammerspoon.org/docs/hs.ipc.html#cliInstall](https://www.hammerspoon.org/docs/hs.ipc.html#cliInstall)):
+Several tools are able to operate on the docstrings used by Cosmic Hammer and Spoons. In the simplest case, each Spoon should include a `docs.json` file which is little more than the various docstrings collected together.
+This file can be generated using the Cosmic Hammer command line tool (see [https://www.hammerspoon.org/docs/hs.ipc.html#cliInstall](https://www.hammerspoon.org/docs/hs.ipc.html#cliInstall)):
 
 ```bash
 cd /path/too/your/Spoon
@@ -200,7 +200,7 @@ Any Spoons that are submitted to the official Spoons repository will have their 
 If you also want to generate HTML/Markdown versions of your documentation for your own purposes:
 
  * Clone [https://github.com/Hammerspoon/hammerspoon](https://github.com/Hammerspoon/hammerspoon)
- * Install the required Python dependencies (e.g. `pip install --user -r requirements.txt` in the Hammerspoon repo)
+ * Install the required Python dependencies (e.g. `pip install --user -r requirements.txt` in the Cosmic Hammer repo)
  * Then in your Spoon's directory, run:
 
 ```bash

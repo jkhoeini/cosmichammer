@@ -1,9 +1,9 @@
 //
 //  HSinspect.m
-//  Hammerspoon
+//  Cosmic Hammer
 //
 //  Created by David Peterson on 18-Oct-2018.
-//  Copyright © 2016 Hammerspoon. All rights reserved.
+//  Copyright © 2016 Cosmic Hammer. All rights reserved.
 //
 
 #import "HSTestCase.h"
@@ -29,7 +29,7 @@
 }
 
 /* - cmsj disabled this test because it doesn't work:
- 2018-12-27 11:20:52.584907+0100 Hammerspoon[23984:1758686] Test returned: ...s/Hammerspoon Tests.xctest/Contents/Resources/lsunit.lua:27: Assertion failure: expected: '{a = "b"}', actual: '{
+ 2018-12-27 11:20:52.584907+0100 Cosmic Hammer[23984:1758686] Test returned: ...s/Cosmic Hammer Tests.xctest/Contents/Resources/lsunit.lua:27: Assertion failure: expected: '{a = "b"}', actual: '{
  a = nil
  }'
  

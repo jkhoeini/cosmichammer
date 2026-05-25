@@ -2,6 +2,6 @@ comment:
   layout: header, changes, diff
 coverage:
   ignore:
-  - HammerspoonUITests/.*
+  - CosmicHammerUITests/.*
   - Packages/LuaSkin/Sources/LuaSkin/lua-5.4/.*
 

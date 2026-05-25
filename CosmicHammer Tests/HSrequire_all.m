@@ -1,9 +1,9 @@
 //
-//  Hammerspoon_Tests.m
-//  Hammerspoon Tests
+//  Cosmic Hammer_Tests.m
+//  Cosmic Hammer Tests
 //
 //  Created by Peter van Dijk on 28/10/14.
-//  Copyright (c) 2014 Hammerspoon. All rights reserved.
+//  Copyright (c) 2014 Cosmic Hammer. All rights reserved.
 //
 
 #import "HSTestCase.h"
@@ -30,7 +30,7 @@
     NSString *res = [self runLua:@"return testrequires()"];
     NSArray *errors = [res componentsSeparatedByCharactersInSet:[NSCharacterSet characterSetWithCharactersInString:@"💩"]];
 
-    // If Hammerspoon is already running, hs.ipc will fail to load, so let's filter that error out if it exists.
+    // If Cosmic Hammer is already running, hs.ipc will fail to load, so let's filter that error out if it exists.
     NSArray *filteredErrors = [errors filteredArrayUsingPredicate:[NSPredicate predicateWithFormat:@"NOT (SELF contains 'failed to create new local port') AND NOT (SELF == '')"]];
 
     XCTAssertEqual(0, filteredErrors.count, @"Some modules failed to load: %@", filteredErrors);

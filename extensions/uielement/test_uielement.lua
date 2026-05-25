@@ -19,7 +19,7 @@ function getConsole()
   return hs.uielement.focusedElement()
 end
 
-function testHammerspoonElements()
+function testCosmicHammerElements()
   local consoleElem = getConsole()
   local consoleElem2 = getConsole()
 
@@ -43,8 +43,8 @@ function testHammerspoonElements()
   assertFalse(consoleElem==prefsElem)
   assertTrue(consoleElem==consoleElem2)
 
-  assertTrue(hs.window.find("Hammerspoon Console"):close())
-  assertTrue(hs.window.find("Hammerspoon Preferences"):close())
+  assertTrue(hs.window.find("Cosmic Hammer Console"):close())
+  assertTrue(hs.window.find("Cosmic Hammer Preferences"):close())
 
   return success()
 end

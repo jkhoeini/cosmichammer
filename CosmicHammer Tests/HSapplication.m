@@ -1,9 +1,9 @@
 //
 //  HSapplication.m
-//  Hammerspoon
+//  Cosmic Hammer
 //
 //  Created by Michael Bujol on 13/04/2016.
-//  Copyright © 2016 Hammerspoon. All rights reserved.
+//  Copyright © 2016 Cosmic Hammer. All rights reserved.
 //
 
 #import "HSTestCase.h"

@@ -5,7 +5,7 @@ local owMT = debug.getregistry()[USERDATA_TAG]
 
 -- private variables and methods -----------------------------------------
 
--- copied from `hs.fnutils` to keep this file independent of Hammerspoon
+-- copied from `hs.fnutils` to keep this file independent of Cosmic Hammer
 -- sorts a key-value table by the keys and returns an iterator function usable by the lua `for` command
 local _sortByKeys = function(t, f)
   -- a default, simple comparison that treats keys as strings only if their types differ
@@ -149,7 +149,7 @@ ls.deprecationWarning = function(module, name, message, fn)
     end
     assert(type(fn) == "function" or (getmetatable(fn) or {}).__call, "expected function for argument 4")
 
-    -- use math.random instead of hs.host.uuid to keep this non hammerspoon specific
+    -- use math.random instead of hs.host.uuid to keep this non Cosmic Hammer specific
     local uniqueKey = math.random(1000000)
     while type(warningsIssued[uniqueKey]) ~= "nil" do uniqueKey = math.random(1000000) end
 

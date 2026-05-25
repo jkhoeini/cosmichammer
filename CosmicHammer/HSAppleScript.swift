@@ -1,9 +1,9 @@
 //
 //  HSAppleScript.swift
-//  Hammerspoon
+//  Cosmic Hammer
 //
 //  Ported from HSAppleScript.m by Mohammad Sadegh Khoeini.
-//  Copyright © 2017 Hammerspoon. All rights reserved.
+//  Copyright © 2017 Cosmic Hammer. All rights reserved.
 //
 
 import Foundation
@@ -81,9 +81,9 @@ private func HSAppleScriptRunString(_ command: String, errorFor cmd: NSScriptCom
 
 // MARK: - NSScriptCommand subclass
 
-/// Handles the AppleScript `execute` verb for Hammerspoon.
+/// Handles the AppleScript `execute` verb for Cosmic Hammer.
 /// The class name `executeLua` must match the `cocoa class` attribute in
-/// `Hammerspoon.sdef`, so it is exposed to the Objective-C runtime under that
+/// `Cosmic Hammer.sdef`, so it is exposed to the Objective-C runtime under that
 /// exact name via `@objc(executeLua)`.
 @objc(executeLua)
 final class executeLua: NSScriptCommand {

@@ -7,7 +7,7 @@
 ---
 --- Your computer must have network access for the geocoder object to return detailed placemark information and is rate limited.  Geocoding requests are rate-limited, so making too many requests in a short period of time may cause some of the requests to fail with a network error.
 ---
---- Use of this module does not require Location Services to be enabled for Hammerspoon.
+--- Use of this module does not require Location Services to be enabled for Cosmic Hammer.
 ---
 --- A `placemarkTable` is returned to the callback functions used by the constructor methods of this module.  These tables may contain one or more of the following keys:
 ---  * `addressDictionary`     - a table containing key-value pairs for the components of the address for the placemark

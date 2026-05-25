@@ -580,7 +580,7 @@ private func axuielement_getElementAtPosition(_ L: UnsafeMutablePointer<lua_Stat
 ///  * the current value of the parameterized attribute, nil if the parameterized attribute has no value, or nil and an error string if an accessibility error occurred
 ///
 /// Notes:
-///  * The specific parameter required for a each parameterized attribute is different and is often application specific thus requiring some experimentation. Notes regarding identified parameter types and thoughts on some still being investigated will be provided in the Hammerspoon Wiki, hopefully shortly after this module becomes part of a Hammerspoon release.
+///  * The specific parameter required for a each parameterized attribute is different and is often application specific thus requiring some experimentation. Notes regarding identified parameter types and thoughts on some still being investigated will be provided in the Cosmic Hammer Wiki, hopefully shortly after this module becomes part of a Cosmic Hammer release.
 private func axuielement_getParameterizedAttributeValue(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING, LS_TANY, LS_TBREAK)
@@ -732,7 +732,7 @@ private func axuielement_setTimeout(_ L: UnsafeMutablePointer<lua_State>!) -> In
 ///
 /// Notes:
 ///  * This table is provided for reference only and is not intended to be comprehensive.
-///  * You can view the contents of this table from the Hammerspoon console by typing in `hs.axuielement.attributes`
+///  * You can view the contents of this table from the Cosmic Hammer console by typing in `hs.axuielement.attributes`
 private func axuielement_pushAttributesTable(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
     lua_newtable(L)
@@ -912,9 +912,9 @@ private func axuielement_pushAttributesTable(_ L: UnsafeMutablePointer<lua_State
 ///
 /// Notes:
 ///  * this table is provided for reference only and is not intended to be comprehensive.
-///  * you can view the contents of this table from the Hammerspoon console by typing in `hs.axuielement.parameterizedAttributes`
+///  * you can view the contents of this table from the Cosmic Hammer console by typing in `hs.axuielement.parameterizedAttributes`
 ///  * Parameterized attributes are attributes that take an argument when querying the element. There is very little documentation available for most of these and application developers can implement their own for which we may never be able to get any documentation. This table contains parameterized attribute names that are defined within the Apple documentation and a few others that have been discovered.
-///  * Documentation covering what has been discovered through experimentation about parameterized attributes is planned and should be added to the Hammerspoon wiki shortly after this module becomes part of a formal release.
+///  * Documentation covering what has been discovered through experimentation about parameterized attributes is planned and should be added to the Cosmic Hammer wiki shortly after this module becomes part of a formal release.
 private func axuielement_pushParameterizedAttributesTable(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
     lua_newtable(L)
@@ -942,7 +942,7 @@ private func axuielement_pushParameterizedAttributesTable(_ L: UnsafeMutablePoin
 ///
 /// Notes:
 ///  * this table is provided for reference only and is not intended to be comprehensive.
-///  * you can view the contents of this table from the Hammerspoon console by typing in `hs.axuielement.actions`
+///  * you can view the contents of this table from the Cosmic Hammer console by typing in `hs.axuielement.actions`
 private func axuielement_pushActionsTable(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
     lua_newtable(L)
@@ -966,7 +966,7 @@ private func axuielement_pushActionsTable(_ L: UnsafeMutablePointer<lua_State>!)
 ///
 /// Notes:
 ///  * this table is provided for reference only and is not intended to be comprehensive.
-///  * you can view the contents of this table from the Hammerspoon console by typing in `hs.axuielement.roles`
+///  * you can view the contents of this table from the Cosmic Hammer console by typing in `hs.axuielement.roles`
 private func axuielement_pushRolesTable(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
     lua_newtable(L)
@@ -1040,7 +1040,7 @@ private func axuielement_pushRolesTable(_ L: UnsafeMutablePointer<lua_State>!) -
 ///
 /// Notes:
 ///  * this table is provided for reference only and is not intended to be comprehensive.
-///  * you can view the contents of this table from the Hammerspoon console by typing in `hs.axuielement.subroles`
+///  * you can view the contents of this table from the Cosmic Hammer console by typing in `hs.axuielement.subroles`
 private func axuielement_pushSubrolesTable(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
     lua_newtable(L)
@@ -1097,7 +1097,7 @@ private func axuielement_pushSubrolesTable(_ L: UnsafeMutablePointer<lua_State>!
 ///
 /// Notes:
 ///  * this table is provided for reference only and may not be comprehensive.
-///  * you can view the contents of this table from the Hammerspoon console by typing in `hs.axuielement.orientations`
+///  * you can view the contents of this table from the Cosmic Hammer console by typing in `hs.axuielement.orientations`
 private func axuielement_pushOrientationsTable(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
     lua_newtable(L)
@@ -1113,7 +1113,7 @@ private func axuielement_pushOrientationsTable(_ L: UnsafeMutablePointer<lua_Sta
 ///
 /// Notes:
 ///  * this table is provided for reference only and may not be comprehensive.
-///  * you can view the contents of this table from the Hammerspoon console by typing in `hs.axuielement.sortDirections`
+///  * you can view the contents of this table from the Cosmic Hammer console by typing in `hs.axuielement.sortDirections`
 private func axuielement_pushSortDirectionsTable(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
     lua_newtable(L)
@@ -1129,7 +1129,7 @@ private func axuielement_pushSortDirectionsTable(_ L: UnsafeMutablePointer<lua_S
 ///
 /// Notes:
 ///  * this table is provided for reference only and may not be comprehensive.
-///  * you can view the contents of this table from the Hammerspoon console by typing in `hs.axuielement.rulerMarkers`
+///  * you can view the contents of this table from the Cosmic Hammer console by typing in `hs.axuielement.rulerMarkers`
 private func axuielement_pushRulerMarkerTypesTable(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
     lua_newtable(L)
@@ -1150,7 +1150,7 @@ private func axuielement_pushRulerMarkerTypesTable(_ L: UnsafeMutablePointer<lua
 ///
 /// Notes:
 ///  * this table is provided for reference only and may not be comprehensive.
-///  * you can view the contents of this table from the Hammerspoon console by typing in `hs.axuielement.units`
+///  * you can view the contents of this table from the Cosmic Hammer console by typing in `hs.axuielement.units`
 private func axuielement_pushUnitsTable(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
     lua_newtable(L)
@@ -1162,7 +1162,7 @@ private func axuielement_pushUnitsTable(_ L: UnsafeMutablePointer<lua_State>!) -
     return 1
 }
 
-// MARK: - Hammerspoon/Lua Infrastructure
+// MARK: - Cosmic Hammer/Lua Infrastructure
 
 private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)

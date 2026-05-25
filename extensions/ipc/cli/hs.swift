@@ -3,9 +3,9 @@ import Foundation
 import Darwin.sysexits
 import CEditline
 
-private let defaultPortName = "Hammerspoon"
+private let defaultPortName = "Cosmic Hammer"
 private let defaultTimeout: CFTimeInterval = 4.0
-private let bundleID = "org.hammerspoon.Hammerspoon" as CFString
+private let bundleID = "org.cosmic-hammer.CosmicHammer" as CFString
 
 private enum MsgID: Int32 {
     case legacy     =   0
@@ -78,7 +78,7 @@ private final class HSClient {
     func connect() -> Bool {
         remotePort = CFMessagePortCreateRemote(nil, remoteName as CFString)
         guard remotePort != nil else {
-            fputs("error: can't access Hammerspoon message port \(remoteName); is it running with the ipc module loaded?\n", stderr)
+            fputs("error: can't access Cosmic Hammer message port \(remoteName); is it running with the ipc module loaded?\n", stderr)
             exitCode = EX_UNAVAILABLE
             return false
         }
@@ -182,7 +182,7 @@ private final class HSClient {
                 if registerWithRemote() { fputs("Re-established.\n", stderr); return }
             }
         }
-        fputs("error: can't access Hammerspoon; is it running?\n", stderr)
+        fputs("error: can't access Cosmic Hammer; is it running?\n", stderr)
         exitCode = EX_UNAVAILABLE
     }
 }
@@ -255,12 +255,12 @@ private func portError(_ code: Int32) -> String {
     }
 }
 
-private func launchHammerspoon(auto: Bool) -> Bool {
+private func launchCosmicHammer(auto: Bool) -> Bool {
     if !auto {
         let alert = NSAlert()
         alert.addButton(withTitle: "Launch")
         alert.addButton(withTitle: "Cancel")
-        alert.messageText = "Hammerspoon is not running"
+        alert.messageText = "Cosmic Hammer is not running"
         alert.informativeText = "Would you like to launch it now?"
         if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID as String) {
             alert.icon = NSWorkspace.shared.icon(forFile: url.path)
@@ -296,7 +296,7 @@ private func printUsage(_ cmd: String) {
 
     usage: \(cmd) [arguments] [file]
 
-        -A         Auto launch Hammerspoon if not running.
+        -A         Auto launch Cosmic Hammer if not running.
         -c cmd     Execute a command. May be specified multiple times.
         -C         Clone console output to this instance.
         -h         Show this help.
@@ -393,9 +393,9 @@ struct HSCli {
         let running = !NSRunningApplication.runningApplications(withBundleIdentifier: bundleID as String).isEmpty
         if !running {
             if exitIfNoHS { exit(EX_TEMPFAIL) }
-            if !launchHammerspoon(auto: autoLaunch) { exit(EX_UNAVAILABLE) }
+            if !launchCosmicHammer(auto: autoLaunch) { exit(EX_UNAVAILABLE) }
             guard waitForPort(portName) else {
-                fputs("error: can't access Hammerspoon; is it running with ipc loaded?\n", stderr)
+                fputs("error: can't access Cosmic Hammer; is it running with ipc loaded?\n", stderr)
                 exit(EX_UNAVAILABLE)
             }
         }
@@ -445,12 +445,12 @@ struct HSCli {
 
             let saveHistory = (CFPreferencesCopyAppValue("ipc.cli.saveHistory" as CFString, bundleID) as? Bool) ?? false
             let historyLimit: Int32 = (CFPreferencesCopyAppValue("ipc.cli.historyLimit" as CFString, bundleID) as? NSNumber)?.int32Value ?? 1000
-            let confDir = (CFPreferencesCopyAppValue("MJConfigFile" as CFString, bundleID) as? String ?? "~/.hammerspoon/init.lua")
+            let confDir = (CFPreferencesCopyAppValue("MJConfigFile" as CFString, bundleID) as? String ?? "~/.cosmic-hammer/init.lua")
                 .replacingOccurrences(of: "init.lua", with: ".cli.history")
             let historyPath = NSString(string: confDir).expandingTildeInPath
 
             if saveHistory { read_history(historyPath) }
-            print("\(client.colors.banner)Hammerspoon interactive prompt.\(client.colors.reset)")
+            print("\(client.colors.banner)Cosmic Hammer interactive prompt.\(client.colors.reset)")
 
             rl_attempted_completion_function = completionHandler
             rl_completion_append_character = 0

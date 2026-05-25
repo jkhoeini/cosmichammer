@@ -307,7 +307,7 @@ end
 ---  * A function
 ---
 --- Notes:
----  * This is best understood with an example which you can test in the Hammerspoon console:
+---  * This is best understood with an example which you can test in the Cosmic Hammer console:
 ---
 ---    Create the function `a` which has it's initial arguments set to `1,2,3`:
 ---       a = hs.fnutils.partial(function(...) return table.pack(...) end, 1, 2, 3)

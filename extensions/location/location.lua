@@ -3,7 +3,7 @@
 ---
 --- Determine the machine's location and useful information about that location
 ---
---- This module provides functions for getting current location information and tracking location changes. It expands on the earlier version of the module by adding the ability to create independent locationObjects which can enable/disable location tracking independent of other uses of Location Services by Hammerspoon, adds region monitoring for exit and entry, and adds the retrieval of geocoding information through the `hs.location.geocoder` submodule.
+--- This module provides functions for getting current location information and tracking location changes. It expands on the earlier version of the module by adding the ability to create independent locationObjects which can enable/disable location tracking independent of other uses of Location Services by Cosmic Hammer, adds region monitoring for exit and entry, and adds the retrieval of geocoding information through the `hs.location.geocoder` submodule.
 ---
 --- This module is backwards compatible with its predecessor with the following changes:
 ---  * [hs.location.get](#get) - no longer requires that you invoke [hs.location.start](#start) before using this function. The information returned will be the last cached value, which is updated internally whenever additional WiFi networks are detected or lost (not necessarily joined). When update tracking is enabled with the [hs.location.start](#start) function, calculations based upon the RSSI of all currently seen networks are preformed more often to provide a more precise fix, but it's still based on the WiFi networks near you. In many cases, the value retrieved when the WiFi state is changed should be sufficiently accurate.
@@ -108,7 +108,7 @@ local __dispatch = function(msg, ...)
     end
 end
 local registerCallback = module._registerCallback
-module._registerCallback = nil -- not needed again until/unless Hammerspoon restarted
+module._registerCallback = nil -- not needed again until/unless Cosmic Hammer restarted
 registerCallback(__dispatch)
 
 -- note, will choke on recursion and ignores metatables
@@ -187,7 +187,7 @@ end
 ---  * True if the operation succeeded, otherwise false
 ---
 --- Notes:
----  * This function activates Location Services for Hammerspoon, so the first time you call this, you may be prompted to authorise Hammerspoon to use Location Services.
+---  * This function activates Location Services for Cosmic Hammer, so the first time you call this, you may be prompted to authorise Cosmic Hammer to use Location Services.
 module.start = function()
     local result = true
     -- if startedFor is empty, then start
@@ -220,7 +220,7 @@ end
 
 --- hs.location.new() -> locationObject
 --- Constructor
---- Create a new location object which can receive callbacks independent of other Hammerspoon use of Location Services.
+--- Create a new location object which can receive callbacks independent of other Cosmic Hammer use of Location Services.
 ---
 --- Parameters:
 ---  * None
@@ -268,7 +268,7 @@ end
 ---  * the locationObject
 ---
 --- Notes:
----  * This function activates Location Services for Hammerspoon, so the first time you call this, you may be prompted to authorise Hammerspoon to use Location Services.
+---  * This function activates Location Services for Cosmic Hammer, so the first time you call this, you may be prompted to authorise Cosmic Hammer to use Location Services.
 objectMT.startTracking = function(self)
     local result = true
     -- if startedFor is empty, then start
@@ -305,10 +305,10 @@ end
 ---  * None
 ---
 --- Returns:
----  * the distance the specified location is from the current location in meters or nil if Location Services cannot be enabled for Hammerspoon. The measurement is made by tracing a line that follows an idealised curvature of the earth
+---  * the distance the specified location is from the current location in meters or nil if Location Services cannot be enabled for Cosmic Hammer. The measurement is made by tracing a line that follows an idealised curvature of the earth
 ---
 --- Notes:
----  * This function activates Location Services for Hammerspoon, so the first time you call this, you may be prompted to authorise Hammerspoon to use Location Services.
+---  * This function activates Location Services for Cosmic Hammer, so the first time you call this, you may be prompted to authorise Cosmic Hammer to use Location Services.
 objectMT.distanceFrom = function(self, ...)
     local current = self:get()
     if current then
@@ -326,10 +326,10 @@ end
 ---  * None
 ---
 --- Returns:
----  * if Location Services can be enabled for Hammerspoon, returns a table containing regionTables for each region which is being monitored for this locationObject; otherwise nil
+---  * if Location Services can be enabled for Cosmic Hammer, returns a table containing regionTables for each region which is being monitored for this locationObject; otherwise nil
 ---
 --- Notes:
----  * This method activates Location Services for Hammerspoon, so the first time you call this, you may be prompted to authorise Hammerspoon to use Location Services.
+---  * This method activates Location Services for Cosmic Hammer, so the first time you call this, you may be prompted to authorise Cosmic Hammer to use Location Services.
 local monitoredRegions = module._monitoredRegions
 objectMT.monitoredRegions = function(self)
     local regions = monitoredRegions()
@@ -366,7 +366,7 @@ end
 ---  * if the region table was able to be added to Location Services for monitoring, returns the locationObject; otherwise returns nil
 ---
 --- Notes:
----  * This method activates Location Services for Hammerspoon, so the first time you call this, you may be prompted to authorise Hammerspoon to use Location Services.
+---  * This method activates Location Services for Cosmic Hammer, so the first time you call this, you may be prompted to authorise Cosmic Hammer to use Location Services.
 ---  * If the `identifier` key is not provided, a new UUID string is generated and used as the identifier.
 ---  * If the `identifier` key matches an already monitored region, this region will replace the existing one.
 local addMonitoredRegion = module._addMonitoredRegion
@@ -411,10 +411,10 @@ end
 ---  * `identifier` - a string which should contain the identifier of the region to remove from monitoring
 ---
 --- Returns:
----  * if the region identifier matches a currently monitored region, returns the locationObject; if it does not match a currently monitored region, returns false; returns nil if an error occurs or if Location Services is not currently active (no function or method which activates Location Services has been invoked yet) or enabled for Hammerspoon.
+---  * if the region identifier matches a currently monitored region, returns the locationObject; if it does not match a currently monitored region, returns false; returns nil if an error occurs or if Location Services is not currently active (no function or method which activates Location Services has been invoked yet) or enabled for Cosmic Hammer.
 ---
 --- Notes:
----  * This method activates Location Services for Hammerspoon, so the first time you call this, you may be prompted to authorise Hammerspoon to use Location Services.
+---  * This method activates Location Services for Cosmic Hammer, so the first time you call this, you may be prompted to authorise Cosmic Hammer to use Location Services.
 ---  * If the `identifier` key is not provided, a new UUID string is generated and used as the identifier.
 ---  * If the `identifier` key matches an already monitored region, this region will replace the existing one.
 local removeMonitoredRegion = module._removeMonitoredRegion
@@ -441,10 +441,10 @@ module._removeMonitoredRegion = nil -- not supported in legacy mode, so hide fro
 ---  * None
 ---
 --- Returns:
----  * the string identifier for the region that the current location is within, or nil if the current location is not within a currently monitored region or location services cannot be enabled for Hammerspoon.
+---  * the string identifier for the region that the current location is within, or nil if the current location is not within a currently monitored region or location services cannot be enabled for Cosmic Hammer.
 ---
 --- Notes:
----  * This method activates Location Services for Hammerspoon, so the first time you call this, you may be prompted to authorise Hammerspoon to use Location Services.
+---  * This method activates Location Services for Cosmic Hammer, so the first time you call this, you may be prompted to authorise Cosmic Hammer to use Location Services.
 objectMT.currentRegion = function(self)
     local location, regions = self:location(), self:monitoredRegions()
     local currentRegion, currentRadius = nil, math.huge
@@ -466,7 +466,7 @@ end
 ---  * a function, or nil to remove the current function, which will be invoked as a callback for messages generated by this locationObject.  The callback function should expect 3 or 4 arguments as follows:
 ---    * the locationObject itself
 ---    * a string specifying the message generated by the locationObject:
----      * "didChangeAuthorizationStatus" - the user has changed the authorization status for Hammerspoon's use of Location Services.  The third argument will be a string as described in the [hs.location.authorizationStatus](#authorizationStatus) function.
+---      * "didChangeAuthorizationStatus" - the user has changed the authorization status for Cosmic Hammer's use of Location Services.  The third argument will be a string as described in the [hs.location.authorizationStatus](#authorizationStatus) function.
 ---      * "didUpdateLocations"           - the current location has changed or been refined.  This message will only occur if location tracking has been enabled with [hs.location:startTracking](#startTracking). The third argument will be a table containing one or more locationTables as array elements.  The most recent location update is contained in the last element of the array.
 ---      * "didFailWithError"             - there was an error retrieving location information. The third argument will be a string describing the error that occurred.
 ---      * "didStartMonitoringForRegion"  - a new region has successfully been added to the regions being monitored.  The third argument will be the regionTable for the region which was just added.
@@ -503,8 +503,8 @@ end
 ---  * If successful, a locationTable as described in the module header, otherwise nil.
 ---
 --- Notes:
----  * This function activates Location Services for Hammerspoon, so the first time you call this, you may be prompted to authorise Hammerspoon to use Location Services.
----  * If access to Location Services is enabled for Hammerspoon, this function will return the most recent cached data for the computer's location.
+---  * This function activates Location Services for Cosmic Hammer, so the first time you call this, you may be prompted to authorise Cosmic Hammer to use Location Services.
+---  * If access to Location Services is enabled for Cosmic Hammer, this function will return the most recent cached data for the computer's location.
 ---    * Internally, the Location Services cache is updated whenever additional WiFi networks are detected or lost (not necessarily joined). When update tracking is enabled with the [hs.location.start](#start) function, calculations based upon the RSSI of all currently seen networks are preformed more often to provide a more precise fix, but it's still based on the WiFi networks near you.
 objectMT.location = function()
     return module.get()

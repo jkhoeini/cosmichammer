@@ -1,18 +1,18 @@
 --- === hs.urlevent ===
 ---
---- Allows Hammerspoon to respond to URLs
---- Hammerspoon is configured to react to URLs that start with `hammerspoon://` when they are opened by OS X.
+--- Allows Cosmic Hammer to respond to URLs
+--- Cosmic Hammer is configured to react to URLs that start with `hammerspoon://` when they are opened by OS X.
 --- This extension allows you to register callbacks for these URL events and their parameters, offering a flexible way to receive events from other applications.
 ---
---- You can also choose to make Hammerspoon the default for `http://` and `https://` URLs, which lets you route the URLs in your Lua code
+--- You can also choose to make Cosmic Hammer the default for `http://` and `https://` URLs, which lets you route the URLs in your Lua code
 ---
 --- Given a URL such as `hammerspoon://someEventToHandle?someParam=things&otherParam=stuff`, in the literal, RFC1808 sense of the URL, `someEventToHandle` is the hostname (or net_loc) of the URL, but given that these are not network resources, we consider `someEventToHandle` to be the name of the event. No path should be specified in the URL - it should consist purely of a hostname and, optionally, query parameters.
 ---
 --- See also `hs.ipc` for a command line IPC mechanism that is likely more appropriate for shell scripts or command line use. Unlike `hs.ipc`, `hs.urlevent` is not able to return any data to its caller.
 ---
---- NOTE: If Hammerspoon is not running when a `hammerspoon://` URL is opened, Hammerspoon will be launched, but it will not react to the URL event. Nor will it react to any events until this extension is loaded and event callbacks have been bound.
---- NOTE: Any event which is received, for which no callback has been bound, will be logged to the Hammerspoon Console
---- NOTE: When you trigger a URL from another application, it is usually best to have the URL open in the background, if that option is available. Otherwise, OS X will activate Hammerspoon (i.e. give it focus), which makes URL events difficult to use for things like window management.
+--- NOTE: If Cosmic Hammer is not running when a `hammerspoon://` URL is opened, Cosmic Hammer will be launched, but it will not react to the URL event. Nor will it react to any events until this extension is loaded and event callbacks have been bound.
+--- NOTE: Any event which is received, for which no callback has been bound, will be logged to the Cosmic Hammer Console
+--- NOTE: When you trigger a URL from another application, it is usually best to have the URL open in the background, if that option is available. Otherwise, OS X will activate Cosmic Hammer (i.e. give it focus), which makes URL events difficult to use for things like window management.
 
 local log = require'hs.logger'.new('urlevent')
 local urlevent = require "hs.liburlevent"
@@ -50,7 +50,7 @@ local function urlEventCallback(scheme, event, params, fullURL, senderPID)
 	local hsScheme = string.lower(string.sub(bundleID, (string.find(bundleID, "%.[^%.]*$")) + 1))
     if (scheme == "http" or scheme == "https" or scheme == "file") then
         if not urlevent.httpCallback then
-            log.ef("Hammerspoon is configured for http(s):// URLs, but no http callback has been set")
+            log.ef("Cosmic Hammer is configured for http(s):// URLs, but no http callback has been set")
         else
             local ok, err = xpcall(function() return urlevent.httpCallback(scheme, event, params, fullURL, senderPID) end, debug.traceback)
             if not ok then
@@ -59,7 +59,7 @@ local function urlEventCallback(scheme, event, params, fullURL, senderPID)
         end
     elseif (scheme == "mailto") then
         if not urlevent.mailtoCallback then
-            log.ef("Hammerspoon is configured for mailto URLs, but no mailtoCallback has been set")
+            log.ef("Cosmic Hammer is configured for mailto URLs, but no mailtoCallback has been set")
         else
             local ok, err = xpcall(function() return urlevent.mailtoCallback(scheme, event, params, fullURL, senderPID) end, debug.traceback)
             if not ok then
@@ -80,7 +80,7 @@ local function urlEventCallback(scheme, event, params, fullURL, senderPID)
             end
         end
     else
-        log.ef("Hammerspoon has been passed a %s URL, but does not know how to handle it", scheme)
+        log.ef("Cosmic Hammer has been passed a %s URL, but does not know how to handle it", scheme)
     end
 end
 urlevent.setCallback(urlEventCallback)

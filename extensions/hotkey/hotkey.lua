@@ -263,7 +263,7 @@ end
 ---  * if the hotkey combination is not in use by the operating system, returns the boolean value `false`
 ---
 --- Notes:
----  * this is provided for informational purposes and does not provide a reliable test as to whether or not Hammerspoon can use the combination to create a custom hotkey -- some combinations which return a table can be over-ridden by Hammerspoon while others cannot.  See also [hs.hotkey.assignable](#assignable).
+---  * this is provided for informational purposes and does not provide a reliable test as to whether or not Cosmic Hammer can use the combination to create a custom hotkey -- some combinations which return a table can be over-ridden by Cosmic Hammer while others cannot.  See also [hs.hotkey.assignable](#assignable).
 local originalSystemAssigned = hotkey.systemAssigned
 function hotkey.systemAssigned(mods, key)
   local keycode = getKeycode(key)
@@ -273,7 +273,7 @@ end
 
 --- hs.hotkey.assignable(mods, key) -> boolean
 --- Function
---- Determines whether the hotkey combination can be assigned a callback through Hammerspoon.
+--- Determines whether the hotkey combination can be assigned a callback through Cosmic Hammer.
 ---
 --- Parameters:
 ---  * mods - A table or a string containing (as elements, or as substrings with any separator) the keyboard modifiers required,
@@ -285,10 +285,10 @@ end
 ---  * key - A string containing the name of a keyboard key (as found in [hs.keycodes.map](hs.keycodes.html#map) ), or a raw keycode number
 ---
 --- Returns:
----  * a boolean value, true if the hotkey combination can be given an assignment by Hammerspoon or false if it cannot.
+---  * a boolean value, true if the hotkey combination can be given an assignment by Cosmic Hammer or false if it cannot.
 ---
 --- Notes:
----  * The most common reason a hotkey combination cannot be given an assignment by Hammerspoon is because it is in use by the Mac operating system -- see the Shortcuts tab of Keyboard in the System Preferences application or [hs.hotkey.systemAssigned](#systemAssigned).
+---  * The most common reason a hotkey combination cannot be given an assignment by Cosmic Hammer is because it is in use by the Mac operating system -- see the Shortcuts tab of Keyboard in the System Preferences application or [hs.hotkey.systemAssigned](#systemAssigned).
 function hotkey.assignable(mods, key)
     local k = hotkey.new(mods, key, function() end)
     local prevLevel = hs.luaSkinLog.level

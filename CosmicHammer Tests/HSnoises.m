@@ -1,9 +1,9 @@
 //
 //  HSnoises.m
-//  Hammerspoon
+//  Cosmic Hammer
 //
 //  Created by Tristan Hume on 2016-07-15.
-//  Copyright © 2016 Hammerspoon. All rights reserved.
+//  Copyright © 2016 Cosmic Hammer. All rights reserved.
 //
 
 #import "HSTestCase.h"

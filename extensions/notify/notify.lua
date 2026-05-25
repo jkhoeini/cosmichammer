@@ -3,9 +3,9 @@
 ---
 --- This module allows you to create on screen notifications in the User Notification Center located at the right of the users screen.
 ---
---- Notifications can be sent immediately or scheduled for delivery at a later time, even if that scheduled time occurs when Hammerspoon is not currently running. Currently, if you take action on a notification while Hammerspoon is not running, the callback function is not honored for the first notification clicked upon -- This is expected to be fixed in a future release.
+--- Notifications can be sent immediately or scheduled for delivery at a later time, even if that scheduled time occurs when Cosmic Hammer is not currently running. Currently, if you take action on a notification while Cosmic Hammer is not running, the callback function is not honored for the first notification clicked upon -- This is expected to be fixed in a future release.
 ---
---- When setting up a callback function, you have the option of specifying it with the creation of the notification (hs.notify.new) or by pre-registering it with hs.notify.register and then referring it to by the tag name specified with hs.notify.register. If you use this registration method for defining your callback functions, and make sure to register all expected callback functions within your init.lua file or files it includes, then callback functions will remain available for existing notifications in the User Notification Center even if Hammerspoon's configuration is reloaded or if Hammerspoon is restarted. If the callback tag is not present when the user acts on the notification, the Hammerspoon console will be raised as a default action.
+--- When setting up a callback function, you have the option of specifying it with the creation of the notification (hs.notify.new) or by pre-registering it with hs.notify.register and then referring it to by the tag name specified with hs.notify.register. If you use this registration method for defining your callback functions, and make sure to register all expected callback functions within your init.lua file or files it includes, then callback functions will remain available for existing notifications in the User Notification Center even if Cosmic Hammer's configuration is reloaded or if Cosmic Hammer is restarted. If the callback tag is not present when the user acts on the notification, the Cosmic Hammer console will be raised as a default action.
 ---
 --- A shorthand, based upon the original inspiration for this module from Hydra and Mjolnir, hs.notify.show, is provided if you just require a quick and simple informative notification without the bells and whistles.
 ---
@@ -73,7 +73,7 @@ module.warnAboutMissingFunctionTag = true
 ---    * subTitle        - see [hs.notify:subTitle](#subTitle)
 ---    * title           - see [hs.notify:title](#title)
 ---    * setIdImage      - see [hs.notify:setIdImage](#setIdImage) -- note the border will automatically be set to false if assigned as an attribute in this table.
----   * The following can also be set, but will only have an apparent effect on the notification when the user has set Hammerspoon's notification style to "Alert" in the Notification Center panel of System Preferences:
+---   * The following can also be set, but will only have an apparent effect on the notification when the user has set Cosmic Hammer's notification style to "Alert" in the Notification Center panel of System Preferences:
 ---    * actionButtonTitle           - see [hs.notify:actionButtonTitle](#actionButtonTitle)
 ---    * hasActionButton             - see [hs.notify:hasActionButton](#hasActionButton)
 ---    * otherButtonTitle            - see [hs.notify:otherButtonTitle](#otherButtonTitle)
@@ -257,7 +257,7 @@ module.unregisterall = function()
 --- Notes:
 ---  * This table should not be modified directly. Use the `hs.notify.register(tag, fn)` and `hs.notify.unregister(id)` functions.
 ---  * This table has a __tostring metamethod so you can see the list of registered function tags in the console by typing `hs.notify.registry`
----  * See [hs.notify.warnAboutMissingFunctionTag](#warnAboutMissingFunctionTag) for determining the behavior when a notification attempts to perform a callback to a function tag which is not present in this table. This occurrence is most common with notifications which are acted upon by the user after Hammerspoon has been reloaded.
+---  * See [hs.notify.warnAboutMissingFunctionTag](#warnAboutMissingFunctionTag) for determining the behavior when a notification attempts to perform a callback to a function tag which is not present in this table. This occurrence is most common with notifications which are acted upon by the user after Cosmic Hammer has been reloaded.
 module.registry = setmetatable({ { emptyFunctionPlaceholder, function(_) end } }, {
     __tostring = function(_)
       local result = ""
@@ -308,7 +308,7 @@ end
 
 --- hs.notify:setIdImage(image[, withBorder]) -> notificationObject
 --- Method
---- Set a notification's identification image (replace the Hammerspoon icon with a custom image)
+--- Set a notification's identification image (replace the Cosmic Hammer icon with a custom image)
 ---
 --- Parameters:
 ---  * image - An `hs.image` object, a string containing an image path, or a string defining an ASCIImage

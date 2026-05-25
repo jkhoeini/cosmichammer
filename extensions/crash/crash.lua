@@ -1,6 +1,6 @@
 --- === hs.crash ===
 ---
---- Various features/facilities for developers who are working on Hammerspoon itself, or writing extensions for it. It is extremely unlikely that you should need any part of this extension, in a normal user configuration.
+--- Various features/facilities for developers who are working on Cosmic Hammer itself, or writing extensions for it. It is extremely unlikely that you should need any part of this extension, in a normal user configuration.
 
 local crash = require "hs.libcrash"
 
@@ -39,7 +39,7 @@ end
 
 --- hs.crash.attemptMemoryRelease()
 --- Function
---- Attempts to reduce RAM usage of Hammerspoon
+--- Attempts to reduce RAM usage of Cosmic Hammer
 ---
 --- Parameters:
 ---  * None
@@ -48,7 +48,7 @@ end
 ---  * None
 ---
 --- Notes:
----  * This function will print some memory usage numbers (in bytes) to the Hammerspoon Console before and after forcing Lua's garbage collector
+---  * This function will print some memory usage numbers (in bytes) to the Cosmic Hammer Console before and after forcing Lua's garbage collector
 crash.attemptMemoryRelease = function()
     print("Process resident size: "..crash.residentSize())
     print("Lua state size: "..math.floor(collectgarbage("count")*1024))

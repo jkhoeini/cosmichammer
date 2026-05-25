@@ -66,7 +66,7 @@ function testTitle()
   local win = hs.window.focusedWindow()
   local title = win:title()
   assertIsString(title)
-  assertIsEqual("Hammerspoon Console", win:title())
+  assertIsEqual("Cosmic Hammer Console", win:title())
   assertIsString(tostring(win))
   return success()
 end
@@ -186,8 +186,8 @@ end
 
 function testFullscreenOneSetup()
   hs.openConsole()
-  local win = hs.window.get("Hammerspoon Console")
-  assertIsEqual(win:title(), "Hammerspoon Console")
+  local win = hs.window.get("Cosmic Hammer Console")
+  assertIsEqual(win:title(), "Cosmic Hammer Console")
   assertFalse(win:isFullScreen())
 
   win:setFullScreen(true)
@@ -196,8 +196,8 @@ function testFullscreenOneSetup()
 end
 
 function testFullscreenOneResult()
-  local win = hs.window.get("Hammerspoon Console")
-  assertIsEqual(win:title(), "Hammerspoon Console")
+  local win = hs.window.get("Cosmic Hammer Console")
+  assertIsEqual(win:title(), "Cosmic Hammer Console")
   assertTrue(win:isFullScreen())
   win:setFullScreen(false)
   assertFalse(win:isFullScreen())
@@ -207,14 +207,14 @@ end
 
 function testFullscreenTwoSetup()
   hs.openConsole()
-  local win = hs.window.get("Hammerspoon Console")
+  local win = hs.window.get("Cosmic Hammer Console")
   win:toggleZoom()
 
   return success()
 end
 
 function testFullscreenTwoResult()
-  local win = hs.window.get("Hammerspoon Console")
+  local win = hs.window.get("Cosmic Hammer Console")
   assertTrue(win:isFullScreen())
   win:setFullScreen(false)
   assertFalse(win:isFullScreen())

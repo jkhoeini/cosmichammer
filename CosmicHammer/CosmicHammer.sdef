@@ -24,7 +24,7 @@
 
     </suite>
 
-    <!-- HAMMERSPOON SUITE -->
+    <!-- COSMIC HAMMER SUITE -->
     <suite name="Cosmic Hammer Suite" code="CsHm" description="Cosmic Hammer-specific classes.">
 
         <!-- EXECUTE LUA CODE -->

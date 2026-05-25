@@ -1,9 +1,9 @@
 //
 //  HShotkey.m
-//  Hammerspoon Tests
+//  Cosmic Hammer Tests
 //
 //  Created by Chris Jones on 06/05/2021.
-//  Copyright © 2021 Hammerspoon. All rights reserved.
+//  Copyright © 2021 Cosmic Hammer. All rights reserved.
 //
 
 #import "HSTestCase.h"

@@ -3,7 +3,7 @@
 //  LuaSkin
 //
 //  Created by Chris Jones on 11/06/2015.
-//  Copyright (c) 2015 Hammerspoon Project Authors. All rights reserved.
+//  Copyright (c) 2015 Cosmic Hammer Project Authors. All rights reserved.
 //
 
 #import "Skin.h"
@@ -176,11 +176,11 @@ static NSMutableSet *_sharedWarnings ;
 
     if (fname) {
         if (![_sharedWarnings containsObject:fname]) {
-            [LuaSkin logWarn:[NSString stringWithFormat:@"Deprecated LuaSkin method [LuaSkin shared] invoked by `%@`. Please notify developer of module to upgrade as this method is unsafe for use with coroutines and may disappear in a future Hammerspoon release.", fname]] ;
+            [LuaSkin logWarn:[NSString stringWithFormat:@"Deprecated LuaSkin method [LuaSkin shared] invoked by `%@`. Please notify developer of module to upgrade as this method is unsafe for use with coroutines and may disappear in a future Cosmic Hammer release.", fname]] ;
             [_sharedWarnings addObject:fname] ;
         }
     } else {
-        [LuaSkin logWarn:@"Deprecated LuaSkin method [LuaSkin shared] invoked but unable to determine source library. Notify Hammerspoon developers and include the following stack trace:"] ;
+        [LuaSkin logWarn:@"Deprecated LuaSkin method [LuaSkin shared] invoked but unable to determine source library. Notify Cosmic Hammer developers and include the following stack trace:"] ;
         [LuaSkin logWarn:[[NSThread callStackSymbols] componentsJoinedByString:@"\r"]] ;
     }
 
@@ -294,7 +294,7 @@ static NSMutableSet *_sharedWarnings ;
         luaSkinLua = [[NSBundle mainBundle] pathForResource:@"luaskin" ofType:@"lua" inDirectory:@"extensions/hs"];
     }
     if (!luaSkinLua) {
-        catastropheText = @"createLuaState was unable to find luaskin.lua. Please re-install Hammerspoon";
+        catastropheText = @"createLuaState was unable to find luaskin.lua. Please re-install Cosmic Hammer";
         goto catastrophe;
     }
 
@@ -302,13 +302,13 @@ static NSMutableSet *_sharedWarnings ;
 
     loadresult = luaL_loadfile(LuaSkin.mainLuaState, luaSkinLua.fileSystemRepresentation); // extend _G["ls"]
     if (loadresult != 0) {
-        catastropheText = @"createLuaState was unable to load luaskin.lua. Please re-install Hammerspoon";
+        catastropheText = @"createLuaState was unable to load luaskin.lua. Please re-install Cosmic Hammer";
         goto catastrophe;
     }
 
     luaresult = lua_pcall(LuaSkin.mainLuaState, 0, 0, 0);
     if (luaresult != LUA_OK) {
-        catastropheText = @"createLuaState was unable to evaluate luaskin.lua. Please re-install Hammerspoon";
+        catastropheText = @"createLuaState was unable to evaluate luaskin.lua. Please re-install Cosmic Hammer";
         goto catastrophe;
     }
 

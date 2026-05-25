@@ -247,7 +247,7 @@ end
 ---  * The first trigger will be set to the earliest occurrence given the `repeatInterval`; if that's omitted,
 ---    and `time` is earlier than the current time, the timer will trigger the next day. If the repeated interval
 ---    results in exactly 24 hours you can schedule regular jobs that will run at the expected time independently
----    of when Hammerspoon was restarted/reloaded. E.g.:
+---    of when Cosmic Hammer was restarted/reloaded. E.g.:
 ---    * If it's 19:00, `hs.timer.doAt("20:00",somefn)` will set the timer 1 hour from now
 ---    * If it's 21:00, `hs.timer.doAt("20:00",somefn)` will set the timer 23 hours from now
 ---    * If it's 21:00, `hs.timer.doAt("20:00","6h",somefn)` will set the timer 5 hours from now (at 02:00)

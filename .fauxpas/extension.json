@@ -22,9 +22,9 @@
     // "Warning" / "Error" / "Fatal" / "None")
     //"minErrorStatusSeverity": "Error",
     // Xcode workspace to build project with (File path)
-    "workspace": "Hammerspoon.xcworkspace",
+    "workspace": "CosmicHammer.xcworkspace",
     // Xcode scheme to build project with (String)
-    "scheme": "Hammerspoon",
+    "scheme": "CosmicHammer",
     // Number of concurrent file checking jobs (Positive integer)
     "numConcurrentJobs": null,
     // Additional compiler arguments to use (Array of strings)

@@ -1,9 +1,9 @@
 //
 //  HSfs.m
-//  Hammerspoon
+//  Cosmic Hammer
 //
 //  Created by Michael Bujol on 03/01/2016.
-//  Copyright © 2016 Hammerspoon. All rights reserved.
+//  Copyright © 2016 Cosmic Hammer. All rights reserved.
 //
 
 #import "HSTestCase.h"

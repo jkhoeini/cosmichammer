@@ -4,9 +4,9 @@
 ///
 /// This module provides GitHub-Flavored-Markdown conversion support used by hs.doc.  This module is a Lua wrapper to the C code portion of the Ruby gem `github-markdown`, available at https://rubygems.org/gems/github-markdown/versions/0.6.9.
 ///
-/// The Ruby gem `github-markdown` was chosen as the code base for this module because it is the tool used to generate the official Hammerspoon Dash docset.
+/// The Ruby gem `github-markdown` was chosen as the code base for this module because it is the tool used to generate the official Cosmic Hammer Dash docset.
 ///
-/// The Lua wrapper portion is licensed under the MIT license by the Hammerspoon development team.  The C code portion of the Ruby gem is licensed under the MIT license by GitHub, Inc.
+/// The Lua wrapper portion is licensed under the MIT license by the Cosmic Hammer development team.  The C code portion of the Ruby gem is licensed under the MIT license by GitHub, Inc.
 
 import Foundation
 import LuaSkin
@@ -349,7 +349,7 @@ private func markdown_convert(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 1
 }
 
-// MARK: - Hammerspoon/Lua Infrastructure
+// MARK: - Cosmic Hammer/Lua Infrastructure
 
 private var moduleLib: [luaL_Reg] = [
     luaL_Reg(name: ("convert" as NSString).utf8String, func: markdown_convert),

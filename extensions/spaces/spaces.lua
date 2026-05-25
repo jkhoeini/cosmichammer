@@ -3,7 +3,7 @@
 ---
 --- This module provides some basic functions for controlling macOS Spaces.
 ---
---- The functionality provided by this module is considered experimental and subject to change. By using a combination of private APIs and Accessibility hacks (via hs.axuielement), some basic functions for controlling the use of Spaces is possible with Hammerspoon, but there are some limitations and caveats.
+--- The functionality provided by this module is considered experimental and subject to change. By using a combination of private APIs and Accessibility hacks (via hs.axuielement), some basic functions for controlling the use of Spaces is possible with Cosmic Hammer, but there are some limitations and caveats.
 ---
 --- It should be noted that while the functions provided by this module have worked for some time in third party applications and in a previous experimental module that has received limited testing over the last few years, they do utilize some private APIs which means that Apple could change them at any time.
 ---
@@ -11,7 +11,7 @@
 ---
 --- It is recommended that you also enable "Displays have separate Spaces" in System Preferences -> Mission Control.
 ---
---- Portions of this module are based on code and fixes discovered by the developers of Yabai (https://github.com/koekeishiya/yabai). This has been noted in the relevant places of the source code for this module if you wish more information. Yabai provides much functionality with regards to the manipulation of macOS Spaces and power users may want to consider utilizing Yabai as an adjunct to Hammerspoon.
+--- Portions of this module are based on code and fixes discovered by the developers of Yabai (https://github.com/koekeishiya/yabai). This has been noted in the relevant places of the source code for this module if you wish more information. Yabai provides much functionality with regards to the manipulation of macOS Spaces and power users may want to consider utilizing Yabai as an adjunct to Cosmic Hammer.
 
 local USERDATA_TAG = "hs.spaces"
 local module       = require(table.concat({ USERDATA_TAG:match("^([%w%._]+%.)([%w_]+)$") }, "lib"))
@@ -328,7 +328,7 @@ module.closeMissionControl = closeMissionControl
 ---  * a table containing space IDs for the spaces for the screen, or nil and an error message if there is an error.
 ---
 --- Notes:
----  * the table returned has its __tostring metamethod set to `hs.inspect` to simplify inspecting the results when using the Hammerspoon Console.
+---  * the table returned has its __tostring metamethod set to `hs.inspect` to simplify inspecting the results when using the Cosmic Hammer Console.
 module.spacesForScreen = function(...)
     local args, screenID = { ... }, nil
 
@@ -393,7 +393,7 @@ end
 ---  * a key-value table in which the keys are the UUIDs for the current screens and the value for each key is a table of space IDs corresponding to the spaces for that screen. Returns nil and an error message if an error occurs.
 ---
 --- Notes:
----  * the table returned has its __tostring metamethod set to `hs.inspect` to simplify inspecting the results when using the Hammerspoon Console.
+---  * the table returned has its __tostring metamethod set to `hs.inspect` to simplify inspecting the results when using the Cosmic Hammer Console.
 module.allSpaces = function(...)
     local args = { ... }
     assert(#args == 0, "expected no arguments")
@@ -485,7 +485,7 @@ end
 ---  * a key-value table in which the keys are the UUIDs for the current screens and the value for each key is the space ID of the active space for that display.
 ---
 --- Notes:
----  * the table returned has its __tostring metamethod set to `hs.inspect` to simplify inspecting the results when using the Hammerspoon Console.
+---  * the table returned has its __tostring metamethod set to `hs.inspect` to simplify inspecting the results when using the Cosmic Hammer Console.
 module.activeSpaces = function(...)
     local args = { ... }
     assert(#args == 0, "expected no arguments")
@@ -597,7 +597,7 @@ module.windowsForSpace = function(...)
     local results = { _windowsForSpace(...) }
     local actual = results[1]
     if actual then
-        -- prune known Hammerspoon "non-windows" (e.g. canvas)
+        -- prune known Cosmic Hammer "non-windows" (e.g. canvas)
         local HS = application.applicationsForBundleID(hs.processInfo.bundleID)[1]
         for _, vElement in ipairs(axuielement.applicationElement(HS)) do
             if vElement.AXRole == "AXWindow" and vElement.AXSubrole:match("^AXUnknown") then
@@ -629,12 +629,12 @@ end
 ---  * a key-value table in which the keys are the UUIDs for each screen and the value is a key-value table where the screen ID is the key and the Mission Control name of the space is the value.
 ---
 --- Notes:
----  * the table returned has its __tostring metamethod set to `hs.inspect` to simplify inspecting the results when using the Hammerspoon Console.
+---  * the table returned has its __tostring metamethod set to `hs.inspect` to simplify inspecting the results when using the Cosmic Hammer Console.
 ---  * This function works by opening up the Mission Control display and then grabbing the names from the Accessibility elements created. This is unavoidable. You can  minimize, but not entirely remove, the visual shift to the Mission Control display by by enabling "Reduce motion" in System Preferences -> Accessibility -> Display.
 ---  * If you intend to perform multiple actions which require the Mission Control display ([hs.spaces.missionControlSpaceNames](#missionControlSpaceNames), [hs.spaces.addSpaceToScreen](#addSpaceToScreen), [hs.spaces.removeSpace](#removeSpace), or [hs.spaces.gotoSpace](#gotoSpace)), you can pass in `false` as the final argument to prevent the automatic closure of the Mission Control display -- this will reduce the visual side-affects to one transition instead of many.
 ---  * This function attempts to use the localization strings for the Dock application to properly determine the Mission Control names. If you find that it doesn't provide the correct values for your system, please provide the following information when submitting an issue:
----    * the desktop or application name(s) as they appear at the top of the Mission Control screen when you invoke it manually (or with `hs.spaces.toggleMissionControl()` entered into the Hammerspoon console).
----    * the output from the following commands, issued in the Hammerspoon console:
+---    * the desktop or application name(s) as they appear at the top of the Mission Control screen when you invoke it manually (or with `hs.spaces.toggleMissionControl()` entered into the Cosmic Hammer console).
+---    * the output from the following commands, issued in the Cosmic Hammer console:
 ---      * `hs.host.operatingSystemVersionString()`
 ---      * `hs.host.locale.current()`
 ---      * `hs.inspect(hs.host.locale.preferredLanguages())`

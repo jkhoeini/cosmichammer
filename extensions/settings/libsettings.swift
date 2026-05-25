@@ -209,7 +209,7 @@ private func target_clear(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * None
 ///
 /// Returns:
-///  * A table containing all of the settings keys in Hammerspoon's settings
+///  * A table containing all of the settings keys in Cosmic Hammer's settings
 ///
 /// Notes:
 ///  * Use `ipairs(hs.settings.getKeys())` to iterate over all available settings
@@ -341,7 +341,7 @@ public func luaopen_hs_libsettings(_ L: UnsafeMutablePointer<lua_State>!) -> Int
 
     /// hs.settings.bundleID
     /// Constant
-    /// A string representing the ID of the bundle Hammerspoon's settings are stored in . You can use this with the command line tool `defaults` or other tools which allow access to the `User Defaults` of applications, to access these outside of Hammerspoon
+    /// A string representing the ID of the bundle Cosmic Hammer's settings are stored in . You can use this with the command line tool `defaults` or other tools which allow access to the `User Defaults` of applications, to access these outside of Cosmic Hammer
     lua_pushstring(L, Bundle.main.bundleIdentifier ?? "")
     lua_setfield(L, -2, "bundleID")
 

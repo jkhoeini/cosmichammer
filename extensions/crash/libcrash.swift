@@ -5,7 +5,7 @@ import LuaSkin
 
 /// hs.crash.crash()
 /// Function
-/// Causes Hammerspoon to immediately crash
+/// Causes Cosmic Hammer to immediately crash
 ///
 /// Parameters:
 ///  * None
@@ -14,7 +14,7 @@ import LuaSkin
 ///  * None
 ///
 /// Notes:
-///  * This is for testing purposes only, you are extremely unlikely to need this in normal Hammerspoon usage
+///  * This is for testing purposes only, you are extremely unlikely to need this in normal Cosmic Hammer usage
 private func burnTheWorld(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let x = UnsafeMutablePointer<Int>.allocate(capacity: 0)
     x.deinitialize(count: 0)
@@ -27,7 +27,7 @@ private func burnTheWorld(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 /// hs.crash.throwObjCException(name, message)
 /// Function
-/// Causes Hammerspoon to generate an Objective C exception
+/// Causes Cosmic Hammer to generate an Objective C exception
 ///
 /// Parameters:
 ///  * name - A string containing the name of the exception
@@ -37,7 +37,7 @@ private func burnTheWorld(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * None
 ///
 /// Notes:
-///  * Outside of a context of a Lua pcall() (or a C lua_pcall()), this will cause Hammerspoon to exit. We follow the safe behaviour of terminating the app on any unhandled Objective C exception.
+///  * Outside of a context of a Lua pcall() (or a C lua_pcall()), this will cause Cosmic Hammer to exit. We follow the safe behaviour of terminating the app on any unhandled Objective C exception.
 private func throwTheWorld(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING, LS_TSTRING, LS_TBREAK)
@@ -90,13 +90,13 @@ private func crashKV(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 /// hs.crash.residentSize() -> integer or nil
 /// Function
-/// Gets the resident size of the Hammerspoon process
+/// Gets the resident size of the Cosmic Hammer process
 ///
 /// Parameters:
 ///  * None
 ///
 /// Returns:
-///  * An integer containing the amount of RAM in use by Hammerspoon (in bytes), or nil if an error occurred
+///  * An integer containing the amount of RAM in use by Cosmic Hammer (in bytes), or nil if an error occurred
 private func residentSize(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     var info = task_basic_info()
     var size = mach_msg_type_number_t(MemoryLayout<task_basic_info>.size) / 4

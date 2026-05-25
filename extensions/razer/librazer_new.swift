@@ -1562,7 +1562,7 @@ private func toHSRazerDeviceFromLua(_ L: UnsafeMutablePointer<lua_State>!, _ idx
     }
 }
 
-// MARK: - Hammerspoon/Lua Infrastructure
+// MARK: - Cosmic Hammer/Lua Infrastructure
 
 private let razer_object_tostring: lua_CFunction = { L in
     let skin = LuaSkin.skin(with: L)

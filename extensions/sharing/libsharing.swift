@@ -165,8 +165,8 @@ private func sharing_servicesForItems(_ L: UnsafeMutablePointer<lua_State>!) -> 
 /// Notes:
 ///  * If the URL is specified as a table, it is expected to contain a `url` key with a string value specifying a proper schema and resource locator.
 ///
-///  * Because macOS requires URLs to be represented as a specific object type which has no exact equivalent in Lua, Hammerspoon uses a table with specific keys to allow proper identification of a URL when included as an argument or result type.  Use this function or the [hs.sharing.fileURL](#fileURL) wrapper function when specifying a URL to ensure that the proper keys are defined.
-///  * At present, the following keys are defined for a URL table (additional keys may be added in the future if future Hammerspoon modules require them to more completely utilize the macOS NSURL class, but these will not change):
+///  * Because macOS requires URLs to be represented as a specific object type which has no exact equivalent in Lua, Cosmic Hammer uses a table with specific keys to allow proper identification of a URL when included as an argument or result type.  Use this function or the [hs.sharing.fileURL](#fileURL) wrapper function when specifying a URL to ensure that the proper keys are defined.
+///  * At present, the following keys are defined for a URL table (additional keys may be added in the future if future Cosmic Hammer modules require them to more completely utilize the macOS NSURL class, but these will not change):
 ///    * url           - a string containing the URL with a proper schema and resource locator
 ///    * filePath      = a string specifying the actual path to the file in case the url is a file reference URL.  Note that setting this field with this method will be silently ignored; the field is automatically inserted if appropriate when returning an NSURL object to lua.
 ///    * __luaSkinType - a string specifying the macOS type this table represents when converted into an Objective-C type
@@ -590,7 +590,7 @@ private func toNSURLFromLuaHelper(_ L: UnsafeMutablePointer<lua_State>!, idx: In
     return toNSURLFromLua(L, idx)
 }
 
-// MARK: - Hammerspoon/Lua Infrastructure
+// MARK: - Cosmic Hammer/Lua Infrastructure
 
 private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)

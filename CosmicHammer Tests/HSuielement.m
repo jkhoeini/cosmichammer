@@ -1,9 +1,9 @@
 //
 //  HSuielement.m
-//  Hammerspoon
+//  Cosmic Hammer
 //
 //  Created by Michael Bujol on 17/04/2016.
-//  Copyright © 2016 Hammerspoon. All rights reserved.
+//  Copyright © 2016 Cosmic Hammer. All rights reserved.
 //
 
 #import "HSTestCase.h"
@@ -39,7 +39,7 @@
 //    RUN_TWO_PART_LUA_TEST_WITH_TIMEOUT(5)
 //}
 
-- (void)testHammerspoonElements {
+- (void)testCosmicHammerElements {
     RUN_LUA_TEST()
 }
 

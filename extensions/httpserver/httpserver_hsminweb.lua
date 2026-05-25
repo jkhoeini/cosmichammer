@@ -1,20 +1,20 @@
 
 --- === hs.httpserver.hsminweb ===
 ---
---- Minimalist Web Server for Hammerspoon
+--- Minimalist Web Server for Cosmic Hammer
 ---
---- This module aims to be a minimal, but (mostly) standards-compliant web server for use within Hammerspoon.  Expanding upon the Hammerspoon module, `hs.httpserver`, this module adds support for serving static pages stored at a specified document root as well as serving dynamic content from Lua Template Files interpreted within the Hammerspoon environment and external executables which support the CGI/1.1 framework.
+--- This module aims to be a minimal, but (mostly) standards-compliant web server for use within Cosmic Hammer.  Expanding upon the Cosmic Hammer module, `hs.httpserver`, this module adds support for serving static pages stored at a specified document root as well as serving dynamic content from Lua Template Files interpreted within the Cosmic Hammer environment and external executables which support the CGI/1.1 framework.
 ---
 --- This module aims to provide a fully functional, and somewhat extendable, web server foundation, but will never replace a true dedicated web server application.  Some limitations include:
----  * It is single threaded within the Hammerspoon environment and can only serve one resource at a time
----  * As with all Hammerspoon modules, while dynamic content is being generated, Hammerspoon cannot respond to other callback functions -- a complex or time consuming script may block other Hammerspoon activity in a noticeable manner.
----  * All document requests and responses are handled in memory only -- because of this, maximum resource size is limited to what you are willing to allow Hammerspoon to consume and memory limitations of your computer.
+---  * It is single threaded within the Cosmic Hammer environment and can only serve one resource at a time
+---  * As with all Cosmic Hammer modules, while dynamic content is being generated, Cosmic Hammer cannot respond to other callback functions -- a complex or time consuming script may block other Cosmic Hammer activity in a noticeable manner.
+---  * All document requests and responses are handled in memory only -- because of this, maximum resource size is limited to what you are willing to allow Cosmic Hammer to consume and memory limitations of your computer.
 ---
---- While some of these limitations may be mitigated to an extent in the future with additional modules and additions to `hs.httpserver`, Hammerspoon's web serving capabilities will never replace a dedicated web server when volume or speed is required.
+--- While some of these limitations may be mitigated to an extent in the future with additional modules and additions to `hs.httpserver`, Cosmic Hammer's web serving capabilities will never replace a dedicated web server when volume or speed is required.
 ---
---- An example web site is provided in the `hsdocs` folder of the `hs.doc` module.  This web site can serve documentation for Hammerspoon dynamically generated from the json file included with the Hammerspoon application for internal documentation.  It serves as a basic example of what is possible with this module.
+--- An example web site is provided in the `hsdocs` folder of the `hs.doc` module.  This web site can serve documentation for Cosmic Hammer dynamically generated from the json file included with the Cosmic Hammer application for internal documentation.  It serves as a basic example of what is possible with this module.
 ---
---- You can start this web server by typing the following into your Hammerspoon console:
+--- You can start this web server by typing the following into your Cosmic Hammer console:
 --- `require("hs.doc.hsdocs").start()` and then visiting `http://localhost:12345/` with your web browser.
 
 --   [ ] Wiki docs
@@ -23,7 +23,7 @@
 --   [ ] document headers._ support table for error functions
 --   [ ] document _allowRenderTranslations, _logBadTranslations, and _logPageErrorTranslations
 --
--- May see how hard these would be... maybe only for Hammerspoon/Lua Template pages
+-- May see how hard these would be... maybe only for Cosmic Hammer/Lua Template pages
 --   [ ] basic/digest auth via lua only?
 --   [ ] minimal WebDAV support?
 --   [ ] For WebDav support, some other methods may also require a body... (i.e. additions to hs.httpserver)
@@ -1054,7 +1054,7 @@ end
 ---
 --- Notes:
 ---  * the password, if set, is server wide and causes the server to use the Basic authentication scheme with an empty string for the username.
----  * this module is an extension to the Hammerspoon core module `hs.httpserver`, so it has the same limitations regarding server passwords. See the documentation for `hs.httpserver.setPassword` (`help.hs.httpserver.setPassword` in the Hammerspoon console).
+---  * this module is an extension to the Cosmic Hammer core module `hs.httpserver`, so it has the same limitations regarding server passwords. See the documentation for `hs.httpserver.setPassword` (`help.hs.httpserver.setPassword` in the Cosmic Hammer console).
 objectMethods.password = function(self, ...)
     local args = table.pack(...)
     assert(type(args[1]) == "nil" or type(args[1]) == "string", "argument must be string")
@@ -1083,7 +1083,7 @@ end
 ---  * the hsminwebTable object if a parameter is provided, or the current value if no parameter is specified.
 ---
 --- Notes:
----  * Because the Hammerspoon http server processes incoming requests completely in memory, this method puts a limit on the maximum size for a POST or PUT request.
+---  * Because the Cosmic Hammer http server processes incoming requests completely in memory, this method puts a limit on the maximum size for a POST or PUT request.
 ---  * If the request body exceeds this size, `hs.httpserver` will respond with a status code of 405 for the method before this module ever receives the request.
 objectMethods.maxBodySize = function(self, ...)
     local args = table.pack(...)
@@ -1137,7 +1137,7 @@ end
 ---
 --- Notes:
 ---  * this flag can only be changed when the server is not running (i.e. the [hs.httpserver.hsminweb:start](#start) method has not yet been called, or the [hs.httpserver.hsminweb:stop](#stop) method is called first.)
----  * this module is an extension to the Hammerspoon core module `hs.httpserver`, so it has the same considerations regarding SSL. See the documentation for `hs.httpserver.new` (`help.hs.httpserver.new` in the Hammerspoon console).
+---  * this module is an extension to the Cosmic Hammer core module `hs.httpserver`, so it has the same considerations regarding SSL. See the documentation for `hs.httpserver.new` (`help.hs.httpserver.new` in the Cosmic Hammer console).
 objectMethods.ssl = function(self, ...)
     local args = table.pack(...)
     assert(type(args[1]) == "nil" or type(args[1]) == "boolean", "argument must be boolean")
@@ -1214,7 +1214,7 @@ end
 ---  * the hsminwebTable object if a parameter is provided, or the current value if no parameter is specified.
 ---
 --- Notes:
----  * DNS lookups can be time consuming or even block Hammerspoon for a short time, so they are disabled by default.
+---  * DNS lookups can be time consuming or even block Cosmic Hammer for a short time, so they are disabled by default.
 ---  * Currently DNS lookups are (optionally) performed for CGI scripts, but may be added for other purposes in the future (logging, etc.).
 objectMethods.dnsLookup = function(self, ...)
     local args = table.pack(...)
@@ -1239,7 +1239,7 @@ end
 ---
 --- Notes:
 ---  * If logging is enabled, an Apache common style log entry is appended to [self._accesslog](#_accessLog) for each request made to the web server.
----  * Error messages during content generation are always logged to the Hammerspoon console via the `hs.logger` instance saved to [hs.httpserver.hsminweb.log](#log).
+---  * Error messages during content generation are always logged to the Cosmic Hammer console via the `hs.logger` instance saved to [hs.httpserver.hsminweb.log](#log).
 objectMethods.queryLogging = function(self, ...)
     local args = table.pack(...)
     assert(type(args[1]) == "nil" or type(args[1]) == "boolean", "argument must be boolean")
@@ -1319,10 +1319,10 @@ end
 
 --- hs.httpserver.hsminweb:luaTemplateExtension([string]) -> hsminwebTable | current-value
 --- Method
---- Get or set the extension of files which contain Lua code which should be executed within Hammerspoon to provide the results to an HTTP request.
+--- Get or set the extension of files which contain Lua code which should be executed within Cosmic Hammer to provide the results to an HTTP request.
 ---
 --- Parameters:
----  * string - an optional string or `nil`, defaults to `nil`, specifying the file extension which indicates that a file should be executed as Lua code within the Hammerspoon environment to provide the content for an HTTP request.
+---  * string - an optional string or `nil`, defaults to `nil`, specifying the file extension which indicates that a file should be executed as Lua code within the Cosmic Hammer environment to provide the content for an HTTP request.
 ---
 --- Returns:
 ---  * the hsminwebTable object if a parameter is provided, or the current value if no parameter is specified.
@@ -1351,7 +1351,7 @@ end
 ---  * the hsminwebTable object if a parameter is provided, or the current value if no parameter is specified.
 ---
 --- Notes:
----  * With the current functionality available in `hs.httpserver`, any script which is expected to return content for an HTTP request must run in a blocking manner -- this means that no other Hammerspoon activity can be occurring while the script is executing.  This parameter lets you set the maximum amount of time such a script can hold things up before being terminated.
+---  * With the current functionality available in `hs.httpserver`, any script which is expected to return content for an HTTP request must run in a blocking manner -- this means that no other Cosmic Hammer activity can be occurring while the script is executing.  This parameter lets you set the maximum amount of time such a script can hold things up before being terminated.
 ---  * An alternative implementation of at least some of the methods available in `hs.httpserver` is being considered which may make it possible to use `hs.task` for these scripts, which would alleviate this blocking behavior.  However, even if this is addressed, a timeout for scripts is still desirable so that a client making a request doesn't sit around waiting forever if a script is malformed.
 objectMethods.scriptTimeout = function(self, ...)
     local args = table.pack(...)
@@ -1504,10 +1504,10 @@ end
 
 --- hs.httpserver.hsminweb.new([documentRoot]) -> hsminwebTable
 --- Constructor
---- Create a new hsminweb table object representing a Hammerspoon Web Server.
+--- Create a new hsminweb table object representing a Cosmic Hammer Web Server.
 ---
 --- Parameters:
----  * documentRoot - an optional string specifying the document root for the new web server.  Defaults to the Hammerspoon users `Sites` sub-directory (i.e. `os.getenv("HOME").."/Sites"`).
+---  * documentRoot - an optional string specifying the document root for the new web server.  Defaults to the Cosmic Hammer users `Sites` sub-directory (i.e. `os.getenv("HOME").."/Sites"`).
 ---
 --- Returns:
 ---  * a table representing the hsminweb object.
@@ -1652,7 +1652,7 @@ module.log = log
 ---    * "Official" list at https://en.wikipedia.org/wiki/List_of_HTTP_status_codes
 ---    * KeplerProject's wsapi at https://github.com/keplerproject/wsapi
 ---    * IIS additions from https://support.microsoft.com/en-us/kb/943891
----  * This table has metatable additions which allow you to review its contents from the Hammerspoon console by typing `hs.httpserver.hsminweb.statusCodes`
+---  * This table has metatable additions which allow you to review its contents from the Cosmic Hammer console by typing `hs.httpserver.hsminweb.statusCodes`
 module.statusCodes = setmetatable(statusCodes, {
     __tostring = function(_)
         local outputList = {}

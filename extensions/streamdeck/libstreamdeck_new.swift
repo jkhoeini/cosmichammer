@@ -1,10 +1,10 @@
 //
 //  libstreamdeck_new.swift
-//  Hammerspoon
+//  Cosmic Hammer
 //
 //  Ported from Objective-C to Swift.
 //  Original authors: Chris Jones, Chris Hocking.
-//  Copyright © 2017-2023 Hammerspoon. All rights reserved.
+//  Copyright © 2017-2023 Cosmic Hammer. All rights reserved.
 //
 
 import Cocoa
@@ -1622,7 +1622,7 @@ private func toHSStreamDeckDeviceFromLua(_ L: UnsafeMutablePointer<lua_State>!, 
     return nil
 }
 
-// MARK: - Hammerspoon/Lua Infrastructure
+// MARK: - Cosmic Hammer/Lua Infrastructure
 
 private func streamdeck_object_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)

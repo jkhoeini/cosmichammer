@@ -866,7 +866,7 @@ private func canvas_orderHelper(_ L: UnsafeMutablePointer<lua_State>!, mode: NSW
     return 1
 }
 
-// userdata_gc is defined later in this file (MARK: - Hammerspoon/Lua Infrastructure)
+// userdata_gc is defined later in this file (MARK: - Cosmic Hammer/Lua Infrastructure)
 
 // MARK: - HSCanvasWindow
 
@@ -905,7 +905,7 @@ private func canvas_orderHelper(_ L: UnsafeMutablePointer<lua_State>!, mode: NSW
     override func accessibilitySubrole() -> NSAccessibility.Subrole? {
         let defaultSubrole = super.accessibilitySubrole()
         let defaultStr = defaultSubrole?.rawValue ?? ""
-        let customSubrole = NSAccessibility.Subrole(rawValue: defaultStr + ".Hammerspoon")
+        let customSubrole = NSAccessibility.Subrole(rawValue: defaultStr + ".Cosmic Hammer")
 
         if let override = subroleOverride {
             if override.isEmpty {
@@ -3343,7 +3343,7 @@ private func toHSCanvasViewFromLua(_ L: UnsafeMutablePointer<lua_State>!, idx: I
     }
 }
 
-// MARK: - Hammerspoon/Lua Infrastructure
+// MARK: - Cosmic Hammer/Lua Infrastructure
 
 private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)

@@ -286,7 +286,7 @@ private func isAnyApplicationSpeaking(_ L: UnsafeMutablePointer<lua_State>!) -> 
 
 /// hs.speech.new([voice]) -> synthesizerObject
 /// Constructor
-/// Creates a new speech synthesizer object for use by Hammerspoon.
+/// Creates a new speech synthesizer object for use by Cosmic Hammer.
 ///
 /// Parameters:
 ///  * voice - an optional string specifying the voice the synthesizer should use for generating speech.  Defaults to the system voice.
@@ -732,7 +732,7 @@ private func pushHSSpeechSynthesizer(_ L: UnsafeMutablePointer<lua_State>!, obj:
     return 1
 }
 
-// MARK: - Hammerspoon Infrastructure
+// MARK: - Cosmic Hammer Infrastructure
 
 private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let synth = get_synthFromUserdata(L, at: 1)

@@ -81,7 +81,7 @@ extension NSImage {
 ///
 /// Notes:
 ///  * Image names pulled from NSImage.h
-///  * This table has a __tostring() metamethod which allows listing it's contents in the Hammerspoon console by typing `hs.image.systemImageNames`.
+///  * This table has a __tostring() metamethod which allows listing it's contents in the Cosmic Hammer console by typing `hs.image.systemImageNames`.
 private func pushNSImageNameTable(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
     lua_newtable(L)
@@ -529,8 +529,8 @@ private func imageWithContextFromASCII(_ L: UnsafeMutablePointer<lua_State>!) ->
 /// Notes:
 ///  * Some predefined labels corresponding to OS X System default images can be found in `hs.image.systemImageNames`.
 ///  * Names are not required to be unique: The search order is as follows, and the first match found is returned:
-///     * an image whose name was explicitly set with the `setName` method since the last full restart of Hammerspoon
-///     * Hammerspoon's main application bundle
+///     * an image whose name was explicitly set with the `setName` method since the last full restart of Cosmic Hammer
+///     * Cosmic Hammer's main application bundle
 ///     * the Application Kit framework (this is where most of the images listed in `hs.image.systemImageNames` are located)
 ///  * Image names can be assigned by the image creator or by calling the `hs.image:setName` method on an hs.image object.
 private func imageFromName(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
@@ -1262,7 +1262,7 @@ private func HSImage_toNSImage(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int
     return Unmanaged<NSImage>.fromOpaque(raw).takeUnretainedValue()
 }
 
-// MARK: - Hammerspoon/Lua Infrastructure
+// MARK: - Cosmic Hammer/Lua Infrastructure
 
 private func image_userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let testImage = LuaSkin.skin(with: L).luaObject(at: 1, toClass: "NSImage") as! NSImage

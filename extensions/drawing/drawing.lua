@@ -19,7 +19,7 @@ return require("hs.drawing_canvasWrapper")
 ---
 --- Notes:
 ---  * This method should only be used on an image drawing object
----  * Paths relative to the PWD of Hammerspoon (typically ~/.hammerspoon/) will work, but paths relative to the UNIX homedir character, `~` will not
+---  * Paths relative to the PWD of Cosmic Hammer (typically ~/.cosmic-hammer/) will work, but paths relative to the UNIX homedir character, `~` will not
 ---  * Animated GIFs are supported. They're not super friendly on your CPU, but they work
 
 --- hs.drawing:setImageASCII(ascii) -> drawingObject
@@ -180,7 +180,7 @@ return require("hs.drawing_canvasWrapper")
 ---
 --- Returns:
 ---  * An `hs.drawing` object, or nil if an error occurs
----  * Paths relative to the PWD of Hammerspoon (typically ~/.hammerspoon/) will work, but paths relative to the UNIX homedir character, `~` will not
+---  * Paths relative to the PWD of Cosmic Hammer (typically ~/.cosmic-hammer/) will work, but paths relative to the UNIX homedir character, `~` will not
 ---  * Animated GIFs are supported. They're not super friendly on your CPU, but they work
 ---
 --- Notes:
@@ -566,10 +566,10 @@ return require("hs.drawing_canvasWrapper")
 
 --- hs.drawing:clickCallbackActivating([false]) -> drawingObject or current value
 --- Method
---- Get or set whether or not clicking on a drawing with a click callback defined should bring all of Hammerspoon's open windows to the front.
+--- Get or set whether or not clicking on a drawing with a click callback defined should bring all of Cosmic Hammer's open windows to the front.
 ---
 --- Parameters:
----  * flag - an optional boolean indicating whether or not clicking on a drawing with a click callback function defined should activate Hammerspoon and bring its windows forward.  Defaults to true.
+---  * flag - an optional boolean indicating whether or not clicking on a drawing with a click callback function defined should activate Cosmic Hammer and bring its windows forward.  Defaults to true.
 ---
 --- Returns:
 ---  * If a setting value is provided, the drawing object is returned; if no argument is provided, the current setting is returned.
@@ -635,7 +635,7 @@ return require("hs.drawing_canvasWrapper")
 ---  * The drawing object
 ---
 --- Notes:
----  * As of macOS Sierra and later, if you want a `hs.drawing` object to appear above full-screen windows you must hide the Hammerspoon Dock icon first using: `hs.dockicon.hide()`
+---  * As of macOS Sierra and later, if you want a `hs.drawing` object to appear above full-screen windows you must hide the Cosmic Hammer Dock icon first using: `hs.dockicon.hide()`
 
 --- hs.drawing:sendToBack() -> drawingObject
 --- Method
@@ -702,7 +702,7 @@ return require("hs.drawing_canvasWrapper")
 --- * stationary        -- The window is unaffected by Exposé; it stays visible and stationary, like the desktop window.
 ---
 --- Notes:
----  * This table has a __tostring() metamethod which allows listing it's contents in the Hammerspoon console by typing `hs.drawing.windowBehaviors`.
+---  * This table has a __tostring() metamethod which allows listing it's contents in the Cosmic Hammer console by typing `hs.drawing.windowBehaviors`.
 
 --- hs.drawing.windowLevels
 --- Constant
@@ -730,7 +730,7 @@ return require("hs.drawing_canvasWrapper")
 ---  * _MaximumWindowLevelKey - highest allowed window level
 ---
 --- Notes:
----  * This table has a __tostring() metamethod which allows listing it's contents in the Hammerspoon console by typing `hs.drawing.windowLevels`.
+---  * This table has a __tostring() metamethod which allows listing it's contents in the Cosmic Hammer console by typing `hs.drawing.windowLevels`.
 ---  * These key names map to the constants used in CoreGraphics to specify window levels and may not actually be used for what the name might suggest. For example, tests suggest that an active screen saver actually runs at a level of 2002, rather than at 1000, which is the window level corresponding to kCGScreenSaverWindowLevelKey.
 ---  * Each drawing level is sorted separately and `hs.drawing:orderAbove(...)` and hs.drawing:orderBelow(...)` only arrange windows within the same level.
 ---  * If you use Dock hiding (or in 10.11, Menubar hiding) please note that when the Dock (or Menubar) is popped up, it is done so with an implicit orderAbove, which will place it above any items you may also draw at the Dock (or MainMenu) level.

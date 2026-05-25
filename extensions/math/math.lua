@@ -7,7 +7,7 @@
 ---     local math = require("hs.math")
 ---     local n = math.sin(math.minFloat) -- works even though they're both from different libraries
 ---
---- The documentation for the math library can be found at http://www.lua.org/manual/5.3/ or from the Hammerspoon console via the help command: `help.lua.math`. This includes the following functions and variables:
+--- The documentation for the math library can be found at http://www.lua.org/manual/5.3/ or from the Cosmic Hammer console via the help command: `help.lua.math`. This includes the following functions and variables:
 ---
 ---   * hs.math.abs        - help available via `help.lua.math.abs`
 ---   * hs.math.acos       - help available via `help.lua.math.acos`
@@ -37,7 +37,7 @@
 ---   * hs.math.type       - help available via `help.lua.math.type`
 ---   * hs.math.ult        - help available via `help.lua.math.ult`
 ---
---- Additional functions and values that are specific to Hammerspoon which provide expanded math support are documented here.
+--- Additional functions and values that are specific to Cosmic Hammer which provide expanded math support are documented here.
 local module = require("hs.libmath")
 local _luaMath = math
 
@@ -95,7 +95,7 @@ end
 
 --- hs.math.minFloat
 --- Constant
---- Smallest positive floating point number representable in Hammerspoon
+--- Smallest positive floating point number representable in Cosmic Hammer
 ---
 --- Notes:
 ---  * Because specifying a delay of 0 to `hs.timer.doAfter` results in the event not triggering, use this value to indicate that the action should occur as soon as possible after the current code block has completed execution.

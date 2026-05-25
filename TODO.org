@@ -43,7 +43,7 @@ replaced.
     justfile build recipe.
 
 *** TODO Replace Xcode-style ~$(VARIABLE)~ placeholders in Info.plist
-    ~Hammerspoon-Info.plist~ uses Xcode substitution syntax
+    ~CosmicHammer-Info.plist~ uses Xcode substitution syntax
     (~$(MARKETING_VERSION)~, ~${EXECUTABLE_NAME}~, etc.) even though the
     justfile already ~sed~-replaces them. Use a simpler template format.
 
@@ -87,13 +87,13 @@ replaced.
 ** DONE Switch ~Package.swift~ to SPM auto-discovery (246 → 105 lines)
 ** DONE Unify ~extensions.list~ + ~lua-files.list~ into ~extensions.manifest~
 ** DONE Delete orphaned ~hs.xcconfig~
-** DONE Delete unused ~Hammerspoon-Test.xcconfig~
+** DONE Delete unused ~CosmicHammer-Test.xcconfig~
 ** DONE Remove empty "Embed Frameworks" build phase
-** DONE Remove dead ~Hammerspoon-Downstream.xcconfig~ includes
+** DONE Remove dead ~CosmicHammer-Downstream.xcconfig~ includes
 ** DONE Fix "Copy hs CLI" phase for incremental builds
 ** DONE Fix "Compile docs.json" output declaration
 ** DONE Collapse xcconfigs from 6 → 3
-** DONE Document ~Hammerspoon-Profile.xcconfig~ overrides
+** DONE Document ~CosmicHammer-Profile.xcconfig~ overrides
 ** DONE Add pre-commit hook for generator staleness
 ** DONE Enable all 15 compiler warnings
 ** DONE Set ~GCC_OPTIMIZATION_LEVEL~ per-configuration
@@ -127,4 +127,4 @@ replaced.
 ** DONE Replace all 4 XIBs with programmatic UI
 ** DONE Replace ~xcassets~ with pre-compiled ~.icns~ file
 ** DONE Move entitlements from Xcode to ~codesign~ in justfile
-** DONE Gitignore ~Hammerspoon.xcworkspace/~ (including shared xcschemes)
+** DONE Gitignore ~CosmicHammer.xcworkspace/~ (including shared xcschemes)

@@ -24,7 +24,7 @@ settings:
 # HSExtensions as internal targets. Remote dependencies (CocoaLumberjack,
 # CocoaAsyncSocket, ORSSerialPort) are resolved transitively.
 packages:
-  HammerspoonLibs:
+  CosmicHammerLibs:
     path: Packages
 
 targets:
@@ -73,7 +73,7 @@ targets:
         buildPhase:
           copyFiles: { destination: resources, subpath: extensions/hs/hsdocs/hsminweb }
     dependencies:
-      - package: HammerspoonLibs
+      - package: CosmicHammerLibs
 
   CosmicHammer UI Tests:
     type: bundle.ui-testing

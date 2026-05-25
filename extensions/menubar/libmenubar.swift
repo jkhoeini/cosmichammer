@@ -165,7 +165,7 @@ private func parse_table(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32, _ 
             // MARK: menu key
             lua_getfield(L, -1, "menu")
             if lua_istable(L, -1) {
-                let subMenu = NSMenu(title: "HammerspoonSubMenu")
+                let subMenu = NSMenu(title: "Cosmic HammerSubMenu")
                 subMenu.autoenablesItems = false
                 if lua_checkstack(L, 20) != 0 {
                     parse_table(L, lua_gettop(L), subMenu, stateBoxImageSize)
@@ -653,7 +653,7 @@ private func menubarSetMenu(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
     switch lua_type(L, 2) {
     case LUA_TTABLE:
-        menu = create_or_reuse_menu(L, statusItem, "HammerspoonMenuItemStaticMenu")
+        menu = create_or_reuse_menu(L, statusItem, "Cosmic HammerMenuItemStaticMenu")
         menu?.autoenablesItems = false
         parse_table(L, 2, menu!, menuBarItem.pointee.stateBoxImageSize)
         if menu?.numberOfItems == 0 {
@@ -661,7 +661,7 @@ private func menubarSetMenu(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
         }
 
     case LUA_TFUNCTION:
-        menu = create_or_reuse_menu(L, statusItem, "HammerspoonMenuItemDynamicMenu")
+        menu = create_or_reuse_menu(L, statusItem, "Cosmic HammerMenuItemDynamicMenu")
         menu?.autoenablesItems = false
         delegate = HSMenubarItemMenuDelegate()
         delegate!.stateBoxImageSize = menuBarItem.pointee.stateBoxImageSize
@@ -743,7 +743,7 @@ private func menubar_delete(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Notes:
 ///  * Items which trigger hs.menubar:setClickCallback() will invoke the callback function, but we cannot control the positioning of any visual elements the function may create -- calling this method on such an object is the equivalent of invoking its callback function directly.
-///  * This method is blocking. Hammerspoon will be unable to respond to any other activity while the pop-up menu is being displayed.
+///  * This method is blocking. Cosmic Hammer will be unable to respond to any other activity while the pop-up menu is being displayed.
 ///  * `darkMode` uses an undocumented macOS API call, so may break in a future release.
 private func menubar_render(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)

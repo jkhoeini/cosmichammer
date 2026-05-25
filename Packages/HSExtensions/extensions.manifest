@@ -1,4 +1,4 @@
-# Unified extension manifest for Hammerspoon
+# Unified extension manifest for Cosmic Hammer
 # Format: directory<TAB>entry-points<TAB>lua-files
 # - directory: extension folder name under extensions/
 #   entry-points: comma-separated luaopen_* symbols, or "-" if Lua-only

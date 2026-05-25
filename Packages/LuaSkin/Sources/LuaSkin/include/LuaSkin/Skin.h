@@ -3,13 +3,13 @@
 //  LuaSkin
 //
 //  Created by Chris Jones on 11/06/2015
-//  Copyright (c) 2015 Hammerspoon Project Authors. All rights reserved
+//  Copyright (c) 2015 Cosmic Hammer Project Authors. All rights reserved
 //
 
 /*!
      @header Skin.h
      An Objective-C framework that both wraps and abstracts Lua
-     @copyright The Hammerspoon Authors
+     @copyright The Cosmic Hammer Authors
 
      @ignorefuncmacro NS_OPTIONS
      @ignorefuncmacro NS_ENUM
@@ -189,7 +189,7 @@ NSString *specMaskToString(int spec);
 /*!
  @class LuaSkin
  @abstract Abstraction layer for common operations on Lua state objects
- @discussion LuaSkin was written for Hammerspoon (although it does not depend on any Hammerspoon functionality) to simplify our use of Lua. It includes a full, unmodified Lua distribution, and provides an Objective C class that is capable of performing common operations such as creating/destroying a lua_State object, providing shared access to the object, Lua function argument type checking and bi-directional conversion of Lua objects and NSObject objects (with loadable plugins for your own converters)
+ @discussion LuaSkin was written for Cosmic Hammer (although it does not depend on any Cosmic Hammer functionality) to simplify our use of Lua. It includes a full, unmodified Lua distribution, and provides an Objective C class that is capable of performing common operations such as creating/destroying a lua_State object, providing shared access to the object, Lua function argument type checking and bi-directional conversion of Lua objects and NSObject objects (with loadable plugins for your own converters)
  */
 @interface LuaSkin : NSObject
 
@@ -641,7 +641,7 @@ NSString *specMaskToString(int spec);
 
  @warning This is included as a separate method because NSRect is a structure, not an NSObject
  @param theRect the rectangle to push onto the lua stack
- @returns The number of items on the lua stack - this is always 1 but is returned to simplify its use in Hammerspoon modules
+ @returns The number of items on the lua stack - this is always 1 but is returned to simplify its use in Cosmic Hammer modules
  */
 - (int)pushNSRect:(NSRect)theRect ;
 
@@ -650,7 +650,7 @@ NSString *specMaskToString(int spec);
 
  @warning This is included as a separate method because NSPoint is a structure, not an NSObject
  @param thePoint the point to push onto the lua stack
- @returns The number of items on the lua stack - this is always 1 but is returned to simplify its use in Hammerspoon modules
+ @returns The number of items on the lua stack - this is always 1 but is returned to simplify its use in Cosmic Hammer modules
  */
 - (int)pushNSPoint:(NSPoint)thePoint ;
 
@@ -659,7 +659,7 @@ NSString *specMaskToString(int spec);
 
  @warning This is included as a separate method because NSSize is a structure, not an NSObject
  @param theSize the point to push onto the lua stack
- @returns The number of items on the lua stack - this is always 1 but is returned to simplify its use in Hammerspoon modules
+ @returns The number of items on the lua stack - this is always 1 but is returned to simplify its use in Cosmic Hammer modules
  */
 - (int)pushNSSize:(NSSize)theSize ;
 
@@ -731,7 +731,7 @@ NSString *specMaskToString(int spec);
 /*!
  @abstract Return an NSObject containing the best representation of the lua table at the specified index
 
- @warning This method uses registered converter functions provided by the Hammerspoon modules to convert the specified table into a recognizable NSObject.  No converters are included within the LuaSkin.  This method relies upon functions registered with the registerLuaObjectHelper:forClass: method for the conversions
+ @warning This method uses registered converter functions provided by the Cosmic Hammer modules to convert the specified table into a recognizable NSObject.  No converters are included within the LuaSkin.  This method relies upon functions registered with the registerLuaObjectHelper:forClass: method for the conversions
  @param idx the index on lua stack which contains the table to convert
  @param className a C string containing the class name of the NSObject type to return.  If no converter function is currently registered for this type, nil is returned
  @returns An NSObject of the appropriate type depending upon the data on the lua stack and the functions currently registered

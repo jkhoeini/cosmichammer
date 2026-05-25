@@ -321,7 +321,7 @@ private func toNSAffineTransformFromLua(_ L: UnsafeMutablePointer<lua_State>!, i
     return value
 }
 
-// MARK: - Hammerspoon/Lua Infrastructure
+// MARK: - Cosmic Hammer/Lua Infrastructure
 
 // Functions for returned object when module loads
 private var moduleLib: [luaL_Reg] = [

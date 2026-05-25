@@ -609,7 +609,7 @@ end
 ---  * `hs.inspect(hs.grid.HINTS)` from the console will show you how the table is built
 ---  * `hs.grid.show()`
 ---     When displaying interactive grid, if gird dimensions (`hs.grid.setGrid()`) are greater than `HINTS` dimensions,
----     then Hammerspoon merges few cells such that interactive grid dimensions do not exceed `HINTS` dimensions.
+---     then Cosmic Hammer merges few cells such that interactive grid dimensions do not exceed `HINTS` dimensions.
 ---     This is done to make sure interactive grid cells do not run out of hints. The interactive grid ends up with
 ---     cells of varying height and width.
 ---     The actual grid is not affected. If you use API methods like `hs.grid.pushWindowDown()`, you will not face this

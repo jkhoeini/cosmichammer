@@ -17,7 +17,7 @@
 --- hint length, colors, fonts and sizes, whether to show window thumbnails and/or titles, and more.
 ---
 --- To improve responsiveness, this module will update its thumbnail layout in the background (so to speak), so that it
---- can show the expose without delay on invocation. Be aware that on particularly heavy Hammerspoon configurations
+--- can show the expose without delay on invocation. Be aware that on particularly heavy Cosmic Hammer configurations
 --- this could adversely affect overall performance; you can disable this behaviour with
 --- `hs.expose.ui.fitWindowsInBackground=false`
 ---

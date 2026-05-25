@@ -61,7 +61,7 @@
 --- Each layout can work in "passive" or "active" modes; passive layouts must be triggered manually (via `hs.hotkey.bind()`,
 --- `hs.menubar`, etc.) while active layouts continuously keep their rules enforced (see `hs.window.layout:start()`
 --- for more information); in general you should avoid having multiple active layouts targeting the same windows, as the
---- results will be unpredictable (if such a situation is detected, you'll see an error in the Hammerspoon console); you
+--- results will be unpredictable (if such a situation is detected, you'll see an error in the Cosmic Hammer console); you
 --- *can* have multiple active layouts, but be careful to maintain a clear "separation of concerns" between their respective windowfilters.
 ---
 --- Each layout can have an associated screen configuration; if so, the layout will only be valid while the current screen

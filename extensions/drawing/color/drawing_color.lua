@@ -2,9 +2,9 @@ local module = require("hs.libdrawing_color")
 
 --- === hs.drawing.color ===
 ---
---- Provides access to the system color lists and a wider variety of ways to represent color within Hammerspoon.
+--- Provides access to the system color lists and a wider variety of ways to represent color within Cosmic Hammer.
 ---
---- Color is represented within Hammerspoon as a table containing keys which tell Hammerspoon how the color is specified.  You can specify a color in one of the following ways, depending upon the keys you supply within the table:
+--- Color is represented within Cosmic Hammer as a table containing keys which tell Cosmic Hammer how the color is specified.  You can specify a color in one of the following ways, depending upon the keys you supply within the table:
 ---
 --- * As a combination of Red, Green, and Blue elements (RGB Color):
 ---   * red   - the red component of the color specified as a number from 0.0 to 1.0.
@@ -22,7 +22,7 @@ local module = require("hs.libdrawing_color")
 ---   * white - the ratio of white to black from 0.0 (completely black) to 1.0 (completely white)
 ---   * alpha - the color transparency from 0.0 (completely transparent) to 1.0 (completely opaque)
 ---
---- * From the system or Hammerspoon color lists:
+--- * From the system or Cosmic Hammer color lists:
 ---   * list - the name of a system color list or a collection list defined in `hs.drawing.color`
 ---   * name - the color name within the specified color list
 ---
@@ -109,7 +109,7 @@ end
 ---
 --- Notes:
 ---  * Where possible, each color node is provided as its RGB color representation.  Where this is not possible, the color node contains the keys `list` and `name` which identify the indicated color.  This means that you can use the following wherever a color parameter is expected: `hs.drawing.color.colorsFor(list)["color-name"]`
----  * This function provides a tostring metatable method which allows listing the defined colors in the list in the Hammerspoon console with: `hs.drawing.colorsFor(list)`
+---  * This function provides a tostring metatable method which allows listing the defined colors in the list in the Cosmic Hammer console with: `hs.drawing.colorsFor(list)`
 ---  * See also `hs.drawing.color.lists`
 module.colorsFor = function(list, ...)
     local interimValue = module.lists(...)[list]
@@ -337,7 +337,7 @@ module.x11 = {
 --- Notes:
 ---  * This is not a constant, so you can adjust the colors at run time for your installation if desired.
 ---
----  * Previous versions of Hammerspoon included these colors at the `hs.drawing.color` path; for backwards compatibility, the keys of this table are replicated at that path as long as they do not conflict with any other color collection or function within the `hs.drawing.color` module.  You really should adjust your code to use the collection, as this may change in the future.
+---  * Previous versions of Cosmic Hammer included these colors at the `hs.drawing.color` path; for backwards compatibility, the keys of this table are replicated at that path as long as they do not conflict with any other color collection or function within the `hs.drawing.color` module.  You really should adjust your code to use the collection, as this may change in the future.
 module.hammerspoon =  {
     ["osx_green"]   = { ["red"]=0.153,["green"]=0.788,["blue"]=0.251,["alpha"]=1 },
     ["osx_red"]     = { ["red"]=0.996,["green"]=0.329,["blue"]=0.302,["alpha"]=1 },

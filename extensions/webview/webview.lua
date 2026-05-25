@@ -1,6 +1,6 @@
 --- === hs.webview ===
 ---
---- Display web content in a window from Hammerspoon
+--- Display web content in a window from Cosmic Hammer
 ---
 --- This module uses Apple's WebKit WKWebView class to provide web content display with JavaScript injection support.  The objective is to provide a functional interface to the WKWebView and WKUserContentController classes.
 ---
@@ -10,12 +10,12 @@
 ---   * It is uncertain at present exactly how or where cookies and cached page data is stored or how it can be invalidated.
 ---     * This can be mitigated to an extent for web requests by using `hs.webview:reload(true)` and by crafting the url for `hs.webview:url({...})` as a table -- see the appropriate help entries for more information.
 ---
---- Any suggestions or updates to the code to address any of these or other limitations as they may become apparent are welcome at the Hammerspoon github site: https://www.github.com/Hammerspoon/hammerspoon
+--- Any suggestions or updates to the code to address any of these or other limitations as they may become apparent are welcome at the Cosmic Hammer github site: https://www.github.com/Hammerspoon/hammerspoon
 ---
 
 --- === hs.webview.usercontent ===
 ---
---- This module provides support for injecting custom JavaScript user content into your webviews and for JavaScript to post messages back to Hammerspoon.
+--- This module provides support for injecting custom JavaScript user content into your webviews and for JavaScript to post messages back to Cosmic Hammer.
 
 local USERDATA_TAG = "hs.webview"
 
@@ -84,7 +84,7 @@ end
 --- Parameters:
 ---  * `rect`                  - a rectangle specifying where the webviewObject should be displayed.
 ---  * `preferencesTable`      - an optional table which specifies special settings for the webview object.
----  * `userContentController` - an optional `hs.webview.usercontent` object to provide script injection and JavaScript messaging with Hammerspoon from the webview.
+---  * `userContentController` - an optional `hs.webview.usercontent` object to provide script injection and JavaScript messaging with Cosmic Hammer from the webview.
 ---
 --- Returns:
 ---  * The webview object
@@ -198,7 +198,7 @@ end
 ---  * None
 ---
 --- Notes:
----  * This method is automatically called during garbage collection, notably during a Hammerspoon termination or reload, with a fade time of 0.
+---  * This method is automatically called during garbage collection, notably during a Cosmic Hammer termination or reload, with a fade time of 0.
 objectMT.delete = function(self, propagate, delay)
     if type(propagate) == "number" then
         propagate, delay = nil, propagate

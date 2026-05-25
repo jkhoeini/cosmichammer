@@ -1,9 +1,9 @@
 //
 //  NSImage+BMP.swift
-//  Hammerspoon
+//  Cosmic Hammer
 //
 //  Created by Chris Jones on 07/09/2017.
-//  Copyright © 2017 Hammerspoon. All rights reserved.
+//  Copyright © 2017 Cosmic Hammer. All rights reserved.
 //
 // Copyright 1997-2017 Omni Development, Inc. All rights reserved.
 //

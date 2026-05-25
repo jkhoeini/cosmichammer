@@ -1,9 +1,9 @@
 //
 //  MJAppDelegate.h
-//  Hammerspoon
+//  Cosmic Hammer
 //
 //  Created by Chris Jones on 02/09/2015.
-//  Copyright (c) 2015 Hammerspoon. All rights reserved.
+//  Copyright (c) 2015 Cosmic Hammer. All rights reserved.
 //
 
 @protocol HSOpenFileDelegate <NSObject>

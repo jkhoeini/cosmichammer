@@ -155,7 +155,7 @@ private func distnot_stop(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 1
 }
 
-// MARK: - Hammerspoon Infrastructure
+// MARK: - Cosmic Hammer Infrastructure
 
 private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)

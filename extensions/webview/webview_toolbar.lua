@@ -1,9 +1,9 @@
 
 --- === hs.webview.toolbar ===
 ---
---- Create and manipulate toolbars which can be attached to the Hammerspoon console or hs.webview objects.
+--- Create and manipulate toolbars which can be attached to the Cosmic Hammer console or hs.webview objects.
 ---
---- Toolbars are attached to titled windows and provide buttons which can be used to perform various actions within the application. Hammerspoon can use this module to add toolbars to the console or `hs.webview` objects which have a title bar (see `hs.webview.windowMasks` and `hs.webview:windowStyle`). Toolbars are identified by a unique identifier which is used by OS X to identify information which can be auto saved in the application's user defaults to reflect changes the user has made to the toolbar button order or active button list (this requires setting [hs.webview.toolbar:autosaves](#autosaves) and [hs.webview.toolbar:canCustomize](#canCustomize) both to true).
+--- Toolbars are attached to titled windows and provide buttons which can be used to perform various actions within the application. Cosmic Hammer can use this module to add toolbars to the console or `hs.webview` objects which have a title bar (see `hs.webview.windowMasks` and `hs.webview:windowStyle`). Toolbars are identified by a unique identifier which is used by OS X to identify information which can be auto saved in the application's user defaults to reflect changes the user has made to the toolbar button order or active button list (this requires setting [hs.webview.toolbar:autosaves](#autosaves) and [hs.webview.toolbar:canCustomize](#canCustomize) both to true).
 ---
 --- Multiple copies of the same toolbar can be made with the [hs.webview.toolbar:copy](#copy) method so that multiple webview windows use the same toolbar, for example. If the user customizes a copied toolbar, changes to the active buttons or their order will be reflected in all copies of the toolbar.
 ---
@@ -32,7 +32,7 @@
 --- ~~~
 ---
 --- Notes:
----  * This module is supported in OS X versions prior to 10.10 (for the Hammerspoon console only), even though its parent `hs.webview` is not. To load this module directly, use `require("hs.webview.toolbar")` instead of relying on module auto-loading.
+---  * This module is supported in OS X versions prior to 10.10 (for the Cosmic Hammer console only), even though its parent `hs.webview` is not. To load this module directly, use `require("hs.webview.toolbar")` instead of relying on module auto-loading.
 ---  * Toolbar items are rendered in the order they are supplied, although if the toolbar is marked as customizable, the user may have changed the order.
 
 local USERDATA_TAG = "hs.webview.toolbar"
@@ -73,7 +73,7 @@ module.itemPriorities     = ls.makeConstantsTable(module.itemPriorities)
 ---   * `priority`     - an integer value used to determine toolbar item order and which items are displayed or put into the overflow menu when the number of items in the toolbar exceed the width of the window in which the toolbar is attached. Some example values are provided in the [hs.webview.toolbar.itemPriorities](#itemPriorities) table. If a toolbar item is in a group, it's priority is ignored and the item group is ordered by the item group's priority.
 ---   * `searchfield`  - a boolean (default false) specifying whether or not this toolbar item is a search field. If true, the following additional keys are allowed:
 ---     * `searchHistory`                - an array (table) of strings, specifying previous searches to automatically include in the search field menu, if `searchPredefinedMenuTitle` is not false
----     * `searchHistoryAutosaveName`    - a string specifying the key name to save search history with in the application defaults (accessible through `hs.settings`). If this value is set, search history will be maintained through restarts of Hammerspoon.
+---     * `searchHistoryAutosaveName`    - a string specifying the key name to save search history with in the application defaults (accessible through `hs.settings`). If this value is set, search history will be maintained through restarts of Cosmic Hammer.
 ---     * `searchHistoryLimit`           - the maximum number of items to store in the search field history.
 ---     * `searchPredefinedMenuTitle`    - a string or boolean specifying how a predefined list of search field "response" should be included in the search field menu. If this item is `true`, this list of items specified for `searchPredefinedSearches` will be displayed in a submenu with the title "Predefined Searches". If this item is a string, the list of items will be displayed in a submenu with the title specified by this string value. If this item is `false`, then the search field menu will only contain the items specified in `searchPredefinedSearches` and no search history will be included in the menu.
 ---     * `searchPredefinedSearches`     - an array (table) of strings specifying the items to be listed in the predefined search submenu. If set to false, any existing menu will be removed and the search field menu will be reset to the default.

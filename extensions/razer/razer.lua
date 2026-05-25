@@ -91,7 +91,7 @@ end
 --- Notes:
 ---  * Because `hs.razer` relies on a physical device to
 ---    be connected for testing, this method exists so that
----    Hammerspoon developers can test the extension outside
+---    Cosmic Hammer developers can test the extension outside
 ---    of the usual GitHub tests. It can also be used for
 ---    user troubleshooting.
 function razer.unitTests()

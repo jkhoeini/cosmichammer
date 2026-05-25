@@ -1,7 +1,7 @@
 --- === hs.spoons ===
 ---
 --- Utility and management functions for Spoons
---- Spoons are Lua plugins for Hammerspoon.
+--- Spoons are Lua plugins for Cosmic Hammer.
 --- See https://www.hammerspoon.org/Spoons/ for more information
 
 if _G["spoon"] == nil then
@@ -43,7 +43,7 @@ end
 ---
 --- Parameters:
 ---  * name: name of the new spoon, without the `.spoon` extension
----  * basedir: (optional) directory where to create the template. Defaults to `~/.hammerspoon/Spoons`
+---  * basedir: (optional) directory where to create the template. Defaults to `~/.cosmic-hammer/Spoons`
 ---  * metadata: (optional) table containing metadata values to be inserted in the template. Provided values are merged with the defaults. Defaults to:
 ---    ```
 ---    {
@@ -54,7 +54,7 @@ end
 ---      download_url = "https://github.com/Hammerspoon/Spoons/raw/master/Spoons/"..name..".spoon.zip"
 ---    }
 ---    ```
----  * template: (optional) absolute path of the template to use for the `init.lua` file of the new Spoon. Defaults to the `templates/init.tpl` file included with Hammerspoon.
+---  * template: (optional) absolute path of the template to use for the `init.lua` file of the new Spoon. Defaults to the `templates/init.tpl` file included with Cosmic Hammer.
 ---
 --- Returns:
 ---  * The full directory path where the template was created, or `nil` if there was an error.

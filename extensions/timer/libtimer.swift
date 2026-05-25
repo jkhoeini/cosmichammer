@@ -248,7 +248,7 @@ private func timer_doAfter(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * None
 ///
 /// Notes:
-///  * Use of this function is strongly discouraged, as it blocks all main-thread execution in Hammerspoon. This means no hotkeys or events will be processed in that time, no GUI updates will happen, and no Lua will execute. This is only provided as a last resort, or for extremely short sleeps. For all other purposes, you really should be splitting up your code into multiple functions and calling `hs.timer.doAfter()`
+///  * Use of this function is strongly discouraged, as it blocks all main-thread execution in Cosmic Hammer. This means no hotkeys or events will be processed in that time, no GUI updates will happen, and no Lua will execute. This is only provided as a last resort, or for extremely short sleeps. For all other purposes, you really should be splitting up your code into multiple functions and calling `hs.timer.doAfter()`
 private func timer_usleep(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TNUMBER, LS_TBREAK)
@@ -287,7 +287,7 @@ private func timer_running(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Notes:
 ///  * The return value may be a negative integer in two circumstances:
-///   * Hammerspoon's runloop is backlogged and is catching up on missed timer triggers
+///   * Cosmic Hammer's runloop is backlogged and is catching up on missed timer triggers
 ///   * The timer object is not currently running. In this case, the return value of this method is the number of seconds since the last firing (you can check if the timer is running or not, with `hs.timer:running()`
 private func timer_nextTrigger(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)

@@ -1,6 +1,6 @@
 --- === hs.midi ===
 ---
---- MIDI Extension for Hammerspoon.
+--- MIDI Extension for Cosmic Hammer.
 ---
 --- This extension supports listening, transmitting and synthesizing MIDI commands.
 ---

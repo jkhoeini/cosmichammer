@@ -1,4 +1,4 @@
-@_silgen_name("launchHammerspoon")
-func launchHammerspoon() -> Int32
+@_silgen_name("launchCosmicHammer")
+func launchCosmicHammer() -> Int32
 
-exit(launchHammerspoon())
+exit(launchCosmicHammer())

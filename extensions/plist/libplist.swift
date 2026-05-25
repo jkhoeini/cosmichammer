@@ -122,7 +122,7 @@ private func plist_writeString(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///   * Numbers
 ///   * Booleans
 ///   * Tables
-///  * You should be careful when reading a plist, modifying and writing it - Hammerspoon may not be able to preserve all of the datatypes via Lua
+///  * You should be careful when reading a plist, modifying and writing it - Cosmic Hammer may not be able to preserve all of the datatypes via Lua
 private func plist_write(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING, LS_TTABLE, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)

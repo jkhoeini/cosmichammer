@@ -47,7 +47,7 @@ private func enumerateDirectory(_ dirpath: String, fileManager: FileManager, cod
     for filename in files {
         if filename.hasSuffix(".m") || filename.hasSuffix(".lua") {
             // Match Python: dirpath + "/" + filename
-            // For root dir with trailing slash, this produces e.g. "Hammerspoon//file.m"
+            // For root dir with trailing slash, this produces e.g. "Cosmic Hammer//file.m"
             // For subdirs (no trailing slash), this produces normal paths
             let fullPath = dirpath + "/" + filename
             dbg("  Found file: \(fullPath)")

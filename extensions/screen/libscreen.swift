@@ -1315,7 +1315,7 @@ public func luaopen_hs_libscreen(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
     originalGammas = NSMutableDictionary()
     currentGammas = NSMutableDictionary()
     getAllInitialScreenGammas()
-    notificationQueue = DispatchQueue(label: "org.hammerspoon.Hammerspoon.gammaReapplyNotificationQueue")
+    notificationQueue = DispatchQueue(label: "org.cosmic-hammer.CosmicHammer.gammaReapplyNotificationQueue")
     CGDisplayRegisterReconfigurationCallback(displayReconfigurationCallback, nil)
 
     skin.registerLibrary(USERDATA_TAG, functions: &screenlib, metaFunctions: &metalib)

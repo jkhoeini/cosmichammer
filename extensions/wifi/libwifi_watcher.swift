@@ -257,7 +257,7 @@ private func toHSWifiWatcherFromLua(_ L: UnsafeMutablePointer<lua_State>!, _ idx
     return nil
 }
 
-// MARK: - Hammerspoon/Lua Infrastructure
+// MARK: - Cosmic Hammer/Lua Infrastructure
 
 private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let str = "\(USERDATA_TAG): (\(String(describing: lua_topointer(L, 1)!)))"

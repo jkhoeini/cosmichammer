@@ -173,17 +173,17 @@ private func urleventSetCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 
 /// hs.urlevent.setRestoreHandler(scheme, bundleID)
 /// Function
-/// Stores a URL handler that will be restored when Hammerspoon or reloads its config
+/// Stores a URL handler that will be restored when Cosmic Hammer or reloads its config
 ///
 /// Parameters:
 ///  * scheme - A string containing the URL scheme to change. This must be 'http' (although both http:// and https:// URLs will be affected)
-///  * bundleID - A string containing an application bundle identifier (e.g. 'com.apple.Safari') for the application to set as the default handler when Hammerspoon exits or reloads its config
+///  * bundleID - A string containing an application bundle identifier (e.g. 'com.apple.Safari') for the application to set as the default handler when Cosmic Hammer exits or reloads its config
 ///
 /// Returns:
 ///  * None
 ///
 /// Notes:
-///  * You don't have to call this function if you want Hammerspoon to permanently be your default handler. Only use this if you want the handler to be automatically reverted to something else when Hammerspoon exits/reloads.
+///  * You don't have to call this function if you want Cosmic Hammer to permanently be your default handler. Only use this if you want the handler to be automatically reverted to something else when Cosmic Hammer exits/reloads.
 private func urleventsetRestoreHandler(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TSTRING, LS_TSTRING, LS_TBREAK)
@@ -199,7 +199,7 @@ private func urleventsetRestoreHandler(_ L: UnsafeMutablePointer<lua_State>!) ->
 ///
 /// Parameters:
 ///  * scheme - A string containing the URL scheme to change. This must be 'http' or 'https' (although entering either will change the handler for both)
-///  * bundleID - An optional string containing an application bundle identifier for the application to set as the default handler. Defaults to `org.hammerspoon.Hammerspoon`.
+///  * bundleID - An optional string containing an application bundle identifier for the application to set as the default handler. Defaults to `org.cosmic-hammer.CosmicHammer`.
 ///
 /// Returns:
 ///  * None
@@ -211,7 +211,7 @@ private func urleventsetDefaultHandler(_ L: UnsafeMutablePointer<lua_State>!) ->
     skin.checkArgs(LS_TSTRING, LS_TSTRING | LS_TOPTIONAL, LS_TBREAK)
 
     let scheme = String(cString: lua_tostring(L, 1)!).lowercased()
-    var bundleID = Bundle.main.bundleIdentifier ?? "org.hammerspoon.Hammerspoon"
+    var bundleID = Bundle.main.bundleIdentifier ?? "org.cosmic-hammer.CosmicHammer"
 
     if lua_type(L, 2) == LUA_TSTRING {
         bundleID = String(cString: lua_tostring(L, 2)!)

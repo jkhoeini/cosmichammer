@@ -25,7 +25,7 @@ private var refTable: LSRefTable = LUA_NOREF
 ///  * An `hs.chooser` object
 ///
 /// Notes:
-///  * As of macOS Sierra and later, if you want a `hs.chooser` object to appear above full-screen windows you must hide the Hammerspoon Dock icon first using: `hs.dockicon.hide()`
+///  * As of macOS Sierra and later, if you want a `hs.chooser` object to appear above full-screen windows you must hide the Cosmic Hammer Dock icon first using: `hs.dockicon.hide()`
 private let chooserNew: lua_CFunction = { L in
     let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TFUNCTION, LS_TBREAK)
@@ -798,7 +798,7 @@ private let toHSChooserFromLua: @convention(c) (UnsafeMutablePointer<lua_State>?
     return nil
 }
 
-// MARK: - Hammerspoon Infrastructure
+// MARK: - Cosmic Hammer Infrastructure
 
 private let userdata_tostring: lua_CFunction = { L in
     let skin = LuaSkin.skin(with: L)

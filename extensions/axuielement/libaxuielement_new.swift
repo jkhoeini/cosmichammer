@@ -135,7 +135,7 @@ public func new_application(_ L: UnsafeMutablePointer<lua_State>!, _ pid: pid_t)
 public func new_window(_ L: UnsafeMutablePointer<lua_State>!, _ win: AXUIElement) -> Bool {
     let skin = LuaSkin.skin(with: L)
     guard let hswClass: AnyClass = NSClassFromString("HSwindow") else {
-        skin.logError("\(String(cString: USERDATA_TAG)):new_window - HSwindow class not present; may require Hammerspoon upgrade")
+        skin.logError("\(String(cString: USERDATA_TAG)):new_window - HSwindow class not present; may require Cosmic Hammer upgrade")
         lua_pushnil(L)
         return false
     }
@@ -654,7 +654,7 @@ private func axtextmarker_rangeEndMarker(_ L: UnsafeMutablePointer<lua_State>!) 
     return 1
 }
 
-// MARK: - Hammerspoon/Lua Infrastructure (textmarker)
+// MARK: - Cosmic Hammer/Lua Infrastructure (textmarker)
 
 private func textmarker_userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
@@ -1070,7 +1070,7 @@ private func pushNotificationsTable(_ L: UnsafeMutablePointer<lua_State>!) -> In
     return 1
 }
 
-// MARK: - Hammerspoon/Lua Infrastructure (observer)
+// MARK: - Cosmic Hammer/Lua Infrastructure (observer)
 
 private func observer_userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)

@@ -1,9 +1,9 @@
 --- === hs.host ===
 ---
---- Inspect information about the machine Hammerspoon is running on
+--- Inspect information about the machine Cosmic Hammer is running on
 ---
 --- Notes:
----  * The network/hostname calls can be slow, as network resolution calls can be called, which are synchronous and will block Hammerspoon until they complete.
+---  * The network/hostname calls can be slow, as network resolution calls can be called, which are synchronous and will block Cosmic Hammer until they complete.
 
 local host = require "hs.libhost"
 local fnutils = require "hs.fnutils"
@@ -37,8 +37,8 @@ end
 ---
 --- Parameters:
 ---  * `period`    - an optional value specifying the time between samples collected for calculating CPU usage statistics.
----    * If `callback` is not provided, this is an optional integer, default 100000, specifying the number of microseconds to block between samples collected.  Note that Hammerspoon will block for this period of time during execution of this function.
----    * If `callback` is provided, this is an optional number, default 1.0, specifying the number of seconds between samples collected.  Hammerspoon will *not* block during this time period.
+---    * If `callback` is not provided, this is an optional integer, default 100000, specifying the number of microseconds to block between samples collected.  Note that Cosmic Hammer will block for this period of time during execution of this function.
+---    * If `callback` is provided, this is an optional number, default 1.0, specifying the number of seconds between samples collected.  Cosmic Hammer will *not* block during this time period.
 ---  * `callback` - an optional callback function which will receive the cpu usage statistics in a table, described below, as its sole argument.
 ---
 --- Returns:
@@ -57,11 +57,11 @@ end
 ---    * The results of the cpu statistics will be submitted as a table, described above, to the callback function.
 ---
 --- Notes:
----  * If no callback function is provided, Hammerspoon will block (i.e. no other Hammerspoon activity can occur) during execution of this function for `period` microseconds (1 second = 1,000,000 microseconds).  The default period is 1/10 of a second. If `period` is too small, it is possible that some of the CPU statistics may result in `nan` (not-a-number).
+---  * If no callback function is provided, Cosmic Hammer will block (i.e. no other Cosmic Hammer activity can occur) during execution of this function for `period` microseconds (1 second = 1,000,000 microseconds).  The default period is 1/10 of a second. If `period` is too small, it is possible that some of the CPU statistics may result in `nan` (not-a-number).
 ---
 ---  * For reference, the `top` command has a default period between samples of 1 second.
 ---
----  * The subtables for each core and `overall` have a __tostring() metamethod which allows listing it's contents in the Hammerspoon console by typing `hs.host.cpuUsage()[#]` where # is the core you are interested in or the string "overall".
+---  * The subtables for each core and `overall` have a __tostring() metamethod which allows listing it's contents in the Cosmic Hammer console by typing `hs.host.cpuUsage()[#]` where # is the core you are interested in or the string "overall".
 local convertToPercentages = function(result1, result2)
     local result = {}
     for k,v in pairs(result2) do

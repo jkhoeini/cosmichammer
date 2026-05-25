@@ -14,8 +14,8 @@ echo "== Dumping ASN.1 structure of cert.cer:"
 
 echo ""
 
-echo "== Generating HammerspoonCertTemplate.h:"
-INCLUDE_FILE="HammerspoonCertTemplate.h"
+echo "== Generating CosmicHammerCertTemplate.h:"
+INCLUDE_FILE="CosmicHammerCertTemplate.h"
 
 # Clear out the include file
 > ${INCLUDE_FILE}

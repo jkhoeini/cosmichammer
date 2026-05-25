@@ -17,7 +17,7 @@ let package = Package(
     platforms: [.macOS(.v26)],
     products: [
         .executable(name: "CosmicHammer", targets: ["HSApp"]),
-        .library(name: "HammerspoonLibs", type: .static, targets: ["HSExtensions", "HSSwiftExtensions"]),
+        .library(name: "CosmicHammerLibs", type: .static, targets: ["HSExtensions", "HSSwiftExtensions"]),
     ],
     dependencies: [
         .package(url: "https://github.com/robbiehanson/CocoaAsyncSocket", exact: "7.6.5"),
@@ -330,7 +330,7 @@ let package = Package(
         // ---------------------------------------------------------------
         // HSApp — thin executable wrapper.  main() lives here so
         // HSExtensions can be a regular .target (usable in both the
-        // executable product and the HammerspoonLibs library product).
+        // executable product and the CosmicHammerLibs library product).
         // ---------------------------------------------------------------
         .executableTarget(
             name: "HSApp",
@@ -338,15 +338,15 @@ let package = Package(
             path: "HSApp/Sources/HSApp"
         ),
         // ---------------------------------------------------------------
-        // HammerspoonTests — Swift Testing suite for all Lua-bridged tests.
+        // CosmicHammerTests — Swift Testing suite for all Lua-bridged tests.
         // Uses MJLuaInitWithPaths to bootstrap a Lua state without the
         // full app, then delegates to the same Lua test functions the
         // old XCTest suite used.
         // ---------------------------------------------------------------
         .testTarget(
-            name: "HammerspoonTests",
+            name: "CosmicHammerTests",
             dependencies: ["HSExtensions", "HSSwiftExtensions", "LuaSkin"],
-            path: "HammerspoonTests",
+            path: "CosmicHammerTests",
             exclude: ["lsunit.lua", "testinit.lua"],
             swiftSettings: [
                 .swiftLanguageMode(.v6),

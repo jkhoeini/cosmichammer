@@ -32,7 +32,7 @@ private func datastore_allWebsiteDataTypes(_ L: UnsafeMutablePointer<lua_State>!
 
 /// hs.webview.datastore.default() -> datastoreObject
 /// Constructor
-/// Returns an object representing the default datastore for Hammerspoon `hs.webview` instances.
+/// Returns an object representing the default datastore for Cosmic Hammer `hs.webview` instances.
 ///
 /// Parameters:
 ///  * None
@@ -51,7 +51,7 @@ private func datastore_newDefaultDataStore(_ L: UnsafeMutablePointer<lua_State>!
 
 /// hs.webview.datastore.newPrivate() -> datastoreObject
 /// Constructor
-/// Returns an object representing a newly created non-persistent (private) datastore for use with a Hammerspoon `hs.webview` instance.
+/// Returns an object representing a newly created non-persistent (private) datastore for use with a Cosmic Hammer `hs.webview` instance.
 ///
 /// Parameters:
 ///  * None
@@ -355,7 +355,7 @@ private func toWKWebsiteDataStoreFromLua(_ L: UnsafeMutablePointer<lua_State>!, 
     return nil
 }
 
-// MARK: - Hammerspoon/Lua Infrastructure
+// MARK: - Cosmic Hammer/Lua Infrastructure
 
 private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)

@@ -651,7 +651,7 @@ private func textPrompt(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 2
 }
 
-// MARK: - Hammerspoon/Lua Infrastructure
+// MARK: - Cosmic Hammer/Lua Infrastructure
 
 private func releaseReceivers(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)

@@ -105,7 +105,7 @@ private func consoleDarkMode(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 /// hs.console.consolePrintColor([color]) -> color
 /// Function
-/// Get or set the color that regular output displayed in the Hammerspoon console is displayed with.
+/// Get or set the color that regular output displayed in the Cosmic Hammer console is displayed with.
 ///
 /// Parameters:
 ///  * color - an optional table containing color keys as described in `hs.drawing.color`
@@ -114,7 +114,7 @@ private func consoleDarkMode(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * the current color setting as a table
 ///
 /// Notes:
-///  * See the `hs.drawing.color` entry in the Dash documentation, or type `help.hs.drawing.color` in the Hammerspoon console to get more information on how to specify a color.
+///  * See the `hs.drawing.color` entry in the Dash documentation, or type `help.hs.drawing.color` in the Cosmic Hammer console to get more information on how to specify a color.
 ///  * Note this only affects future output -- anything already in the console will remain its current color.
 private func console_consolePrintColor(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
@@ -134,10 +134,10 @@ private func console_consolePrintColor(_ L: UnsafeMutablePointer<lua_State>!) ->
 
 /// hs.console.maxOutputHistory([length]) -> number
 /// Function
-/// Get or set the max length of the Hammerspoon console's scrollback history.
+/// Get or set the max length of the Cosmic Hammer console's scrollback history.
 ///
 /// Parameters:
-///  * length - an optional number containing the maximum size in bytes of the Hammerspoon console history.
+///  * length - an optional number containing the maximum size in bytes of the Cosmic Hammer console history.
 ///
 /// Returns:
 ///  * the current maximum size of the console history
@@ -160,7 +160,7 @@ private func console_maxOutputHistory(_ L: UnsafeMutablePointer<lua_State>!) -> 
 
 /// hs.console.consoleFont([font]) -> fontTable
 /// Function
-/// Get or set the font used in the Hammerspoon console.
+/// Get or set the font used in the Cosmic Hammer console.
 ///
 /// Parameters:
 ///  * font - an optional string or table describing the font to use in the console. If a string is specified, then the default system font size will be used.  If a table is specified, it should contain a `name` key-value pair and a `size` key-value pair describing the font to be used.
@@ -169,7 +169,7 @@ private func console_maxOutputHistory(_ L: UnsafeMutablePointer<lua_State>!) -> 
 ///  * the current font setting as a table containing a `name` key and a `size` key.
 ///
 /// Notes:
-///  * See the `hs.drawing.color` entry in the Dash documentation, or type `help.hs.drawing.color` in the Hammerspoon console to get more information on how to specify a color.
+///  * See the `hs.drawing.color` entry in the Dash documentation, or type `help.hs.drawing.color` in the Cosmic Hammer console to get more information on how to specify a color.
 ///  * Note this only affects future output -- anything already in the console will remain its current font.
 private func console_consoleFont(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
@@ -186,7 +186,7 @@ private func console_consoleFont(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 
 /// hs.console.consoleCommandColor([color]) -> color
 /// Function
-/// Get or set the color that commands displayed in the Hammerspoon console are displayed with.
+/// Get or set the color that commands displayed in the Cosmic Hammer console are displayed with.
 ///
 /// Parameters:
 ///  * color - an optional table containing color keys as described in `hs.drawing.color`
@@ -195,7 +195,7 @@ private func console_consoleFont(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 ///  * the current color setting as a table
 ///
 /// Notes:
-///  * See the `hs.drawing.color` entry in the Dash documentation, or type `help.hs.drawing.color` in the Hammerspoon console to get more information on how to specify a color.
+///  * See the `hs.drawing.color` entry in the Dash documentation, or type `help.hs.drawing.color` in the Cosmic Hammer console to get more information on how to specify a color.
 ///  * Note this only affects future output -- anything already in the console will remain its current color.
 private func console_consoleCommandColor(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
@@ -215,7 +215,7 @@ private func console_consoleCommandColor(_ L: UnsafeMutablePointer<lua_State>!) 
 
 /// hs.console.consoleResultColor([color]) -> color
 /// Function
-/// Get or set the color that function results displayed in the Hammerspoon console are displayed with.
+/// Get or set the color that function results displayed in the Cosmic Hammer console are displayed with.
 ///
 /// Parameters:
 ///  * color - an optional table containing color keys as described in `hs.drawing.color`
@@ -224,7 +224,7 @@ private func console_consoleCommandColor(_ L: UnsafeMutablePointer<lua_State>!) 
 ///  * the current color setting as a table
 ///
 /// Notes:
-///  * See the `hs.drawing.color` entry in the Dash documentation, or type `help.hs.drawing.color` in the Hammerspoon console to get more information on how to specify a color.
+///  * See the `hs.drawing.color` entry in the Dash documentation, or type `help.hs.drawing.color` in the Cosmic Hammer console to get more information on how to specify a color.
 ///  * Note this only affects future output -- anything already in the console will remain its current color.
 private func console_consoleResultColor(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
@@ -244,7 +244,7 @@ private func console_consoleResultColor(_ L: UnsafeMutablePointer<lua_State>!) -
 
 /// hs.console.hswindow() -> hs.window object
 /// Function
-/// Get an hs.window object which represents the Hammerspoon console window
+/// Get an hs.window object which represents the Cosmic Hammer console window
 ///
 /// Parameters:
 ///  * None
@@ -265,7 +265,7 @@ private func console_asWindow(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 /// hs.console.windowBackgroundColor([color]) -> color
 /// Function
-/// Get or set the color for the background of the Hammerspoon Console's window.
+/// Get or set the color for the background of the Cosmic Hammer Console's window.
 ///
 /// Parameters:
 ///  * color - an optional table containing color keys as described in `hs.drawing.color`
@@ -274,7 +274,7 @@ private func console_asWindow(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * the current color setting as a table
 ///
 /// Notes:
-///  * See the `hs.drawing.color` entry in the Dash documentation, or type `help.hs.drawing.color` in the Hammerspoon console to get more information on how to specify a color.
+///  * See the `hs.drawing.color` entry in the Dash documentation, or type `help.hs.drawing.color` in the Cosmic Hammer console to get more information on how to specify a color.
 private func console_backgroundColor(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
     let console = consoleWindow()
@@ -290,7 +290,7 @@ private func console_backgroundColor(_ L: UnsafeMutablePointer<lua_State>!) -> I
 
 /// hs.console.outputBackgroundColor([color]) -> color
 /// Function
-/// Get or set the color for the background of the Hammerspoon Console's output view.
+/// Get or set the color for the background of the Cosmic Hammer Console's output view.
 ///
 /// Parameters:
 ///  * color - an optional table containing color keys as described in `hs.drawing.color`
@@ -299,7 +299,7 @@ private func console_backgroundColor(_ L: UnsafeMutablePointer<lua_State>!) -> I
 ///  * the current color setting as a table
 ///
 /// Notes:
-///  * See the `hs.drawing.color` entry in the Dash documentation, or type `help.hs.drawing.color` in the Hammerspoon console to get more information on how to specify a color.
+///  * See the `hs.drawing.color` entry in the Dash documentation, or type `help.hs.drawing.color` in the Cosmic Hammer console to get more information on how to specify a color.
 private func console_outputBackgroundColor(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
     let output = consoleOutputView()
@@ -315,7 +315,7 @@ private func console_outputBackgroundColor(_ L: UnsafeMutablePointer<lua_State>!
 
 /// hs.console.inputBackgroundColor([color]) -> color
 /// Function
-/// Get or set the color for the background of the Hammerspoon Console's input field.
+/// Get or set the color for the background of the Cosmic Hammer Console's input field.
 ///
 /// Parameters:
 ///  * color - an optional table containing color keys as described in `hs.drawing.color`
@@ -324,7 +324,7 @@ private func console_outputBackgroundColor(_ L: UnsafeMutablePointer<lua_State>!
 ///  * the current color setting as a table
 ///
 /// Notes:
-///  * See the `hs.drawing.color` entry in the Dash documentation, or type `help.hs.drawing.color` in the Hammerspoon console to get more information on how to specify a color.
+///  * See the `hs.drawing.color` entry in the Dash documentation, or type `help.hs.drawing.color` in the Cosmic Hammer console to get more information on how to specify a color.
 private func console_inputBackgroundColor(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
     let input = consoleInputField()
@@ -343,13 +343,13 @@ private func console_inputBackgroundColor(_ L: UnsafeMutablePointer<lua_State>!)
 /// Determine whether or not objects copied from the console window insert or delete space around selected words to preserve proper spacing and punctuation.
 ///
 /// Parameters:
-///  * flag - an optional boolean value indicating whether or not "smart" space behavior is enabled when copying from the Hammerspoon console.
+///  * flag - an optional boolean value indicating whether or not "smart" space behavior is enabled when copying from the Cosmic Hammer console.
 ///
 /// Returns:
 ///  * the current value
 ///
 /// Notes:
-///  * this only applies to future copy operations from the Hammerspoon console -- anything already in the clipboard is not affected.
+///  * this only applies to future copy operations from the Cosmic Hammer console -- anything already in the clipboard is not affected.
 private func console_smartInsertDeleteEnabled(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let output = consoleOutputView()
 
@@ -363,13 +363,13 @@ private func console_smartInsertDeleteEnabled(_ L: UnsafeMutablePointer<lua_Stat
 
 /// hs.console.getHistory() -> array
 /// Function
-/// Get the Hammerspoon console command history as an array.
+/// Get the Cosmic Hammer console command history as an array.
 ///
 /// Parameters:
 ///  * None
 ///
 /// Returns:
-///  * an array containing the history of commands entered into the Hammerspoon console.
+///  * an array containing the history of commands entered into the Cosmic Hammer console.
 private func console_getHistory(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TBREAK)
@@ -380,10 +380,10 @@ private func console_getHistory(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 
 /// hs.console.setConsole([styledText]) -> none
 /// Function
-/// Clear the Hammerspoon console output window.
+/// Clear the Cosmic Hammer console output window.
 ///
 /// Parameters:
-///  * styledText - an optional `hs.styledtext` object containing the text you wish to replace the Hammerspoon console output with.  If you do not provide an argument, the console is cleared of all content.
+///  * styledText - an optional `hs.styledtext` object containing the text you wish to replace the Cosmic Hammer console output with.  If you do not provide an argument, the console is cleared of all content.
 ///
 /// Returns:
 ///  * None
@@ -430,13 +430,13 @@ private func console_setConsole(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 
 /// hs.console.getConsole([styled]) -> text | styledText
 /// Function
-/// Get the text of the Hammerspoon console output window.
+/// Get the text of the Cosmic Hammer console output window.
 ///
 /// Parameters:
 ///  * styled - an optional boolean indicating whether the console text is returned as a string or a styledText object.  Defaults to false.
 ///
 /// Returns:
-///  * The text currently in the Hammerspoon console output window as either a string or an `hs.styledtext` object.
+///  * The text currently in the Cosmic Hammer console output window as either a string or an `hs.styledtext` object.
 ///
 /// Notes:
 ///  * If the text of the console is retrieved as a string, no color or style information in the console output is retrieved - only the raw text.
@@ -457,10 +457,10 @@ private func console_getConsole(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 
 /// hs.console.setHistory(array) -> nil
 /// Function
-/// Set the Hammerspoon console command history to the items specified in the given array.
+/// Set the Cosmic Hammer console command history to the items specified in the given array.
 ///
 /// Parameters:
-///  * array - the list of commands to set the Hammerspoon console history to.
+///  * array - the list of commands to set the Cosmic Hammer console history to.
 ///
 /// Returns:
 ///  * None
@@ -481,10 +481,10 @@ private func console_setHistory(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 
 /// hs.console.printStyledtext(...) -> none
 /// Function
-/// A print function which recognizes `hs.styledtext` objects and renders them as such in the Hammerspoon console.
+/// A print function which recognizes `hs.styledtext` objects and renders them as such in the Cosmic Hammer console.
 ///
 /// Parameters:
-///  * Any number of arguments can be specified, just like the builtin Lua `print` command.  If an argument matches the userdata type of `hs.styledtext`, the text is rendered as defined by its style attributes in the Hammerspoon console; otherwise it is rendered as it would be via the traditional `print` command within Hammerspoon.
+///  * Any number of arguments can be specified, just like the builtin Lua `print` command.  If an argument matches the userdata type of `hs.styledtext`, the text is rendered as defined by its style attributes in the Cosmic Hammer console; otherwise it is rendered as it would be via the traditional `print` command within Cosmic Hammer.
 ///
 /// Returns:
 ///  * None
@@ -572,7 +572,7 @@ private func console_level(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Get or set the alpha level of the console window.
 ///
 /// Parameters:
-///  * `alpha` - an optional number between 0.0 and 1.0 specifying the new alpha level for the Hammerspoon console.
+///  * `alpha` - an optional number between 0.0 and 1.0 specifying the new alpha level for the Cosmic Hammer console.
 ///
 /// Returns:
 ///  * the current, possibly new, value.
@@ -594,7 +594,7 @@ private func console_alpha(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Get or set the window behavior settings for the console.
 ///
 /// Parameters:
-///  * `behavior` - an optional number representing the desired window behaviors for the Hammerspoon console.
+///  * `behavior` - an optional number representing the desired window behaviors for the Cosmic Hammer console.
 ///
 /// Returns:
 ///  * the current, possibly new, value.
@@ -618,7 +618,7 @@ private func console_behavior(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 /// hs.console.titleVisibility([state]) -> current value
 /// Function
-/// Get or set whether or not the "Hammerspoon Console" text appears in the Hammerspoon console titlebar.
+/// Get or set whether or not the "Cosmic Hammer Console" text appears in the Cosmic Hammer console titlebar.
 ///
 /// Parameters:
 ///  * state - an optional string containing the text "visible" or "hidden", specifying whether or not the console window's title text appears.
@@ -627,7 +627,7 @@ private func console_behavior(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * a string of "visible" or "hidden" specifying the current (possibly changed) state of the window title's visibility.
 ///
 /// Notes:
-///  * When a toolbar is attached to the Hammerspoon console (see the `hs.webview.toolbar` module documentation), this function can be used to specify whether the Toolbar appears underneath the console window's title ("visible") or in the window's title bar itself, as seen in applications like Safari ("hidden"). When the title is hidden, the toolbar will only display the toolbar items as icons without labels, and ignores changes made with `hs.webview.toolbar:displayMode`.
+///  * When a toolbar is attached to the Cosmic Hammer console (see the `hs.webview.toolbar` module documentation), this function can be used to specify whether the Toolbar appears underneath the console window's title ("visible") or in the window's title bar itself, as seen in applications like Safari ("hidden"). When the title is hidden, the toolbar will only display the toolbar items as icons without labels, and ignores changes made with `hs.webview.toolbar:displayMode`.
 ///
 ///  * If a toolbar is attached to the console, you can achieve the same effect as this function with `hs.console.toolbar():inTitleBar(boolean)`
 private func console_titleVisibility(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {

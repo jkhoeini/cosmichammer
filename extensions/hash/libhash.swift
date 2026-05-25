@@ -688,7 +688,7 @@ private func getHashObject(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32)
     return Unmanaged<HSHashObjectNew>.fromOpaque(ptr.pointee).takeUnretainedValue()
 }
 
-// MARK: - Hammerspoon/Lua Infrastructure
+// MARK: - Cosmic Hammer/Lua Infrastructure
 
 private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     guard let obj = getHashObject(L, at: 1) else { return 0 }

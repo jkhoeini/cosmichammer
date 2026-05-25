@@ -2,7 +2,7 @@
 ---
 --- Functions providing basic support for UTF-8 encodings
 ---
---- Prior to upgrading Hammerspoon's Lua interpreter to 5.3, UTF8 support was provided by including the then beta version of Lua 5.3's utf8 library as a Hammerspoon module.  This is no longer necessary, but to maintain compatibility, the Lua utf8 library can still be accessed through `hs.utf8`.  The documentation for the utf8 library can be found at http://www.lua.org/manual/5.3/ or from the Hammerspoon console via the help command: `help.lua.utf8`. This affects the following functions and variables:
+--- Prior to upgrading Cosmic Hammer's Lua interpreter to 5.3, UTF8 support was provided by including the then beta version of Lua 5.3's utf8 library as a Cosmic Hammer module.  This is no longer necessary, but to maintain compatibility, the Lua utf8 library can still be accessed through `hs.utf8`.  The documentation for the utf8 library can be found at http://www.lua.org/manual/5.3/ or from the Cosmic Hammer console via the help command: `help.lua.utf8`. This affects the following functions and variables:
 ---
 ---   * hs.utf8.char          - help available via `help.lua.utf8.char`
 ---   * hs.utf8.charPattern   - help available via `help.lua.utf8.charpattern`
@@ -11,7 +11,7 @@
 ---   * hs.utf8.len           - help available via `help.lua.utf8.len`
 ---   * hs.utf8.offset        - help available via `help.lua.utf8.offset`
 ---
---- Additional functions that are specific to Hammerspoon which provide expanded support for UTF8 are documented here.
+--- Additional functions that are specific to Cosmic Hammer which provide expanded support for UTF8 are documented here.
 ---
 
 -- Mirror utf8.X as hs.utf8.X in a case insensitive manner -- a little broader than
@@ -241,7 +241,7 @@ end
 ---     (U+21E1) up2              ⇡
 ---
 --- Notes:
----  * This table has a __tostring() metamethod which allows listing it's contents in the Hammerspoon console by typing `hs.utf8.registeredKeys`.
+---  * This table has a __tostring() metamethod which allows listing it's contents in the Cosmic Hammer console by typing `hs.utf8.registeredKeys`.
 ---  * For parity with `hs.utf8.registeredLabels`, this can also invoked as a function, i.e. `hs.utf8.registeredKeys["cmd"]` is equivalent to `hs.utf8.registeredKeys("cmd")`
 
 module.registerCodepoint("alt",              0x2325)
@@ -306,8 +306,8 @@ module.registerCodepoint("concaveDiamond",   0x27E1)
 ---
 --- Notes:
 ---  * Because Unicode characters outside of the basic ascii alphabet are multi-byte characters, any UTF8 or other Unicode encoded character will be broken up into their individual bytes and likely escaped by this function.
----  * This function is useful for displaying binary data in a human readable way that might otherwise be inexpressible in the Hammerspoon console or other destination.  For example:
----    * `utf8.charpattern`, which contains the regular expression for matching valid UTF8 encoded sequences, results in `(null)` in the Hammerspoon console, but `hs.utf8.asciiOnly(utf8.charpattern)` will display `[\x00-\x7F\xC2-\xF4][\x80-\xBF]*`.
+---  * This function is useful for displaying binary data in a human readable way that might otherwise be inexpressible in the Cosmic Hammer console or other destination.  For example:
+---    * `utf8.charpattern`, which contains the regular expression for matching valid UTF8 encoded sequences, results in `(null)` in the Cosmic Hammer console, but `hs.utf8.asciiOnly(utf8.charpattern)` will display `[\x00-\x7F\xC2-\xF4][\x80-\xBF]*`.
 module.asciiOnly = function(theString, all)
     all = all or false
     if type(theString) == "string" then

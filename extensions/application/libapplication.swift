@@ -665,7 +665,7 @@ private func _findmenuitembyname(_ L: UnsafeMutablePointer<lua_State>!, _ app: A
     }
 
     if i == 0 {
-        skin.logWarn("_findmenuitembyname() overflowed 5000 iteration guard. This is either a Hammerspoon bug, or your menus are too deep")
+        skin.logWarn("_findmenuitembyname() overflowed 5000 iteration guard. This is either a Cosmic Hammer bug, or your menus are too deep")
     }
     return nil
 }
@@ -1024,7 +1024,7 @@ private func _getMenuStructure(_ menuItem: AXUIElement) -> Any {
 ///  * If no argument is provided, returns a table containing the menu structure of the application, or nil if an error occurred. If a callback function is provided, the callback function will receive this table (or nil) and this method will return the application object this method was invoked on.
 ///
 /// Notes:
-///  * In some applications, this can take a little while to complete, because quite a large number of round trips are required to the source application, to get the information. When this method is invoked without a callback function, Hammerspoon will block while creating the menu structure table.  When invoked with a callback function, the menu structure is built in a background thread.
+///  * In some applications, this can take a little while to complete, because quite a large number of round trips are required to the source application, to get the information. When this method is invoked without a callback function, Cosmic Hammer will block while creating the menu structure table.  When invoked with a callback function, the menu structure is built in a background thread.
 ///
 ///  * The table is nested with the same structure as the menus of the application. Each item has several keys containing information about the menu item. Not all keys will appear for all items. The possible keys are:
 ///   * AXTitle - A string containing the text of the menu item (entries which have no title are menu separators)

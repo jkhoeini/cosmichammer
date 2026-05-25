@@ -309,7 +309,7 @@ function testScreenshots()
 
   assertIsUserdataOfType("hs.image", primary:snapshot())
 
-  local filename = string.format("/tmp/Hammerspoon_test_screenshot_%d", hs.processInfo["processID"])
+  local filename = string.format("/tmp/Cosmic Hammer_test_screenshot_%d", hs.processInfo["processID"])
 
   primary:shotAsJPG(filename)
   local fd = io.open(filename, "r")

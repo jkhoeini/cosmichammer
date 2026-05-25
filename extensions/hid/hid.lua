@@ -1,6 +1,6 @@
 --- === hs.hid ===
 ---
---- HID interface for Hammerspoon, controls and queries caps lock state
+--- HID interface for Cosmic Hammer, controls and queries caps lock state
 ---
 --- Portions sourced from (https://discussions.apple.com/thread/7094207).
 
@@ -59,7 +59,7 @@ end
 
 --- === hs.hid.led ===
 ---
---- HID LED interface for Hammerspoon, controls the state of keyboard LEDs
+--- HID LED interface for Cosmic Hammer, controls the state of keyboard LEDs
 
 module.led = {}
 

@@ -41,7 +41,7 @@ private class HSUserContentController: WKUserContentController, WKScriptMessageH
 /// Create a new user content controller for a webview and create the message port with the specified name for JavaScript message support.
 ///
 /// Parameters:
-///  * name - the name of the message port which JavaScript in the webview can use to post messages to Hammerspoon.
+///  * name - the name of the message port which JavaScript in the webview can use to post messages to Cosmic Hammer.
 ///
 /// Returns:
 ///  * the usercontentControllerObject

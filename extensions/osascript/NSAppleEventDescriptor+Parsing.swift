@@ -1,9 +1,9 @@
 //
 //  NSAppleEventDescriptor+Parsing.swift
-//  Hammerspoon
+//  Cosmic Hammer
 //
 //  Created by Michael Bujol on 2/25/16.
-//  Copyright (c) 2016 Hammerspoon. All rights reserved.
+//  Copyright (c) 2016 Cosmic Hammer. All rights reserved.
 //
 //  Adapted from https://developer.apple.com/library/mac/samplecode/sc2280/Listings/SimpleAssetManagerSample_ScriptingSupportCategories_m.html
 //

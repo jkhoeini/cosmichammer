@@ -78,7 +78,7 @@ func milight_cacheCommands(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * An `hs.milight` object
 ///
 /// Notes:
-///  * You can not use 255.255.255.255 as the IP address, to do so requires elevated privileges for the Hammerspoon process
+///  * You can not use 255.255.255.255 as the IP address, to do so requires elevated privileges for the Cosmic Hammer process
 private func milight_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let ip = luaL_checkstring(L, 1)!
     let port: Int32

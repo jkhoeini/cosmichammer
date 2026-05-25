@@ -34,7 +34,7 @@ Then, simply run `just rebuild` for more streamlined builds.
 This is generally very simple in terms of the workflow, but there's less likely to be any reason to work on the core app:
 
 * Clone our GitHub [repository](https://github.com/Hammerspoon/hammerspoon)
-* Open `Hammerspoon.xcworkspace` in Xcode (Note that you'll generally need the latest available version of Xcode)
+* Open `CosmicHammer.xcworkspace` in Xcode (Note that you'll generally need the latest available version of Xcode)
 * Make the changes you want
 * Push them up to a fork on GitHub
 * Propose a Pull Request on GitHub
@@ -42,7 +42,7 @@ This is generally very simple in terms of the workflow, but there's less likely 
 
 ## Contributing to the extensions
 
-This is really where the meat of Hammerspoon is. Extensions can either be pure Lua or a mixture of Lua and Objective-C (although since they are just dynamically loaded libraries, they could ultimately be compiled in almost any language, if there is a sufficiently compelling reason).
+This is really where the meat of Cosmic Hammer is. Extensions can either be pure Lua or a mixture of Lua and Objective-C (although since they are just dynamically loaded libraries, they could ultimately be compiled in almost any language, if there is a sufficiently compelling reason).
 
 *Note*: all APIs provided by extensions should follow the camelCase naming convention. This does not need to apply to an extension's internal functions, just the ones presented to Lua.
 
@@ -54,13 +54,13 @@ These extensions generally provide useful helper functionality for users (e.g. a
 
 To create such an extension:
 
-* Clone the Hammerspoon git repository
+* Clone the Cosmic Hammer git repository
 * cd into the `extensions` directory
 * Make a directory for your extension
 * Create a `modulename.lua` to contain your code, giving it the appropriate name. It should behave like any normal Lua library - that is to say, your job is to return a table containing functions/methods/constants/etc
 * Ensure you document your API in our preferred format (see the code for almost any existing module for reference)
-* In Xcode's Project Navigator, select the Hammerspoon root entry, then choose Hammerspoon from the Targets list and find the "Copy Extension Lua Files" build phase. Add your new Lua file
-* Build Hammerspoon and test your extension
+* In Xcode's Project Navigator, select the Cosmic Hammer root entry, then choose Cosmic Hammer from the Targets list and find the "Copy Extension Lua Files" build phase. Add your new Lua file
+* Build Cosmic Hammer and test your extension
 * Push your changes up to a fork on GitHub
 * Propose a Pull Request on GitHub
 * Talk to us in #hammerspoon on Libera if you need any guidance
@@ -71,24 +71,24 @@ These extensions generally expose an OS level API for users to automate (e.g. ad
 
 To create such an extension:
 
-* Clone the Hammerspoon git repository
+* Clone the Cosmic Hammer git repository
 * Create the directories/files for your extension:
   * cd into the `extensions` directory
   * Make a directory for your extension
   * Create a `modulename.lua` to load your Objective-C code and contain any additional Lua code. You might find it easier to provide much of your API in Lua and just provide undocumented API from Objective C that does the minimum work possible. The choice is ultimately down to you, depending on the nature of the work the extension is doing.
   * Create a `modulename.m` to contain your Objective-C code. Please use the LuaSkin methods to do as much work as possible, they are well tested and in most extensions can reduce the amount of Lua C API calls to almost zero. Not all of our extensions have been fully converted to LuaSkin yet (a good example is [`hs.chooser`](https://github.com/Hammerspoon/hammerspoon/blob/master/extensions/chooser/internal.m))
   * Right click on the `extensions` group in Xcode's Project Browser and add a new sub-group for your extension, then right click on the sub-group and add your `modulename.lua` and `modulename.m` files (and any supporting `.h`/`.c`/`.m`/etc files)
-  * The files you've added will probably be made members of the Hammerspoon target. You do not want this; Select each file in the Project Browser and using the File Inspector in the Utilities pane on the right of Xcode's window, deselect them from the main Hammerspoon target.
-* Configure Xcode to build your extension and include it in the `Hammerspoon.app` bundle:
-  * Click on the `Hammerspoon` workspace at the very top of the Xcode Project Browser (i.e. the bar on the left)
+  * The files you've added will probably be made members of the Cosmic Hammer target. You do not want this; Select each file in the Project Browser and using the File Inspector in the Utilities pane on the right of Xcode's window, deselect them from the main Cosmic Hammer target.
+* Configure Xcode to build your extension and include it in the `Cosmic Hammer.app` bundle:
+  * Click on the `Cosmic Hammer` workspace at the very top of the Xcode Project Browser (i.e. the bar on the left)
   * Right click on an existing extension target in the "project and targets list" and choose `Duplicate`, which creates `extensionname copy` at the bottom of the list.
   * Rename the copy and drag it to the right place in the list (alphabetically)
   * Click on the target you just created, remove hs.alert's `extension.m` from the `Compile Sources` build phase, add in the `.m` files from your new module
   * Check the `Link Binary With Libraries` section for any frameworks you need to add. Typically this will just mean `LuaSkin.framework`, plus any additional system frameworks you need to link against.
-  * Click on the `Hammerspoon` target (not the project), and in the `Target Dependencies` build phase, add the module target you just created
+  * Click on the `Cosmic Hammer` target (not the project), and in the `Target Dependencies` build phase, add the module target you just created
   * Click the menu item Product → Scheme → Manage Schemes, find `extensionname copy`, rename it and move it to the right place in the list of schemes
-  * Add your `modulename.lua` to the "Copy Extension Lua Files" build phase on the Hammerspoon target, and your `modulename.dylib` to the "Copy Extension Dylibs" build phase
-* Build Hammerspoon and test your extension
+  * Add your `modulename.lua` to the "Copy Extension Lua Files" build phase on the Cosmic Hammer target, and your `modulename.dylib` to the "Copy Extension Dylibs" build phase
+* Build Cosmic Hammer and test your extension
 * Push your changes up to a fork on GitHub
 * Propose a Pull Request on GitHub
 * Talk to us in #hammerspoon on Libera if you need any guidance
@@ -158,16 +158,16 @@ The `Parameters` and `Returns` sections should always be present. If there is no
 
 ### Testing
 
-All new extensions in Hammerspoon should be landed with a test suite, and any modifications to existing extensions should add appropriate tests (which may mean creating tests, if the extension in question is not currently being fully tested).
+All new extensions in Cosmic Hammer should be landed with a test suite, and any modifications to existing extensions should add appropriate tests (which may mean creating tests, if the extension in question is not currently being fully tested).
 
-Our test suite uses Swift Testing (`@Suite`/`@Test`/`#expect`) and lives in the SPM package at `Packages/HammerspoonTests/`. The Lua test functions are in `extensions/<name>/test_<name>.lua`; the Swift side loads each module and calls the Lua functions.
+Our test suite uses Swift Testing (`@Suite`/`@Test`/`#expect`) and lives in the SPM package at `Packages/CosmicHammerTests/`. The Lua test functions are in `extensions/<name>/test_<name>.lua`; the Swift side loads each module and calls the Lua functions.
 
 To add tests for an extension `foo`:
 
  * Create `extensions/foo/test_foo.lua` with functions named `testBar` that return `success()` on pass.
- * Create `Packages/HammerspoonTests/FooTests.swift` with a `@Suite` class inside `HammerspoonTests`:
+ * Create `Packages/CosmicHammerTests/FooTests.swift` with a `@Suite` class inside `CosmicHammerTests`:
    ```swift
-   extension HammerspoonTests {
+   extension CosmicHammerTests {
        @Suite(.serialized) @MainActor final class Foo {
            init() throws { try loadLuaModule("test_foo") }
            @Test func testBar() { runLuaTest() }
@@ -177,7 +177,7 @@ To add tests for an extension `foo`:
  * For hardware-dependent tests, add `.skipInHeadless`: `@Test(.skipInHeadless) func testBar() { ... }`
  * Run tests: `just test` (requires `just build` first).
 
-The Lua test harness (`lsunit.lua` in `Packages/HammerspoonTests/`) provides assertion helpers:
+The Lua test harness (`lsunit.lua` in `Packages/CosmicHammerTests/`) provides assertion helpers:
 
  * `assertIsEqual(expected, actual)` - Ensures that the two arguments are of the same type and value
  * `assertTrue(a)`/`assertFalse(a)` - Ensure that the argument is `true`/`false` respectively
@@ -186,6 +186,6 @@ The Lua test harness (`lsunit.lua` in `Packages/HammerspoonTests/`) provides ass
 
 ### Third party extension distribution
 
-While we want to have Hammerspoon shipping as many useful extensions as possible, there may be reasons for you to ship your extension separately. It would probably be easier to do this in binary form, following the init.lua/internal.so form that Hammerspoon uses, then users can just download your extension into `~/.hammerspoon/<YOUR_EXTENSION_NAME>/`.
+While we want to have Cosmic Hammer shipping as many useful extensions as possible, there may be reasons for you to ship your extension separately. It would probably be easier to do this in binary form, following the init.lua/internal.so form that Cosmic Hammer uses, then users can just download your extension into `~/.cosmic-hammer/<YOUR_EXTENSION_NAME>/`.
 
 If you do choose this route, please list your extension at [https://github.com/Hammerspoon/hammerspoon/wiki/Third-Party-Extensions](https://github.com/Hammerspoon/hammerspoon/wiki/Third-Party-Extensions) so users can discover it easily.

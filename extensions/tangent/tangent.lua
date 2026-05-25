@@ -4,7 +4,7 @@
 ---
 --- **API Version:** TUBE Version 3.2 - TIPC Rev 4 (22nd February 2017)
 ---
---- This plugin allows Hammerspoon to communicate with Tangent's range of panels, such as their Element, Virtual Element Apps, Wave, Ripple and any future panels.
+--- This plugin allows Cosmic Hammer to communicate with Tangent's range of panels, such as their Element, Virtual Element Apps, Wave, Ripple and any future panels.
 ---
 --- The Tangent Unified Bridge Engine (TUBE) is made up of two software elements, the Mapper and the Hub. The Hub communicates with your application via the
 --- TUBE Inter Process Communications (TIPC). TIPC is a standardised protocol to allow any application that supports it to communicate with any current and
@@ -36,7 +36,7 @@ local mod = {}
 
 --- hs.tangent.fromHub -> table
 --- Constant
---- Definitions for IPC Commands from the HUB to Hammerspoon.
+--- Definitions for IPC Commands from the HUB to Cosmic Hammer.
 ---
 --- Notes:
 ---  * `connected`                       - a connection is established with the Hub.
@@ -89,7 +89,7 @@ mod.fromHub = {
 
 --- hs.tangent.toHub -> table
 --- Constant
---- Definitions for IPC Commands from Hammerspoon to the HUB.
+--- Definitions for IPC Commands from Cosmic Hammer to the HUB.
 mod.toHub = {
     applicationDefinition                       = 0x81,
     parameterValue                              = 0x82,
@@ -417,7 +417,7 @@ end
 
 -- errorResponse(message) -> nil, number
 -- Function
--- Writes an error message to the Hammerspoon Console.
+-- Writes an error message to the Cosmic Hammer Console.
 --
 -- Parameters:
 --  * message - The error message.

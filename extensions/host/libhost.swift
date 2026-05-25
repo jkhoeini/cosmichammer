@@ -118,7 +118,7 @@ private func hostLocalizedName(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///    * uncompressedPages       -- the total number of pages (uncompressed) held within the compressor
 ///
 /// Notes:
-///  * The table returned has a __tostring() metamethod which allows listing it's contents in the Hammerspoon console by typing `hs.host.vmStats()`.
+///  * The table returned has a __tostring() metamethod which allows listing it's contents in the Cosmic Hammer console by typing `hs.host.vmStats()`.
 ///  * Except for the addition of cacheHits, cacheLookups, pageSize and memSize, the results for this function should be identical to the OS X command `vm_stat`.
 ///  * Adapted primarily from the source code to Apple's vm_stat command located at http://www.opensource.apple.com/source/system_cmds/system_cmds-643.1.1/vm_stat.tproj/vm_stat.c
 private func hs_vmstat(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
@@ -584,7 +584,7 @@ private func hs_volumeInformation(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
 ///  * A table whose key-value pairs represent the GPUs for the current system.  Each key is a string containing the name for an installed GPU and its value is the GPU's VRAM size in MB.  If the VRAM size cannot be determined for a specific GPU, its value will be -1.0.
 ///
 /// Notes:
-///  * If your GPU reports -1.0 as the memory size, please submit an issue to the Hammerspoon github repository and include any information that you can which may be relevant, such as: Macintosh model, macOS version, is the GPU built in or a third party expansion card, the GPU model and VRAM as best you can determine (see the System Information application in the Utilities folder and look at the Graphics/Display section) and anything else that you think might be important.
+///  * If your GPU reports -1.0 as the memory size, please submit an issue to the Cosmic Hammer github repository and include any information that you can which may be relevant, such as: Macintosh model, macOS version, is the GPU built in or a third party expansion card, the GPU model and VRAM as best you can determine (see the System Information application in the Utilities folder and look at the Graphics/Display section) and anything else that you think might be important.
 private func hs_vramSize(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     var iterator: io_iterator_t = 0
     let err = IOServiceGetMatchingServices(kIOMainPortDefault, IOServiceMatching("IOPCIDevice"), &iterator)

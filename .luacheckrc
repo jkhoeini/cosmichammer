@@ -15,7 +15,7 @@ read_globals = {
 }
 
 --
--- Hammerspoon Tests:
+-- CosmicHammer Tests:
 --
 files["**/test_*.lua"] = {
     read_globals = {

@@ -59,7 +59,7 @@ function testSecondsSinceEpoch()
   local hsTime = hs.timer.secondsSinceEpoch()
   local fuzz = hsTime - luaTime
 
-  -- Since we have no objective way of getting the time with zero time lag, we'll just compare the Lua epoch time and the Hammerspoon epoch time and ensure that their offset is small
+  -- Since we have no objective way of getting the time with zero time lag, we'll just compare the Lua epoch time and the Cosmic Hammer epoch time and ensure that their offset is small
   assertGreaterThan(-5, fuzz)
   assertLessThan(5, fuzz)
 

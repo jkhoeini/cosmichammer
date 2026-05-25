@@ -403,7 +403,7 @@ private func dynamicStoreLocation(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
 private func dynamicStoreLocations(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
-    guard let prefs = SCPreferencesCreate(nil, "Hammerspoon" as CFString, nil) else {
+    guard let prefs = SCPreferencesCreate(nil, "Cosmic Hammer" as CFString, nil) else {
         lua_pushnil(L)
         return 1
     }
@@ -581,7 +581,7 @@ private func dynamicStoreMonitorKeys(_ L: UnsafeMutablePointer<lua_State>!) -> I
     return 1
 }
 
-// MARK: - Hammerspoon/Lua Infrastructure
+// MARK: - Cosmic Hammer/Lua Infrastructure
 
 private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)

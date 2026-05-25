@@ -324,7 +324,7 @@ static int obj_ud_gc(lua_State *L) {
     return 0 ;
 }
 
-#pragma mark - Hammerspoon/Lua Infrastructure
+#pragma mark - Cosmic Hammer/Lua Infrastructure
 
 // Metatable for userdata objects
 static const luaL_Reg userdata_metaLib[] = {

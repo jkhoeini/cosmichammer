@@ -1,6 +1,6 @@
 --- === hs ===
 ---
---- Core Hammerspoon functionality
+--- Core Cosmic Hammer functionality
 
 return {setup=function(...)
   local modpath, prettypath, fullpath, configdir, docstringspath, hasinitfile, autoload_extensions = ...
@@ -48,15 +48,15 @@ return {setup=function(...)
 
 --- hs.dockIconClickCallback
 --- Variable
---- An optional function that will be called when the Hammerspoon Dock Icon is clicked while the app is running
+--- An optional function that will be called when the Cosmic Hammer Dock Icon is clicked while the app is running
 ---
 --- Notes:
----  * If set, this callback will be called regardless of whether or not Hammerspoon shows its console window in response to a click (which can be enabled/disabled via `hs.openConsoleOnDockClick()`
+---  * If set, this callback will be called regardless of whether or not Cosmic Hammer shows its console window in response to a click (which can be enabled/disabled via `hs.openConsoleOnDockClick()`
 hs.dockIconClickCallback = nil
 
 --- hs.shutdownCallback
 --- Variable
---- An optional function that will be called when the Lua environment is being destroyed (either because Hammerspoon is exiting or reloading its config)
+--- An optional function that will be called when the Lua environment is being destroyed (either because Cosmic Hammer is exiting or reloading its config)
 ---
 --- Notes:
 ---  * This function should not perform any asynchronous tasks
@@ -73,7 +73,7 @@ hs.accessibilityStateCallback = nil
 
 --- hs.textDroppedToDockIconCallback
 --- Variable
---- An optional function that will be called when text is dragged to the Hammerspoon Dock Icon or sent via the Services menu
+--- An optional function that will be called when text is dragged to the Cosmic Hammer Dock Icon or sent via the Services menu
 ---
 --- Notes:
 ---  * The function should accept a single parameter, which will be a string containing the text that was dragged to the dock icon
@@ -81,17 +81,17 @@ hs.textDroppedToDockIconCallback = nil
 
 --- hs.fileDroppedToDockIconCallback
 --- Variable
---- An optional function that will be called when a files are dragged to the Hammerspoon Dock Icon or sent via the Services menu
+--- An optional function that will be called when a files are dragged to the Cosmic Hammer Dock Icon or sent via the Services menu
 ---
 --- Notes:
 ---  * The function should accept a single parameter, which will be a string containing the full path to the file that was dragged to the dock icon
 ---  * If multiple files are sent, this callback will be called once for each file
----  * This callback will be triggered when ANY file type is dragged onto the Hammerspoon Dock Icon, however certain filetypes are also processed separately by Hammerspoon. For example, `hs.urlevent` will be triggered when the following filetypes are dropped onto the Dock Icon: HTML Documents (.html, .htm, .shtml, .jhtml), Plain text documents (.txt, .text), Web site locations (.url), XHTML documents (.xhtml, .xht, .xhtm, .xht).
+---  * This callback will be triggered when ANY file type is dragged onto the Cosmic Hammer Dock Icon, however certain filetypes are also processed separately by Cosmic Hammer. For example, `hs.urlevent` will be triggered when the following filetypes are dropped onto the Dock Icon: HTML Documents (.html, .htm, .shtml, .jhtml), Plain text documents (.txt, .text), Web site locations (.url), XHTML documents (.xhtml, .xht, .xhtm, .xht).
 hs.fileDroppedToDockIconCallback = nil
 
 --- hs.relaunch()
 --- Function
---- Quits and relaunches Hammerspoon.
+--- Quits and relaunches Cosmic Hammer.
 ---
 --- Parameters:
 ---  * None
@@ -105,7 +105,7 @@ end
 
 --- hs.coroutineApplicationYield([delay])
 --- Function
---- Yield coroutine to allow the Hammerspoon application to process other scheduled events and schedule a resume in the event application queue.
+--- Yield coroutine to allow the Cosmic Hammer application to process other scheduled events and schedule a resume in the event application queue.
 ---
 --- Parameters:
 ---  * `delay` - an optional number, default `hs.math.minFloat`, specifying the number of seconds from when this function is executed that the `coroutine.resume` should be scheduled for.
@@ -115,7 +115,7 @@ end
 ---
 --- Notes:
 ---  * this function will return an error if invoked outside of a coroutine.
----  * unlike `coroutine.yield`, this function does not allow the passing of (new) information to or from the coroutine while it is running; this function is to allow long running tasks to yield time to the Hammerspoon application so other timers and scheduled events can occur without requiring the programmer to add code for an explicit resume.
+---  * unlike `coroutine.yield`, this function does not allow the passing of (new) information to or from the coroutine while it is running; this function is to allow long running tasks to yield time to the Cosmic Hammer application so other timers and scheduled events can occur without requiring the programmer to add code for an explicit resume.
 ---
 ---  * this function is added to the lua `coroutine` library as `coroutine.applicationYield` as an alternative name.
 local resumeTimers = {}
@@ -143,12 +143,12 @@ coroutine.applicationYield = hs.coroutineApplicationYield
 
 --- hs.docstrings_json_file
 --- Constant
---- A string containing the full path to the `docs.json` file inside Hammerspoon's app bundle. This contains the full Hammerspoon API documentation and can be accessed in the Console using `help("someAPI")`. It can also be loaded and processed by the `hs.doc` extension
+--- A string containing the full path to the `docs.json` file inside Cosmic Hammer's app bundle. This contains the full Cosmic Hammer API documentation and can be accessed in the Console using `help("someAPI")`. It can also be loaded and processed by the `hs.doc` extension
   hs.docstrings_json_file = docstringspath
 
 --- hs.showError(err)
 --- Function
---- Shows an error to the user, using Hammerspoon's Console
+--- Shows an error to the user, using Cosmic Hammer's Console
 ---
 --- Parameters:
 ---  * err - A string containing an error message
@@ -162,7 +162,7 @@ coroutine.applicationYield = hs.coroutineApplicationYield
 ---  * You can override this function if you wish to route errors differently (e.g. for remote systems)
 
   function hs.showError(err)
-    hs._notify("Hammerspoon error") -- undecided on this line
+    hs._notify("Cosmic Hammer error") -- undecided on this line
     --  print(traceback())
     print("*** ERROR: "..err)
     hs.focus()
@@ -192,7 +192,7 @@ coroutine.applicationYield = hs.coroutineApplicationYield
 ---  * If the console is not currently open, it will be opened. If it is open and not the focused window, it will be brought forward and focused.
 ---  * If the console is focused, it will be closed.
   function hs.toggleConsole()
-    local console = hs.appfinder.windowFromWindowTitle("Hammerspoon Console")
+    local console = hs.appfinder.windowFromWindowTitle("Cosmic Hammer Console")
     if console and (console ~= hs.window.focusedWindow()) then
       console:focus()
     elseif console then
@@ -213,7 +213,7 @@ coroutine.applicationYield = hs.coroutineApplicationYield
 ---  * None
 ---
 --- Notes:
----  * Hammerspoon overrides Lua's print() function, but this is a reference we retain to is, should you need it for any reason
+---  * Cosmic Hammer overrides Lua's print() function, but this is a reference we retain to is, should you need it for any reason
   local rawprint,logmessage = print,hs._logmessage
   hs.rawprint = rawprint
   function print(...) -- luacheck: ignore
@@ -261,10 +261,10 @@ coroutine.applicationYield = hs.coroutineApplicationYield
 
 --- hs.dockIcon([state]) -> bool
 --- Function
---- Set or display whether or not the Hammerspoon dock icon is visible.
+--- Set or display whether or not the Cosmic Hammer dock icon is visible.
 ---
 --- Parameters:
----  * state - an optional boolean which will set whether or not the Hammerspoon dock icon should be visible.
+---  * state - an optional boolean which will set whether or not the Cosmic Hammer dock icon should be visible.
 ---
 --- Returns:
 ---  * True if the icon is currently set (or has just been) to be visible or False if it is not.
@@ -291,7 +291,7 @@ coroutine.applicationYield = hs.coroutineApplicationYield
 ---  * The object provided by the Spoon (which can be ignored if you chose to make the Spoon global)
 ---
 --- Notes:
----  * Spoons are a way of distributing self-contained units of Lua functionality, for Hammerspoon. For more information, see https://github.com/Hammerspoon/hammerspoon/blob/master/SPOONS.md
+---  * Spoons are a way of distributing self-contained units of Lua functionality, for Cosmic Hammer. For more information, see https://github.com/Hammerspoon/hammerspoon/blob/master/SPOONS.md
 ---  * This function will load the Spoon and call its `:init()` method if it has one. If you do not wish this to happen, or wish to use a Spoon that somehow doesn't fit with the behaviours of this function, you can also simply `require('name')` to load the Spoon
 ---  * If the Spoon has a `:start()` method you are responsible for calling it before using the functionality of the Spoon.
 ---  * If the Spoon provides documentation, it will be loaded by made available in hs.docs
@@ -369,16 +369,16 @@ coroutine.applicationYield = hs.coroutineApplicationYield
 
 --- hs.help(identifier)
 --- Function
---- Prints the documentation for some part of Hammerspoon's API and Lua 5.3.  This function is actually sourced from hs.doc.help.
+--- Prints the documentation for some part of Cosmic Hammer's API and Lua 5.3.  This function is actually sourced from hs.doc.help.
 ---
 --- Parameters:
----  * identifier - A string containing the signature of some part of Hammerspoon's API (e.g. `"hs.reload"`)
+---  * identifier - A string containing the signature of some part of Cosmic Hammer's API (e.g. `"hs.reload"`)
 ---
 --- Returns:
 ---  * None
 ---
 --- Notes:
----  * This function is mainly for runtime API help while using Hammerspoon's Console
+---  * This function is mainly for runtime API help while using Cosmic Hammer's Console
 ---  * You can also access the results of this function by the following methods from the console:
 ---    * help("identifier") -- quotes are required, e.g. `help("hs.reload")`
 ---    * help.identifier.path -- no quotes are required, e.g. `help.hs.reload`
@@ -392,10 +392,10 @@ coroutine.applicationYield = hs.coroutineApplicationYield
 
 --- hs.hsdocs([identifier])
 --- Function
---- Display's Hammerspoon API documentation in a webview browser.
+--- Display's Cosmic Hammer API documentation in a webview browser.
 ---
 --- Parameters:
----  * identifier - An optional string containing the signature of some part of Hammerspoon's API (e.g. `"hs.reload"`).  If no string is provided, then the table of contents for the Hammerspoon documentation is displayed.
+---  * identifier - An optional string containing the signature of some part of Cosmic Hammer's API (e.g. `"hs.reload"`).  If no string is provided, then the table of contents for the Cosmic Hammer documentation is displayed.
 ---
 --- Returns:
 ---  * None
@@ -404,8 +404,8 @@ coroutine.applicationYield = hs.coroutineApplicationYield
 ---  * You can also access the results of this function by the following methods from the console:
 ---    * hs.hsdocs.identifier.path -- no quotes are required, e.g. `hs.hsdocs.hs.reload`
 ---  * See `hs.doc.hsdocs` for more information about the available settings for the documentation browser.
----  * This function provides documentation for Hammerspoon modules, functions, and methods similar to the Hammerspoon Dash docset, but does not require any additional software.
----  * This currently only provides documentation for the built in Hammerspoon modules, functions, and methods.  The Lua documentation and third-party modules are not presently supported, but may be added in a future release.
+---  * This function provides documentation for Cosmic Hammer modules, functions, and methods similar to the Cosmic Hammer Dash docset, but does not require any additional software.
+---  * This currently only provides documentation for the built in Cosmic Hammer modules, functions, and methods.  The Lua documentation and third-party modules are not presently supported, but may be added in a future release.
   local hsdocsMetatable
   hsdocsMetatable = {
     __index = function(self, key)
@@ -592,7 +592,7 @@ coroutine.applicationYield = hs.coroutineApplicationYield
 ---  * A table of strings, each of which will be shown as a possible completion option to the user
 ---
 --- Notes:
----  * Hammerspoon provides a default implementation of this function, which can complete against the global Lua namespace, the 'hs' (i.e. extension) namespace, and object metatables. You can assign a new function to the variable to replace it with your own variant.
+---  * Cosmic Hammer provides a default implementation of this function, which can complete against the global Lua namespace, the 'hs' (i.e. extension) namespace, and object metatables. You can assign a new function to the variable to replace it with your own variant.
   function hs.completionsForInputString(completionWord)
     local completions = {}
     local mapJoiner = "."
@@ -672,7 +672,7 @@ coroutine.applicationYield = hs.coroutineApplicationYield
     hscrash.crashKV("modules", table.concat(loadedModules, ", "))
 
       --if string.sub(modulename, 1, 3) == "hs." then
-      --  -- Reasonably certain that we're dealing with a Hammerspoon extension
+      --  -- Reasonably certain that we're dealing with a Cosmic Hammer extension
       --  local extname = string.sub(modulename, 4, -1)
       --  for k,v in ipairs(hscrash.dumpCLIBS()) do
       --    if string.find(v, extname) then
@@ -702,7 +702,7 @@ coroutine.applicationYield = hs.coroutineApplicationYield
 --- Default toolbar for the Console window
 ---
 --- Notes:
----  * This is an `hs.toolbar` object that is shown by default in the Hammerspoon Console
+---  * This is an `hs.toolbar` object that is shown by default in the Cosmic Hammer Console
 ---  * You can remove this toolbar by adding `hs.console.toolbar(nil)` to your config, or you can replace it with your own `hs.webview.toolbar` object
   local toolbar = require("hs.webview.toolbar")
   local console = require("hs.console")

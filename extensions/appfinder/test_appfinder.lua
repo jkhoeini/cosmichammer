@@ -12,9 +12,9 @@ end
 
 function testAppFromWindowTitle()
   hs.openConsole()
-  local app = hs.appfinder.appFromWindowTitle("Hammerspoon Console")
+  local app = hs.appfinder.appFromWindowTitle("Cosmic Hammer Console")
   assertIsUserdata(app)
-  assertIsEqual("Hammerspoon", app:name())
+  assertIsEqual("Cosmic Hammer", app:name())
 
   assertIsNil(hs.appfinder.appFromWindowTitle("Window title that should never exist"))
 
@@ -25,7 +25,7 @@ function testAppFromWindowTitlePattern()
   hs.openConsole()
   local app = hs.appfinder.appFromWindowTitlePattern("Ha.* Console")
   assertIsUserdata(app)
-  assertIsEqual("Hammerspoon", app:name())
+  assertIsEqual("Cosmic Hammer", app:name())
 
   assertIsNil(hs.appfinder.appFromWindowTitlePattern("Not going .* match"))
 
@@ -34,9 +34,9 @@ end
 
 function testWindowFromWindowTitle()
   hs.openConsole()
-  local win = hs.appfinder.windowFromWindowTitle("Hammerspoon Console")
+  local win = hs.appfinder.windowFromWindowTitle("Cosmic Hammer Console")
   assertIsUserdata(win)
-  assertIsEqual("Hammerspoon Console", win:title())
+  assertIsEqual("Cosmic Hammer Console", win:title())
 
   assertIsNil(hs.appfinder.windowFromWindowTitle("Window title that should never exist"))
 
@@ -47,7 +47,7 @@ function testWindowFromWindowTitlePattern()
   hs.openConsole()
   local win = hs.appfinder.windowFromWindowTitlePattern("Ha.*Console")
   assertIsUserdata(win)
-  assertIsEqual("Hammerspoon Console", win:title())
+  assertIsEqual("Cosmic Hammer Console", win:title())
 
   assertIsNil(hs.appfinder.windowFromWindowTitlePattern("Not going .* match"))
 

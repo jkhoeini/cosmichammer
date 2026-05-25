@@ -463,7 +463,7 @@ private func task_getPID(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  *  If the task was started successfully, returns the task object; otherwise returns false
 ///
 /// Notes:
-///  * If the task does not start successfully, the error message will be printed to the Hammerspoon Console
+///  * If the task does not start successfully, the error message will be printed to the Cosmic Hammer Console
 private func task_launch(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
@@ -572,7 +572,7 @@ private func task_SIGINT(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  *  If the task was paused successfully, returns the task object; otherwise returns false
 ///
 /// Notes:
-///  * If the task is not paused, the error message will be printed to the Hammerspoon Console
+///  * If the task is not paused, the error message will be printed to the Cosmic Hammer Console
 ///  * This method can be called multiple times, but a matching number of `hs.task:resume()` calls will be required to allow the process to continue
 private func task_pause(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
@@ -606,7 +606,7 @@ private func task_pause(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  *  If the task was resumed successfully, returns the task object; otherwise returns false
 ///
 /// Notes:
-///  * If the task is not resumed successfully, the error message will be printed to the Hammerspoon Console
+///  * If the task is not resumed successfully, the error message will be printed to the Cosmic Hammer Console
 private func task_resumeTask(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
@@ -630,7 +630,7 @@ private func task_resumeTask(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 /// hs.task:waitUntilExit() -> hs.task object
 /// Method
-/// Blocks Hammerspoon until the task exits
+/// Blocks Cosmic Hammer until the task exits
 ///
 /// Parameters:
 ///  * None
@@ -639,7 +639,7 @@ private func task_resumeTask(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * The `hs.task` object
 ///
 /// Notes:
-///  * All Lua and Hammerspoon activity will be blocked by this method. Its use is highly discouraged.
+///  * All Lua and Cosmic Hammer activity will be blocked by this method. Its use is highly discouraged.
 private func task_block(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
@@ -746,7 +746,7 @@ private func task_terminationReason(_ L: UnsafeMutablePointer<lua_State>!) -> In
 ///  * a table of the environment variables for the task where each key is the environment variable name.
 ///
 /// Notes:
-///  * if you have not yet set an environment table with the `hs.task:setEnvironment` method, this method will return a copy of the Hammerspoon environment table, as this is what the task will inherit by default.
+///  * if you have not yet set an environment table with the `hs.task:setEnvironment` method, this method will return a copy of the Cosmic Hammer environment table, as this is what the task will inherit by default.
 private func task_getEnvironment(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
@@ -772,7 +772,7 @@ private func task_getEnvironment(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 ///  * The hs.task object, or false if the table was not set (usually because the task is already running or has completed)
 ///
 /// Notes:
-///  * If you do not set an environment table with this method, the task will inherit the environment variables of the Hammerspoon application.  Set this to an empty table if you wish for no variables to be set for the task.
+///  * If you do not set an environment table with this method, the task will inherit the environment variables of the Cosmic Hammer application.  Set this to an empty table if you wish for no variables to be set for the task.
 private func task_setEnvironment(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TTABLE, LS_TBREAK)

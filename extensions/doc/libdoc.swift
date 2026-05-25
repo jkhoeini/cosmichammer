@@ -312,7 +312,7 @@ private func doc_help(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 /// hs.doc.registerJSONFile(jsonfile, [isSpoon]) -> status[, message]
 /// Function
-/// Register a JSON file for inclusion when Hammerspoon generates internal documentation.
+/// Register a JSON file for inclusion when Cosmic Hammer generates internal documentation.
 ///
 /// Parameters:
 ///  * jsonfile - A string containing the location of a JSON file
@@ -462,7 +462,7 @@ private func internal_documentationTree(_ L: UnsafeMutablePointer<lua_State>!) -
     return 1
 }
 
-// MARK: - Hammerspoon/Lua Infrastructure
+// MARK: - Cosmic Hammer/Lua Infrastructure
 
 private func meta_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)

@@ -7,7 +7,7 @@ Custom functions can be defined to provide custom error pages for each web serve
 server = require("hs.httpserver.hsminweb").new():start()
 ~~~
 
-You can identify the server's port by typing `server:port()` into the Hammerspoon console or create a server instance on a specific port by using methods described in the documentation for `hs.httpserver.hsminweb`.
+You can identify the server's port by typing `server:port()` into the Cosmic Hammer console or create a server instance on a specific port by using methods described in the documentation for `hs.httpserver.hsminweb`.
 
 - - -
 
@@ -25,7 +25,7 @@ By default, the HTTP error pages are pretty bland:
 
 You can provide a custom function to make a more descriptive error page for a specific error code, or for all errors which do not have a custom function by adding them to the `server._errorHandlers` table.
 
-404 is the error code for a missing resource, usually because the URL refers to a file that does not exist.  You can see a list of the common error codes and their basic description by typing `hs.httpserver.hsminweb.statusCodes` into the Hammerspoon console.  Any number over 400 indicates an error condition.  404 is probably the most commonly encountered, and to provide a more descriptive error, you could do something like this:
+404 is the error code for a missing resource, usually because the URL refers to a file that does not exist.  You can see a list of the common error codes and their basic description by typing `hs.httpserver.hsminweb.statusCodes` into the Cosmic Hammer console.  Any number over 400 indicates an error condition.  404 is probably the most commonly encountered, and to provide a more descriptive error, you could do something like this:
 
 ~~~lua
 server._errorHandlers["404"] = function(method, path, headers)

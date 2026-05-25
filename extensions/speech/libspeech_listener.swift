@@ -55,10 +55,10 @@ private func get_recognizerFromUserdata_transfer(_ L: UnsafeMutablePointer<lua_S
 
 /// hs.speech.listener.new([title]) -> recognizerObject
 /// Constructor
-/// Creates a new speech recognizer object for use by Hammerspoon.
+/// Creates a new speech recognizer object for use by Cosmic Hammer.
 ///
 /// Parameters:
-///  * title - an optional parameter specifying the title under which commands assigned to this speech recognizer will be listed in the Dictation Commands display when it is visible.  Defaults to "Hammerspoon".
+///  * title - an optional parameter specifying the title under which commands assigned to this speech recognizer will be listed in the Dictation Commands display when it is visible.  Defaults to "Cosmic Hammer".
 ///
 /// Returns:
 ///  * a speech recognizer object or nil, if the system was unable to create a new recognizer.
@@ -72,7 +72,7 @@ private func newSpeechRecognizer(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
     if lua_gettop(L) == 1 {
         luaL_checkstring(L, 1)
         theTitle = skin.toNSObject(atIndex: 1) as? String
-        if theTitle == nil { skin.logWarn("unable to identify title from string, defaulting to \"Hammerspoon\"") }
+        if theTitle == nil { skin.logWarn("unable to identify title from string, defaulting to \"Cosmic Hammer\"") }
     }
 
     guard let recognizer = HSSpeechRecognizer() else {
@@ -133,7 +133,7 @@ private func displayedCommandsTitle(_ L: UnsafeMutablePointer<lua_State>!) -> In
             luaL_checkstring(L, 2)
             theTitle = skin.toNSObject(atIndex: 2) as? String
         }
-        recognizer.displayedCommandsTitle = theTitle ?? "Hammerspoon"
+        recognizer.displayedCommandsTitle = theTitle ?? "Cosmic Hammer"
         lua_pushvalue(L, 1)
     } else {
         skin.pushNSObject(recognizer.displayedCommandsTitle as NSString?)
@@ -143,7 +143,7 @@ private func displayedCommandsTitle(_ L: UnsafeMutablePointer<lua_State>!) -> In
 
 /// hs.speech.listener:foregroundOnly([flag]) -> recognizerObject | current value
 /// Method
-/// Get or set whether or not the speech recognizer is active only when the Hammerspoon application is active.
+/// Get or set whether or not the speech recognizer is active only when the Cosmic Hammer application is active.
 private func listensInForegroundOnly(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let recognizer = get_recognizerFromUserdata(L, at: 1)
     let skin = LuaSkin.skin(with: L)
@@ -244,12 +244,12 @@ private func pushHSSpeechRecognizer(_ L: UnsafeMutablePointer<lua_State>!, obj: 
     return 1
 }
 
-// MARK: - Hammerspoon Infrastructure
+// MARK: - Cosmic Hammer Infrastructure
 
 private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let recognizer = get_recognizerFromUserdata(L, at: 1)
     let skin = LuaSkin.skin(with: L)
-    let title = recognizer.displayedCommandsTitle ?? "Hammerspoon"
+    let title = recognizer.displayedCommandsTitle ?? "Cosmic Hammer"
     let ptr = Unmanaged.passUnretained(recognizer).toOpaque()
     lua_pushstring(L, "\(USERDATA_TAG): \(title) (\(ptr))")
     return 1

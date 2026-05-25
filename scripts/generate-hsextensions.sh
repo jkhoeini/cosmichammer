@@ -12,7 +12,7 @@
 #      luaopen_hs_lib<name> into Lua's package.preload keyed by
 #      "hs.lib<name>".
 #
-#   3. Hammerspoon/HSExtensionsRegistry.m
+#   3. CosmicHammer/HSExtensionsRegistry.m
 #      Keep-alive array in the main app target. The static linker pulls each
 #      referenced object out of libHSExtensions.a so the `luaopen_*`
 #      functions don't get dead-stripped.

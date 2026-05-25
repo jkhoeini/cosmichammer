@@ -222,7 +222,7 @@ private func hotkey_enable(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     } else {
         skin.logError("\(USERDATA_TAG):enable() keycode: \(hotkey.pointee.keycode), mods: 0x\(String(format: "%04x", hotkey.pointee.mods)), RegisterEventHotKey failed: \(result)")
         if result == OSStatus(eventHotKeyExistsErr) {
-            skin.logError("This hotkey is already registered. It may be a duplicate in your Hammerspoon config, or it may be registered by macOS. See System Preferences->Keyboard->Shortcuts")
+            skin.logError("This hotkey is already registered. It may be a duplicate in your Cosmic Hammer config, or it may be registered by macOS. See System Preferences->Keyboard->Shortcuts")
         }
         lua_pushnil(L)
     }

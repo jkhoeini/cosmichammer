@@ -323,10 +323,10 @@ private func sound_loopSound(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 /// hs.sound:stopOnReload([stopOnReload]) -> soundObject | bool
 /// Method
-/// Get or set whether a sound should be stopped when Hammerspoon reloads its configuration
+/// Get or set whether a sound should be stopped when Cosmic Hammer reloads its configuration
 ///
 /// Parameters:
-///  * stopOnReload - An optional boolean, true to stop playback when Hammerspoon reloads its config, false to continue playback regardless.  Defaults to true.
+///  * stopOnReload - An optional boolean, true to stop playback when Cosmic Hammer reloads its config, false to continue playback regardless.  Defaults to true.
 ///
 /// Returns:
 ///  * If a parameter is provided, returns the sound object; otherwise returns the current setting.
@@ -361,7 +361,7 @@ private func sound_stopOnRelease(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 ///  * If a parameter is provided, returns the sound object; otherwise returns the current setting.
 ///
 /// Notes:
-///  * If remove the sound name by specifying `nil`, the sound will automatically be set to stop when Hammerspoon is reloaded.
+///  * If remove the sound name by specifying `nil`, the sound will automatically be set to stop when Cosmic Hammer is reloaded.
 private func sound_name(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING | LS_TNUMBER | LS_TNIL | LS_TOPTIONAL, LS_TBREAK)
@@ -578,7 +578,7 @@ private func toNSSoundFromLua(_ L: UnsafeMutablePointer<lua_State>!, idx: Int32)
     return value.soundObject
 }
 
-// MARK: - Hammerspoon/Lua Infrastructure
+// MARK: - Cosmic Hammer/Lua Infrastructure
 
 private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)

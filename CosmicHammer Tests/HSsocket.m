@@ -1,6 +1,6 @@
 //
 //  HSsocket.m
-//  Hammerspoon
+//  Cosmic Hammer
 //
 //  Created by Michael Bujol on 02/12/2016.
 

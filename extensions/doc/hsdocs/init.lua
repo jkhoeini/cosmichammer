@@ -3,7 +3,7 @@
 ---
 --- Manage the internal documentation web server.
 ---
---- This module provides functions for managing the Hammerspoon built-in documentation web server.  Currently, this is the same documentation available in the Dash docset for Hammerspoon, but does not require third party software for viewing.
+--- This module provides functions for managing the Cosmic Hammer built-in documentation web server.  Currently, this is the same documentation available in the Dash docset for Cosmic Hammer, but does not require third party software for viewing.
 ---
 --- Future enhancements to this module under consideration include:
 ---  * Support for third-party modules to add to the documentation set at run-time
@@ -11,7 +11,7 @@
 ---  * Documentation for the LuaSkin Objective-C Framework
 ---  * Lua Reference documentation
 ---
---- The intent of this sub-module is to provide as close a rendering of the same documentation available at the Hammerspoon GitHub site and Dash documentation as possible in a manner suitable for run-time modification so module developers can test out documentation additions without requiring a complete recompilation of the Hammerspoon source.  As always, the most current and official documentation can be found at https://www.hammerspoon.org and in the official Hammerspoon Dash docset.
+--- The intent of this sub-module is to provide as close a rendering of the same documentation available at the Cosmic Hammer GitHub site and Dash documentation as possible in a manner suitable for run-time modification so module developers can test out documentation additions without requiring a complete recompilation of the Cosmic Hammer source.  As always, the most current and official documentation can be found at https://www.hammerspoon.org and in the official Cosmic Hammer Dash docset.
 
 local module  = {}
 -- private variables and methods -----------------------------------------
@@ -222,7 +222,7 @@ local makeToolbar = function(browser)
         },
         {
             id = "search",
-            tooltip = "Search for a Hammerspoon function or method by name",
+            tooltip = "Search for a Cosmic Hammer function or method by name",
             searchfield = true,
             searchWidth = 250,
             searchPredefinedSearches = makeModuleListForMenu(),
@@ -364,7 +364,7 @@ local makeBrowser = function()
 
     if (osVersion["major"] == 10 and osVersion["minor"] > 10) then
         options.privateBrowsing = true
-        options.applicationName = "Hammerspoon/" .. hs.processInfo.version
+        options.applicationName = "Cosmic Hammer/" .. hs.processInfo.version
     end
 
 -- not used anymore, but just in case, I'm leaving the skeleton here...
@@ -408,10 +408,10 @@ end)
 
 --- hs.doc.hsdocs.interface([interface]) -> currentValue
 --- Function
---- Get or set the network interface that the Hammerspoon documentation web server will be served on
+--- Get or set the network interface that the Cosmic Hammer documentation web server will be served on
 ---
 --- Parameters:
----  * interface - an optional string, or nil, specifying the network interface the Hammerspoon documentation web server will be served on.  An explicit nil specifies that the web server should listen on all active interfaces for the machine.  Defaults to "localhost".
+---  * interface - an optional string, or nil, specifying the network interface the Cosmic Hammer documentation web server will be served on.  An explicit nil specifies that the web server should listen on all active interfaces for the machine.  Defaults to "localhost".
 ---
 --- Returns:
 ---  * the current, possibly new, value
@@ -420,7 +420,7 @@ end)
 ---  * See `hs.httpserver.setInterface` for a description of valid values that can be specified as the `interface` argument to this function.
 ---  * A change to the interface can only occur when the documentation server is not running. If the server is currently active when you call this function with an argument, the server will be temporarily stopped and then restarted after the interface has been changed.
 ---
----  * Changes made with this function are saved with `hs.settings` with the label "_documentationServer.interface" and will persist through a reload or restart of Hammerspoon.
+---  * Changes made with this function are saved with `hs.settings` with the label "_documentationServer.interface" and will persist through a reload or restart of Cosmic Hammer.
 module.interface = function(...)
     local args = table.pack(...)
     if args.n > 0 then
@@ -452,10 +452,10 @@ end
 
 --- hs.doc.hsdocs.port([value]) -> currentValue
 --- Function
---- Get or set the Hammerspoon documentation server HTTP port.
+--- Get or set the Cosmic Hammer documentation server HTTP port.
 ---
 --- Parameters:
----  * value - an optional number specifying the port for the Hammerspoon documentation web server
+---  * value - an optional number specifying the port for the Cosmic Hammer documentation web server
 ---
 --- Returns:
 ---  * the current, possibly new, value
@@ -463,7 +463,7 @@ end
 --- Notes:
 ---  * The default port number is 12345.
 ---
----  * Changes made with this function are saved with `hs.settings` with the label "_documentationServer.serverPort" and will persist through a reload or restart of Hammerspoon.
+---  * Changes made with this function are saved with `hs.settings` with the label "_documentationServer.serverPort" and will persist through a reload or restart of Cosmic Hammer.
 module.port = function(...)
     local args = table.pack(...)
     local value = args[1]
@@ -478,7 +478,7 @@ end
 
 --- hs.doc.hsdocs.start() -> `hs.doc.hsdocs`
 --- Function
---- Start the Hammerspoon internal documentation web server.
+--- Start the Cosmic Hammer internal documentation web server.
 ---
 --- Parameters:
 ---  * None
@@ -495,7 +495,7 @@ module.start = function()
     else
         module._server = require"hs.httpserver.hsminweb".new(documentRoot)
         module._server:port(module.port())
-                     :name("Hammerspoon Documentation")
+                     :name("Cosmic Hammer Documentation")
                      :bonjour(true)
                      :luaTemplateExtension("lp")
                      :interface(module.interface())
@@ -512,7 +512,7 @@ end
 
 --- hs.doc.hsdocs.stop() -> `hs.doc.hsdocs`
 --- Function
---- Stop the Hammerspoon internal documentation web server.
+--- Stop the Cosmic Hammer internal documentation web server.
 ---
 --- Parameters:
 ---  * None
@@ -531,10 +531,10 @@ end
 
 --- hs.doc.hsdocs.help([identifier]) -> nil
 --- Function
---- Display the documentation for the specified Hammerspoon function, or the Table of Contents for the Hammerspoon documentation in a built-in mini browser.
+--- Display the documentation for the specified Cosmic Hammer function, or the Table of Contents for the Cosmic Hammer documentation in a built-in mini browser.
 ---
 --- Parameters:
----  * an optional string specifying a Hammerspoon module, function, or method to display documentation for. If you leave out this parameter, the table of contents for the Hammerspoon built-in documentation is displayed instead.
+---  * an optional string specifying a Cosmic Hammer module, function, or method to display documentation for. If you leave out this parameter, the table of contents for the Cosmic Hammer built-in documentation is displayed instead.
 ---
 --- Returns:
 ---  * None
@@ -569,7 +569,7 @@ end
 --- Get or set the currently saved initial frame location for the documentation browser.
 ---
 --- Parameters:
----  * frameTable - a frame table containing x, y, h, and w values specifying the browser's initial position when Hammerspoon starts.
+---  * frameTable - a frame table containing x, y, h, and w values specifying the browser's initial position when Cosmic Hammer starts.
 ---
 --- Returns:
 ---  * the current, possibly new, value
@@ -578,7 +578,7 @@ end
 ---  * If [hs.doc.hsdocs.trackBrowserFrame](#trackBrowserFrame) is false or nil (the default), then you can use this function to specify the initial position of the documentation browser.
 ---  * If [hs.doc.hsdocs.trackBrowserFrame](#trackBrowserFrame) is true, then this any value set with this function will be overwritten whenever the browser window is moved or resized.
 ---
----  * Changes made with this function are saved with `hs.settings` with the label "_documentationServer.browserFrame" and will persist through a reload or restart of Hammerspoon.
+---  * Changes made with this function are saved with `hs.settings` with the label "_documentationServer.browserFrame" and will persist through a reload or restart of Cosmic Hammer.
 module.browserFrame = function(...)
     local args = table.pack(...)
     local value = args[1]
@@ -592,16 +592,16 @@ end
 
 --- hs.doc.hsdocs.trackBrowserFrame([value]) -> currentValue
 --- Function
---- Get or set whether or not changes in the documentation browsers location and size persist through launches of Hammerspoon.
+--- Get or set whether or not changes in the documentation browsers location and size persist through launches of Cosmic Hammer.
 ---
 --- Parameters:
----  * value - an optional boolean specifying whether or not the browsers location should be saved across launches of Hammerspoon.
+---  * value - an optional boolean specifying whether or not the browsers location should be saved across launches of Cosmic Hammer.
 ---
 --- Returns:
 ---  * the current, possibly new, value
 ---
 --- Notes:
----  * Changes made with this function are saved with `hs.settings` with the label "_documentationServer.trackBrowserFrameChanges" and will persist through a reload or restart of Hammerspoon.
+---  * Changes made with this function are saved with `hs.settings` with the label "_documentationServer.trackBrowserFrameChanges" and will persist through a reload or restart of Cosmic Hammer.
 module.trackBrowserFrame = function(...)
     local args = table.pack(...)
     if args.n == 1 and (type(args[1]) == "boolean" or type(args[1]) == "nil") then
@@ -623,7 +623,7 @@ end
 --- Notes:
 ---  * This is experimental and is disabled by default. It was inspired by a Userscript written by krasnovpro.  The original can be found at https://openuserjs.org/scripts/krasnovpro/hammerspoon.org_Documentation/source.
 ---
----  * Changes made with this function are saved with `hs.settings` with the label "_documentationServer.entitiesInSidebar" and will persist through a reload or restart of Hammerspoon.
+---  * Changes made with this function are saved with `hs.settings` with the label "_documentationServer.entitiesInSidebar" and will persist through a reload or restart of Cosmic Hammer.
 module.moduleEntitiesInSidebar = function(...)
     local args = table.pack(...)
     if args.n == 1 and (type(args[1]) == "boolean" or type(args[1]) == "nil") then
@@ -634,7 +634,7 @@ end
 
 --- hs.doc.hsdocs.browserDarkMode([value]) -> currentValue
 --- Function
---- Get or set whether or not the Hammerspoon browser renders output in Dark mode.
+--- Get or set whether or not the Cosmic Hammer browser renders output in Dark mode.
 ---
 --- Parameters:
 ---  * value - an optional boolean, number, or nil specifying whether or not the documentation browser renders in Dark mode.
@@ -649,7 +649,7 @@ end
 --- Notes:
 ---  * Inversion is applied through the use of CSS filtering, so while numeric values other than 0 (false) and 100 (true) are allowed, the result is generally not what is desired.
 ---
----  * Changes made with this function are saved with `hs.settings` with the label "_documentationServer.invertDocs" and will persist through a reload or restart of Hammerspoon.
+---  * Changes made with this function are saved with `hs.settings` with the label "_documentationServer.invertDocs" and will persist through a reload or restart of Cosmic Hammer.
 module.browserDarkMode = function(...)
     local args = table.pack(...)
     local value = args[1]
@@ -676,7 +676,7 @@ end
 ---
 ---  * This behavior is triggered automatically, regardless of this setting, if you are running with a version of OS X prior to 10.10, since `hs.webview` requires OS X 10.10 or later.
 ---
----  * Changes made with this function are saved with `hs.settings` with the label "_documentationServer.forceExternalBrowser" and will persist through a reload or restart of Hammerspoon.
+---  * Changes made with this function are saved with `hs.settings` with the label "_documentationServer.forceExternalBrowser" and will persist through a reload or restart of Cosmic Hammer.
 module.forceExternalBrowser = function(...)
     local args = table.pack(...)
     local value = args[1]

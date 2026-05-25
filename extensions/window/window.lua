@@ -3,7 +3,7 @@
 --- Inspect/manipulate windows
 ---
 --- Notes:
----  * See `hs.screen` and `hs.geometry` for more information on how Hammerspoon uses window/screen frames and coordinates
+---  * See `hs.screen` and `hs.geometry` for more information on how Cosmic Hammer uses window/screen frames and coordinates
 
 local application = require "hs.application"
 local window = require("hs.libwindow")
@@ -225,7 +225,7 @@ window.windowForID=window.get
 --- Usage:
 --- ```
 --- -- by id
---- hs.window(8812):title() --> Hammerspoon Console
+--- hs.window(8812):title() --> Cosmic Hammer Console
 --- -- by title
 --- hs.window'bash':application():name() --> Terminal
 --- ```
@@ -694,7 +694,7 @@ end
 ---  * A list of `hs.window` objects representing all windows positioned east (i.e. right) of the window, in ascending order of distance
 ---
 --- Notes:
----  * If you don't pass `candidateWindows`, Hammerspoon will query for the list of all visible windows every time this method is called; this can be slow, and some undesired "windows" could be included (see the notes for `hs.window.allWindows()`); consider using the equivalent methods in `hs.window.filter` instead
+---  * If you don't pass `candidateWindows`, Cosmic Hammer will query for the list of all visible windows every time this method is called; this can be slow, and some undesired "windows" could be included (see the notes for `hs.window.allWindows()`); consider using the equivalent methods in `hs.window.filter` instead
 
 --- hs.window:windowsToWest([candidateWindows[, frontmost[, strict]]]) -> list of hs.window objects
 --- Method
@@ -709,7 +709,7 @@ end
 ---  * A list of `hs.window` objects representing all windows positioned west (i.e. left) of the window, in ascending order of distance
 ---
 --- Notes:
----  * If you don't pass `candidateWindows`, Hammerspoon will query for the list of all visible windows every time this method is called; this can be slow, and some undesired "windows" could be included (see the notes for `hs.window.allWindows()`); consider using the equivalent methods in `hs.window.filter` instead
+---  * If you don't pass `candidateWindows`, Cosmic Hammer will query for the list of all visible windows every time this method is called; this can be slow, and some undesired "windows" could be included (see the notes for `hs.window.allWindows()`); consider using the equivalent methods in `hs.window.filter` instead
 
 --- hs.window:windowsToNorth([candidateWindows[, frontmost[, strict]]]) -> list of hs.window objects
 --- Method
@@ -724,7 +724,7 @@ end
 ---  * A list of `hs.window` objects representing all windows positioned north (i.e. up) of the window, in ascending order of distance
 ---
 --- Notes:
----  * If you don't pass `candidateWindows`, Hammerspoon will query for the list of all visible windows every time this method is called; this can be slow, and some undesired "windows" could be included (see the notes for `hs.window.allWindows()`); consider using the equivalent methods in `hs.window.filter` instead
+---  * If you don't pass `candidateWindows`, Cosmic Hammer will query for the list of all visible windows every time this method is called; this can be slow, and some undesired "windows" could be included (see the notes for `hs.window.allWindows()`); consider using the equivalent methods in `hs.window.filter` instead
 
 --- hs.window:windowsToSouth([candidateWindows[, frontmost[, strict]]]) -> list of hs.window objects
 --- Method
@@ -739,7 +739,7 @@ end
 ---  * A list of `hs.window` objects representing all windows positioned south (i.e. down) of the window, in ascending order of distance
 ---
 --- Notes:
----  * If you don't pass `candidateWindows`, Hammerspoon will query for the list of all visible windows every time this method is called; this can be slow, and some undesired "windows" could be included (see the notes for `hs.window.allWindows()`); consider using the equivalent methods in `hs.window.filter` instead
+---  * If you don't pass `candidateWindows`, Cosmic Hammer will query for the list of all visible windows every time this method is called; this can be slow, and some undesired "windows" could be included (see the notes for `hs.window.allWindows()`); consider using the equivalent methods in `hs.window.filter` instead
 
 --- hs.window.frontmostWindow() -> hs.window object
 --- Constructor
@@ -756,7 +756,7 @@ function window.frontmostWindow()
   if w then return w end
   for _,ww in ipairs(window.orderedWindows()) do
     local app=ww:application()
-    if (app and app:title()~='Hammerspoon') or ww:subrole()~='AXUnknown' then return ww end
+    if (app and app:title()~='Cosmic Hammer') or ww:subrole()~='AXUnknown' then return ww end
   end
 end
 
@@ -791,7 +791,7 @@ end
 ---  * `true` if a window was found and focused, `false` otherwise; `nil` if the search couldn't take place
 ---
 --- Notes:
----  * If you don't pass `candidateWindows`, Hammerspoon will query for the list of all visible windows
+---  * If you don't pass `candidateWindows`, Cosmic Hammer will query for the list of all visible windows
 ---    every time this method is called; this can be slow, and some undesired "windows" could be included
 ---    (see the notes for `hs.window.allWindows()`); consider using the equivalent methods in
 ---    `hs.window.filter` instead
@@ -811,7 +811,7 @@ end
 ---  * `true` if a window was found and focused, `false` otherwise; `nil` if the search couldn't take place
 ---
 --- Notes:
----  * If you don't pass `candidateWindows`, Hammerspoon will query for the list of all visible windows
+---  * If you don't pass `candidateWindows`, Cosmic Hammer will query for the list of all visible windows
 ---    every time this method is called; this can be slow, and some undesired "windows" could be included
 ---    (see the notes for `hs.window.allWindows()`); consider using the equivalent methods in
 ---    `hs.window.filter` instead
@@ -831,7 +831,7 @@ end
 ---  * `true` if a window was found and focused, `false` otherwise; `nil` if the search couldn't take place
 ---
 --- Notes:
----  * If you don't pass `candidateWindows`, Hammerspoon will query for the list of all visible windows
+---  * If you don't pass `candidateWindows`, Cosmic Hammer will query for the list of all visible windows
 ---    every time this method is called; this can be slow, and some undesired "windows" could be included
 ---    (see the notes for `hs.window.allWindows()`); consider using the equivalent methods in
 ---    `hs.window.filter` instead
@@ -851,7 +851,7 @@ end
 ---  * `true` if a window was found and focused, `false` otherwise; `nil` if the search couldn't take place
 ---
 --- Notes:
----  * If you don't pass `candidateWindows`, Hammerspoon will query for the list of all visible windows
+---  * If you don't pass `candidateWindows`, Cosmic Hammer will query for the list of all visible windows
 ---    every time this method is called; this can be slow, and some undesired "windows" could be included
 ---    (see the notes for `hs.window.allWindows()`); consider using the equivalent methods in
 ---    `hs.window.filter` instead

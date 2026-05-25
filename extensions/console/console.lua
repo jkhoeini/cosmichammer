@@ -1,8 +1,8 @@
 --- === hs.console ===
 ---
---- Some functions for manipulating the Hammerspoon console.
+--- Some functions for manipulating the Cosmic Hammer console.
 ---
---- These functions allow altering the behavior and display of the Hammerspoon console.  They should be considered experimental, but have worked well for me.
+--- These functions allow altering the behavior and display of the Cosmic Hammer console.  They should be considered experimental, but have worked well for me.
 
 -- make sure NSColor conversion tools are installed
 require("hs.drawing.color")
@@ -26,7 +26,7 @@ end
 
 --- hs.console.clearConsole() -> nil
 --- Function
---- Clear the Hammerspoon console output window.
+--- Clear the Cosmic Hammer console output window.
 ---
 --- Parameters:
 ---  * None
@@ -90,7 +90,7 @@ end
 --- Get or set the window behavior settings for the console using labels defined in `hs.drawing.windowBehaviors`.
 ---
 --- Parameters:
----  * behaviorTable - an optional table of strings and/or numbers specifying the desired window behavior for the Hammerspoon console.
+---  * behaviorTable - an optional table of strings and/or numbers specifying the desired window behavior for the Cosmic Hammer console.
 ---
 --- Returns:
 ---  * the current (possibly new) value.
@@ -135,10 +135,10 @@ end
 
 --- hs.console.toolbar([toolbar]) -> toolbarObject | currentValue
 --- Method
---- Get or attach/detach a toolbar to/from the Hammerspoon console.
+--- Get or attach/detach a toolbar to/from the Cosmic Hammer console.
 ---
 --- Parameters:
----  * `toolbar` - if an `hs.webview.toolbar` object is specified, it will be attached to the Hammerspoon console.  If an explicit nil is specified, the current toolbar will be removed from the console.
+---  * `toolbar` - if an `hs.webview.toolbar` object is specified, it will be attached to the Cosmic Hammer console.  If an explicit nil is specified, the current toolbar will be removed from the console.
 ---
 --- Returns:
 ---  * if a toolbarObject or explicit nil is specified, returns the toolbarObject; otherwise returns the current toolbarObject or nil, if no toolbar is attached to the console.

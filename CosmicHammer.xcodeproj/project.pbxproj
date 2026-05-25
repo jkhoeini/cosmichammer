@@ -1,0 +1,756 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		1DDF5E0796996ECE1D3C1EEE /* gfm.lp in CopyFiles */ = {isa = PBXBuildFile; fileRef = 35420A8371EA5241D9029871 /* gfm.lp */; };
+		3459CCB8A61816CB4D0170AE /* index.lp in CopyFiles */ = {isa = PBXBuildFile; fileRef = 3BC8DD117045B5C214FCD95A /* index.lp */; };
+		3D64DA96966D4E8C04B35D83 /* lua.json in Resources */ = {isa = PBXBuildFile; fileRef = 2F20A33A39F1461D7B65C8B9 /* lua.json */; };
+		421220B4CF0576F36623C0B1 /* statusicon.pdf in Resources */ = {isa = PBXBuildFile; fileRef = A725867C0F4F55BF619C8E0E /* statusicon.pdf */; };
+		43BA308FADAB1A5C5E963B3E /* index.md in CopyFiles */ = {isa = PBXBuildFile; fileRef = A85F46D756640214432705FF /* index.md */; };
+		455FE72CD164F22702370AE7 /* functions.md in CopyFiles */ = {isa = PBXBuildFile; fileRef = B3B0ECA86782ED4D5CAD56A9 /* functions.md */; };
+		46BC010635B600E812221711 /* docs.json in Resources */ = {isa = PBXBuildFile; fileRef = AD27B6EC154891D88595111C /* docs.json */; };
+		4FDB61A5DB096F67A501C3D1 /* Credits.rtf in Resources */ = {isa = PBXBuildFile; fileRef = A79B76DDE57C69C2BF1CC7C2 /* Credits.rtf */; };
+		509815593EC1077191C0AED5 /* search.lp in CopyFiles */ = {isa = PBXBuildFile; fileRef = 12955A65EC8B4E175A3AA9F4 /* search.lp */; };
+		582FE2EC11E7BCAB5A76A18B /* CosmicHammerLibs in Frameworks */ = {isa = PBXBuildFile; productRef = E2B94AEB5DEA8C269F0C3FF9 /* CosmicHammerLibs */; };
+		65C32200A3105ECC5C6A419A /* CosmicHammer.sdef in Resources */ = {isa = PBXBuildFile; fileRef = 8F1C2B1D3260B1F176133075 /* CosmicHammer.sdef */; };
+		6B11C22FD3611DABA887026E /* templates.md in CopyFiles */ = {isa = PBXBuildFile; fileRef = 008243CAFD60622918CD3CFB /* templates.md */; };
+		6B24B79FB19FC82BFE8BDF6B /* CosmicHammer.icns in Resources */ = {isa = PBXBuildFile; fileRef = C888D91E2C9D4748531824F2 /* CosmicHammer.icns */; };
+		83D814BC575F59DE22DE9EB4 /* setup.lua in Resources */ = {isa = PBXBuildFile; fileRef = BF693442D37F7B42628A8EC8 /* setup.lua */; };
+		97FFF2FE66A72A5328E60F1A /* init.lua in Resources */ = {isa = PBXBuildFile; fileRef = BF9EF831B1E9E6FE297171D2 /* init.lua */; };
+		99F5E59764F3B716CCEC6E22 /* init.lua in CopyFiles */ = {isa = PBXBuildFile; fileRef = F09F93BA992FC7B5F5463408 /* init.lua */; };
+		9C3258BBB61BE8C62474E8F3 /* index.md in CopyFiles */ = {isa = PBXBuildFile; fileRef = 4286FC26E0B3E3111CDBC956 /* index.md */; };
+		AB4FBF5421418BD1BCC0BEA0 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 267B42E447A2F65ADE53E93F /* main.swift */; };
+		BE0A85DF0A9FC5ABB75A633C /* common.lp in CopyFiles */ = {isa = PBXBuildFile; fileRef = D3E69A386F9106DFC29307DF /* common.lp */; };
+		BFAF5E7D0FE68D4274A5A6FA /* hs.man in CopyFiles */ = {isa = PBXBuildFile; fileRef = 13418951E264C212081D292C /* hs.man */; };
+		D199F15E917D1BD9F9BD153E /* sample.lp in CopyFiles */ = {isa = PBXBuildFile; fileRef = 3145A8BDBABC567C2A4FD440 /* sample.lp */; };
+		D53D16666308170120EE9D16 /* form.lp in CopyFiles */ = {isa = PBXBuildFile; fileRef = CE5D9B67C28A8BB7AA177155 /* form.lp */; };
+		DAE69B06A78603B99F6E2AA5 /* docs.css in CopyFiles */ = {isa = PBXBuildFile; fileRef = 557AD63064919F647AA112CF /* docs.css */; };
+		E287727A21B14E8752C66867 /* timeout3 in Resources */ = {isa = PBXBuildFile; fileRef = 49B1B20E4F060946C3D13F42 /* timeout3 */; };
+		F5684D07A3BB978F76B3B916 /* Hammerspoon_UITests.m in Sources */ = {isa = PBXBuildFile; fileRef = A68C3FB0C374D9C17F955493 /* Hammerspoon_UITests.m */; };
+		F5773CB4015E0DB7FDB0EFDC /* Spoon.icns in Resources */ = {isa = PBXBuildFile; fileRef = 3BEC1D5DC5FDEA3BF09551C3 /* Spoon.icns */; };
+		FEED9F80DF42ABF5AF6E7295 /* module.lp in CopyFiles */ = {isa = PBXBuildFile; fileRef = 0BEB52C72B59B21DAC911670 /* module.lp */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		2CAA4B4064CC6600720DE59B /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 00DAA1F163DFC61266F1F680 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = B8030808D8FA0293CBE68AF6;
+			remoteInfo = CosmicHammer;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		0F9E6011CBE2C4FE5AA50A66 /* CopyFiles */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = extensions/hs/hsdocs/hsminweb;
+			dstSubfolderSpec = 7;
+			files = (
+				455FE72CD164F22702370AE7 /* functions.md in CopyFiles */,
+				43BA308FADAB1A5C5E963B3E /* index.md in CopyFiles */,
+				6B11C22FD3611DABA887026E /* templates.md in CopyFiles */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B5A4A18B0653B4407DF625A2 /* CopyFiles */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = extensions/hs/hsdocs;
+			dstSubfolderSpec = 7;
+			files = (
+				BE0A85DF0A9FC5ABB75A633C /* common.lp in CopyFiles */,
+				DAE69B06A78603B99F6E2AA5 /* docs.css in CopyFiles */,
+				D53D16666308170120EE9D16 /* form.lp in CopyFiles */,
+				1DDF5E0796996ECE1D3C1EEE /* gfm.lp in CopyFiles */,
+				3459CCB8A61816CB4D0170AE /* index.lp in CopyFiles */,
+				9C3258BBB61BE8C62474E8F3 /* index.md in CopyFiles */,
+				99F5E59764F3B716CCEC6E22 /* init.lua in CopyFiles */,
+				FEED9F80DF42ABF5AF6E7295 /* module.lp in CopyFiles */,
+				D199F15E917D1BD9F9BD153E /* sample.lp in CopyFiles */,
+				509815593EC1077191C0AED5 /* search.lp in CopyFiles */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		BA3687FA5BB6B110E1D0CBCF /* CopyFiles */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = man;
+			dstSubfolderSpec = 7;
+			files = (
+				BFAF5E7D0FE68D4274A5A6FA /* hs.man in CopyFiles */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		008243CAFD60622918CD3CFB /* templates.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = templates.md; sourceTree = "<group>"; };
+		0BEB52C72B59B21DAC911670 /* module.lp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.lex; path = module.lp; sourceTree = "<group>"; };
+		12955A65EC8B4E175A3AA9F4 /* search.lp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.lex; path = search.lp; sourceTree = "<group>"; };
+		13418951E264C212081D292C /* hs.man */ = {isa = PBXFileReference; path = hs.man; sourceTree = "<group>"; };
+		267B42E447A2F65ADE53E93F /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
+		2BD526935BFCCC4E0DFCA47C /* CosmicHammer-Profile.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "CosmicHammer-Profile.xcconfig"; sourceTree = "<group>"; };
+		2F20A33A39F1461D7B65C8B9 /* lua.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = lua.json; sourceTree = "<group>"; };
+		3145A8BDBABC567C2A4FD440 /* sample.lp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.lex; path = sample.lp; sourceTree = "<group>"; };
+		35420A8371EA5241D9029871 /* gfm.lp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.lex; path = gfm.lp; sourceTree = "<group>"; };
+		3BC8DD117045B5C214FCD95A /* index.lp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.lex; path = index.lp; sourceTree = "<group>"; };
+		3BEC1D5DC5FDEA3BF09551C3 /* Spoon.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = Spoon.icns; sourceTree = "<group>"; };
+		4286FC26E0B3E3111CDBC956 /* index.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = index.md; sourceTree = "<group>"; };
+		49B1B20E4F060946C3D13F42 /* timeout3 */ = {isa = PBXFileReference; path = timeout3; sourceTree = "<group>"; };
+		4AB39B36B825C56B4A8B1893 /* CosmicHammer-Base.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "CosmicHammer-Base.xcconfig"; sourceTree = "<group>"; };
+		4DB483ED0803A13CD186A95A /* CosmicHammer.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CosmicHammer.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		557AD63064919F647AA112CF /* docs.css */ = {isa = PBXFileReference; lastKnownFileType = text.css; path = docs.css; sourceTree = "<group>"; };
+		6466B175C0554A9DCCD86C4B /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		7CAC4808137AA23B71EEF4CB /* Packages */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Packages; path = Packages; sourceTree = SOURCE_ROOT; };
+		8F1C2B1D3260B1F176133075 /* CosmicHammer.sdef */ = {isa = PBXFileReference; path = CosmicHammer.sdef; sourceTree = "<group>"; };
+		A123DE0D1DABED01E0A3BE63 /* CosmicHammer UI Tests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "CosmicHammer UI Tests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		A68C3FB0C374D9C17F955493 /* Hammerspoon_UITests.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = Hammerspoon_UITests.m; sourceTree = "<group>"; };
+		A725867C0F4F55BF619C8E0E /* statusicon.pdf */ = {isa = PBXFileReference; lastKnownFileType = image.pdf; path = statusicon.pdf; sourceTree = "<group>"; };
+		A79B76DDE57C69C2BF1CC7C2 /* Credits.rtf */ = {isa = PBXFileReference; lastKnownFileType = text.rtf; path = Credits.rtf; sourceTree = "<group>"; };
+		A85F46D756640214432705FF /* index.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = index.md; sourceTree = "<group>"; };
+		AD27B6EC154891D88595111C /* docs.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = docs.json; sourceTree = "<group>"; };
+		B3B0ECA86782ED4D5CAD56A9 /* functions.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = functions.md; sourceTree = "<group>"; };
+		BF693442D37F7B42628A8EC8 /* setup.lua */ = {isa = PBXFileReference; path = setup.lua; sourceTree = "<group>"; };
+		BF9EF831B1E9E6FE297171D2 /* init.lua */ = {isa = PBXFileReference; path = init.lua; sourceTree = "<group>"; };
+		C888D91E2C9D4748531824F2 /* CosmicHammer.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = CosmicHammer.icns; sourceTree = "<group>"; };
+		CE5D9B67C28A8BB7AA177155 /* form.lp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.lex; path = form.lp; sourceTree = "<group>"; };
+		D3E69A386F9106DFC29307DF /* common.lp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.lex; path = common.lp; sourceTree = "<group>"; };
+		F09F93BA992FC7B5F5463408 /* init.lua */ = {isa = PBXFileReference; path = init.lua; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		408AAD0CCA6D574691529066 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				582FE2EC11E7BCAB5A76A18B /* CosmicHammerLibs in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		0ADA414B3ABA9B5E8E742435 /* httpserver */ = {
+			isa = PBXGroup;
+			children = (
+				49B1B20E4F060946C3D13F42 /* timeout3 */,
+			);
+			name = httpserver;
+			path = extensions/httpserver;
+			sourceTree = "<group>";
+		};
+		1D503C07310ECFAFBF10AC13 /* Xcode */ = {
+			isa = PBXGroup;
+			children = (
+				267B42E447A2F65ADE53E93F /* main.swift */,
+			);
+			path = Xcode;
+			sourceTree = "<group>";
+		};
+		208A1617FC60BC9EED958569 /* CosmicHammerUITests */ = {
+			isa = PBXGroup;
+			children = (
+				A68C3FB0C374D9C17F955493 /* Hammerspoon_UITests.m */,
+				6466B175C0554A9DCCD86C4B /* Info.plist */,
+				BF9EF831B1E9E6FE297171D2 /* init.lua */,
+			);
+			path = CosmicHammerUITests;
+			sourceTree = "<group>";
+		};
+		2679E8B48F7D00038956600B /* hsminweb */ = {
+			isa = PBXGroup;
+			children = (
+				B3B0ECA86782ED4D5CAD56A9 /* functions.md */,
+				A85F46D756640214432705FF /* index.md */,
+				008243CAFD60622918CD3CFB /* templates.md */,
+			);
+			name = hsminweb;
+			path = extensions/doc/hsdocs/hsminweb;
+			sourceTree = "<group>";
+		};
+		3310938130DCCB2A6E6D3543 /* templates */ = {
+			isa = PBXGroup;
+			children = (
+				557AD63064919F647AA112CF /* docs.css */,
+			);
+			name = templates;
+			path = scripts/docs/templates;
+			sourceTree = "<group>";
+		};
+		433C38FD32987118E3E35548 /* CosmicHammer */ = {
+			isa = PBXGroup;
+			children = (
+				C888D91E2C9D4748531824F2 /* CosmicHammer.icns */,
+				8F1C2B1D3260B1F176133075 /* CosmicHammer.sdef */,
+				A79B76DDE57C69C2BF1CC7C2 /* Credits.rtf */,
+				BF693442D37F7B42628A8EC8 /* setup.lua */,
+				3BEC1D5DC5FDEA3BF09551C3 /* Spoon.icns */,
+				A725867C0F4F55BF619C8E0E /* statusicon.pdf */,
+			);
+			path = CosmicHammer;
+			sourceTree = "<group>";
+		};
+		4A07E7F2DF779E33DD369B4F /* build */ = {
+			isa = PBXGroup;
+			children = (
+				AD27B6EC154891D88595111C /* docs.json */,
+			);
+			path = build;
+			sourceTree = "<group>";
+		};
+		970F64B56E506C34F1F6902D /* hsdocs */ = {
+			isa = PBXGroup;
+			children = (
+				D3E69A386F9106DFC29307DF /* common.lp */,
+				CE5D9B67C28A8BB7AA177155 /* form.lp */,
+				35420A8371EA5241D9029871 /* gfm.lp */,
+				3BC8DD117045B5C214FCD95A /* index.lp */,
+				4286FC26E0B3E3111CDBC956 /* index.md */,
+				F09F93BA992FC7B5F5463408 /* init.lua */,
+				0BEB52C72B59B21DAC911670 /* module.lp */,
+				3145A8BDBABC567C2A4FD440 /* sample.lp */,
+				12955A65EC8B4E175A3AA9F4 /* search.lp */,
+			);
+			name = hsdocs;
+			path = extensions/doc/hsdocs;
+			sourceTree = "<group>";
+		};
+		9FC4E84A79FF2FC48251086E /* doc */ = {
+			isa = PBXGroup;
+			children = (
+				2F20A33A39F1461D7B65C8B9 /* lua.json */,
+			);
+			name = doc;
+			path = extensions/doc;
+			sourceTree = "<group>";
+		};
+		C306A1604946A643721C192C = {
+			isa = PBXGroup;
+			children = (
+				4A07E7F2DF779E33DD369B4F /* build */,
+				D262C854BE0CF587C33063CC /* Build Configs */,
+				F6D89EDDA997915BE5840DCA /* cli */,
+				433C38FD32987118E3E35548 /* CosmicHammer */,
+				208A1617FC60BC9EED958569 /* CosmicHammerUITests */,
+				9FC4E84A79FF2FC48251086E /* doc */,
+				970F64B56E506C34F1F6902D /* hsdocs */,
+				2679E8B48F7D00038956600B /* hsminweb */,
+				0ADA414B3ABA9B5E8E742435 /* httpserver */,
+				CF1C93D0991159770456F2D2 /* Packages */,
+				3310938130DCCB2A6E6D3543 /* templates */,
+				1D503C07310ECFAFBF10AC13 /* Xcode */,
+				C86BE73AF46887CBB28A1088 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		C86BE73AF46887CBB28A1088 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				A123DE0D1DABED01E0A3BE63 /* CosmicHammer UI Tests.xctest */,
+				4DB483ED0803A13CD186A95A /* CosmicHammer.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		CF1C93D0991159770456F2D2 /* Packages */ = {
+			isa = PBXGroup;
+			children = (
+				7CAC4808137AA23B71EEF4CB /* Packages */,
+			);
+			path = Packages;
+			sourceTree = "<group>";
+		};
+		D262C854BE0CF587C33063CC /* Build Configs */ = {
+			isa = PBXGroup;
+			children = (
+				4AB39B36B825C56B4A8B1893 /* CosmicHammer-Base.xcconfig */,
+				2BD526935BFCCC4E0DFCA47C /* CosmicHammer-Profile.xcconfig */,
+			);
+			name = "Build Configs";
+			path = "CosmicHammer/Build Configs";
+			sourceTree = "<group>";
+		};
+		F6D89EDDA997915BE5840DCA /* cli */ = {
+			isa = PBXGroup;
+			children = (
+				13418951E264C212081D292C /* hs.man */,
+			);
+			name = cli;
+			path = extensions/ipc/cli;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		0870FA5D776423DD38D05220 /* CosmicHammer UI Tests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 96223FF2996BEE9CE1E8361D /* Build configuration list for PBXNativeTarget "CosmicHammer UI Tests" */;
+			buildPhases = (
+				74CFF2BF0657745C110BCC2C /* Sources */,
+				17DD1956C1611E0E863D168A /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				3975E85ECF1656FB21BA5FE7 /* PBXTargetDependency */,
+			);
+			name = "CosmicHammer UI Tests";
+			packageProductDependencies = (
+			);
+			productName = "CosmicHammer UI Tests";
+			productReference = A123DE0D1DABED01E0A3BE63 /* CosmicHammer UI Tests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+		B8030808D8FA0293CBE68AF6 /* CosmicHammer */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 729964C65A37BF810DE2E390 /* Build configuration list for PBXNativeTarget "CosmicHammer" */;
+			buildPhases = (
+				3A5193809A6FFE7DFB648BA6 /* Sources */,
+				1ABD5BC8ED27104E662B1061 /* Resources */,
+				BA3687FA5BB6B110E1D0CBCF /* CopyFiles */,
+				B5A4A18B0653B4407DF625A2 /* CopyFiles */,
+				0F9E6011CBE2C4FE5AA50A66 /* CopyFiles */,
+				408AAD0CCA6D574691529066 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = CosmicHammer;
+			packageProductDependencies = (
+				E2B94AEB5DEA8C269F0C3FF9 /* CosmicHammerLibs */,
+			);
+			productName = CosmicHammer;
+			productReference = 4DB483ED0803A13CD186A95A /* CosmicHammer.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		00DAA1F163DFC61266F1F680 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1600;
+				TargetAttributes = {
+					0870FA5D776423DD38D05220 = {
+						TestTargetID = B8030808D8FA0293CBE68AF6;
+					};
+				};
+			};
+			buildConfigurationList = 5CABB43D7C55E924CC692DA2 /* Build configuration list for PBXProject "CosmicHammer" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = C306A1604946A643721C192C;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				F8D58260BBD97401DA662933 /* XCLocalSwiftPackageReference "Packages" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = C86BE73AF46887CBB28A1088 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				B8030808D8FA0293CBE68AF6 /* CosmicHammer */,
+				0870FA5D776423DD38D05220 /* CosmicHammer UI Tests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		17DD1956C1611E0E863D168A /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				97FFF2FE66A72A5328E60F1A /* init.lua in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		1ABD5BC8ED27104E662B1061 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				6B24B79FB19FC82BFE8BDF6B /* CosmicHammer.icns in Resources */,
+				65C32200A3105ECC5C6A419A /* CosmicHammer.sdef in Resources */,
+				4FDB61A5DB096F67A501C3D1 /* Credits.rtf in Resources */,
+				F5773CB4015E0DB7FDB0EFDC /* Spoon.icns in Resources */,
+				46BC010635B600E812221711 /* docs.json in Resources */,
+				3D64DA96966D4E8C04B35D83 /* lua.json in Resources */,
+				83D814BC575F59DE22DE9EB4 /* setup.lua in Resources */,
+				421220B4CF0576F36623C0B1 /* statusicon.pdf in Resources */,
+				E287727A21B14E8752C66867 /* timeout3 in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		3A5193809A6FFE7DFB648BA6 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AB4FBF5421418BD1BCC0BEA0 /* main.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		74CFF2BF0657745C110BCC2C /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F5684D07A3BB978F76B3B916 /* Hammerspoon_UITests.m in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		3975E85ECF1656FB21BA5FE7 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = B8030808D8FA0293CBE68AF6 /* CosmicHammer */;
+			targetProxy = 2CAA4B4064CC6600720DE59B /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		1863773AF0AB76FA2C7E500B /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		3C4CFC3602AEEF5B6356742C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				INFOPLIST_FILE = CosmicHammerUITests/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "org.cosmic-hammer.CosmicHammerUITests";
+				SDKROOT = macosx;
+				TEST_TARGET_NAME = CosmicHammer;
+			};
+			name = Debug;
+		};
+		3F4F3C5822811CF18C39ED46 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				INFOPLIST_FILE = CosmicHammerUITests/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "org.cosmic-hammer.CosmicHammerUITests";
+				SDKROOT = macosx;
+				TEST_TARGET_NAME = CosmicHammer;
+			};
+			name = Release;
+		};
+		4F58F65ABD8CA7F53B5F6000 /* Profile */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 2BD526935BFCCC4E0DFCA47C /* CosmicHammer-Profile.xcconfig */;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				COMBINE_HIDPI_IMAGES = YES;
+				ENABLE_DEBUG_DYLIB = NO;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				SDKROOT = macosx;
+			};
+			name = Profile;
+		};
+		604BA591247847CC963D33DD /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				COMBINE_HIDPI_IMAGES = YES;
+				ENABLE_DEBUG_DYLIB = NO;
+				GCC_OPTIMIZATION_LEVEL = s;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "org.cosmic-hammer.CosmicHammer";
+				SDKROOT = macosx;
+			};
+			name = Release;
+		};
+		7895DA032D46D98C1D09C8BA /* Profile */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Profile;
+		};
+		8A62391183415C482D71E771 /* Profile */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				INFOPLIST_FILE = CosmicHammerUITests/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "org.cosmic-hammer.CosmicHammerUITests";
+				SDKROOT = macosx;
+				TEST_TARGET_NAME = CosmicHammer;
+			};
+			name = Profile;
+		};
+		97D01EAD0B64974576C1B5F5 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = s;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		DF5F8F24B7DD5D95F55EE65A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 4AB39B36B825C56B4A8B1893 /* CosmicHammer-Base.xcconfig */;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				COMBINE_HIDPI_IMAGES = YES;
+				ENABLE_DEBUG_DYLIB = NO;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				SDKROOT = macosx;
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		5CABB43D7C55E924CC692DA2 /* Build configuration list for PBXProject "CosmicHammer" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				1863773AF0AB76FA2C7E500B /* Debug */,
+				7895DA032D46D98C1D09C8BA /* Profile */,
+				97D01EAD0B64974576C1B5F5 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		729964C65A37BF810DE2E390 /* Build configuration list for PBXNativeTarget "CosmicHammer" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				DF5F8F24B7DD5D95F55EE65A /* Debug */,
+				4F58F65ABD8CA7F53B5F6000 /* Profile */,
+				604BA591247847CC963D33DD /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		96223FF2996BEE9CE1E8361D /* Build configuration list for PBXNativeTarget "CosmicHammer UI Tests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				3C4CFC3602AEEF5B6356742C /* Debug */,
+				8A62391183415C482D71E771 /* Profile */,
+				3F4F3C5822811CF18C39ED46 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		F8D58260BBD97401DA662933 /* XCLocalSwiftPackageReference "Packages" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		E2B94AEB5DEA8C269F0C3FF9 /* CosmicHammerLibs */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = CosmicHammerLibs;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 00DAA1F163DFC61266F1F680 /* Project object */;
+}

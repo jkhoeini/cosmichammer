@@ -146,7 +146,7 @@ private func getNotification(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32
 
 /// hs.notify.withdrawAll()
 /// Function
-/// Withdraw all delivered notifications from Hammerspoon
+/// Withdraw all delivered notifications from Cosmic Hammer
 ///
 /// Parameters:
 ///  * None
@@ -155,7 +155,7 @@ private func getNotification(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32
 ///  * None
 ///
 /// Notes:
-///  * This will withdraw all notifications for Hammerspoon, including those not sent by this module or that linger from a previous load of Hammerspoon.
+///  * This will withdraw all notifications for Cosmic Hammer, including those not sent by this module or that linger from a previous load of Cosmic Hammer.
 private let notification_withdraw_all: lua_CFunction = { L in
     let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TBREAK)
@@ -165,7 +165,7 @@ private let notification_withdraw_all: lua_CFunction = { L in
 
 /// hs.notify.withdrawAllScheduled()
 /// Function
-/// Withdraw all scheduled notifications from Hammerspoon
+/// Withdraw all scheduled notifications from Cosmic Hammer
 ///
 /// Parameters:
 ///  * None
@@ -187,12 +187,12 @@ private let notification_withdraw_allScheduled: lua_CFunction = { L in
 ///  * None
 ///
 /// Returns:
-///  * a table containing the notification userdata objects for all Hammerspoon notifications currently in the notification center
+///  * a table containing the notification userdata objects for all Cosmic Hammer notifications currently in the notification center
 ///
 /// Notes:
 ///  * Only notifications which have been presented but not cleared, either by the user clicking on the [hs.notify:otherButtonTitle](#otherButtonTitle) or through auto-withdrawal (see [hs.notify:autoWithdraw](#autoWithdraw) for more details), will be in the array returned.
 ///
-///  * You can use this function along with [hs.notify:getFunctionTag](#getFunctionTag) to re=register necessary callback functions with [hs.notify.register](#register) when Hammerspoon is restarted.
+///  * You can use this function along with [hs.notify:getFunctionTag](#getFunctionTag) to re=register necessary callback functions with [hs.notify.register](#register) when Cosmic Hammer is restarted.
 ///
 ///  * Since notifications which the user has closed (or cancelled) do not trigger a callback, you can check this table with a timer to see if the user has cleared a notification, e.g.
 /// ~~~lua
@@ -234,12 +234,12 @@ private let notification_deliveredNotifications: lua_CFunction = { L in
 ///  * None
 ///
 /// Returns:
-///  * a table containing the notification userdata objects for all Hammerspoon notifications currently scheduled to be delivered.
+///  * a table containing the notification userdata objects for all Cosmic Hammer notifications currently scheduled to be delivered.
 ///
 /// Notes:
 ///  * Once a notification has been delivered, it is moved to [hs.notify.deliveredNotifications](#deliveredNotifications) or removed, depending upon the users action.
 ///
-///  * You can use this function along with [hs.notify:getFunctionTag](#getFunctionTag) to re=register necessary callback functions with [hs.notify.register](#register) when Hammerspoon is restarted.
+///  * You can use this function along with [hs.notify:getFunctionTag](#getFunctionTag) to re=register necessary callback functions with [hs.notify.register](#register) when Cosmic Hammer is restarted.
 private let notification_scheduledNotifications: lua_CFunction = { L in
     let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TBREAK)
@@ -515,7 +515,7 @@ private let notification_informativeText: lua_CFunction = { L in
 ///  * The notification object, if buttonTitle is present; otherwise the current setting.
 ///
 /// Notes:
-///  * The affects of this method only apply if the user has set Hammerspoon notifications to `Alert` in the Notification Center pane of System Preferences
+///  * The affects of this method only apply if the user has set Cosmic Hammer notifications to `Alert` in the Notification Center pane of System Preferences
 ///  * This value is ignored if [hs.notify:hasReplyButton](#hasReplyButton) is true.
 private let notification_actionButtonTitle: lua_CFunction = { L in
     let skin = LuaSkin.skin(with: L)
@@ -556,7 +556,7 @@ private let notification_actionButtonTitle: lua_CFunction = { L in
 ///  * The notification object, if buttonTitle is present; otherwise the current setting.
 ///
 /// Notes:
-///  * The affects of this method only apply if the user has set Hammerspoon notifications to `Alert` in the Notification Center pane of System Preferences
+///  * The affects of this method only apply if the user has set Cosmic Hammer notifications to `Alert` in the Notification Center pane of System Preferences
 ///  * Due to OSX limitations, it is NOT possible to get a callback for this button.
 private let notification_otherButtonTitle: lua_CFunction = { L in
     let skin = LuaSkin.skin(with: L)
@@ -597,7 +597,7 @@ private let notification_otherButtonTitle: lua_CFunction = { L in
 ///  * The notification object, if hasButton is present; otherwise the current setting.
 ///
 /// Notes:
-///  * The affects of this method only apply if the user has set Hammerspoon notifications to `Alert` in the Notification Center pane of System Preferences
+///  * The affects of this method only apply if the user has set Cosmic Hammer notifications to `Alert` in the Notification Center pane of System Preferences
 private let notification_hasActionButton: lua_CFunction = { L in
     let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
@@ -634,7 +634,7 @@ private let notification_hasActionButton: lua_CFunction = { L in
 ///
 /// Notes:
 ///  * This does not affect the return value of `hs.notify:presented()` -- that will still reflect the decision of the Notification Center
-///  * Examples of why the users Notification Center would choose not to display a notification would be if Hammerspoon is the currently focussed application, being attached to a projector, or the user having set Do Not Disturb.
+///  * Examples of why the users Notification Center would choose not to display a notification would be if Cosmic Hammer is the currently focussed application, being attached to a projector, or the user having set Do Not Disturb.
 ///
 ///  * if the notification was not created by this module, this method will return nil
 private let notification_alwaysPresent: lua_CFunction = { L in
@@ -705,8 +705,8 @@ private let notification_getFunctionTag: lua_CFunction = { L in
 ///  * The notification object, if shouldWithdraw is present; otherwise the current setting.
 ///
 /// Notes:
-///  * This method has no effect if the user has set Hammerspoon notifications to `Alert` in the Notification Center pane of System Preferences: clicking on either the action or other button will clear the notification automatically.
-///  * If a notification which was created before your last reload (or restart) of Hammerspoon and is clicked upon before hs.notify has been loaded into memory, this setting will not be honored because the initial application delegate is not aware of this option and is set to automatically withdraw all notifications which are acted upon.
+///  * This method has no effect if the user has set Cosmic Hammer notifications to `Alert` in the Notification Center pane of System Preferences: clicking on either the action or other button will clear the notification automatically.
+///  * If a notification which was created before your last reload (or restart) of Cosmic Hammer and is clicked upon before hs.notify has been loaded into memory, this setting will not be honored because the initial application delegate is not aware of this option and is set to automatically withdraw all notifications which are acted upon.
 ///
 ///  * if the notification was not created by this module, this method will return nil
 private let notification_autoWithdraw: lua_CFunction = { L in
@@ -850,7 +850,7 @@ private let notification_setIdImage: lua_CFunction = { L in
 ///  * The notification object, if an argument is present; otherwise the current value
 ///
 /// Notes:
-///  * This method has no effect unless the user has set Hammerspoon notifications to `Alert` in the Notification Center pane of System Preferences.
+///  * This method has no effect unless the user has set Cosmic Hammer notifications to `Alert` in the Notification Center pane of System Preferences.
 ///  * [hs.notify:hasActionButton](#hasActionButton) must also be true or the "Reply" button will not be displayed.
 ///  * If this is set to true, the action button will be "Reply" even if you have set another one with [hs.notify:actionButtonTitle](#actionButtonTitle).
 private let notification_hasReplyButton: lua_CFunction = { L in
@@ -888,7 +888,7 @@ private let notification_hasReplyButton: lua_CFunction = { L in
 ///  * The notification object, if an argument is present; otherwise the current value.
 ///
 /// Notes:
-///  * This method has no effect unless the user has set Hammerspoon notifications to `Alert` in the Notification Center pane of System Preferences.
+///  * This method has no effect unless the user has set Cosmic Hammer notifications to `Alert` in the Notification Center pane of System Preferences.
 ///  * [hs.notify:additionalActions](#additionalActions) must also be used for this method to have any effect.
 ///  * **WARNING:** This method uses a private API. It could break at any time. Please file an issue if it does.
 private let notification_alwaysShowAdditionalActions: lua_CFunction = { L in
@@ -1131,7 +1131,7 @@ private let notification_additionalActivationAction: lua_CFunction = { L in
 ///  * A boolean indicating whether the users Notification Center decided to display the notification
 ///
 /// Notes:
-///  * Examples of why the users Notification Center would choose not to display a notification would be if Hammerspoon is the currently focussed application, being attached to a projector, or the user having set Do Not Disturb.
+///  * Examples of why the users Notification Center would choose not to display a notification would be if Cosmic Hammer is the currently focussed application, being attached to a projector, or the user having set Do Not Disturb.
 private let notification_presented: lua_CFunction = { L in
     let skin = LuaSkin.skin(with: L)
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
@@ -1290,7 +1290,7 @@ private func toNSUserNotificationFromLua(_ L: UnsafeMutablePointer<lua_State>!, 
     return nil
 }
 
-// MARK: - Hammerspoon/Lua Infrastructure
+// MARK: - Cosmic Hammer/Lua Infrastructure
 
 private let userdata_tostring: lua_CFunction = { L in
     let skin = LuaSkin.skin(with: L)

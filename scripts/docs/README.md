@@ -23,5 +23,5 @@ $ make docs
 ~~~
 
 Your output will now be in build/ in the following forms:
- * Hammerspoon.docset - Docs bundle for the excellent "Dash" browser
+ * Cosmic Hammer.docset - Docs bundle for the excellent "Dash" browser
  * html - HTML docs
