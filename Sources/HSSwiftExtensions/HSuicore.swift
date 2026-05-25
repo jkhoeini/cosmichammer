@@ -76,14 +76,8 @@ private func getWindowTabs(_ win: AXUIElement) -> AXUIElement? {
               role == (kAXGroupRole as String) else { continue }
         var attrNamesRef: CFArray?
         guard AXUIElementCopyAttributeNames(child, &attrNamesRef) == .success,
-              let attrNames = attrNamesRef else { continue }
-        let tabsKey: CFString = kAXTabsAttribute as CFString
-        let range = CFRangeMake(0, CFArrayGetCount(attrNames))
-        // CFArrayContainsValue requires an UnsafeRawPointer for the value
-        let found = withUnsafePointer(to: tabsKey) { ptr in
-            CFArrayContainsValue(attrNames, range, UnsafeRawPointer(ptr))
-        }
-        if found {
+              let attrNames = attrNamesRef as? [String] else { continue }
+        if attrNames.contains(kAXTabsAttribute as String) {
             return child
         }
     }
