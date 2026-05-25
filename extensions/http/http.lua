@@ -147,7 +147,7 @@ end
 ---
 --- Notes:
 ---  * This list is likely not complete.  It is based on the list of common entities described at http://www.freeformatter.com/html-entities.html.
----  * Additional entities can be temporarily added via the `hs.http.registerEntity(...)` function.  If you feel you have a more official list of entities which contains items which are currently not included by default, please open up an issue at https://github.com/Hammerspoon/hammerspoon and your link will be considered.
+---  * Additional entities can be temporarily added via the `hs.http.registerEntity(...)` function.  If you feel you have a more official list of entities which contains items which are currently not included by default, please open up an issue at https://github.com/jkhoeini/cosmichammer and your link will be considered.
 ---  * To see a list of the currently defined entities, a __tostring meta-method is included so that referencing the table directly as a string will return the current definitions.
 ---    * For reference, this meta-method is essentially the following:
 ---

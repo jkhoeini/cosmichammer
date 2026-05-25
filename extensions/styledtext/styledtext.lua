@@ -2,7 +2,7 @@
 ---
 --- This module adds support for controlling the style of the text in Cosmic Hammer.
 ---
---- More detailed documentation is being worked on and will be provided in the Cosmic Hammer Wiki at https://github.com/Hammerspoon/hammerspoon/wiki.  The documentation here is a condensed version provided for use within the Cosmic Hammer Dash docset and the inline help provided by the `help` console command within Cosmic Hammer.
+--- More detailed documentation is being worked on and will be provided in the Cosmic Hammer Wiki at https://github.com/jkhoeini/cosmichammer/wiki.  The documentation here is a condensed version provided for use within the Cosmic Hammer Dash docset and the inline help provided by the `help` console command within Cosmic Hammer.
 ---
 --- The following list of attributes key-value pairs are recognized by this module and can be adjusted, set, or removed for objects by the various methods provided by this module.  The list of attributes is provided here for reference; anywhere in the documentation you see a reference to the `attributes key-value pairs`, refer back to here for specifics:
 ---

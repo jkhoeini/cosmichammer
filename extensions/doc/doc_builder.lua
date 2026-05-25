@@ -7,7 +7,7 @@
 ---
 --- This submodule can be used to generate and maintain the documentation for Spoon bundles and can also be used to generate documentation for third-party modules as well.
 ---
---- Documentation for modules and spoons is expected to be embedded in the source code for the relevant object in specially formatted comment strings.  A very brief example of how to format documentation can be found at https://github.com/Hammerspoon/hammerspoon/blob/master/SPOONS.md#documentation, but a better treatment is planned.
+--- Documentation for modules and spoons is expected to be embedded in the source code for the relevant object in specially formatted comment strings.  A very brief example of how to format documentation can be found at https://github.com/jkhoeini/cosmichammer/blob/master/SPOONS.md#documentation, but a better treatment is planned.
 ---
 --- Most of this submodule should be considered at the "Proof of Concept" stage and will require some additional work on your part to generate useful documentation in HTML, Markdown, or Docset formats.  This is expected to change in the future.
 
@@ -46,7 +46,7 @@ local sections = {
 ---  * table - a table containing the documentation broken out into the key-value pairs used to generate documentation displayed by `hs.doc` and `hs.doc.hsdocs`.
 ---
 --- Notes:
----  * Because Cosmic Hammer and all known currently available modules are coded in Objective-C and/or Lua, only files with the .m or .lua extension are examined in the provided path(s).  Please submit an issue (or pull request, if you modify this submodule yourself) at https://github.com/Hammerspoon if you need this to be changed for your addition.
+---  * Because Cosmic Hammer and all known currently available modules are coded in Objective-C and/or Lua, only files with the .m or .lua extension are examined in the provided path(s).  Please submit an issue (or pull request, if you modify this submodule yourself) at https://github.com/jkhoeini/cosmichammer if you need this to be changed for your addition.
 module.genComments = function(where, recurse)
     -- get the comments from the specified path(s)
     local text = {}

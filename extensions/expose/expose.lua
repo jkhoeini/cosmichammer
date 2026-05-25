@@ -3,8 +3,7 @@
 --- Keyboard-driven expose replacement/enhancement
 ---
 --- Warning: this module is still somewhat experimental.
---- Should you encounter any issues, please feel free to report them on https://github.com/Hammerspoon/hammerspoon/issues
---- or #hammerspoon on irc.libera.chat
+--- Should you encounter any issues, please feel free to report them on https://github.com/jkhoeini/cosmichammer/issues
 ---
 --- With this module you can configure a hotkey to show thumbnails for open windows when invoked; each thumbnail will have
 --- an associated keyboard "hint" (usually one or two characters) that you can type to quickly switch focus to that

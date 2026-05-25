@@ -20,7 +20,7 @@ What gives Cosmic Hammer its power is a set of extensions that expose specific p
 
 ### Manually
 
- * Download the [latest release](https://github.com/Hammerspoon/hammerspoon/releases/latest)
+ * Download the [latest release](https://github.com/jkhoeini/cosmichammer/releases/latest)
  * Drag `Cosmic Hammer.app` from your `Downloads` folder to `Applications`
 
 ### Homebrew
@@ -30,16 +30,16 @@ What gives Cosmic Hammer its power is a set of extensions that expose specific p
 ## What next?
 
 Out of the box, Cosmic Hammer does nothing - you will need to create `~/.cosmic-hammer/init.lua` and fill it with useful code. There are several resources which can help you:
- * [Getting Started Guide](https://www.hammerspoon.org/go/)
- * [API docs](https://www.hammerspoon.org/docs/)
- * [FAQ](https://www.hammerspoon.org/faq/)
- * [Sample Configurations](https://github.com/Hammerspoon/hammerspoon/wiki/Sample-Configurations) supplied by various users
- * [Contribution Guide](https://github.com/Hammerspoon/hammerspoon/blob/master/CONTRIBUTING.md) for developers looking to get involved
+ * [Getting Started Guide](https://github.com/jkhoeini/cosmichammer/go/)
+ * [API docs](https://github.com/jkhoeini/cosmichammer/docs/)
+ * [FAQ](https://github.com/jkhoeini/cosmichammer/faq/)
+ * [Sample Configurations](https://github.com/jkhoeini/cosmichammer/wiki/Sample-Configurations) supplied by various users
+ * [Contribution Guide](https://github.com/jkhoeini/cosmichammer/blob/master/CONTRIBUTING.md) for developers looking to get involved
  * An IRC channel for general chat/support/development (#cosmic-hammer on Libera)
 
 ## What is the history of the project?
 
-Cosmic Hammer is a fork of [Hammerspoon](https://github.com/Hammerspoon/hammerspoon), which is itself a fork of [Mjolnir](https://github.com/mjolnirapp/mjolnir). Mjolnir aims to be a very minimal application, with its extensions hosted externally and managed using a Lua package manager. We wanted to provide a more integrated experience.
+Cosmic Hammer is a fork of [Hammerspoon](https://github.com/jkhoeini/cosmichammer), which is itself a fork of [Mjolnir](https://github.com/mjolnirapp/mjolnir). Mjolnir aims to be a very minimal application, with its extensions hosted externally and managed using a Lua package manager. We wanted to provide a more integrated experience.
 
 ## What is the future of the project?
 

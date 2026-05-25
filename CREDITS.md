@@ -5,6 +5,6 @@ Our maintainers are:
  * [Aaron Magill](https://github.com/asmagill)
  * [Chris Hocking](https://github.com/latenitefilms)
 
-Lots of additional extensions/work has been provided by [various contributors](https://github.com/Hammerspoon/hammerspoon/graphs/contributors)
+Lots of additional extensions/work has been provided by [various contributors](https://github.com/jkhoeini/cosmichammer/graphs/contributors)
 
 The Cosmic Hammer icon was designed for the Cosmic Hammer fork. The original Hammerspoon icon was provided by Juerd Waalboer.

@@ -239,7 +239,7 @@ private func pushNSImageNameTable(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
 /// Table of arrays containing the names of additional internal system images which may also be available for use with `hs.drawing.image` and [hs.image.imageFromName](#imageFromName).
 ///
 /// Notes:
-///  * The list of these images was pulled from a collection located in the repositories at https://github.com/hetima?tab=repositories.  As these image names are (for the most part) not formally listed in Apple's documentation or published APIs, their use cannot be guaranteed across all OS X versions.  If you identify any images which may be missing or could be added, please file an issue at https://github.com/Hammerspoon/hammerspoon.
+///  * The list of these images was pulled from a collection located in the repositories at https://github.com/hetima?tab=repositories.  As these image names are (for the most part) not formally listed in Apple's documentation or published APIs, their use cannot be guaranteed across all OS X versions.  If you identify any images which may be missing or could be added, please file an issue at https://github.com/jkhoeini/cosmichammer.
 private func additionalImages(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     lua_newtable(L)
 

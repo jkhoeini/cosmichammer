@@ -24,7 +24,7 @@ The app itself is built using Xcode. You must open `CosmicHammer.xcworkspace` ra
 The extension modules are built before the core Cosmic Hammer binary as target dependencies. Each extension is defined as an Xcode target in its own right, although there is usually no reason to build these targets manually.
 
 ### Making frequent local rebuilds more convenient
-[Self-signing your builds](https://github.com/Hammerspoon/hammerspoon/issues/643#issuecomment-158291705) will keep you from having to re-enable permissions for your locally built copy.
+[Self-signing your builds](https://github.com/jkhoeini/cosmichammer/issues/643#issuecomment-158291705) will keep you from having to re-enable permissions for your locally built copy.
 
 Create a self-signed Code Signing certificate named 'Internal Code Signing' or similar as described [here](http://bd808.com/blog/2013/10/21/creating-a-self-signed-code-certificate-for-xcode/).
 
@@ -33,12 +33,12 @@ Then, simply run `just rebuild` for more streamlined builds.
 ## Contributing to the core app or LuaSkin
 This is generally very simple in terms of the workflow, but there's less likely to be any reason to work on the core app:
 
-* Clone our GitHub [repository](https://github.com/Hammerspoon/hammerspoon)
+* Clone our GitHub [repository](https://github.com/jkhoeini/cosmichammer)
 * Open `CosmicHammer.xcworkspace` in Xcode (Note that you'll generally need the latest available version of Xcode)
 * Make the changes you want
 * Push them up to a fork on GitHub
 * Propose a Pull Request on GitHub
-* Talk to us in #hammerspoon on Libera if you need any guidance
+* Open an issue on GitHub if you need any guidance
 
 ## Contributing to the extensions
 
@@ -63,7 +63,7 @@ To create such an extension:
 * Build Cosmic Hammer and test your extension
 * Push your changes up to a fork on GitHub
 * Propose a Pull Request on GitHub
-* Talk to us in #hammerspoon on Libera if you need any guidance
+* Open an issue on GitHub if you need any guidance
 
 ### Writing a new mixed Lua/Objective-C extension ###
 
@@ -76,7 +76,7 @@ To create such an extension:
   * cd into the `extensions` directory
   * Make a directory for your extension
   * Create a `modulename.lua` to load your Objective-C code and contain any additional Lua code. You might find it easier to provide much of your API in Lua and just provide undocumented API from Objective C that does the minimum work possible. The choice is ultimately down to you, depending on the nature of the work the extension is doing.
-  * Create a `modulename.m` to contain your Objective-C code. Please use the LuaSkin methods to do as much work as possible, they are well tested and in most extensions can reduce the amount of Lua C API calls to almost zero. Not all of our extensions have been fully converted to LuaSkin yet (a good example is [`hs.chooser`](https://github.com/Hammerspoon/hammerspoon/blob/master/extensions/chooser/internal.m))
+  * Create a `modulename.m` to contain your Objective-C code. Please use the LuaSkin methods to do as much work as possible, they are well tested and in most extensions can reduce the amount of Lua C API calls to almost zero. Not all of our extensions have been fully converted to LuaSkin yet (a good example is [`hs.chooser`](https://github.com/jkhoeini/cosmichammer/blob/master/extensions/chooser/internal.m))
   * Right click on the `extensions` group in Xcode's Project Browser and add a new sub-group for your extension, then right click on the sub-group and add your `modulename.lua` and `modulename.m` files (and any supporting `.h`/`.c`/`.m`/etc files)
   * The files you've added will probably be made members of the Cosmic Hammer target. You do not want this; Select each file in the Project Browser and using the File Inspector in the Utilities pane on the right of Xcode's window, deselect them from the main Cosmic Hammer target.
 * Configure Xcode to build your extension and include it in the `Cosmic Hammer.app` bundle:
@@ -91,7 +91,7 @@ To create such an extension:
 * Build Cosmic Hammer and test your extension
 * Push your changes up to a fork on GitHub
 * Propose a Pull Request on GitHub
-* Talk to us in #hammerspoon on Libera if you need any guidance
+* Open an issue on GitHub if you need any guidance
 
 ### Documenting your extension
 
@@ -188,4 +188,4 @@ The Lua test harness (`lsunit.lua` in `Packages/CosmicHammerTests/`) provides as
 
 While we want to have Cosmic Hammer shipping as many useful extensions as possible, there may be reasons for you to ship your extension separately. It would probably be easier to do this in binary form, following the init.lua/internal.so form that Cosmic Hammer uses, then users can just download your extension into `~/.cosmic-hammer/<YOUR_EXTENSION_NAME>/`.
 
-If you do choose this route, please list your extension at [https://github.com/Hammerspoon/hammerspoon/wiki/Third-Party-Extensions](https://github.com/Hammerspoon/hammerspoon/wiki/Third-Party-Extensions) so users can discover it easily.
+If you do choose this route, please list your extension at [https://github.com/jkhoeini/cosmichammer/wiki/Third-Party-Extensions](https://github.com/jkhoeini/cosmichammer/wiki/Third-Party-Extensions) so users can discover it easily.

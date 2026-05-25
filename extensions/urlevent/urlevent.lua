@@ -1,16 +1,16 @@
 --- === hs.urlevent ===
 ---
 --- Allows Cosmic Hammer to respond to URLs
---- Cosmic Hammer is configured to react to URLs that start with `hammerspoon://` when they are opened by OS X.
+--- Cosmic Hammer is configured to react to URLs that start with `cosmichammer://` when they are opened by OS X.
 --- This extension allows you to register callbacks for these URL events and their parameters, offering a flexible way to receive events from other applications.
 ---
 --- You can also choose to make Cosmic Hammer the default for `http://` and `https://` URLs, which lets you route the URLs in your Lua code
 ---
---- Given a URL such as `hammerspoon://someEventToHandle?someParam=things&otherParam=stuff`, in the literal, RFC1808 sense of the URL, `someEventToHandle` is the hostname (or net_loc) of the URL, but given that these are not network resources, we consider `someEventToHandle` to be the name of the event. No path should be specified in the URL - it should consist purely of a hostname and, optionally, query parameters.
+--- Given a URL such as `cosmichammer://someEventToHandle?someParam=things&otherParam=stuff`, in the literal, RFC1808 sense of the URL, `someEventToHandle` is the hostname (or net_loc) of the URL, but given that these are not network resources, we consider `someEventToHandle` to be the name of the event. No path should be specified in the URL - it should consist purely of a hostname and, optionally, query parameters.
 ---
 --- See also `hs.ipc` for a command line IPC mechanism that is likely more appropriate for shell scripts or command line use. Unlike `hs.ipc`, `hs.urlevent` is not able to return any data to its caller.
 ---
---- NOTE: If Cosmic Hammer is not running when a `hammerspoon://` URL is opened, Cosmic Hammer will be launched, but it will not react to the URL event. Nor will it react to any events until this extension is loaded and event callbacks have been bound.
+--- NOTE: If Cosmic Hammer is not running when a `cosmichammer://` URL is opened, Cosmic Hammer will be launched, but it will not react to the URL event. Nor will it react to any events until this extension is loaded and event callbacks have been bound.
 --- NOTE: Any event which is received, for which no callback has been bound, will be logged to the Cosmic Hammer Console
 --- NOTE: When you trigger a URL from another application, it is usually best to have the URL open in the background, if that option is available. Otherwise, OS X will activate Cosmic Hammer (i.e. give it focus), which makes URL events difficult to use for things like window management.
 
@@ -25,7 +25,7 @@ local callbacks = {}
 --- Notes:
 ---  * The function should handle four arguments:
 ---   * scheme - A string containing the URL scheme (i.e. "http")
----   * host - A string containing the host requested (e.g. "www.hammerspoon.org")
+---   * host - A string containing the host requested (e.g. "github.com/jkhoeini/cosmichammer")
 ---   * params - A table containing the key/value pairs of all the URL parameters
 ---   * fullURL - A string containing the full, original URL
 ---   * senderPID - An integer containing the PID of the application that opened the URL, if available (otherwise -1)
@@ -87,7 +87,7 @@ urlevent.setCallback(urlEventCallback)
 
 --- hs.urlevent.bind(eventName, callback)
 --- Function
---- Registers a callback for a hammerspoon:// URL event
+--- Registers a callback for a cosmichammer:// URL event
 ---
 --- Parameters:
 ---  * eventName - A string containing the name of an event
@@ -102,7 +102,7 @@ urlevent.setCallback(urlEventCallback)
 ---   * params - A table containing key/value string pairs containing any URL parameters that were specified in the URL
 ---   * senderPID - An integer containing the PID of the sending application, if available (otherwise -1)
 ---   * fullURL - A string containing the full, original URL
----  * Given the URL `hammerspoon://doThingA?value=1` The event name is `doThingA` and the callback's `params` argument will be a table containing `{["value"] = "1"}` and `fullURL` will be `hammerspoon://doThingA?value=1`
+---  * Given the URL `cosmichammer://doThingA?value=1` The event name is `doThingA` and the callback's `params` argument will be a table containing `{["value"] = "1"}` and `fullURL` will be `cosmichammer://doThingA?value=1`
 function urlevent.bind(eventName, callback)
     callbacks[eventName] = callback
 end

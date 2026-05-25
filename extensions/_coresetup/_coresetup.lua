@@ -172,7 +172,7 @@ coroutine.applicationYield = hs.coroutineApplicationYield
   function hs.assert(pred,desc,data)
     if not pred then error([[
   Internal error: please open an issue at
-  https://github.com/Hammerspoon/hammerspoon/issues/new   and paste the following stack trace:
+  https://github.com/jkhoeini/cosmichammer/issues/new   and paste the following stack trace:
 
   Assertion failed: ]]..desc..'\n'..(data and hs.inspect(data) or ''),2)
     end
@@ -291,11 +291,11 @@ coroutine.applicationYield = hs.coroutineApplicationYield
 ---  * The object provided by the Spoon (which can be ignored if you chose to make the Spoon global)
 ---
 --- Notes:
----  * Spoons are a way of distributing self-contained units of Lua functionality, for Cosmic Hammer. For more information, see https://github.com/Hammerspoon/hammerspoon/blob/master/SPOONS.md
+---  * Spoons are a way of distributing self-contained units of Lua functionality, for Cosmic Hammer. For more information, see https://github.com/jkhoeini/cosmichammer/blob/master/SPOONS.md
 ---  * This function will load the Spoon and call its `:init()` method if it has one. If you do not wish this to happen, or wish to use a Spoon that somehow doesn't fit with the behaviours of this function, you can also simply `require('name')` to load the Spoon
 ---  * If the Spoon has a `:start()` method you are responsible for calling it before using the functionality of the Spoon.
 ---  * If the Spoon provides documentation, it will be loaded by made available in hs.docs
----  * To learn how to distribute your own code as a Spoon, see https://github.com/Hammerspoon/hammerspoon/blob/master/SPOONS.md
+---  * To learn how to distribute your own code as a Spoon, see https://github.com/jkhoeini/cosmichammer/blob/master/SPOONS.md
   hs.loadSpoon = function (name, global)
     if name == "" then
       hs.showError("hs.loadSpoon() called with no Spoon name")

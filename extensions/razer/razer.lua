@@ -13,13 +13,13 @@
 --- remapping the default shortcut keys to "dummy" keys, so that they
 --- don't trigger regular keypresses in macOS.
 ---
---- Like the [`hs.streamdeck`](http://www.hammerspoon.org/docs/hs.streamdeck.html) extension, this extension has been
+--- Like the [`hs.streamdeck`](http://github.com/jkhoeini/cosmichammer/docs/hs.streamdeck.html) extension, this extension has been
 --- designed to be modular, so it's possible for others to develop support
 --- for other Razer devices later down the line, if there's interest.
 ---
 --- This extension was thrown together by [Chris Hocking](https://github.com/latenitefilms) for [CommandPost](https://commandpost.io).
 ---
---- This extension is based off the [`hs.streamdeck`](http://www.hammerspoon.org/docs/hs.streamdeck.html) extension by [Chris Jones](https://github.com/cmsj).
+--- This extension is based off the [`hs.streamdeck`](http://github.com/jkhoeini/cosmichammer/docs/hs.streamdeck.html) extension by [Chris Jones](https://github.com/cmsj).
 ---
 --- Special thanks to the authors of these awesome documents & resources:
 ---

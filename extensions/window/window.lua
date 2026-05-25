@@ -520,7 +520,7 @@ function objectMT.focus(self)
       -- triggered by :_bringtofront(), so the workaround belongs here
       if desktopFocusWorkaroundTimer then desktopFocusWorkaroundTimer:stop() end
       desktopFocusWorkaroundTimer=timer.doAfter(0.3,function()
-        -- 0.3s comes from https://github.com/Hammerspoon/hammerspoon/issues/581
+        -- 0.3s comes from https://github.com/jkhoeini/cosmichammer/issues/581
         -- it'd be slightly less ugly to use a "space change completed" callback (as per issue above) rather than
         -- a crude timer, although that route is a lot more complicated
         self:becomeMain()

@@ -35,7 +35,7 @@ This is possible because of two things:
 
 ## Where do I get Spoons from?
 
-The official repository of Spoons is [https://www.hammerspoon.org/Spoons](https://www.hammerspoon.org/Spoons) (the source for which can be found at [https://github.com/Hammerspoon/Spoons](https://github.com/Hammerspoon/Spoons)), but authors may choose to distribute them separately from their own sites.
+The official repository of Spoons is [https://github.com/jkhoeini/cosmichammer/Spoons](https://github.com/jkhoeini/cosmichammer/Spoons) (the source for which can be found at [https://github.com/jkhoeini/cosmichammer](https://github.com/jkhoeini/cosmichammer)), but authors may choose to distribute them separately from their own sites.
 
 ## How do I install a Spoon?
 
@@ -188,7 +188,7 @@ By convention in Cosmic Hammer, methods tend to return the object they belong to
 #### Generating
 
 Several tools are able to operate on the docstrings used by Cosmic Hammer and Spoons. In the simplest case, each Spoon should include a `docs.json` file which is little more than the various docstrings collected together.
-This file can be generated using the Cosmic Hammer command line tool (see [https://www.hammerspoon.org/docs/hs.ipc.html#cliInstall](https://www.hammerspoon.org/docs/hs.ipc.html#cliInstall)):
+This file can be generated using the Cosmic Hammer command line tool (see [https://github.com/jkhoeini/cosmichammer/docs/hs.ipc.html#cliInstall](https://github.com/jkhoeini/cosmichammer/docs/hs.ipc.html#cliInstall)):
 
 ```bash
 cd /path/too/your/Spoon
@@ -199,12 +199,12 @@ Any Spoons that are submitted to the official Spoons repository will have their 
 
 If you also want to generate HTML/Markdown versions of your documentation for your own purposes:
 
- * Clone [https://github.com/Hammerspoon/hammerspoon](https://github.com/Hammerspoon/hammerspoon)
+ * Clone [https://github.com/jkhoeini/cosmichammer](https://github.com/jkhoeini/cosmichammer)
  * Install the required Python dependencies (e.g. `pip install --user -r requirements.txt` in the Cosmic Hammer repo)
  * Then in your Spoon's directory, run:
 
 ```bash
-/path/to/hammerspoon_repo/scripts/docs/bin/build_docs.py --templates /path/to/hammerspoon_repo/scripts/docs/templates/ --output_dir . --json --html --markdown --standalone .
+/path/to/cosmichammer_repo/scripts/docs/bin/build_docs.py --templates /path/to/cosmichammer_repo/scripts/docs/templates/ --output_dir . --json --html --markdown --standalone .
 ```
 
 This will search the current working director for any `.lua` files, extract docstrings from them, and write `docs.json` to the current directory, along with HTML and Markdown outputs. See `build_docs.py --help` for more options.

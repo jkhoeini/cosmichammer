@@ -2,7 +2,7 @@
 ---
 --- Utility and management functions for Spoons
 --- Spoons are Lua plugins for Cosmic Hammer.
---- See https://www.hammerspoon.org/Spoons/ for more information
+--- See https://github.com/jkhoeini/cosmichammer/Spoons/ for more information
 
 if _G["spoon"] == nil then
   _G["spoon"] = {}
@@ -49,9 +49,9 @@ end
 ---    {
 ---      version = "0.1",
 ---      author = "Your Name <your@email.org>",
----      homepage = "https://github.com/Hammerspoon/Spoons",
+---      homepage = "https://github.com/jkhoeini/cosmichammer",
 ---      license = "MIT - https://opensource.org/licenses/MIT",
----      download_url = "https://github.com/Hammerspoon/Spoons/raw/master/Spoons/"..name..".spoon.zip"
+---      download_url = "https://github.com/jkhoeini/cosmichammer/raw/master/Spoons/"..name..".spoon.zip"
 ---    }
 ---    ```
 ---  * template: (optional) absolute path of the template to use for the `init.lua` file of the new Spoon. Defaults to the `templates/init.tpl` file included with Cosmic Hammer.
@@ -70,9 +70,9 @@ function module.newSpoon(name, basedir, metadata, template)
    local meta={
       version = "0.1",
       author = "Your Name <your@email.org>",
-      homepage = "https://github.com/Hammerspoon/Spoons",
+      homepage = "https://github.com/jkhoeini/cosmichammer",
       license = "MIT - https://opensource.org/licenses/MIT",
-      download_url = "https://github.com/Hammerspoon/Spoons/raw/master/Spoons/"..name..".spoon.zip",
+      download_url = "https://github.com/jkhoeini/cosmichammer/raw/master/Spoons/"..name..".spoon.zip",
       description = "A new Sample Spoon"
    }
    if metadata then
@@ -126,7 +126,7 @@ end
 ---
 --- Parameters:
 ---  * def - table containing name-to-function definitions for the hotkeys supported by the Spoon. Each key is a hotkey name, and its value must be a function that will be called when the hotkey is invoked.
----  * map - table containing name-to-hotkey definitions and an optional message to be displayed via `hs.alert()` when the hotkey has been triggered, as supported by [bindHotkeys in the Spoon API](https://github.com/Hammerspoon/hammerspoon/blob/master/SPOONS.md#hotkeys). Not all the entries in `def` must be bound, but if any keys in `map` don't have a definition, an error will be produced.
+---  * map - table containing name-to-hotkey definitions and an optional message to be displayed via `hs.alert()` when the hotkey has been triggered, as supported by [bindHotkeys in the Spoon API](https://github.com/jkhoeini/cosmichammer/blob/master/SPOONS.md#hotkeys). Not all the entries in `def` must be bound, but if any keys in `map` don't have a definition, an error will be produced.
 ---
 --- Returns:
 ---  * None

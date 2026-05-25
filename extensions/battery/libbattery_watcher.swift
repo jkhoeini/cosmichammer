@@ -52,7 +52,7 @@ private func callback(_ info: UnsafeMutableRawPointer?) {
 ///  * An `hs.battery.watcher` object
 ///
 /// Notes:
-///  * Because the callback function accepts no arguments, tracking of state of changing battery attributes is the responsibility of the user (see https://github.com/Hammerspoon/hammerspoon/issues/166 for discussion)
+///  * Because the callback function accepts no arguments, tracking of state of changing battery attributes is the responsibility of the user (see https://github.com/jkhoeini/cosmichammer/issues/166 for discussion)
 private func battery_watcher_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
 

@@ -11,7 +11,7 @@
 ---  * Documentation for the LuaSkin Objective-C Framework
 ---  * Lua Reference documentation
 ---
---- The intent of this sub-module is to provide as close a rendering of the same documentation available at the Cosmic Hammer GitHub site and Dash documentation as possible in a manner suitable for run-time modification so module developers can test out documentation additions without requiring a complete recompilation of the Cosmic Hammer source.  As always, the most current and official documentation can be found at https://www.hammerspoon.org and in the official Cosmic Hammer Dash docset.
+--- The intent of this sub-module is to provide as close a rendering of the same documentation available at the Cosmic Hammer GitHub site and Dash documentation as possible in a manner suitable for run-time modification so module developers can test out documentation additions without requiring a complete recompilation of the Cosmic Hammer source.  As always, the most current and official documentation can be found at https://github.com/jkhoeini/cosmichammer and in the official Cosmic Hammer Dash docset.
 
 local module  = {}
 -- private variables and methods -----------------------------------------
@@ -621,7 +621,7 @@ end
 ---  * the current, possibly new, value
 ---
 --- Notes:
----  * This is experimental and is disabled by default. It was inspired by a Userscript written by krasnovpro.  The original can be found at https://openuserjs.org/scripts/krasnovpro/hammerspoon.org_Documentation/source.
+---  * This is experimental and is disabled by default. It was inspired by a Userscript written by krasnovpro.  The original can be found at https://openuserjs.org/scripts/krasnovpro/github.com/jkhoeini/cosmichammer_Documentation/source.
 ---
 ---  * Changes made with this function are saved with `hs.settings` with the label "_documentationServer.entitiesInSidebar" and will persist through a reload or restart of Cosmic Hammer.
 module.moduleEntitiesInSidebar = function(...)
