@@ -1,0 +1,124 @@
+import Cocoa
+import LuaSkin
+
+// MARK: - HSCanvasWindow
+
+@objc class HSCanvasWindow: NSPanel, NSWindowDelegate {
+    @objc var subroleOverride: String?
+
+    override init(contentRect: NSRect, styleMask style: NSWindow.StyleMask, backing backingStoreType: NSWindow.BackingStoreType, defer flag: Bool) {
+        guard contentRect.origin.x.isFinite && contentRect.origin.y.isFinite &&
+              contentRect.size.height.isFinite && contentRect.size.width.isFinite else {
+            LuaSkin.skin(with: nil).logError("\(canvas_USERDATA_TAG):coordinates must be finite numbers")
+            // Cannot return nil from a non-failable init in Swift; the ObjC version returned nil.
+            // We initialize with zero rect and the caller checks for validity.
+            super.init(contentRect: .zero, styleMask: style, backing: backingStoreType, defer: flag)
+            return
+        }
+
+        super.init(contentRect: contentRect, styleMask: style, backing: backingStoreType, defer: flag)
+
+        self.delegate = self
+
+        self.setFrameOrigin(canvas_RectWithFlippedYCoordinate(contentRect).origin)
+
+        // Configure the window
+        self.isReleasedWhenClosed = false
+        self.backgroundColor = .clear
+        self.isOpaque = false
+        self.hasShadow = false
+        self.ignoresMouseEvents = true
+        self.isRestorable = false
+        self.hidesOnDeactivate = false
+        self.animationBehavior = .none
+        self.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.screenSaverWindow)))
+        subroleOverride = nil
+    }
+
+    override func accessibilitySubrole() -> NSAccessibility.Subrole? {
+        let defaultSubrole = super.accessibilitySubrole()
+        let defaultStr = defaultSubrole?.rawValue ?? ""
+        let customSubrole = NSAccessibility.Subrole(rawValue: defaultStr + ".Cosmic Hammer")
+
+        if let override = subroleOverride {
+            if override.isEmpty {
+                return canvas_defaultCustomSubRole ? defaultSubrole : customSubrole
+            } else {
+                return NSAccessibility.Subrole(rawValue: override)
+            }
+        } else {
+            return canvas_defaultCustomSubRole ? customSubrole : defaultSubrole
+        }
+    }
+
+    override var canBecomeKey: Bool {
+        var allowKey = false
+        if let canvasView = self.contentView as? HSCanvasView {
+            for element in canvasView.elementList {
+                if let dict = element as? NSDictionary,
+                   let canvas = dict["canvas"] as? NSView,
+                   canvas.canBecomeKeyView {
+                    allowKey = true
+                    break
+                }
+            }
+        }
+        return allowKey
+    }
+
+    // MARK: NSWindowDelegate
+
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        return false
+    }
+
+    // MARK: Window Animation Methods
+
+    func fadeIn(_ fadeTime: TimeInterval) {
+        let alphaSetting = self.alphaValue
+        self.alphaValue = 0.0
+        self.makeKeyAndOrderFront(nil)
+        NSAnimationContext.beginGrouping()
+        NSAnimationContext.current.duration = fadeTime
+        self.animator().alphaValue = alphaSetting
+        NSAnimationContext.endGrouping()
+    }
+
+    func fadeOut(_ fadeTime: TimeInterval, andDelete deleteCanvas: Bool, withState L: UnsafeMutablePointer<lua_State>!) {
+        let skin = LuaSkin.skin(with: L)
+        guard let theView = self.contentView as? HSCanvasView else { return }
+        if theView.selfRef != LUA_NOREF { return } // already in a fade
+        skin.pushNSObject(theView)
+        theView.selfRef = skin.luaRef(canvas_refTable)
+
+        let alphaSetting = self.alphaValue
+        NSAnimationContext.beginGrouping()
+        weak let bself = self
+        let canary = skin.createGCCanary()
+
+        NSAnimationContext.current.duration = fadeTime
+        NSAnimationContext.current.completionHandler = {
+            DispatchQueue.main.async {
+                guard let mySelf = bself,
+                      let myView = mySelf.contentView as? HSCanvasView,
+                      myView.selfRef != LUA_NOREF else { return }
+
+                let bSkin = LuaSkin.skin(with: nil)
+                _lua_stackguard_entry(bSkin.l)
+
+                if skin.check(canary) {
+                    myView.selfRef = bSkin.luaUnref(canvas_refTable, ref: myView.selfRef)
+                }
+                var mutableCanary = canary
+                skin.destroy(&mutableCanary)
+                _lua_stackguard_exit(bSkin.l)
+
+                mySelf.orderOut(nil)
+                mySelf.alphaValue = alphaSetting
+            }
+        }
+        self.animator().alphaValue = 0.0
+        NSAnimationContext.endGrouping()
+    }
+}
+

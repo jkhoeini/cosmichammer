@@ -58,9 +58,9 @@ public class MJConsoleWindowController: NSWindowController, NSTextFieldDelegate 
     private var historyIndex: Int = 0
     @objc private var outputView: NSTextView?
     @objc private var inputField: NSTextField?
-    private var preshownStdouts: NSMutableArray = NSMutableArray()
+    private var preshownStdouts: [Any] = []
     private var dateFormatter: DateFormatter
-    private var outputBuffer: NSMutableArray
+    private var outputBuffer: [NSAttributedString]
     private var outputTimer: Timer?
 
     // MARK: Singleton
@@ -79,18 +79,19 @@ public class MJConsoleWindowController: NSWindowController, NSTextFieldDelegate 
         df.locale = enUSPOSIX
         df.dateFormat = "yyyy-MM-dd HH:mm:ss"
         self.dateFormatter = df
-        self.outputBuffer = NSMutableArray(capacity: 1000)
+        self.outputBuffer = []
+        self.outputBuffer.reserveCapacity(1000)
 
         super.init(window: window)
 
         // Start the drain timer
         let timer = Timer(timeInterval: 0.2, repeats: true) { [weak self] _ in
-            guard let self = self, self.outputBuffer.count > 0 else { return }
+            guard let self = self, !self.outputBuffer.isEmpty else { return }
             autoreleasepool {
                 guard let storage = self.outputView?.textStorage else { return }
                 storage.beginEditing()
                 let maxLength = self.maxConsoleOutputHistory?.intValue ?? 100000
-                for case let attrStr as NSAttributedString in self.outputBuffer {
+                for attrStr in self.outputBuffer {
                     let curLength = storage.length
                     let addLength = attrStr.length
                     storage.append(attrStr)
@@ -98,7 +99,7 @@ public class MJConsoleWindowController: NSWindowController, NSTextFieldDelegate 
                         storage.deleteCharacters(in: NSRange(location: 0, length: curLength - maxLength + addLength))
                     }
                 }
-                self.outputBuffer.removeAllObjects()
+                self.outputBuffer.removeAll()
                 storage.endEditing()
                 self.outputView?.scrollToEndOfDocument(self)
             }
@@ -227,14 +228,14 @@ public class MJConsoleWindowController: NSWindowController, NSTextFieldDelegate 
     }
 
     @objc public func setup() {
-        preshownStdouts = NSMutableArray()
+        preshownStdouts = []
         MJLuaSetupLogHandler { [weak self] str in
             guard let self = self else { return }
             if self.outputView != nil {
                 self.appendString(str as String, type: .stdout)
                 self.outputView?.scrollToEndOfDocument(self)
             } else {
-                self.preshownStdouts.add(str)
+                self.preshownStdouts.append(str)
             }
         }
         reflectDefaults()
@@ -274,7 +275,7 @@ public class MJConsoleWindowController: NSWindowController, NSTextFieldDelegate 
             .foregroundColor: color,
         ]
         let attrStr = NSAttributedString(string: displayStr, attributes: attrs)
-        outputBuffer.add(attrStr)
+        outputBuffer.append(attrStr)
     }
 
     private func run(_ command: String) -> String {

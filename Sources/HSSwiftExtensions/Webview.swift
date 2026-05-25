@@ -3,16 +3,16 @@ import Cocoa
 import WebKit
 import LuaSkin
 
-private let USERDATA_TAG = "hs.webview"
+let wv_USERDATA_TAG = "hs.webview"
 private let USERDATA_UCC_TAG = "hs.webview.usercontent"
 private let USERDATA_DS_TAG = "hs.webview.datastore"
 private let USERDATA_TB_TAG = "hs.webview.toolbar"
 
-private var refTable: Int32 = 0
-private var HSWebViewProcessPool: WKProcessPool?
-private var delayTimers: NSMapTable<HSWebViewView, Timer>?
+var wv_refTable: Int32 = 0
+var wv_ProcessPool: WKProcessPool?
+var wv_delayTimers: NSMapTable<HSWebViewView, Timer>?
 
-private func RectWithFlippedYCoordinate(_ theRect: NSRect) -> NSRect {
+func wv_RectWithFlippedYCoordinate(_ theRect: NSRect) -> NSRect {
     return NSMakeRect(theRect.origin.x,
                       NSScreen.screens[0].frame.size.height - theRect.origin.y - theRect.size.height,
                       theRect.size.width,
@@ -21,651 +21,33 @@ private func RectWithFlippedYCoordinate(_ theRect: NSRect) -> NSRect {
 
 // forward declarations handled by Swift naturally
 
-func delayUntilViewStopsLoading(_ theView: HSWebViewView, block: @escaping () -> Void) {
-    if delayTimers == nil { delayTimers = NSMapTable<HSWebViewView, Timer>.strongToWeakObjects() }
+func wv_delayUntilViewStopsLoading(_ theView: HSWebViewView, block: @escaping () -> Void) {
+    if wv_delayTimers == nil { wv_delayTimers = NSMapTable<HSWebViewView, Timer>.strongToWeakObjects() }
 
-    if let existingTimer = delayTimers?.object(forKey: theView) {
+    if let existingTimer = wv_delayTimers?.object(forKey: theView) {
         existingTimer.invalidate()
-        delayTimers?.removeObject(forKey: theView)
+        wv_delayTimers?.removeObject(forKey: theView)
     }
 
     let newDelay = Timer(timeInterval: 0.001, repeats: true) { timer in
         if timer.isValid {
             if !theView.isLoading {
                 theView.stopLoading()
-                delayTimers?.removeObject(forKey: theView)
+                wv_delayTimers?.removeObject(forKey: theView)
                 timer.invalidate()
                 block()
             }
         }
     }
 
-    delayTimers?.setObject(newDelay, forKey: theView)
+    wv_delayTimers?.setObject(newDelay, forKey: theView)
     newDelay.fireDate = Date(timeIntervalSinceNow: 0)
     RunLoop.current.add(newDelay, forMode: .common)
 }
 
-// MARK: - HSWebViewWindow
 
-class HSWebViewWindow: NSPanel, NSWindowDelegate {
-    var parentWebView: HSWebViewWindow?
-    var children: NSMutableArray = NSMutableArray()
-    var udRef: Int32 = LUA_NOREF
-    var windowCallback: Int32 = LUA_NOREF
-    var allowKeyboardEntry: Bool = false
-    var darkMode: Bool = false
-    var titleFollow: Bool = true
-    var deleteOnClose: Bool = false
-    var closeOnEscape: Bool = false
-    var lsCanary: LSGCCanary = LSGCCanary()
-
-    override init(contentRect: NSRect, styleMask style: NSWindow.StyleMask,
-                  backing backingStoreType: NSWindow.BackingStoreType, defer flag: Bool) {
-        super.init(contentRect: contentRect, styleMask: style, backing: backingStoreType, defer: flag)
-
-        let flippedRect = RectWithFlippedYCoordinate(contentRect)
-        self.setFrameOrigin(flippedRect.origin)
-
-        self.isReleasedWhenClosed = false
-        self.backgroundColor = .clear
-        self.isOpaque = true
-        self.hasShadow = false
-        self.ignoresMouseEvents = false
-        self.isRestorable = false
-        self.hidesOnDeactivate = false
-        self.animationBehavior = .none
-        self.level = .normal
-
-        self.parentWebView = nil
-        self.children = NSMutableArray()
-        self.udRef = LUA_NOREF
-        self.windowCallback = LUA_NOREF
-        self.titleFollow = true
-        self.deleteOnClose = false
-        self.allowKeyboardEntry = false
-        self.closeOnEscape = false
-        self.darkMode = false
-
-        self.delegate = self
-    }
-
-    var darkModeEnabled: Bool { return darkMode }
-
-    override var canBecomeKey: Bool { return allowKeyboardEntry }
-
-    func windowShouldClose(_ sender: NSWindow) -> Bool {
-        return (self.styleMask.contains(.closable))
-    }
-
-    func windowWillClose(_ notification: Notification) {
-        let skin = LuaSkin.skin(with: nil)
-        let L = skin.l!
-
-        if !skin.check(lsCanary) { return }
-        _lua_stackguard_entry(L)
-
-        if windowCallback != LUA_NOREF {
-            skin.pushLuaRef(refTable, ref: windowCallback)
-            skin.pushNSObject("closing" as NSString)
-            skin.pushNSObject(self)
-            skin.protectedCallAndError("hs.webview:windowCallback:closing", nargs: 2, nresults: 0)
-        }
-        if deleteOnClose {
-            lua_pushcfunction(L, userdata_gc)
-            skin.pushNSObject(self)
-            if lua_pcall(L, 1, 0, 0) != LUA_OK {
-                skin.logError(String(format: "%s:error invoking _gc for deleteOnClose:%s", USERDATA_TAG, lua_tostring(L, -1)!))
-                lua_pop(L, 1)
-            }
-        }
-        _lua_stackguard_exit(L)
-    }
-
-    func windowDidBecomeKey(_ notification: Notification) {
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            if self.windowCallback != LUA_NOREF {
-                let skin = LuaSkin.skin(with: nil)
-                _lua_stackguard_entry(skin.l)
-                skin.pushLuaRef(refTable, ref: self.windowCallback)
-                skin.pushNSObject("focusChange" as NSString)
-                skin.pushNSObject(self)
-                lua_pushboolean(skin.l, 1)
-                skin.protectedCallAndError("hs.webview:windowCallback:focusChange", nargs: 3, nresults: 0)
-                _lua_stackguard_exit(skin.l)
-            }
-        }
-    }
-
-    func windowDidResignKey(_ notification: Notification) {
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            if self.windowCallback != LUA_NOREF {
-                let skin = LuaSkin.skin(with: nil)
-                _lua_stackguard_entry(skin.l)
-                skin.pushLuaRef(refTable, ref: self.windowCallback)
-                skin.pushNSObject("focusChange" as NSString)
-                skin.pushNSObject(self)
-                lua_pushboolean(skin.l, 0)
-                skin.protectedCallAndError("hs.webview:windowCallback:focusChange", nargs: 3, nresults: 0)
-                _lua_stackguard_exit(skin.l)
-            }
-        }
-    }
-
-    func windowDidResize(_ notification: Notification) {
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            if self.windowCallback != LUA_NOREF {
-                let skin = LuaSkin.skin(with: nil)
-                _lua_stackguard_entry(skin.l)
-                skin.pushLuaRef(refTable, ref: self.windowCallback)
-                skin.pushNSObject("frameChange" as NSString)
-                skin.pushNSObject(self)
-                skin.pushNSRect(RectWithFlippedYCoordinate(self.frame))
-                skin.protectedCallAndError("hs.webview:windowCallback:frameChange:resize", nargs: 3, nresults: 0)
-                _lua_stackguard_exit(skin.l)
-            }
-        }
-    }
-
-    func windowDidMove(_ notification: Notification) {
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            if self.windowCallback != LUA_NOREF {
-                let skin = LuaSkin.skin(with: nil)
-                _lua_stackguard_entry(skin.l)
-                skin.pushLuaRef(refTable, ref: self.windowCallback)
-                skin.pushNSObject("frameChange" as NSString)
-                skin.pushNSObject(self)
-                skin.pushNSRect(RectWithFlippedYCoordinate(self.frame))
-                skin.protectedCallAndError("hs.webview:windowCallback:frameChange:move", nargs: 3, nresults: 0)
-                _lua_stackguard_exit(skin.l)
-            }
-        }
-    }
-
-    override func cancelOperation(_ sender: Any?) {
-        if closeOnEscape { super.cancelOperation(sender) }
-    }
-
-    func fadeIn(_ fadeTime: TimeInterval) {
-        self.alphaValue = 0.0
-        self.makeKeyAndOrderFront(nil)
-        NSAnimationContext.beginGrouping()
-        NSAnimationContext.current.duration = fadeTime
-        self.animator().alphaValue = 1.0
-        NSAnimationContext.endGrouping()
-    }
-
-    func fadeOut(_ fadeTime: TimeInterval, andDelete deleteWindow: Bool, withState L: UnsafeMutablePointer<lua_State>!) {
-        NSAnimationContext.beginGrouping()
-        weak let bself = self
-
-        let outerSkin = LuaSkin.skin(with: L)
-        let lsCanary = outerSkin.createGCCanary()
-        NSAnimationContext.current.duration = fadeTime
-        NSAnimationContext.current.completionHandler = {
-            let skin = LuaSkin.skin(with: nil)
-            if !skin.check(lsCanary) { return }
-            if let mySelf = bself {
-                if deleteWindow {
-                    mySelf.close()
-                    lua_pushcfunction(L, userdata_gc)
-                    skin.pushLuaRef(refTable, ref: mySelf.udRef)
-                    if lua_pcall(L, 1, 0, 0) != LUA_OK {
-                        skin.logBreadcrumb(String(format: "%s:error invoking _gc for delete (with fade) method:%s", USERDATA_TAG, lua_tostring(L, -1)!))
-                        lua_pop(L, 1)
-                    }
-                } else {
-                    mySelf.orderOut(nil)
-                    mySelf.alphaValue = 1.0
-                }
-            }
-            var mutableCanary = lsCanary
-            skin.destroy(&mutableCanary)
-        }
-        self.animator().alphaValue = 0.0
-        NSAnimationContext.endGrouping()
-    }
-}
-
-// MARK: - HSWebViewView
-
-class HSWebViewView: WKWebView, WKNavigationDelegate, WKUIDelegate {
-    var navigationCallback: Int32 = LUA_NOREF
-    var policyCallback: Int32 = LUA_NOREF
-    var sslCallback: Int32 = LUA_NOREF
-    var allowNewWindows: Bool = true
-    var examineInvalidCertificates: Bool = false
-    var trackingID: WKNavigation?
-
-    override init(frame frameRect: NSRect, configuration: WKWebViewConfiguration) {
-        super.init(frame: frameRect, configuration: configuration)
-        self.navigationDelegate = self
-        self.uiDelegate = self
-        self.navigationCallback = LUA_NOREF
-        self.policyCallback = LUA_NOREF
-        self.sslCallback = LUA_NOREF
-        self.allowNewWindows = true
-        self.examineInvalidCertificates = false
-    }
-
-    required init?(coder: NSCoder) { fatalError("init(coder:) not implemented") }
-
-    override var isFlipped: Bool { return true }
-
-    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { return true }
-
-    // MARK: -- WKNavigationDelegate
-
-    func webView(_ webView: WKWebView, didReceiveServerRedirectForProvisionalNavigation navigation: WKNavigation!) {
-        navigationCallbackFor("didReceiveServerRedirectForProvisionalNavigation", forView: webView, withNavigation: navigation, withError: nil)
-    }
-
-    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
-        navigationCallbackFor("didStartProvisionalNavigation", forView: webView, withNavigation: navigation, withError: nil)
-    }
-
-    func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
-        navigationCallbackFor("didCommitNavigation", forView: webView, withNavigation: navigation, withError: nil)
-    }
-
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        let windowTitle = webView.title ?? "<no title>"
-        if (webView.window as? HSWebViewWindow)?.titleFollow == true { webView.window?.title = windowTitle }
-        navigationCallbackFor("didFinishNavigation", forView: webView, withNavigation: navigation, withError: nil)
-    }
-
-    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-        if navigationCallbackFor("didFailNavigation", forView: webView, withNavigation: navigation, withError: error as NSError) {
-            handleNavigationFailure(error as NSError, forView: webView)
-        }
-    }
-
-    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-        let nsError = error as NSError
-        if navigationCallbackFor("didFailProvisionalNavigation", forView: webView, withNavigation: navigation, withError: nsError) {
-            if nsError.code == NSURLErrorUnsupportedURL {
-                if let destinationURL = nsError.userInfo[NSURLErrorFailingURLErrorKey] as? URL {
-                    if NSWorkspace.shared.open(destinationURL) { return }
-                } else {
-                    LuaSkin.skin(with: nil).logWarn("\(USERDATA_TAG):didFailProvisionalNavigation missing NSURLErrorFailingURLErrorKey")
-                }
-            }
-            handleNavigationFailure(nsError, forView: webView)
-        }
-    }
-
-    func webView(_ webView: WKWebView, didReceive challenge: URLAuthenticationChallenge,
-                 completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
-        let hostName = webView.url?.host ?? ""
-        let authenticationMethod = challenge.protectionSpace.authenticationMethod
-
-        if authenticationMethod == NSURLAuthenticationMethodDefault
-            || authenticationMethod == NSURLAuthenticationMethodHTTPBasic
-            || authenticationMethod == NSURLAuthenticationMethodHTTPDigest {
-
-            let previousCredential = challenge.proposedCredential
-
-            if self.policyCallback != LUA_NOREF && challenge.previousFailureCount < 3 {
-                let skin = LuaSkin.skin(with: nil)
-                _lua_stackguard_entry(skin.l)
-                skin.pushLuaRef(refTable, ref: self.policyCallback)
-                lua_pushstring(skin.l, "authenticationChallenge")
-                skin.pushNSObject(webView.window as? HSWebViewWindow)
-                skin.pushNSObject(challenge)
-
-                if !skin.protectedCallAndTraceback(3, nresults: 1) {
-                    let errorMsg = lua_tostring(skin.l, -1).map({ String(cString: $0) }) ?? "unknown error"
-                    skin.logError("hs.webview:policyCallback() authenticationChallenge callback error: \(errorMsg)")
-                } else {
-                    if lua_type(skin.l, -1) == LUA_TTABLE {
-                        lua_getfield(skin.l, -1, "user")
-                        let userName = (lua_type(skin.l, -1) == LUA_TSTRING) ? (skin.toNSObject(atIndex: -1) as? String ?? "") : ""
-                        lua_pop(skin.l, 1)
-
-                        lua_getfield(skin.l, -1, "password")
-                        let password = (lua_type(skin.l, -1) == LUA_TSTRING) ? (skin.toNSObject(atIndex: -1) as? String ?? "") : ""
-                        lua_pop(skin.l, 1)
-
-                        let credential = URLCredential(user: userName, password: password, persistence: .forSession)
-                        completionHandler(.useCredential, credential)
-                        lua_pop(skin.l, 1)
-                        _lua_stackguard_exit(skin.l)
-                        return
-                    } else if lua_toboolean(skin.l, -1) == 0 {
-                        completionHandler(.cancelAuthenticationChallenge, nil)
-                        lua_pop(skin.l, 1)
-                        _lua_stackguard_exit(skin.l)
-                        return
-                    }
-                }
-                lua_pop(skin.l, 1)
-                _lua_stackguard_exit(skin.l)
-            }
-
-            if let targetWindow = self.window {
-                var title = "Authentication Challenge"
-                if previousCredential != nil && challenge.previousFailureCount > 0 {
-                    title = "\(title), attempt \(challenge.previousFailureCount + 1)"
-                }
-                let alert1 = NSAlert()
-                alert1.addButton(withTitle: "OK")
-                alert1.addButton(withTitle: "Cancel")
-                alert1.messageText = title
-                alert1.informativeText = "Username for \(hostName)"
-                let user = NSTextField(frame: NSMakeRect(0, 0, 200, 24))
-                if let prevCred = previousCredential {
-                    user.stringValue = prevCred.user ?? ""
-                }
-                user.isEditable = true
-                alert1.accessoryView = user
-
-                alert1.beginSheetModal(for: targetWindow) { returnCode in
-                    if returnCode == .alertFirstButtonReturn {
-                        let alert2 = NSAlert()
-                        alert2.addButton(withTitle: "OK")
-                        alert2.addButton(withTitle: "Cancel")
-                        alert2.messageText = title
-                        alert2.informativeText = "password for \(hostName)"
-                        let pass = NSSecureTextField(frame: NSMakeRect(0, 36, 200, 24))
-                        pass.isEditable = true
-                        alert2.accessoryView = pass
-                        alert2.beginSheetModal(for: targetWindow) { returnCode2 in
-                            if returnCode2 == .alertFirstButtonReturn {
-                                let credential = URLCredential(user: user.stringValue, password: pass.stringValue, persistence: .forSession)
-                                completionHandler(.useCredential, credential)
-                            } else {
-                                completionHandler(.cancelAuthenticationChallenge, nil)
-                            }
-                        }
-                    } else {
-                        completionHandler(.cancelAuthenticationChallenge, nil)
-                    }
-                }
-            } else {
-                LuaSkin.skin(with: nil).logWarn("\(USERDATA_TAG):didReceiveAuthenticationChallenge no target window")
-                completionHandler(.performDefaultHandling, nil)
-            }
-
-        } else if authenticationMethod == NSURLAuthenticationMethodServerTrust {
-            let serverTrust = challenge.protectionSpace.serverTrust!
-            var status: SecTrustResultType = .invalid
-            SecTrustEvaluate(serverTrust, &status)
-
-            if status == .recoverableTrustFailure && self.sslCallback != LUA_NOREF {
-                let skin = LuaSkin.skin(with: nil)
-                _lua_stackguard_entry(skin.l)
-                skin.pushLuaRef(refTable, ref: self.sslCallback)
-                skin.pushNSObject(webView.window as? HSWebViewWindow)
-                skin.pushNSObject(challenge.protectionSpace)
-
-                if !skin.protectedCallAndTraceback(2, nresults: 1) {
-                    let errorMsg = lua_tostring(skin.l, -1).map({ String(cString: $0) }) ?? "unknown error"
-                    skin.logError("hs.webview:sslCallback callback error: \(errorMsg)")
-                    completionHandler(.performDefaultHandling, nil)
-                } else {
-                    if lua_type(skin.l, -1) == LUA_TBOOLEAN && lua_toboolean(skin.l, -1) != 0 && examineInvalidCertificates {
-                        let exceptions = SecTrustCopyExceptions(serverTrust)
-                        SecTrustSetExceptions(serverTrust, exceptions)
-                        completionHandler(.useCredential, URLCredential(trust: serverTrust))
-                    } else {
-                        completionHandler(.performDefaultHandling, nil)
-                    }
-                }
-                lua_pop(skin.l, 1)
-                _lua_stackguard_exit(skin.l)
-            } else {
-                completionHandler(.performDefaultHandling, nil)
-            }
-        } else {
-            LuaSkin.skin(with: nil).logWarn("\(USERDATA_TAG):didReceiveAuthenticationChallenge unhandled challenge type:\(challenge.protectionSpace.authenticationMethod)")
-            completionHandler(.performDefaultHandling, nil)
-        }
-    }
-
-    func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
-                 decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-        if self.policyCallback != LUA_NOREF {
-            let skin = LuaSkin.skin(with: nil)
-            _lua_stackguard_entry(skin.l)
-            skin.pushLuaRef(refTable, ref: self.policyCallback)
-            lua_pushstring(skin.l, "navigationAction")
-            skin.pushNSObject(webView.window as? HSWebViewWindow)
-            skin.pushNSObject(navigationAction)
-
-            if !skin.protectedCallAndTraceback(3, nresults: 1) {
-                let errorMsg = lua_tostring(skin.l, -1).map({ String(cString: $0) }) ?? "unknown error"
-                skin.logError("hs.webview:policyCallback() navigationAction callback error: \(errorMsg)")
-                decisionHandler(.cancel)
-            } else {
-                decisionHandler(lua_toboolean(skin.l, -1) != 0 ? .allow : .cancel)
-            }
-            lua_pop(skin.l, 1)
-            _lua_stackguard_exit(skin.l)
-        } else {
-            decisionHandler(.allow)
-        }
-    }
-
-    func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse,
-                 decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
-        if self.policyCallback != LUA_NOREF {
-            let skin = LuaSkin.skin(with: nil)
-            _lua_stackguard_entry(skin.l)
-            skin.pushLuaRef(refTable, ref: self.policyCallback)
-            lua_pushstring(skin.l, "navigationResponse")
-            skin.pushNSObject(webView.window as? HSWebViewWindow)
-            skin.pushNSObject(navigationResponse)
-
-            if !skin.protectedCallAndTraceback(3, nresults: 1) {
-                let errorMsg = lua_tostring(skin.l, -1).map({ String(cString: $0) }) ?? "unknown error"
-                skin.logError("hs.webview:policyCallback() navigationResponse callback error: \(errorMsg)")
-                decisionHandler(.cancel)
-            } else {
-                decisionHandler(lua_toboolean(skin.l, -1) != 0 ? .allow : .cancel)
-            }
-            lua_pop(skin.l, 1)
-            _lua_stackguard_exit(skin.l)
-        } else {
-            decisionHandler(.allow)
-        }
-    }
-
-    // MARK: -- WKUIDelegate
-
-    func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
-                 for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
-        guard (webView as? HSWebViewView)?.allowNewWindows == true else { return nil }
-
-        let skin = LuaSkin.skin(with: nil)
-        _lua_stackguard_entry(skin.l)
-
-        let parent = webView.window as! HSWebViewWindow
-        var theRect = parent.contentRect(forFrameRect: parent.frame)
-        theRect = RectWithFlippedYCoordinate(theRect)
-        theRect.origin.x += 20
-        theRect.origin.y += 20
-
-        let newWindow = HSWebViewWindow(contentRect: theRect, styleMask: parent.styleMask, backing: .buffered, defer: true)
-        newWindow.level = parent.level
-        newWindow.allowKeyboardEntry = parent.allowKeyboardEntry
-        newWindow.titleFollow = parent.titleFollow
-        newWindow.parentWebView = parent
-        newWindow.deleteOnClose = true
-        newWindow.isOpaque = parent.isOpaque
-        newWindow.lsCanary = skin.createGCCanary()
-
-        if parent.windowCallback != LUA_NOREF {
-            skin.pushLuaRef(refTable, ref: parent.windowCallback)
-            newWindow.windowCallback = skin.luaRef(refTable)
-        }
-
-        let newView = HSWebViewView(frame: (newWindow.contentView! as NSView).bounds, configuration: configuration)
-        newWindow.contentView = newView
-
-        newView.allowNewWindows = (webView as! HSWebViewView).allowNewWindows
-        newView.allowsMagnification = webView.allowsMagnification
-        newView.allowsBackForwardNavigationGestures = webView.allowsBackForwardNavigationGestures
-        newView.setValue(NSNumber(value: newWindow.isOpaque), forKey: "drawsTransparentBackground")
-
-        if (webView as! HSWebViewView).navigationCallback != LUA_NOREF {
-            skin.pushLuaRef(refTable, ref: (webView as! HSWebViewView).navigationCallback)
-            newView.navigationCallback = skin.luaRef(refTable)
-        }
-        if (webView as! HSWebViewView).policyCallback != LUA_NOREF {
-            skin.pushLuaRef(refTable, ref: (webView as! HSWebViewView).policyCallback)
-            newView.policyCallback = skin.luaRef(refTable)
-        }
-
-        if self.policyCallback != LUA_NOREF {
-            skin.pushLuaRef(refTable, ref: self.policyCallback)
-            lua_pushstring(skin.l, "newWindow")
-            skin.pushNSObject(newWindow)
-            skin.pushNSObject(navigationAction)
-            skin.pushNSObject(windowFeatures)
-
-            if !skin.protectedCallAndTraceback(4, nresults: 1) {
-                let errorMsg = lua_tostring(skin.l, -1).map({ String(cString: $0) }) ?? "unknown error"
-                lua_pop(skin.l, 1)
-                skin.logError("hs.webview:policyCallback() newWindow callback error: \(errorMsg)")
-
-                lua_pushcfunction(skin.l, userdata_gc)
-                skin.pushNSObject(newWindow)
-                skin.protectedCallAndError("hs.webview:policyCallback() newWindow removal", nargs: 1, nresults: 0)
-                _lua_stackguard_exit(skin.l)
-                return nil
-            } else {
-                if lua_toboolean(skin.l, -1) == 0 {
-                    lua_pop(skin.l, 1)
-                    lua_pushcfunction(skin.l, userdata_gc)
-                    skin.pushNSObject(newWindow)
-                    skin.protectedCallAndError("hs.webview:policyCallback() newWindow removal rejection", nargs: 1, nresults: 0)
-                    _lua_stackguard_exit(skin.l)
-                    return nil
-                }
-            }
-            lua_pop(skin.l, 1)
-        }
-
-        parent.children.add(newWindow)
-        newWindow.makeKeyAndOrderFront(nil)
-
-        _lua_stackguard_exit(skin.l)
-        return newView
-    }
-
-    func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String,
-                 initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping () -> Void) {
-        let alertPanel = NSAlert()
-        alertPanel.addButton(withTitle: "OK")
-        alertPanel.messageText = "JavaScript Alert for \(frame.request.url?.host ?? "")"
-        alertPanel.informativeText = message
-
-        if let targetWindow = webView.window {
-            alertPanel.beginSheetModal(for: targetWindow) { _ in completionHandler() }
-        } else {
-            LuaSkin.skin(with: nil).logWarn("\(USERDATA_TAG):runJavaScriptAlertPanelWithMessage no target window")
-        }
-    }
-
-    func webView(_ webView: WKWebView, runJavaScriptConfirmPanelWithMessage message: String,
-                 initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping (Bool) -> Void) {
-        let confirmPanel = NSAlert()
-        confirmPanel.addButton(withTitle: "OK")
-        confirmPanel.addButton(withTitle: "Cancel")
-        confirmPanel.messageText = "JavaScript Confirm for \(frame.request.url?.host ?? "")"
-        confirmPanel.informativeText = message
-
-        if let targetWindow = webView.window {
-            confirmPanel.beginSheetModal(for: targetWindow) { returnCode in
-                completionHandler(returnCode == .alertFirstButtonReturn)
-            }
-        } else {
-            LuaSkin.skin(with: nil).logWarn("\(USERDATA_TAG):runJavaScriptConfirmPanelWithMessage no target window")
-        }
-    }
-
-    func webView(_ webView: WKWebView, runJavaScriptTextInputPanelWithPrompt prompt: String,
-                 defaultText: String?, initiatedByFrame frame: WKFrameInfo,
-                 completionHandler: @escaping (String?) -> Void) {
-        let inputPanel = NSAlert()
-        inputPanel.addButton(withTitle: "OK")
-        inputPanel.addButton(withTitle: "Cancel")
-        inputPanel.messageText = "JavaScript Input for \(frame.request.url?.host ?? "")"
-        inputPanel.informativeText = prompt
-        let input = NSTextField(frame: NSMakeRect(0, 0, 200, 24))
-        input.stringValue = defaultText ?? ""
-        input.isEditable = true
-        inputPanel.accessoryView = input
-
-        if let targetWindow = webView.window {
-            inputPanel.beginSheetModal(for: targetWindow) { returnCode in
-                completionHandler(returnCode == .alertFirstButtonReturn ? input.stringValue : nil)
-            }
-        } else {
-            LuaSkin.skin(with: nil).logWarn("\(USERDATA_TAG):runJavaScriptTextInputPanelWithPrompt no target window")
-        }
-    }
-
-    // MARK: -- Helper methods
-
-    func handleNavigationFailure(_ error: NSError, forView theView: WKWebView) {
-        var theErrorPage = "<html><head><title>Webview Error \(error.code)</title></head><body>"
-        theErrorPage += "<b>An Error code: \(error.code) in \(error.domain) occurred during navigation:</b><br><hr>"
-        if let desc = error.localizedDescription as String? { theErrorPage += "<i>Description:</i> \(desc)<br>" }
-        if let reason = error.localizedFailureReason { theErrorPage += "<i>Reason:</i> \(reason)<br>" }
-        theErrorPage += "</body></html>"
-        theView.loadHTMLString(theErrorPage, baseURL: nil)
-    }
-
-    @discardableResult
-    func navigationCallbackFor(_ action: String, forView theView: WKWebView,
-                               withNavigation navigation: WKNavigation?,
-                               withError error: NSError?) -> Bool {
-        (theView as? HSWebViewView)?.trackingID = navigation
-
-        var actionRequiredAfterReturn = true
-
-        if self.navigationCallback != LUA_NOREF {
-            let skin = LuaSkin.skin(with: nil)
-            _lua_stackguard_entry(skin.l)
-            var numberOfArguments: Int32 = 3
-            skin.pushLuaRef(refTable, ref: self.navigationCallback)
-            lua_pushstring(skin.l, action)
-            skin.pushNSObject(theView.window as? HSWebViewWindow)
-            let navStr = String(describing: Unmanaged.passUnretained(navigation as AnyObject).toOpaque())
-            lua_pushstring(skin.l, navStr)
-
-            if let error = error {
-                numberOfArguments += 1
-                NSError_toLua(skin.l, error)
-            }
-
-            if !skin.protectedCallAndTraceback(numberOfArguments, nresults: 1) {
-                let errorMsg = lua_tostring(skin.l, -1).map({ String(cString: $0) }) ?? "unknown error"
-                skin.logError("hs.webview:navigationCallback() \(action) callback error: \(errorMsg)")
-            } else {
-                if error != nil {
-                    if lua_type(skin.l, -1) == LUA_TSTRING {
-                        luaL_tolstring(skin.l, -1, nil)
-                        let theHTML = skin.toNSObject(atIndex: -1) as? String ?? ""
-                        lua_pop(skin.l, 1)
-                        theView.loadHTMLString(theHTML, baseURL: nil)
-                        actionRequiredAfterReturn = false
-                    } else if lua_type(skin.l, -1) == LUA_TBOOLEAN && lua_toboolean(skin.l, -1) != 0 {
-                        actionRequiredAfterReturn = false
-                    }
-                }
-            }
-            lua_pop(skin.l, 1)
-            _lua_stackguard_exit(skin.l)
-        }
-
-        return actionRequiredAfterReturn
-    }
-}
+// HSWebViewWindow -> WebviewWindow.swift
+// HSWebViewView -> WebviewView.swift
 
 // MARK: - WKWebView Related Methods
 
@@ -678,11 +60,11 @@ class HSWebViewView: WKWebView, WKNavigationDelegate, WKUIDelegate {
 ///
 /// Returns:
 ///  * a boolean value indicating whether or not the datastore is non-persistent.
-private func webview_privateBrowsing(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_privateBrowsing(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    skin.checkArgs(LS_TUSERDATA, wv_USERDATA_TAG, LS_TBREAK)
     let theWindow = Unmanaged<HSWebViewWindow>.fromOpaque(
-        luaL_checkudata(L, 1, USERDATA_TAG)!.assumingMemoryBound(to: UnsafeMutableRawPointer?.self).pointee!
+        luaL_checkudata(L, 1, wv_USERDATA_TAG)!.assumingMemoryBound(to: UnsafeMutableRawPointer?.self).pointee!
     ).takeUnretainedValue()
     let theView = theWindow.contentView as! HSWebViewView
     let theConfiguration = theView.configuration
@@ -691,8 +73,8 @@ private func webview_privateBrowsing(_ L: UnsafeMutablePointer<lua_State>!) -> I
 }
 
 // Helper to get HSWebViewWindow from userdata at stack index
-private func getWindowFromUD(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> HSWebViewWindow {
-    let ptr = luaL_checkudata(L, idx, USERDATA_TAG)!
+func wv_getWindowFromUD(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> HSWebViewWindow {
+    let ptr = luaL_checkudata(L, idx, wv_USERDATA_TAG)!
         .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
     return Unmanaged<HSWebViewWindow>.fromOpaque(ptr.pointee!).takeUnretainedValue()
 }
@@ -700,10 +82,10 @@ private func getWindowFromUD(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32
 /// hs.webview:children() -> array
 /// Method
 /// Returns an array of webview objects which have been opened as children of this webview.
-private func webview_children(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_children(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
-    let theWindow = getWindowFromUD(L, 1)
+    skin.checkArgs(LS_TUSERDATA, wv_USERDATA_TAG, LS_TBREAK)
+    let theWindow = wv_getWindowFromUD(L, 1)
 
     lua_newtable(L)
     for child in theWindow.children {
@@ -716,10 +98,10 @@ private func webview_children(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.webview:parent() -> webviewObject | nil
 /// Method
 /// Get the parent webview object for the calling webview object, or nil if the webview has no parent.
-private func webview_parent(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_parent(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
-    let theWindow = getWindowFromUD(L, 1)
+    skin.checkArgs(LS_TUSERDATA, wv_USERDATA_TAG, LS_TBREAK)
+    let theWindow = wv_getWindowFromUD(L, 1)
     if let parent = theWindow.parentWebView { skin.pushNSObject(parent) } else { lua_pushnil(L) }
     return 1
 }
@@ -727,10 +109,10 @@ private func webview_parent(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.webview:url([URL]) -> webviewObject, navigationIdentifier | url
 /// Method
 /// Get or set the URL to render for the webview.
-private func webview_url(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_url(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING | LS_TTABLE | LS_TOPTIONAL, LS_TBREAK)
-    let theWindow = getWindowFromUD(L, 1)
+    skin.checkArgs(LS_TUSERDATA, wv_USERDATA_TAG, LS_TSTRING | LS_TTABLE | LS_TOPTIONAL, LS_TBREAK)
+    let theWindow = wv_getWindowFromUD(L, 1)
     let theView = theWindow.contentView as! HSWebViewView
 
     if lua_type(L, 2) == LUA_TNONE {
@@ -739,7 +121,7 @@ private func webview_url(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     } else {
         let theNSURL = skin.luaObject(at: 2, toClass: "NSURLRequest") as? URLRequest
         if let theNSURL = theNSURL {
-            delayUntilViewStopsLoading(theView) {
+            wv_delayUntilViewStopsLoading(theView) {
                 let navID = theView.load(theNSURL)
                 theView.trackingID = navID
             }
@@ -754,10 +136,10 @@ private func webview_url(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.webview:userAgent([agent]) -> webviewObject | current value
 /// Method
 /// Get or set the webview's user agent string
-private func webview_userAgent(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_userAgent(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING | LS_TOPTIONAL, LS_TBREAK)
-    let theWindow = getWindowFromUD(L, 1)
+    skin.checkArgs(LS_TUSERDATA, wv_USERDATA_TAG, LS_TSTRING | LS_TOPTIONAL, LS_TBREAK)
+    let theWindow = wv_getWindowFromUD(L, 1)
     let theView = theWindow.contentView as! HSWebViewView
 
     if lua_type(L, 2) == LUA_TNONE {
@@ -772,16 +154,16 @@ private func webview_userAgent(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.webview:certificateChain() -> table | nil
 /// Method
 /// Returns the certificate chain for the most recently committed navigation of the webview.
-private func webview_certificateChain(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_certificateChain(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
-    let theWindow = getWindowFromUD(L, 1)
+    skin.checkArgs(LS_TUSERDATA, wv_USERDATA_TAG, LS_TBREAK)
+    let theWindow = wv_getWindowFromUD(L, 1)
     let theView = theWindow.contentView as! HSWebViewView
 
     if let certificateChain = theView.serverTrust {
         lua_newtable(L)
         for i in 0..<SecTrustGetCertificateCount(certificateChain) {
-            SecCertificateRef_toLua(L, SecTrustGetCertificateAtIndex(certificateChain, i))
+            wv_SecCertificateRef_toLua(L, SecTrustGetCertificateAtIndex(certificateChain, i))
             lua_rawseti(L, -2, luaL_len(L, -2) + 1)
         }
     } else {
@@ -793,10 +175,10 @@ private func webview_certificateChain(_ L: UnsafeMutablePointer<lua_State>!) -> 
 /// hs.webview:title() -> title
 /// Method
 /// Get the title of the page displayed in the webview.
-private func webview_title(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_title(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
-    let theWindow = getWindowFromUD(L, 1)
+    skin.checkArgs(LS_TUSERDATA, wv_USERDATA_TAG, LS_TBREAK)
+    let theWindow = wv_getWindowFromUD(L, 1)
     let theView = theWindow.contentView as! HSWebViewView
     skin.pushNSObject(theView.title as NSString?)
     return 1
@@ -805,10 +187,10 @@ private func webview_title(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.webview:navigationID() -> navigationID
 /// Method
 /// Get the most recent navigation identifier for the specified webview.
-private func webview_navigationID(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_navigationID(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
-    let theWindow = getWindowFromUD(L, 1)
+    skin.checkArgs(LS_TUSERDATA, wv_USERDATA_TAG, LS_TBREAK)
+    let theWindow = wv_getWindowFromUD(L, 1)
     let theView = theWindow.contentView as! HSWebViewView
     skin.pushNSObject(theView.trackingID)
     return 1
@@ -817,10 +199,10 @@ private func webview_navigationID(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
 /// hs.webview:loading() -> boolean
 /// Method
 /// Returns a boolean value indicating whether or not the webview is still loading content.
-private func webview_loading(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_loading(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
-    let theWindow = getWindowFromUD(L, 1)
+    skin.checkArgs(LS_TUSERDATA, wv_USERDATA_TAG, LS_TBREAK)
+    let theWindow = wv_getWindowFromUD(L, 1)
     let theView = theWindow.contentView as! HSWebViewView
     lua_pushboolean(L, theView.isLoading ? 1 : 0)
     return 1
@@ -829,10 +211,10 @@ private func webview_loading(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.webview:stopLoading() -> webviewObject
 /// Method
 /// Stop loading additional content for the webview.
-private func webview_stopLoading(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_stopLoading(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
-    let theWindow = getWindowFromUD(L, 1)
+    skin.checkArgs(LS_TUSERDATA, wv_USERDATA_TAG, LS_TBREAK)
+    let theWindow = wv_getWindowFromUD(L, 1)
     let theView = theWindow.contentView as! HSWebViewView
     if !theView.isLoading { theView.stopLoading() }
     lua_settop(L, 1)
@@ -842,10 +224,10 @@ private func webview_stopLoading(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 /// hs.webview:estimatedProgress() -> number
 /// Method
 /// Returns the estimated percentage of expected content that has been loaded.
-private func webview_estimatedProgress(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_estimatedProgress(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
-    let theWindow = getWindowFromUD(L, 1)
+    skin.checkArgs(LS_TUSERDATA, wv_USERDATA_TAG, LS_TBREAK)
+    let theWindow = wv_getWindowFromUD(L, 1)
     let theView = theWindow.contentView as! HSWebViewView
     lua_pushnumber(L, theView.estimatedProgress)
     return 1
@@ -854,10 +236,10 @@ private func webview_estimatedProgress(_ L: UnsafeMutablePointer<lua_State>!) ->
 /// hs.webview:isOnlySecureContent() -> bool
 /// Method
 /// Returns a boolean value indicating if all content current displayed in the webview was loaded over securely encrypted connections.
-private func webview_isOnlySecureContent(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_isOnlySecureContent(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
-    let theWindow = getWindowFromUD(L, 1)
+    skin.checkArgs(LS_TUSERDATA, wv_USERDATA_TAG, LS_TBREAK)
+    let theWindow = wv_getWindowFromUD(L, 1)
     let theView = theWindow.contentView as! HSWebViewView
     lua_pushboolean(L, theView.hasOnlySecureContent ? 1 : 0)
     return 1
@@ -866,10 +248,10 @@ private func webview_isOnlySecureContent(_ L: UnsafeMutablePointer<lua_State>!) 
 /// hs.webview:goForward() -> webviewObject
 /// Method
 /// Move to the next page in the webview's history, if possible.
-private func webview_goForward(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_goForward(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
-    let theWindow = getWindowFromUD(L, 1)
+    skin.checkArgs(LS_TUSERDATA, wv_USERDATA_TAG, LS_TBREAK)
+    let theWindow = wv_getWindowFromUD(L, 1)
     let theView = theWindow.contentView as! HSWebViewView
     theView.goForward()
     lua_settop(L, 1)
@@ -879,10 +261,10 @@ private func webview_goForward(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.webview:goBack() -> webviewObject
 /// Method
 /// Move to the previous page in the webview's history, if possible.
-private func webview_goBack(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_goBack(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
-    let theWindow = getWindowFromUD(L, 1)
+    skin.checkArgs(LS_TUSERDATA, wv_USERDATA_TAG, LS_TBREAK)
+    let theWindow = wv_getWindowFromUD(L, 1)
     let theView = theWindow.contentView as! HSWebViewView
     theView.goBack()
     lua_settop(L, 1)
@@ -892,14 +274,14 @@ private func webview_goBack(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.webview:reload([validate]) -> webviewObject, navigationIdentifier
 /// Method
 /// Reload the page in the webview, optionally performing end-to-end revalidation using cache-validating conditionals if possible.
-private func webview_reload(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_reload(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
-    let theWindow = getWindowFromUD(L, 1)
+    skin.checkArgs(LS_TUSERDATA, wv_USERDATA_TAG, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
+    let theWindow = wv_getWindowFromUD(L, 1)
     let theView = theWindow.contentView as! HSWebViewView
     let validate = (lua_type(L, 2) == LUA_TBOOLEAN) ? (lua_toboolean(L, 2) != 0) : false
 
-    delayUntilViewStopsLoading(theView) {
+    wv_delayUntilViewStopsLoading(theView) {
         let navID = validate ? theView.reloadFromOrigin() : theView.reload()
         theView.trackingID = navID
     }
@@ -911,10 +293,10 @@ private func webview_reload(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.webview:transparent([value]) -> webviewObject | current value
 /// Method
 /// Get or set whether or not the webview background is transparent.
-private func webview_transparent(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_transparent(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
-    let theWindow = getWindowFromUD(L, 1)
+    skin.checkArgs(LS_TUSERDATA, wv_USERDATA_TAG, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
+    let theWindow = wv_getWindowFromUD(L, 1)
 
     if lua_type(L, 2) == LUA_TNONE {
         lua_pushboolean(L, !theWindow.isOpaque ? 1 : 0)
@@ -930,10 +312,10 @@ private func webview_transparent(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 /// hs.webview:allowMagnificationGestures([value]) -> webviewObject | current value
 /// Method
 /// Get or set whether or not the webview will respond to magnification gestures from a trackpad or magic mouse.
-private func webview_allowMagnificationGestures(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_allowMagnificationGestures(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
-    let theWindow = getWindowFromUD(L, 1)
+    skin.checkArgs(LS_TUSERDATA, wv_USERDATA_TAG, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
+    let theWindow = wv_getWindowFromUD(L, 1)
     let theView = theWindow.contentView as! HSWebViewView
 
     if lua_type(L, 2) == LUA_TNONE {
@@ -948,10 +330,10 @@ private func webview_allowMagnificationGestures(_ L: UnsafeMutablePointer<lua_St
 /// hs.webview:allowNewWindows([value]) -> webviewObject | current value
 /// Method
 /// Get or set whether or not the webview allows new windows to be opened from it by any method.
-private func webview_allowNewWindows(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_allowNewWindows(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
-    let theWindow = getWindowFromUD(L, 1)
+    skin.checkArgs(LS_TUSERDATA, wv_USERDATA_TAG, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
+    let theWindow = wv_getWindowFromUD(L, 1)
     let theView = theWindow.contentView as! HSWebViewView
 
     if lua_type(L, 2) == LUA_TNONE {
@@ -966,10 +348,10 @@ private func webview_allowNewWindows(_ L: UnsafeMutablePointer<lua_State>!) -> I
 /// hs.webview:examineInvalidCertificates([flag]) -> webviewObject | current value
 /// Method
 /// Get or set whether or not invalid SSL server certificates that are approved by the ssl callback function are accepted as valid for browsing with the webview.
-private func webview_examineInvalidCertificates(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_examineInvalidCertificates(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
-    let theWindow = getWindowFromUD(L, 1)
+    skin.checkArgs(LS_TUSERDATA, wv_USERDATA_TAG, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
+    let theWindow = wv_getWindowFromUD(L, 1)
     let theView = theWindow.contentView as! HSWebViewView
 
     if lua_type(L, 2) == LUA_TNONE {
@@ -984,10 +366,10 @@ private func webview_examineInvalidCertificates(_ L: UnsafeMutablePointer<lua_St
 /// hs.webview:allowNavigationGestures([value]) -> webviewObject | current value
 /// Method
 /// Get or set whether or not the webview will respond to the navigation gestures from a trackpad or magic mouse.
-private func webview_allowNavigationGestures(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_allowNavigationGestures(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
-    let theWindow = getWindowFromUD(L, 1)
+    skin.checkArgs(LS_TUSERDATA, wv_USERDATA_TAG, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
+    let theWindow = wv_getWindowFromUD(L, 1)
     let theView = theWindow.contentView as! HSWebViewView
 
     if lua_type(L, 2) == LUA_TNONE {
@@ -1002,10 +384,10 @@ private func webview_allowNavigationGestures(_ L: UnsafeMutablePointer<lua_State
 /// hs.webview:magnification([value]) -> webviewObject | current value
 /// Method
 /// Get or set the webviews current magnification level.
-private func webview_magnification(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_magnification(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
-    let theWindow = getWindowFromUD(L, 1)
+    skin.checkArgs(LS_TUSERDATA, wv_USERDATA_TAG, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
+    let theWindow = wv_getWindowFromUD(L, 1)
     let theView = theWindow.contentView as! HSWebViewView
 
     if lua_type(L, 2) == LUA_TNONE {
@@ -1021,10 +403,10 @@ private func webview_magnification(_ L: UnsafeMutablePointer<lua_State>!) -> Int
 /// hs.webview:html(html,[baseURL]) -> webviewObject, navigationIdentifier
 /// Method
 /// Render the given HTML in the webview with an optional base URL for relative links.
-private func webview_html(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_html(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING, LS_TSTRING | LS_TOPTIONAL, LS_TBREAK)
-    let theWindow = getWindowFromUD(L, 1)
+    skin.checkArgs(LS_TUSERDATA, wv_USERDATA_TAG, LS_TSTRING, LS_TSTRING | LS_TOPTIONAL, LS_TBREAK)
+    let theWindow = wv_getWindowFromUD(L, 1)
     let theView = theWindow.contentView as! HSWebViewView
 
     luaL_tolstring(L, 2, nil)
@@ -1032,7 +414,7 @@ private func webview_html(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     lua_pop(L, 1)
     let theBaseURL = (lua_type(L, 3) == LUA_TSTRING) ? skin.toNSObject(atIndex: 3) as? String : nil
 
-    delayUntilViewStopsLoading(theView) {
+    wv_delayUntilViewStopsLoading(theView) {
         let navID = theView.loadHTMLString(theHTML, baseURL: theBaseURL != nil ? URL(string: theBaseURL!) : nil)
         theView.trackingID = navID
     }
@@ -1044,16 +426,16 @@ private func webview_html(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.webview:navigationCallback(fn) -> webviewObject
 /// Method
 /// Sets a callback for tracking a webview's navigation process.
-private func webview_navigationCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_navigationCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TFUNCTION | LS_TNIL, LS_TBREAK)
-    let theWindow = getWindowFromUD(L, 1)
+    skin.checkArgs(LS_TUSERDATA, wv_USERDATA_TAG, LS_TFUNCTION | LS_TNIL, LS_TBREAK)
+    let theWindow = wv_getWindowFromUD(L, 1)
     let theView = theWindow.contentView as! HSWebViewView
 
-    theView.navigationCallback = skin.luaUnref(refTable, ref: theView.navigationCallback)
+    theView.navigationCallback = skin.luaUnref(wv_refTable, ref: theView.navigationCallback)
     if lua_type(L, 2) == LUA_TFUNCTION {
         lua_pushvalue(L, 2)
-        theView.navigationCallback = skin.luaRef(refTable)
+        theView.navigationCallback = skin.luaRef(wv_refTable)
     }
     lua_pushvalue(L, 1)
     return 1
@@ -1062,16 +444,16 @@ private func webview_navigationCallback(_ L: UnsafeMutablePointer<lua_State>!) -
 /// hs.webview:policyCallback(fn) -> webviewObject
 /// Method
 /// Sets a callback to approve or deny web navigation activity.
-private func webview_policyCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_policyCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TFUNCTION | LS_TNIL, LS_TBREAK)
-    let theWindow = getWindowFromUD(L, 1)
+    skin.checkArgs(LS_TUSERDATA, wv_USERDATA_TAG, LS_TFUNCTION | LS_TNIL, LS_TBREAK)
+    let theWindow = wv_getWindowFromUD(L, 1)
     let theView = theWindow.contentView as! HSWebViewView
 
-    theView.policyCallback = skin.luaUnref(refTable, ref: theView.policyCallback)
+    theView.policyCallback = skin.luaUnref(wv_refTable, ref: theView.policyCallback)
     if lua_type(L, 2) == LUA_TFUNCTION {
         lua_pushvalue(L, 2)
-        theView.policyCallback = skin.luaRef(refTable)
+        theView.policyCallback = skin.luaRef(wv_refTable)
     }
     lua_pushvalue(L, 1)
     return 1
@@ -1080,16 +462,16 @@ private func webview_policyCallback(_ L: UnsafeMutablePointer<lua_State>!) -> In
 /// hs.webview:sslCallback(fn) -> webviewObject
 /// Method
 /// Sets a callback to examine an invalid SSL certificate and determine if an exception should be granted.
-private func webview_sslCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_sslCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TFUNCTION | LS_TNIL, LS_TBREAK)
-    let theWindow = getWindowFromUD(L, 1)
+    skin.checkArgs(LS_TUSERDATA, wv_USERDATA_TAG, LS_TFUNCTION | LS_TNIL, LS_TBREAK)
+    let theWindow = wv_getWindowFromUD(L, 1)
     let theView = theWindow.contentView as! HSWebViewView
 
-    theView.sslCallback = skin.luaUnref(refTable, ref: theView.sslCallback)
+    theView.sslCallback = skin.luaUnref(wv_refTable, ref: theView.sslCallback)
     if lua_type(L, 2) == LUA_TFUNCTION {
         lua_pushvalue(L, 2)
-        theView.sslCallback = skin.luaRef(refTable)
+        theView.sslCallback = skin.luaRef(wv_refTable)
     }
     lua_pushvalue(L, 1)
     return 1
@@ -1098,10 +480,10 @@ private func webview_sslCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 /// hs.webview:historyList() -> historyTable
 /// Method
 /// Returns the URL history for the current webview as an array.
-private func webview_historyList(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_historyList(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
-    let theWindow = getWindowFromUD(L, 1)
+    skin.checkArgs(LS_TUSERDATA, wv_USERDATA_TAG, LS_TBREAK)
+    let theWindow = wv_getWindowFromUD(L, 1)
     let theView = theWindow.contentView as! HSWebViewView
     skin.pushNSObject(theView.backForwardList)
     return 1
@@ -1110,17 +492,17 @@ private func webview_historyList(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 /// hs.webview:evaluateJavaScript(script, [callback]) -> webviewObject
 /// Method
 /// Execute JavaScript within the context of the current webview and optionally receive its result or error in a callback function.
-private func webview_evaluateJavaScript(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_evaluateJavaScript(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING, LS_TFUNCTION | LS_TOPTIONAL, LS_TBREAK)
-    let theWindow = getWindowFromUD(L, 1)
+    skin.checkArgs(LS_TUSERDATA, wv_USERDATA_TAG, LS_TSTRING, LS_TFUNCTION | LS_TOPTIONAL, LS_TBREAK)
+    let theWindow = wv_getWindowFromUD(L, 1)
     let theView = theWindow.contentView as! HSWebViewView
 
     let javascript = skin.toNSObject(atIndex: 2) as! String
     var callbackRef: Int32 = LUA_NOREF
     if lua_type(L, 3) == LUA_TFUNCTION {
         lua_pushvalue(L, 3)
-        callbackRef = skin.luaRef(refTable)
+        callbackRef = skin.luaRef(wv_refTable)
     }
 
     let lsCanary = skin.createGCCanary()
@@ -1129,11 +511,11 @@ private func webview_evaluateJavaScript(_ L: UnsafeMutablePointer<lua_State>!) -
             DispatchQueue.main.async {
                 let blockSkin = LuaSkin.skin(with: nil)
                 if !blockSkin.check(lsCanary) { return }
-                blockSkin.pushLuaRef(refTable, ref: callbackRef)
+                blockSkin.pushLuaRef(wv_refTable, ref: callbackRef)
                 blockSkin.pushNSObject(obj as? NSObject)
-                NSError_toLua(blockSkin.l, error as NSError?)
+                wv_NSError_toLua(blockSkin.l, error as NSError?)
                 blockSkin.protectedCallAndError("hs.webview:evaluateJavaScript callback", nargs: 2, nresults: 0)
-                blockSkin.luaUnref(refTable, ref: callbackRef)
+                blockSkin.luaUnref(wv_refTable, ref: callbackRef)
                 var mutableCanary = lsCanary
                 blockSkin.destroy(&mutableCanary)
             }
@@ -1149,17 +531,17 @@ private func webview_evaluateJavaScript(_ L: UnsafeMutablePointer<lua_State>!) -
 /// hs.webview:topLeft([point]) -> webviewObject | currentValue
 /// Method
 /// Get or set the top-left coordinate of the webview window
-private func webview_topLeft(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_topLeft(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TTABLE | LS_TOPTIONAL, LS_TBREAK)
-    let theWindow = getWindowFromUD(L, 1)
-    let oldFrame = RectWithFlippedYCoordinate(theWindow.frame)
+    skin.checkArgs(LS_TUSERDATA, wv_USERDATA_TAG, LS_TTABLE | LS_TOPTIONAL, LS_TBREAK)
+    let theWindow = wv_getWindowFromUD(L, 1)
+    let oldFrame = wv_RectWithFlippedYCoordinate(theWindow.frame)
 
     if lua_gettop(L) == 1 {
         skin.pushNSPoint(oldFrame.origin)
     } else {
         let newCoord = skin.tableToPoint(at: 2)
-        let newFrame = RectWithFlippedYCoordinate(NSMakeRect(newCoord.x, newCoord.y, oldFrame.size.width, oldFrame.size.height))
+        let newFrame = wv_RectWithFlippedYCoordinate(NSMakeRect(newCoord.x, newCoord.y, oldFrame.size.width, oldFrame.size.height))
         theWindow.setFrame(newFrame, display: true, animate: false)
         lua_pushvalue(L, 1)
     }
@@ -1169,10 +551,10 @@ private func webview_topLeft(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.webview:size([size]) -> webviewObject | currentValue
 /// Method
 /// Get or set the size of a webview window
-private func webview_size(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_size(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TTABLE | LS_TOPTIONAL, LS_TBREAK)
-    let theWindow = getWindowFromUD(L, 1)
+    skin.checkArgs(LS_TUSERDATA, wv_USERDATA_TAG, LS_TTABLE | LS_TOPTIONAL, LS_TBREAK)
+    let theWindow = wv_getWindowFromUD(L, 1)
     let oldFrame = theWindow.frame
 
     if lua_gettop(L) == 1 {
@@ -1189,7 +571,7 @@ private func webview_size(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.webview.new(rect, [preferencesTable], [userContentController]) -> webviewObject
 /// Constructor
 /// Create a webviewObject and optionally modify its preferences.
-private func webview_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
     let windowRect = skin.tableToRect(at: 1)
 
@@ -1197,10 +579,10 @@ private func webview_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
     theWindow.lsCanary = skin.createGCCanary()
 
-    if HSWebViewProcessPool == nil { HSWebViewProcessPool = WKProcessPool() }
+    if wv_ProcessPool == nil { wv_ProcessPool = WKProcessPool() }
 
     let config = WKWebViewConfiguration()
-    config.processPool = HSWebViewProcessPool!
+    config.processPool = wv_ProcessPool!
 
     if lua_type(L, 2) == LUA_TTABLE {
         let myPreferences = WKPreferences()
@@ -1273,10 +655,10 @@ private func webview_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.webview:show([fadeInTime]) -> webviewObject
 /// Method
 /// Displays the webview object
-private func webview_show(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_show(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TNUMBER | LS_TOPTIONAL, LS_TBREAK)
-    let theWindow = getWindowFromUD(L, 1)
+    skin.checkArgs(LS_TUSERDATA, wv_USERDATA_TAG, LS_TNUMBER | LS_TOPTIONAL, LS_TBREAK)
+    let theWindow = wv_getWindowFromUD(L, 1)
     let fadeTime: TimeInterval = (lua_gettop(L) == 2) ? lua_tonumber(L, 2) : 0.0
 
     if fadeTime > 0 { theWindow.fadeIn(fadeTime) } else { theWindow.makeKeyAndOrderFront(nil) }
@@ -1287,10 +669,10 @@ private func webview_show(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.webview:hide([fadeOutTime]) -> webviewObject
 /// Method
 /// Hides the webview object
-private func webview_hide(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_hide(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TNUMBER | LS_TOPTIONAL, LS_TBREAK)
-    let theWindow = getWindowFromUD(L, 1)
+    skin.checkArgs(LS_TUSERDATA, wv_USERDATA_TAG, LS_TNUMBER | LS_TOPTIONAL, LS_TBREAK)
+    let theWindow = wv_getWindowFromUD(L, 1)
     let fadeTime: TimeInterval = (lua_gettop(L) == 2) ? lua_tonumber(L, 2) : 0.0
 
     if fadeTime > 0 { theWindow.fadeOut(fadeTime, andDelete: false, withState: L) } else { theWindow.orderOut(nil) }
@@ -1301,10 +683,10 @@ private func webview_hide(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.webview:allowTextEntry([value]) -> webviewObject | current value
 /// Method
 /// Get or set whether or not the webview can accept keyboard for web form entry.
-private func webview_allowTextEntry(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_allowTextEntry(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
-    let theWindow = getWindowFromUD(L, 1)
+    skin.checkArgs(LS_TUSERDATA, wv_USERDATA_TAG, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
+    let theWindow = wv_getWindowFromUD(L, 1)
     if lua_type(L, 2) == LUA_TNONE {
         lua_pushboolean(L, theWindow.allowKeyboardEntry ? 1 : 0)
     } else {
@@ -1317,10 +699,10 @@ private func webview_allowTextEntry(_ L: UnsafeMutablePointer<lua_State>!) -> In
 /// hs.webview:deleteOnClose([value]) -> webviewObject | current value
 /// Method
 /// Get or set whether or not the webview should delete itself when its window is closed.
-private func webview_deleteOnClose(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_deleteOnClose(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
-    let theWindow = getWindowFromUD(L, 1)
+    skin.checkArgs(LS_TUSERDATA, wv_USERDATA_TAG, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
+    let theWindow = wv_getWindowFromUD(L, 1)
     if lua_type(L, 2) == LUA_TNONE {
         lua_pushboolean(L, theWindow.deleteOnClose ? 1 : 0)
     } else {
@@ -1333,10 +715,10 @@ private func webview_deleteOnClose(_ L: UnsafeMutablePointer<lua_State>!) -> Int
 /// hs.webview:darkMode([state]) -> bool
 /// Method
 /// Set or display whether or not the `hs.webview` window should display in dark mode.
-private func webview_darkMode(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_darkMode(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
-    let theWindow = getWindowFromUD(L, 1)
+    skin.checkArgs(LS_TUSERDATA, wv_USERDATA_TAG, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
+    let theWindow = wv_getWindowFromUD(L, 1)
 
     if lua_type(L, 2) == LUA_TNONE {
         lua_pushboolean(L, theWindow.darkMode ? 1 : 0)
@@ -1351,10 +733,10 @@ private func webview_darkMode(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.webview:closeOnEscape([flag]) -> webviewObject | current value
 /// Method
 /// If the webview is closable, this will get or set whether or not the Escape key is allowed to close the webview window.
-private func webview_closeOnEscape(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_closeOnEscape(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
-    let theWindow = getWindowFromUD(L, 1)
+    skin.checkArgs(LS_TUSERDATA, wv_USERDATA_TAG, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
+    let theWindow = wv_getWindowFromUD(L, 1)
     if lua_type(L, 2) == LUA_TNONE {
         lua_pushboolean(L, theWindow.closeOnEscape ? 1 : 0)
     } else {
@@ -1367,10 +749,10 @@ private func webview_closeOnEscape(_ L: UnsafeMutablePointer<lua_State>!) -> Int
 /// hs.webview:hswindow() -> hs.window object
 /// Method
 /// Returns an hs.window object for the webview so that you can use hs.window methods on it.
-private func webview_hswindow(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_hswindow(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
-    let theWindow = getWindowFromUD(L, 1)
+    skin.checkArgs(LS_TUSERDATA, wv_USERDATA_TAG, LS_TBREAK)
+    let theWindow = wv_getWindowFromUD(L, 1)
     let windowID = CGWindowID(theWindow.windowNumber)
     skin.requireModule("hs.window")
     lua_getfield(L, -1, "windowForID")
@@ -1382,10 +764,10 @@ private func webview_hswindow(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.webview:isVisible() -> boolean
 /// Method
 /// Checks to see if a webview window is visible or not.
-private func webview_isVisible(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_isVisible(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
-    let theWindow = getWindowFromUD(L, 1)
+    skin.checkArgs(LS_TUSERDATA, wv_USERDATA_TAG, LS_TBREAK)
+    let theWindow = wv_getWindowFromUD(L, 1)
     lua_pushboolean(L, theWindow.isVisible ? 1 : 0)
     return 1
 }
@@ -1393,10 +775,10 @@ private func webview_isVisible(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.webview:windowTitle([title]) -> webviewObject
 /// Method
 /// Sets the title for the webview window.
-private func webview_windowTitle(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_windowTitle(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING | LS_TOPTIONAL, LS_TBREAK)
-    let theWindow = getWindowFromUD(L, 1)
+    skin.checkArgs(LS_TUSERDATA, wv_USERDATA_TAG, LS_TSTRING | LS_TOPTIONAL, LS_TBREAK)
+    let theWindow = wv_getWindowFromUD(L, 1)
 
     if lua_isnoneornil(L, 2) {
         theWindow.titleFollow = true
@@ -1414,10 +796,10 @@ private func webview_windowTitle(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 /// hs.webview:titleVisibility([state]) -> webviewObject | string
 /// Function
 /// Get or set whether or not the title text appears in the webview window.
-private func webview_titleVisibility(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_titleVisibility(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING | LS_TOPTIONAL, LS_TBREAK)
-    let theWindow = getWindowFromUD(L, 1)
+    skin.checkArgs(LS_TUSERDATA, wv_USERDATA_TAG, LS_TSTRING | LS_TOPTIONAL, LS_TBREAK)
+    let theWindow = wv_getWindowFromUD(L, 1)
 
     let mapping: [String: NSWindow.TitleVisibility] = [
         "visible": .visible,
@@ -1446,10 +828,10 @@ private func webview_titleVisibility(_ L: UnsafeMutablePointer<lua_State>!) -> I
 }
 
 // NOTE: wrapped in init.lua
-private func webview_windowStyle(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_windowStyle(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TNUMBER | LS_TINTEGER | LS_TOPTIONAL, LS_TBREAK)
-    let theWindow = getWindowFromUD(L, 1)
+    skin.checkArgs(LS_TUSERDATA, wv_USERDATA_TAG, LS_TNUMBER | LS_TINTEGER | LS_TOPTIONAL, LS_TBREAK)
+    let theWindow = wv_getWindowFromUD(L, 1)
     if lua_type(L, 2) == LUA_TNONE {
         lua_pushinteger(L, lua_Integer(theWindow.styleMask.rawValue))
     } else {
@@ -1465,10 +847,10 @@ private func webview_windowStyle(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 /// hs.webview:level([theLevel]) -> drawingObject | currentValue
 /// Method
 /// Get or set the window level
-private func webview_level(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_level(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TNUMBER | LS_TINTEGER | LS_TOPTIONAL, LS_TBREAK)
-    let theWindow = getWindowFromUD(L, 1)
+    skin.checkArgs(LS_TUSERDATA, wv_USERDATA_TAG, LS_TNUMBER | LS_TINTEGER | LS_TOPTIONAL, LS_TBREAK)
+    let theWindow = wv_getWindowFromUD(L, 1)
 
     if lua_gettop(L) == 1 {
         lua_pushinteger(L, lua_Integer(theWindow.level.rawValue))
@@ -1489,10 +871,10 @@ private func webview_level(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.webview:bringToFront([aboveEverything]) -> webviewObject
 /// Method
 /// Places the drawing object on top of normal windows
-private func webview_bringToFront(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_bringToFront(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
-    let theWindow = getWindowFromUD(L, 1)
+    skin.checkArgs(LS_TUSERDATA, wv_USERDATA_TAG, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
+    let theWindow = wv_getWindowFromUD(L, 1)
     theWindow.level = lua_toboolean(L, 2) != 0 ? .screenSaver : .floating
     lua_pushvalue(L, 1)
     return 1
@@ -1501,10 +883,10 @@ private func webview_bringToFront(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
 /// hs.webview:sendToBack() -> webviewObject
 /// Method
 /// Places the webview object behind normal windows, between the desktop wallpaper and desktop icons
-private func webview_sendToBack(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_sendToBack(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
-    let theWindow = getWindowFromUD(L, 1)
+    skin.checkArgs(LS_TUSERDATA, wv_USERDATA_TAG, LS_TBREAK)
+    let theWindow = wv_getWindowFromUD(L, 1)
     theWindow.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.desktopIconWindow)) - 1)
     lua_pushvalue(L, 1)
     return 1
@@ -1513,10 +895,10 @@ private func webview_sendToBack(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 /// hs.webview:alpha([alpha]) -> webviewObject | currentValue
 /// Method
 /// Get or set the alpha level of the window containing the hs.webview object.
-private func webview_alpha(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_alpha(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TNUMBER | LS_TOPTIONAL, LS_TBREAK)
-    let theWindow = getWindowFromUD(L, 1)
+    skin.checkArgs(LS_TUSERDATA, wv_USERDATA_TAG, LS_TNUMBER | LS_TOPTIONAL, LS_TBREAK)
+    let theWindow = wv_getWindowFromUD(L, 1)
 
     if lua_gettop(L) == 1 {
         lua_pushnumber(L, lua_Number(theWindow.alphaValue))
@@ -1531,10 +913,10 @@ private func webview_alpha(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.webview:shadow([value]) -> webviewObject | current value
 /// Method
 /// Get or set whether or not the webview window has shadows.
-private func webview_shadow(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_shadow(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
-    let theWindow = getWindowFromUD(L, 1)
+    skin.checkArgs(LS_TUSERDATA, wv_USERDATA_TAG, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
+    let theWindow = wv_getWindowFromUD(L, 1)
 
     if lua_type(L, 2) == LUA_TNONE {
         lua_pushboolean(L, theWindow.hasShadow ? 1 : 0)
@@ -1545,14 +927,14 @@ private func webview_shadow(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 1
 }
 
-private func webview_orderHelper(_ L: UnsafeMutablePointer<lua_State>!, mode: NSWindow.OrderingMode) -> Int32 {
+func webview_orderHelper(_ L: UnsafeMutablePointer<lua_State>!, mode: NSWindow.OrderingMode) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK | LS_TVARARG)
+    skin.checkArgs(LS_TUSERDATA, wv_USERDATA_TAG, LS_TBREAK | LS_TVARARG)
     let theWindow = skin.luaObject(at: 1, toClass: "HSWebViewWindow") as! HSWebViewWindow
     var relativeTo: Int = 0
 
     if lua_gettop(L) > 1 {
-        skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+        skin.checkArgs(LS_TUSERDATA, wv_USERDATA_TAG, LS_TUSERDATA, wv_USERDATA_TAG, LS_TBREAK)
         relativeTo = (skin.luaObject(at: 2, toClass: "HSWebViewWindow") as! HSWebViewWindow).windowNumber
     }
 
@@ -1564,29 +946,29 @@ private func webview_orderHelper(_ L: UnsafeMutablePointer<lua_State>!, mode: NS
 /// hs.webview:orderAbove([webview2]) -> webviewObject
 /// Method
 /// Moves webview object above webview2, or all webview objects in the same presentation level, if webview2 is not given.
-private func webview_orderAbove(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_orderAbove(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return webview_orderHelper(L, mode: .above)
 }
 
 /// hs.webview:orderBelow([webview2]) -> webviewObject
 /// Method
 /// Moves webview object below webview2, or all webview objects in the same presentation level, if webview2 is not given.
-private func webview_orderBelow(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_orderBelow(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return webview_orderHelper(L, mode: .below)
 }
 
 // NOTE: wrapped in init.lua
-private func webview_delete(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_delete(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TNUMBER | LS_TOPTIONAL, LS_TBREAK)
+    skin.checkArgs(LS_TUSERDATA, wv_USERDATA_TAG, LS_TNUMBER | LS_TOPTIONAL, LS_TBREAK)
     let theWindow = skin.luaObject(at: 1, toClass: "HSWebViewWindow") as! HSWebViewWindow
 
     if lua_gettop(L) == 1 || !theWindow.isVisible {
         theWindow.close()
-        lua_pushcfunction(L, userdata_gc)
+        lua_pushcfunction(L, wv_userdata_gc)
         lua_pushvalue(L, 1)
         if lua_pcall(L, 1, 0, 0) != LUA_OK {
-            skin.logBreadcrumb(String(format: "%s:error invoking _gc for delete method:%s", USERDATA_TAG, lua_tostring(L, -1)!))
+            skin.logBreadcrumb(String(format: "%s:error invoking _gc for delete method:%s", wv_USERDATA_TAG, lua_tostring(L, -1)!))
             lua_pop(L, 1)
         }
     } else {
@@ -1600,15 +982,15 @@ private func webview_delete(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.webview:behavior([behavior]) -> webviewObject | currentValue
 /// Method
 /// Get or set the window behavior settings for the webview object.
-private func webview_behavior(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_behavior(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TNUMBER | LS_TOPTIONAL, LS_TBREAK)
+    skin.checkArgs(LS_TUSERDATA, wv_USERDATA_TAG, LS_TNUMBER | LS_TOPTIONAL, LS_TBREAK)
     let theWindow = skin.luaObject(at: 1, toClass: "HSWebViewWindow") as! HSWebViewWindow
 
     if lua_gettop(L) == 1 {
         lua_pushinteger(L, lua_Integer(theWindow.collectionBehavior.rawValue))
     } else {
-        skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TNUMBER | LS_TINTEGER, LS_TBREAK)
+        skin.checkArgs(LS_TUSERDATA, wv_USERDATA_TAG, LS_TNUMBER | LS_TINTEGER, LS_TBREAK)
         let newLevel = lua_tointeger(L, 2)
         theWindow.collectionBehavior = NSWindow.CollectionBehavior(rawValue: UInt(newLevel))
         lua_pushvalue(L, 1)
@@ -1619,15 +1001,15 @@ private func webview_behavior(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.webview:windowCallback(fn) -> webviewObject
 /// Method
 /// Set or clear a callback for updates to the webview window
-private func webview_windowCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_windowCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TFUNCTION | LS_TNIL, LS_TBREAK)
-    let theWindow = getWindowFromUD(L, 1)
+    skin.checkArgs(LS_TUSERDATA, wv_USERDATA_TAG, LS_TFUNCTION | LS_TNIL, LS_TBREAK)
+    let theWindow = wv_getWindowFromUD(L, 1)
 
-    theWindow.windowCallback = skin.luaUnref(refTable, ref: theWindow.windowCallback)
+    theWindow.windowCallback = skin.luaUnref(wv_refTable, ref: theWindow.windowCallback)
     if lua_type(L, 2) == LUA_TFUNCTION {
         lua_pushvalue(L, 2)
-        theWindow.windowCallback = skin.luaRef(refTable)
+        theWindow.windowCallback = skin.luaRef(wv_refTable)
     }
     lua_pushvalue(L, 1)
     return 1
@@ -1638,7 +1020,7 @@ private func webview_windowCallback(_ L: UnsafeMutablePointer<lua_State>!) -> In
 /// hs.webview.windowMasks[]
 /// Constant
 /// A table containing valid masks for the webview window.
-private func webview_windowMasksTable(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func wv_windowMasksTable(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     lua_newtable(L)
     lua_pushinteger(L, lua_Integer(NSWindow.StyleMask.borderless.rawValue));          lua_setfield(L, -2, "borderless")
     lua_pushinteger(L, lua_Integer(NSWindow.StyleMask.titled.rawValue));              lua_setfield(L, -2, "titled")
@@ -1656,7 +1038,7 @@ private func webview_windowMasksTable(_ L: UnsafeMutablePointer<lua_State>!) -> 
 /// hs.webview.certificateOIDs[]
 /// Constant
 /// A table of common OID values found in SSL certificates.
-private func webview_pushCertificateOIDs(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func wv_pushCertificateOIDs(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
     lua_newtable(L)
     let oids: [(CFString, String)] = [
@@ -1787,17 +1169,17 @@ private func webview_pushCertificateOIDs(_ L: UnsafeMutablePointer<lua_State>!) 
 
 // MARK: - NS<->Lua conversion tools
 
-private func luaTo_HSWebViewWindow(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> Any! {
+func wv_luaTo_HSWebViewWindow(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> Any! {
     let skin = LuaSkin.skin(with: L)
-    if luaL_testudata(L, idx, USERDATA_TAG) != nil {
-        return getWindowFromUD(L, idx)
+    if luaL_testudata(L, idx, wv_USERDATA_TAG) != nil {
+        return wv_getWindowFromUD(L, idx)
     } else {
-        skin.logError(String(format: "expected %s object, found %s", USERDATA_TAG, String(cString: lua_typename(L, lua_type(L, idx)))))
+        skin.logError(String(format: "expected %s object, found %s", wv_USERDATA_TAG, String(cString: lua_typename(L, lua_type(L, idx)))))
     }
     return nil
 }
 
-private func HSWebViewWindow_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
+func wv_HSWebViewWindow_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
     let theWindow = obj as! HSWebViewWindow
 
@@ -1805,16 +1187,16 @@ private func HSWebViewWindow_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj:
         let windowPtr = lua_newuserdata(L, MemoryLayout<UnsafeMutableRawPointer>.size)!
             .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
         windowPtr.pointee = Unmanaged.passRetained(theWindow).toOpaque()
-        luaL_getmetatable(L, USERDATA_TAG)
+        luaL_getmetatable(L, wv_USERDATA_TAG)
         lua_setmetatable(L, -2)
-        theWindow.udRef = skin.luaRef(refTable)
+        theWindow.udRef = skin.luaRef(wv_refTable)
     }
 
-    skin.pushLuaRef(refTable, ref: theWindow.udRef)
+    skin.pushLuaRef(wv_refTable, ref: theWindow.udRef)
     return 1
 }
 
-private func WKNavigationAction_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
+func wv_WKNavigationAction_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
     let navAction = obj as! WKNavigationAction
 
@@ -1848,7 +1230,7 @@ private func WKNavigationAction_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ o
     return 1
 }
 
-private func WKNavigationResponse_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
+func wv_WKNavigationResponse_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
     let navResponse = obj as! WKNavigationResponse
 
@@ -1859,7 +1241,7 @@ private func WKNavigationResponse_toLua(_ L: UnsafeMutablePointer<lua_State>!, _
     return 1
 }
 
-private func WKFrameInfo_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
+func wv_WKFrameInfo_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
     let frameInfo = obj as! WKFrameInfo
 
@@ -1870,7 +1252,7 @@ private func WKFrameInfo_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any
     return 1
 }
 
-private func WKBackForwardListItem_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
+func wv_WKBackForwardListItem_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
     let item = obj as! WKBackForwardListItem
 
@@ -1881,7 +1263,7 @@ private func WKBackForwardListItem_toLua(_ L: UnsafeMutablePointer<lua_State>!, 
     return 1
 }
 
-private func WKBackForwardList_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
+func wv_WKBackForwardList_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
     let theList = obj as? WKBackForwardList
 
@@ -1907,14 +1289,14 @@ private func WKBackForwardList_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ ob
     return 1
 }
 
-private func WKNavigation_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
+func wv_WKNavigation_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
     let navID = obj as! WKNavigation
     let str = String(describing: Unmanaged.passUnretained(navID as AnyObject).toOpaque())
     lua_pushstring(L, str)
     return 1
 }
 
-private func NSError_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
+func wv_NSError_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
     guard let theError = obj as? NSError else { lua_pushnil(L); return 1 }
 
@@ -1929,7 +1311,7 @@ private func NSError_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -
     return 1
 }
 
-private func WKWindowFeatures_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
+func wv_WKWindowFeatures_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
     let features = obj as! WKWindowFeatures
 
     lua_newtable(L)
@@ -1944,7 +1326,7 @@ private func WKWindowFeatures_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj
     return 1
 }
 
-private func NSURLAuthenticationChallenge_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
+func wv_NSURLAuthenticationChallenge_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
     let challenge = obj as! URLAuthenticationChallenge
 
@@ -1957,7 +1339,7 @@ private func NSURLAuthenticationChallenge_toLua(_ L: UnsafeMutablePointer<lua_St
     return 1
 }
 
-private func SecCertificateRef_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ certRef: SecCertificate!) -> Int32 {
+func wv_SecCertificateRef_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ certRef: SecCertificate!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
     lua_newtable(L)
     var commonName: CFString?
@@ -1972,7 +1354,7 @@ private func SecCertificateRef_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ ce
     return 1
 }
 
-private func NSURLProtectionSpace_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
+func wv_NSURLProtectionSpace_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
     let theSpace = obj as! URLProtectionSpace
 
@@ -2012,7 +1394,7 @@ private func NSURLProtectionSpace_toLua(_ L: UnsafeMutablePointer<lua_State>!, _
         SecTrustEvaluate(serverTrust, &secResult)
         let count = SecTrustGetCertificateCount(serverTrust)
         for idx in 0..<count {
-            SecCertificateRef_toLua(L, SecTrustGetCertificateAtIndex(serverTrust, idx))
+            wv_SecCertificateRef_toLua(L, SecTrustGetCertificateAtIndex(serverTrust, idx))
             lua_rawseti(L, -2, luaL_len(L, -2) + 1)
         }
         lua_setfield(L, -2, "certificates")
@@ -2020,7 +1402,7 @@ private func NSURLProtectionSpace_toLua(_ L: UnsafeMutablePointer<lua_State>!, _
     return 1
 }
 
-private func NSURLCredential_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
+func wv_NSURLCredential_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
     let credential = obj as! URLCredential
 
@@ -2039,7 +1421,7 @@ private func NSURLCredential_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj:
     return 1
 }
 
-private func WKSecurityOrigin_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
+func wv_WKSecurityOrigin_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
     let origin = obj as! WKSecurityOrigin
 
@@ -2052,27 +1434,27 @@ private func WKSecurityOrigin_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj
 
 // MARK: - Lua Framework Stuff
 
-private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let theWindow = getWindowFromUD(L, 1)
+func wv_userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let theWindow = wv_getWindowFromUD(L, 1)
     let theView = theWindow.contentView as? HSWebViewView
     let title = theView?.title ?? ""
     let ptr = lua_topointer(L, 1)!
-    let str = "\(USERDATA_TAG): \(title.isEmpty ? "" : title) (\(ptr))"
+    let str = "\(wv_USERDATA_TAG): \(title.isEmpty ? "" : title) (\(ptr))"
     lua_pushstring(L, str)
     return 1
 }
 
-private func userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let theWindow = getWindowFromUD(L, 1)
-    let otherWindow = getWindowFromUD(L, 2)
+func wv_userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let theWindow = wv_getWindowFromUD(L, 1)
+    let otherWindow = wv_getWindowFromUD(L, 2)
     lua_pushboolean(L, theWindow.udRef == otherWindow.udRef ? 1 : 0)
     return 1
 }
 
-private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    if luaL_testudata(L, 1, USERDATA_TAG) == nil { return 0 }
+func wv_userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    if luaL_testudata(L, 1, wv_USERDATA_TAG) == nil { return 0 }
 
-    let ptr = luaL_checkudata(L, 1, USERDATA_TAG)!
+    let ptr = luaL_checkudata(L, 1, wv_USERDATA_TAG)!
         .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
     guard let rawPtr = ptr.pointee else {
         lua_pushnil(L); lua_setmetatable(L, 1)
@@ -2086,11 +1468,11 @@ private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     lua_setmetatable(L, 1)
 
     let skin = LuaSkin.skin(with: L)
-    theWindow.udRef = skin.luaUnref(refTable, ref: theWindow.udRef)
-    theWindow.windowCallback = skin.luaUnref(refTable, ref: theWindow.windowCallback)
+    theWindow.udRef = skin.luaUnref(wv_refTable, ref: theWindow.udRef)
+    theWindow.windowCallback = skin.luaUnref(wv_refTable, ref: theWindow.windowCallback)
     if let theView = theView {
-        theView.navigationCallback = skin.luaUnref(refTable, ref: theView.navigationCallback)
-        theView.policyCallback = skin.luaUnref(refTable, ref: theView.policyCallback)
+        theView.navigationCallback = skin.luaUnref(wv_refTable, ref: theView.navigationCallback)
+        theView.policyCallback = skin.luaUnref(wv_refTable, ref: theView.policyCallback)
     }
 
     if theWindow.toolbar != nil {
@@ -2109,9 +1491,9 @@ private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
         (child as? HSWebViewWindow)?.parentWebView = nil
     }
 
-    if let theView = theView, let reloadTimer = delayTimers?.object(forKey: theView) {
+    if let theView = theView, let reloadTimer = wv_delayTimers?.object(forKey: theView) {
         reloadTimer.invalidate()
-        delayTimers?.removeObject(forKey: theView)
+        wv_delayTimers?.removeObject(forKey: theView)
     }
 
     theView?.navigationDelegate = nil
@@ -2127,17 +1509,17 @@ private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 0
 }
 
-private func meta_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    HSWebViewProcessPool = nil
+func wv_meta_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    wv_ProcessPool = nil
 
-    if let timers = delayTimers {
+    if let timers = wv_delayTimers {
         let enumerator = timers.objectEnumerator()!
         while let timer = enumerator.nextObject() as? Timer {
             timer.invalidate()
         }
-        delayTimers?.removeAllObjects()
+        wv_delayTimers?.removeAllObjects()
     }
-    delayTimers = nil
+    wv_delayTimers = nil
 
     return 0
 }
@@ -2199,9 +1581,9 @@ private var userdata_metaLib: [luaL_Reg] = [
     luaL_Reg(name: strdup("_windowStyle"),               func: webview_windowStyle),
     luaL_Reg(name: strdup("level"),                      func: webview_level),
 
-    luaL_Reg(name: strdup("__tostring"),                 func: userdata_tostring),
-    luaL_Reg(name: strdup("__eq"),                       func: userdata_eq),
-    luaL_Reg(name: strdup("__gc"),                       func: userdata_gc),
+    luaL_Reg(name: strdup("__tostring"),                 func: wv_userdata_tostring),
+    luaL_Reg(name: strdup("__eq"),                       func: wv_userdata_eq),
+    luaL_Reg(name: strdup("__gc"),                       func: wv_userdata_gc),
     luaL_Reg(name: nil, func: nil),
 ]
 
@@ -2213,7 +1595,7 @@ private var moduleLib: [luaL_Reg] = [
 
 // Metatable for module
 private var module_metaLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("__gc"), func: meta_gc),
+    luaL_Reg(name: strdup("__gc"), func: wv_meta_gc),
     luaL_Reg(name: nil, func: nil),
 ]
 
@@ -2221,33 +1603,33 @@ private var module_metaLib: [luaL_Reg] = [
 public func luaopen_hs_libwebview(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
 
-    refTable = skin.registerLibrary(withObject: USERDATA_TAG,
+    wv_refTable = skin.registerLibrary(withObject: wv_USERDATA_TAG,
                                     functions: &moduleLib,
                                     metaFunctions: &module_metaLib,
                                     objectFunctions: &userdata_metaLib)
 
     // module userdata specific conversions
-    skin.registerPushNSHelper(HSWebViewWindow_toLua, forClass: "HSWebViewWindow")
-    skin.registerLuaObjectHelper(luaTo_HSWebViewWindow, forClass: "HSWebViewWindow",
-                                 withUserdataMapping: USERDATA_TAG)
+    skin.registerPushNSHelper(wv_HSWebViewWindow_toLua, forClass: "HSWebViewWindow")
+    skin.registerLuaObjectHelper(wv_luaTo_HSWebViewWindow, forClass: "HSWebViewWindow",
+                                 withUserdataMapping: wv_USERDATA_TAG)
 
     // classes used primarily by this module
-    skin.registerPushNSHelper(WKBackForwardListItem_toLua, forClass: "WKBackForwardListItem")
-    skin.registerPushNSHelper(WKBackForwardList_toLua, forClass: "WKBackForwardList")
-    skin.registerPushNSHelper(WKNavigationAction_toLua, forClass: "WKNavigationAction")
-    skin.registerPushNSHelper(WKNavigationResponse_toLua, forClass: "WKNavigationResponse")
-    skin.registerPushNSHelper(WKFrameInfo_toLua, forClass: "WKFrameInfo")
-    skin.registerPushNSHelper(WKNavigation_toLua, forClass: "WKNavigation")
-    skin.registerPushNSHelper(WKWindowFeatures_toLua, forClass: "WKWindowFeatures")
-    skin.registerPushNSHelper(WKSecurityOrigin_toLua, forClass: "WKSecurityOrigin")
+    skin.registerPushNSHelper(wv_WKBackForwardListItem_toLua, forClass: "WKBackForwardListItem")
+    skin.registerPushNSHelper(wv_WKBackForwardList_toLua, forClass: "WKBackForwardList")
+    skin.registerPushNSHelper(wv_WKNavigationAction_toLua, forClass: "WKNavigationAction")
+    skin.registerPushNSHelper(wv_WKNavigationResponse_toLua, forClass: "WKNavigationResponse")
+    skin.registerPushNSHelper(wv_WKFrameInfo_toLua, forClass: "WKFrameInfo")
+    skin.registerPushNSHelper(wv_WKNavigation_toLua, forClass: "WKNavigation")
+    skin.registerPushNSHelper(wv_WKWindowFeatures_toLua, forClass: "WKWindowFeatures")
+    skin.registerPushNSHelper(wv_WKSecurityOrigin_toLua, forClass: "WKSecurityOrigin")
 
     // classes that may find a better home elsewhere someday
-    skin.registerPushNSHelper(NSURLAuthenticationChallenge_toLua, forClass: "NSURLAuthenticationChallenge")
-    skin.registerPushNSHelper(NSURLProtectionSpace_toLua, forClass: "NSURLProtectionSpace")
-    skin.registerPushNSHelper(NSURLCredential_toLua, forClass: "NSURLCredential")
+    skin.registerPushNSHelper(wv_NSURLAuthenticationChallenge_toLua, forClass: "NSURLAuthenticationChallenge")
+    skin.registerPushNSHelper(wv_NSURLProtectionSpace_toLua, forClass: "NSURLProtectionSpace")
+    skin.registerPushNSHelper(wv_NSURLCredential_toLua, forClass: "NSURLCredential")
 
-    webview_windowMasksTable(L);    lua_setfield(L, -2, "windowMasks")
-    webview_pushCertificateOIDs(L); lua_setfield(L, -2, "certificateOIDs")
+    wv_windowMasksTable(L);    lua_setfield(L, -2, "windowMasks")
+    wv_pushCertificateOIDs(L); lua_setfield(L, -2, "certificateOIDs")
 
     return 1
 }
