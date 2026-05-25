@@ -47,10 +47,11 @@ replaced.
 
 * TODO — ObjC-to-Swift Migration (large)
 
-*** TODO Port remaining 28 ~.m~ files to Swift
-    11K lines of ObjC in ~Sources/HSExtensions/~. Some are pure C wrappers
-    (fine to keep), but many are ObjC classes that could become cleaner
-    Swift. Biggest wins: ~doc/~, ~eventtap/~, ~fs/~ subdirectories.
+*** DONE Port ObjC extension code to Swift
+    Original 28 ~.m~ files already ported in earlier work. Auto-generated
+    registration (~HSExtensions.m~, ~HSExtensionsRegistry.m~) migrated to
+    Swift (~HSExtensionsGenerated.swift~). Generator script now emits Swift.
+    Only LuaSkin (2.5K, must stay ObjC) and third-party C libs remain.
 
 *** DONE Replace vendored CocoaHTTPServer
     Replaced with NWHTTPServer (Network.framework), HTTPParser, and

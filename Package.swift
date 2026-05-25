@@ -27,6 +27,7 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/armadsen/ORSSerialPort", exact: "2.1.0"),
+        .package(url: "https://github.com/swiftlang/swift-markdown.git", from: "0.5.0"),
     ],
     targets: [
         // ---------------------------------------------------------------
@@ -59,18 +60,14 @@ let package = Package(
                 .product(name: "ORSSerial", package: "ORSSerialPort"),
             ],
             path: "Sources/HSExtensions",
-            exclude: [
-                "sqlite3/lsqlite3.c",
-            ],
+            exclude: [],
             publicHeadersPath: "include",
             cSettings: [
                 .define("LUA_USE_MACOSX"),
                 .define("LUA_COMPAT_5_3"),
                 .headerSearchPath("CosmicHammer"),
-                .headerSearchPath("doc"),
                 .headerSearchPath("eventtap"),
                 .headerSearchPath("fs"),
-                .headerSearchPath("noises"),
             ],
             cxxSettings: [
                 .define("LUA_USE_MACOSX"),
@@ -126,6 +123,7 @@ let package = Package(
             dependencies: [
                 "LuaSkin",
                 .product(name: "ORSSerial", package: "ORSSerialPort"),
+                .product(name: "Markdown", package: "swift-markdown"),
             ],
             path: "Sources/HSSwiftExtensions",
             swiftSettings: [

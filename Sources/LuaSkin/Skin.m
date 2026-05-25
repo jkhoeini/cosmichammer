@@ -1302,14 +1302,20 @@ nextarg:
                 // Swift classes are registered with short names (e.g. "HSToolbar")
                 // but the runtime uses module-qualified names (e.g. "HSSwiftExtensions.HSToolbar").
                 // Match by comparing the short name against the suffix of the runtime class name.
+                BOOL matched = NO;
                 NSRange dotRange = [objClassName rangeOfString:@"." options:NSBackwardsSearch];
                 if (dotRange.location != NSNotFound) {
                     NSString *shortName = [objClassName substringFromIndex:dotRange.location + 1];
-                    if ([shortName isEqualToString:key]) {
-                        pushNSHelperFunction theFunc = (pushNSHelperFunction)[self.registeredNSHelperFunctions[key] pointerValue];
-                        int resultAnswer = theFunc(self.L, obj);
-                        if (resultAnswer > -1) return resultAnswer;
-                    }
+                    matched = [shortName isEqualToString:key];
+                } else if ([objClassName hasPrefix:@"_TtC"]) {
+                    // Private Swift classes use mangled names (_TtC...P33_...<len>ClassName)
+                    // with no dot separator — fall back to suffix matching.
+                    matched = [objClassName hasSuffix:key];
+                }
+                if (matched) {
+                    pushNSHelperFunction theFunc = (pushNSHelperFunction)[self.registeredNSHelperFunctions[key] pointerValue];
+                    int resultAnswer = theFunc(self.L, obj);
+                    if (resultAnswer > -1) return resultAnswer;
                 }
             } else if ([obj isMemberOfClass:cls]) {
                 pushNSHelperFunction theFunc = (pushNSHelperFunction)[self.registeredNSHelperFunctions[key] pointerValue] ;
@@ -1322,14 +1328,18 @@ nextarg:
         for (id key in self.registeredNSHelperFunctions) {
             Class cls = NSClassFromString(key);
             if (!cls) {
+                BOOL matched = NO;
                 NSRange dotRange = [objClassName rangeOfString:@"." options:NSBackwardsSearch];
                 if (dotRange.location != NSNotFound) {
                     NSString *shortName = [objClassName substringFromIndex:dotRange.location + 1];
-                    if ([shortName isEqualToString:key]) {
-                        pushNSHelperFunction theFunc = (pushNSHelperFunction)[self.registeredNSHelperFunctions[key] pointerValue];
-                        int resultAnswer = theFunc(self.L, obj);
-                        if (resultAnswer > -1) return resultAnswer;
-                    }
+                    matched = [shortName isEqualToString:key];
+                } else if ([objClassName hasPrefix:@"_TtC"]) {
+                    matched = [objClassName hasSuffix:key];
+                }
+                if (matched) {
+                    pushNSHelperFunction theFunc = (pushNSHelperFunction)[self.registeredNSHelperFunctions[key] pointerValue];
+                    int resultAnswer = theFunc(self.L, obj);
+                    if (resultAnswer > -1) return resultAnswer;
                 }
             } else if ([obj isKindOfClass:cls]) {
                 pushNSHelperFunction theFunc = (pushNSHelperFunction)[self.registeredNSHelperFunctions[key] pointerValue] ;

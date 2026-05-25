@@ -9,45 +9,6 @@ import IOKit.hidsystem
 private let FLAGS_TAG = "hs.eventtap.event.flags"
 private let APPLICATION_USERDATA_TAG = "hs.application"
 
-// IOHIDEventPhase constants (from private IOHIDEventTypes.h)
-private let kIOHIDEventPhaseBegan: UInt32    = 1 << 0
-private let kIOHIDEventPhaseEnded: UInt32    = 1 << 2
-
-// TouchEvents.h gesture subtypes
-private let kTLInfoSubtypeRotate: UInt32       = 0x05
-private let kTLInfoSubtypeMagnify: UInt32      = 0x08
-private let kTLInfoSubtypeSwipe: UInt32        = 0x10
-private let kTLInfoSubtypeSmartMagnify: UInt32 = 0x16
-
-// TouchEvents.h swipe directions
-private let kTLInfoSwipeUp: UInt32    = 1
-private let kTLInfoSwipeDown: UInt32  = 2
-private let kTLInfoSwipeLeft: UInt32  = 4
-private let kTLInfoSwipeRight: UInt32 = 8
-
-// CFString keys from TouchEvents.h — resolved at runtime via dlsym
-private func loadCFString(_ name: String) -> CFString {
-    guard let handle = dlopen(nil, RTLD_LAZY),
-          let sym = dlsym(handle, name) else {
-        return name as CFString
-    }
-    return Unmanaged<CFString>.fromOpaque(sym.assumingMemoryBound(to: UnsafeRawPointer.self).pointee).takeUnretainedValue()
-}
-
-private let kTLInfoKeyGestureSubtype = loadCFString("kTLInfoKeyGestureSubtype")
-private let kTLInfoKeyGesturePhase   = loadCFString("kTLInfoKeyGesturePhase")
-private let kTLInfoKeyMagnification  = loadCFString("kTLInfoKeyMagnification")
-private let kTLInfoKeyRotation       = loadCFString("kTLInfoKeyRotation")
-private let kTLInfoKeySwipeDirection  = loadCFString("kTLInfoKeySwipeDirection")
-
-// tl_CGEventCreateFromGesture from TouchEvents — a private SPI
-private typealias TLCGEventCreateFromGestureFunc = @convention(c) (CFDictionary, CFArray) -> Unmanaged<CGEvent>?
-private let tl_CGEventCreateFromGesture: TLCGEventCreateFromGestureFunc? = {
-    guard let handle = dlopen(nil, RTLD_LAZY),
-          let sym = dlsym(handle, "tl_CGEventCreateFromGesture") else { return nil }
-    return unsafeBitCast(sym, to: TLCGEventCreateFromGestureFunc.self)
-}()
-
 // Event source (module-level, like the ObjC static)
 private var eventSource: CGEventSource? = nil
 
@@ -166,79 +127,7 @@ private func eventtap_event_newEventFromData(_ L: UnsafeMutablePointer<lua_State
 }
 
 private func eventtap_event_newGesture(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING, LS_TNUMBER | LS_TOPTIONAL, LS_TBREAK)
-
-    guard let gesture = lua_tostring(L, 1).map({ String(cString: $0) }) else {
-        lua_pushnil(L); return 1
-    }
-
-    var dict = [CFString: Any]()
-
-    switch gesture {
-    case "beginSwipeLeft", "beginSwipeRight", "beginSwipeUp", "beginSwipeDown":
-        dict[kTLInfoKeyGestureSubtype] = kTLInfoSubtypeSwipe
-        dict[kTLInfoKeyGesturePhase] = kIOHIDEventPhaseBegan
-
-    case "endSwipeLeft":
-        dict[kTLInfoKeyGestureSubtype] = kTLInfoSubtypeSwipe
-        dict[kTLInfoKeyGesturePhase] = kIOHIDEventPhaseEnded
-        dict[kTLInfoKeySwipeDirection] = kTLInfoSwipeLeft
-    case "endSwipeRight":
-        dict[kTLInfoKeyGestureSubtype] = kTLInfoSubtypeSwipe
-        dict[kTLInfoKeyGesturePhase] = kIOHIDEventPhaseEnded
-        dict[kTLInfoKeySwipeDirection] = kTLInfoSwipeRight
-    case "endSwipeUp":
-        dict[kTLInfoKeyGestureSubtype] = kTLInfoSubtypeSwipe
-        dict[kTLInfoKeyGesturePhase] = kIOHIDEventPhaseEnded
-        dict[kTLInfoKeySwipeDirection] = kTLInfoSwipeUp
-    case "endSwipeDown":
-        dict[kTLInfoKeyGestureSubtype] = kTLInfoSubtypeSwipe
-        dict[kTLInfoKeyGesturePhase] = kIOHIDEventPhaseEnded
-        dict[kTLInfoKeySwipeDirection] = kTLInfoSwipeDown
-
-    case "beginMagnify":
-        let mag = lua_isnoneornil(L, 2) ? 0.0 : lua_tonumber(L, 2)
-        dict[kTLInfoKeyGestureSubtype] = kTLInfoSubtypeMagnify
-        dict[kTLInfoKeyGesturePhase] = kIOHIDEventPhaseBegan
-        dict[kTLInfoKeyMagnification] = mag
-    case "endMagnify":
-        let mag = lua_isnoneornil(L, 2) ? 0.1 : lua_tonumber(L, 2)
-        dict[kTLInfoKeyGestureSubtype] = kTLInfoSubtypeMagnify
-        dict[kTLInfoKeyGesturePhase] = kIOHIDEventPhaseEnded
-        dict[kTLInfoKeyMagnification] = mag
-
-    case "smartMagnify":
-        dict[kTLInfoKeyGestureSubtype] = kTLInfoSubtypeSmartMagnify
-
-    case "beginRotate":
-        let rot = lua_isnoneornil(L, 2) ? 0.0 : lua_tonumber(L, 2)
-        dict[kTLInfoKeyGestureSubtype] = kTLInfoSubtypeRotate
-        dict[kTLInfoKeyGesturePhase] = kIOHIDEventPhaseBegan
-        dict[kTLInfoKeyRotation] = rot
-    case "endRotate":
-        let rot = lua_isnoneornil(L, 2) ? 45.0 : lua_tonumber(L, 2)
-        dict[kTLInfoKeyGestureSubtype] = kTLInfoSubtypeRotate
-        dict[kTLInfoKeyGesturePhase] = kIOHIDEventPhaseEnded
-        dict[kTLInfoKeyRotation] = rot
-
-    default:
-        LuaSkin.skin(with: L).logError("hs.eventtap.event.newGesture() - Invalid gesture identifier supplied.")
-        lua_pushnil(L); return 1
-    }
-
-    guard let createFromGesture = tl_CGEventCreateFromGesture else {
-        lua_pushnil(L); return 1
-    }
-    let cfDict = dict as CFDictionary
-    let cfArr = [] as CFArray
-    if let unmanaged = createFromGesture(cfDict, cfArr) {
-        let event = unmanaged.takeRetainedValue()
-        newEventtapEvent(L, event)
-    } else {
-        lua_pushnil(L)
-    }
-    return 1
+    return luaL_error(L, "hs.eventtap.event: gesture synthesis is not implemented in this version")
 }
 
 // MARK: - Methods

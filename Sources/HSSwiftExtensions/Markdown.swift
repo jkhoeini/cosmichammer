@@ -2,120 +2,13 @@
 ///
 /// Markdown to HTML and plaintext conversion support used by hs.doc
 ///
-/// This module provides GitHub-Flavored-Markdown conversion support used by hs.doc.  This module is a Lua wrapper to the C code portion of the Ruby gem `github-markdown`, available at https://rubygems.org/gems/github-markdown/versions/0.6.9.
+/// This module provides GitHub-Flavored-Markdown conversion support used by hs.doc.
 ///
-/// The Ruby gem `github-markdown` was chosen as the code base for this module because it is the tool used to generate the official Cosmic Hammer Dash docset.
-///
-/// The Lua wrapper portion is licensed under the MIT license by the Cosmic Hammer development team.  The C code portion of the Ruby gem is licensed under the MIT license by GitHub, Inc.
+/// The Lua wrapper portion is licensed under the MIT license by the Cosmic Hammer development team.
 
 import Foundation
 import LuaSkin
-
-// MARK: - C Interop Declarations
-//
-// The sundown/github-markdown C library compiles in the HSExtensions target.
-// Since HSSwiftExtensions is a separate SPM target we cannot import those
-// headers directly; instead we forward-declare every C symbol we need.
-
-// -- struct buf (from buffer.h) --------------------------------------------------
-// We replicate the layout so we can read output_buf->data / ->size.
-private struct CMarkdownBuf {
-    var data: UnsafeMutablePointer<UInt8>?
-    var size: Int       // size_t
-    var asize: Int      // size_t  (allocated size)
-    var unit: Int       // size_t  (reallocation unit)
-}
-
-// -- Opaque types ----------------------------------------------------------------
-// sd_markdown is intentionally opaque in the C header.
-// sd_callbacks and html_renderopt are large structs full of function pointers;
-// we never touch their fields from Swift, so treat them as opaque blobs.
-
-// sd_callbacks: 25 function pointers, each 8 bytes on arm64/x86_64 = 200 bytes.
-// We over-allocate slightly to be safe across compiler padding differences.
-private let SD_CALLBACKS_SIZE = 256
-
-// html_renderopt: toc_data (3 ints = 12 bytes) + flags (4 bytes) + link_attributes
-// function pointer (8 bytes) + possible padding = ~32 bytes. Over-allocate.
-private let HTML_RENDEROPT_SIZE = 64
-
-// -- Buffer functions (buffer.h) -------------------------------------------------
-@_silgen_name("bufnew")
-private func c_bufnew(_ unit: Int) -> UnsafeMutablePointer<CMarkdownBuf>?
-
-@_silgen_name("bufrelease")
-private func c_bufrelease(_ buf: UnsafeMutablePointer<CMarkdownBuf>?)
-
-@_silgen_name("bufput")
-private func c_bufput(_ buf: UnsafeMutableRawPointer?, _ data: UnsafeRawPointer?, _ size: Int)
-
-@_silgen_name("bufputc")
-private func c_bufputc(_ buf: UnsafeMutableRawPointer?, _ c: Int32)
-
-// -- HTML renderer (html.h) ------------------------------------------------------
-@_silgen_name("sdhtml_renderer")
-private func c_sdhtml_renderer(
-    _ callbacks: UnsafeMutableRawPointer?,
-    _ options: UnsafeMutableRawPointer?,
-    _ render_flags: UInt32
-)
-
-// -- Plaintext renderer (plaintext.h) --------------------------------------------
-@_silgen_name("sdtext_renderer")
-private func c_sdtext_renderer(_ callbacks: UnsafeMutableRawPointer?)
-
-// -- Markdown engine (markdown.h) ------------------------------------------------
-// sd_markdown_new returns an opaque sd_markdown*.
-@_silgen_name("sd_markdown_new")
-private func c_sd_markdown_new(
-    _ extensions: UInt32,
-    _ max_nesting: Int,
-    _ callbacks: UnsafeRawPointer?,
-    _ opaque: UnsafeMutableRawPointer?
-) -> OpaquePointer?
-
-@_silgen_name("sd_markdown_render")
-private func c_sd_markdown_render(
-    _ ob: UnsafeMutableRawPointer?,
-    _ document: UnsafePointer<UInt8>?,
-    _ doc_size: Int,
-    _ md: OpaquePointer?
-)
-
-// -- Houdini (houdini.h) ---------------------------------------------------------
-@_silgen_name("houdini_escape_html0")
-private func c_houdini_escape_html0(
-    _ ob: UnsafeMutableRawPointer?,
-    _ src: UnsafePointer<UInt8>?,
-    _ size: Int,
-    _ secure: Int32
-)
-
-// -- Markdown extension flags (from markdown.h enum mkd_extensions) --------------
-private let MKDEXT_NO_INTRA_EMPHASIS: UInt32 = 1 << 0
-private let MKDEXT_TABLES:            UInt32 = 1 << 1
-private let MKDEXT_FENCED_CODE:       UInt32 = 1 << 2
-private let MKDEXT_AUTOLINK:          UInt32 = 1 << 3
-private let MKDEXT_STRIKETHROUGH:     UInt32 = 1 << 4
-private let MKDEXT_SPACE_HEADERS:     UInt32 = 1 << 6
-private let MKDEXT_LAX_SPACING:       UInt32 = 1 << 8
-
-// -- HTML render flags (from html.h enum html_render_mode) -----------------------
-private let HTML_HARD_WRAP: UInt32 = 1 << 7
-
-// MARK: - Module Constants
-
-private let USERDATA_TAG = "hs.doc.markdown"
-
-private let GITHUB_MD_NESTING = 32
-
-private let GITHUB_MD_FLAGS: UInt32 =
-    MKDEXT_NO_INTRA_EMPHASIS |
-    MKDEXT_LAX_SPACING       |
-    MKDEXT_STRIKETHROUGH     |
-    MKDEXT_TABLES            |
-    MKDEXT_FENCED_CODE       |
-    MKDEXT_AUTOLINK
+import Markdown
 
 // MARK: - Mode Enum
 
@@ -125,150 +18,365 @@ private enum ModeType: Int {
     case plaintext
 }
 
-// MARK: - Pipeline State
-//
-// Each pipeline owns:
-//   - a blob for sd_callbacks
-//   - a blob for html_renderopt (HTML pipelines only)
-//   - an opaque sd_markdown* handle
+// MARK: - HTML Renderer
 
-private struct MarkdownPipeline {
-    var md: OpaquePointer?
-    // Keep the callback/renderopt allocations alive for the lifetime of md.
-    var callbacksBuf: UnsafeMutableRawPointer?
-    var renderOptsBuf: UnsafeMutableRawPointer?
-}
+/// Walks the swift-markdown AST and emits HTML, supporting GFM extensions
+/// (tables, strikethrough, fenced code blocks, autolinks).
+private struct HTMLRenderer: MarkupWalker {
+    var result = ""
+    let hardWrap: Bool
 
-private var g_markdown  = MarkdownPipeline()
-private var g_GFM       = MarkdownPipeline()
-private var g_plaintext = MarkdownPipeline()
-
-// Custom blockcode renderer that mirrors rndr_blockcode_github from markdown.m.
-// The C signature is:
-//   void blockcode(struct buf *ob, const struct buf *text,
-//                  const struct buf *lang, void *opaque)
-private let rndr_blockcode_github:
-    @convention(c) (
-        UnsafeMutableRawPointer?,       // ob
-        UnsafeRawPointer?,              // text
-        UnsafeRawPointer?,              // lang
-        UnsafeMutableRawPointer?        // opaque (unused)
-    ) -> Void = { obRaw, textRaw, langRaw, _ in
-
-    guard let obRaw = obRaw else { return }
-    let ob = obRaw.assumingMemoryBound(to: CMarkdownBuf.self)
-
-    if ob.pointee.size > 0 {
-        c_bufputc(obRaw, Int32(UInt8(ascii: "\n")))
+    init(hardWrap: Bool = false) {
+        self.hardWrap = hardWrap
     }
 
-    // Read text buf fields (may be NULL)
-    let text: UnsafePointer<CMarkdownBuf>? = textRaw?.assumingMemoryBound(to: CMarkdownBuf.self)
-    let lang: UnsafePointer<CMarkdownBuf>? = langRaw?.assumingMemoryBound(to: CMarkdownBuf.self)
+    // MARK: Helpers
 
-    let hasText = text != nil && text!.pointee.size > 0
-    let hasLang = lang != nil && lang!.pointee.size > 0
-
-    if !hasText {
-        "<pre><code></code></pre>".withCString { cstr in
-            c_bufput(obRaw, cstr, strlen(cstr))
+    private static func escapeHTML(_ text: String) -> String {
+        var out = ""
+        out.reserveCapacity(text.count)
+        for ch in text {
+            switch ch {
+            case "&":  out += "&amp;"
+            case "<":  out += "&lt;"
+            case ">":  out += "&gt;"
+            case "\"": out += "&quot;"
+            default:   out.append(ch)
+            }
         }
-        return
+        return out
     }
 
-    if hasLang {
-        // Find the first non-space run in lang
-        let langData = lang!.pointee.data!
-        let langSize = lang!.pointee.size
-        var i = 0
-        while i < langSize && !langData[i].isWhitespace_ascii {
-            i += 1
-        }
+    // MARK: Block-level elements
 
-        let langName: UnsafePointer<UInt8>
-        let langNameSize: Int
-        if langData[0] == UInt8(ascii: ".") {
-            langName = UnsafePointer(langData.advanced(by: 1))
-            langNameSize = i - 1
+    mutating func visitHeading(_ heading: Heading) -> () {
+        let level = heading.level
+        result += "<h\(level)>"
+        descendInto(heading)
+        result += "</h\(level)>\n"
+    }
+
+    mutating func visitParagraph(_ paragraph: Paragraph) -> () {
+        result += "<p>"
+        descendInto(paragraph)
+        result += "</p>\n"
+    }
+
+    mutating func visitBlockQuote(_ blockQuote: BlockQuote) -> () {
+        result += "<blockquote>\n"
+        descendInto(blockQuote)
+        result += "</blockquote>\n"
+    }
+
+    mutating func visitCodeBlock(_ codeBlock: CodeBlock) -> () {
+        if result.count > 0 && !result.hasSuffix("\n") {
+            result += "\n"
+        }
+        let code = codeBlock.code
+        if code.isEmpty {
+            result += "<pre><code></code></pre>"
+            return
+        }
+        if let lang = codeBlock.language, !lang.isEmpty {
+            // Strip leading dot if present, take first word
+            let langName: String
+            let trimmed = lang.hasPrefix(".") ? String(lang.dropFirst()) : lang
+            if let spaceIdx = trimmed.firstIndex(of: " ") {
+                langName = String(trimmed[trimmed.startIndex..<spaceIdx])
+            } else {
+                langName = trimmed
+            }
+            result += "<pre lang=\"\(Self.escapeHTML(langName))\"><code>"
         } else {
-            langName = UnsafePointer(langData)
-            langNameSize = i
+            result += "<pre><code>"
         }
+        result += Self.escapeHTML(code)
+        result += "</code></pre>\n"
+    }
 
-        "<pre lang=\"".withCString { cstr in
-            c_bufput(obRaw, cstr, strlen(cstr))
+    mutating func visitThematicBreak(_ thematicBreak: ThematicBreak) -> () {
+        result += "<hr />\n"
+    }
+
+    mutating func visitHTMLBlock(_ html: HTMLBlock) -> () {
+        result += html.rawHTML
+    }
+
+    // MARK: Lists
+
+    mutating func visitOrderedList(_ orderedList: OrderedList) -> () {
+        if orderedList.startIndex != 1 {
+            result += "<ol start=\"\(orderedList.startIndex)\">\n"
+        } else {
+            result += "<ol>\n"
         }
-        c_houdini_escape_html0(obRaw, langName, langNameSize, 0)
-        "\"><code>".withCString { cstr in
-            c_bufput(obRaw, cstr, strlen(cstr))
+        descendInto(orderedList)
+        result += "</ol>\n"
+    }
+
+    mutating func visitUnorderedList(_ unorderedList: UnorderedList) -> () {
+        result += "<ul>\n"
+        descendInto(unorderedList)
+        result += "</ul>\n"
+    }
+
+    mutating func visitListItem(_ listItem: ListItem) -> () {
+        result += "<li>"
+        descendInto(listItem)
+        result += "</li>\n"
+    }
+
+    // MARK: Tables (GFM)
+
+    mutating func visitTable(_ table: Markdown.Table) -> () {
+        result += "<table>\n"
+        descendInto(table)
+        result += "</table>\n"
+    }
+
+    mutating func visitTableHead(_ tableHead: Markdown.Table.Head) -> () {
+        result += "<thead>\n<tr>\n"
+        for cell in tableHead.cells {
+            let align = alignAttribute(for: cell)
+            result += "<th\(align)>"
+            var cellRenderer = HTMLRenderer(hardWrap: hardWrap)
+            cellRenderer.descendInto(cell)
+            result += cellRenderer.result
+            result += "</th>\n"
         }
-    } else {
-        "<pre><code>".withCString { cstr in
-            c_bufput(obRaw, cstr, strlen(cstr))
+        result += "</tr>\n</thead>\n"
+    }
+
+    mutating func visitTableBody(_ tableBody: Markdown.Table.Body) -> () {
+        if tableBody.childCount > 0 {
+            result += "<tbody>\n"
+            descendInto(tableBody)
+            result += "</tbody>\n"
         }
     }
 
-    c_houdini_escape_html0(obRaw, text!.pointee.data, text!.pointee.size, 0)
-    "</code></pre>\n".withCString { cstr in
-        c_bufput(obRaw, cstr, strlen(cstr))
+    mutating func visitTableRow(_ tableRow: Markdown.Table.Row) -> () {
+        result += "<tr>\n"
+        for cell in tableRow.cells {
+            let align = alignAttribute(for: cell)
+            result += "<td\(align)>"
+            var cellRenderer = HTMLRenderer(hardWrap: hardWrap)
+            cellRenderer.descendInto(cell)
+            result += cellRenderer.result
+            result += "</td>\n"
+        }
+        result += "</tr>\n"
+    }
+
+    // Skip default traversal for table head/body/row since we handle them above
+    mutating func visitTableCell(_ cell: Markdown.Table.Cell) -> () {
+        descendInto(cell)
+    }
+
+    private func alignAttribute(for cell: Markdown.Table.Cell) -> String {
+        let col = cell.indexInParent
+        // Walk up to find the Table: cell -> Head/Row -> Table, or cell -> Row -> Body -> Table
+        let table: Markdown.Table?
+        if let t = cell.parent?.parent as? Markdown.Table {
+            table = t
+        } else if let t = cell.parent?.parent?.parent as? Markdown.Table {
+            table = t
+        } else {
+            table = nil
+        }
+        guard let table = table else { return "" }
+        let alignments = table.columnAlignments
+        guard col < alignments.count else { return "" }
+        guard let alignment = alignments[col] else { return "" }
+        switch alignment {
+        case .left:   return " align=\"left\""
+        case .center: return " align=\"center\""
+        case .right:  return " align=\"right\""
+        }
+    }
+
+    // MARK: Inline elements
+
+    mutating func visitText(_ text: Text) -> () {
+        result += Self.escapeHTML(text.string)
+    }
+
+    mutating func visitInlineCode(_ inlineCode: InlineCode) -> () {
+        result += "<code>"
+        result += Self.escapeHTML(inlineCode.code)
+        result += "</code>"
+    }
+
+    mutating func visitEmphasis(_ emphasis: Emphasis) -> () {
+        result += "<em>"
+        descendInto(emphasis)
+        result += "</em>"
+    }
+
+    mutating func visitStrong(_ strong: Strong) -> () {
+        result += "<strong>"
+        descendInto(strong)
+        result += "</strong>"
+    }
+
+    mutating func visitStrikethrough(_ strikethrough: Strikethrough) -> () {
+        result += "<del>"
+        descendInto(strikethrough)
+        result += "</del>"
+    }
+
+    mutating func visitLink(_ link: Link) -> () {
+        let dest = link.destination ?? ""
+        result += "<a href=\"\(Self.escapeHTML(dest))\">"
+        descendInto(link)
+        result += "</a>"
+    }
+
+    mutating func visitImage(_ image: Image) -> () {
+        let src = image.source ?? ""
+        let alt = image.plainText
+        result += "<img src=\"\(Self.escapeHTML(src))\" alt=\"\(Self.escapeHTML(alt))\" />"
+    }
+
+    mutating func visitInlineHTML(_ html: InlineHTML) -> () {
+        result += html.rawHTML
+    }
+
+    mutating func visitLineBreak(_ lineBreak: LineBreak) -> () {
+        result += "<br />\n"
+    }
+
+    mutating func visitSoftBreak(_ softBreak: SoftBreak) -> () {
+        if hardWrap {
+            result += "<br />\n"
+        } else {
+            result += "\n"
+        }
     }
 }
 
-private extension UInt8 {
-    var isWhitespace_ascii: Bool {
-        self == 0x20 || self == 0x09 || self == 0x0A || self == 0x0D
+// MARK: - Plaintext Renderer
+
+/// Walks the swift-markdown AST and extracts plain text content.
+private struct PlaintextRenderer: MarkupWalker {
+    var result = ""
+
+    mutating func visitText(_ text: Text) -> () {
+        result += text.string
+    }
+
+    mutating func visitInlineCode(_ inlineCode: InlineCode) -> () {
+        result += inlineCode.code
+    }
+
+    mutating func visitCodeBlock(_ codeBlock: CodeBlock) -> () {
+        result += codeBlock.code
+    }
+
+    mutating func visitSoftBreak(_ softBreak: SoftBreak) -> () {
+        result += "\n"
+    }
+
+    mutating func visitLineBreak(_ lineBreak: LineBreak) -> () {
+        result += "\n"
+    }
+
+    mutating func visitParagraph(_ paragraph: Paragraph) -> () {
+        if !result.isEmpty && !result.hasSuffix("\n\n") {
+            if result.hasSuffix("\n") {
+                result += "\n"
+            } else {
+                result += "\n\n"
+            }
+        }
+        descendInto(paragraph)
+    }
+
+    mutating func visitHeading(_ heading: Heading) -> () {
+        if !result.isEmpty && !result.hasSuffix("\n") {
+            result += "\n"
+        }
+        descendInto(heading)
+        result += "\n"
+    }
+
+    mutating func visitListItem(_ listItem: ListItem) -> () {
+        descendInto(listItem)
+        if !result.hasSuffix("\n") {
+            result += "\n"
+        }
+    }
+
+    mutating func visitBlockQuote(_ blockQuote: BlockQuote) -> () {
+        descendInto(blockQuote)
+    }
+
+    mutating func visitLink(_ link: Link) -> () {
+        descendInto(link)
+    }
+
+    mutating func visitImage(_ image: Image) -> () {
+        result += image.plainText
+    }
+
+    mutating func visitStrikethrough(_ strikethrough: Strikethrough) -> () {
+        descendInto(strikethrough)
+    }
+
+    mutating func visitEmphasis(_ emphasis: Emphasis) -> () {
+        descendInto(emphasis)
+    }
+
+    mutating func visitStrong(_ strong: Strong) -> () {
+        descendInto(strong)
+    }
+
+    mutating func visitThematicBreak(_ thematicBreak: ThematicBreak) -> () {
+        result += "\n"
+    }
+
+    mutating func visitTable(_ table: Markdown.Table) -> () {
+        descendInto(table)
+    }
+
+    mutating func visitTableHead(_ tableHead: Markdown.Table.Head) -> () {
+        descendInto(tableHead)
+    }
+
+    mutating func visitTableBody(_ tableBody: Markdown.Table.Body) -> () {
+        descendInto(tableBody)
+    }
+
+    mutating func visitTableRow(_ tableRow: Markdown.Table.Row) -> () {
+        descendInto(tableRow)
+        if !result.hasSuffix("\n") {
+            result += "\n"
+        }
+    }
+
+    mutating func visitTableCell(_ cell: Markdown.Table.Cell) -> () {
+        descendInto(cell)
+        result += " "
     }
 }
 
-// MARK: - Pipeline Initialization
+// MARK: - Conversion
 
-// The sd_callbacks struct is an array of function pointers. The blockcode
-// callback is the very first field.  After sdhtml_renderer fills in the
-// defaults we overwrite that first pointer with our custom renderer.
+private func convertMarkdown(_ input: String, mode: ModeType) -> String {
+    let options: ParseOptions = [.parseBlockDirectives]
+    let document = Document(parsing: input, options: options)
 
-private func ghmd__init_md() {
-    let callbacks = UnsafeMutableRawPointer.allocate(byteCount: SD_CALLBACKS_SIZE, alignment: MemoryLayout<UnsafeRawPointer>.alignment)
-    callbacks.initializeMemory(as: UInt8.self, repeating: 0, count: SD_CALLBACKS_SIZE)
-    let renderOpts = UnsafeMutableRawPointer.allocate(byteCount: HTML_RENDEROPT_SIZE, alignment: MemoryLayout<Int>.alignment)
-    renderOpts.initializeMemory(as: UInt8.self, repeating: 0, count: HTML_RENDEROPT_SIZE)
-
-    c_sdhtml_renderer(callbacks, renderOpts, 0)
-
-    // Patch blockcode (first function pointer in sd_callbacks)
-    callbacks.assumingMemoryBound(to: (@convention(c) (UnsafeMutableRawPointer?, UnsafeRawPointer?, UnsafeRawPointer?, UnsafeMutableRawPointer?) -> Void)?.self)
-        .pointee = rndr_blockcode_github
-
-    g_markdown.callbacksBuf = callbacks
-    g_markdown.renderOptsBuf = renderOpts
-    g_markdown.md = c_sd_markdown_new(GITHUB_MD_FLAGS, GITHUB_MD_NESTING, callbacks, renderOpts)
-}
-
-private func ghmd__init_gfm() {
-    let callbacks = UnsafeMutableRawPointer.allocate(byteCount: SD_CALLBACKS_SIZE, alignment: MemoryLayout<UnsafeRawPointer>.alignment)
-    callbacks.initializeMemory(as: UInt8.self, repeating: 0, count: SD_CALLBACKS_SIZE)
-    let renderOpts = UnsafeMutableRawPointer.allocate(byteCount: HTML_RENDEROPT_SIZE, alignment: MemoryLayout<Int>.alignment)
-    renderOpts.initializeMemory(as: UInt8.self, repeating: 0, count: HTML_RENDEROPT_SIZE)
-
-    c_sdhtml_renderer(callbacks, renderOpts, HTML_HARD_WRAP)
-
-    // Patch blockcode
-    callbacks.assumingMemoryBound(to: (@convention(c) (UnsafeMutableRawPointer?, UnsafeRawPointer?, UnsafeRawPointer?, UnsafeMutableRawPointer?) -> Void)?.self)
-        .pointee = rndr_blockcode_github
-
-    g_GFM.callbacksBuf = callbacks
-    g_GFM.renderOptsBuf = renderOpts
-    g_GFM.md = c_sd_markdown_new(GITHUB_MD_FLAGS | MKDEXT_SPACE_HEADERS, GITHUB_MD_NESTING, callbacks, renderOpts)
-}
-
-private func ghmd__init_plaintext() {
-    let callbacks = UnsafeMutableRawPointer.allocate(byteCount: SD_CALLBACKS_SIZE, alignment: MemoryLayout<UnsafeRawPointer>.alignment)
-    callbacks.initializeMemory(as: UInt8.self, repeating: 0, count: SD_CALLBACKS_SIZE)
-
-    c_sdtext_renderer(callbacks)
-
-    g_plaintext.callbacksBuf = callbacks
-    g_plaintext.renderOptsBuf = nil
-    g_plaintext.md = c_sd_markdown_new(GITHUB_MD_FLAGS, GITHUB_MD_NESTING, callbacks, nil)
+    switch mode {
+    case .markdown, .gfm:
+        let hardWrap = (mode == .gfm)
+        var renderer = HTMLRenderer(hardWrap: hardWrap)
+        renderer.visit(document)
+        return renderer.result
+    case .plaintext:
+        var renderer = PlaintextRenderer()
+        renderer.visit(document)
+        return renderer.result
+    }
 }
 
 // MARK: - Module Functions
@@ -317,34 +425,15 @@ private func markdown_convert(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
         }
     }
 
-    // Get input as raw bytes (NSData)
+    // Get input as raw bytes (NSData) and convert to String
     let textBody = skin.toNSObject(atIndex: 1, withOptions: .nsLuaStringAsDataOnly) as! NSData
+    let inputString = String(data: textBody as Data, encoding: .utf8) ?? ""
 
-    // Select the pipeline
-    let md: OpaquePointer?
-    switch mode {
-    case .markdown:  md = g_markdown.md
-    case .gfm:       md = g_GFM.md
-    case .plaintext:  md = g_plaintext.md
-    }
+    let output = convertMarkdown(inputString, mode: mode)
 
-    guard let md = md else {
-        return luaL_error(L, "Invalid render mode")
-    }
-
-    // Allocate output buffer
-    guard let outputBuf = c_bufnew(128) else {
-        return luaL_error(L, "Failed to allocate output buffer")
-    }
-
-    // Render
-    c_sd_markdown_render(outputBuf, textBody.bytes.assumingMemoryBound(to: UInt8.self), textBody.length, md)
-
-    // Build result NSData and push
-    let outputData = NSData(bytes: outputBuf.pointee.data, length: outputBuf.pointee.size)
-    skin.pushNSObject(outputData)
-
-    c_bufrelease(outputBuf)
+    // Push result as NSData to preserve exact byte output
+    let outputData = (output as NSString).data(using: String.Encoding.utf8.rawValue) ?? Data()
+    skin.pushNSObject(outputData as NSData)
 
     return 1
 }
@@ -360,10 +449,5 @@ private var moduleLib: [luaL_Reg] = [
 public func luaopen_hs_libmarkdown(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
     skin.registerLibrary("hs.doc.markdown", functions: &moduleLib, metaFunctions: nil)
-
-    ghmd__init_md()
-    ghmd__init_gfm()
-    ghmd__init_plaintext()
-
     return 1
 }
