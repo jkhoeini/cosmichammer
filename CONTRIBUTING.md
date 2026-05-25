@@ -19,7 +19,7 @@ Cosmic Hammer is composed of three separate logical areas - a Lua runtime wrappe
 
 ## How is everything built?
 
-The app is built using SPM (Swift Package Manager) via `just build`. A root-level `Package.swift` defines all targets under `Sources/<TargetName>/`. The Xcode project (generated from `project.yml` via XcodeGen) links against the SPM static library and handles only resources (XIBs, plists, icons). See `CLAUDE.md` for the full architecture.
+The app is built using SPM (Swift Package Manager) via `just build`. A root-level `Package.swift` defines all targets under `Sources/<TargetName>/`. The justfile compiles the executable via `swift build`, then assembles the `.app` bundle (copying resources, Lua files, hs CLI, and codesigning). See `CLAUDE.md` for the full architecture.
 
 ### Making frequent local rebuilds more convenient
 [Self-signing your builds](https://github.com/jkhoeini/cosmichammer/issues/643#issuecomment-158291705) will keep you from having to re-enable permissions for your locally built copy.
@@ -32,7 +32,7 @@ Then, simply run `just rebuild` for more streamlined builds.
 This is generally very simple in terms of the workflow, but there's less likely to be any reason to work on the core app:
 
 * Clone our GitHub [repository](https://github.com/jkhoeini/cosmichammer)
-* Open `CosmicHammer.xcworkspace` in Xcode (Note that you'll generally need the latest available version of Xcode)
+* Run `just build` to compile
 * Make the changes you want
 * Push them up to a fork on GitHub
 * Propose a Pull Request on GitHub

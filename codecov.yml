@@ -2,6 +2,5 @@ comment:
   layout: header, changes, diff
 coverage:
   ignore:
-  - CosmicHammerUITests/.*
   - Sources/LuaSkin/.*
 

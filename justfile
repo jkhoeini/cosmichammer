@@ -133,7 +133,11 @@ build config="Debug":
     else
         ENTITLEMENTS="CosmicHammer/CosmicHammer-dev.entitlements"
     fi
-    /usr/bin/codesign --force --sign - --deep --entitlements "${ENTITLEMENTS}" "${APP_DIR}"
+    if [ "{{ config }}" = "Release" ]; then
+        /usr/bin/codesign --force --sign - --deep --options runtime --entitlements "${ENTITLEMENTS}" "${APP_DIR}"
+    else
+        /usr/bin/codesign --force --sign - --deep --entitlements "${ENTITLEMENTS}" "${APP_DIR}"
+    fi
 
 # Run tests (SPM test target; requires `just build` first for Lua resources)
 test:
@@ -170,25 +174,6 @@ docs-lint:
         swift build -c release --package-path scripts/docs
     fi
     "$DOCSTOOL" --lint extensions/
-
-# Generate Xcode project and workspace from project.yml
-generate:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    xcodegen generate
-    rm -rf CosmicHammer.xcworkspace
-    mkdir -p CosmicHammer.xcworkspace/xcshareddata/xcschemes
-    cat > CosmicHammer.xcworkspace/contents.xcworkspacedata << 'XCWS'
-    <?xml version="1.0" encoding="UTF-8"?>
-    <Workspace
-       version = "1.0">
-       <FileRef
-          location = "group:CosmicHammer.xcodeproj">
-       </FileRef>
-    </Workspace>
-    XCWS
-    mv CosmicHammer.xcodeproj/xcshareddata/xcschemes/*.xcscheme \
-       CosmicHammer.xcworkspace/xcshareddata/xcschemes/
 
 # Full rebuild: clean + build
 rebuild: clean build

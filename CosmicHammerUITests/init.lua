@@ -1,1 +1,0 @@
-print("NOOP UI Tests init.lua")
