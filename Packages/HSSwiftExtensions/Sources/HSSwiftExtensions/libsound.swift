@@ -1,1 +1,1 @@
-/Users/mohammadk/Dev/hammerspoon/extensions/sound/libsound.swift
+../../../../extensions/sound/libsound.swift
