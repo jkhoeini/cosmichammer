@@ -352,7 +352,7 @@ private func markdown_convert(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 // MARK: - Cosmic Hammer/Lua Infrastructure
 
 private var moduleLib: [luaL_Reg] = [
-    luaL_Reg(name: ("convert" as NSString).utf8String, func: markdown_convert),
+    luaL_Reg(name: strdup("convert"), func: markdown_convert),
     luaL_Reg(name: nil, func: nil),
 ]
 

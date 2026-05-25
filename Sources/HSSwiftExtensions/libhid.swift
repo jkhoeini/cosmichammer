@@ -188,11 +188,11 @@ private func hid_led_set(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 }
 
 private var hid_lib: [luaL_Reg] = [
-    luaL_Reg(name: ("_capslock_query"  as NSString).utf8String, func: hid_capslock_query),
-    luaL_Reg(name: ("_capslock_toggle" as NSString).utf8String, func: hid_capslock_toggle),
-    luaL_Reg(name: ("_capslock_on"     as NSString).utf8String, func: hid_capslock_on),
-    luaL_Reg(name: ("_capslock_off"    as NSString).utf8String, func: hid_capslock_off),
-    luaL_Reg(name: ("_led_set"         as NSString).utf8String, func: hid_led_set),
+    luaL_Reg(name: strdup("_capslock_query"), func: hid_capslock_query),
+    luaL_Reg(name: strdup("_capslock_toggle"), func: hid_capslock_toggle),
+    luaL_Reg(name: strdup("_capslock_on"), func: hid_capslock_on),
+    luaL_Reg(name: strdup("_capslock_off"), func: hid_capslock_off),
+    luaL_Reg(name: strdup("_led_set"), func: hid_led_set),
     luaL_Reg(name: nil, func: nil),
 ]
 

@@ -419,21 +419,21 @@ private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 // Metatable for userdata objects
 private let userdata_metaLib: [luaL_Reg] = [
-    luaL_Reg(name: ("isRunning" as NSString).utf8String, func: resolutionIsRunning),
-    luaL_Reg(name: ("cancel" as NSString).utf8String, func: cancelResolution),
+    luaL_Reg(name: strdup("isRunning"), func: resolutionIsRunning),
+    luaL_Reg(name: strdup("cancel"), func: cancelResolution),
 
-    luaL_Reg(name: ("__tostring" as NSString).utf8String, func: userdata_tostring),
-    luaL_Reg(name: ("__eq" as NSString).utf8String, func: userdata_eq),
-    luaL_Reg(name: ("__gc" as NSString).utf8String, func: userdata_gc),
+    luaL_Reg(name: strdup("__tostring"), func: userdata_tostring),
+    luaL_Reg(name: strdup("__eq"), func: userdata_eq),
+    luaL_Reg(name: strdup("__gc"), func: userdata_gc),
     luaL_Reg(name: nil, func: nil),
 ]
 
 // Functions for returned object when module loads
 private let moduleLib: [luaL_Reg] = [
-    luaL_Reg(name: ("addressesForHostname" as NSString).utf8String, func: getAddressesForHostName),
-    luaL_Reg(name: ("hostnamesForAddress" as NSString).utf8String, func: getNamesForAddress),
-    luaL_Reg(name: ("reachabilityForHostname" as NSString).utf8String, func: getReachabilityForHostName),
-    luaL_Reg(name: ("reachabilityForAddress" as NSString).utf8String, func: getReachabilityForAddress),
+    luaL_Reg(name: strdup("addressesForHostname"), func: getAddressesForHostName),
+    luaL_Reg(name: strdup("hostnamesForAddress"), func: getNamesForAddress),
+    luaL_Reg(name: strdup("reachabilityForHostname"), func: getReachabilityForHostName),
+    luaL_Reg(name: strdup("reachabilityForAddress"), func: getReachabilityForAddress),
     luaL_Reg(name: nil, func: nil),
 ]
 

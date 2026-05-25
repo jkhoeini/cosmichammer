@@ -478,21 +478,21 @@ private func meta_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 // Functions for returned object when module loads
 private var moduleLib: [luaL_Reg] = [
-    luaL_Reg(name: ("help" as NSString).utf8String,               func: doc_help),
-    luaL_Reg(name: ("registerJSONFile" as NSString).utf8String,   func: doc_registerJSONFile),
-    luaL_Reg(name: ("registeredFiles" as NSString).utf8String,    func: doc_registeredFiles),
-    luaL_Reg(name: ("unregisterJSONFile" as NSString).utf8String, func: doc_unregisterJSONFile),
+    luaL_Reg(name: strdup("help"),               func: doc_help),
+    luaL_Reg(name: strdup("registerJSONFile"),   func: doc_registerJSONFile),
+    luaL_Reg(name: strdup("registeredFiles"),    func: doc_registeredFiles),
+    luaL_Reg(name: strdup("unregisterJSONFile"), func: doc_unregisterJSONFile),
     luaL_Reg(name: nil, func: nil),
 ]
 
 // Metatable for module, if needed
 private var module_metaLib: [luaL_Reg] = [
-    luaL_Reg(name: ("_children" as NSString).utf8String,                func: internal_arrayOfChildren),
-    luaL_Reg(name: ("_loadRegisteredFiles" as NSString).utf8String,     func: internal_loadRegisteredFiles),
-    luaL_Reg(name: ("_registerTriggerFunction" as NSString).utf8String, func: internal_registerTriggerFunction),
-    luaL_Reg(name: ("_registeredFilesObject" as NSString).utf8String,   func: internal_registeredFiles),
-    luaL_Reg(name: ("_documentationTreeObject" as NSString).utf8String, func: internal_documentationTree),
-    luaL_Reg(name: ("__gc" as NSString).utf8String,                     func: meta_gc),
+    luaL_Reg(name: strdup("_children"),                func: internal_arrayOfChildren),
+    luaL_Reg(name: strdup("_loadRegisteredFiles"),     func: internal_loadRegisteredFiles),
+    luaL_Reg(name: strdup("_registerTriggerFunction"), func: internal_registerTriggerFunction),
+    luaL_Reg(name: strdup("_registeredFilesObject"),   func: internal_registeredFiles),
+    luaL_Reg(name: strdup("_documentationTreeObject"), func: internal_documentationTree),
+    luaL_Reg(name: strdup("__gc"),                     func: meta_gc),
     luaL_Reg(name: nil, func: nil),
 ]
 

@@ -627,36 +627,36 @@ private func meta_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 // Metatable for userdata objects
 private let userdata_metaLib: [luaL_Reg] = [
-    luaL_Reg(name: ("contents" as NSString).utf8String, func: dynamicStoreContents),
-    luaL_Reg(name: ("keys" as NSString).utf8String, func: dynamicStoreKeys),
-    luaL_Reg(name: ("dhcpInfo" as NSString).utf8String, func: dynamicStoreDHCPInfo),
-    luaL_Reg(name: ("computerName" as NSString).utf8String, func: dynamicStoreComputerName),
-    luaL_Reg(name: ("consoleUser" as NSString).utf8String, func: dynamicStoreConsoleUser),
-    luaL_Reg(name: ("hostname" as NSString).utf8String, func: dynamicStoreLocalHostName),
-    luaL_Reg(name: ("location" as NSString).utf8String, func: dynamicStoreLocation),
-    luaL_Reg(name: ("locations" as NSString).utf8String, func: dynamicStoreLocations),
-    luaL_Reg(name: ("proxies" as NSString).utf8String, func: dynamicStoreProxies),
-    luaL_Reg(name: ("monitorKeys" as NSString).utf8String, func: dynamicStoreMonitorKeys),
-    luaL_Reg(name: ("setCallback" as NSString).utf8String, func: dynamicStoreSetCallback),
-    luaL_Reg(name: ("setLocation" as NSString).utf8String, func: dynamicStoreSetLocation),
-    luaL_Reg(name: ("start" as NSString).utf8String, func: dynamicStoreStartWatcher),
-    luaL_Reg(name: ("stop" as NSString).utf8String, func: dynamicStoreStopWatcher),
+    luaL_Reg(name: strdup("contents"), func: dynamicStoreContents),
+    luaL_Reg(name: strdup("keys"), func: dynamicStoreKeys),
+    luaL_Reg(name: strdup("dhcpInfo"), func: dynamicStoreDHCPInfo),
+    luaL_Reg(name: strdup("computerName"), func: dynamicStoreComputerName),
+    luaL_Reg(name: strdup("consoleUser"), func: dynamicStoreConsoleUser),
+    luaL_Reg(name: strdup("hostname"), func: dynamicStoreLocalHostName),
+    luaL_Reg(name: strdup("location"), func: dynamicStoreLocation),
+    luaL_Reg(name: strdup("locations"), func: dynamicStoreLocations),
+    luaL_Reg(name: strdup("proxies"), func: dynamicStoreProxies),
+    luaL_Reg(name: strdup("monitorKeys"), func: dynamicStoreMonitorKeys),
+    luaL_Reg(name: strdup("setCallback"), func: dynamicStoreSetCallback),
+    luaL_Reg(name: strdup("setLocation"), func: dynamicStoreSetLocation),
+    luaL_Reg(name: strdup("start"), func: dynamicStoreStartWatcher),
+    luaL_Reg(name: strdup("stop"), func: dynamicStoreStopWatcher),
 
-    luaL_Reg(name: ("__tostring" as NSString).utf8String, func: userdata_tostring),
-    luaL_Reg(name: ("__eq" as NSString).utf8String, func: userdata_eq),
-    luaL_Reg(name: ("__gc" as NSString).utf8String, func: userdata_gc),
+    luaL_Reg(name: strdup("__tostring"), func: userdata_tostring),
+    luaL_Reg(name: strdup("__eq"), func: userdata_eq),
+    luaL_Reg(name: strdup("__gc"), func: userdata_gc),
     luaL_Reg(name: nil, func: nil),
 ]
 
 // Functions for returned object when module loads
 private let moduleLib: [luaL_Reg] = [
-    luaL_Reg(name: ("open" as NSString).utf8String, func: newStoreObject),
+    luaL_Reg(name: strdup("open"), func: newStoreObject),
     luaL_Reg(name: nil, func: nil),
 ]
 
 // Metatable for module
 private let module_metaLib: [luaL_Reg] = [
-    luaL_Reg(name: ("__gc" as NSString).utf8String, func: meta_gc),
+    luaL_Reg(name: strdup("__gc"), func: meta_gc),
     luaL_Reg(name: nil, func: nil),
 ]
 

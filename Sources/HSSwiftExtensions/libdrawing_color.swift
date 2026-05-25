@@ -305,10 +305,10 @@ private func registerColorCollectionsTable(_ L: UnsafeMutablePointer<lua_State>!
 }
 
 private var moduleLib: [luaL_Reg] = [
-    luaL_Reg(name: ("lists" as NSString).utf8String, func: getColorLists),
-    luaL_Reg(name: ("asRGB" as NSString).utf8String, func: colorAsRGB),
-    luaL_Reg(name: ("asHSB" as NSString).utf8String, func: colorAsHSB),
-    luaL_Reg(name: ("_registerColorCollectionsTable" as NSString).utf8String, func: registerColorCollectionsTable),
+    luaL_Reg(name: strdup("lists"), func: getColorLists),
+    luaL_Reg(name: strdup("asRGB"), func: colorAsRGB),
+    luaL_Reg(name: strdup("asHSB"), func: colorAsHSB),
+    luaL_Reg(name: strdup("_registerColorCollectionsTable"), func: registerColorCollectionsTable),
     luaL_Reg(name: nil, func: nil),
 ]
 

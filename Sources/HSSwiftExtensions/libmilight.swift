@@ -196,16 +196,16 @@ private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 }
 
 private let milightlib: [luaL_Reg] = [
-    luaL_Reg(name: ("_cacheCommands" as NSString).utf8String, func: milight_cacheCommands),
-    luaL_Reg(name: ("new" as NSString).utf8String, func: milight_new),
+    luaL_Reg(name: strdup("_cacheCommands"), func: milight_cacheCommands),
+    luaL_Reg(name: strdup("new"), func: milight_new),
     luaL_Reg(name: nil, func: nil),
 ]
 
 private let milight_objectlib: [luaL_Reg] = [
-    luaL_Reg(name: ("delete" as NSString).utf8String, func: milight_del),
-    luaL_Reg(name: ("send" as NSString).utf8String, func: milight_send),
-    luaL_Reg(name: ("__tostring" as NSString).utf8String, func: userdata_tostring),
-    luaL_Reg(name: ("__gc" as NSString).utf8String, func: milight_metagc),
+    luaL_Reg(name: strdup("delete"), func: milight_del),
+    luaL_Reg(name: strdup("send"), func: milight_send),
+    luaL_Reg(name: strdup("__tostring"), func: userdata_tostring),
+    luaL_Reg(name: strdup("__gc"), func: milight_metagc),
     luaL_Reg(name: nil, func: nil),
 ]
 

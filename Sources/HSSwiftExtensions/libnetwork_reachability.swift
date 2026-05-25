@@ -411,29 +411,29 @@ private func meta_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 // Metatable for userdata objects
 private let userdata_metaLib: [luaL_Reg] = [
-    luaL_Reg(name: ("status" as NSString).utf8String, func: reachabilityStatus),
-    luaL_Reg(name: ("statusString" as NSString).utf8String, func: reachabilityStatusString),
-    luaL_Reg(name: ("setCallback" as NSString).utf8String, func: reachabilityCallback),
-    luaL_Reg(name: ("start" as NSString).utf8String, func: reachabilityStartWatcher),
-    luaL_Reg(name: ("stop" as NSString).utf8String, func: reachabilityStopWatcher),
+    luaL_Reg(name: strdup("status"), func: reachabilityStatus),
+    luaL_Reg(name: strdup("statusString"), func: reachabilityStatusString),
+    luaL_Reg(name: strdup("setCallback"), func: reachabilityCallback),
+    luaL_Reg(name: strdup("start"), func: reachabilityStartWatcher),
+    luaL_Reg(name: strdup("stop"), func: reachabilityStopWatcher),
 
-    luaL_Reg(name: ("__tostring" as NSString).utf8String, func: userdata_tostring),
-    luaL_Reg(name: ("__eq" as NSString).utf8String, func: userdata_eq),
-    luaL_Reg(name: ("__gc" as NSString).utf8String, func: userdata_gc),
+    luaL_Reg(name: strdup("__tostring"), func: userdata_tostring),
+    luaL_Reg(name: strdup("__eq"), func: userdata_eq),
+    luaL_Reg(name: strdup("__gc"), func: userdata_gc),
     luaL_Reg(name: nil, func: nil),
 ]
 
 // Functions for returned object when module loads
 private let moduleLib: [luaL_Reg] = [
-    luaL_Reg(name: ("forAddressPair" as NSString).utf8String, func: reachabilityForAddressPair),
-    luaL_Reg(name: ("forAddress" as NSString).utf8String, func: reachabilityForAddress),
-    luaL_Reg(name: ("forHostName" as NSString).utf8String, func: reachabilityForHostName),
+    luaL_Reg(name: strdup("forAddressPair"), func: reachabilityForAddressPair),
+    luaL_Reg(name: strdup("forAddress"), func: reachabilityForAddress),
+    luaL_Reg(name: strdup("forHostName"), func: reachabilityForHostName),
     luaL_Reg(name: nil, func: nil),
 ]
 
 // Metatable for module
 private let module_metaLib: [luaL_Reg] = [
-    luaL_Reg(name: ("__gc" as NSString).utf8String, func: meta_gc),
+    luaL_Reg(name: strdup("__gc"), func: meta_gc),
     luaL_Reg(name: nil, func: nil),
 ]
 
