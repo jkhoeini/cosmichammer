@@ -2,7 +2,6 @@ import Cocoa
 import LuaSkin
 import CocoaHTTPServer
 import CocoaAsyncSocket
-import CocoaLumberjack
 import os.log
 
 // MARK: - Constants
@@ -709,8 +708,6 @@ private let httpserverObjectLib: [luaL_Reg] = [
 public func luaopen_hs_libhttpserver(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
     refTable = skin.registerLibrary(withObject: "hs.httpserver", functions: httpserverLib, metaFunctions: nil, objectFunctions: httpserverObjectLib)
-
-    DDLog.add(DDOSLogger.sharedInstance)
 
     return 1
 }

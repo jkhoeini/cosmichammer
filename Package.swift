@@ -29,7 +29,6 @@ let package = Package(
     dependencies: [
         .package(url: "https://github.com/robbiehanson/CocoaAsyncSocket", exact: "7.6.5"),
         .package(url: "https://github.com/armadsen/ORSSerialPort", exact: "2.1.0"),
-        .package(url: "https://github.com/CocoaLumberjack/CocoaLumberjack", exact: "3.9.0"),
     ],
     targets: [
         // ---------------------------------------------------------------
@@ -58,7 +57,6 @@ let package = Package(
             name: "CocoaHTTPServer",
             dependencies: [
                 "CocoaAsyncSocket",
-                .product(name: "CocoaLumberjack", package: "CocoaLumberjack"),
             ],
             path: "Sources/CocoaHTTPServer",
             exclude: ["LICENSE.txt"],
@@ -88,7 +86,6 @@ let package = Package(
                 "CocoaAsyncSocket",
                 "HSSwiftExtensions",
                 .product(name: "ORSSerial", package: "ORSSerialPort"),
-                .product(name: "CocoaLumberjack", package: "CocoaLumberjack"),
             ],
             path: "Sources/HSExtensions",
             exclude: [
@@ -160,7 +157,6 @@ let package = Package(
                 "CocoaHTTPServer",
                 "CocoaAsyncSocket",
                 .product(name: "ORSSerial", package: "ORSSerialPort"),
-                .product(name: "CocoaLumberjack", package: "CocoaLumberjack"),
             ],
             path: "Sources/HSSwiftExtensions",
             swiftSettings: [

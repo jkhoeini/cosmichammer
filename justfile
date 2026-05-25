@@ -111,12 +111,6 @@ build config="Debug":
     cp -R extensions/doc/hsdocs/* "${RESOURCES}/extensions/hs/hsdocs/" 2>/dev/null || true
     cp scripts/docs/templates/docs.css "${RESOURCES}/extensions/hs/hsdocs/"
 
-    # CocoaLumberjack resource bundle (PrivacyInfo)
-    CL_BUNDLE=".build/${spm_config}/CocoaLumberjack_CocoaLumberjack.bundle"
-    if [ -d "$CL_BUNDLE" ]; then
-        cp -R "$CL_BUNDLE" "${RESOURCES}/"
-    fi
-
     # Copy hs CLI
     cp .build/release/hs "${CONTENTS}/Frameworks/hs/hs"
     /usr/bin/codesign --force --sign - "${CONTENTS}/Frameworks/hs/hs"

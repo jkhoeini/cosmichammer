@@ -45,6 +45,37 @@ replaced.
     system-dependent tests with a trait and skip them in ~swift test~,
     (c) add a second hosted-test target for integration tests.
 
+* TODO — ObjC-to-Swift Migration (large)
+
+*** TODO Port remaining 28 ~.m~ files to Swift
+    11K lines of ObjC in ~Sources/HSExtensions/~. Some are pure C wrappers
+    (fine to keep), but many are ObjC classes that could become cleaner
+    Swift. Biggest wins: ~doc/~, ~eventtap/~, ~fs/~ subdirectories.
+
+*** TODO Replace vendored CocoaHTTPServer
+    ~6K lines of vendored ObjC in ~Sources/CocoaHTTPServer/~. Check if
+    upstream SPM package exists or if Swift NIO / Hummingbird could replace
+    it entirely.
+
+*** TODO Replace CocoaLumberjack (3.9.0) with ~os.log~
+    The dependency exists mainly for CocoaHTTPServer. If the HTTP server is
+    replaced, this dep can go too.
+
+* TODO — Architecture (design decisions needed)
+
+*** TODO Evaluate ~-all_load~ linker flag removal
+    Forces linking all ObjC symbols. Needed because extensions register via
+    ~__attribute__((used))~ static arrays. Could be replaced with explicit
+    symbol exports, but needs investigation.
+
+*** TODO Evaluate static vs dynamic extension loading
+    All 91 extensions are compiled into one binary. Dynamic loading would
+    reduce binary size and allow third-party extensions, but adds complexity.
+
+*** TODO Evaluate LuaSkin's long-term role
+    The ObjC bridge forces ~@objc~ everywhere. A pure Swift Lua bridge
+    would eliminate most of the ObjC ceremony but is a major rewrite.
+
 * Investigated — not worth doing
 
 ** SKIP Make generators Xcode build-time phases
