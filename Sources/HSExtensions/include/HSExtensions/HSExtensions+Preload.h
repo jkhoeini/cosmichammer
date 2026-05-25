@@ -1,9 +1,8 @@
 // AUTO-GENERATED. DO NOT EDIT. Re-run scripts/generate-hsextensions.sh.
 //
 // Forward declarations for every luaopen_hs_lib<name> entry point that the
-// HSExtensions static library exposes. The keep-alive registry array in the
-// main app target references these symbols so the static linker doesn't
-// dead-strip them out of libHSExtensions.a.
+// HSExtensions static library exposes.  Needed so C/ObjC compilation units
+// can reference these symbols.
 #pragma once
 #include <LuaSkin/lua.h>
 

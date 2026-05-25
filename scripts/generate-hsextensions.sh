@@ -2,20 +2,17 @@
 # Regenerates HSExtensions glue files.
 #
 # Reads entry-point symbols from the unified manifest
-# extensions.manifest and emits three generated files:
+# extensions.manifest and emits two generated files:
 #
 #   1. Sources/HSExtensions/include/HSExtensions/HSExtensions+Preload.h
 #      Forward declarations for each luaopen_hs_lib* symbol.
+#      Still needed so C/ObjC compilation units can reference these symbols.
 #
-#   2. Sources/HSExtensions/HSExtensions.m
-#      Implementation of HSExtensionsRegisterAll, which inserts each
+#   2. Sources/HSSwiftExtensions/HSExtensionsGenerated.swift
+#      Implementation of hsExtensionsRegisterAll(_:), which inserts each
 #      luaopen_hs_lib<name> into Lua's package.preload keyed by
-#      "hs.lib<name>".
-#
-#   3. Sources/HSExtensions/CosmicHammer/HSExtensionsRegistry.m
-#      Keep-alive array in the main app target. The static linker pulls each
-#      referenced object out of libHSExtensions.a so the `luaopen_*`
-#      functions don't get dead-stripped.
+#      "hs.lib<name>".  All entry points are imported via @_silgen_name
+#      so the Swift function name is decoupled from the C symbol name.
 #
 # Re-run this script whenever you add or remove an extension entry-point.
 # The script is idempotent: running it twice produces the same output.
@@ -26,8 +23,7 @@ cd "$repo_root"
 
 MANIFEST="extensions.manifest"
 OUT_PRELOAD_H="Sources/HSExtensions/include/HSExtensions/HSExtensions+Preload.h"
-OUT_REGISTER_M="Sources/HSExtensions/HSExtensions.m"
-OUT_KEEPALIVE_M="Sources/HSExtensions/CosmicHammer/HSExtensionsRegistry.m"
+OUT_SWIFT="Sources/HSSwiftExtensions/HSExtensionsGenerated.swift"
 
 if [[ ! -f "$MANIFEST" ]]; then
     echo "error: manifest not found: $MANIFEST" >&2
@@ -62,22 +58,14 @@ IFS=$'\n' symbols=($(sort <<<"${symbols[*]}")); unset IFS
 count="${#symbols[@]}"
 echo "Generating glue for ${count} symbols..."
 
-# Compute the longest symbol length for column alignment in HSExtensions.m
-maxlen=0
-for sym in "${symbols[@]}"; do
-    if (( ${#sym} > maxlen )); then maxlen=${#sym}; fi
-done
-pad=$((maxlen + 2))
-
 # -- 1. Preload header ----------------------------------------------------------
 {
     cat <<'HDR'
 // AUTO-GENERATED. DO NOT EDIT. Re-run scripts/generate-hsextensions.sh.
 //
 // Forward declarations for every luaopen_hs_lib<name> entry point that the
-// HSExtensions static library exposes. The keep-alive registry array in the
-// main app target references these symbols so the static linker doesn't
-// dead-strip them out of libHSExtensions.a.
+// HSExtensions static library exposes.  Needed so C/ObjC compilation units
+// can reference these symbols.
 #pragma once
 #include <LuaSkin/lua.h>
 
@@ -97,65 +85,54 @@ HDR
 HDR
 } > "$OUT_PRELOAD_H"
 
-# -- 2. Register implementation -------------------------------------------------
+# -- 2. Swift registration implementation ---------------------------------------
 {
     cat <<'HDR'
 // AUTO-GENERATED. DO NOT EDIT. Re-run scripts/generate-hsextensions.sh.
 //
-// Implements HSExtensionsRegisterAll(L), which inserts every bundled
-// luaopen_hs_lib<name> into Lua's package.preload keyed by "hs.lib<name>".
-// Call after lua_State creation and before setup.lua runs so require()
-// resolves bundled modules without ever touching package.cpath.
-#import "HSExtensions/HSExtensions.h"
-#import "HSExtensions/HSExtensions+Preload.h"
+// Registers all bundled extension entry points into Lua's package.preload table.
+// Call after lua_State creation and before setup.lua runs.
+//
+// Every entry point is imported via @_silgen_name so the Swift function name
+// is decoupled from the C symbol name (handles both @_cdecl Swift funcs and
+// C-implemented funcs like lsqlite3).
+import LuaSkin
 
-#include <LuaSkin/lauxlib.h>
+// MARK: - Forward declarations (C symbol imports)
 
-void HSExtensionsRegisterAll(lua_State *L) {
-    static const struct { const char *name; lua_CFunction func; } preload[] = {
+HDR
+    for sym in "${symbols[@]}"; do
+        printf '@_silgen_name("%s")\n' "$sym"
+        printf 'private func _import_%s(_ L: UnsafeMutablePointer<lua_State>!) -> Int32\n\n' "$sym"
+    done
+
+    cat <<'HDR'
+// MARK: - Registration
+
+/// Registers every bundled hs.lib<name> entry point with package.preload.
+/// Call after lua_State creation and before setup.lua runs.
+@_cdecl("HSExtensionsRegisterAll")
+func hsExtensionsRegisterAll(_ L: UnsafeMutablePointer<lua_State>!) {
+    let preload: [(String, @convention(c) (UnsafeMutablePointer<lua_State>?) -> Int32)] = [
 HDR
     for sym in "${symbols[@]}"; do
         # luaopen_hs_libwindow -> hs.libwindow
         modname="hs.${sym#luaopen_hs_}"
-        # left-justify quoted module name to align func column
-        quoted="\"${modname}\","
-        printf '        { %-*s %s },\n' "$pad" "$quoted" "$sym"
+        printf '        ("%s", _import_%s),\n' "$modname" "$sym"
     done
+    # Use the Swift-available constant for LUA_REGISTRYINDEX.
     cat <<'HDR'
-        { NULL, NULL }
-    };
+    ]
 
-    luaL_getsubtable(L, LUA_REGISTRYINDEX, LUA_PRELOAD_TABLE);
-    for (size_t i = 0; preload[i].name; i++) {
-        lua_pushcfunction(L, preload[i].func);
-        lua_setfield(L, -2, preload[i].name);
+    luaL_getsubtable(L, LUA_REGISTRYINDEX_VALUE, "_PRELOAD")
+    for (name, fn) in preload {
+        lua_pushcclosure(L, fn, 0)
+        lua_setfield(L, -2, name)
     }
-    lua_pop(L, 1);  // pop _PRELOAD table
+    lua_pop(L, 1)
 }
 HDR
-} > "$OUT_REGISTER_M"
-
-# -- 3. Keep-alive registry (main app target) -----------------------------------
-{
-    cat <<'HDR'
-// AUTO-GENERATED. DO NOT EDIT. Re-run scripts/generate-hsextensions.sh.
-//
-// Purpose: prevent the static linker from dead-stripping the luaopen_hs_*
-// entry points out of libHSExtensions.a. Each symbol is referenced from a
-// __used array so the linker keeps the archive object alive.
-#import <HSExtensions/HSExtensions+Preload.h>
-
-__attribute__((used))
-static void * const _HSExtensionsKeepAlive[] = {
-HDR
-    for sym in "${symbols[@]}"; do
-        printf '    (void *)&%s,\n' "$sym"
-    done
-    cat <<'HDR'
-};
-HDR
-} > "$OUT_KEEPALIVE_M"
+} > "$OUT_SWIFT"
 
 echo "  wrote $OUT_PRELOAD_H"
-echo "  wrote $OUT_REGISTER_M"
-echo "  wrote $OUT_KEEPALIVE_M"
+echo "  wrote $OUT_SWIFT"

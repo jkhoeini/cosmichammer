@@ -1,24 +1,9 @@
 // HSExtensions.h
 //
-// Public entry point for the consolidated HSExtensions static library.
-// All bundled hs.lib<name> entry points are registered into Lua's
-// package.preload by HSExtensionsRegisterAll, which the main app calls
-// after Lua state creation and before setup.lua runs.
+// Umbrella header for the consolidated HSExtensions static library.
+// The generated forward declarations cover every public C symbol.
 
 #pragma once
-#include <LuaSkin/lua.h>
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-/// Registers every bundled hs.lib<name> entry point with package.preload.
-/// Call after lua_State creation and before setup.lua runs.
-void HSExtensionsRegisterAll(lua_State *L);
-
-#ifdef __cplusplus
-}
-#endif
 
 // Include the generated forward declarations so the umbrella module covers
 // every public header in this include directory.
