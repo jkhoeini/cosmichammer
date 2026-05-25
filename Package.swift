@@ -26,7 +26,6 @@ let package = Package(
         .executable(name: "hs", targets: ["hs"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/robbiehanson/CocoaAsyncSocket", exact: "7.6.5"),
         .package(url: "https://github.com/armadsen/ORSSerialPort", exact: "2.1.0"),
     ],
     targets: [
@@ -56,7 +55,6 @@ let package = Package(
             name: "HSExtensions",
             dependencies: [
                 "LuaSkin",
-                "CocoaAsyncSocket",
                 "HSSwiftExtensions",
                 .product(name: "ORSSerial", package: "ORSSerialPort"),
             ],
@@ -127,7 +125,6 @@ let package = Package(
             name: "HSSwiftExtensions",
             dependencies: [
                 "LuaSkin",
-                "CocoaAsyncSocket",
                 .product(name: "ORSSerial", package: "ORSSerialPort"),
             ],
             path: "Sources/HSSwiftExtensions",

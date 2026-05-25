@@ -1,6 +1,6 @@
 import Cocoa
 import LuaSkin
-import CocoaAsyncSocket
+import Network
 
 // socket.h shared definitions are duplicated here since Swift can't import the C header directly.
 // Each Swift file in the socket extension gets its own copy of the shared state.
@@ -74,60 +74,712 @@ private func udpReadCallback(_ asyncUdpSocket: HSAsyncUdpSocket, data: Data, add
     }
 }
 
-// MARK: - UDP Socket Class
+// MARK: - UDP Socket Class (Network.framework + POSIX)
 
-private class HSAsyncUdpSocket: GCDAsyncUdpSocket, GCDAsyncUdpSocketDelegate {
+/// Hybrid UDP socket implementation.
+///
+/// - **Connected mode** (after `connect()`): uses `NWConnection` with `.udp` parameters.
+/// - **Unconnected / server mode** (after `listen()` or bare `send(to:)`): uses a POSIX
+///   `AF_INET`/`AF_INET6` datagram socket with `DispatchSource.makeReadSource` for async receives.
+private class HSAsyncUdpSocket {
     var readCallbackRef: Int32 = LUA_NOREF
     var writeCallbackRef: Int32 = LUA_NOREF
     var connectCallbackRef: Int32 = LUA_NOREF
     var socketTimeout: TimeInterval = -1
 
+    // NWConnection for connected mode
+    private var connection: NWConnection?
+
+    // POSIX socket for unconnected / server mode
+    private var fd4: Int32 = -1  // IPv4 socket
+    private var fd6: Int32 = -1  // IPv6 socket
+    private var readSource4: DispatchSourceRead?
+    private var readSource6: DispatchSourceRead?
+    private var continuousReceive: Bool = false
+    private var receiveActive: Bool = false
+
+    // State
+    private var isBound: Bool = false
+    private var _isConnected: Bool = false
+    private var _isClosed: Bool = true
+    private var ipv4Enabled: Bool = true
+    private var ipv6Enabled: Bool = true
+    private var preferredIPVersion: Int = 0  // 0=neutral, 4=ipv4, 6=ipv6
+    private var maxRecvIPv4Buffer: UInt16 = 9216
+    private var maxRecvIPv6Buffer: UInt32 = 9216
+    private var broadcastEnabled: Bool = false
+    private var reusePortEnabled: Bool = false
+
+    // Addressing info
+    private var _localHost: String?
+    private var _localPort: UInt16 = 0
+    private var _connectedHost: String?
+    private var _connectedPort: UInt16 = 0
+    private var _userData: AnyObject?
+
+    private let delegateQueue: DispatchQueue
+
     init(queue: DispatchQueue) {
-        super.init(delegate: nil, delegateQueue: queue, socketQueue: nil)
+        delegateQueue = queue
     }
 
-    func configure() {
-        setDelegate(self, delegateQueue: delegateQueue())
+    // MARK: userData
+
+    func setUserData(_ obj: AnyObject?) {
+        _userData = obj
     }
 
-    func udpSocket(_ sock: GCDAsyncUdpSocket, didConnectToAddress address: Data) {
-        LuaSkin.skin(with: nil).logDebug("UDP socket connected")
-        self.setUserData(DEFAULT)
-        if self.connectCallbackRef != LUA_NOREF {
-            udpConnectCallback(self)
+    func userData() -> AnyObject? {
+        return _userData
+    }
+
+    // MARK: State queries
+
+    func isConnected() -> Bool { return _isConnected }
+    func isClosed() -> Bool { return _isClosed }
+    func isIPv4() -> Bool {
+        if let conn = connection {
+            if case .hostPort(let host, _) = conn.currentPath?.remoteEndpoint {
+                return "\(host)".contains(".")
+            }
+        }
+        return fd4 >= 0
+    }
+    func isIPv6() -> Bool {
+        if let conn = connection {
+            if case .hostPort(let host, _) = conn.currentPath?.remoteEndpoint {
+                return "\(host)".contains(":")
+            }
+        }
+        return fd6 >= 0
+    }
+    func isIPv4Enabled() -> Bool { return ipv4Enabled }
+    func isIPv6Enabled() -> Bool { return ipv6Enabled }
+    func isIPv4Preferred() -> Bool { return preferredIPVersion == 4 }
+    func isIPv6Preferred() -> Bool { return preferredIPVersion == 6 }
+    func isIPVersionNeutral() -> Bool { return preferredIPVersion == 0 }
+    func maxReceiveIPv4BufferSize() -> UInt16 { return maxRecvIPv4Buffer }
+    func maxReceiveIPv6BufferSize() -> UInt32 { return maxRecvIPv6Buffer }
+
+    // MARK: Address info
+
+    func connectedHost() -> String? { return _connectedHost }
+    func connectedPort() -> UInt16 { return _connectedPort }
+    func connectedAddress() -> Data? {
+        guard _isConnected else { return nil }
+        return sockaddrData(host: _connectedHost ?? "", port: _connectedPort, family: AF_INET)
+    }
+
+    func localHost() -> String? { return _localHost }
+    func localPort() -> UInt16 { return _localPort }
+    func localAddress() -> Data? {
+        return localAddress_IPv4() ?? localAddress_IPv6()
+    }
+
+    func localHost_IPv4() -> String? {
+        if fd4 >= 0 { return hostFromFd(fd4, family: AF_INET) }
+        return nil
+    }
+    func localHost_IPv6() -> String? {
+        if fd6 >= 0 { return hostFromFd(fd6, family: AF_INET6) }
+        return nil
+    }
+    func localPort_IPv4() -> UInt16 {
+        if fd4 >= 0 { return portFromFd(fd4, family: AF_INET) }
+        return 0
+    }
+    func localPort_IPv6() -> UInt16 {
+        if fd6 >= 0 { return portFromFd(fd6, family: AF_INET6) }
+        return 0
+    }
+    func localAddress_IPv4() -> Data? {
+        if fd4 >= 0 { return sockaddrDataFromFd(fd4, family: AF_INET) }
+        return nil
+    }
+    func localAddress_IPv6() -> Data? {
+        if fd6 >= 0 { return sockaddrDataFromFd(fd6, family: AF_INET6) }
+        return nil
+    }
+
+    // MARK: Configuration
+
+    func setIPv4Enabled(_ flag: Bool) { ipv4Enabled = flag }
+    func setIPv6Enabled(_ flag: Bool) { ipv6Enabled = flag }
+    func setPreferIPv4() { preferredIPVersion = 4 }
+    func setPreferIPv6() { preferredIPVersion = 6 }
+    func setIPVersionNeutral() { preferredIPVersion = 0 }
+    func setMaxReceiveIPv4BufferSize(_ size: UInt16) { maxRecvIPv4Buffer = size }
+    func setMaxReceiveIPv6BufferSize(_ size: UInt32) { maxRecvIPv6Buffer = size }
+
+    func enableBroadcast(_ flag: Bool) throws {
+        broadcastEnabled = flag
+        // Apply to existing POSIX sockets immediately
+        if fd4 >= 0 { applyBroadcast(fd4) }
+        if fd6 >= 0 { applyBroadcast(fd6) }
+    }
+
+    func enableReusePort(_ flag: Bool) throws {
+        reusePortEnabled = flag
+        // Apply to existing POSIX sockets immediately
+        if fd4 >= 0 { applyReusePort(fd4) }
+        if fd6 >= 0 { applyReusePort(fd6) }
+    }
+
+    // MARK: Connect (NWConnection mode)
+
+    func connect(toHost host: String, onPort port: UInt16) throws {
+        guard !_isConnected else {
+            throw NSError(domain: "HSAsyncUdpSocket", code: 1, userInfo: [NSLocalizedDescriptionKey: "Already connected"])
+        }
+
+        let params = NWParameters.udp
+        if !ipv4Enabled {
+            params.requiredLocalEndpoint = nil
+            params.prohibitedInterfaceTypes = []
+        }
+
+        let nwHost: NWEndpoint.Host
+        if preferredIPVersion == 4 {
+            // Attempt to force IPv4 by resolving to numeric if possible
+            nwHost = NWEndpoint.Host(host)
+        } else if preferredIPVersion == 6 {
+            nwHost = NWEndpoint.Host(host)
+        } else {
+            nwHost = NWEndpoint.Host(host)
+        }
+        guard let nwPort = NWEndpoint.Port(rawValue: port) else {
+            throw NSError(domain: "HSAsyncUdpSocket", code: 2, userInfo: [NSLocalizedDescriptionKey: "Invalid port: \(port)"])
+        }
+
+        let conn = NWConnection(host: nwHost, port: nwPort, using: params)
+        self.connection = conn
+
+        conn.stateUpdateHandler = { [weak self] state in
+            guard let self = self else { return }
+            switch state {
+            case .ready:
+                self._isConnected = true
+                self._isClosed = false
+                self._connectedHost = host
+                self._connectedPort = port
+                self.cacheLocalInfoFromConnection(conn)
+                self.setUserData(DEFAULT)
+                LuaSkin.skin(with: nil).logDebug("UDP socket connected")
+                if self.connectCallbackRef != LUA_NOREF {
+                    udpConnectCallback(self)
+                }
+            case .failed(let err):
+                self._isConnected = false
+                LuaSkin.skin(with: nil).logError("UDP socket did not connect: \(err)")
+                mainThreadDispatch {
+                    self.connectCallbackRef = LuaSkin.skin(with: nil).luaUnref(refTable, ref: self.connectCallbackRef)
+                }
+            case .cancelled:
+                self._isConnected = false
+                self._isClosed = true
+                self.setUserData(nil)
+                LuaSkin.skin(with: nil).logDebug("UDP socket closed")
+            default:
+                break
+            }
+        }
+
+        conn.start(queue: delegateQueue)
+        _isClosed = false
+    }
+
+    // MARK: Bind (POSIX mode)
+
+    func bind(toPort port: UInt16) throws {
+        guard !isBound && !_isConnected else {
+            throw NSError(domain: "HSAsyncUdpSocket", code: 3, userInfo: [NSLocalizedDescriptionKey: "Socket already bound or connected"])
+        }
+
+        if ipv4Enabled {
+            fd4 = Darwin.socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)
+            guard fd4 >= 0 else {
+                throw NSError(domain: "HSAsyncUdpSocket", code: 4, userInfo: [NSLocalizedDescriptionKey: "Failed to create IPv4 socket: \(String(cString: strerror(errno)))"])
+            }
+            if reusePortEnabled { applyReusePort(fd4) }
+            if broadcastEnabled { applyBroadcast(fd4) }
+
+            var addr4 = sockaddr_in()
+            addr4.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+            addr4.sin_family = sa_family_t(AF_INET)
+            addr4.sin_port = port.bigEndian
+            addr4.sin_addr.s_addr = INADDR_ANY
+
+            let bindResult = withUnsafePointer(to: &addr4) { ptr in
+                ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sa in
+                    Darwin.bind(fd4, sa, socklen_t(MemoryLayout<sockaddr_in>.size))
+                }
+            }
+            if bindResult != 0 {
+                let errMsg = String(cString: strerror(errno))
+                Darwin.close(fd4)
+                fd4 = -1
+                throw NSError(domain: "HSAsyncUdpSocket", code: 5, userInfo: [NSLocalizedDescriptionKey: "IPv4 bind failed: \(errMsg)"])
+            }
+        }
+
+        if ipv6Enabled {
+            fd6 = Darwin.socket(AF_INET6, SOCK_DGRAM, IPPROTO_UDP)
+            guard fd6 >= 0 else {
+                if fd4 >= 0 { Darwin.close(fd4); fd4 = -1 }
+                throw NSError(domain: "HSAsyncUdpSocket", code: 4, userInfo: [NSLocalizedDescriptionKey: "Failed to create IPv6 socket: \(String(cString: strerror(errno)))"])
+            }
+            if reusePortEnabled { applyReusePort(fd6) }
+
+            // Only bind IPv6 — prevent dual-stack overlap with the IPv4 socket
+            var on: Int32 = 1
+            setsockopt(fd6, IPPROTO_IPV6, IPV6_V6ONLY, &on, socklen_t(MemoryLayout<Int32>.size))
+
+            var addr6 = sockaddr_in6()
+            addr6.sin6_len = UInt8(MemoryLayout<sockaddr_in6>.size)
+            addr6.sin6_family = sa_family_t(AF_INET6)
+            addr6.sin6_port = port.bigEndian
+            addr6.sin6_addr = in6addr_any
+
+            let bindResult = withUnsafePointer(to: &addr6) { ptr in
+                ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sa in
+                    Darwin.bind(fd6, sa, socklen_t(MemoryLayout<sockaddr_in6>.size))
+                }
+            }
+            if bindResult != 0 {
+                let errMsg = String(cString: strerror(errno))
+                Darwin.close(fd6)
+                fd6 = -1
+                // IPv4 bind may have succeeded — that's OK
+                if fd4 < 0 {
+                    throw NSError(domain: "HSAsyncUdpSocket", code: 5, userInfo: [NSLocalizedDescriptionKey: "IPv6 bind failed: \(errMsg)"])
+                }
+            }
+        }
+
+        guard fd4 >= 0 || fd6 >= 0 else {
+            throw NSError(domain: "HSAsyncUdpSocket", code: 6, userInfo: [NSLocalizedDescriptionKey: "No sockets could be bound"])
+        }
+
+        isBound = true
+        _isClosed = false
+
+        // Cache local address info
+        if fd4 >= 0 {
+            _localHost = hostFromFd(fd4, family: AF_INET)
+            _localPort = portFromFd(fd4, family: AF_INET)
+        } else if fd6 >= 0 {
+            _localHost = hostFromFd(fd6, family: AF_INET6)
+            _localPort = portFromFd(fd6, family: AF_INET6)
         }
     }
 
-    func udpSocket(_ sock: GCDAsyncUdpSocket, didNotConnect error: Error?) {
-        LuaSkin.skin(with: nil).logError("UDP socket did not connect: \(error?.localizedDescription ?? "")")
-        mainThreadDispatch {
-            self.connectCallbackRef = LuaSkin.skin(with: nil).luaUnref(refTable, ref: self.connectCallbackRef)
+    // MARK: Receive (POSIX dispatch sources)
+
+    func beginReceiving() throws {
+        guard isBound else {
+            throw NSError(domain: "HSAsyncUdpSocket", code: 7, userInfo: [NSLocalizedDescriptionKey: "Socket not bound"])
+        }
+        continuousReceive = true
+        receiveActive = true
+        installReadSources()
+    }
+
+    func receiveOnce() throws {
+        guard isBound else {
+            throw NSError(domain: "HSAsyncUdpSocket", code: 7, userInfo: [NSLocalizedDescriptionKey: "Socket not bound"])
+        }
+        continuousReceive = false
+        receiveActive = true
+        installReadSources()
+    }
+
+    func pauseReceiving() {
+        receiveActive = false
+        if let src = readSource4 { src.cancel(); readSource4 = nil }
+        if let src = readSource6 { src.cancel(); readSource6 = nil }
+    }
+
+    private func installReadSources() {
+        if fd4 >= 0 && readSource4 == nil {
+            let src = DispatchSource.makeReadSource(fileDescriptor: fd4, queue: delegateQueue)
+            src.setEventHandler { [weak self] in self?.handleReadEvent(fd: self?.fd4 ?? -1, isIPv6: false) }
+            src.setCancelHandler { /* nothing */ }
+            readSource4 = src
+            src.resume()
+        }
+        if fd6 >= 0 && readSource6 == nil {
+            let src = DispatchSource.makeReadSource(fileDescriptor: fd6, queue: delegateQueue)
+            src.setEventHandler { [weak self] in self?.handleReadEvent(fd: self?.fd6 ?? -1, isIPv6: true) }
+            src.setCancelHandler { /* nothing */ }
+            readSource6 = src
+            src.resume()
         }
     }
 
-    func udpSocketDidClose(_ sock: GCDAsyncUdpSocket, withError error: Error?) {
-        LuaSkin.skin(with: nil).logDebug("UDP socket closed: \(error?.localizedDescription ?? "")")
-        sock.setUserData(nil)
-    }
+    private func handleReadEvent(fd: Int32, isIPv6: Bool) {
+        guard fd >= 0, receiveActive else { return }
 
-    func udpSocket(_ sock: GCDAsyncUdpSocket, didSendDataWithTag tag: Int) {
-        LuaSkin.skin(with: nil).logDebug("Data written to UDP socket")
-        if self.writeCallbackRef != LUA_NOREF {
-            udpWriteCallback(self, tag: tag)
+        let bufSize = isIPv6 ? Int(maxRecvIPv6Buffer) : Int(maxRecvIPv4Buffer)
+        var buffer = [UInt8](repeating: 0, count: bufSize)
+        var addrStorage = sockaddr_storage()
+        var addrLen = socklen_t(MemoryLayout<sockaddr_storage>.size)
+
+        let bytesRead = withUnsafeMutablePointer(to: &addrStorage) { storagePtr in
+            storagePtr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sa in
+                recvfrom(fd, &buffer, bufSize, 0, sa, &addrLen)
+            }
         }
-    }
 
-    func udpSocket(_ sock: GCDAsyncUdpSocket, didNotSendDataWithTag tag: Int, dueToError error: Error?) {
-        LuaSkin.skin(with: nil).logError("Data not sent on UDP socket: \(error?.localizedDescription ?? "")")
-        mainThreadDispatch {
-            self.writeCallbackRef = LuaSkin.skin(with: nil).luaUnref(refTable, ref: self.writeCallbackRef)
+        guard bytesRead > 0 else { return }
+
+        let data = Data(bytes: buffer, count: bytesRead)
+        let address = withUnsafePointer(to: &addrStorage) { ptr in
+            Data(bytes: ptr, count: Int(addrLen))
         }
-    }
 
-    func udpSocket(_ sock: GCDAsyncUdpSocket, didReceive data: Data, fromAddress address: Data, withFilterContext filterContext: Any?) {
         LuaSkin.skin(with: nil).logDebug("Data read from UDP socket")
-        if self.readCallbackRef != LUA_NOREF {
+        if readCallbackRef != LUA_NOREF {
             udpReadCallback(self, data: data, address: address)
+        }
+
+        if !continuousReceive {
+            receiveActive = false
+            if let src = readSource4 { src.cancel(); readSource4 = nil }
+            if let src = readSource6 { src.cancel(); readSource6 = nil }
+        }
+    }
+
+    // MARK: Receive (NWConnection mode)
+
+    func receiveFromConnection(continuous: Bool) {
+        guard let conn = connection else { return }
+        continuousReceive = continuous
+        receiveActive = true
+
+        conn.receiveMessage { [weak self] content, _, isComplete, error in
+            guard let self = self else { return }
+            if let error = error {
+                LuaSkin.skin(with: nil).logError("UDP receive error: \(error)")
+                return
+            }
+            if let data = content {
+                // Build a sockaddr from the connected endpoint info
+                let address = self.connectedAddress() ?? Data()
+                LuaSkin.skin(with: nil).logDebug("Data read from UDP socket")
+                if self.readCallbackRef != LUA_NOREF {
+                    udpReadCallback(self, data: data, address: address)
+                }
+            }
+            if self.continuousReceive && self.receiveActive {
+                self.receiveFromConnection(continuous: true)
+            }
+        }
+    }
+
+    // MARK: Send (connected NWConnection)
+
+    func send(_ data: Data, withTimeout timeout: TimeInterval, tag: Int) {
+        guard let conn = connection else {
+            LuaSkin.skin(with: nil).logError("UDP send failed: not connected")
+            return
+        }
+        conn.send(content: data, completion: .contentProcessed { [weak self] error in
+            guard let self = self else { return }
+            if let error = error {
+                LuaSkin.skin(with: nil).logError("Data not sent on UDP socket: \(error)")
+                mainThreadDispatch {
+                    self.writeCallbackRef = LuaSkin.skin(with: nil).luaUnref(refTable, ref: self.writeCallbackRef)
+                }
+            } else {
+                LuaSkin.skin(with: nil).logDebug("Data written to UDP socket")
+                if self.writeCallbackRef != LUA_NOREF {
+                    udpWriteCallback(self, tag: tag)
+                }
+            }
+        })
+    }
+
+    // MARK: Send (unconnected POSIX sendto)
+
+    func send(_ data: Data, toHost host: String, port: UInt16, withTimeout timeout: TimeInterval, tag: Int) {
+        // Ensure at least one POSIX socket exists
+        ensurePosixSocket()
+
+        delegateQueue.async { [weak self] in
+            guard let self = self else { return }
+
+            var sent = false
+
+            // Try IPv4 first if preferred or neutral
+            if self.ipv4Enabled && self.fd4 >= 0 && self.preferredIPVersion != 6 {
+                if self.sendtoIPv4(fd: self.fd4, data: data, host: host, port: port) {
+                    sent = true
+                }
+            }
+
+            // Fall back to IPv6
+            if !sent && self.ipv6Enabled && self.fd6 >= 0 {
+                if self.sendtoIPv6(fd: self.fd6, data: data, host: host, port: port) {
+                    sent = true
+                }
+            }
+
+            // Last resort: try IPv4 even if IPv6 was preferred
+            if !sent && self.ipv4Enabled && self.fd4 >= 0 && self.preferredIPVersion == 6 {
+                if self.sendtoIPv4(fd: self.fd4, data: data, host: host, port: port) {
+                    sent = true
+                }
+            }
+
+            if sent {
+                LuaSkin.skin(with: nil).logDebug("Data written to UDP socket")
+                if self.writeCallbackRef != LUA_NOREF {
+                    udpWriteCallback(self, tag: tag)
+                }
+            } else {
+                LuaSkin.skin(with: nil).logError("Data not sent on UDP socket: could not resolve or send to \(host):\(port)")
+                mainThreadDispatch {
+                    self.writeCallbackRef = LuaSkin.skin(with: nil).luaUnref(refTable, ref: self.writeCallbackRef)
+                }
+            }
+        }
+    }
+
+    private func sendtoIPv4(fd: Int32, data: Data, host: String, port: UInt16) -> Bool {
+        var addr = sockaddr_in()
+        addr.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+        addr.sin_family = sa_family_t(AF_INET)
+        addr.sin_port = port.bigEndian
+        if inet_pton(AF_INET, host, &addr.sin_addr) != 1 {
+            // Try DNS resolution
+            guard let resolved = resolveHost(host, family: AF_INET) else {
+                return false
+            }
+            addr.sin_addr = resolved
+        }
+
+        let result = data.withUnsafeBytes { buf in
+            withUnsafePointer(to: &addr) { addrPtr in
+                addrPtr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sa in
+                    Darwin.sendto(fd, buf.baseAddress, data.count, 0, sa, socklen_t(MemoryLayout<sockaddr_in>.size))
+                }
+            }
+        }
+        return result >= 0
+    }
+
+    private func sendtoIPv6(fd: Int32, data: Data, host: String, port: UInt16) -> Bool {
+        var addr6 = sockaddr_in6()
+        addr6.sin6_len = UInt8(MemoryLayout<sockaddr_in6>.size)
+        addr6.sin6_family = sa_family_t(AF_INET6)
+        addr6.sin6_port = port.bigEndian
+        if inet_pton(AF_INET6, host, &addr6.sin6_addr) != 1 {
+            guard let resolved = resolveHost6(host) else {
+                return false
+            }
+            addr6.sin6_addr = resolved
+        }
+
+        let result = data.withUnsafeBytes { buf in
+            withUnsafePointer(to: &addr6) { addrPtr in
+                addrPtr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sa in
+                    Darwin.sendto(fd, buf.baseAddress, data.count, 0, sa, socklen_t(MemoryLayout<sockaddr_in6>.size))
+                }
+            }
+        }
+        return result >= 0
+    }
+
+    private func resolveHost(_ host: String, family: Int32) -> in_addr? {
+        var hints = addrinfo()
+        hints.ai_family = family
+        hints.ai_socktype = SOCK_DGRAM
+        var result: UnsafeMutablePointer<addrinfo>?
+        guard getaddrinfo(host, nil, &hints, &result) == 0, let res = result else { return nil }
+        defer { freeaddrinfo(res) }
+        if res.pointee.ai_family == AF_INET {
+            let sa = res.pointee.ai_addr!.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { $0.pointee }
+            return sa.sin_addr
+        }
+        return nil
+    }
+
+    private func resolveHost6(_ host: String) -> in6_addr? {
+        var hints = addrinfo()
+        hints.ai_family = AF_INET6
+        hints.ai_socktype = SOCK_DGRAM
+        var result: UnsafeMutablePointer<addrinfo>?
+        guard getaddrinfo(host, nil, &hints, &result) == 0, let res = result else { return nil }
+        defer { freeaddrinfo(res) }
+        if res.pointee.ai_family == AF_INET6 {
+            let sa = res.pointee.ai_addr!.withMemoryRebound(to: sockaddr_in6.self, capacity: 1) { $0.pointee }
+            return sa.sin6_addr
+        }
+        return nil
+    }
+
+    // MARK: Ensure POSIX socket exists for unconnected sends
+
+    private func ensurePosixSocket() {
+        if ipv4Enabled && fd4 < 0 {
+            fd4 = Darwin.socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)
+            if fd4 >= 0 {
+                if broadcastEnabled { applyBroadcast(fd4) }
+                if reusePortEnabled { applyReusePort(fd4) }
+                _isClosed = false
+            }
+        }
+        if ipv6Enabled && fd6 < 0 {
+            fd6 = Darwin.socket(AF_INET6, SOCK_DGRAM, IPPROTO_UDP)
+            if fd6 >= 0 {
+                var on: Int32 = 1
+                setsockopt(fd6, IPPROTO_IPV6, IPV6_V6ONLY, &on, socklen_t(MemoryLayout<Int32>.size))
+                if reusePortEnabled { applyReusePort(fd6) }
+                _isClosed = false
+            }
+        }
+    }
+
+    // MARK: Close
+
+    func close() {
+        pauseReceiving()
+
+        if let conn = connection {
+            conn.cancel()
+            connection = nil
+        }
+        if fd4 >= 0 { Darwin.close(fd4); fd4 = -1 }
+        if fd6 >= 0 { Darwin.close(fd6); fd6 = -1 }
+
+        _isConnected = false
+        _isClosed = true
+        isBound = false
+        setUserData(nil)
+    }
+
+    // MARK: POSIX helpers
+
+    private func applyBroadcast(_ fd: Int32) {
+        var flag: Int32 = broadcastEnabled ? 1 : 0
+        setsockopt(fd, SOL_SOCKET, SO_BROADCAST, &flag, socklen_t(MemoryLayout<Int32>.size))
+    }
+
+    private func applyReusePort(_ fd: Int32) {
+        var flag: Int32 = reusePortEnabled ? 1 : 0
+        setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &flag, socklen_t(MemoryLayout<Int32>.size))
+    }
+
+    private func hostFromFd(_ fd: Int32, family: Int32) -> String? {
+        if family == AF_INET {
+            var addr = sockaddr_in()
+            var len = socklen_t(MemoryLayout<sockaddr_in>.size)
+            let result = withUnsafeMutablePointer(to: &addr) { ptr in
+                ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sa in
+                    getsockname(fd, sa, &len)
+                }
+            }
+            guard result == 0 else { return nil }
+            var buf = [CChar](repeating: 0, count: Int(INET_ADDRSTRLEN))
+            var inAddr = addr.sin_addr
+            inet_ntop(AF_INET, &inAddr, &buf, socklen_t(INET_ADDRSTRLEN))
+            return String(cString: buf)
+        } else {
+            var addr = sockaddr_in6()
+            var len = socklen_t(MemoryLayout<sockaddr_in6>.size)
+            let result = withUnsafeMutablePointer(to: &addr) { ptr in
+                ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sa in
+                    getsockname(fd, sa, &len)
+                }
+            }
+            guard result == 0 else { return nil }
+            var buf = [CChar](repeating: 0, count: Int(INET6_ADDRSTRLEN))
+            var in6Addr = addr.sin6_addr
+            inet_ntop(AF_INET6, &in6Addr, &buf, socklen_t(INET6_ADDRSTRLEN))
+            return String(cString: buf)
+        }
+    }
+
+    private func portFromFd(_ fd: Int32, family: Int32) -> UInt16 {
+        if family == AF_INET {
+            var addr = sockaddr_in()
+            var len = socklen_t(MemoryLayout<sockaddr_in>.size)
+            let result = withUnsafeMutablePointer(to: &addr) { ptr in
+                ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sa in
+                    getsockname(fd, sa, &len)
+                }
+            }
+            guard result == 0 else { return 0 }
+            return UInt16(bigEndian: addr.sin_port)
+        } else {
+            var addr = sockaddr_in6()
+            var len = socklen_t(MemoryLayout<sockaddr_in6>.size)
+            let result = withUnsafeMutablePointer(to: &addr) { ptr in
+                ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sa in
+                    getsockname(fd, sa, &len)
+                }
+            }
+            guard result == 0 else { return 0 }
+            return UInt16(bigEndian: addr.sin6_port)
+        }
+    }
+
+    private func sockaddrDataFromFd(_ fd: Int32, family: Int32) -> Data? {
+        if family == AF_INET {
+            var addr = sockaddr_in()
+            var len = socklen_t(MemoryLayout<sockaddr_in>.size)
+            let result = withUnsafeMutablePointer(to: &addr) { ptr in
+                ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sa in
+                    getsockname(fd, sa, &len)
+                }
+            }
+            guard result == 0 else { return nil }
+            return withUnsafePointer(to: &addr) { ptr in
+                Data(bytes: ptr, count: Int(len))
+            }
+        } else {
+            var addr = sockaddr_in6()
+            var len = socklen_t(MemoryLayout<sockaddr_in6>.size)
+            let result = withUnsafeMutablePointer(to: &addr) { ptr in
+                ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sa in
+                    getsockname(fd, sa, &len)
+                }
+            }
+            guard result == 0 else { return nil }
+            return withUnsafePointer(to: &addr) { ptr in
+                Data(bytes: ptr, count: Int(len))
+            }
+        }
+    }
+
+    private func sockaddrData(host: String, port: UInt16, family: Int32) -> Data? {
+        if family == AF_INET {
+            var addr = sockaddr_in()
+            addr.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+            addr.sin_family = sa_family_t(AF_INET)
+            addr.sin_port = port.bigEndian
+            inet_pton(AF_INET, host, &addr.sin_addr)
+            return withUnsafePointer(to: &addr) { ptr in
+                Data(bytes: ptr, count: MemoryLayout<sockaddr_in>.size)
+            }
+        } else {
+            var addr = sockaddr_in6()
+            addr.sin6_len = UInt8(MemoryLayout<sockaddr_in6>.size)
+            addr.sin6_family = sa_family_t(AF_INET6)
+            addr.sin6_port = port.bigEndian
+            inet_pton(AF_INET6, host, &addr.sin6_addr)
+            return withUnsafePointer(to: &addr) { ptr in
+                Data(bytes: ptr, count: MemoryLayout<sockaddr_in6>.size)
+            }
+        }
+    }
+
+    private func cacheLocalInfoFromConnection(_ conn: NWConnection) {
+        if let path = conn.currentPath {
+            if let local = path.localEndpoint, case .hostPort(let host, let port) = local {
+                _localHost = "\(host)"
+                _localPort = port.rawValue
+            }
         }
     }
 }
@@ -149,7 +801,6 @@ private func socketudp_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     skin.checkArgs(LS_TFUNCTION | LS_TNIL | LS_TOPTIONAL, LS_TBREAK)
     let udpDelegateQueue = DispatchQueue(label: "udpDelegateQueue")
     let asyncUdpSocket = HSAsyncUdpSocket(queue: udpDelegateQueue)
-    asyncUdpSocket.configure()
 
     if lua_type(L, 1) == LUA_TFUNCTION {
         lua_pushvalue(L, 1)
@@ -308,6 +959,12 @@ private func socketudp_receiveContinuous(_ L: UnsafeMutablePointer<lua_State>!, 
     if asyncUdpSocket.readCallbackRef == LUA_NOREF {
         LuaSkin.skin(with: nil).logError("No callback defined!")
         return false
+    }
+
+    // Connected mode uses NWConnection receive; unconnected uses POSIX dispatch sources
+    if asyncUdpSocket.isConnected() {
+        asyncUdpSocket.receiveFromConnection(continuous: readContinuous)
+        return true
     }
 
     do {
@@ -815,7 +1472,6 @@ private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
     let skin = LuaSkin.skin(with: L)
     asyncUdpSocket.close()
-    asyncUdpSocket.setDelegate(nil, delegateQueue: nil)
     asyncUdpSocket.readCallbackRef = skin.luaUnref(refTable, ref: asyncUdpSocket.readCallbackRef)
     asyncUdpSocket.writeCallbackRef = skin.luaUnref(refTable, ref: asyncUdpSocket.writeCallbackRef)
     asyncUdpSocket.connectCallbackRef = skin.luaUnref(refTable, ref: asyncUdpSocket.connectCallbackRef)
