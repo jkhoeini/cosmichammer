@@ -6,7 +6,6 @@ import PackageDescription
 // All source lives under Sources/<TargetName>/:
 //
 //   LuaSkin            – Lua 5.4 runtime + Objective-C bridge
-//   CocoaHTTPServer    – vendored HTTP server (used by hs.httpserver)
 //   HSExtensions       – ObjC/C/C++ extension code + core app headers
 //   HSSwiftExtensions  – Swift extension code + core app Swift sources
 //   HSApp              – thin executable wrapper (main.swift)
@@ -51,38 +50,12 @@ let package = Package(
             ]
         ),
         // ---------------------------------------------------------------
-        // CocoaHTTPServer — vendored HTTP server library
-        // ---------------------------------------------------------------
-        .target(
-            name: "CocoaHTTPServer",
-            dependencies: [
-                "CocoaAsyncSocket",
-            ],
-            path: "Sources/CocoaHTTPServer",
-            exclude: ["LICENSE.txt"],
-            sources: ["Core", "Extensions"],
-            publicHeadersPath: "Core",
-            cSettings: [
-                .headerSearchPath("Core"),
-                .headerSearchPath("Core/Categories"),
-                .headerSearchPath("Core/Mime"),
-                .headerSearchPath("Core/Responses"),
-                .headerSearchPath("Extensions/WebDAV"),
-            ],
-            linkerSettings: [
-                .linkedFramework("CoreServices"),
-                .linkedFramework("Security"),
-                .linkedLibrary("xml2"),
-            ]
-        ),
-        // ---------------------------------------------------------------
         // HSExtensions — ObjC/C/C++ extension sources + core app headers
         // ---------------------------------------------------------------
         .target(
             name: "HSExtensions",
             dependencies: [
                 "LuaSkin",
-                "CocoaHTTPServer",
                 "CocoaAsyncSocket",
                 "HSSwiftExtensions",
                 .product(name: "ORSSerial", package: "ORSSerialPort"),
@@ -154,7 +127,6 @@ let package = Package(
             name: "HSSwiftExtensions",
             dependencies: [
                 "LuaSkin",
-                "CocoaHTTPServer",
                 "CocoaAsyncSocket",
                 .product(name: "ORSSerial", package: "ORSSerialPort"),
             ],

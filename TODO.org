@@ -52,14 +52,9 @@ replaced.
     (fine to keep), but many are ObjC classes that could become cleaner
     Swift. Biggest wins: ~doc/~, ~eventtap/~, ~fs/~ subdirectories.
 
-*** TODO Replace vendored CocoaHTTPServer
-    ~6K lines of vendored ObjC in ~Sources/CocoaHTTPServer/~. Check if
-    upstream SPM package exists or if Swift NIO / Hummingbird could replace
-    it entirely.
-
-*** TODO Replace CocoaLumberjack (3.9.0) with ~os.log~
-    The dependency exists mainly for CocoaHTTPServer. If the HTTP server is
-    replaced, this dep can go too.
+*** DONE Replace vendored CocoaHTTPServer
+    Replaced with NWHTTPServer (Network.framework), HTTPParser, and
+    NWWebSocket — all pure Swift. ~Sources/CocoaHTTPServer/~ deleted.
 
 * TODO — Architecture (design decisions needed)
 

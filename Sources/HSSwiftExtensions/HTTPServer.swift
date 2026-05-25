@@ -1,13 +1,8 @@
 import Cocoa
 import LuaSkin
-import CocoaHTTPServer
-import CocoaAsyncSocket
 import os.log
 
 // MARK: - Constants
-
-private let TIMEOUT_WRITE_ERROR: TimeInterval = 30
-private let HTTP_FINAL_RESPONSE: Int = 91
 
 private let USERDATA_TAG = "hs.httpserver"
 private var refTable: LSRefTable = 0
@@ -29,204 +24,157 @@ private struct httpserver_t {
     var server: UnsafeMutableRawPointer?
 }
 
-// MARK: - ObjC Class Definitions
+// MARK: - HSHTTPServer — wraps NWHTTPServer for Lua
 
-@objc private class HSWebSocket: WebSocket {
-    @objc var callback: Int32 = LUA_NOREF
+private class HSHTTPServer {
+    let nwServer = NWHTTPServer()
 
-    override func didOpen() {
-        super.didOpen()
-        os_log(.info, "Opened websocket connection")
+    var fn: Int32 = LUA_NOREF
+    var wsCallback: Int32 = LUA_NOREF
+    var wsPath: String?
+    var wsServer: NWWebSocketServer?
+
+    /// Whether Bonjour advertisement is enabled (set at creation time).
+    var useBonjour: Bool = true
+
+    /// Whether SSL/TLS is enabled (set at creation time).
+    var useSSL: Bool {
+        get { nwServer.useSSL }
+        set { nwServer.useSSL = newValue }
     }
 
-    override func didReceive(_ msg: Data!) {
-        var response: NSData? = nil
+    // Proxy properties to NWHTTPServer
+    var maxBodySize: Int {
+        get { nwServer.maxBodySize }
+        set { nwServer.maxBodySize = newValue }
+    }
 
-        let responseCallbackBlock = { [self] in
-            if self.callback != LUA_NOREF {
-                let skin = LuaSkin.skin(with: nil)
-                _lua_stackguard_entry(skin.l)
-                skin.pushLuaRef(refTable, ref: self.callback)
-                skin.pushNSObject(msg as NSData)
+    var httpPassword: String? {
+        get { nwServer.password }
+        set { nwServer.password = newValue }
+    }
 
-                if !skin.protectedCallAndTraceback(1, nresults: 1) {
-                    let errorMsg = lua_tostring(skin.l, -1).map { String(cString: $0) } ?? "unknown error"
-                    skin.logError("hs.httpserver:websocket callback error: \(errorMsg)")
-                } else {
-                    response = skin.toNSObject(atIndex: -1) as? NSData
-                }
-
-                lua_pop(skin.l, 1)
-                _lua_stackguard_exit(skin.l)
+    func start() throws {
+        // Wire up the request handler from the Lua callback
+        nwServer.requestHandler = { [weak self] method, path, headers, body in
+            guard let self = self else {
+                return (Data("Server error".utf8), 503, [:])
             }
+            return self.handleRequest(method: method, path: path, headers: headers, body: body)
         }
 
-        if Thread.isMainThread {
-            responseCallbackBlock()
-        } else {
-            DispatchQueue.main.sync(execute: responseCallbackBlock)
-        }
-
-        sendMessage("\(response as Any)")
-    }
-
-    override func didReceiveMessage(_ msg: String!) {
-        var response: NSData? = nil
-
-        let responseCallbackBlock = { [self] in
-            if self.callback != LUA_NOREF {
-                let skin = LuaSkin.skin(with: nil)
-                _lua_stackguard_entry(skin.l)
-                skin.pushLuaRef(refTable, ref: self.callback)
-                lua_pushstring(skin.l, msg)
-
-                if !skin.protectedCallAndTraceback(1, nresults: 1) {
-                    let errorMsg = lua_tostring(skin.l, -1).map { String(cString: $0) } ?? "unknown error"
-                    skin.logError("hs.httpserver:websocket callback error: \(errorMsg)")
-                } else {
-                    response = skin.toNSObject(atIndex: -1) as? NSData
-                }
-
-                lua_pop(skin.l, 1)
-                _lua_stackguard_exit(skin.l)
+        // Wire up WebSocket if configured
+        if let wsPath = wsPath {
+            let ws = NWWebSocketServer(path: wsPath)
+            ws.onMessage = { [weak self] message in
+                self?.handleWebSocketMessage(message)
             }
+            ws.onOpen = {
+                os_log(.info, "Opened websocket connection")
+            }
+            ws.onClose = {
+                os_log(.info, "Closed websocket connection")
+            }
+            wsServer = ws
+            nwServer.webSocketHandler = ws
         }
 
-        if Thread.isMainThread {
-            responseCallbackBlock()
-        } else {
-            DispatchQueue.main.sync(execute: responseCallbackBlock)
-        }
-
-        sendMessage("\(response as Any)")
+        try nwServer.start()
     }
 
-    override func didClose() {
-        super.didClose()
-        os_log(.info, "Closed websocket connection")
-    }
-}
-
-@objc private class HSHTTPServer: HTTPServer {
-    @objc var fn: Int32 = LUA_NOREF
-    @objc var maxBodySize: UInt = 10 * 1024 * 1024
-    @objc var sslIdentity: SecIdentity?
-    @objc var httpPassword: String?
-    @objc var wsCallback: Int32 = LUA_NOREF
-    @objc var wsPath: String?
-    @objc var ws: HSWebSocket?
-
-    override init() {
-        super.init()
-        httpPassword = nil
-        maxBodySize = 10 * 1024 * 1024
-        wsCallback = LUA_NOREF
-        fn = LUA_NOREF
-    }
-}
-
-@objc private class HSHTTPDataResponse: HTTPDataResponse {
-    @objc var hsStatus: Int = 0
-    @objc var hsHeaders: NSDictionary?
-
-    override func status() -> Int { return hsStatus }
-    override func httpHeaders() -> [AnyHashable: Any]! { return hsHeaders as? [AnyHashable: Any] }
-}
-
-@objc private class HSHTTPConnection: HTTPConnection {
-
-    override func supportsMethod(_ method: String!, atPath path: String!) -> Bool {
-        if method == "POST" || method == "PUT" {
-            return requestContentLength <= (config.server as! HSHTTPServer).maxBodySize
-        }
-        return true
+    func stop() {
+        nwServer.stop()
+        wsServer?.close()
     }
 
-    override func handleUnknownMethod(_ method: String!) {
-        if requestContentLength > (config.server as! HSHTTPServer).maxBodySize {
-            let response = HTTPMessage(responseWithStatusCode: 413, description: nil, version: HTTPVersion1_1_str)!
-            response.setHeaderField("Content-Length", value: "0")
-            response.setHeaderField("Connection", value: "close")
-
-            let responseData = preprocessErrorResponse(response)
-            asyncSocket.write(responseData, withTimeout: TIMEOUT_WRITE_ERROR, tag: HTTP_FINAL_RESPONSE)
-        } else {
-            super.handleUnknownMethod(method)
-        }
+    func listeningPort() -> UInt16 {
+        return nwServer.listeningPort() ?? 0
     }
 
-    override func preprocessErrorResponse(_ response: HTTPMessage!) -> Data! {
-        if response.statusCode() == 413 {
-            let msg = "<html><head><title>Request Entity Too Large</title><head><body><H1>HTTP/1.1 413 Request Entity Too Large</H1><br/>The \(request.method()!) method is not supported for requests larger than \((config.server as! HSHTTPServer).maxBodySize) bytes.<br/><hr/></body></html>"
-            let msgData = msg.data(using: .utf8)!
-            response.setBody(msgData)
-            response.setHeaderField("Content-Length", value: "\(msgData.count)")
-        }
-        return super.preprocessErrorResponse(response)
+    func setPort(_ port: UInt16) {
+        nwServer.port = port
     }
 
-    override func processBodyData(_ postDataChunk: Data!) {
-        request.append(postDataChunk)
+    func interface() -> String? {
+        return nwServer.interface
     }
 
-    override func httpResponse(forMethod method: String!, uri path: String!) -> (any HTTPResponse & NSObjectProtocol)! {
-        var responseCode: Int32 = 0
-        var responseHeaders: NSMutableDictionary? = nil
-        var responseBody: Data? = nil
+    func setInterface(_ iface: String?) {
+        nwServer.interface = iface
+    }
+
+    func name() -> String? {
+        return nwServer.name
+    }
+
+    func setName(_ name: String?) {
+        nwServer.name = name
+    }
+
+    func setType(_ type: String) {
+        // Bonjour type is handled by NWHTTPServer internally via the name property.
+        // Setting a name enables Bonjour advertisement.
+    }
+
+    // MARK: - Request Handling (Lua callback bridge)
+
+    private func handleRequest(
+        method: String,
+        path: String,
+        headers: [String: String],
+        body: Data
+    ) -> (Data, Int, [String: String]) {
+        var responseCode: Int = 503
+        var responseHeaders: [String: String] = [:]
+        var responseBody = Data("An error occurred during hs.httpserver callback handling".utf8)
 
         let responseCallbackBlock = { [self] in
-            if (self.config.server as! HSHTTPServer).fn != LUA_NOREF {
-                let skin = LuaSkin.skin(with: nil)
-                let L = skin.l!
-                _lua_stackguard_entry(L)
+            guard self.fn != LUA_NOREF else { return }
 
-                self.request.setHeaderField("X-Remote-Addr", value: self.asyncSocket.connectedHost)
-                self.request.setHeaderField("X-Remote-Port", value: "\(self.asyncSocket.connectedPort)")
-                self.request.setHeaderField("X-Server-Addr", value: self.asyncSocket.localHost)
-                self.request.setHeaderField("X-Server-Port", value: "\(self.asyncSocket.localPort)")
+            let skin = LuaSkin.skin(with: nil)
+            let L = skin.l!
+            _lua_stackguard_entry(L)
 
-                skin.pushLuaRef(refTable, ref: (self.config.server as! HSHTTPServer).fn)
-                lua_pushstring(L, method)
-                lua_pushstring(L, path)
-                skin.pushNSObject(self.request.allHeaderFields())
-                skin.pushNSObject(self.request.body() as NSData?, withOptions: LS_NSConversionOptions.nsLuaStringAsDataOnly.rawValue)
+            skin.pushLuaRef(refTable, ref: self.fn)
+            lua_pushstring(L, method)
+            lua_pushstring(L, path)
+            skin.pushNSObject(headers as NSDictionary)
+            skin.pushNSObject(body as NSData, withOptions: LS_NSConversionOptions.nsLuaStringAsDataOnly.rawValue)
 
-                if !skin.protectedCallAndTraceback(4, nresults: 3) {
-                    let errorMsg = lua_tostring(L, -1).map { String(cString: $0) } ?? "unknown error"
-                    skin.logError("hs.httpserver:setCallback() callback error: \(errorMsg)")
+            if !skin.protectedCallAndTraceback(4, nresults: 3) {
+                let errorMsg = lua_tostring(L, -1).map { String(cString: $0) } ?? "unknown error"
+                skin.logError("hs.httpserver:setCallback() callback error: \(errorMsg)")
+                responseCode = 503
+                responseBody = Data("An error occurred during hs.httpserver callback handling".utf8)
+                lua_pop(L, 1)
+            } else {
+                if !(lua_type(L, -3) == LUA_TSTRING && lua_type(L, -2) == LUA_TNUMBER && lua_type(L, -1) == LUA_TTABLE) {
+                    skin.logError("hs.httpserver:setCallback() callbacks must return three values. A string for the response body, an integer response code, and a table of headers")
                     responseCode = 503
-                    responseBody = "An error occurred during hs.httpserver callback handling".data(using: .utf8)
-                    lua_pop(L, 1)
+                    responseBody = Data("Callback handler returned invalid values".utf8)
                 } else {
-                    if !(lua_type(L, -3) == LUA_TSTRING && lua_type(L, -2) == LUA_TNUMBER && lua_type(L, -1) == LUA_TTABLE) {
-                        skin.logError("hs.httpserver:setCallback() callbacks must return three values. A string for the response body, an integer response code, and a table of headers")
-                        responseCode = 503
-                        responseBody = "Callback handler returned invalid values".data(using: .utf8)
-                    } else {
-                        responseBody = skin.toNSObject(at: -3, withOptions: LS_NSConversionOptions.nsLuaStringAsDataOnly.rawValue) as? Data
-                        responseCode = Int32(lua_tointeger(L, -2))
+                    responseBody = (skin.toNSObject(at: -3, withOptions: LS_NSConversionOptions.nsLuaStringAsDataOnly.rawValue) as? Data) ?? Data()
+                    responseCode = Int(lua_tointeger(L, -2))
 
-                        responseHeaders = NSMutableDictionary()
-                        var headerTypeError = false
-                        lua_pushnil(L)
-                        while lua_next(L, -2) != 0 {
-                            if lua_type(L, -1) == LUA_TSTRING && lua_type(L, -2) == LUA_TSTRING {
-                                let key: String = skin.toNSObject(atIndex: -2) as! String
-                                let value: String = skin.toNSObject(atIndex: -1) as! String
-                                responseHeaders?[key] = value
-                            } else {
-                                headerTypeError = true
-                            }
-                            lua_pop(L, 1)
+                    var headerTypeError = false
+                    lua_pushnil(L)
+                    while lua_next(L, -2) != 0 {
+                        if lua_type(L, -1) == LUA_TSTRING && lua_type(L, -2) == LUA_TSTRING {
+                            let key: String = skin.toNSObject(atIndex: -2) as! String
+                            let value: String = skin.toNSObject(atIndex: -1) as! String
+                            responseHeaders[key] = value
+                        } else {
+                            headerTypeError = true
                         }
-                        if headerTypeError {
-                            skin.logError("hs.httpserver:setCallback() callback returned a header table that contains non-strings")
-                        }
+                        lua_pop(L, 1)
                     }
-                    lua_pop(L, 3)
+                    if headerTypeError {
+                        skin.logError("hs.httpserver:setCallback() callback returned a header table that contains non-strings")
+                    }
                 }
-                _lua_stackguard_exit(L)
+                lua_pop(L, 3)
             }
+            _lua_stackguard_exit(L)
         }
 
         if Thread.isMainThread {
@@ -235,67 +183,46 @@ private struct httpserver_t {
             DispatchQueue.main.sync(execute: responseCallbackBlock)
         }
 
-        let response = HSHTTPDataResponse(data: responseBody)!
-        response.hsStatus = Int(responseCode)
-        response.hsHeaders = responseHeaders
-        return response
+        return (responseBody, responseCode, responseHeaders)
     }
 
-    override func isPasswordProtected(_ path: String!) -> Bool {
-        return (config.server as! HSHTTPServer).httpPassword != nil
-    }
+    // MARK: - WebSocket Message Handling (Lua callback bridge)
 
-    override func useDigestAccessAuthentication() -> Bool {
-        return true
-    }
+    private func handleWebSocketMessage(_ message: String) {
+        var response: String? = nil
 
-    override func password(forUser username: String!) -> String! {
-        return (config.server as! HSHTTPServer).httpPassword
-    }
+        let responseCallbackBlock = { [self] in
+            guard self.wsCallback != LUA_NOREF else { return }
 
-    override func webSocket(forURI path: String!) -> WebSocket! {
-        if path == (config.server as! HSHTTPServer).wsPath {
-            let ws = HSWebSocket(request: request, socket: asyncSocket)!
-            ws.callback = (config.server as! HSHTTPServer).wsCallback
-            (config.server as! HSHTTPServer).ws = ws
-            return ws
-        }
-        return super.webSocket(forURI: path)
-    }
-}
+            let skin = LuaSkin.skin(with: nil)
+            _lua_stackguard_entry(skin.l)
+            skin.pushLuaRef(refTable, ref: self.wsCallback)
+            lua_pushstring(skin.l, message)
 
-@objc private class HSHTTPSConnection: HSHTTPConnection {
-    override func isSecureServer() -> Bool {
-        return true
-    }
-
-    override func sslIdentityAndCertificates() -> [Any]! {
-        guard let identity = MYGetOrCreateAnonymousIdentity("Cosmic Hammer HTTP Server", 20 * kMYAnonymousIdentityDefaultExpirationInterval) else {
-            os_log(.error, "ERROR: Unable to find/generate a certificate")
-            return nil
-        }
-
-        (config.server as! HSHTTPServer).sslIdentity = identity
-        return [identity]
-    }
-
-    override func startConnection() {
-        if isSecureServer() {
-            let certificates = sslIdentityAndCertificates()
-
-            if let certificates = certificates, certificates.count > 0 {
-                let settings = NSMutableDictionary(capacity: 3)
-                settings[kCFStreamSSLIsServer as String] = NSNumber(value: true)
-                settings[kCFStreamSSLCertificates as String] = certificates
-                // kTLSProtocol12 = 8 (deprecated SSLProtocol enum value)
-                settings[GCDAsyncSocketSSLProtocolVersionMin] = NSNumber(value: Int32(8))
-                settings[GCDAsyncSocketSSLProtocolVersionMax] = NSNumber(value: Int32(8))
-
-                asyncSocket.startTLS(settings as? [String: NSObject])
+            if !skin.protectedCallAndTraceback(1, nresults: 1) {
+                let errorMsg = lua_tostring(skin.l, -1).map { String(cString: $0) } ?? "unknown error"
+                skin.logError("hs.httpserver:websocket callback error: \(errorMsg)")
+            } else {
+                if let result = skin.toNSObject(atIndex: -1) as? String {
+                    response = result
+                } else if let data = skin.toNSObject(atIndex: -1) as? NSData {
+                    response = String(data: data as Data, encoding: .utf8)
+                }
             }
+
+            lua_pop(skin.l, 1)
+            _lua_stackguard_exit(skin.l)
         }
 
-        (self as HTTPConnection).perform(Selector(("startReadingRequest")))
+        if Thread.isMainThread {
+            responseCallbackBlock()
+        } else {
+            DispatchQueue.main.sync(execute: responseCallbackBlock)
+        }
+
+        if let response = response {
+            wsServer?.send(response)
+        }
     }
 }
 
@@ -328,14 +255,13 @@ private func httpserver_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     httpServer.pointee = httpserver_t()
 
     let server = HSHTTPServer()
-    if useSSL {
-        server.setConnectionClass(HSHTTPSConnection.self)
-    } else {
-        server.setConnectionClass(HSHTTPConnection.self)
+    server.useSSL = useSSL
+    server.useBonjour = useBonjour
+    if useBonjour {
+        server.setType("_http._tcp.")
     }
-    if useBonjour { server.setType("_http._tcp.") }
-
     server.fn = LUA_NOREF
+
     httpServer.pointee.server = Unmanaged.passRetained(server).toOpaque()
 
     luaL_getmetatable(L, USERDATA_TAG)
@@ -388,7 +314,9 @@ private func httpserver_send(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING, LS_TBREAK)
     let server = getUserData(L, 1)
 
-    server.ws?.sendMessage(skin.toNSObject(atIndex: 2) as? String)
+    if let msg = skin.toNSObject(atIndex: 2) as? String {
+        server.wsServer?.send(msg)
+    }
 
     lua_pushvalue(L, 1)
     return 1
@@ -454,7 +382,7 @@ private func httpserver_maxBodySize(_ L: UnsafeMutablePointer<lua_State>!) -> In
 
     let server = getUserData(L, 1)
     if lua_gettop(L) == 2 {
-        server.maxBodySize = UInt(lua_tointeger(L, 2))
+        server.maxBodySize = Int(lua_tointeger(L, 2))
         lua_pushvalue(L, 1)
     } else {
         lua_pushinteger(L, lua_Integer(server.maxBodySize))

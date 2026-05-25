@@ -36,7 +36,6 @@ All SPM code lives in a single root-level `Package.swift` with standard `Sources
 Package.swift              — root-level manifest
 Sources/
   LuaSkin/                 — Lua 5.4 + ObjC bridge
-  CocoaHTTPServer/         — vendored HTTP server
   HSExtensions/            — ObjC/C/C++ extension + core app code
     include/               — public headers (generated glue)
     CosmicHammer/          — core app ObjC headers + HSExtensionsRegistry.m
