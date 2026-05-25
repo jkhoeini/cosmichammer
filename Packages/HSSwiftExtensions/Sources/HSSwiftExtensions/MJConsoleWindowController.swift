@@ -1,1 +1,0 @@
-../../../../CosmicHammer/MJConsoleWindowController.swift

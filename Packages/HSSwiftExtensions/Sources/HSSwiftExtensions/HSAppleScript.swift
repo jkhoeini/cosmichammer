@@ -1,1 +1,0 @@
-../../../../CosmicHammer/HSAppleScript.swift

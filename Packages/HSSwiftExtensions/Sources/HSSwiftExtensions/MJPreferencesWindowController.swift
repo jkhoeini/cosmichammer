@@ -1,1 +1,0 @@
-../../../../CosmicHammer/MJPreferencesWindowController.swift

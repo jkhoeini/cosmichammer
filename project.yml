@@ -25,7 +25,7 @@ settings:
 # CocoaAsyncSocket, ORSSerialPort) are resolved transitively.
 packages:
   CosmicHammerLibs:
-    path: Packages
+    path: .
 
 targets:
   CosmicHammer:
@@ -57,7 +57,7 @@ targets:
         buildPhase: resources
         optional: true
       # Copy hs manpage -> Resources/man/
-      - path: extensions/ipc/cli/hs.man
+      - path: Sources/hs/hs.man
         buildPhase:
           copyFiles: { destination: resources, subpath: man }
       # Copy hsdocs -> Resources/extensions/hs/hsdocs/

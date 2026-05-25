@@ -1,1 +1,0 @@
-../../../../extensions/pathwatcher/libpathwatcher.swift

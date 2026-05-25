@@ -1,1 +1,0 @@
-../../../../CosmicHammer/MJAppDelegate.swift

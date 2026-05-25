@@ -1,12 +1,11 @@
 #!/usr/bin/env bash
-# Copies every Lua file listed in Packages/HSExtensions/extensions.manifest
-# into the built Cosmic Hammer.app bundle under
-# Contents/Resources/extensions/hs/<basename>.lua.
+# Copies every Lua file listed in extensions.manifest into the built
+# Cosmic Hammer.app bundle under Contents/Resources/extensions/hs/<basename>.lua.
 #
 # This is the build-time replacement for the legacy "Copy Extension Lua files"
 # PBXCopyFilesBuildPhase. Driven by the unified manifest so adding a new
-# extension's Lua file only requires editing
-# Packages/HSExtensions/extensions.manifest — no pbxproj edit needed.
+# extension's Lua file only requires editing extensions.manifest — no pbxproj
+# edit needed.
 #
 # Invoked as an Xcode Run Script build phase. The phase declares the manifest
 # and every source path as inputs and every destination as outputs (via
@@ -18,7 +17,7 @@ set -euo pipefail
 # UNLOCALIZED_RESOURCES_FOLDER_PATH are set. When run standalone (e.g. for
 # ad-hoc smoke-testing), fall back to the repo root and a sentinel destination.
 SRCROOT="${SRCROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
-MANIFEST="${SRCROOT}/Packages/HSExtensions/extensions.manifest"
+MANIFEST="${SRCROOT}/extensions.manifest"
 
 if [[ -z "${BUILT_PRODUCTS_DIR:-}" || -z "${UNLOCALIZED_RESOURCES_FOLDER_PATH:-}" ]]; then
     echo "error: BUILT_PRODUCTS_DIR / UNLOCALIZED_RESOURCES_FOLDER_PATH not set." >&2

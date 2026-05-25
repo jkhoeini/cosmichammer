@@ -2,17 +2,17 @@
 # Regenerates HSExtensions glue files.
 #
 # Reads entry-point symbols from the unified manifest
-# Packages/HSExtensions/extensions.manifest and emits three generated files:
+# extensions.manifest and emits three generated files:
 #
-#   1. Packages/HSExtensions/Sources/HSExtensions/HSExtensions+Preload.h
+#   1. Sources/HSExtensions/include/HSExtensions/HSExtensions+Preload.h
 #      Forward declarations for each luaopen_hs_lib* symbol.
 #
-#   2. Packages/HSExtensions/Sources/HSExtensions/HSExtensions.m
+#   2. Sources/HSExtensions/HSExtensions.m
 #      Implementation of HSExtensionsRegisterAll, which inserts each
 #      luaopen_hs_lib<name> into Lua's package.preload keyed by
 #      "hs.lib<name>".
 #
-#   3. CosmicHammer/HSExtensionsRegistry.m
+#   3. Sources/HSExtensions/CosmicHammer/HSExtensionsRegistry.m
 #      Keep-alive array in the main app target. The static linker pulls each
 #      referenced object out of libHSExtensions.a so the `luaopen_*`
 #      functions don't get dead-stripped.
@@ -24,10 +24,10 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$repo_root"
 
-MANIFEST="Packages/HSExtensions/extensions.manifest"
-OUT_PRELOAD_H="Packages/HSExtensions/Sources/HSExtensions/include/HSExtensions/HSExtensions+Preload.h"
-OUT_REGISTER_M="Packages/HSExtensions/Sources/HSExtensions/HSExtensions.m"
-OUT_KEEPALIVE_M="CosmicHammer/HSExtensionsRegistry.m"
+MANIFEST="extensions.manifest"
+OUT_PRELOAD_H="Sources/HSExtensions/include/HSExtensions/HSExtensions+Preload.h"
+OUT_REGISTER_M="Sources/HSExtensions/HSExtensions.m"
+OUT_KEEPALIVE_M="Sources/HSExtensions/CosmicHammer/HSExtensionsRegistry.m"
 
 if [[ ! -f "$MANIFEST" ]]; then
     echo "error: manifest not found: $MANIFEST" >&2

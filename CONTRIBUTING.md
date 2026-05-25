@@ -6,7 +6,7 @@
   - [Contributing to the core app or LuaSkin](#contributing-to-the-core-app-or-luaskin)
   - [Contributing to the extensions](#contributing-to-the-extensions)
     - [Writing a new, pure-Lua extension](#writing-a-new-pure-lua-extension)
-    - [Writing a new mixed Lua/Objective-C extension](#writing-a-new-mixed-luaobjective-c-extension)
+    - [Writing a new mixed Lua/Swift extension](#writing-a-new-mixed-luaswift-extension)
     - [Documenting your extension](#documenting-your-extension)
       - [Constants](#constants)
       - [Variables](#variables)
@@ -19,9 +19,7 @@ Cosmic Hammer is composed of three separate logical areas - a Lua runtime wrappe
 
 ## How is everything built?
 
-The app itself is built using Xcode. You must open `CosmicHammer.xcworkspace` rather than `CosmicHammer.xcodeproj`. If you open the latter, your build will fail because the workspace includes the LuaSkin sub-project and Swift Package Manager dependencies, which are resolved automatically by Xcode.
-
-The extension modules are built before the core Cosmic Hammer binary as target dependencies. Each extension is defined as an Xcode target in its own right, although there is usually no reason to build these targets manually.
+The app is built using SPM (Swift Package Manager) via `just build`. A root-level `Package.swift` defines all targets under `Sources/<TargetName>/`. The Xcode project (generated from `project.yml` via XcodeGen) links against the SPM static library and handles only resources (XIBs, plists, icons). See `CLAUDE.md` for the full architecture.
 
 ### Making frequent local rebuilds more convenient
 [Self-signing your builds](https://github.com/jkhoeini/cosmichammer/issues/643#issuecomment-158291705) will keep you from having to re-enable permissions for your locally built copy.
@@ -59,39 +57,27 @@ To create such an extension:
 * Make a directory for your extension
 * Create a `modulename.lua` to contain your code, giving it the appropriate name. It should behave like any normal Lua library - that is to say, your job is to return a table containing functions/methods/constants/etc
 * Ensure you document your API in our preferred format (see the code for almost any existing module for reference)
-* In Xcode's Project Navigator, select the Cosmic Hammer root entry, then choose Cosmic Hammer from the Targets list and find the "Copy Extension Lua Files" build phase. Add your new Lua file
+* Add a line to `extensions.manifest`: `<name><TAB>-<TAB><name>.lua`
 * Build Cosmic Hammer and test your extension
 * Push your changes up to a fork on GitHub
 * Propose a Pull Request on GitHub
 * Open an issue on GitHub if you need any guidance
 
-### Writing a new mixed Lua/Objective-C extension ###
+### Writing a new mixed Lua/Swift extension ###
 
 These extensions generally expose an OS level API for users to automate (e.g. adjusting screen brightness using IOKit).
 
 To create such an extension:
 
 * Clone the Cosmic Hammer git repository
-* Create the directories/files for your extension:
-  * cd into the `extensions` directory
-  * Make a directory for your extension
-  * Create a `modulename.lua` to load your Objective-C code and contain any additional Lua code. You might find it easier to provide much of your API in Lua and just provide undocumented API from Objective C that does the minimum work possible. The choice is ultimately down to you, depending on the nature of the work the extension is doing.
-  * Create a `modulename.m` to contain your Objective-C code. Please use the LuaSkin methods to do as much work as possible, they are well tested and in most extensions can reduce the amount of Lua C API calls to almost zero. Not all of our extensions have been fully converted to LuaSkin yet (a good example is [`hs.chooser`](https://github.com/jkhoeini/cosmichammer/blob/master/extensions/chooser/internal.m))
-  * Right click on the `extensions` group in Xcode's Project Browser and add a new sub-group for your extension, then right click on the sub-group and add your `modulename.lua` and `modulename.m` files (and any supporting `.h`/`.c`/`.m`/etc files)
-  * The files you've added will probably be made members of the Cosmic Hammer target. You do not want this; Select each file in the Project Browser and using the File Inspector in the Utilities pane on the right of Xcode's window, deselect them from the main Cosmic Hammer target.
-* Configure Xcode to build your extension and include it in the `Cosmic Hammer.app` bundle:
-  * Click on the `Cosmic Hammer` workspace at the very top of the Xcode Project Browser (i.e. the bar on the left)
-  * Right click on an existing extension target in the "project and targets list" and choose `Duplicate`, which creates `extensionname copy` at the bottom of the list.
-  * Rename the copy and drag it to the right place in the list (alphabetically)
-  * Click on the target you just created, remove hs.alert's `extension.m` from the `Compile Sources` build phase, add in the `.m` files from your new module
-  * Check the `Link Binary With Libraries` section for any frameworks you need to add. Typically this will just mean `LuaSkin.framework`, plus any additional system frameworks you need to link against.
-  * Click on the `Cosmic Hammer` target (not the project), and in the `Target Dependencies` build phase, add the module target you just created
-  * Click the menu item Product → Scheme → Manage Schemes, find `extensionname copy`, rename it and move it to the right place in the list of schemes
-  * Add your `modulename.lua` to the "Copy Extension Lua Files" build phase on the Cosmic Hammer target, and your `modulename.dylib` to the "Copy Extension Dylibs" build phase
-* Build Cosmic Hammer and test your extension
+* Create `extensions/<name>/<name>.lua` for the Lua interface
+* Create the Swift source file (e.g. `lib<name>.swift`) and place it in `Sources/HSSwiftExtensions/`
+* For ObjC/C files, create `Sources/HSExtensions/<name>/` and place `.m`/`.h`/`.c` files there
+* Add a line to `extensions.manifest`: `<name><TAB><luaopen_hs_lib symbols><TAB><name>.lua`
+* Run `scripts/generate-hsextensions.sh`
+* Run `just build` and test your extension
 * Push your changes up to a fork on GitHub
 * Propose a Pull Request on GitHub
-* Open an issue on GitHub if you need any guidance
 
 ### Documenting your extension
 
@@ -160,12 +146,12 @@ The `Parameters` and `Returns` sections should always be present. If there is no
 
 All new extensions in Cosmic Hammer should be landed with a test suite, and any modifications to existing extensions should add appropriate tests (which may mean creating tests, if the extension in question is not currently being fully tested).
 
-Our test suite uses Swift Testing (`@Suite`/`@Test`/`#expect`) and lives in the SPM package at `Packages/CosmicHammerTests/`. The Lua test functions are in `extensions/<name>/test_<name>.lua`; the Swift side loads each module and calls the Lua functions.
+Our test suite uses Swift Testing (`@Suite`/`@Test`/`#expect`) and lives in the SPM package at `Tests/CosmicHammerTests/`. The Lua test functions are in `extensions/<name>/test_<name>.lua`; the Swift side loads each module and calls the Lua functions.
 
 To add tests for an extension `foo`:
 
  * Create `extensions/foo/test_foo.lua` with functions named `testBar` that return `success()` on pass.
- * Create `Packages/CosmicHammerTests/FooTests.swift` with a `@Suite` class inside `CosmicHammerTests`:
+ * Create `Tests/CosmicHammerTests/FooTests.swift` with a `@Suite` class inside `CosmicHammerTests`:
    ```swift
    extension CosmicHammerTests {
        @Suite(.serialized) @MainActor final class Foo {
@@ -177,7 +163,7 @@ To add tests for an extension `foo`:
  * For hardware-dependent tests, add `.skipInHeadless`: `@Test(.skipInHeadless) func testBar() { ... }`
  * Run tests: `just test` (requires `just build` first).
 
-The Lua test harness (`lsunit.lua` in `Packages/CosmicHammerTests/`) provides assertion helpers:
+The Lua test harness (`lsunit.lua` in `Tests/CosmicHammerTests/`) provides assertion helpers:
 
  * `assertIsEqual(expected, actual)` - Ensures that the two arguments are of the same type and value
  * `assertTrue(a)`/`assertFalse(a)` - Ensure that the argument is `true`/`false` respectively

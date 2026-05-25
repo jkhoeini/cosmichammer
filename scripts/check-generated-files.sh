@@ -46,7 +46,7 @@ check_file_match() {
 
 # ── Shared manifest ────────────────────────────────────────────────────
 
-MANIFEST="Packages/HSExtensions/extensions.manifest"
+MANIFEST="extensions.manifest"
 
 [[ -f "$MANIFEST" ]] || die "manifest not found: $MANIFEST"
 
@@ -54,9 +54,9 @@ MANIFEST="Packages/HSExtensions/extensions.manifest"
 
 GEN_EXT="scripts/generate-hsextensions.sh"
 
-OUT_PRELOAD_H="Packages/HSExtensions/Sources/HSExtensions/include/HSExtensions/HSExtensions+Preload.h"
-OUT_REGISTER_M="Packages/HSExtensions/Sources/HSExtensions/HSExtensions.m"
-OUT_KEEPALIVE_M="CosmicHammer/HSExtensionsRegistry.m"
+OUT_PRELOAD_H="Sources/HSExtensions/include/HSExtensions/HSExtensions+Preload.h"
+OUT_REGISTER_M="Sources/HSExtensions/HSExtensions.m"
+OUT_KEEPALIVE_M="Sources/HSExtensions/CosmicHammer/HSExtensionsRegistry.m"
 
 [[ -f "$GEN_EXT" ]]   || die "generator not found: $GEN_EXT"
 [[ -f "$OUT_PRELOAD_H" ]] || die "output not found: $OUT_PRELOAD_H"
@@ -67,11 +67,10 @@ tmpdir_ext="$(mktemp -d)"
 trap 'rm -rf "$tmpdir_ext"' EXIT
 
 # Create a mirror directory structure so the generator writes to predictable paths.
-mkdir -p "$tmpdir_ext/Packages/HSExtensions/Sources/HSExtensions/include/HSExtensions"
-mkdir -p "$tmpdir_ext/CosmicHammer"
+mkdir -p "$tmpdir_ext/Sources/HSExtensions/include/HSExtensions"
+mkdir -p "$tmpdir_ext/Sources/HSExtensions/CosmicHammer"
 
 # Copy the manifest so the generator finds it.
-mkdir -p "$tmpdir_ext/Packages/HSExtensions"
 cp "$MANIFEST" "$tmpdir_ext/$MANIFEST"
 
 # Run the generator against the temp tree.

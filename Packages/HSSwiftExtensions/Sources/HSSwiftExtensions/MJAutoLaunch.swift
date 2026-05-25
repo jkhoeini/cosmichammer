@@ -1,1 +1,0 @@
-../../../../CosmicHammer/MJAutoLaunch.swift

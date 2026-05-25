@@ -2,8 +2,6 @@
 
 set shell := ["bash", "-euo", "pipefail", "-c"]
 
-workspace := "CosmicHammer.xcworkspace"
-scheme    := "CosmicHammer"
 build_dir := "build"
 
 default:
@@ -12,7 +10,7 @@ default:
 # Clean build artifacts
 clean:
     rm -rf {{ build_dir }}
-    rm -rf Packages/.build
+    rm -rf .build
 
 # Build Cosmic Hammer.app (config: Debug or Release)
 build config="Debug":
@@ -43,14 +41,14 @@ build config="Debug":
 
     # --- Pre-build: compile docs.json ---
     if [ -f ./scripts/docs/.build/release/BuildDocs ]; then
-        ./scripts/docs/.build/release/BuildDocs -o ./build/ --json CosmicHammer extensions
+        ./scripts/docs/.build/release/BuildDocs -o ./build/ --json extensions
     else
         echo "warning: BuildDocs not built, skipping docs.json. Run: swift build -c release --package-path scripts/docs"
         touch ./build/docs.json
     fi
 
     # --- Pre-build: build hs CLI ---
-    swift build -c release --package-path Packages/hs
+    swift build -c release --product hs
 
     # --- Main build: compile Cosmic Hammer executable via SPM ---
     # Map Xcode-style config names to SPM -c values.
@@ -61,7 +59,7 @@ build config="Debug":
     fi
 
     SDK_PATH="$(xcrun --show-sdk-path)"
-    swift build --package-path Packages \
+    swift build \
         --product CosmicHammer \
         -c "${spm_config}" \
         -Xlinker -F -Xlinker "${SDK_PATH}/System/Library/PrivateFrameworks" \
@@ -77,7 +75,7 @@ build config="Debug":
     mkdir -p "${MACOS}" "${RESOURCES}" "${CONTENTS}/Frameworks/hs"
 
     # Copy executable
-    cp "Packages/.build/${spm_config}/CosmicHammer" "${MACOS}/CosmicHammer"
+    cp ".build/${spm_config}/CosmicHammer" "${MACOS}/CosmicHammer"
 
     # Generate Info.plist from template
     sed -e 's/${EXECUTABLE_NAME}/CosmicHammer/g' \
@@ -106,7 +104,7 @@ build config="Debug":
 
     # hs manpage
     mkdir -p "${RESOURCES}/man"
-    cp extensions/ipc/cli/hs.man "${RESOURCES}/man/"
+    cp Sources/hs/hs.man "${RESOURCES}/man/"
 
     # hsdocs
     mkdir -p "${RESOURCES}/extensions/hs/hsdocs"
@@ -114,13 +112,13 @@ build config="Debug":
     cp scripts/docs/templates/docs.css "${RESOURCES}/extensions/hs/hsdocs/"
 
     # CocoaLumberjack resource bundle (PrivacyInfo)
-    CL_BUNDLE="Packages/.build/${spm_config}/CocoaLumberjack_CocoaLumberjack.bundle"
+    CL_BUNDLE=".build/${spm_config}/CocoaLumberjack_CocoaLumberjack.bundle"
     if [ -d "$CL_BUNDLE" ]; then
         cp -R "$CL_BUNDLE" "${RESOURCES}/"
     fi
 
     # Copy hs CLI
-    cp Packages/hs/.build/release/hs "${CONTENTS}/Frameworks/hs/hs"
+    cp .build/release/hs "${CONTENTS}/Frameworks/hs/hs"
     /usr/bin/codesign --force --sign - "${CONTENTS}/Frameworks/hs/hs"
 
     # Copy extension Lua files
@@ -141,10 +139,11 @@ build config="Debug":
 test:
     #!/usr/bin/env bash
     set -euo pipefail
+    mkdir -p {{ build_dir }}
     SDK_PATH="$(xcrun --show-sdk-path)"
-    cd Packages && swift test \
+    swift test \
         -Xlinker -F -Xlinker "${SDK_PATH}/System/Library/PrivateFrameworks" \
-        2>&1 | tee ../{{ build_dir }}/test.log
+        2>&1 | tee {{ build_dir }}/test.log
 
 # Build all documentation
 docs:
@@ -158,7 +157,7 @@ docs:
     mkdir -p {{ build_dir }}
     for fmt in json markdown html sql; do
         echo "Building docs $fmt..."
-        "$DOCSTOOL" -o {{ build_dir }} --$fmt CosmicHammer extensions/
+        "$DOCSTOOL" -o {{ build_dir }} --$fmt extensions/
     done
 
 # Lint documentation without building
@@ -170,7 +169,7 @@ docs-lint:
         echo "Building docs tool..."
         swift build -c release --package-path scripts/docs
     fi
-    "$DOCSTOOL" --lint CosmicHammer extensions/
+    "$DOCSTOOL" --lint extensions/
 
 # Generate Xcode project and workspace from project.yml
 generate:

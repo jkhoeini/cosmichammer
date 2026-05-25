@@ -1,0 +1,103 @@
+# Unified extension manifest for Cosmic Hammer
+# Format: directory<TAB>entry-points<TAB>lua-files
+# - directory: extension folder name under extensions/
+#   entry-points: comma-separated luaopen_* symbols, or "-" if Lua-only
+#   lua-files: comma-separated .lua filenames (relative to extensions/<directory>/)
+#
+# Special entries (non-extension files) use a full path prefixed with "@".
+# For @-lines the lua-files column is a full repo-relative path.
+
+@LuaSkin	-	Sources/LuaSkin/Resources/luaskin.lua
+_coresetup	-	_coresetup.lua
+alert	-	alert.lua
+appfinder	-	appfinder.lua
+applescript	-	applescript.lua
+application	luaopen_hs_libapplication,luaopen_hs_libapplicationwatcher	application.lua
+audiodevice	luaopen_hs_libaudiodevice,luaopen_hs_libaudiodevicewatcher	audiodevice.lua
+axuielement	luaopen_hs_libaxuielement	axuielement.lua
+base64	luaopen_hs_libbase64	base64.lua
+battery	luaopen_hs_libbattery,luaopen_hs_libbatterywatcher	battery.lua
+bonjour	luaopen_hs_libbonjour,luaopen_hs_libbonjourservice	bonjour.lua
+brightness	luaopen_hs_libbrightness	brightness.lua
+caffeinate	luaopen_hs_libcaffeinate,luaopen_hs_libcaffeinatewatcher	caffeinate.lua
+camera	luaopen_hs_libcamera	camera.lua
+canvas	luaopen_hs_libcanvas,luaopen_hs_libcanvasmatrix	canvas.lua,canvas_matrix.lua
+chooser	luaopen_hs_libchooser	chooser.lua
+console	luaopen_hs_libconsole	console.lua
+crash	luaopen_hs_libcrash	crash.lua
+deezer	-	deezer.lua
+dialog	luaopen_hs_libdialog	dialog.lua
+distributednotifications	luaopen_hs_libdistributednotifications	distributednotifications.lua
+doc	luaopen_hs_libdoc	doc.lua,doc_builder.lua
+dockicon	luaopen_hs_libdockicon	dockicon.lua
+drawing	luaopen_hs_libdrawing_color	color/drawing_color.lua,drawing.lua,drawing_canvasWrapper.lua
+eventtap	luaopen_hs_libeventtap,luaopen_hs_libeventtapevent	eventtap.lua
+expose	-	expose.lua
+fnutils	-	fnutils.lua
+fs	luaopen_hs_libfs,luaopen_hs_libfsvolume,luaopen_hs_libfsxattr	fs.lua
+geometry	-	geometry.lua
+grid	-	grid.lua
+hash	luaopen_hs_libhash	hash.lua
+hid	luaopen_hs_libhid	hid.lua
+hints	luaopen_hs_libhints	hints.lua
+host	luaopen_hs_libhost,luaopen_hs_libhost_locale	host.lua,locale/host_locale.lua
+hotkey	luaopen_hs_libhotkey	hotkey.lua
+http	luaopen_hs_libhttp	http.lua
+httpserver	luaopen_hs_libhttpserver	cgilua_compatibility_functions.lua,httpserver.lua,httpserver_hsminweb.lua
+image	luaopen_hs_libimage	image.lua
+inspect	-	inspect.lua
+ipc	luaopen_hs_libipc	ipc.lua
+itunes	-	itunes.lua
+javascript	-	javascript.lua
+json	luaopen_hs_libjson	json.lua
+keycodes	luaopen_hs_libkeycodes	keycodes.lua
+layout	-	layout.lua
+location	luaopen_hs_liblocation	location.lua,location_geocoder.lua
+logger	-	logger.lua
+markdown	luaopen_hs_libmarkdown	-
+math	luaopen_hs_libmath	math.lua
+menubar	luaopen_hs_libmenubar	menubar.lua
+messages	-	messages.lua
+midi	luaopen_hs_libmidi	midi.lua
+milight	luaopen_hs_libmilight	milight.lua
+mjomatic	-	mjomatic.lua
+mouse	luaopen_hs_libmouse	mouse.lua
+network	luaopen_hs_libnetworkconfiguration,luaopen_hs_libnetworkhost,luaopen_hs_libnetworkping,luaopen_hs_libnetworkreachability	network.lua,network_configuration.lua,network_host.lua,network_reachability.lua,ping/network_ping.lua
+noises	luaopen_hs_libnoises	noises.lua
+notify	luaopen_hs_libnotify	notify.lua
+osascript	luaopen_hs_libosascript	osascript.lua
+pasteboard	luaopen_hs_libpasteboard,luaopen_hs_libpasteboardwatcher	pasteboard.lua
+pathwatcher	luaopen_hs_libpathwatcher	pathwatcher.lua
+plist	luaopen_hs_libplist	plist.lua
+razer	luaopen_hs_librazer	razer.lua
+redshift	-	redshift.lua
+screen	luaopen_hs_libscreen,luaopen_hs_libscreenwatcher	screen.lua
+serial	luaopen_hs_libserial	serial.lua
+settings	luaopen_hs_libsettings	settings.lua
+sharing	luaopen_hs_libsharing	sharing.lua
+shortcuts	luaopen_hs_libshortcuts	shortcuts.lua
+socket	luaopen_hs_libsocket,luaopen_hs_libsocketudp	socket.lua
+sound	luaopen_hs_libsound	sound.lua
+spaces	luaopen_hs_libspaces,luaopen_hs_libspaces_watcher	spaces.lua
+speech	luaopen_hs_libspeech,luaopen_hs_libspeechlistener	speech.lua
+spoons	-	spoons.lua
+spotify	-	spotify.lua
+spotlight	luaopen_hs_libspotlight	spotlight.lua
+sqlite3	luaopen_hs_liblsqlite3	sqlite3.lua
+streamdeck	luaopen_hs_libstreamdeck	streamdeck.lua
+styledtext	luaopen_hs_libstyledtext	styledtext.lua
+tabs	-	tabs.lua
+tangent	-	tangent.lua
+task	luaopen_hs_libtask	task.lua
+timer	luaopen_hs_libtimer	timer.lua
+uielement	luaopen_hs_libuielement,luaopen_hs_libuielementwatcher	uielement.lua
+urlevent	luaopen_hs_liburlevent	urlevent.lua
+usb	luaopen_hs_libusb,luaopen_hs_libusbwatcher	usb.lua
+utf8	-	utf8.lua
+vox	-	vox.lua
+watchable	-	watchable.lua
+websocket	luaopen_hs_libwebsocket	websocket.lua
+webview	luaopen_hs_libwebview,luaopen_hs_libwebviewdatastore,luaopen_hs_libwebviewtoolbar,luaopen_hs_libwebviewusercontent	webview.lua,webview_toolbar.lua
+wifi	luaopen_hs_libwifi,luaopen_hs_libwifiwatcher	wifi.lua
+window	luaopen_hs_libwindow	window.lua,window_filter.lua,window_highlight.lua,window_layout.lua,window_switcher.lua,window_tiling.lua
+
