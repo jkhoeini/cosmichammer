@@ -1153,7 +1153,7 @@ import LuaSkin
 
         let alphaSetting = self.alphaValue
         NSAnimationContext.beginGrouping()
-        weak let bself = self
+        weak var bself = self
         NSAnimationContext.current.duration = fadeTime
         NSAnimationContext.current.completionHandler = {
             guard let mySelf = bself else { return }

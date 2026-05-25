@@ -29,7 +29,7 @@ public func MJConsoleWindowSetAlwaysOnTop(_ alwaysOnTop: Bool) {
 }
 
 // MJLuaSetupLogHandler, MJLuaRunString, MJLuaCompletionsForWord
-// are now defined in MJLua.swift (same module) — no @_silgen_name needed.
+// are now defined in LuaRuntime.swift (same module) — no @_silgen_name needed.
 
 // MARK: - MJReplLineType
 

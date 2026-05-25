@@ -93,7 +93,7 @@ import LuaSkin
 
         let alphaSetting = self.alphaValue
         NSAnimationContext.beginGrouping()
-        weak let bself = self
+        weak var bself = self
         let canary = skin.createGCCanary()
 
         NSAnimationContext.current.duration = fadeTime

@@ -14,13 +14,13 @@ private let HSConsoleDarkModeKey         = "HSConsoleDarkModeKey"
 
 // MJLuaCreate, MJLuaDestroy, MJLuaReplace, callDockIconCallback,
 // callAccessibilityStateCallback, textDroppedToDockIcon, fileDroppedToDockIcon
-// are now defined in MJLua.swift (same module) — no @_silgen_name needed.
+// are now defined in LuaRuntime.swift (same module) — no @_silgen_name needed.
 
 // MARK: - HSOpenFileDelegate protocol
 
 /// Protocol for handling opened files/URLs.  The ObjC version lives in
 /// MJAppDelegate.h; we redeclare it here with the same ObjC name so the
-/// runtime treats them as the same protocol.  (liburlevent.swift does the
+/// runtime treats them as the same protocol.  (Urlevent.swift does the
 /// same thing in the HSSwiftExtensions target.)
 @objc(HSOpenFileDelegate) protocol HSOpenFileDelegateAppDelegate: NSObjectProtocol {
     @objc func callback(withURL openUrl: String, senderPID pid: pid_t)

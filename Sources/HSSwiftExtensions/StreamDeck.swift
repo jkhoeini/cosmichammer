@@ -1041,7 +1041,7 @@ class HSStreamDeckDevicePedal: HSStreamDeckDevice {
         }
 
         if vendorID != USB_VID_ELGATO {
-            os_log(.info, "deviceDidConnect from unknown vendor: %d", vendorID)
+            os_log(.error, "deviceDidConnect from unknown vendor: %d", vendorID)
             _lua_stackguard_exit(L)
             return nil
         }
@@ -1064,12 +1064,12 @@ class HSStreamDeckDevicePedal: HSStreamDeckDevice {
         case USB_PID_STREAMDECK_PEDAL:
             deck = HSStreamDeckDevicePedal(device: hidDevice, manager: self)
         default:
-            os_log(.info, "deviceDidConnect from unknown device: %d", productID)
+            os_log(.error, "deviceDidConnect from unknown device: %d", productID)
             deck = nil
         }
 
         guard let deck = deck else {
-            os_log(.info, "deviceDidConnect: no HSStreamDeckDevice was created, ignoring")
+            os_log(.error, "deviceDidConnect: no HSStreamDeckDevice was created, ignoring")
             _lua_stackguard_exit(L)
             return nil
         }

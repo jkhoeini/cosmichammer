@@ -172,7 +172,7 @@ private func generateAnonymousCert(publicKey: SecKey, privateKey: SecKey, expira
     // Copy public key
     guard let keyData = getPublicKeyData(publicKey) else { return nil }
     guard keyData.count == kPublicKeyLength else {
-        os_log(.error, "ERROR: keyData.length (%lu) != kPublicKeyLength (%u)", keyData.count, kPublicKeyLength)
+        os_log(.error, "ERROR: keyData.length (%ld) != kPublicKeyLength (%u)", keyData.count, kPublicKeyLength)
         return nil
     }
     keyData.withUnsafeBytes { ptr in
@@ -184,7 +184,7 @@ private func generateAnonymousCert(publicKey: SecKey, privateKey: SecKey, expira
     let csr = data[kCSROffset..<kCSROffset + Int(kCSRLength)]
     guard let sig = signData(privateKey: privateKey, inputData: Data(csr)) else { return nil }
     guard sig.count == kSignatureLength else {
-        os_log(.error, "ERROR: sig.length (%lu) != kSignatureLength (%u)", sig.count, kSignatureLength)
+        os_log(.error, "ERROR: sig.length (%ld) != kSignatureLength (%u)", sig.count, kSignatureLength)
         return nil
     }
     data.append(sig)

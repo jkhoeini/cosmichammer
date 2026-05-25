@@ -10,10 +10,10 @@ import LuaSkin
 
 // MARK: - Tag Constants
 
-// These were #define in common.h.  They must be visible to libaxuielement.swift
+// These were #define in common.h.  They must be visible to AXUIElement.swift
 // (same SPM target), so they are internal (not private).
 // Use specific prefix to avoid colliding with other files' private USERDATA_TAG.
-// libaxuielement.swift references these by their prefixed names.
+// AXUIElement.swift references these by their prefixed names.
 //
 // StaticString.utf8Start gives a stable UnsafePointer<UInt8> whose lifetime
 // is the entire program run, so rebinding to CChar is safe.
@@ -88,7 +88,7 @@ func AXTextMarkerRangeCopyStartMarker(_ range: CFTypeRef) -> CFTypeRef?
 @_silgen_name("AXTextMarkerRangeCopyEndMarker")
 func AXTextMarkerRangeCopyEndMarker(_ range: CFTypeRef) -> CFTypeRef?
 
-// pushAXUIElement and AXErrorAsString are defined in libaxuielement.swift
+// pushAXUIElement and AXErrorAsString are defined in AXUIElement.swift
 // (same module), so no forward declarations needed.
 
 // MARK: ============================================================

@@ -1,5 +1,5 @@
 //
-//  MJLua.swift
+//  LuaRuntime.swift
 //  Cosmic Hammer
 //
 //  Ported from MJLua.m by Mohammad Sadegh Khoeini.
@@ -720,7 +720,7 @@ func MJLuaInit() {
             errorMessage = "(unknown error)"
         }
         lua_pop(L, 1) // Pop the error message off the stack
-        os_log(.error, "Error running setup.lua:%{public}s", errorMessage)
+        os_log(.error, "Error running setup.lua: %{public}s", errorMessage)
         let alert = NSAlert()
         alert.addButton(withTitle: "OK")
         alert.messageText = "Cosmic Hammer initialization failed"

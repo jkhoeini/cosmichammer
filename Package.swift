@@ -16,7 +16,7 @@ import PackageDescription
 // Tests live under Tests/CosmicHammerTests/.
 //
 // Lua files remain in extensions/ (copied to the app bundle at build time).
-// Xcode resources (XIBs, plists, icons) remain in CosmicHammer/.
+// App resources (plists, icons) remain in CosmicHammer/.
 
 let package = Package(
     name: "CosmicHammer",

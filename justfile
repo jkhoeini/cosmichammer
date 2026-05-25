@@ -51,7 +51,7 @@ build config="Debug":
     swift build -c release --product hs
 
     # --- Main build: compile Cosmic Hammer executable via SPM ---
-    # Map Xcode-style config names to SPM -c values.
+    # Map config names to SPM -c values.
     if [ "{{ config }}" = "Release" ]; then
         spm_config="release"
     else

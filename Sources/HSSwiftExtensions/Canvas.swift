@@ -5,7 +5,7 @@ import LuaSkin
 // HSGifAnimator is defined in Canvas.h / imageAdditions.m (ObjC). Since this
 // Swift file is compiled in the HSSwiftExtensions target without direct
 // visibility of those ObjC headers, we provide a minimal Swift stand-in that
-// mirrors the ObjC interface just enough for libcanvas.swift to compile.
+// mirrors the ObjC interface just enough for Canvas.swift to compile.
 
 @objc class HSGifAnimator: NSObject {
     @objc weak var animatingRepresentation: NSBitmapImageRep?
