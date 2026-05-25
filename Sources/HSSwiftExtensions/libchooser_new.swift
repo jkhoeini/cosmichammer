@@ -1,5 +1,6 @@
 import Cocoa
 import LuaSkin
+import os.log
 
 // MARK: - HSChooserTableView delegate protocol
 
@@ -493,7 +494,7 @@ import LuaSkin
 
     @objc func setupWindow() -> Bool {
         guard window != nil else {
-            NSLog("ERROR: Unable to create hs.chooser window")
+            os_log(.error, "ERROR: Unable to create hs.chooser window")
             return false
         }
 

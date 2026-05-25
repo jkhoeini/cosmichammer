@@ -11,6 +11,7 @@ import Cocoa
 import IOKit
 import IOKit.hid
 import LuaSkin
+import os.log
 
 // MARK: - Constants (mirroring streamdeck.h)
 
@@ -342,7 +343,7 @@ private func get_objectFromUserdata<T: AnyObject>(_ type: T.Type, _ L: UnsafeMut
 
         let res = deviceWriteSimpleReport(resetCmd)
         if res != kIOReturnSuccess {
-            NSLog("hs.streamdeck:reset() failed on %@ (%@)", deckType, serialNumber ?? "unknown")
+            os_log(.error, "hs.streamdeck:reset() failed on %{public}s (%{public}s)", deckType, serialNumber ?? "unknown")
         }
     }
 
@@ -479,7 +480,7 @@ private func get_objectFromUserdata<T: AnyObject>(_ type: T.Type, _ L: UnsafeMut
                 }
 
                 if result != kIOReturnSuccess {
-                    NSLog("WARNING: writing an image with hs.streamdeck encountered a failure on page %d: %d", pageNumber, result)
+                    os_log(.error, "WARNING: writing an image with hs.streamdeck encountered a failure on page %d: %d", pageNumber, result)
                 }
 
                 bytesRemaining -= thisPageLength
@@ -587,7 +588,7 @@ private func get_objectFromUserdata<T: AnyObject>(_ type: T.Type, _ L: UnsafeMut
                 }
 
                 if result != kIOReturnSuccess {
-                    NSLog("WARNING: writing an image with hs.streamdeck encountered a failure on page %d: %d", pageNumber, result)
+                    os_log(.error, "WARNING: writing an image with hs.streamdeck encountered a failure on page %d: %d", pageNumber, result)
                 }
 
                 bytesRemaining -= thisPageLength
@@ -661,7 +662,7 @@ class HSStreamDeckDeviceMini: HSStreamDeckDevice {
                     return IOHIDDeviceSetReport(device, kIOHIDReportTypeOutput, CFIndex(reportMagic[0]), ptr, report.count)
                 }
                 if result != kIOReturnSuccess {
-                    NSLog("WARNING: writing an image with hs.streamdeck encountered a failure on page %d: %d", pageNumber, result)
+                    os_log(.error, "WARNING: writing an image with hs.streamdeck encountered a failure on page %d: %d", pageNumber, result)
                 }
                 bytesRemaining -= Int(reportLength)
                 pageNumber += 1
@@ -1040,7 +1041,7 @@ class HSStreamDeckDevicePedal: HSStreamDeckDevice {
         }
 
         if vendorID != USB_VID_ELGATO {
-            NSLog("deviceDidConnect from unknown vendor: %d", vendorID)
+            os_log(.info, "deviceDidConnect from unknown vendor: %d", vendorID)
             _lua_stackguard_exit(L)
             return nil
         }
@@ -1063,12 +1064,12 @@ class HSStreamDeckDevicePedal: HSStreamDeckDevice {
         case USB_PID_STREAMDECK_PEDAL:
             deck = HSStreamDeckDevicePedal(device: hidDevice, manager: self)
         default:
-            NSLog("deviceDidConnect from unknown device: %d", productID)
+            os_log(.info, "deviceDidConnect from unknown device: %d", productID)
             deck = nil
         }
 
         guard let deck = deck else {
-            NSLog("deviceDidConnect: no HSStreamDeckDevice was created, ignoring")
+            os_log(.info, "deviceDidConnect: no HSStreamDeckDevice was created, ignoring")
             _lua_stackguard_exit(L)
             return nil
         }
@@ -1118,7 +1119,7 @@ class HSStreamDeckDevicePedal: HSStreamDeckDevice {
                 return
             }
         }
-        NSLog("ERROR: A Stream Deck was disconnected that we didn't know about")
+        os_log(.error, "ERROR: A Stream Deck was disconnected that we didn't know about")
         _lua_stackguard_exit(L)
     }
 }

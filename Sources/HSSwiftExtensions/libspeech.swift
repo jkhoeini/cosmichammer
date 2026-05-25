@@ -1,5 +1,6 @@
 import Cocoa
 import LuaSkin
+import os.log
 
 private let USERDATA_TAG = "hs.speech"
 private var refTable: LSRefTable = LUA_NOREF
@@ -105,7 +106,7 @@ private class HSSpeechSynthesizer: NSSpeechSynthesizer, NSSpeechSynthesizerDeleg
     }
 
     func speechSynthesizer(_ sender: NSSpeechSynthesizer, didEncounterErrorAt characterIndex: Int, of text: String, message errorMessage: String) {
-        NSLog("In error delegate")
+        os_log(.error, "In error delegate")
         guard let synth = sender as? HSSpeechSynthesizer, synth.callbackRef != LUA_NOREF else { return }
         let skin = LuaSkin.skin(with: nil)
         let _L = skin.l!

@@ -1,6 +1,7 @@
 import Cocoa
 import Foundation
 import LuaSkin
+import os.log
 
 private let USERDATA_TAG = "hs.task"
 
@@ -131,7 +132,7 @@ private func create_task(_ userData: UnsafeMutablePointer<TaskUserdata>) {
             stdErrFH?.closeFile()
 
             guard let ud = userDataFromNSTask(terminatedTask) else {
-                NSLog("NSTask terminationHandler called on a task we don't recognise. This was likely a stuck process, or one that didn't respond to SIGTERM, and we have already GC'd its objects. Ignoring")
+                os_log(.info, "NSTask terminationHandler called on a task we don't recognise. This was likely a stuck process, or one that didn't respond to SIGTERM, and we have already GC'd its objects. Ignoring")
                 _lua_stackguard_exit(L)
                 return
             }

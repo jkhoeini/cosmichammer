@@ -8,6 +8,7 @@
 
 import Foundation
 import Cocoa
+import os.log
 
 extension NSImage {
 
@@ -19,7 +20,7 @@ extension NSImage {
         var adjustedDegrees = degrees % 360
 
         if fmod(Double(degrees), 90.0) != 0 {
-            NSLog("This code has only been tested for multiples of 90 degrees. (TODO: test and remove this line)")
+            os_log(.info, "This code has only been tested for multiples of 90 degrees. (TODO: test and remove this line)")
         }
         adjustedDegrees = Int(fmod(Double(degrees), 360.0))
 

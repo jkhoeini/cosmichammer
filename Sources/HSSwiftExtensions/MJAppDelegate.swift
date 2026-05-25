@@ -1,5 +1,6 @@
 import Cocoa
 import UniformTypeIdentifiers
+import os.log
 
 // MARK: - String constants (from variables.h)
 
@@ -290,7 +291,7 @@ class MJAppDelegate: NSObject, NSApplicationDelegate {
             let dstSpoonFullPath = (spoonPath as NSString).appendingPathComponent(spoonName)
 
             if dstSpoonFullPath == filename {
-                NSLog("User double clicked on a Spoon in %@, skipping", MJConfigDirAbsolute())
+                os_log(.info, "User double clicked on a Spoon in %{public}s, skipping", MJConfigDirAbsolute() as String)
                 return true
             }
 
@@ -299,12 +300,12 @@ class MJAppDelegate: NSObject, NSApplicationDelegate {
             // Remove any preexisting copy of the Spoon
             var upgrade = false
             if fileManager.fileExists(atPath: dstSpoonFullPath) {
-                NSLog("Spoon already exists at %@, removing the old version", dstSpoonFullPath)
+                os_log(.info, "Spoon already exists at %{public}s, removing the old version", dstSpoonFullPath)
                 upgrade = true
                 do {
                     try fileManager.removeItem(atPath: dstSpoonFullPath)
                 } catch {
-                    NSLog("Unable to remove existing Spoon (%@):%@", dstSpoonFullPath, error.localizedDescription)
+                    os_log(.error, "Unable to remove existing Spoon (%{public}s):%{public}s", dstSpoonFullPath, error.localizedDescription)
                     let alert = NSAlert()
                     alert.addButton(withTitle: "OK")
                     alert.messageText = "Error upgrading Spoon"
@@ -324,7 +325,7 @@ class MJAppDelegate: NSObject, NSApplicationDelegate {
                 notification.soundName = NSUserNotificationDefaultSoundName
                 NSUserNotificationCenter.default.deliver(notification)
             } catch {
-                NSLog("Unable to move %@ to %@: %@", filename, spoonPath, error.localizedDescription)
+                os_log(.error, "Unable to move %{public}s to %{public}s: %{public}s", filename, spoonPath, error.localizedDescription)
                 let alert = NSAlert()
                 alert.addButton(withTitle: "OK")
                 alert.messageText = "Error installing Spoon"
@@ -415,7 +416,7 @@ class MJAppDelegate: NSObject, NSApplicationDelegate {
 
         if NSClassFromString("XCTest") != nil {
             // CosmicHammer Tests
-            NSLog("in testing mode!")
+            os_log(.info, "in testing mode!")
 
             let mainBundle = Bundle.main
             if let bundle = Bundle(path: "\(mainBundle.bundlePath)/Contents/Plugins/CosmicHammer Tests.xctest"),
@@ -424,12 +425,12 @@ class MJAppDelegate: NSObject, NSApplicationDelegate {
                 let fsPath = (lsUnitPath as NSString).fileSystemRepresentation
                 MJConfigFileSet(FileManager.default.string(withFileSystemRepresentation: fsPath, length: strlen(fsPath)) as NSString)
             } else {
-                NSLog("Unable to find lsunit.lua in CosmicHammer Tests.xctest. We're about to crash, sorry!")
+                os_log(.fault, "Unable to find lsunit.lua in CosmicHammer Tests.xctest. We're about to crash, sorry!")
                 abort()
             }
         } else if ProcessInfo.processInfo.environment["XCTESTING"] != nil {
             // CosmicHammer UI Tests
-            NSLog("in UI testing mode")
+            os_log(.info, "in UI testing mode")
             let initPath = FileManager.default.currentDirectoryPath + "/CosmicHammer UI Tests-Runner.app/Contents/PlugIns/CosmicHammer UI Tests.xctest/Contents/Resources/init.lua"
             let fsPath = (initPath as NSString).fileSystemRepresentation
             MJConfigFileSet(FileManager.default.string(withFileSystemRepresentation: fsPath, length: strlen(fsPath)) as NSString)
@@ -446,18 +447,18 @@ class MJAppDelegate: NSObject, NSApplicationDelegate {
             var spoonsPathIsDir: ObjCBool = false
             let spoonsPathExists = fileManager.fileExists(atPath: spoonsPath, isDirectory: &spoonsPathIsDir)
 
-            NSLog("Determined Spoons path will be: %@ (exists: %@, isDir: %@)",
-                  spoonsPath,
-                  spoonsPathExists ? "YES" : "NO",
-                  spoonsPathIsDir.boolValue ? "YES" : "NO")
+            os_log(.info, "Determined Spoons path will be: %{public}s (exists: %{public}s, isDir: %{public}s)",
+                   spoonsPath,
+                   spoonsPathExists ? "YES" : "NO",
+                   spoonsPathIsDir.boolValue ? "YES" : "NO")
 
             if spoonsPathExists && !spoonsPathIsDir.boolValue {
-                NSLog("ERROR: %@ exists, but is a file", spoonsPath)
+                os_log(.error, "ERROR: %{public}s exists, but is a file", spoonsPath)
                 abort()
             }
 
             if !spoonsPathExists {
-                NSLog("Creating Spoons directory at: %@", spoonsPath)
+                os_log(.info, "Creating Spoons directory at: %{public}s", spoonsPath)
                 try? fileManager.createDirectory(atPath: spoonsPath, withIntermediateDirectories: true, attributes: nil)
             }
         }
@@ -498,7 +499,7 @@ class MJAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func accessibilityChanged(_ note: Notification) {
-        NSLog("accessibilityChanged: %@", MJAccessibilityIsEnabled() ? "ENABLED" : "DISABLED")
+        os_log(.info, "accessibilityChanged: %{public}s", MJAccessibilityIsEnabled() ? "ENABLED" : "DISABLED")
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
             callAccessibilityStateCallback()
         }

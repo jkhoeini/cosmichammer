@@ -1,5 +1,6 @@
 import Cocoa
 import LuaSkin
+import os.log
 
 // MARK: - Module metadata
 
@@ -296,7 +297,7 @@ private let chooserSetQuery: lua_CFunction = { L in
             lua_pushvalue(L, 1)
 
         default:
-            NSLog("ERROR: Unknown type passed to hs.chooser:query(). This should not be possible")
+            os_log(.error, "ERROR: Unknown type passed to hs.chooser:query(). This should not be possible")
             lua_pushnil(L)
         }
     }
@@ -461,7 +462,7 @@ private let chooserSetFgColor: lua_CFunction = { L in
         skin.pushNSObject(chooser.fgColor)
 
     default:
-        NSLog("ERROR: Unknown type in hs.chooser:bgColor(). This should not be possible")
+        os_log(.error, "ERROR: Unknown type in hs.chooser:fgColor(). This should not be possible")
         lua_pushnil(L)
     }
 
@@ -496,7 +497,7 @@ private let chooserSetSubTextColor: lua_CFunction = { L in
         skin.pushNSObject(chooser.subTextColor)
 
     default:
-        NSLog("ERROR: Unknown type in hs.chooser:bgColor(). This should not be possible")
+        os_log(.error, "ERROR: Unknown type in hs.chooser:subTextColor(). This should not be possible")
         lua_pushnil(L)
     }
 
@@ -535,7 +536,7 @@ private let chooserSetBgDark: lua_CFunction = { L in
         lua_pushboolean(L, chooser.isBgLightDark() ? 1 : 0)
 
     default:
-        NSLog("ERROR: Unknown type in hs.chooser:bgDark(). This should not be possible")
+        os_log(.error, "ERROR: Unknown type in hs.chooser:bgDark(). This should not be possible")
         lua_pushnil(L)
     }
 
@@ -570,7 +571,7 @@ private let chooserSetEnableDefaultForQuery: lua_CFunction = { L in
         return 1
 
     default:
-        NSLog("ERROR: Unknown type passed to hs.chooser:enableDefaultForQuery(). This should not be possible")
+        os_log(.error, "ERROR: Unknown type passed to hs.chooser:enableDefaultForQuery(). This should not be possible")
         lua_pushnil(L)
     }
 
@@ -605,7 +606,7 @@ private let chooserSetSearchSubText: lua_CFunction = { L in
         return 1
 
     default:
-        NSLog("ERROR: Unknown type passed to hs.chooser:searchSubText(). This should not be possible")
+        os_log(.error, "ERROR: Unknown type passed to hs.chooser:searchSubText(). This should not be possible")
         lua_pushnil(L)
     }
 
@@ -639,7 +640,7 @@ private let chooserSetWidth: lua_CFunction = { L in
         lua_pushnumber(L, lua_Number(chooser.width))
 
     default:
-        NSLog("ERROR: Unknown type passed to hs.chooser:width(). This should not be possible")
+        os_log(.error, "ERROR: Unknown type passed to hs.chooser:width(). This should not be possible")
         lua_pushnil(L)
     }
 
@@ -670,7 +671,7 @@ private let chooserSetNumRows: lua_CFunction = { L in
         lua_pushinteger(L, lua_Integer(chooser.numRows))
 
     default:
-        NSLog("ERROR: Unknown type passed to hs.chooser:rows(). This should not be possible")
+        os_log(.error, "ERROR: Unknown type passed to hs.chooser:rows(). This should not be possible")
         lua_pushnil(L)
     }
 

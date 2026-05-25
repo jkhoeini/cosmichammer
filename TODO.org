@@ -30,26 +30,12 @@ replaced.
 
 *** TODO Generate a new app icon
 
-* TODO — Xcode Build Vestiges
-
-*** DONE Move "Copy Extension Lua Files" Run Script phase to justfile
-    ~project.yml~ still has one ~postBuildScripts~ entry calling
-    ~scripts/copy-extension-lua-files.sh~ from inside Xcode. Move it to a
-    post-build step in the justfile like the other phases.
-
-*** TODO Move Copy Files build phases to justfile
-    Three ~copyFiles~ directives in ~project.yml~ (manpage, docs, hsminweb
-    assets) translate into Xcode Copy Files phases. Consolidate into the
-    justfile build recipe.
+* TODO — Remaining Build Cleanup
 
 *** TODO Replace Xcode-style ~$(VARIABLE)~ placeholders in Info.plist
     ~CosmicHammer-Info.plist~ uses Xcode substitution syntax
     (~$(MARKETING_VERSION)~, ~${EXECUTABLE_NAME}~, etc.) even though the
     justfile already ~sed~-replaces them. Use a simpler template format.
-
-*** DONE Migrate ~just test~ from ~xcodebuild~ to ~swift test~
-    Replaced with SPM ~.testTarget~ in ~Packages/Package.swift~, Swift
-    Testing framework, and ~swift test~ in the justfile.
 
 *** TODO Fix failing SPM test suites that need macOS system APIs
     20 of 30 suites fail because the pure SPM test runner has no host app.
@@ -128,3 +114,9 @@ replaced.
 ** DONE Replace ~xcassets~ with pre-compiled ~.icns~ file
 ** DONE Move entitlements from Xcode to ~codesign~ in justfile
 ** DONE Gitignore ~CosmicHammer.xcworkspace/~ (including shared xcschemes)
+** DONE Remove Xcode build system entirely
+   Deleted ~project.yml~, ~Xcode/main.swift~, 3 xcconfig files, dead UI
+   test target. ~just build~ (pure ~swift build~ + justfile) is now the
+   sole build system. Added ~--options runtime~ to Release codesign.
+** DONE Move Copy Files build phases to justfile
+** DONE Move "Copy Extension Lua Files" Run Script phase to justfile

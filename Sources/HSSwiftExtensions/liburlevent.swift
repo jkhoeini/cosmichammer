@@ -2,6 +2,7 @@ import Cocoa
 import Carbon
 import CoreServices
 import LuaSkin
+import os.log
 
 private var refTable: LSRefTable = 0
 private var defaultContentTypes: [String]?
@@ -67,8 +68,8 @@ private class HSURLEventHandler: NSObject, HSOpenFileDelegate {
                     for type in contentTypes {
                         let status = LSSetDefaultRoleHandlerForContentType(type as CFString, LSRolesMask.viewer, bundleID as CFString)
                         if status != noErr {
-                            NSLog("Unable to set role handler for %@: %@", type,
-                                  NSError(domain: NSOSStatusErrorDomain, code: Int(status), userInfo: nil).localizedDescription)
+                            os_log(.error, "Unable to set role handler for %{public}s: %{public}s", type,
+                                   NSError(domain: NSOSStatusErrorDomain, code: Int(status), userInfo: nil).localizedDescription)
                         }
                     }
                 }
@@ -127,7 +128,7 @@ private class HSURLEventHandler: NSObject, HSOpenFileDelegate {
         }
 
         guard let url = URL(string: urlString) else {
-            NSLog("ERROR: Unable to parse '%@' as a URL", urlString)
+            os_log(.error, "ERROR: Unable to parse '%{public}s' as a URL", urlString)
             _lua_stackguard_exit(L)
             return
         }

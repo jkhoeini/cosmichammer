@@ -9,6 +9,7 @@
 import Cocoa
 import LuaSkin
 import AVFoundation
+import os.log
 
 // MARK: - Module-level state (formerly static C variables)
 
@@ -621,13 +622,13 @@ private var corelib: [luaL_Reg] = [
 func MJLuaCreate() {
     MJLuaAlloc()
     MJLuaInit()
-    NSLog("Created Lua instance")
+    os_log(.info, "Created Lua instance")
 }
 
 /// Deconfigure and destroy a Lua environment
 @_cdecl("MJLuaDestroy")
 func MJLuaDestroy() {
-    NSLog("Destroying Lua instance")
+    os_log(.info, "Destroying Lua instance")
     MJLuaDeinit()
     MJLuaDealloc()
 }
@@ -646,7 +647,7 @@ func MJLuaReplace() {
 // MARK: - Lua environment lifecycle, low level
 
 private func MJLuaAtPanic(_ L: UnsafeMutablePointer<lua_State>?) -> Int32 {
-    NSLog("LUA_AT_PANIC: %s", lua_tostring(L, -1) ?? "<nil>")
+    os_log(.fault, "LUA_AT_PANIC: %{public}s", lua_tostring(L, -1).map { String(cString: $0) } ?? "<nil>")
     if let oldPanicFunction = oldPanicFunction {
         return oldPanicFunction(L)
     }
@@ -691,7 +692,7 @@ func MJLuaInit() {
         luaL_loadfilex(L, fsRep, nil)
     } ?? LUA_ERRFILE
     if loadresult != 0 {
-        NSLog("Unable to load setup.lua from bundle. Terminating")
+        os_log(.fault, "Unable to load setup.lua from bundle. Terminating")
         let alert = NSAlert()
         alert.addButton(withTitle: "OK")
         alert.messageText = "Cosmic Hammer installation is corrupted"
@@ -719,7 +720,7 @@ func MJLuaInit() {
             errorMessage = "(unknown error)"
         }
         lua_pop(L, 1) // Pop the error message off the stack
-        NSLog("Error running setup.lua:%@", errorMessage)
+        os_log(.error, "Error running setup.lua:%{public}s", errorMessage)
         let alert = NSAlert()
         alert.addButton(withTitle: "OK")
         alert.messageText = "Cosmic Hammer initialization failed"
@@ -895,9 +896,9 @@ func MJLuaRunString(_ command: NSString) -> NSString {
 
     skin.pushLuaRef(refTable, ref: evalfn)
     if !lua_isfunction(L, -1) {
-        NSLog("ERROR: MJLuaRunString doesn't seem to have an evalfn")
+        os_log(.error, "ERROR: MJLuaRunString doesn't seem to have an evalfn")
         if lua_isstring(L, -1) {
-            NSLog("evalfn appears to be a string: %s", lua_tostring(L, -1) ?? "")
+            os_log(.error, "evalfn appears to be a string: %{public}s", lua_tostring(L, -1).map { String(cString: $0) } ?? "")
         }
         // Whatever evalfn was, it wasn't a function, so pop it
         lua_pop(L, 1)

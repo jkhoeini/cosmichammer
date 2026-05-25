@@ -1,5 +1,6 @@
 import Cocoa
 import LuaSkin
+import os.log
 
 /// hs.plist.read(filepath) -> table
 /// Function
@@ -147,7 +148,7 @@ private func plist_write(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
         try output.write(to: URL(fileURLWithPath: filePath), options: .atomic)
         lua_pushboolean(L, 1)
     } catch {
-        NSLog("error writing plist: %@", error.localizedDescription)
+        os_log(.error, "error writing plist: %{public}s", error.localizedDescription)
         lua_pushboolean(L, 0)
     }
 

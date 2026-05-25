@@ -103,9 +103,6 @@ let package = Package(
                 .headerSearchPath("eventtap"),
                 .headerSearchPath("fs"),
                 .headerSearchPath("noises"),
-                .unsafeFlags([
-                    "-Wno-everything",
-                ]),
             ],
             cxxSettings: [
                 .define("LUA_USE_MACOSX"),

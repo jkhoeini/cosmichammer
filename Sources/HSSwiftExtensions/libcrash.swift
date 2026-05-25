@@ -1,5 +1,6 @@
 import Cocoa
 import LuaSkin
+import os.log
 
 // ----------------------- API Implementation ---------------------
 
@@ -110,7 +111,7 @@ private func residentSize(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
         lua_pushinteger(L, lua_Integer(info.resident_size))
     } else {
         lua_pushnil(L)
-        NSLog("Error with task_info(): %@", String(cString: mach_error_string(kerr)))
+        os_log(.error, "Error with task_info(): %{public}s", String(cString: mach_error_string(kerr)))
     }
 
     return 1

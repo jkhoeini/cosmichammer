@@ -3,6 +3,7 @@ import IOKit
 import IOKit.hid
 import IOKit.usb
 import LuaSkin
+import os.log
 
 // MARK: - Constants (mirroring razer.h)
 
@@ -203,7 +204,7 @@ private struct HSRazerReportBuilder {
 
     @objc func setupEventTap() {
         guard scrollWheelID != 0 else {
-            NSLog("[hs.razer] The device does not have a scroll wheel ID, so aborting event tap setup.")
+            os_log(.info, "[hs.razer] The device does not have a scroll wheel ID, so aborting event tap setup.")
             return
         }
 
@@ -218,7 +219,7 @@ private struct HSRazerReportBuilder {
             callback: razerEventTapCallback,
             userInfo: selfPtr
         ) else {
-            NSLog("[hs.razer] Failed to create the event tap.")
+            os_log(.error, "[hs.razer] Failed to create the event tap.")
             return
         }
 

@@ -3,6 +3,7 @@ import LuaSkin
 import IOKit
 import IOKit.ps
 import IOKit.pwr_mgt
+import os.log
 import IOBluetooth
 
 // Define the private API items of IOBluetooth we will be using
@@ -128,7 +129,7 @@ private func battery_others(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
     let kr = IOMainPort(bootstrap_port, &masterPort)
     guard kr == KERN_SUCCESS else {
-        NSLog("IOMasterPort() failed: %x\n", kr)
+        os_log(.error, "IOMasterPort() failed: %x", kr)
         skin.pushNSObject(batteryInfo)
         return 1
     }
@@ -152,7 +153,7 @@ private func battery_others(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
                 }
             }
         } else {
-            NSLog("IORegistryEntryCreateCFProperties error %x\n", propKr)
+            os_log(.error, "IORegistryEntryCreateCFProperties error %x", propKr)
             IOObjectRelease(obj)
             break
         }

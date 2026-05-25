@@ -2,6 +2,7 @@ import Cocoa
 import Foundation
 import LuaSkin
 import AudioToolbox
+import os.log
 
 // MARK: - Constants
 
@@ -129,7 +130,7 @@ private class NoisesListener: NSObject {
             recordState.recording = true
             AudioQueueStart(recordState.queue!, nil)
         } else {
-            NSLog("Error: Couldn't open audio queue.")
+            os_log(.error, "Error: Couldn't open audio queue.")
         }
     }
 

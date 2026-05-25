@@ -3,6 +3,7 @@ import LuaSkin
 import CocoaHTTPServer
 import CocoaAsyncSocket
 import CocoaLumberjack
+import os.log
 
 // MARK: - Constants
 
@@ -36,7 +37,7 @@ private struct httpserver_t {
 
     override func didOpen() {
         super.didOpen()
-        NSLog("Opened websocket connection")
+        os_log(.info, "Opened websocket connection")
     }
 
     override func didReceive(_ msg: Data!) {
@@ -103,7 +104,7 @@ private struct httpserver_t {
 
     override func didClose() {
         super.didClose()
-        NSLog("Closed websocket connection")
+        os_log(.info, "Closed websocket connection")
     }
 }
 
@@ -271,7 +272,7 @@ private struct httpserver_t {
 
     override func sslIdentityAndCertificates() -> [Any]! {
         guard let identity = MYGetOrCreateAnonymousIdentity("Cosmic Hammer HTTP Server", 20 * kMYAnonymousIdentityDefaultExpirationInterval) else {
-            NSLog("ERROR: Unable to find/generate a certificate")
+            os_log(.error, "ERROR: Unable to find/generate a certificate")
             return nil
         }
 

@@ -1,6 +1,7 @@
 import Foundation
 import Security
 import CommonCrypto
+import os.log
 
 private let kKeySizeInBits = 2048
 private let kSerialLength = 1
@@ -77,7 +78,7 @@ func MYGetOrCreateAnonymousIdentity(_ label: String, _ expirationInterval: TimeI
         return ident
     }
 
-    NSLog("Generating new anonymous self-signed SSL identity labeled \"%@\"...", label)
+    os_log(.info, "Generating new anonymous self-signed SSL identity labeled \"%{public}s\"...", label)
 
     guard let (publicKey, privateKey) = generateRSAKeyPair(sizeInBits: kKeySizeInBits, permanent: true, label: label) else {
         return nil
@@ -94,7 +95,7 @@ func MYGetOrCreateAnonymousIdentity(_ label: String, _ expirationInterval: TimeI
     var identity: SecIdentity?
     let err = SecIdentityCreateWithCertificate(nil, certRef, &identity)
     if err != noErr {
-        NSLog("MYAnonymousIdentity: Can't find identity we just created")
+        os_log(.error, "MYAnonymousIdentity: Can't find identity we just created")
         return nil
     }
     return identity
@@ -107,7 +108,7 @@ func MYDeleteAnonymousIdentity(_ label: String) -> Bool {
     ]
     let err = SecItemDelete(attrs as CFDictionary)
     if err != noErr && err != errSecItemNotFound {
-        NSLog("Unexpected error %d deleting identity from keychain", err)
+        os_log(.error, "Unexpected error %d deleting identity from keychain", err)
     }
     return err == noErr
 }
@@ -147,7 +148,7 @@ private func generateAnonymousCert(publicKey: SecKey, privateKey: SecKey, expira
 
     // Write serial number
     guard SecRandomCopyBytes(kSecRandomDefault, kSerialLength, &data[kSerialOffset]) == errSecSuccess else {
-        NSLog("SecRandomCopyBytes() failed")
+        os_log(.error, "SecRandomCopyBytes() failed")
         return nil
     }
     data[kSerialOffset] &= 0x7F // non-negative
@@ -171,7 +172,7 @@ private func generateAnonymousCert(publicKey: SecKey, privateKey: SecKey, expira
     // Copy public key
     guard let keyData = getPublicKeyData(publicKey) else { return nil }
     guard keyData.count == kPublicKeyLength else {
-        NSLog("ERROR: keyData.length (%lu) != kPublicKeyLength (%u)", keyData.count, kPublicKeyLength)
+        os_log(.error, "ERROR: keyData.length (%lu) != kPublicKeyLength (%u)", keyData.count, kPublicKeyLength)
         return nil
     }
     keyData.withUnsafeBytes { ptr in
@@ -183,7 +184,7 @@ private func generateAnonymousCert(publicKey: SecKey, privateKey: SecKey, expira
     let csr = data[kCSROffset..<kCSROffset + Int(kCSRLength)]
     guard let sig = signData(privateKey: privateKey, inputData: Data(csr)) else { return nil }
     guard sig.count == kSignatureLength else {
-        NSLog("ERROR: sig.length (%lu) != kSignatureLength (%u)", sig.count, kSignatureLength)
+        os_log(.error, "ERROR: sig.length (%lu) != kSignatureLength (%u)", sig.count, kSignatureLength)
         return nil
     }
     data.append(sig)
@@ -227,7 +228,7 @@ private func addCertToKeychain(_ certData: Data, label: String) -> SecCertificat
     var result: CFTypeRef?
     var err = SecItemAdd(attrs as CFDictionary, &result)
     if err != noErr {
-        NSLog("ERROR: SecItemAdd() returned %d", err)
+        os_log(.error, "ERROR: SecItemAdd() returned %d", err)
     }
 
     // Set preference mapping (macOS only mechanism)
@@ -257,7 +258,7 @@ private func findIdentity(_ label: String, _ expirationInterval: TimeInterval) -
     }
 
     if !checkCertValid(cert) {
-        NSLog("SSL identity labeled \"%@\" has expired", label)
+        os_log(.info, "SSL identity labeled \"%{public}s\" has expired", label)
         _ = MYDeleteAnonymousIdentity(label)
         return nil
     }

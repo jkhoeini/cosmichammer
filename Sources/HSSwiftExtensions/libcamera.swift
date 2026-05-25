@@ -2,6 +2,7 @@ import Cocoa
 import AVFoundation
 import CoreMediaIO
 import LuaSkin
+import os.log
 
 // MARK: - Module declarations
 
@@ -73,7 +74,7 @@ private class HSCamera: NSObject {
 
         super.init()
 
-        NSLog("HSCamera init: %@ (%d)", self, deviceID)
+        os_log(.info, "HSCamera init: %{public}s (%d)", String(describing: self), deviceID)
 
         self.uid = getCameraUID()
         self.name = getCameraName()
@@ -120,7 +121,7 @@ private class HSCamera: NSObject {
     }
 
     deinit {
-        NSLog("HSCamera dealloc: %@", self)
+        os_log(.info, "HSCamera dealloc: %{public}s", String(describing: self))
         wasRemoved()
         var canaryCopy = canary
         LuaSkin.skin(with: nil).destroy(&canaryCopy)
@@ -383,9 +384,9 @@ private func startWatcher(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
         }
     }
 
-    NSLog("startWatcher: got objects: %@, %@",
-          deviceWatcherAddedObserver as? NSObject ?? "nil" as NSString,
-          deviceWatcherRemovedObserver as? NSObject ?? "nil" as NSString)
+    os_log(.info, "startWatcher: got objects: %{public}s, %{public}s",
+           String(describing: deviceWatcherAddedObserver),
+           String(describing: deviceWatcherRemovedObserver))
     watcher.pointee.running = true
     return 0
 }

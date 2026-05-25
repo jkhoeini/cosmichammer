@@ -10,6 +10,7 @@
 
 import Foundation
 import Carbon
+import os.log
 
 // MARK: - NSDictionary (UserDefinedRecord)
 
@@ -107,7 +108,7 @@ extension NSAppleEventDescriptor {
 
         if object == nil {
             // FIXME: Do better logging here
-            NSLog("ERROR: NSAppleEventDescriptor objectValue is nil. Given descriptorType is: %u", descType)
+            os_log(.error, "ERROR: NSAppleEventDescriptor objectValue is nil. Given descriptorType is: %u", descType)
         }
 
         return object

@@ -1,5 +1,6 @@
 import Foundation
 import ServiceManagement
+import os.log
 
 @_cdecl("MJAutoLaunchGet")
 func MJAutoLaunchGet() -> Bool {
@@ -16,6 +17,6 @@ func MJAutoLaunchSet(_ opensAtLogin: Bool) {
             try service.unregister()
         }
     } catch {
-        NSLog("MJAutoLaunch: %@", error as NSError)
+        os_log(.error, "MJAutoLaunch: %{public}s", String(describing: error))
     }
 }

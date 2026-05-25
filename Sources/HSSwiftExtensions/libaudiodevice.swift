@@ -3,6 +3,7 @@ import Carbon
 import CoreAudio
 import AudioToolbox
 import Foundation
+import os.log
 import LuaSkin
 
 // MARK: - Library defines
@@ -513,14 +514,14 @@ private func audiodevice_inUse(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
     var err = AudioObjectGetPropertyDataSize(deviceId, &prop, 0, nil, &dataSize)
     if err != kAudioHardwareNoError {
-        NSLog("getAudioDeviceIsUsed(): get data size error: %d", err)
+        os_log(.error, "getAudioDeviceIsUsed(): get data size error: %d", err)
         lua_pushnil(L)
         return 1
     }
 
     err = AudioObjectGetPropertyData(deviceId, &prop, 0, nil, &dataSize, &isUsed)
     if err != kAudioHardwareNoError {
-        NSLog("getAudioDeviceIsUsed(): get data error: %d", err)
+        os_log(.error, "getAudioDeviceIsUsed(): get data error: %d", err)
         lua_pushnil(L)
         return 1
     }
@@ -1775,7 +1776,7 @@ private func datasource_setDefault(_ L: UnsafeMutablePointer<lua_State>!) -> Int
     } else if isInputDevice(dataSource.pointee.hostDevice) {
         scope = kAudioObjectPropertyScopeInput
     } else {
-        NSLog("ERROR: datasource host device is neither input nor output")
+        os_log(.error, "ERROR: datasource host device is neither input nor output")
         lua_pushvalue(L, 1)
         return 1
     }

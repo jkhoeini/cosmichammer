@@ -9,6 +9,7 @@
 import Foundation
 import AppKit
 import LuaSkin
+import os.log
 
 @objc(HSLogger)
 class HSLogger: NSObject, LuaSkinDelegate {
@@ -73,7 +74,7 @@ class HSLogger: NSObject, LuaSkinDelegate {
     /// Non-variadic breadcrumb logger. Swift cannot bridge ObjC-style variadic methods,
     /// so call sites pass a pre-formatted string directly.
     func logBreadcrumb(_ message: String) {
-        NSLog("BREADCRUMB: %@", message)
+        os_log(.default, "BREADCRUMB: %{public}s", message)
     }
 }
 
