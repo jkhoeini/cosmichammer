@@ -460,9 +460,9 @@ func getAllInitialScreenGammas() {
 func screen_gammaReapply(_ display: CGDirectDisplayID) {
     guard let gammas = currentGammas[NSNumber(value: display)] as? NSDictionary else { return }
 
-    let red = gammas["red"] as! [NSNumber]
-    let green = gammas["green"] as! [NSNumber]
-    let blue = gammas["blue"] as! [NSNumber]
+    guard let red = gammas["red"] as? [NSNumber],
+          let green = gammas["green"] as? [NSNumber],
+          let blue = gammas["blue"] as? [NSNumber] else { return }
 
     let count = red.count
 
@@ -547,9 +547,13 @@ private func screen_gammaSet(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
         return 1
     }
 
-    let redArray = originalGamma["red"] as! [NSNumber]
-    let greenArray = originalGamma["green"] as! [NSNumber]
-    let blueArray = originalGamma["blue"] as! [NSNumber]
+    guard let redArray = originalGamma["red"] as? [NSNumber],
+          let greenArray = originalGamma["green"] as? [NSNumber],
+          let blueArray = originalGamma["blue"] as? [NSNumber] else {
+        skin.logBreadcrumb("screen_gammaSet: unable to parse gamma arrays for display: \(screen_id)")
+        lua_pushboolean(L, 0)
+        return 1
+    }
     let count = redArray.count
 
     let redTable = UnsafeMutablePointer<CGGammaValue>.allocate(capacity: count)

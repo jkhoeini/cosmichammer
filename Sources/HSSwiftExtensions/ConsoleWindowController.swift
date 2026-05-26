@@ -358,7 +358,7 @@ public class MJConsoleWindowController: NSWindowController, NSTextFieldDelegate 
         let textAfterCursor  = nsCurrentText.substring(from: maxRange)
         let completionWord   = nsCurrentText.substring(with: charRange)
 
-        let completions = MJLuaCompletionsForWord(completionWord as NSString) as! [String]
+        let completions = (MJLuaCompletionsForWord(completionWord as NSString) as? [String]) ?? []
 
         if completions.count == 1 {
             let completeWith = completions[0]

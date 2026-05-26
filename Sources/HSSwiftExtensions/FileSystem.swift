@@ -795,7 +795,7 @@ private func tagsAdd(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     skin.checkArgs(LS_TSTRING, LS_TTABLE, LS_TBREAK)
     let path = skin.toNSObject(atIndex: 1) as! NSString
 
-    let oldTags = NSMutableSet(array: tags_from_file(L, path) as! [Any])
+    let oldTags = NSMutableSet(array: (tags_from_file(L, path) as? [Any]) ?? [])
     let newTags = NSMutableSet(array: tags_from_lua_stack(L) as [AnyObject])
     newTags.union(oldTags as Set)
     lua_pushboolean(L, tags_to_file(L, path, newTags.allObjects as NSArray) ? 1 : 0)
@@ -840,7 +840,7 @@ private func tagsRemove(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let path = skin.toNSObject(atIndex: 1) as! NSString
     let removeTags = NSMutableSet(array: tags_from_lua_stack(L) as [AnyObject])
 
-    let tags = NSMutableSet(array: tags_from_file(L, path) as! [Any])
+    let tags = NSMutableSet(array: (tags_from_file(L, path) as? [Any]) ?? [])
     tags.minus(removeTags as Set)
     lua_pushboolean(L, tags_to_file(L, path, tags.allObjects as NSArray) ? 1 : 0)
 

@@ -635,7 +635,7 @@ private func imageForFiles(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     if lua_type(L, 1) == LUA_TSTRING {
         theFiles = [skin.toNSObject(atIndex: 1) as! String]
     } else {
-        theFiles = skin.toNSObject(atIndex: 1) as! [Any]
+        theFiles = (skin.toNSObject(atIndex: 1) as? [Any]) ?? []
     }
 
     var filesArray: [String] = []

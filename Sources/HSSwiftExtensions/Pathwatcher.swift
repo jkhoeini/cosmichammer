@@ -61,7 +61,11 @@ private let event_callback: FSEventStreamCallback = {
 
     _lua_stackguard_entry(L)
 
-    let changedFiles = Unmanaged<CFArray>.fromOpaque(eventPaths).takeUnretainedValue() as! [String]
+    guard let changedFiles = Unmanaged<CFArray>.fromOpaque(eventPaths).takeUnretainedValue() as? [String],
+          changedFiles.count >= numEvents else {
+        _lua_stackguard_exit(L)
+        return
+    }
 
     skin.pushLuaRef(refTable, ref: pw.pointee.closureref)
 
@@ -152,7 +156,7 @@ private func watcher_path_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
         [resolved] as CFArray,
         FSEventStreamEventId(kFSEventStreamEventIdSinceNow),
         0.4,
-        UInt32(kFSEventStreamCreateFlagWatchRoot | kFSEventStreamCreateFlagNoDefer | kFSEventStreamCreateFlagFileEvents)
+        UInt32(kFSEventStreamCreateFlagWatchRoot | kFSEventStreamCreateFlagNoDefer | kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagUseCFTypes)
     )
 
     return 1
@@ -239,8 +243,8 @@ private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
         .assumingMemoryBound(to: WatcherPath.self)
     var thePath = "(unknown path)"
     if let stream = watcherPtr.pointee.stream {
-        let thePaths = FSEventStreamCopyPathsBeingWatched(stream) as! [String]
-        if !thePaths.isEmpty {
+        if let thePaths = FSEventStreamCopyPathsBeingWatched(stream) as? [String],
+           !thePaths.isEmpty {
             thePath = thePaths[0]
         }
     }

@@ -621,7 +621,7 @@ private func _findmenuitembyname(_ L: UnsafeMutablePointer<lua_State>!, _ app: A
     guard error == .success, let children = cfChildren else { return nil }
 
     let toCheck = NSMutableArray()
-    toCheck.addObjects(from: children as! [Any])
+    toCheck.addObjects(from: (children as? [Any]) ?? [])
 
     var i = 5000
     while i > 0 {
@@ -650,7 +650,7 @@ private func _findmenuitembyname(_ L: UnsafeMutablePointer<lua_State>!, _ app: A
                 continue
             }
             if let menuchildren = cfMenuchildren {
-                toCheck.addObjects(from: menuchildren as! [Any])
+                toCheck.addObjects(from: (menuchildren as? [Any]) ?? [])
             }
         } else if childcount == 0 {
             if !nameIsRegex && name == title {
@@ -939,7 +939,7 @@ private func _getMenuStructure(_ menuItem: AXUIElement) -> Any {
     }
 
     if let cfValues = cfAttributeValues {
-        let attributeValues = NSMutableArray(array: cfValues as! [Any])
+        let attributeValues = NSMutableArray(array: (cfValues as? [Any]) ?? [])
         var children: NSMutableArray? = nil
 
         for j in 0..<attributeValues.count {
