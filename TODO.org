@@ -57,6 +57,20 @@ replaced.
     Replaced with NWHTTPServer (Network.framework), HTTPParser, and
     NWWebSocket — all pure Swift. ~Sources/CocoaHTTPServer/~ deleted.
 
+*** DONE Replace vendored lsqlite3 with Swift sqlite3 wrapper
+    Deleted ~lsqlite3.c~ (2,422 lines) + ~lsqlite3_wrapper.m~. New
+    ~SQLite3Module.swift~ uses system ~import SQLite3~ directly. Full
+    Lua API preserved.
+
+*** DONE Replace vendored Sundown with Apple swift-markdown
+    Deleted 16 C files (4,800 lines) from ~doc/~. Custom AST walkers
+    for HTML and plaintext rendering. Same ~hs.doc.markdown.convert~ API.
+
+*** DONE Remove noise detector and TouchEvents C libraries
+    Deleted ~detectors.cpp~ (272 lines), ~TouchEvents.c~ (407 lines),
+    and headers. Lua APIs stubbed with "not implemented" errors.
+    ~HSExtensions~ now contains only header files — zero ~.c/.m/.cpp~.
+
 * TODO — Architecture (design decisions needed)
 
 *** TODO Evaluate ~-all_load~ linker flag removal
