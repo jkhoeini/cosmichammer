@@ -9,10 +9,10 @@
       system = "aarch64-darwin";
       pkgs = nixpkgs.legacyPackages.${system};
 
-      version = "0.4.1";
+      version = "0.4.2";
       src = pkgs.fetchurl {
         url = "https://github.com/jkhoeini/hammerspoon/releases/download/v${version}/CosmicHammer-${version}-macos-arm64.dmg";
-        hash = "sha256-YYdScjTS0HS7lW/52SvDuIcYuN2JcPPPVW94RBgbwLw=";
+        hash = "sha256-gUT7bwMS2dTkj7rIPyHyDVMfSF5YM1oGrlKVlU6He+Y=";
       };
 
       cosmic-hammer = pkgs.stdenvNoCC.mkDerivation {
