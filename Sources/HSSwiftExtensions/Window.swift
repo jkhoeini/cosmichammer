@@ -8,6 +8,25 @@ private var refTable: LSRefTable = LUA_NOREF
 @_silgen_name("CGSSetDebugOptions")
 private func cgsSetDebugOptions(_ options: Int32)
 
+// SkyLight private API for querying window corner radii via the window iterator.
+@_silgen_name("SLSMainConnectionID")
+private func slsMainConnectionID() -> Int32
+
+@_silgen_name("SLSWindowQueryWindows")
+private func SLSWindowQueryWindows(_ cid: Int32, _ windows: CFArray, _ options: UInt32) -> CFTypeRef?
+
+@_silgen_name("SLSWindowQueryResultCopyWindows")
+private func SLSWindowQueryResultCopyWindows(_ query: CFTypeRef) -> CFTypeRef?
+
+@_silgen_name("SLSWindowIteratorGetCount")
+private func SLSWindowIteratorGetCount(_ iterator: CFTypeRef) -> Int32
+
+@_silgen_name("SLSWindowIteratorAdvance")
+private func SLSWindowIteratorAdvance(_ iterator: CFTypeRef) -> Bool
+
+@_silgen_name("SLSWindowIteratorGetCornerRadii")
+private func SLSWindowIteratorGetCornerRadii(_ iterator: CFTypeRef) -> CFArray?
+
 private let kCGSDebugOptionNormal: Int32 = 0
 private let kCGSDebugOptionNoShadows: Int32 = 16384
 
@@ -373,6 +392,74 @@ private func window_snapshot(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 1
 }
 
+// MARK: - Corner Radius (SkyLight private API)
+
+/// Returns the corner radius for the given CGWindowID, or nil if unavailable.
+private func windowCornerRadius(for windowID: CGWindowID) -> CGFloat? {
+    let cid = slsMainConnectionID()
+    let windowArray = [NSNumber(value: windowID)] as CFArray
+    guard let query = SLSWindowQueryWindows(cid, windowArray, 0x0) else { return nil }
+    guard let iterator = SLSWindowQueryResultCopyWindows(query) else { return nil }
+    guard SLSWindowIteratorGetCount(iterator) > 0 else { return nil }
+    guard SLSWindowIteratorAdvance(iterator) else { return nil }
+
+    guard let radiiRef = SLSWindowIteratorGetCornerRadii(iterator),
+          let radii = radiiRef as? NSArray,
+          radii.count > 0,
+          let value = radii[0] as? NSNumber else { return nil }
+    let radius = CGFloat(value.doubleValue)
+    return radius > 0 ? radius : nil
+}
+
+/// hs.window:cornerRadius() -> number
+/// Method
+/// Gets the corner radius of the window as reported by the system window server.
+///
+/// Parameters:
+///  * None
+///
+/// Returns:
+///  * A number representing the corner radius in points, or 0 if unavailable.
+///
+/// Notes:
+///  * This uses a private macOS API (SkyLight) and may not work on all macOS versions.
+///  * Standard windows on macOS Sequoia/Tahoe have a corner radius of approximately 10.
+///  * Returns 0 for windows whose corner radius cannot be determined.
+private func window_cornerRadius(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
+    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    guard let win = getWindow(L, at: 1) else {
+        lua_pushnumber(L, 0)
+        return 1
+    }
+    let radius = windowCornerRadius(for: CGWindowID(win.winID)) ?? 0
+    lua_pushnumber(L, lua_Number(radius))
+    return 1
+}
+
+/// hs.window.cornerRadiusForID(windowID) -> number
+/// Function
+/// Gets the corner radius of a window given its window ID.
+///
+/// Parameters:
+///  * windowID - a number representing the window ID (as returned by `hs.window:id()`)
+///
+/// Returns:
+///  * A number representing the corner radius in points, or 0 if unavailable.
+///
+/// Notes:
+///  * This uses a private macOS API (SkyLight) and may not work on all macOS versions.
+///  * Standard windows on macOS Sequoia/Tahoe have a corner radius of approximately 10.
+///  * Returns 0 for windows whose corner radius cannot be determined or for invalid window IDs.
+private func window_cornerRadiusForID(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let skin = LuaSkin.skin(with: L)
+    skin.checkArgs(LS_TNUMBER | LS_TINTEGER, LS_TBREAK)
+    let windowID = CGWindowID(lua_tointeger(L, 1))
+    let radius = windowCornerRadius(for: windowID) ?? 0
+    lua_pushnumber(L, lua_Number(radius))
+    return 1
+}
+
 // MARK: - hs.uielement methods on hs.window
 
 private func window_uielement_isApplication(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
@@ -491,12 +578,13 @@ private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 // MARK: - Registration
 
 private let moduleLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("focusedWindow"),  func: window_focusedwindow),
-    luaL_Reg(name: strdup("_orderedwinids"), func: window__orderedwinids),
-    luaL_Reg(name: strdup("setShadows"),     func: window_setShadows),
-    luaL_Reg(name: strdup("snapshotForID"),  func: window_snapshotForID),
-    luaL_Reg(name: strdup("timeout"),        func: window_timeout),
-    luaL_Reg(name: strdup("list"),           func: window_list),
+    luaL_Reg(name: strdup("focusedWindow"),      func: window_focusedwindow),
+    luaL_Reg(name: strdup("_orderedwinids"),      func: window__orderedwinids),
+    luaL_Reg(name: strdup("setShadows"),          func: window_setShadows),
+    luaL_Reg(name: strdup("snapshotForID"),       func: window_snapshotForID),
+    luaL_Reg(name: strdup("cornerRadiusForID"),   func: window_cornerRadiusForID),
+    luaL_Reg(name: strdup("timeout"),             func: window_timeout),
+    luaL_Reg(name: strdup("list"),                func: window_list),
     luaL_Reg(name: nil, func: nil),
 ]
 
@@ -531,6 +619,7 @@ private let userdata_metaLib: [luaL_Reg] = [
     luaL_Reg(name: strdup("_setFullScreen"), func: window__setfullscreen),
     luaL_Reg(name: strdup("isFullScreen"),   func: window_isfullscreen),
     luaL_Reg(name: strdup("snapshot"),       func: window_snapshot),
+    luaL_Reg(name: strdup("cornerRadius"),   func: window_cornerRadius),
     luaL_Reg(name: strdup("isApplication"),  func: window_uielement_isApplication),
     luaL_Reg(name: strdup("isWindow"),       func: window_uielement_isWindow),
     luaL_Reg(name: strdup("selectedText"),   func: window_uielement_selectedText),
