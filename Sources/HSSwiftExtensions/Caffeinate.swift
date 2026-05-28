@@ -2,6 +2,7 @@ import Cocoa
 import Carbon
 import IOKit.pwr_mgt
 import LuaSkin
+import os.log
 
 // MARK: - Apple Private API items
 
@@ -75,8 +76,6 @@ private func stringFromError(_ errorVal: UInt32) -> String? {
 
 // Create an IOPM Assertion of specified type and store its ID in the specified variable
 private func caffeinate_create_assertion(_ L: UnsafeMutablePointer<lua_State>!, _ assertionType: CFString, _ assertionID: UnsafeMutablePointer<IOPMAssertionID>) {
-    let skin = LuaSkin.skin(with: L)
-
     guard assertionID.pointee == 0 else { return }
 
     let result = IOPMAssertionCreateWithDescription(
@@ -89,20 +88,18 @@ private func caffeinate_create_assertion(_ L: UnsafeMutablePointer<lua_State>!, 
     )
 
     if result != kIOReturnSuccess {
-        skin.logError("caffeinate_create_assertion: failed (\(stringFromError(UInt32(result)) ?? "unknown"))")
+        os_log(.error, "caffeinate_create_assertion: failed (%{public}s)", stringFromError(UInt32(result)) ?? "unknown")
     }
 }
 
 // Release a previously stored assertion
 private func caffeinate_release_assertion(_ L: UnsafeMutablePointer<lua_State>!, _ assertionID: UnsafeMutablePointer<IOPMAssertionID>) {
-    let skin = LuaSkin.skin(with: L)
-
     guard assertionID.pointee != 0 else { return }
 
     let result = IOPMAssertionRelease(assertionID.pointee)
 
     if result != kIOReturnSuccess {
-        skin.logError("caffeinate_release_assertion: failed (\(stringFromError(UInt32(result)) ?? "unknown"))")
+        os_log(.error, "caffeinate_release_assertion: failed (%{public}s)", stringFromError(UInt32(result)) ?? "unknown")
     }
 
     assertionID.pointee = 0
@@ -152,8 +149,6 @@ private func caffeinate_isIdleSystemSleepPrevented(_ L: UnsafeMutablePointer<lua
 
 // Prevent system sleep
 private func caffeinate_preventSystemSleep(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-
     var acAndBattery = false
     if lua_isboolean(L, 1) {
         acAndBattery = lua_toboolean(L, 1) != 0
@@ -170,7 +165,7 @@ private func caffeinate_preventSystemSleep(_ L: UnsafeMutablePointer<lua_State>!
             value
         )
         if result != kIOReturnSuccess {
-            skin.logError("ERROR: Unable to set systemSleep assertion property (\(stringFromError(UInt32(result)) ?? "unknown"))")
+            os_log(.error, "Unable to set systemSleep assertion property (%{public}s)", stringFromError(UInt32(result)) ?? "unknown")
         }
     }
 
@@ -219,8 +214,7 @@ private func caffeinate_systemSleep(_ L: UnsafeMutablePointer<lua_State>!) -> In
 ///  * This is intended to simulate user activity, for example to prevent displays from sleeping, or to wake them up
 ///  * It is not mandatory to re-use assertion IDs if you are calling this function multiple times, but it is recommended that you do so if the calls are related
 private func caffeinate_declareUserActivity(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TNUMBER | LS_TINTEGER | LS_TNIL | LS_TOPTIONAL, LS_TBREAK)
+    // Optional integer or nil argument
 
     var assertionID = IOPMAssertionID(kIOPMNullAssertionID)
 
@@ -246,9 +240,6 @@ private func caffeinate_declareUserActivity(_ L: UnsafeMutablePointer<lua_State>
 /// Notes:
 ///  * This function uses private Apple APIs and could therefore stop working in any given release of macOS without warning.
 private func caffeinate_lockScreen(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TBREAK)
-
     // Load the private API we need to call SACLockScreenImmediate()
     if loginFramework == nil {
         let bundlePath = "/System/Library/PrivateFrameworks/login.framework"
@@ -257,12 +248,12 @@ private func caffeinate_lockScreen(_ L: UnsafeMutablePointer<lua_State>!) -> Int
     }
 
     guard let framework = loginFramework else {
-        skin.logError("Unable to load login.framework")
+        os_log(.error, "Unable to load login.framework")
         return 0
     }
 
     guard let funcPtr = CFBundleGetFunctionPointerForName(framework, "SACLockScreenImmediate" as CFString) else {
-        skin.logError("Unable to load SACLockScreenImmediate from private login.framework")
+        os_log(.error, "Unable to load SACLockScreenImmediate from private login.framework")
         return 0
     }
 
@@ -285,15 +276,12 @@ private func caffeinate_lockScreen(_ L: UnsafeMutablePointer<lua_State>!) -> Int
 /// Notes:
 ///  * The keys in this dictionary will vary based on the current state of the system (e.g. local vs VNC login, screen locked vs unlocked).
 private func caffeinate_sessionProperties(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TBREAK)
-
     guard let ref = CGSessionCopyCurrentDictionary() else {
         lua_pushnil(L)
         return 1
     }
 
-    skin.pushNSObject(ref as NSDictionary)
+    lua_pushany(L, ref as NSDictionary)
     return 1
 }
 
@@ -307,20 +295,17 @@ private func caffeinate_sessionProperties(_ L: UnsafeMutablePointer<lua_State>!)
 /// Returns:
 ///  * A table containing information about current power assertions, with process IDs (PID) as the keys, each of which may contain multiple assertions
 private func caffeinate_currentAssertions(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TBREAK)
-
     var assertions: Unmanaged<CFDictionary>?
     let result = IOPMCopyAssertionsByProcess(&assertions)
     if result != kIOReturnSuccess {
-        skin.pushNSObject(NSDictionary())
+        lua_pushany(L, NSDictionary())
         return 1
     }
 
     if let dict = assertions?.takeRetainedValue() {
-        skin.pushNSObject(dict as NSDictionary)
+        lua_pushany(L, dict as NSDictionary)
     } else {
-        skin.pushNSObject(NSDictionary())
+        lua_pushany(L, NSDictionary())
     }
 
     return 1
@@ -372,7 +357,14 @@ private var metalib: [luaL_Reg] = [
 
 @_cdecl("luaopen_hs_libcaffeinate")
 public func luaopen_hs_libcaffeinate(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.registerLibrary("hs.caffeinate", functions: &caffeinatelib, metaFunctions: &metalib)
+    // Create module table
+    lua_createtable(L, 0, Int32(caffeinatelib.count - 1))
+    luaL_setfuncs(L, &caffeinatelib, 0)
+
+    // Set module metatable (for __gc)
+    lua_createtable(L, 0, Int32(metalib.count - 1))
+    luaL_setfuncs(L, &metalib, 0)
+    lua_setmetatable(L, -2)
+
     return 1
 }

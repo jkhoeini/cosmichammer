@@ -9,7 +9,7 @@ private struct WebSocketUserData {
 }
 
 private let WS_USERDATA_TAG = "hs.websocket"
-private var refTable: Int32 = 0
+private var refTable: Int32 = LUA_NOREF
 
 private func getWsUserData(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> HSWebSocketDelegate {
     let ud = lua_touserdata(L, idx)!.assumingMemoryBound(to: WebSocketUserData.self)
@@ -23,6 +23,7 @@ private class HSWebSocketDelegate: NSObject, URLSessionWebSocketDelegate {
     var webSocket: URLSessionWebSocketTask?
     var session: URLSession?
     var isOpen: Bool = false
+    var stateGeneration: UInt64 = 0
 
     init(url: URL) {
         super.init()
@@ -42,33 +43,36 @@ private class HSWebSocketDelegate: NSObject, URLSessionWebSocketDelegate {
         webSocket?.receive { [weak weakSelf] result in
             guard let strongSelf = weakSelf else { return }
             if strongSelf.fn == LUA_NOREF { return }
+            guard lua_isStateGenerationValid(strongSelf.stateGeneration) else { return }
+
+            let L = LuaSkin.skin(with: nil).l!
 
             switch result {
             case .failure(let error):
                 if strongSelf.isOpen { return }
-                let skin = LuaSkin.skin(with: nil)
-                _lua_stackguard_entry(skin.l)
-                skin.pushLuaRef(refTable, ref: strongSelf.fn)
-                skin.pushNSObject("fail" as NSString)
-                skin.pushNSObject(error.localizedDescription as NSString)
-                skin.protectedCallAndError("hs.websocket callback", nargs: 2, nresults: 0)
-                _lua_stackguard_exit(skin.l)
+                lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(refTable))
+                lua_rawgeti(L, -1, lua_Integer(strongSelf.fn))
+                lua_remove(L, -2)
+                lua_pushstring(L, "fail")
+                lua_pushstring(L, error.localizedDescription)
+                if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
 
             case .success(let message):
-                let skin = LuaSkin.skin(with: nil)
-                _lua_stackguard_entry(skin.l)
-                skin.pushLuaRef(refTable, ref: strongSelf.fn)
-                skin.pushNSObject("received" as NSString)
+                lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(refTable))
+                lua_rawgeti(L, -1, lua_Integer(strongSelf.fn))
+                lua_remove(L, -2)
+                lua_pushstring(L, "received")
                 switch message {
                 case .string(let text):
-                    skin.pushNSObject(text as NSString)
+                    lua_pushstring(L, text)
                 case .data(let data):
-                    skin.pushNSObject(data as NSData)
+                    data.withUnsafeBytes { rawBuf in
+                        lua_pushlstring(L, rawBuf.baseAddress?.assumingMemoryBound(to: CChar.self), rawBuf.count)
+                    }
                 @unknown default:
-                    lua_pushnil(skin.l)
+                    lua_pushnil(L)
                 }
-                skin.protectedCallAndError("hs.websocket callback", nargs: 2, nresults: 0)
-                _lua_stackguard_exit(skin.l)
+                if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
 
                 strongSelf.listenForMessages()
             }
@@ -80,12 +84,13 @@ private class HSWebSocketDelegate: NSObject, URLSessionWebSocketDelegate {
                     didOpenWithProtocol protocol: String?) {
         isOpen = true
         if fn == LUA_NOREF { return }
-        let skin = LuaSkin.skin(with: nil)
-        _lua_stackguard_entry(skin.l)
-        skin.pushLuaRef(refTable, ref: fn)
-        skin.pushNSObject("open" as NSString)
-        skin.protectedCallAndError("hs.websocket callback", nargs: 1, nresults: 0)
-        _lua_stackguard_exit(skin.l)
+        guard lua_isStateGenerationValid(self.stateGeneration) else { return }
+        let L = LuaSkin.skin(with: nil).l!
+        lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(refTable))
+        lua_rawgeti(L, -1, lua_Integer(fn))
+        lua_remove(L, -2)
+        lua_pushstring(L, "open")
+        if lua_pcall(L, 1, 0, 0) != LUA_OK { lua_pop(L, 1) }
     }
 
     func urlSession(_ session: URLSession,
@@ -94,12 +99,13 @@ private class HSWebSocketDelegate: NSObject, URLSessionWebSocketDelegate {
                     reason: Data?) {
         isOpen = false
         if fn == LUA_NOREF { return }
-        let skin = LuaSkin.skin(with: nil)
-        _lua_stackguard_entry(skin.l)
-        skin.pushLuaRef(refTable, ref: fn)
-        skin.pushNSObject("closed" as NSString)
-        skin.protectedCallAndError("hs.websocket callback", nargs: 1, nresults: 0)
-        _lua_stackguard_exit(skin.l)
+        guard lua_isStateGenerationValid(self.stateGeneration) else { return }
+        let L = LuaSkin.skin(with: nil).l!
+        lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(refTable))
+        lua_rawgeti(L, -1, lua_Integer(fn))
+        lua_remove(L, -2)
+        lua_pushstring(L, "closed")
+        if lua_pcall(L, 1, 0, 0) != LUA_OK { lua_pop(L, 1) }
     }
 }
 
@@ -129,14 +135,15 @@ private class HSWebSocketDelegate: NSObject, URLSessionWebSocketDelegate {
 ///    * ws://localhost:8000/mysock
 ///    * wss://localhost:8000/mysock (if SSL enabled)
 private func websocket_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING, LS_TFUNCTION, LS_TBREAK)
-
-    let urlString = skin.toNSObject(atIndex: 1) as! String
+    let urlString = String(cString: luaL_checkstring(L, 1))
+    luaL_checktype(L, 2, LUA_TFUNCTION)
     let ws = HSWebSocketDelegate(url: URL(string: urlString)!)
+    ws.stateGeneration = lua_currentStateGeneration()
 
+    lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(refTable))
     lua_pushvalue(L, 2)
-    ws.fn = skin.luaRef(refTable)
+    ws.fn = luaL_ref(L, -2)
+    lua_pop(L, 1)
 
     ws.open()
 
@@ -167,20 +174,19 @@ private func websocket_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///   sure everything is "printable" by converting invalid sequences into the Unicode
 ///   Invalid Character sequence).
 private func websocket_send(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, WS_USERDATA_TAG, LS_TSTRING, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
     let ws = getWsUserData(L, 1)
+    luaL_checktype(L, 2, LUA_TSTRING)
 
     let isData: Bool = (lua_gettop(L) > 2) ? (lua_toboolean(L, 3) != 0) : true
 
-    let options: LS_NSConversionOptions = isData ? .nsLuaStringAsDataOnly : .nsPreserveLuaStringExactly
-
     let message: URLSessionWebSocketTask.Message
     if isData {
-        let data = skin.toNSObject(atIndex: 2, withOptions: options) as! Data
+        var len: Int = 0
+        let ptr = lua_tolstring(L, 2, &len)!
+        let data = Data(bytes: ptr, count: len)
         message = .data(data)
     } else {
-        let str = skin.toNSObject(atIndex: 2, withOptions: options) as! String
+        let str = String(cString: lua_tostring(L, 2)!)
         message = .string(str)
     }
     ws.webSocket?.send(message) { _ in }
@@ -204,19 +210,17 @@ private func websocket_send(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///   * closed
 ///   * unknown
 private func websocket_status(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, WS_USERDATA_TAG, LS_TBREAK)
     let ws = getWsUserData(L, 1)
 
     switch ws.webSocket?.state {
     case .running:
-        skin.pushNSObject((ws.isOpen ? "open" : "connecting") as NSString)
+        lua_pushstring(L, ws.isOpen ? "open" : "connecting")
     case .canceling:
-        skin.pushNSObject("closing" as NSString)
+        lua_pushstring(L, "closing")
     case .completed:
-        skin.pushNSObject("closed" as NSString)
+        lua_pushstring(L, "closed")
     default:
-        skin.pushNSObject("unknown" as NSString)
+        lua_pushstring(L, "unknown")
     }
     return 1
 }
@@ -231,8 +235,6 @@ private func websocket_status(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * The `hs.websocket` object
 private func websocket_close(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, WS_USERDATA_TAG, LS_TBREAK)
     let ws = getWsUserData(L, 1)
 
     ws.webSocket?.cancel(with: .normalClosure, reason: nil)
@@ -250,7 +252,9 @@ private func websocket_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     ws.webSocket = nil
     ws.session?.invalidateAndCancel()
     ws.session = nil
-    ws.fn = LuaSkin.skin(with: L).luaUnref(refTable, ref: ws.fn)
+    lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(refTable))
+    luaL_unref(L, -1, ws.fn); ws.fn = LUA_NOREF
+    lua_pop(L, 1)
 
     return 0
 }
@@ -283,10 +287,25 @@ private var wsMetalib: [luaL_Reg] = [
 
 @_cdecl("luaopen_hs_libwebsocket")
 public func luaopen_hs_libwebsocket(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
+    // Create ref table in registry
+    lua_newtable(L)
+    refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
 
-    refTable = skin.registerLibrary(WS_USERDATA_TAG, functions: &websocketlib, metaFunctions: &metalib)
-    skin.registerObject(WS_USERDATA_TAG, objectFunctions: &wsMetalib)
+    // Register userdata metatable
+    luaL_newmetatable(L, WS_USERDATA_TAG)
+    lua_pushvalue(L, -1)
+    lua_setfield(L, -2, "__index")  // mt.__index = mt
+    luaL_setfuncs(L, &wsMetalib, 0)
+    lua_pop(L, 1)
+
+    // Create module table
+    lua_createtable(L, 0, Int32(websocketlib.count - 1))
+    luaL_setfuncs(L, &websocketlib, 0)
+
+    // Set module metatable (for __gc)
+    lua_createtable(L, 0, Int32(metalib.count - 1))
+    luaL_setfuncs(L, &metalib, 0)
+    lua_setmetatable(L, -2)
 
     return 1
 }

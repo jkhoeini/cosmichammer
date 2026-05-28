@@ -1,18 +1,18 @@
 import Cocoa
 import LuaSkin
+import os.log
 
 // MARK: - HSjson Helper Class
 
 class HSjson {
-    func encode(_ obj: Any, prettyPrint: Bool, withState L: UnsafeMutablePointer<lua_State>!) -> String? {
-        let skin = LuaSkin.skin(with: L)
+    func encode(_ obj: Any, prettyPrint: Bool) -> String? {
         var opts: JSONSerialization.WritingOptions = []
         if prettyPrint {
             opts = .prettyPrinted
         }
 
         guard JSONSerialization.isValidJSONObject(obj) else {
-            skin.logError("Object cannot be serialised as JSON")
+            os_log(.error, "Object cannot be serialised as JSON")
             return nil
         }
 
@@ -20,15 +20,14 @@ class HSjson {
             let data = try JSONSerialization.data(withJSONObject: obj, options: opts)
             return String(data: data, encoding: .utf8)
         } catch {
-            skin.logError("Unable to serialise JSON: \(error.localizedDescription)")
+            os_log(.error, "Unable to serialise JSON: %{public}s", error.localizedDescription)
             return nil
         }
     }
 
-    func decode(_ data: Data?, withState L: UnsafeMutablePointer<lua_State>!) -> Any? {
-        let skin = LuaSkin.skin(with: L)
+    func decode(_ data: Data?) -> Any? {
         guard let data = data else {
-            skin.logError("Unable to convert JSON to NSData object")
+            os_log(.error, "Unable to convert JSON to NSData object")
             return nil
         }
 
@@ -36,20 +35,19 @@ class HSjson {
             let obj = try JSONSerialization.jsonObject(with: data, options: .fragmentsAllowed)
             return obj
         } catch {
-            skin.logError("Error deserialising JSON: \(error.localizedDescription)")
+            os_log(.error, "Error deserialising JSON: %{public}s", error.localizedDescription)
             return nil
         }
     }
 
-    func encodeToFile(_ obj: Any, filePath path: String, replace: Bool, prettyPrint: Bool, withState L: UnsafeMutablePointer<lua_State>!) -> Bool {
-        let skin = LuaSkin.skin(with: L)
-        guard let json = encode(obj, prettyPrint: prettyPrint, withState: L) else {
-            skin.logError("Failed to write object to JSON file")
+    func encodeToFile(_ obj: Any, filePath path: String, replace: Bool, prettyPrint: Bool) -> Bool {
+        guard let json = encode(obj, prettyPrint: prettyPrint) else {
+            os_log(.error, "Failed to write object to JSON file")
             return false
         }
 
         guard let data = json.data(using: .utf8) else {
-            skin.logError("Unable to convert JSON to NSData object")
+            os_log(.error, "Unable to convert JSON to NSData object")
             return false
         }
 
@@ -60,18 +58,17 @@ class HSjson {
             try data.write(to: URL(fileURLWithPath: path), options: options)
             return true
         } catch {
-            skin.logError("Error writing JSON to file: \(error.localizedDescription)")
+            os_log(.error, "Error writing JSON to file: %{public}s", error.localizedDescription)
             return false
         }
     }
 
-    func decodeFromFile(_ path: String, withState L: UnsafeMutablePointer<lua_State>!) -> Any? {
-        let skin = LuaSkin.skin(with: L)
+    func decodeFromFile(_ path: String) -> Any? {
         do {
             let json = try Data(contentsOf: URL(fileURLWithPath: path))
-            return decode(json, withState: L)
+            return decode(json)
         } catch {
-            skin.logError("Error reading JSON from file: \(error.localizedDescription)")
+            os_log(.error, "Error reading JSON from file: %{public}s", error.localizedDescription)
             return nil
         }
     }
@@ -93,16 +90,19 @@ class HSjson {
 /// Notes:
 ///  * This is useful for storing some of the more complex lua table structures as a persistent setting (see `hs.settings`)
 private func json_encode(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TTABLE, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
+    luaL_checktype(L, 1, LUA_TTABLE)
 
     let jsonManager = HSjson()
 
-    let table = skin.toNSObject(atIndex: 1)!
+    let table = lua_tovalue(L, at: 1)!
     let prettyPrint = lua_toboolean(L, 2) != 0
 
-    let json = jsonManager.encode(table, prettyPrint: prettyPrint, withState: L)
-    skin.pushNSObject(json as NSString?)
+    let json = jsonManager.encode(table, prettyPrint: prettyPrint)
+    if let json = json {
+        lua_pushstring(L, json)
+    } else {
+        lua_pushnil(L)
+    }
     return 1
 }
 
@@ -119,15 +119,17 @@ private func json_encode(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Notes:
 ///  * This is useful for retrieving some of the more complex lua table structures as a persistent setting (see `hs.settings`)
 private func json_decode(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING, LS_TBREAK)
+    luaL_checktype(L, 1, LUA_TSTRING)
 
     let jsonManager = HSjson()
 
-    let data = skin.toNSObject(atIndex: 1, withOptions: .nsLuaStringAsDataOnly) as? Data
+    // Get raw bytes from Lua string as Data
+    var len: Int = 0
+    let ptr = lua_tolstring(L, 1, &len)
+    let data = ptr.map { Data(bytes: $0, count: len) }
 
-    let table = jsonManager.decode(data, withState: L)
-    skin.pushNSObject(table as? NSObject)
+    let table = jsonManager.decode(data)
+    lua_pushany(L, table)
     return 1
 }
 
@@ -144,17 +146,17 @@ private func json_decode(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * `true` if successful otherwise `false` if an error has occurred
 private func json_write(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TTABLE, LS_TSTRING, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
+    luaL_checktype(L, 1, LUA_TTABLE)
+    let pathStr = String(cString: luaL_checkstring(L, 2))
 
     let jsonManager = HSjson()
 
-    let table = skin.toNSObject(atIndex: 1)!
-    let filePath = (skin.toNSObject(atIndex: 2) as! NSString).expandingTildeInPath
+    let table = lua_tovalue(L, at: 1)!
+    let filePath = (pathStr as NSString).expandingTildeInPath
     let prettyPrint = lua_toboolean(L, 3) != 0
     let replace = lua_toboolean(L, 4) != 0
 
-    let result = jsonManager.encodeToFile(table, filePath: filePath, replace: replace, prettyPrint: prettyPrint, withState: L)
+    let result = jsonManager.encodeToFile(table, filePath: filePath, replace: replace, prettyPrint: prettyPrint)
 
     lua_pushboolean(L, result ? 1 : 0)
     return 1
@@ -170,15 +172,14 @@ private func json_write(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * A table representing the supplied JSON data, or `nil` if an error occurs.
 private func json_read(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING, LS_TBREAK)
+    let pathStr = String(cString: luaL_checkstring(L, 1))
 
     let jsonManager = HSjson()
 
-    let filePath = (skin.toNSObject(atIndex: 1) as! NSString).expandingTildeInPath
+    let filePath = (pathStr as NSString).expandingTildeInPath
 
-    let table = jsonManager.decodeFromFile(filePath, withState: L)
-    skin.pushNSObject(table as? NSObject)
+    let table = jsonManager.decodeFromFile(filePath)
+    lua_pushany(L, table)
     return 1
 }
 
@@ -201,8 +202,9 @@ private var jsonLib: [luaL_Reg] = [
 
 @_cdecl("luaopen_hs_libjson")
 public func luaopen_hs_libjson(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.registerLibrary("hs.json", functions: &jsonLib, metaFunctions: nil)
+    var lib = jsonLib
+    lua_createtable(L, 0, Int32(lib.count - 1))
+    luaL_setfuncs(L, &lib, 0)
 
     return 1
 }

@@ -1,11 +1,12 @@
 import Cocoa
 import Carbon
 import LuaSkin
+import os.log
 
 // MARK: - Constants and Types
 
 private let USERDATA_TAG = "hs.hotkey"
-private var refTable: LSRefTable = 0
+private var refTable: Int32 = LUA_NOREF
 private var eventhandler: EventHandlerRef?
 
 private var monotonicHotkeyCount: UInt32 = 0
@@ -22,7 +23,7 @@ private struct hotkey_t {
     var repeatfn: Int32 = LUA_NOREF
     var enabled: Bool = false
     var carbonHotKey: EventHotKeyRef? = nil
-    var lsCanary: LSGCCanary = LSGCCanary()
+    var stateGeneration: UInt64 = 0
 }
 
 // MARK: - HSKeyRepeatManager
@@ -34,8 +35,7 @@ private struct hotkey_t {
 
     func startTimer(_ theEventID: Int32, eventKind theEventKind: Int32) {
         if keyRepeatTimer != nil {
-            let skin = LuaSkin.skin(with: nil)
-            skin.logWarn("hs.hotkey - startTimer() called while an existing repeat timer is running. Stopping existing timer and refusing to proceed.")
+            os_log(.info, "hs.hotkey - startTimer() called while an existing repeat timer is running. Stopping existing timer and refusing to proceed.")
             stopTimer()
             return
         }
@@ -78,8 +78,6 @@ private struct hotkey_t {
 // MARK: - Hotkey Functions
 
 private func hotkey_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-
     luaL_checktype(L, 1, LUA_TTABLE)
     let keycode = UInt32(luaL_checkinteger(L, 2))
     let hasDown = !lua_isnoneornil(L, 3)
@@ -87,7 +85,7 @@ private func hotkey_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let hasRepeat = !lua_isnoneornil(L, 5)
 
     if !hasDown && !hasUp && !hasRepeat {
-        skin.logError("hs.hotkey: new hotkeys must have at least one callback function")
+        luaL_error(L, "hs.hotkey: new hotkeys must have at least one callback function")
         lua_pushnil(L)
         return 1
     }
@@ -100,7 +98,7 @@ private func hotkey_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let uid = monotonicHotkeyCount
     monotonicHotkeyCount += 1
     hotkey.pointee.monotonicID = Int32(uid)
-    hotkey.pointee.lsCanary = skin.createGCCanary()
+    hotkey.pointee.stateGeneration = lua_currentStateGeneration()
     hotkeys?.setObject(NSValue(pointer: hotkey), forKey: NSNumber(value: uid))
 
     hotkey.pointee.carbonHotKey = nil
@@ -112,7 +110,10 @@ private func hotkey_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     // store pressedfn
     if hasDown {
         lua_pushvalue(L, 3)
-        hotkey.pointee.pressedfn = skin.luaRef(refTable)
+        lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(refTable))
+        lua_pushvalue(L, -2)
+        hotkey.pointee.pressedfn = luaL_ref(L, -2)
+        lua_pop(L, 2)
     } else {
         hotkey.pointee.pressedfn = LUA_NOREF
     }
@@ -120,7 +121,10 @@ private func hotkey_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     // store releasedfn
     if hasUp {
         lua_pushvalue(L, 4)
-        hotkey.pointee.releasedfn = skin.luaRef(refTable)
+        lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(refTable))
+        lua_pushvalue(L, -2)
+        hotkey.pointee.releasedfn = luaL_ref(L, -2)
+        lua_pop(L, 2)
     } else {
         hotkey.pointee.releasedfn = LUA_NOREF
     }
@@ -128,7 +132,10 @@ private func hotkey_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     // store repeatfn
     if hasRepeat {
         lua_pushvalue(L, 5)
-        hotkey.pointee.repeatfn = skin.luaRef(refTable)
+        lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(refTable))
+        lua_pushvalue(L, -2)
+        hotkey.pointee.repeatfn = luaL_ref(L, -2)
+        lua_pop(L, 2)
     } else {
         hotkey.pointee.repeatfn = LUA_NOREF
     }
@@ -148,8 +155,6 @@ private func hotkey_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 }
 
 private func hotkey_systemAssigned(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-
     luaL_checktype(L, 1, LUA_TTABLE)
     let keycode = UInt32(luaL_checkinteger(L, 2))
     var mods: UInt32 = 0
@@ -180,16 +185,16 @@ private func hotkey_systemAssigned(_ L: UnsafeMutablePointer<lua_State>!) -> Int
             let modifierFlags = hotKeyModifiers.uint32Value & ~(1 << 17)
             if hotKeyCode.uint32Value == keycode && modifierFlags == mods {
                 lua_newtable(L)
-                skin.pushNSObject(hotKeyCode);    lua_setfield(L, -2, "keycode")
+                lua_pushany(L, hotKeyCode);    lua_setfield(L, -2, "keycode")
                 lua_pushinteger(L, lua_Integer(modifierFlags)); lua_setfield(L, -2, "mods")
-                skin.pushNSObject(hotKeyEnabled); lua_setfield(L, -2, "enabled")
+                lua_pushany(L, hotKeyEnabled); lua_setfield(L, -2, "enabled")
                 assigned = true
                 break
             }
         }
         if !assigned { lua_pushboolean(L, 0) }
     } else {
-        skin.logWarn("\(USERDATA_TAG).assigned - unable to retrieve SymbolicHotKeys (\(status))")
+        os_log(.info, "hs.hotkey.assigned - unable to retrieve SymbolicHotKeys (%d)", status)
         lua_pushnil(L)
     }
 
@@ -197,10 +202,7 @@ private func hotkey_systemAssigned(_ L: UnsafeMutablePointer<lua_State>!) -> Int
 }
 
 private func hotkey_enable(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
-
-    let hotkey = lua_touserdata(L, 1)!.bindMemory(to: hotkey_t.self, capacity: 1)
+    let hotkey = luaL_checkudata(L, 1, USERDATA_TAG)!.bindMemory(to: hotkey_t.self, capacity: 1)
     lua_settop(L, 1)
 
     if hotkey.pointee.enabled {
@@ -208,7 +210,7 @@ private func hotkey_enable(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     }
 
     if hotkey.pointee.carbonHotKey != nil {
-        skin.logBreadcrumb("hs.hotkey:enable() we think the hotkey is disabled, but it has a Carbon event. Proceeding, but this is a leak.")
+        os_log(.info, "hs.hotkey:enable() we think the hotkey is disabled, but it has a Carbon event. Proceeding, but this is a leak.")
     }
 
     let hotKeyID = EventHotKeyID(signature: OSType(0x484D5350), id: UInt32(hotkey.pointee.monotonicID)) // 'HMSP'
@@ -220,9 +222,9 @@ private func hotkey_enable(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
         hotkey.pointee.enabled = true
         lua_pushvalue(L, 1)
     } else {
-        skin.logError("\(USERDATA_TAG):enable() keycode: \(hotkey.pointee.keycode), mods: 0x\(String(format: "%04x", hotkey.pointee.mods)), RegisterEventHotKey failed: \(result)")
+        os_log(.error, "hs.hotkey:enable() keycode: %u, mods: 0x%04x, RegisterEventHotKey failed: %d", hotkey.pointee.keycode, hotkey.pointee.mods, result)
         if result == OSStatus(eventHotKeyExistsErr) {
-            skin.logError("This hotkey is already registered. It may be a duplicate in your Cosmic Hammer config, or it may be registered by macOS. See System Preferences->Keyboard->Shortcuts")
+            os_log(.error, "This hotkey is already registered. It may be a duplicate in your Cosmic Hammer config, or it may be registered by macOS. See System Preferences->Keyboard->Shortcuts")
         }
         lua_pushnil(L)
     }
@@ -231,18 +233,16 @@ private func hotkey_enable(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 }
 
 private func stop(_ L: UnsafeMutablePointer<lua_State>!, _ hotkey: UnsafeMutablePointer<hotkey_t>) {
-    let skin = LuaSkin.skin(with: L)
-
     if !hotkey.pointee.enabled { return }
     hotkey.pointee.enabled = false
 
     if hotkey.pointee.carbonHotKey == nil {
-        skin.logBreadcrumb("hs.hotkey stop() we think the hotkey is enabled, but it has no Carbon event. Refusing to unregister.")
+        os_log(.info, "hs.hotkey stop() we think the hotkey is enabled, but it has no Carbon event. Refusing to unregister.")
     } else {
         let result = UnregisterEventHotKey(hotkey.pointee.carbonHotKey)
         hotkey.pointee.carbonHotKey = nil
         if result != noErr {
-            skin.logError("\(USERDATA_TAG):stop() keycode: \(hotkey.pointee.keycode), mods: 0x\(String(format: "%04x", hotkey.pointee.mods)), UnregisterEventHotKey failed: \(result)")
+            os_log(.error, "hs.hotkey:stop() keycode: %u, mods: 0x%04x, UnregisterEventHotKey failed: %d", hotkey.pointee.keycode, hotkey.pointee.mods, result)
         }
     }
 
@@ -257,17 +257,17 @@ private func hotkey_disable(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 }
 
 private func hotkey_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     let hotkey = luaL_checkudata(L, 1, USERDATA_TAG)!.bindMemory(to: hotkey_t.self, capacity: 1)
 
     stop(L, hotkey)
 
     hotkeys?.removeObject(forKey: NSNumber(value: UInt32(hotkey.pointee.monotonicID)))
-    skin.destroy(&hotkey.pointee.lsCanary)
 
-    hotkey.pointee.pressedfn = skin.luaUnref(refTable, ref: hotkey.pointee.pressedfn)
-    hotkey.pointee.releasedfn = skin.luaUnref(refTable, ref: hotkey.pointee.releasedfn)
-    hotkey.pointee.repeatfn = skin.luaUnref(refTable, ref: hotkey.pointee.repeatfn)
+    lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(refTable))
+    luaL_unref(L, -1, hotkey.pointee.pressedfn); hotkey.pointee.pressedfn = LUA_NOREF
+    luaL_unref(L, -1, hotkey.pointee.releasedfn); hotkey.pointee.releasedfn = LUA_NOREF
+    luaL_unref(L, -1, hotkey.pointee.repeatfn); hotkey.pointee.repeatfn = LUA_NOREF
+    lua_pop(L, 1)
 
     return 0
 }
@@ -275,20 +275,17 @@ private func hotkey_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 // MARK: - Carbon Event Callback
 
 private func trigger_hotkey_callback(_ eventUID: Int32, eventKind: Int32, isRepeat: Bool) -> OSStatus {
-    let skin = LuaSkin.skin(with: nil)
-    let L = skin.l!
+    let L = LuaSkin.skin(with: nil).l!
 
     guard let hkValue = hotkeys?.object(forKey: NSNumber(value: UInt32(eventUID))) as? NSValue else {
-        skin.logWarn("hs.hotkey system callback for an eventUID we don't know about: \(eventUID)")
+        os_log(.info, "hs.hotkey system callback for an eventUID we don't know about: %d", eventUID)
         return noErr
     }
     let hotkey = hkValue.pointerValue!.bindMemory(to: hotkey_t.self, capacity: 1)
 
-    if !skin.check(hotkey.pointee.lsCanary) {
+    if !lua_isStateGenerationValid(hotkey.pointee.stateGeneration) {
         return noErr
     }
-
-    _lua_stackguard_entry(L)
 
     if !isRepeat {
         keyRepeatManager?.stopTimer()
@@ -302,14 +299,17 @@ private func trigger_hotkey_callback(_ eventUID: Int32, eventKind: Int32, isRepe
     } else if eventKind == Int32(kEventHotKeyReleased) {
         ref = hotkey.pointee.releasedfn
     } else {
-        skin.logWarn("Unknown event kind (\(eventKind)) in hs.hotkey trigger_hotkey_callback")
+        os_log(.info, "Unknown event kind (%d) in hs.hotkey trigger_hotkey_callback", eventKind)
         return noErr
     }
 
     if ref != LUA_NOREF {
-        skin.pushLuaRef(refTable, ref: ref)
+        lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(refTable))
+        lua_rawgeti(L, -1, lua_Integer(ref))
+        lua_remove(L, -2)
 
-        if !skin.protectedCallAndError("hs.hotkey callback", nargs: 0, nresults: 0) {
+        if lua_pcall(L, 0, 0, 0) != LUA_OK {
+            lua_pop(L, 1)
             // For the sake of safety, invalidate any repeat timer so we don't spam errors
             keyRepeatManager?.stopTimer()
             return noErr
@@ -320,17 +320,15 @@ private func trigger_hotkey_callback(_ eventUID: Int32, eventKind: Int32, isRepe
         keyRepeatManager?.startTimer(eventUID, eventKind: eventKind)
     }
 
-    _lua_stackguard_exit(L)
     return noErr
 }
 
 private let hotkey_callback: EventHandlerProcPtr = { (inHandlerCallRef, inEvent, inUserData) -> OSStatus in
-    let skin = LuaSkin.skin(with: nil)
     var eventID = EventHotKeyID()
 
     let result = GetEventParameter(inEvent, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID), nil, MemoryLayout<EventHotKeyID>.size, nil, &eventID)
     if result != noErr {
-        skin.logBreadcrumb("Error handling hotkey: \(result)")
+        os_log(.info, "Error handling hotkey: %d", result)
         return noErr
     }
 
@@ -393,14 +391,30 @@ private var hotkey_objectlib: [luaL_Reg] = [
 
 @_cdecl("luaopen_hs_libhotkey")
 public func luaopen_hs_libhotkey(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-
     if hotkeys == nil {
         hotkeys = NSMutableDictionary()
     }
     keyRepeatManager = HSKeyRepeatManager()
 
-    refTable = skin.registerLibrary(withObject: USERDATA_TAG, functions: &hotkeylib, metaFunctions: &metalib, objectFunctions: &hotkey_objectlib)
+    // Create ref table in registry
+    lua_newtable(L)
+    refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+
+    // Register userdata metatable
+    luaL_newmetatable(L, USERDATA_TAG)
+    lua_pushvalue(L, -1)
+    lua_setfield(L, -2, "__index")  // mt.__index = mt
+    luaL_setfuncs(L, &hotkey_objectlib, 0)
+    lua_pop(L, 1)
+
+    // Create module table
+    lua_createtable(L, 0, Int32(hotkeylib.count - 1))
+    luaL_setfuncs(L, &hotkeylib, 0)
+
+    // Set module metatable (for __gc)
+    lua_createtable(L, 0, Int32(metalib.count - 1))
+    luaL_setfuncs(L, &metalib, 0)
+    lua_setmetatable(L, -2)
 
     // watch for hotkey events
     var hotKeyPressedSpec: [EventTypeSpec] = [

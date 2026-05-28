@@ -12,12 +12,9 @@ import os.log
 /// Returns:
 ///  * The contents of the plist as a Lua table
 private func plist_read(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING, LS_TBREAK)
-
-    let filePath = (skin.toNSObject(atIndex: 1) as! NSString).expandingTildeInPath
+    let filePath = (String(cString: luaL_checkstring(L, 1)) as NSString).expandingTildeInPath
     let plist = NSDictionary(contentsOfFile: filePath)
-    skin.pushNSObject(plist)
+    lua_pushany(L, plist)
 
     return 1
 }
@@ -33,10 +30,14 @@ private func plist_read(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * The contents of the property list as a Lua table or `nil` if an error occurs
 private func plist_readString(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
+    luaL_checktype(L, 1, LUA_TSTRING)
 
-    let source = skin.toNSObject(atIndex: 1) as! NSString
+    // Get raw bytes from the Lua string
+    var len: Int = 0
+    let ptr = lua_tolstring(L, 1, &len)!
+    let rawData = Data(bytes: ptr, count: len)
+    let source = String(cString: lua_tostring(L, 1)!)
+
     let binary: Bool
     if lua_gettop(L) > 1 {
         binary = lua_toboolean(L, 2) != 0
@@ -46,9 +47,9 @@ private func plist_readString(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
     let plistData: Data
     if binary {
-        plistData = skin.toNSObject(atIndex: 1, withOptions: LS_NSConversionOptions.nsLuaStringAsDataOnly) as! Data
+        plistData = rawData
     } else {
-        plistData = (source as String).data(using: .utf8)!
+        plistData = source.data(using: .utf8)!
     }
 
     do {
@@ -58,9 +59,9 @@ private func plist_readString(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
             options: .mutableContainersAndLeaves,
             format: &format
         )
-        skin.pushNSObject(plist as? NSObject)
+        lua_pushany(L, plist)
     } catch {
-        skin.logError("hs.plist.readString(): \(error)")
+        os_log(.error, "hs.plist.readString(): %{public}s", "\(error)")
         lua_pushnil(L)
     }
 
@@ -78,15 +79,14 @@ private func plist_readString(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * A string representing the data as a plist or nil if there was a problem with the date or serialization.
 private func plist_writeString(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TTABLE, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
+    luaL_checktype(L, 1, LUA_TTABLE)
 
-    let data = skin.toNSObject(atIndex: 1, withOptions: LS_NSConversionOptions.nsPreserveLuaStringExactly)!
+    let data = lua_tovalue(L, at: 1)!
     let binary = lua_gettop(L) > 1 ? (lua_toboolean(L, 2) != 0) : false
     let format: PropertyListSerialization.PropertyListFormat = binary ? .binary : .xml
 
     if !PropertyListSerialization.propertyList(data, isValidFor: format) {
-        skin.logError("hs.plist.writeString: data supplied is not in a suitable format to serialize as a plist")
+        os_log(.error, "hs.plist.writeString: data supplied is not in a suitable format to serialize as a plist")
         lua_pushboolean(L, 0)
         return 1
     }
@@ -97,9 +97,9 @@ private func plist_writeString(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
             format: format,
             options: 0
         )
-        skin.pushNSObject(output as NSData)
+        lua_pushany(L, output as NSData)
     } catch {
-        skin.logError("hs.plist.writeString: error serializing to plist representation: \(error.localizedDescription)")
+        os_log(.error, "hs.plist.writeString: error serializing to plist representation: %{public}s", error.localizedDescription)
         lua_pushnil(L)
     }
     return 1
@@ -125,16 +125,14 @@ private func plist_writeString(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///   * Tables
 ///  * You should be careful when reading a plist, modifying and writing it - Cosmic Hammer may not be able to preserve all of the datatypes via Lua
 private func plist_write(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING, LS_TTABLE, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
-
-    let filePath = (skin.toNSObject(atIndex: 1) as! NSString).expandingTildeInPath
-    let data = skin.toNSObject(atIndex: 2, withOptions: LS_NSConversionOptions.nsPreserveLuaStringExactly)!
+    let filePath = (String(cString: luaL_checkstring(L, 1)) as NSString).expandingTildeInPath
+    luaL_checktype(L, 2, LUA_TTABLE)
+    let data = lua_tovalue(L, at: 2)!
     let binary = lua_type(L, 3) == LUA_TBOOLEAN ? (lua_toboolean(L, 3) != 0) : false
     let format: PropertyListSerialization.PropertyListFormat = binary ? .binary : .xml
 
     if !PropertyListSerialization.propertyList(data, isValidFor: format) {
-        skin.logError("hs.plist.write(): Data supplied is not in a suitable format to write to a plist file")
+        os_log(.error, "hs.plist.write(): Data supplied is not in a suitable format to write to a plist file")
         lua_pushboolean(L, 0)
         return 1
     }
@@ -165,7 +163,8 @@ private let plistlib: [luaL_Reg] = [
 
 @_cdecl("luaopen_hs_libplist")
 public func luaopen_hs_libplist(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.registerLibrary("hs.plist", functions: plistlib, metaFunctions: nil)
+    var lib = plistlib
+    lua_createtable(L, 0, Int32(lib.count - 1))
+    luaL_setfuncs(L, &lib, 0)
     return 1
 }

@@ -122,13 +122,11 @@ private func hostLocalizedName(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * Except for the addition of cacheHits, cacheLookups, pageSize and memSize, the results for this function should be identical to the OS X command `vm_stat`.
 ///  * Adapted primarily from the source code to Apple's vm_stat command located at http://www.opensource.apple.com/source/system_cmds/system_cmds-643.1.1/vm_stat.tproj/vm_stat.c
 private func hs_vmstat(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-
     var mib: [Int32] = [CTL_HW, HW_PAGESIZE]
     var pagesize: UInt32 = 0
     var length = MemoryLayout<UInt32>.size
     if sysctl(&mib, 2, &pagesize, &length, nil, 0) < 0 {
-        skin.logError("hs.host.vmStat() error: Error getting page size (\(errno)): \(String(cString: strerror(errno)))")
+        luaL_error(L, "hs.host.vmStat() error: Error getting page size (\(errno)): \(String(cString: strerror(errno)))")
         return 0
     }
 
@@ -136,7 +134,7 @@ private func hs_vmstat(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     var memsize: UInt64 = 0
     length = MemoryLayout<UInt64>.size
     if sysctl(&mib, 2, &memsize, &length, nil, 0) < 0 {
-        skin.logError("hs.host.vmStat() error: Error getting mem size (\(errno)): \(String(cString: strerror(errno)))")
+        luaL_error(L, "hs.host.vmStat() error: Error getting mem size (\(errno)): \(String(cString: strerror(errno)))")
         return 0
     }
 
@@ -149,7 +147,7 @@ private func hs_vmstat(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     }
 
     if retVal != KERN_SUCCESS {
-        skin.logError("hs.host.vmStat() error: Error getting VM Statistics: \(String(cString: mach_error_string(retVal)))")
+        luaL_error(L, "hs.host.vmStat() error: Error getting VM Statistics: \(String(cString: mach_error_string(retVal)))")
         return 0
     }
 
@@ -236,8 +234,6 @@ private func hs_vmstat(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 ///  * Adapted primarily from code found at http://stackoverflow.com/questions/6785069/get-cpu-percent-usage
 private func hs_cpuUsageTicks(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TBREAK)
 
     var numCPUs: UInt32 = 0
     var mib: [Int32] = [CTL_HW, HW_NCPU]
@@ -290,7 +286,7 @@ private func hs_cpuUsageTicks(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
         vm_deallocate(mach_task_self_, vm_address_t(bitPattern: cpuInfo), vm_size_t(MemoryLayout<integer_t>.size * Int(numCpuInfo)))
     } else {
-        skin.logError("hs.host.cpuUsage() error: \(String(cString: mach_error_string(err)))")
+        luaL_error(L, "hs.host.cpuUsage() error: \(String(cString: mach_error_string(err)))")
         return 0
     }
 
@@ -327,9 +323,6 @@ private func hs_operatingSystemVersionString(_ L: UnsafeMutablePointer<lua_State
 /// Returns:
 ///  * The system's thermal state as a human readable string
 private func hs_thermalStateString(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TBREAK)
-
     let state = ProcessInfo.processInfo.thermalState
     let returnState: String
     switch state {
@@ -340,7 +333,7 @@ private func hs_thermalStateString(_ L: UnsafeMutablePointer<lua_State>!) -> Int
     @unknown default: returnState = "unknown"
     }
 
-    skin.pushNSObject(returnState as NSString)
+    lua_pushstring(L, returnState)
     return 1
 }
 
@@ -524,8 +517,6 @@ private func hs_idleTime(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// * Not all keys will be present for all volumes
 /// * The meanings of NSURLVolumeIsEjectableKey and NSURLVolumeIsRemovableKey are not generally useful for determining if a drive is removable in the modern sense (e.g. a USB drive) as much of this terminology dates back to when USB didn't exist and removable drives were things like Floppy/DVD drives. If you're trying to determine if a drive is not fixed into the computer, you may need to use a combination of these keys, but which exact combination you should use, is not consistent across macOS versions.
 private func hs_volumeInformation(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
 
     let fileManager = FileManager.default
     let volumeInfo = NSMutableDictionary()
@@ -569,7 +560,7 @@ private func hs_volumeInformation(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
         }
     }
 
-    skin.pushNSObject(volumeInfo)
+    lua_pushany(L, volumeInfo)
     return 1
 }
 
@@ -689,10 +680,9 @@ private let hostlib: [luaL_Reg] = [
 
 @_cdecl("luaopen_hs_libhost")
 public func luaopen_hs_libhost(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-
     var lib = hostlib
-    skin.registerLibrary("hs.host", functions: &lib, metaFunctions: nil)
+    lua_createtable(L, 0, Int32(lib.count - 1))
+    luaL_setfuncs(L, &lib, 0)
 
     return 1
 }

@@ -5,7 +5,7 @@ import os.log
 // MARK: - Constants
 
 private let USERDATA_TAG = "hs.httpserver"
-private var refTable: LSRefTable = 0
+private var refTable: Int32 = LUA_NOREF
 
 // MARK: - Helper Functions
 
@@ -131,37 +131,46 @@ private class HSHTTPServer {
         let responseCallbackBlock = { [self] in
             guard self.fn != LUA_NOREF else { return }
 
-            let skin = LuaSkin.skin(with: nil)
-            let L = skin.l!
-            _lua_stackguard_entry(L)
+            let L = LuaSkin.skin(with: nil).l!
 
-            skin.pushLuaRef(refTable, ref: self.fn)
+            lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(refTable))
+            lua_rawgeti(L, -1, lua_Integer(self.fn))
+            lua_remove(L, -2)
             lua_pushstring(L, method)
             lua_pushstring(L, path)
-            skin.pushNSObject(headers as NSDictionary)
-            skin.pushNSObject(body as NSData, withOptions: LS_NSConversionOptions.nsLuaStringAsDataOnly.rawValue)
+            lua_pushany(L, headers as NSDictionary)
+            // Push body as raw Lua string (binary data)
+            body.withUnsafeBytes { rawBuf in
+                lua_pushlstring(L, rawBuf.baseAddress?.assumingMemoryBound(to: CChar.self), rawBuf.count)
+            }
 
-            if !skin.protectedCallAndTraceback(4, nresults: 3) {
+            if lua_pcall(L, 4, 3, 0) != LUA_OK {
                 let errorMsg = lua_tostring(L, -1).map { String(cString: $0) } ?? "unknown error"
-                skin.logError("hs.httpserver:setCallback() callback error: \(errorMsg)")
+                os_log(.error, "hs.httpserver:setCallback() callback error: %{public}s", errorMsg)
                 responseCode = 503
                 responseBody = Data("An error occurred during hs.httpserver callback handling".utf8)
                 lua_pop(L, 1)
             } else {
                 if !(lua_type(L, -3) == LUA_TSTRING && lua_type(L, -2) == LUA_TNUMBER && lua_type(L, -1) == LUA_TTABLE) {
-                    skin.logError("hs.httpserver:setCallback() callbacks must return three values. A string for the response body, an integer response code, and a table of headers")
+                    os_log(.error, "hs.httpserver:setCallback() callbacks must return three values. A string for the response body, an integer response code, and a table of headers")
                     responseCode = 503
                     responseBody = Data("Callback handler returned invalid values".utf8)
                 } else {
-                    responseBody = (skin.toNSObject(at: -3, withOptions: LS_NSConversionOptions.nsLuaStringAsDataOnly.rawValue) as? Data) ?? Data()
+                    // Get response body as raw bytes
+                    var bodyLen: Int = 0
+                    if let bodyPtr = lua_tolstring(L, -3, &bodyLen) {
+                        responseBody = Data(bytes: bodyPtr, count: bodyLen)
+                    } else {
+                        responseBody = Data()
+                    }
                     responseCode = Int(lua_tointeger(L, -2))
 
                     var headerTypeError = false
                     lua_pushnil(L)
                     while lua_next(L, -2) != 0 {
                         if lua_type(L, -1) == LUA_TSTRING && lua_type(L, -2) == LUA_TSTRING {
-                            let key: String = skin.toNSObject(atIndex: -2) as! String
-                            let value: String = skin.toNSObject(atIndex: -1) as! String
+                            let key = String(cString: lua_tostring(L, -2)!)
+                            let value = String(cString: lua_tostring(L, -1)!)
                             responseHeaders[key] = value
                         } else {
                             headerTypeError = true
@@ -169,12 +178,11 @@ private class HSHTTPServer {
                         lua_pop(L, 1)
                     }
                     if headerTypeError {
-                        skin.logError("hs.httpserver:setCallback() callback returned a header table that contains non-strings")
+                        os_log(.error, "hs.httpserver:setCallback() callback returned a header table that contains non-strings")
                     }
                 }
                 lua_pop(L, 3)
             }
-            _lua_stackguard_exit(L)
         }
 
         if Thread.isMainThread {
@@ -194,24 +202,24 @@ private class HSHTTPServer {
         let responseCallbackBlock = { [self] in
             guard self.wsCallback != LUA_NOREF else { return }
 
-            let skin = LuaSkin.skin(with: nil)
-            _lua_stackguard_entry(skin.l)
-            skin.pushLuaRef(refTable, ref: self.wsCallback)
-            lua_pushstring(skin.l, message)
+            let L = LuaSkin.skin(with: nil).l!
+            lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(refTable))
+            lua_rawgeti(L, -1, lua_Integer(self.wsCallback))
+            lua_remove(L, -2)
+            lua_pushstring(L, message)
 
-            if !skin.protectedCallAndTraceback(1, nresults: 1) {
-                let errorMsg = lua_tostring(skin.l, -1).map { String(cString: $0) } ?? "unknown error"
-                skin.logError("hs.httpserver:websocket callback error: \(errorMsg)")
+            if lua_pcall(L, 1, 1, 0) != LUA_OK {
+                let errorMsg = lua_tostring(L, -1).map { String(cString: $0) } ?? "unknown error"
+                os_log(.error, "hs.httpserver:websocket callback error: %{public}s", errorMsg)
+                lua_pop(L, 1)
+                return
             } else {
-                if let result = skin.toNSObject(atIndex: -1) as? String {
-                    response = result
-                } else if let data = skin.toNSObject(atIndex: -1) as? NSData {
-                    response = String(data: data as Data, encoding: .utf8)
+                if lua_type(L, -1) == LUA_TSTRING {
+                    response = String(cString: lua_tostring(L, -1)!)
                 }
             }
 
-            lua_pop(skin.l, 1)
-            _lua_stackguard_exit(skin.l)
+            lua_pop(L, 1)
         }
 
         if Thread.isMainThread {
@@ -244,8 +252,6 @@ private class HSHTTPServer {
 ///  * By default, the server will listen on all network interfaces. You can override this with `hs.httpserver:setInterface()` before starting the server
 ///  * Currently, in HTTPS mode, the server will use a self-signed certificate, which most browsers will warn about. If you want/need to be able to use `hs.httpserver` with a certificate signed by a trusted Certificate Authority, please file an bug on Cosmic Hammer requesting support for this.
 private func httpserver_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TBOOLEAN | LS_TOPTIONAL, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
 
     let useSSL = (lua_type(L, 1) == LUA_TBOOLEAN) ? (lua_toboolean(L, 1) != 0) : false
     let useBonjour = (lua_type(L, 2) == LUA_TBOOLEAN) ? (lua_toboolean(L, 2) != 0) : true
@@ -287,14 +293,14 @@ private func httpserver_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///   * ws://localhost:8000/mysock
 ///   * wss://localhost:8000/mysock (if SSL enabled)
 private func httpserver_websocket(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING, LS_TFUNCTION, LS_TBREAK)
     let server = getUserData(L, 1)
 
-    server.wsPath = skin.toNSObject(atIndex: 2) as? String
-    server.wsCallback = skin.luaUnref(refTable, ref: server.wsCallback)
+    server.wsPath = String(cString: luaL_checkstring(L, 2))
+    lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(refTable))
+    luaL_unref(L, -1, server.wsCallback); server.wsCallback = LUA_NOREF
     lua_pushvalue(L, 3)
-    server.wsCallback = skin.luaRef(refTable)
+    server.wsCallback = luaL_ref(L, -2)
+    lua_pop(L, 1)
 
     lua_pushvalue(L, 1)
     return 1
@@ -310,11 +316,10 @@ private func httpserver_websocket(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
 /// Returns:
 ///  * The `hs.httpserver` object
 private func httpserver_send(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING, LS_TBREAK)
     let server = getUserData(L, 1)
 
-    if let msg = skin.toNSObject(atIndex: 2) as? String {
+    if lua_type(L, 2) == LUA_TSTRING {
+        let msg = String(cString: lua_tostring(L, 2)!)
         server.wsServer?.send(msg)
     }
 
@@ -346,19 +351,20 @@ private func httpserver_send(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Notes:
 ///  * A POST request, often used by HTML forms, will store the contents of the form in the body of the request.
 private func httpserver_setCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     let server = getUserData(L, 1)
 
+    lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(refTable))
     switch lua_type(L, 2) {
     case LUA_TFUNCTION:
-        server.fn = skin.luaUnref(refTable, ref: server.fn)
+        luaL_unref(L, -1, server.fn); server.fn = LUA_NOREF
         lua_pushvalue(L, 2)
-        server.fn = skin.luaRef(refTable)
+        server.fn = luaL_ref(L, -2)
     case LUA_TNIL, LUA_TNONE:
-        server.fn = skin.luaUnref(refTable, ref: server.fn)
+        luaL_unref(L, -1, server.fn); server.fn = LUA_NOREF
     default:
-        skin.logError("Unknown type passed to hs.httpserver:setCallback(). Argument must be a function or nil")
+        os_log(.error, "Unknown type passed to hs.httpserver:setCallback(). Argument must be a function or nil")
     }
+    lua_pop(L, 1)
 
     lua_pushvalue(L, 1)
     return 1
@@ -377,9 +383,6 @@ private func httpserver_setCallback(_ L: UnsafeMutablePointer<lua_State>!) -> In
 /// Notes:
 ///  * Because the Cosmic Hammer http server processes incoming requests completely in memory, this method puts a limit on the maximum size for a POST or PUT request.
 private func httpserver_maxBodySize(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TNUMBER | LS_TINTEGER | LS_TOPTIONAL, LS_TBREAK)
-
     let server = getUserData(L, 1)
     if lua_gettop(L) == 2 {
         server.maxBodySize = Int(lua_tointeger(L, 2))
@@ -403,17 +406,15 @@ private func httpserver_maxBodySize(_ L: UnsafeMutablePointer<lua_State>!) -> In
 /// Notes:
 ///  * It is not currently possible to set multiple passwords for different users, or passwords only on specific paths
 private func httpserver_setPassword(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING | LS_TNIL | LS_TOPTIONAL, LS_TBREAK)
     let server = getUserData(L, 1)
 
     switch lua_type(L, 2) {
     case LUA_TNIL, LUA_TNONE:
         server.httpPassword = nil
     case LUA_TSTRING:
-        server.httpPassword = skin.toNSObject(atIndex: 2) as? String
+        server.httpPassword = String(cString: lua_tostring(L, 2)!)
     default:
-        skin.logError("Unknown type passed to hs.httpserver:setPassword(). Argument must be a string or nil")
+        os_log(.error, "Unknown type passed to hs.httpserver:setPassword(). Argument must be a string or nil")
     }
 
     lua_pushvalue(L, 1)
@@ -430,16 +431,15 @@ private func httpserver_setPassword(_ L: UnsafeMutablePointer<lua_State>!) -> In
 /// Returns:
 ///  * The `hs.httpserver` object
 private func httpserver_start(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     let server = getUserData(L, 1)
 
     if server.fn == LUA_NOREF && server.wsCallback == LUA_NOREF {
-        skin.logError("hs.httpserver:start() called with no callback set. You must call `hs.httpserver:setCallback()` or `hs.httpserver:websocket()` first.")
+        os_log(.error, "hs.httpserver:start() called with no callback set. You must call hs.httpserver:setCallback() or hs.httpserver:websocket() first.")
     } else {
         do {
             try server.start()
         } catch {
-            skin.logError("hs.httpserver:start() Unable to start object: \(error)")
+            os_log(.error, "hs.httpserver:start() Unable to start object: %{public}s", "\(error)")
         }
     }
 
@@ -576,10 +576,8 @@ private func httpserver_getName(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 /// Notes:
 ///  * This is not the hostname of the server, just its name in Bonjour service lists (e.g. Safari's Bonjour bookmarks menu)
 private func httpserver_setName(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING, LS_TBREAK)
     let server = getUserData(L, 1)
-    server.setName(skin.toNSObject(atIndex: 2) as? String)
+    server.setName(String(cString: luaL_checkstring(L, 2)))
     lua_pushvalue(L, 1)
     return 1
 }
@@ -587,12 +585,14 @@ private func httpserver_setName(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 // MARK: - GC / Meta
 
 private func httpserver_objectGC(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     let httpServer = get_item_arg(L, 1)
     let server = Unmanaged<HSHTTPServer>.fromOpaque(httpServer.pointee.server!).takeRetainedValue()
     server.stop()
-    server.fn = skin.luaUnref(refTable, ref: server.fn)
-    server.wsCallback = skin.luaUnref(refTable, ref: server.wsCallback)
+
+    lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(refTable))
+    luaL_unref(L, -1, server.fn); server.fn = LUA_NOREF
+    luaL_unref(L, -1, server.wsCallback); server.wsCallback = LUA_NOREF
+    lua_pop(L, 1)
     return 0
 }
 
@@ -634,8 +634,22 @@ private let httpserverObjectLib: [luaL_Reg] = [
 
 @_cdecl("luaopen_hs_libhttpserver")
 public func luaopen_hs_libhttpserver(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    refTable = skin.registerLibrary(withObject: "hs.httpserver", functions: httpserverLib, metaFunctions: nil, objectFunctions: httpserverObjectLib)
+    // Create ref table in registry
+    lua_newtable(L)
+    refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+
+    // Register userdata metatable
+    var objLib = httpserverObjectLib
+    luaL_newmetatable(L, USERDATA_TAG)
+    lua_pushvalue(L, -1)
+    lua_setfield(L, -2, "__index")  // mt.__index = mt
+    luaL_setfuncs(L, &objLib, 0)
+    lua_pop(L, 1)
+
+    // Create module table
+    var lib = httpserverLib
+    lua_createtable(L, 0, Int32(lib.count - 1))
+    luaL_setfuncs(L, &lib, 0)
 
     return 1
 }
