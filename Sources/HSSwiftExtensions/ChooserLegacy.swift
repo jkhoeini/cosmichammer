@@ -896,14 +896,20 @@ private var userdataLib: [luaL_Reg] = [
 
 @_cdecl("luaopen_hs_libchooser")
 public func luaopen_hs_libchooser(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    refTable = skin.registerLibrary(withObject:USERDATA_TAG,
-                                              functions: &chooserLib,
-                                              metaFunctions: nil,
-                                              objectFunctions: &userdataLib)
+    // Create ref table in registry
+    lua_newtable(L)
+    refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
 
-    skin.registerPushNSHelper(pushHSChooser, forClass: "HSChooser")
-    skin.registerLuaObjectHelper(toHSChooserFromLua, forClass: "HSChooser", withUserdataMapping: USERDATA_TAG)
+    // Register userdata metatable
+    luaL_newmetatable(L, USERDATA_TAG)
+    lua_pushvalue(L, -1)
+    lua_setfield(L, -2, "__index")
+    luaL_setfuncs(L, &userdataLib, 0)
+    lua_pop(L, 1)
+
+    // Create module table
+    lua_createtable(L, 0, Int32(chooserLib.count - 1))
+    luaL_setfuncs(L, &chooserLib, 0)
 
     return 1
 }

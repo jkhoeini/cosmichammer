@@ -652,25 +652,20 @@ private var moduleLib: [luaL_Reg] = [
 
 @_cdecl("luaopen_hs_libsound")
 public func luaopen_hs_libsound(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    refTable = skin.registerLibrary(
-        withObject: USERDATA_TAG,
-        functions: &moduleLib,
-        metaFunctions: nil,
-        objectFunctions: &userdata_metaLib
-    )
+    // Create ref table in registry
+    lua_newtable(L)
+    refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
 
-    // pushes HSSoundObject userdata onto stack, or reuses selfRef, if defined
-    skin.registerPushNSHelper(pushHSSoundObject, forClass: "HSSoundObject")
-    // retrieves userdata on stack as HSSoundObject
-    skin.registerLuaObjectHelper(toHSSoundObjectFromLua, forClass: "HSSoundObject")
+    // Register userdata metatable
+    luaL_newmetatable(L, USERDATA_TAG)
+    lua_pushvalue(L, -1)
+    lua_setfield(L, -2, "__index")
+    luaL_setfuncs(L, &userdata_metaLib, 0)
+    lua_pop(L, 1)
 
-    // creates new HSSoundObject from NSSound and pushes userdata onto stack
-    skin.registerPushNSHelper(pushNSSound, forClass: "NSSound")
-    // retrieves userdata on stack as HSSoundObject, but returns NSSound portion only; also
-    // makes this the default for the USERDATA type, since I doubt there will be much call
-    // for HSSoundObject outside of this specific module, but may for NSSound in array's, etc.
-    skin.registerLuaObjectHelper(toNSSoundFromLua, forClass: "NSSound", withUserdataMapping: USERDATA_TAG)
+    // Create module table
+    lua_createtable(L, 0, Int32(moduleLib.count - 1))
+    luaL_setfuncs(L, &moduleLib, 0)
 
     return 1
 }

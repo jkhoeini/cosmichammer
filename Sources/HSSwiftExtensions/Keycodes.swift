@@ -650,11 +650,20 @@ private var keycodeslib: [luaL_Reg] = [
 
 @_cdecl("luaopen_hs_libkeycodes")
 public func luaopen_hs_libkeycodes(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    refTable = skin.registerLibrary(withObject: USERDATA_TAG,
-                                     functions: &keycodeslib,
-                                     metaFunctions: nil,
-                                     objectFunctions: &callbacklib)
+    // Create ref table in registry
+    lua_newtable(L)
+    refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+
+    // Register userdata metatable
+    luaL_newmetatable(L, USERDATA_TAG)
+    lua_pushvalue(L, -1)
+    lua_setfield(L, -2, "__index")
+    luaL_setfuncs(L, &callbacklib, 0)
+    lua_pop(L, 1)
+
+    // Create module table
+    lua_createtable(L, 0, Int32(keycodeslib.count - 1))
+    luaL_setfuncs(L, &keycodeslib, 0)
 
     return 1
 }

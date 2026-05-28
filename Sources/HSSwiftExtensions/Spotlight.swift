@@ -956,35 +956,40 @@ private var module_metaLib: [luaL_Reg] = [
 
 @_cdecl("luaopen_hs_libspotlight")
 public func luaopen_hs_libspotlight(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    refTable = skin.registerLibrary(withObject: USERDATA_TAG,
-                                    functions: &moduleLib_arr,
-                                    metaFunctions: &module_metaLib,
-                                    objectFunctions: &userdata_metaLib)
+    // Create ref table in registry
+    lua_newtable(L)
+    refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
 
-    skin.registerObject(ITEM_UD_TAG, objectFunctions: &item_userdata_metalib)
-    skin.registerObject(GROUP_UD_TAG, objectFunctions: &group_userdata_metalib)
+    // Register userdata metatables
+    luaL_newmetatable(L, USERDATA_TAG)
+    lua_pushvalue(L, -1)
+    lua_setfield(L, -2, "__index")
+    luaL_setfuncs(L, &userdata_metaLib, 0)
+    lua_pop(L, 1)
+
+    luaL_newmetatable(L, ITEM_UD_TAG)
+    lua_pushvalue(L, -1)
+    lua_setfield(L, -2, "__index")
+    luaL_setfuncs(L, &item_userdata_metalib, 0)
+    lua_pop(L, 1)
+
+    luaL_newmetatable(L, GROUP_UD_TAG)
+    lua_pushvalue(L, -1)
+    lua_setfield(L, -2, "__index")
+    luaL_setfuncs(L, &group_userdata_metalib, 0)
+    lua_pop(L, 1)
+
+    // Create module table
+    lua_createtable(L, 0, Int32(moduleLib_arr.count - 1))
+    luaL_setfuncs(L, &moduleLib_arr, 0)
+
+    // Set module metatable (for __gc)
+    lua_createtable(L, 0, Int32(module_metaLib.count - 1))
+    luaL_setfuncs(L, &module_metaLib, 0)
+    lua_setmetatable(L, -2)
 
     let _ = push_searchScopes(L);        lua_setfield(L, -2, "definedSearchScopes")
     let _ = push_commonAttributeKeys(L); lua_setfield(L, -2, "commonAttributeKeys")
-
-    skin.registerPushNSHelper(pushHSMetadataQuery, forClass: "HSMetadataQuery")
-    skin.registerLuaObjectHelper(toHSMetadataQueryFromLua, forClass: "HSMetadataQuery",
-                                 withUserdataMapping: USERDATA_TAG)
-
-    skin.registerPushNSHelper(pushNSMetadataItem, forClass: "NSMetadataItem")
-    skin.registerLuaObjectHelper(toNSMetadataItemFromLua, forClass: "NSMetadataItem",
-                                 withUserdataMapping: ITEM_UD_TAG)
-
-    skin.registerPushNSHelper(pushNSMetadataQueryResultGroup, forClass: "NSMetadataQueryResultGroup")
-    skin.registerLuaObjectHelper(toNSMetadataQueryResultGroupFromLua, forClass: "NSMetadataQueryResultGroup",
-                                 withUserdataMapping: GROUP_UD_TAG)
-
-    skin.registerPushNSHelper(pushNSMetadataQueryAttributeValueTuple, forClass: "NSMetadataQueryAttributeValueTuple")
-
-    skin.registerPushNSHelper(pushNSSortDescriptor, forClass: "NSSortDescriptor")
-    skin.registerLuaObjectHelper(toNSSortDescriptorFromLua, forClass: "NSSortDescriptor",
-                                 withTableMapping: "NSSortDescriptor")
 
     return 1
 }

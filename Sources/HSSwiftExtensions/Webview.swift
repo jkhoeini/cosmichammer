@@ -1601,32 +1601,25 @@ private var module_metaLib: [luaL_Reg] = [
 
 @_cdecl("luaopen_hs_libwebview")
 public func luaopen_hs_libwebview(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
+    // Create ref table in registry
+    lua_newtable(L)
+    wv_refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
 
-    wv_refTable = skin.registerLibrary(withObject: wv_USERDATA_TAG,
-                                    functions: &moduleLib,
-                                    metaFunctions: &module_metaLib,
-                                    objectFunctions: &userdata_metaLib)
+    // Register userdata metatable
+    luaL_newmetatable(L, wv_USERDATA_TAG)
+    lua_pushvalue(L, -1)
+    lua_setfield(L, -2, "__index")
+    luaL_setfuncs(L, &userdata_metaLib, 0)
+    lua_pop(L, 1)
 
-    // module userdata specific conversions
-    skin.registerPushNSHelper(wv_HSWebViewWindow_toLua, forClass: "HSWebViewWindow")
-    skin.registerLuaObjectHelper(wv_luaTo_HSWebViewWindow, forClass: "HSWebViewWindow",
-                                 withUserdataMapping: wv_USERDATA_TAG)
+    // Create module table
+    lua_createtable(L, 0, Int32(moduleLib.count - 1))
+    luaL_setfuncs(L, &moduleLib, 0)
 
-    // classes used primarily by this module
-    skin.registerPushNSHelper(wv_WKBackForwardListItem_toLua, forClass: "WKBackForwardListItem")
-    skin.registerPushNSHelper(wv_WKBackForwardList_toLua, forClass: "WKBackForwardList")
-    skin.registerPushNSHelper(wv_WKNavigationAction_toLua, forClass: "WKNavigationAction")
-    skin.registerPushNSHelper(wv_WKNavigationResponse_toLua, forClass: "WKNavigationResponse")
-    skin.registerPushNSHelper(wv_WKFrameInfo_toLua, forClass: "WKFrameInfo")
-    skin.registerPushNSHelper(wv_WKNavigation_toLua, forClass: "WKNavigation")
-    skin.registerPushNSHelper(wv_WKWindowFeatures_toLua, forClass: "WKWindowFeatures")
-    skin.registerPushNSHelper(wv_WKSecurityOrigin_toLua, forClass: "WKSecurityOrigin")
-
-    // classes that may find a better home elsewhere someday
-    skin.registerPushNSHelper(wv_NSURLAuthenticationChallenge_toLua, forClass: "NSURLAuthenticationChallenge")
-    skin.registerPushNSHelper(wv_NSURLProtectionSpace_toLua, forClass: "NSURLProtectionSpace")
-    skin.registerPushNSHelper(wv_NSURLCredential_toLua, forClass: "NSURLCredential")
+    // Set module metatable (for __gc)
+    lua_createtable(L, 0, Int32(module_metaLib.count - 1))
+    luaL_setfuncs(L, &module_metaLib, 0)
+    lua_setmetatable(L, -2)
 
     wv_windowMasksTable(L);    lua_setfield(L, -2, "windowMasks")
     wv_pushCertificateOIDs(L); lua_setfield(L, -2, "certificateOIDs")

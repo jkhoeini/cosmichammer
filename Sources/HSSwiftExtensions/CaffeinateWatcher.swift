@@ -345,7 +345,7 @@ private func add_event_enum(_ L: UnsafeMutablePointer<lua_State>!) {
 // MARK: - Module registration
 
 // Metatable for created objects when _new invoked
-private let metaLib: [luaL_Reg] = [
+private var metaLib: [luaL_Reg] = [
     luaL_Reg(name: strdup("start"), func: caffeinate_watcher_start),
     luaL_Reg(name: strdup("stop"), func: caffeinate_watcher_stop),
     luaL_Reg(name: strdup("__gc"), func: caffeinate_watcher_gc),
@@ -354,13 +354,13 @@ private let metaLib: [luaL_Reg] = [
 ]
 
 // Functions for returned object when module loads
-private let caffeinateLib: [luaL_Reg] = [
+private var caffeinateLib: [luaL_Reg] = [
     luaL_Reg(name: strdup("new"), func: caffeinate_watcher_new),
     luaL_Reg(name: nil, func: nil),
 ]
 
 // Metatable for returned object when module loads
-private let metaGcLib: [luaL_Reg] = [
+private var metaGcLib: [luaL_Reg] = [
     luaL_Reg(name: strdup("__gc"), func: meta_gc),
     luaL_Reg(name: nil, func: nil),
 ]
@@ -368,8 +368,25 @@ private let metaGcLib: [luaL_Reg] = [
 // Called when loading the module. All necessary tables need to be registered here.
 @_cdecl("luaopen_hs_libcaffeinatewatcher")
 public func luaopen_hs_libcaffeinatewatcher(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    refTable = skin.registerLibrary(withObject: USERDATA_TAG, functions: caffeinateLib, metaFunctions: metaGcLib, objectFunctions: metaLib)
+    // Create ref table in registry
+    lua_newtable(L)
+    refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+
+    // Register userdata metatable
+    luaL_newmetatable(L, USERDATA_TAG)
+    lua_pushvalue(L, -1)
+    lua_setfield(L, -2, "__index")
+    luaL_setfuncs(L, &metaLib, 0)
+    lua_pop(L, 1)
+
+    // Create module table
+    lua_createtable(L, 0, Int32(caffeinateLib.count - 1))
+    luaL_setfuncs(L, &caffeinateLib, 0)
+
+    // Set module metatable (for __gc)
+    lua_createtable(L, 0, Int32(metaGcLib.count - 1))
+    luaL_setfuncs(L, &metaGcLib, 0)
+    lua_setmetatable(L, -2)
 
     add_event_enum(L)
 

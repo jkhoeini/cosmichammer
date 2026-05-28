@@ -700,8 +700,18 @@ private var module_metaLib: [luaL_Reg] = [
 
 @_cdecl("luaopen_hs_libdialog")
 public func luaopen_hs_libdialog(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    refTable = skin.registerLibrary(USERDATA_TAG, functions: &moduleLib, metaFunctions: &module_metaLib)
+    // Create ref table in registry
+    lua_newtable(L)
+    refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+
+    // Create module table
+    lua_createtable(L, 0, Int32(moduleLib.count - 1))
+    luaL_setfuncs(L, &moduleLib, 0)
+
+    // Set module metatable (for __gc)
+    lua_createtable(L, 0, Int32(module_metaLib.count - 1))
+    luaL_setfuncs(L, &module_metaLib, 0)
+    lua_setmetatable(L, -2)
 
     lua_newtable(L)
     luaL_setfuncs(L, &colorPanelLib, 0)

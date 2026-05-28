@@ -1492,14 +1492,14 @@ private func meta_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 // MARK: - Lua registration tables
 
-private let moduleLib: [luaL_Reg] = [
+private var moduleLib: [luaL_Reg] = [
     luaL_Reg(name: strdup("new"), func: toolbar_new),
     luaL_Reg(name: strdup("attachToolbar"), func: toolbar_attachToolbar),
     luaL_Reg(name: strdup("uniqueName"), func: toolbar_uniqueName),
     luaL_Reg(name: nil, func: nil),
 ]
 
-private let userdataLib: [luaL_Reg] = [
+private var userdataLib: [luaL_Reg] = [
     luaL_Reg(name: strdup("_addItems"), func: toolbar_addItems),
     luaL_Reg(name: strdup("_removeItemAtIndex"), func: toolbar_removeItem),
     luaL_Reg(name: strdup("deleteItem"), func: toolbar_deleteItem),
@@ -1534,7 +1534,7 @@ private let userdataLib: [luaL_Reg] = [
     luaL_Reg(name: nil, func: nil),
 ]
 
-private let metaLib: [luaL_Reg] = [
+private var metaLib: [luaL_Reg] = [
     luaL_Reg(name: strdup("__gc"), func: meta_gc),
     luaL_Reg(name: nil, func: nil),
 ]
@@ -1543,11 +1543,25 @@ private let metaLib: [luaL_Reg] = [
 
 @_cdecl("luaopen_hs_libwebviewtoolbar")
 public func luaopen_hs_libwebviewtoolbar(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    refTable = skin.registerLibrary(withObject: USERDATA_TB_TAG,
-                                    functions: moduleLib,
-                                    metaFunctions: metaLib,
-                                    objectFunctions: userdataLib)
+    // Create ref table in registry
+    lua_newtable(L)
+    refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+
+    // Register userdata metatable
+    luaL_newmetatable(L, USERDATA_TB_TAG)
+    lua_pushvalue(L, -1)
+    lua_setfield(L, -2, "__index")
+    luaL_setfuncs(L, &userdataLib, 0)
+    lua_pop(L, 1)
+
+    // Create module table
+    lua_createtable(L, 0, Int32(moduleLib.count - 1))
+    luaL_setfuncs(L, &moduleLib, 0)
+
+    // Set module metatable (for __gc)
+    lua_createtable(L, 0, Int32(metaLib.count - 1))
+    luaL_setfuncs(L, &metaLib, 0)
+    lua_setmetatable(L, -2)
 
     boolEncodingType = (true as NSNumber).objCType
 
@@ -1568,10 +1582,6 @@ public func luaopen_hs_libwebviewtoolbar(_ L: UnsafeMutablePointer<lua_State>!) 
 
     toolbar_systemItems(L); lua_setfield(L, -2, "systemToolbarItems")
     toolbar_itemPriorities(L); lua_setfield(L, -2, "itemPriorities")
-
-    skin.registerPushNSHelper(pushHSToolbar, forClass: "HSToolbar")
-    skin.registerLuaObjectHelper(toHSToolbar, forClass: "HSToolbar", withUserdataMapping: USERDATA_TB_TAG)
-    skin.registerPushNSHelper(pushNSToolbarItem, forClass: "NSToolbarItem")
 
     return 1
 }

@@ -1778,11 +1778,20 @@ private var moduleLib: [luaL_Reg] = [
 
 @_cdecl("luaopen_hs_libstyledtext")
 public func luaopen_hs_libstyledtext(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    refTable = skin.registerLibrary(withObject: USERDATA_TAG,
-                                    functions: &moduleLib,
-                                    metaFunctions: nil,
-                                    objectFunctions: &userdata_metaLib)
+    // Create ref table in registry
+    lua_newtable(L)
+    refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+
+    // Register userdata metatable
+    luaL_newmetatable(L, USERDATA_TAG)
+    lua_pushvalue(L, -1)
+    lua_setfield(L, -2, "__index")
+    luaL_setfuncs(L, &userdata_metaLib, 0)
+    lua_pop(L, 1)
+
+    // Create module table
+    lua_createtable(L, 0, Int32(moduleLib.count - 1))
+    luaL_setfuncs(L, &moduleLib, 0)
 
     fontTraits(L)
     lua_setfield(L, -2, "fontTraits")
@@ -1793,29 +1802,6 @@ public func luaopen_hs_libstyledtext(_ L: UnsafeMutablePointer<lua_State>!) -> I
     lua_setfield(L, -2, "lineStyles")
     defineLineAppliesTo(L)
     lua_setfield(L, -2, "lineAppliesTo")
-
-    skin.registerPushNSHelper(NSShadow_toLua, forClass: "NSShadow")
-    skin.registerLuaObjectHelper(table_toNSShadow, forClass: "NSShadow",
-                                 withTableMapping: "NSShadow")
-
-    skin.registerPushNSHelper(NSParagraphStyle_toLua, forClass: "NSParagraphStyle")
-    skin.registerLuaObjectHelper(table_toNSParagraphStyle, forClass: "NSParagraphStyle",
-                                 withTableMapping: "NSParagraphStyle")
-
-    skin.registerPushNSHelper(NSTextTab_toLua, forClass: "NSTextTab")
-    skin.registerLuaObjectHelper(table_toNSTextTab, forClass: "NSTextTab",
-                                 withTableMapping: "NSTextTab")
-
-    skin.registerPushNSHelper(NSFont_toLua, forClass: "NSFont")
-    skin.registerLuaObjectHelper(table_toNSFont, forClass: "NSFont",
-                                 withTableMapping: "NSFont")
-
-    skin.registerPushNSHelper(NSAttributedString_toLua, forClass: "NSAttributedString")
-    skin.registerLuaObjectHelper(lua_toNSAttributedString, forClass: "NSAttributedString",
-                                 withUserdataMapping: USERDATA_TAG,
-                                 andTableMapping: "NSAttributedString")
-
-    skin.registerLuaObjectHelper(table_toAttributesDictionary, forClass: "hs.styledtext.AttributesDictionary")
 
     return 1
 }

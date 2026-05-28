@@ -732,7 +732,7 @@ private func module_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 // MARK: - Registration tables
 
-private let cameraDeviceLib: [luaL_Reg] = [
+private var cameraDeviceLib: [luaL_Reg] = [
     luaL_Reg(name: strdup("uid"), func: camera_uid),
     luaL_Reg(name: strdup("connectionID"), func: camera_cID),
     luaL_Reg(name: strdup("name"), func: camera_name),
@@ -748,7 +748,7 @@ private let cameraDeviceLib: [luaL_Reg] = [
     luaL_Reg(name: nil, func: nil),
 ]
 
-private let cameraLib: [luaL_Reg] = [
+private var cameraLib: [luaL_Reg] = [
     luaL_Reg(name: strdup("allCameras"), func: allCameras),
     luaL_Reg(name: strdup("setWatcherCallback"), func: setWatcherCallback),
     luaL_Reg(name: strdup("startWatcher"), func: startWatcher),
@@ -758,7 +758,7 @@ private let cameraLib: [luaL_Reg] = [
     luaL_Reg(name: nil, func: nil),
 ]
 
-private let cameraLibMeta: [luaL_Reg] = [
+private var cameraLibMeta: [luaL_Reg] = [
     luaL_Reg(name: strdup("__gc"), func: module_gc),
     luaL_Reg(name: nil, func: nil),
 ]
@@ -767,15 +767,27 @@ private let cameraLibMeta: [luaL_Reg] = [
 
 @_cdecl("luaopen_hs_libcamera")
 public func luaopen_hs_libcamera(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-
     cameraManagerInstance = HSCameraManager()
 
-    refTable = skin.registerLibrary(USERDATA_TAG, functions: cameraLib, metaFunctions: cameraLibMeta)
+    // Create ref table in registry
+    lua_newtable(L)
+    refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
 
-    skin.registerObject(USERDATA_TAG, objectFunctions: cameraDeviceLib)
-    skin.registerPushNSHelper(pushHSCamera, forClass: "HSCamera")
-    skin.registerLuaObjectHelper(toHSCameraFromLua, forClass: "HSCamera", withUserdataMapping: USERDATA_TAG)
+    // Register userdata metatable
+    luaL_newmetatable(L, USERDATA_TAG)
+    lua_pushvalue(L, -1)
+    lua_setfield(L, -2, "__index")
+    luaL_setfuncs(L, &cameraDeviceLib, 0)
+    lua_pop(L, 1)
+
+    // Create module table
+    lua_createtable(L, 0, Int32(cameraLib.count - 1))
+    luaL_setfuncs(L, &cameraLib, 0)
+
+    // Set module metatable (for __gc)
+    lua_createtable(L, 0, Int32(cameraLibMeta.count - 1))
+    luaL_setfuncs(L, &cameraLibMeta, 0)
+    lua_setmetatable(L, -2)
 
     return 1
 }

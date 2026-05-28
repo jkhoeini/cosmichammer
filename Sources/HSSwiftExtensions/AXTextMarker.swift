@@ -219,12 +219,28 @@ private var textmarker_moduleLib: [luaL_Reg] = [
 @_cdecl("luaopen_hs_axuielement_axtextmarker")
 @discardableResult
 public func luaopen_hs_axuielement_axtextmarker(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    textmarkerRefTable = skin.registerLibrary(withObject: axuielement_AXTEXTMARKER_TAG,
-                                              functions: &textmarker_moduleLib,
-                                              metaFunctions: nil,
-                                              objectFunctions: &marker_userdata_metaLib)
-    skin.registerObject(axuielement_AXTEXTMRKRNG_TAG, objectFunctions: &range_userdata_metaLib)
+    // Create ref table in registry
+    lua_newtable(L)
+    textmarkerRefTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+
+    // Register marker userdata metatable
+    luaL_newmetatable(L, axuielement_AXTEXTMARKER_TAG)
+    lua_pushvalue(L, -1)
+    lua_setfield(L, -2, "__index")
+    luaL_setfuncs(L, &marker_userdata_metaLib, 0)
+    lua_pop(L, 1)
+
+    // Register range userdata metatable
+    luaL_newmetatable(L, axuielement_AXTEXTMRKRNG_TAG)
+    lua_pushvalue(L, -1)
+    lua_setfield(L, -2, "__index")
+    luaL_setfuncs(L, &range_userdata_metaLib, 0)
+    lua_pop(L, 1)
+
+    // Create module table
+    lua_createtable(L, 0, Int32(textmarker_moduleLib.count - 1))
+    luaL_setfuncs(L, &textmarker_moduleLib, 0)
+
     return 1
 }
 

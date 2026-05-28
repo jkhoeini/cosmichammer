@@ -407,7 +407,7 @@ private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 }
 
 // Metatable for userdata objects
-private let userdata_metaLib: [luaL_Reg] = [
+private var userdata_metaLib: [luaL_Reg] = [
     luaL_Reg(name: strdup("isRunning"), func: resolutionIsRunning),
     luaL_Reg(name: strdup("cancel"), func: cancelResolution),
 
@@ -418,7 +418,7 @@ private let userdata_metaLib: [luaL_Reg] = [
 ]
 
 // Functions for returned object when module loads
-private let moduleLib: [luaL_Reg] = [
+private var moduleLib: [luaL_Reg] = [
     luaL_Reg(name: strdup("addressesForHostname"), func: getAddressesForHostName),
     luaL_Reg(name: strdup("hostnamesForAddress"), func: getNamesForAddress),
     luaL_Reg(name: strdup("reachabilityForHostname"), func: getReachabilityForHostName),
@@ -428,11 +428,20 @@ private let moduleLib: [luaL_Reg] = [
 
 @_cdecl("luaopen_hs_libnetworkhost")
 public func luaopen_hs_libnetworkhost(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    refTable = skin.registerLibrary(withObject: USERDATA_TAG,
-                                    functions: moduleLib,
-                                    metaFunctions: nil,
-                                    objectFunctions: userdata_metaLib)
+    // Create ref table in registry
+    lua_newtable(L)
+    refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+
+    // Register userdata metatable
+    luaL_newmetatable(L, USERDATA_TAG)
+    lua_pushvalue(L, -1)
+    lua_setfield(L, -2, "__index")
+    luaL_setfuncs(L, &userdata_metaLib, 0)
+    lua_pop(L, 1)
+
+    // Create module table
+    lua_createtable(L, 0, Int32(moduleLib.count - 1))
+    luaL_setfuncs(L, &moduleLib, 0)
 
     return 1
 }

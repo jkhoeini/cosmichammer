@@ -248,7 +248,7 @@ private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 }
 
 // Metatable for created objects when _new invoked
-private let path_metalib: [luaL_Reg] = [
+private var path_metalib: [luaL_Reg] = [
     luaL_Reg(name: strdup("start"),      func: { L in watcher_path_start(L) }),
     luaL_Reg(name: strdup("stop"),       func: { L in watcher_path_stop(L) }),
     luaL_Reg(name: strdup("__gc"),       func: { L in watcher_path_gc(L) }),
@@ -257,20 +257,38 @@ private let path_metalib: [luaL_Reg] = [
 ]
 
 // Functions for returned object when module loads
-private let pathLib: [luaL_Reg] = [
+private var pathLib: [luaL_Reg] = [
     luaL_Reg(name: strdup("new"), func: { L in watcher_path_new(L) }),
     luaL_Reg(name: nil, func: nil),
 ]
 
 // Metatable for returned object when module loads
-private let meta_gcLib: [luaL_Reg] = [
+private var meta_gcLib: [luaL_Reg] = [
     luaL_Reg(name: strdup("__gc"), func: { L in meta_gc(L) }),
     luaL_Reg(name: nil, func: nil),
 ]
 
 @_cdecl("luaopen_hs_libpathwatcher")
 public func luaopen_hs_libpathwatcher(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    refTable = skin.registerLibrary(withObject: USERDATA_TAG, functions: pathLib, metaFunctions: meta_gcLib, objectFunctions: path_metalib)
+    // Create ref table in registry
+    lua_newtable(L)
+    refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+
+    // Register userdata metatable
+    luaL_newmetatable(L, USERDATA_TAG)
+    lua_pushvalue(L, -1)
+    lua_setfield(L, -2, "__index")
+    luaL_setfuncs(L, &path_metalib, 0)
+    lua_pop(L, 1)
+
+    // Create module table
+    lua_createtable(L, 0, Int32(pathLib.count - 1))
+    luaL_setfuncs(L, &pathLib, 0)
+
+    // Set module metatable (for __gc)
+    lua_createtable(L, 0, Int32(meta_gcLib.count - 1))
+    luaL_setfuncs(L, &meta_gcLib, 0)
+    lua_setmetatable(L, -2)
+
     return 1
 }

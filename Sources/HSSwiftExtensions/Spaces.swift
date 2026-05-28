@@ -279,8 +279,13 @@ private var moduleLib: [luaL_Reg] = [
 
 @_cdecl("luaopen_hs_libspaces")
 public func luaopen_hs_libspaces(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    refTable = skin.registerLibrary(USERDATA_TAG, functions: &moduleLib, metaFunctions: nil)
+    // Create ref table in registry
+    lua_newtable(L)
+    refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+
+    // Create module table
+    lua_createtable(L, 0, Int32(moduleLib.count - 1))
+    luaL_setfuncs(L, &moduleLib, 0)
 
     g_connection = SLSMainConnectionID()
 

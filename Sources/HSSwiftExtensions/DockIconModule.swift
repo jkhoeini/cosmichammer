@@ -173,8 +173,9 @@ private var icon_lib: [luaL_Reg] = [
 
 @_cdecl("luaopen_hs_libdockicon")
 public func luaopen_hs_libdockicon(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.registerLibrary("hs.dockicon", functions: &icon_lib, metaFunctions: nil)
+    // Create module table
+    lua_createtable(L, 0, Int32(icon_lib.count - 1))
+    luaL_setfuncs(L, &icon_lib, 0)
 
     return 1
 }

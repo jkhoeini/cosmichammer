@@ -433,11 +433,25 @@ private var observer_module_metaLib: [luaL_Reg] = [
 @_cdecl("luaopen_hs_libaxuielementobserver")
 @discardableResult
 public func luaopen_hs_libaxuielementobserver(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    observerRefTable = skin.registerLibrary(withObject: axuielement_OBSERVER_TAG,
-                                            functions: &observer_moduleLib,
-                                            metaFunctions: &observer_module_metaLib,
-                                            objectFunctions: &observer_userdata_metaLib)
+    // Create ref table in registry
+    lua_newtable(L)
+    observerRefTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+
+    // Register userdata metatable
+    luaL_newmetatable(L, axuielement_OBSERVER_TAG)
+    lua_pushvalue(L, -1)
+    lua_setfield(L, -2, "__index")
+    luaL_setfuncs(L, &observer_userdata_metaLib, 0)
+    lua_pop(L, 1)
+
+    // Create module table
+    lua_createtable(L, 0, Int32(observer_moduleLib.count - 1))
+    luaL_setfuncs(L, &observer_moduleLib, 0)
+
+    // Set module metatable (for __gc)
+    lua_createtable(L, 0, Int32(observer_module_metaLib.count - 1))
+    luaL_setfuncs(L, &observer_module_metaLib, 0)
+    lua_setmetatable(L, -2)
 
     if observerDetails == nil {
         observerDetails = NSMutableDictionary()

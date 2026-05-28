@@ -686,7 +686,13 @@ private var extrasLib: [luaL_Reg] = [
 
 @_cdecl("luaopen_hs_libconsole")
 public func luaopen_hs_libconsole(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    refTable = skin.registerLibrary("hs.console", functions: &extrasLib, metaFunctions: nil)
+    // Create ref table in registry
+    lua_newtable(L)
+    refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+
+    // Create module table
+    lua_createtable(L, 0, Int32(extrasLib.count - 1))
+    luaL_setfuncs(L, &extrasLib, 0)
+
     return 1
 }

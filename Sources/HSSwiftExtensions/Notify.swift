@@ -466,11 +466,25 @@ private var module_metaLib: [luaL_Reg] = [
 
 @_cdecl("luaopen_hs_libnotify")
 public func luaopen_hs_libnotify(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    nt_refTable = skin.registerLibrary(withObject: nt_USERDATA_TAG,
-                                    functions: &moduleLib,
-                                    metaFunctions: &module_metaLib,
-                                    objectFunctions: &userdata_metaLib)
+    // Create ref table in registry
+    lua_newtable(L)
+    nt_refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+
+    // Register userdata metatable
+    luaL_newmetatable(L, nt_USERDATA_TAG)
+    lua_pushvalue(L, -1)
+    lua_setfield(L, -2, "__index")
+    luaL_setfuncs(L, &userdata_metaLib, 0)
+    lua_pop(L, 1)
+
+    // Create module table
+    lua_createtable(L, 0, Int32(moduleLib.count - 1))
+    luaL_setfuncs(L, &moduleLib, 0)
+
+    // Set module metatable (for __gc)
+    lua_createtable(L, 0, Int32(module_metaLib.count - 1))
+    luaL_setfuncs(L, &module_metaLib, 0)
+    lua_setmetatable(L, -2)
 
     _ = nt_activationTypesTable(L)
     lua_setfield(L, -2, "activationTypes")
@@ -480,10 +494,6 @@ public func luaopen_hs_libnotify(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 /// The string representation of the default notification sound. Use `hs.notify:soundName()` or set the `soundName` attribute in `hs:notify.new()`, to this constant, if you want to use the default sound
     lua_pushstring(L, NSUserNotificationDefaultSoundName)
     lua_setfield(L, -2, "defaultNotificationSound")
-
-    skin.registerPushNSHelper(nt_pushNSUserNotification, forClass: "NSUserNotification")
-    skin.registerLuaObjectHelper(nt_toNSUserNotificationFromLua, forClass: "NSUserNotification",
-                                 withUserdataMapping: nt_USERDATA_TAG)
 
     nt_delegate_setup()
     nt_specifics = NSMutableDictionary()

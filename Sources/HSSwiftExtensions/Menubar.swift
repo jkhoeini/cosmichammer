@@ -743,12 +743,27 @@ private var menubar_gclib: [luaL_Reg] = [
 
 @_cdecl("luaopen_hs_libmenubar")
 func luaopen_hs_libmenubar(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-
     menubar_setup()
 
-    mb_refTable = skin.registerLibrary(withObject: mb_USERDATA_TAG, functions: &menubarlib,
-                                    metaFunctions: &menubar_gclib, objectFunctions: &menubar_metalib)
+    // Create ref table in registry
+    lua_newtable(L)
+    mb_refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+
+    // Register userdata metatable
+    luaL_newmetatable(L, mb_USERDATA_TAG)
+    lua_pushvalue(L, -1)
+    lua_setfield(L, -2, "__index")
+    luaL_setfuncs(L, &menubar_metalib, 0)
+    lua_pop(L, 1)
+
+    // Create module table
+    lua_createtable(L, 0, Int32(menubarlib.count - 1))
+    luaL_setfuncs(L, &menubarlib, 0)
+
+    // Set module metatable (for __gc)
+    lua_createtable(L, 0, Int32(menubar_gclib.count - 1))
+    luaL_setfuncs(L, &menubar_gclib, 0)
+    lua_setmetatable(L, -2)
 
     pushImagePositionsTable(L); lua_setfield(L, -2, "imagePositions")
 

@@ -145,16 +145,16 @@ private func uielement_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 // MARK: - Registration
 
-private let moduleLib: [luaL_Reg] = [
+private var moduleLib: [luaL_Reg] = [
     luaL_Reg(name: strdup("focusedElement"), func: uielement_focusedElement),
     luaL_Reg(name: nil, func: nil),
 ]
 
-private let module_metaLib: [luaL_Reg] = [
+private var module_metaLib: [luaL_Reg] = [
     luaL_Reg(name: nil, func: nil),
 ]
 
-private let userdata_metaLib: [luaL_Reg] = [
+private var userdata_metaLib: [luaL_Reg] = [
     luaL_Reg(name: strdup("role"),         func: uielement_role),
     luaL_Reg(name: strdup("isWindow"),     func: uielement_iswindow),
     luaL_Reg(name: strdup("selectedText"), func: uielement_selectedText),
@@ -166,13 +166,25 @@ private let userdata_metaLib: [luaL_Reg] = [
 
 @_cdecl("luaopen_hs_libuielement")
 public func luaopen_hs_libuielement(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    refTable = skin.registerLibrary(withObject: USERDATA_TAG,
-                                    functions: moduleLib,
-                                    metaFunctions: module_metaLib,
-                                    objectFunctions: userdata_metaLib)
-    skin.registerPushNSHelper(pushHSuielement, forClass: "HSuielement")
-    skin.registerLuaObjectHelper(toHSuielementFromLua, forClass: "HSuielement",
-                                 withUserdataMapping: USERDATA_TAG)
+    // Create ref table in registry
+    lua_newtable(L)
+    refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+
+    // Register userdata metatable
+    luaL_newmetatable(L, USERDATA_TAG)
+    lua_pushvalue(L, -1)
+    lua_setfield(L, -2, "__index")
+    luaL_setfuncs(L, &userdata_metaLib, 0)
+    lua_pop(L, 1)
+
+    // Create module table
+    lua_createtable(L, 0, Int32(moduleLib.count - 1))
+    luaL_setfuncs(L, &moduleLib, 0)
+
+    // Set module metatable (for __gc)
+    lua_createtable(L, 0, Int32(module_metaLib.count - 1))
+    luaL_setfuncs(L, &module_metaLib, 0)
+    lua_setmetatable(L, -2)
+
     return 1
 }

@@ -1881,9 +1881,27 @@ private var dataSourceLib: [luaL_Reg] = [
 
 @_cdecl("luaopen_hs_libaudiodevice")
 public func luaopen_hs_libaudiodevice(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    refTable = skin.registerLibrary(withObject: USERDATA_TAG, functions: &audiodeviceLib, metaFunctions: nil, objectFunctions: &audiodevice_metalib)
-    skin.registerObject(USERDATA_DATASOURCE_TAG, objectFunctions: &dataSourceLib)
+    // Create ref table in registry
+    lua_newtable(L)
+    refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+
+    // Register audiodevice userdata metatable
+    luaL_newmetatable(L, USERDATA_TAG)
+    lua_pushvalue(L, -1)
+    lua_setfield(L, -2, "__index")
+    luaL_setfuncs(L, &audiodevice_metalib, 0)
+    lua_pop(L, 1)
+
+    // Register datasource userdata metatable
+    luaL_newmetatable(L, USERDATA_DATASOURCE_TAG)
+    lua_pushvalue(L, -1)
+    lua_setfield(L, -2, "__index")
+    luaL_setfuncs(L, &dataSourceLib, 0)
+    lua_pop(L, 1)
+
+    // Create module table
+    lua_createtable(L, 0, Int32(audiodeviceLib.count - 1))
+    luaL_setfuncs(L, &audiodeviceLib, 0)
 
     return 1
 }

@@ -606,14 +606,20 @@ private var metalib: [luaL_Reg] = [
 
 @_cdecl("luaopen_hs_libhttp")
 public func luaopen_hs_libhttp(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-
     delegates = NSMutableArray()
-    refTable = skin.registerLibrary("hs.http", functions: &httplib, metaFunctions: &metalib)
 
-    skin.registerPushNSHelper(NSURLRequest_toLua_block, forClass: "NSURLRequest")
-    skin.registerPushNSHelper(NSURLResponse_toLua_block, forClass: "NSURLResponse")
-    skin.registerLuaObjectHelper(table_toNSURLRequest_block, forClass: "NSURLRequest")
+    // Create ref table in registry
+    lua_newtable(L)
+    refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+
+    // Create module table
+    lua_createtable(L, 0, Int32(httplib.count - 1))
+    luaL_setfuncs(L, &httplib, 0)
+
+    // Set module metatable (for __gc)
+    lua_createtable(L, 0, Int32(metalib.count - 1))
+    luaL_setfuncs(L, &metalib, 0)
+    lua_setmetatable(L, -2)
 
     return 1
 }

@@ -918,7 +918,7 @@ private func pushNSTouch(_ L: UnsafeMutablePointer<lua_State>!, _ touch: NSTouch
 
 // MARK: - Registration Tables
 
-private let eventtapevent_metalib: [luaL_Reg] = [
+private var eventtapevent_metalib: [luaL_Reg] = [
     luaL_Reg(name: strdup("asData"),          func: eventtap_event_asData),
     luaL_Reg(name: strdup("location"),        func: eventtap_event_location),
     luaL_Reg(name: strdup("rawFlags"),        func: eventtap_event_rawFlags),
@@ -946,7 +946,7 @@ private let eventtapevent_metalib: [luaL_Reg] = [
     luaL_Reg(name: nil, func: nil),
 ]
 
-private let eventtapeventlib: [luaL_Reg] = [
+private var eventtapeventlib: [luaL_Reg] = [
     luaL_Reg(name: strdup("newGesture"),        func: eventtap_event_newGesture),
     luaL_Reg(name: strdup("newEvent"),          func: eventtap_event_newEvent),
     luaL_Reg(name: strdup("newEventFromData"),  func: eventtap_event_newEventFromData),
@@ -957,7 +957,7 @@ private let eventtapeventlib: [luaL_Reg] = [
     luaL_Reg(name: nil, func: nil),
 ]
 
-private let meta_gcLib: [luaL_Reg] = [
+private var meta_gcLib: [luaL_Reg] = [
     luaL_Reg(name: strdup("__gc"), func: event_meta_gc),
     luaL_Reg(name: nil, func: nil),
 ]
@@ -966,11 +966,21 @@ private let meta_gcLib: [luaL_Reg] = [
 
 @_cdecl("luaopen_hs_libeventtapevent")
 public func luaopen_hs_libeventtapevent(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.registerLibrary(withObject: EVENTTAP_EVENT_USERDATA_TAG,
-                         functions: eventtapeventlib,
-                         metaFunctions: meta_gcLib,
-                         objectFunctions: eventtapevent_metalib)
+    // Register userdata metatable
+    luaL_newmetatable(L, EVENTTAP_EVENT_USERDATA_TAG)
+    lua_pushvalue(L, -1)
+    lua_setfield(L, -2, "__index")
+    luaL_setfuncs(L, &eventtapevent_metalib, 0)
+    lua_pop(L, 1)
+
+    // Create module table
+    lua_createtable(L, 0, Int32(eventtapeventlib.count - 1))
+    luaL_setfuncs(L, &eventtapeventlib, 0)
+
+    // Set module metatable (for __gc)
+    lua_createtable(L, 0, Int32(meta_gcLib.count - 1))
+    luaL_setfuncs(L, &meta_gcLib, 0)
+    lua_setmetatable(L, -2)
 
     pushTypesTable(L)
     lua_setfield(L, -2, "types")
@@ -991,13 +1001,6 @@ public func luaopen_hs_libeventtapevent(_ L: UnsafeMutablePointer<lua_State>!) -
     lua_setfield(L, -2, "containExactly")
     lua_setfield(L, -2, "__index")
     lua_pop(L, 1)
-
-    // Register NSTouch -> Lua converter
-    skin.registerPushNSHelper({ L, obj in
-        guard let touch = obj as? NSTouch else { return 0 }
-        pushNSTouch(L, touch)
-        return 1
-    }, forClass: "NSTouch")
 
     return 1
 }

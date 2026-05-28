@@ -328,10 +328,25 @@ private var meta_gcLib: [luaL_Reg] = [
 
 @_cdecl("luaopen_hs_libusbwatcher")
 public func luaopen_hs_libusbwatcher(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    refTable = skin.registerLibrary(withObject: USERDATA_TAG,
-                                    functions: &usbLib,
-                                    metaFunctions: &meta_gcLib,
-                                    objectFunctions: &usb_metalib)
+    // Create ref table in registry
+    lua_newtable(L)
+    refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+
+    // Register userdata metatable
+    luaL_newmetatable(L, USERDATA_TAG)
+    lua_pushvalue(L, -1)
+    lua_setfield(L, -2, "__index")
+    luaL_setfuncs(L, &usb_metalib, 0)
+    lua_pop(L, 1)
+
+    // Create module table
+    lua_createtable(L, 0, Int32(usbLib.count - 1))
+    luaL_setfuncs(L, &usbLib, 0)
+
+    // Set module metatable (for __gc)
+    lua_createtable(L, 0, Int32(meta_gcLib.count - 1))
+    luaL_setfuncs(L, &meta_gcLib, 0)
+    lua_setmetatable(L, -2)
+
     return 1
 }

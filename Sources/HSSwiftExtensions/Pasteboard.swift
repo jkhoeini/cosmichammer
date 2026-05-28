@@ -932,7 +932,7 @@ private func typesOnPasteboard(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 // MARK: - Cosmic Hammer/Lua Infrastructure
 
-private let pasteboardLib: [luaL_Reg] = [
+private var pasteboardLib: [luaL_Reg] = [
     luaL_Reg(name: strdup("changeCount"),      func: { L in pasteboard_changeCount(L) }),
     luaL_Reg(name: strdup("clearContents"),     func: { L in pasteboard_clearContents(L) }),
     luaL_Reg(name: strdup("deletePasteboard"),  func: { L in pasteboard_delete(L) }),
@@ -968,7 +968,8 @@ private let pasteboardLib: [luaL_Reg] = [
 
 @_cdecl("luaopen_hs_libpasteboard")
 public func luaopen_hs_libpasteboard(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.registerLibrary("hs.pasteboard", functions: pasteboardLib, metaFunctions: nil)
+    // Create module table
+    lua_createtable(L, 0, Int32(pasteboardLib.count - 1))
+    luaL_setfuncs(L, &pasteboardLib, 0)
     return 1
 }

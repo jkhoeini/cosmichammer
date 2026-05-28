@@ -240,7 +240,18 @@ private var watcherMetaLib: [luaL_Reg] = [
 
 @_cdecl("luaopen_hs_libaudiodevicewatcher")
 public func luaopen_hs_libaudiodevicewatcher(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    watcherRefTable = skin.registerLibrary("hs.audiodevice.watcher", functions: &audiodevicewatcherLib, metaFunctions: &watcherMetaLib)
+    // Create ref table in registry
+    lua_newtable(L)
+    watcherRefTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+
+    // Create module table
+    lua_createtable(L, 0, Int32(audiodevicewatcherLib.count - 1))
+    luaL_setfuncs(L, &audiodevicewatcherLib, 0)
+
+    // Set module metatable (for __gc)
+    lua_createtable(L, 0, Int32(watcherMetaLib.count - 1))
+    luaL_setfuncs(L, &watcherMetaLib, 0)
+    lua_setmetatable(L, -2)
+
     return 1
 }

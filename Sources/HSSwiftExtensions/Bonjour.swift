@@ -363,15 +363,20 @@ private var moduleLib: [luaL_Reg] = [
 
 @_cdecl("luaopen_hs_libbonjour")
 public func luaopen_hs_libbonjour(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    refTable = skin.registerLibrary(withObject: USERDATA_TAG_STR,
-                                    functions: &moduleLib,
-                                    metaFunctions: nil,
-                                    objectFunctions: &userdata_metaLib)
+    // Create ref table in registry
+    lua_newtable(L)
+    refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
 
-    skin.registerPushNSHelper(pushHSNetServiceBrowser, forClass: "HSNetServiceBrowser")
-    skin.registerLuaObjectHelper(toHSNetServiceBrowserFromLua, forClass: "HSNetServiceBrowser",
-                                 withUserdataMapping: USERDATA_TAG_STR)
+    // Register userdata metatable
+    luaL_newmetatable(L, USERDATA_TAG_STR)
+    lua_pushvalue(L, -1)
+    lua_setfield(L, -2, "__index")
+    luaL_setfuncs(L, &userdata_metaLib, 0)
+    lua_pop(L, 1)
+
+    // Create module table
+    lua_createtable(L, 0, Int32(moduleLib.count - 1))
+    luaL_setfuncs(L, &moduleLib, 0)
 
     return 1
 }

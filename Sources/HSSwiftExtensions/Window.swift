@@ -577,7 +577,7 @@ private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 // MARK: - Registration
 
-private let moduleLib: [luaL_Reg] = [
+private var moduleLib: [luaL_Reg] = [
     luaL_Reg(name: strdup("focusedWindow"),      func: window_focusedwindow),
     luaL_Reg(name: strdup("_orderedwinids"),      func: window__orderedwinids),
     luaL_Reg(name: strdup("setShadows"),          func: window_setShadows),
@@ -588,11 +588,11 @@ private let moduleLib: [luaL_Reg] = [
     luaL_Reg(name: nil, func: nil),
 ]
 
-private let module_metaLib: [luaL_Reg] = [
+private var module_metaLib: [luaL_Reg] = [
     luaL_Reg(name: nil, func: nil),
 ]
 
-private let userdata_metaLib: [luaL_Reg] = [
+private var userdata_metaLib: [luaL_Reg] = [
     luaL_Reg(name: strdup("title"),          func: window_title),
     luaL_Reg(name: strdup("subrole"),        func: window_subrole),
     luaL_Reg(name: strdup("role"),           func: window_role),
@@ -632,13 +632,25 @@ private let userdata_metaLib: [luaL_Reg] = [
 
 @_cdecl("luaopen_hs_libwindow")
 public func luaopen_hs_libwindow(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    refTable = skin.registerLibrary(withObject: USERDATA_TAG,
-                                    functions: moduleLib,
-                                    metaFunctions: module_metaLib,
-                                    objectFunctions: userdata_metaLib)
-    skin.registerPushNSHelper(pushHSwindow, forClass: "HSwindow")
-    skin.registerLuaObjectHelper(toHSwindowFromLua, forClass: "HSwindow",
-                                 withUserdataMapping: USERDATA_TAG)
+    // Create ref table in registry
+    lua_newtable(L)
+    refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+
+    // Register userdata metatable
+    luaL_newmetatable(L, USERDATA_TAG)
+    lua_pushvalue(L, -1)
+    lua_setfield(L, -2, "__index")
+    luaL_setfuncs(L, &userdata_metaLib, 0)
+    lua_pop(L, 1)
+
+    // Create module table
+    lua_createtable(L, 0, Int32(moduleLib.count - 1))
+    luaL_setfuncs(L, &moduleLib, 0)
+
+    // Set module metatable (for __gc)
+    lua_createtable(L, 0, Int32(module_metaLib.count - 1))
+    luaL_setfuncs(L, &module_metaLib, 0)
+    lua_setmetatable(L, -2)
+
     return 1
 }

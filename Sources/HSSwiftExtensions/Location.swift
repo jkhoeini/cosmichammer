@@ -974,30 +974,31 @@ private func luaL_newlib_compat(_ L: UnsafeMutablePointer<lua_State>!, _ lib: in
 
 @_cdecl("luaopen_hs_liblocation")
 func luaopen_hs_liblocation(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-
     // in case a reload skipped meta_gc for some reason
     if location != nil { location = nil }
 
-    refTable = skin.registerLibrary(USERDATA_TAG, functions: &moduleLib, metaFunctions: &module_metaLib)
+    // Create ref table in registry
+    lua_newtable(L)
+    refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
 
-    skin.registerPushNSHelper(pushCLLocation,             forClass: "CLLocation")
-    skin.registerLuaObjectHelper(CLLocationFromLua,       forClass: "CLLocation",
-                                 withTableMapping: "CLLocation")
+    // Create module table
+    lua_createtable(L, 0, Int32(moduleLib.count - 1))
+    luaL_setfuncs(L, &moduleLib, 0)
 
-    skin.registerPushNSHelper(pushCLCircularRegion,       forClass: "CLCircularRegion")
-    skin.registerLuaObjectHelper(CLCircularRegionFromLua, forClass: "CLCircularRegion",
-                                 withTableMapping: "CLCircularRegion")
+    // Set module metatable (for __gc)
+    lua_createtable(L, 0, Int32(module_metaLib.count - 1))
+    luaL_setfuncs(L, &module_metaLib, 0)
+    lua_setmetatable(L, -2)
+
+    // Register geocoder userdata metatable
+    luaL_newmetatable(L, GEOCODE_UD_TAG)
+    lua_pushvalue(L, -1)
+    lua_setfield(L, -2, "__index")
+    luaL_setfuncs(L, &clgeocoder_metaLib, 0)
+    lua_pop(L, 1)
 
     // hs.location.geocoder submodule
     luaL_newlib_compat(L, &clgeocode_moduleLib); lua_setfield(L, -2, "geocoder")
-    skin.registerObject(GEOCODE_UD_TAG, objectFunctions: &clgeocoder_metaLib)
-
-    skin.registerPushNSHelper(pushCLGeocoder,             forClass: "CLGeocoder")
-    skin.registerLuaObjectHelper(toCLGeocoderFromLua,     forClass: "CLGeocoder",
-                                 withUserdataMapping: GEOCODE_UD_TAG)
-
-    skin.registerPushNSHelper(pushCLPlacemark,            forClass: "CLPlacemark")
 
     backgroundCallbacks = NSMutableSet()
     return 1

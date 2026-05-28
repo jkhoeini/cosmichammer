@@ -313,14 +313,15 @@ private var moduleLib: [luaL_Reg] = [
 
 @_cdecl("luaopen_hs_libdrawing_color")
 public func luaopen_hs_libdrawing_color(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    refTable = skin.registerLibrary("hs.drawing", functions: &moduleLib, metaFunctions: nil)
+    // Create ref table in registry
+    lua_newtable(L)
+    refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+
+    // Create module table
+    lua_createtable(L, 0, Int32(moduleLib.count - 1))
+    luaL_setfuncs(L, &moduleLib, 0)
+
     colorCollectionsTable = LUA_NOREF
-
-    skin.registerPushNSHelper(NSColor_tolua, forClass: "NSColor")
-    skin.registerLuaObjectHelper(table_toNSColor, forClass: "NSColor", withTableMapping: "NSColor")
-
-    skin.registerPushNSHelper(NSColorList_tolua, forClass: "NSColorList")
 
     return 1
 }

@@ -1520,9 +1520,25 @@ private var meta_gcLib: [luaL_Reg] = [
 
 @_cdecl("luaopen_hs_libsocketudp")
 public func luaopen_hs_libsocketudp(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    refTable = skin.registerLibrary(USERDATA_TAG, functions: &moduleLib, metaFunctions: &meta_gcLib)
-    skin.registerObject(USERDATA_TAG, objectFunctions: &userdata_metaLib)
+    // Create ref table in registry
+    lua_newtable(L)
+    refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+
+    // Register userdata metatable
+    luaL_newmetatable(L, USERDATA_TAG)
+    lua_pushvalue(L, -1)
+    lua_setfield(L, -2, "__index")
+    luaL_setfuncs(L, &userdata_metaLib, 0)
+    lua_pop(L, 1)
+
+    // Create module table
+    lua_createtable(L, 0, Int32(moduleLib.count - 1))
+    luaL_setfuncs(L, &moduleLib, 0)
+
+    // Set module metatable (for __gc)
+    lua_createtable(L, 0, Int32(meta_gcLib.count - 1))
+    luaL_setfuncs(L, &meta_gcLib, 0)
+    lua_setmetatable(L, -2)
 
     return 1
 }

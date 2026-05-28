@@ -326,8 +326,6 @@ private var module_metaLib: [luaL_Reg] = [
 
 @_cdecl("luaopen_hs_libwifiwatcher")
 public func luaopen_hs_libwifiwatcher(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-
     // Register userdata metatable
     luaL_newmetatable(L, USERDATA_TAG)
     lua_pushvalue(L, -1)
@@ -356,11 +354,6 @@ public func luaopen_hs_libwifiwatcher(_ L: UnsafeMutablePointer<lua_State>!) -> 
     ]
 
     manager = HSWifiWatcherManager()
-
-    // Keep LuaSkin push/pull helpers for HSWifiWatcher userdata dispatch
-    skin.registerPushNSHelper(pushHSWifiWatcher, forClass: "HSWifiWatcher")
-    skin.registerLuaObjectHelper(toHSWifiWatcherFromLua, forClass: "HSWifiWatcher",
-                                 withUserdataMapping: USERDATA_TAG)
 
     pushEventTypes(L)
     lua_setfield(L, -2, "eventTypes")

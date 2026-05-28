@@ -369,11 +369,20 @@ private var urlevent_gclib: [luaL_Reg] = [
 
 @_cdecl("luaopen_hs_liburlevent")
 public func luaopen_hs_liburlevent(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-
     urlevent_setup()
 
-    refTable = skin.registerLibrary("hs.urlevent", functions: &urleventlib, metaFunctions: &urlevent_gclib)
+    // Create ref table in registry
+    lua_newtable(L)
+    refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+
+    // Create module table
+    lua_createtable(L, 0, Int32(urleventlib.count - 1))
+    luaL_setfuncs(L, &urleventlib, 0)
+
+    // Set module metatable (for __gc)
+    lua_createtable(L, 0, Int32(urlevent_gclib.count - 1))
+    luaL_setfuncs(L, &urlevent_gclib, 0)
+    lua_setmetatable(L, -2)
 
     return 1
 }

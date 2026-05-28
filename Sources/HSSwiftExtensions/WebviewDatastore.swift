@@ -431,18 +431,25 @@ private var module_metaLib: [luaL_Reg] = [
 
 @_cdecl("luaopen_hs_libwebviewdatastore")
 public func luaopen_hs_libwebviewdatastore(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
+    // Create ref table in registry
+    lua_newtable(L)
+    refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
 
-    refTable = skin.registerLibrary(withObject: USERDATA_DS_TAG,
-                                    functions: &moduleLib,
-                                    metaFunctions: &module_metaLib,
-                                    objectFunctions: &userdata_metaLib)
+    // Register userdata metatable
+    luaL_newmetatable(L, USERDATA_DS_TAG)
+    lua_pushvalue(L, -1)
+    lua_setfield(L, -2, "__index")
+    luaL_setfuncs(L, &userdata_metaLib, 0)
+    lua_pop(L, 1)
 
-    skin.registerPushNSHelper(pushWKWebsiteDataStore, forClass: "WKWebsiteDataStore")
-    skin.registerPushNSHelper(pushWKWebsiteDataRecord, forClass: "WKWebsiteDataRecord")
+    // Create module table
+    lua_createtable(L, 0, Int32(moduleLib.count - 1))
+    luaL_setfuncs(L, &moduleLib, 0)
 
-    skin.registerLuaObjectHelper(toWKWebsiteDataStoreFromLua, forClass: "WKWebsiteDataStore",
-                                 withUserdataMapping: USERDATA_DS_TAG)
+    // Set module metatable (for __gc)
+    lua_createtable(L, 0, Int32(module_metaLib.count - 1))
+    luaL_setfuncs(L, &module_metaLib, 0)
+    lua_setmetatable(L, -2)
 
     backgroundCallbacks = NSMutableSet()
     return 1

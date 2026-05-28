@@ -1053,17 +1053,22 @@ private var moduleLib: [luaL_Reg] = [
 
 @_cdecl("luaopen_hs_libcanvas")
 public func luaopen_hs_libcanvas(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    canvas_refTable = skin.registerLibrary(withObject: canvas_USERDATA_TAG,
-                                    functions: &moduleLib,
-                                    metaFunctions: nil,
-                                    objectFunctions: &userdata_metaLib)
+    // Create ref table in registry
+    lua_newtable(L)
+    canvas_refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+
+    // Register userdata metatable
+    luaL_newmetatable(L, canvas_USERDATA_TAG)
+    lua_pushvalue(L, -1)
+    lua_setfield(L, -2, "__index")
+    luaL_setfuncs(L, &userdata_metaLib, 0)
+    lua_pop(L, 1)
+
+    // Create module table
+    lua_createtable(L, 0, Int32(moduleLib.count - 1))
+    luaL_setfuncs(L, &moduleLib, 0)
 
     if canvas_languageDictionary == nil { canvas_languageDictionary = canvas_defineLanguageDictionary() }
-
-    skin.registerPushNSHelper(canvas_pushHSCanvasView, forClass: "HSCanvasView")
-    skin.registerLuaObjectHelper(canvas_toHSCanvasViewFromLua, forClass: "HSCanvasView",
-                                 withUserdataMapping: canvas_USERDATA_TAG)
 
     canvas_pushCompositeTypes(L);      lua_setfield(L, -2, "compositeTypes")
     canvas_pushCollectionTypeTable(L); lua_setfield(L, -2, "windowBehaviors")
