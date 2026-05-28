@@ -4,7 +4,7 @@ import CoreServices
 import LuaSkin
 import os.log
 
-private var refTable: LSRefTable = 0
+private var refTable: Int32 = 0
 private var defaultContentTypes: [String]?
 
 // MARK: - ObjC bridge protocol
@@ -48,14 +48,16 @@ private class HSURLEventHandler: NSObject, HSOpenFileDelegate {
     }
 
     func gc(withState L: UnsafeMutablePointer<lua_State>!) {
-        let skin = LuaSkin.skin(with: L)
 
         appleEventManager?.removeEventHandler(forEventClass: AEEventClass(kInternetEventClass),
                                               andEventID: AEEventID(kAEGetURL))
 
         appDelegate?.openFileDelegate = nil
 
-        fnCallback = skin.luaUnref(refTable, ref: fnCallback)
+        luaL_unref(L, LUA_REGISTRYINDEX_VALUE, fnCallback)
+
+
+        fnCallback = LUA_NOREF
 
         for key in restoreHandlers.allKeys {
             guard let scheme = key as? NSString,
@@ -111,13 +113,10 @@ private class HSURLEventHandler: NSObject, HSOpenFileDelegate {
     }
 
     func callback(withURL openUrl: String, senderPID pid: pid_t) {
-        let skin = LuaSkin.skin(with: nil)
-        let L = skin.l!
-        _lua_stackguard_entry(L)
+        let L = LuaSkin.skin(with: nil).l!
 
         if fnCallback == LUA_NOREF || fnCallback == LUA_REFNIL {
-            skin.logWarn("hs.urlevent callbackWithURL received a URL with no callback set: \(openUrl)")
-            _lua_stackguard_exit(L)
+            os_log(.info, "%{public}s", "hs.urlevent callbackWithURL received a URL with no callback set: \(openUrl)")
             return
         }
 
@@ -129,7 +128,6 @@ private class HSURLEventHandler: NSObject, HSOpenFileDelegate {
 
         guard let url = URL(string: urlString) else {
             os_log(.error, "ERROR: Unable to parse '%{public}s' as a URL", urlString)
-            _lua_stackguard_exit(L)
             return
         }
 
@@ -146,14 +144,13 @@ private class HSURLEventHandler: NSObject, HSOpenFileDelegate {
             pairs[key] = value
         }
 
-        skin.pushLuaRef(refTable, ref: fnCallback)
-        skin.pushNSObject(url.scheme?.lowercased() as NSString?)
-        skin.pushNSObject(url.host?.lowercased() as NSString?)
-        skin.pushNSObject(pairs)
-        skin.pushNSObject(url.absoluteString as NSString)
+        lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(fnCallback))
+        lua_pushany(L, url.scheme?.lowercased() as NSString?)
+        lua_pushany(L, url.host?.lowercased() as NSString?)
+        lua_pushany(L, pairs)
+        lua_pushany(L, url.absoluteString as NSString)
         lua_pushinteger(L, lua_Integer(pid))
-        skin.protectedCallAndError("hs.urlevent callback for \(url.absoluteString)", nargs: 5, nresults: 0)
-        _lua_stackguard_exit(L)
+        if lua_pcall(L, 5, 0, 0) != LUA_OK { lua_pop(L, 1) }
     }
 }
 
@@ -163,11 +160,10 @@ private var eventHandler: HSURLEventHandler?
 
 // Rather than manage complex callback state from C, we just have one path into Lua for all events, and events are directed to their callbacks from there
 private func urleventSetCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
 
     luaL_checktype(L, 1, LUA_TFUNCTION)
     lua_pushvalue(L, 1)
-    eventHandler?.fnCallback = skin.luaRef(refTable)
+    eventHandler?.fnCallback = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
 
     return 0
 }
@@ -186,10 +182,8 @@ private func urleventSetCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 /// Notes:
 ///  * You don't have to call this function if you want Cosmic Hammer to permanently be your default handler. Only use this if you want the handler to be automatically reverted to something else when Cosmic Hammer exits/reloads.
 private func urleventsetRestoreHandler(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING, LS_TSTRING, LS_TBREAK)
 
-    eventHandler?.restoreHandlers[skin.toNSObject(atIndex: 1)!] = skin.toNSObject(atIndex: 2)
+    eventHandler?.restoreHandlers[lua_tovalue(L, at: 1)!] = lua_tovalue(L, at: 2)
 
     return 0
 }
@@ -208,8 +202,6 @@ private func urleventsetRestoreHandler(_ L: UnsafeMutablePointer<lua_State>!) ->
 /// Notes:
 ///  * Changing the default handler for http/https URLs will display a system prompt asking the user to confirm the change
 private func urleventsetDefaultHandler(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING, LS_TSTRING | LS_TOPTIONAL, LS_TBREAK)
 
     let scheme = String(cString: lua_tostring(L, 1)!).lowercased()
     var bundleID = Bundle.main.bundleIdentifier ?? "org.cosmic-hammer.CosmicHammer"
@@ -220,7 +212,7 @@ private func urleventsetDefaultHandler(_ L: UnsafeMutablePointer<lua_State>!) ->
 
     let status = LSSetDefaultHandlerForURLScheme(scheme as CFString, bundleID as CFString)
     if status != noErr {
-        skin.logError("hs.urlevent.setDefaultHandler() unable to set the handler for \(scheme) to \(bundleID): \(NSError(domain: NSOSStatusErrorDomain, code: Int(status), userInfo: nil).localizedDescription)")
+        os_log(.error, "%{public}s", "hs.urlevent.setDefaultHandler() unable to set the handler for \(scheme) to \(bundleID): \(NSError(domain: NSOSStatusErrorDomain, code: Int(status), userInfo: nil).localizedDescription)")
     } else {
         eventHandler?.restoreHandlers.removeObject(forKey: scheme)
     }
@@ -231,7 +223,7 @@ private func urleventsetDefaultHandler(_ L: UnsafeMutablePointer<lua_State>!) ->
             for type in contentTypes {
                 let typeStatus = LSSetDefaultRoleHandlerForContentType(type as CFString, LSRolesMask.viewer, bundleID as CFString)
                 if typeStatus != noErr {
-                    skin.logWarn("Unable to set role handler for \(type): \(NSError(domain: NSOSStatusErrorDomain, code: Int(typeStatus), userInfo: nil).localizedDescription)")
+                    os_log(.info, "%{public}s", "Unable to set role handler for \(type): \(NSError(domain: NSOSStatusErrorDomain, code: Int(typeStatus), userInfo: nil).localizedDescription)")
                 }
             }
         }
@@ -253,8 +245,7 @@ private func urleventsetDefaultHandler(_ L: UnsafeMutablePointer<lua_State>!) ->
 /// Returns:
 ///  * A string containing the bundle identifier of the current default application
 private func urleventgetDefaultHandler(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING, LS_TBREAK)
+    luaL_checktype(L, 1, LUA_TSTRING)
 
     let scheme = String(cString: lua_tostring(L, 1)!)
     if let bundleID = LSCopyDefaultHandlerForURLScheme(scheme as CFString)?.takeRetainedValue() {
@@ -275,8 +266,7 @@ private func urleventgetDefaultHandler(_ L: UnsafeMutablePointer<lua_State>!) ->
 /// Returns:
 ///  * A table containing the bundle identifiers of all applications that can handle the scheme
 private func urleventgetAllHandlersForScheme(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING, LS_TBREAK)
+    luaL_checktype(L, 1, LUA_TSTRING)
 
     let scheme = String(cString: lua_tostring(L, 1)!)
     let array = LSCopyAllHandlersForURLScheme(scheme as CFString)?.takeRetainedValue()
@@ -307,12 +297,10 @@ private func urleventgetAllHandlersForScheme(_ L: UnsafeMutablePointer<lua_State
 /// Returns:
 ///  * True if the application was launched successfully, otherwise false
 private func urleventopenURLWithBundle(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING, LS_TSTRING, LS_TBREAK)
 
     var result = false
 
-    let urlString = skin.toNSObject(atIndex: 1) as? String ?? ""
+    let urlString = lua_tovalue(L, at: 1) as? String ?? ""
     if let url = URL(string: urlString) {
         let bundleID = String(cString: lua_tostring(L, 2)!)
         result = NSWorkspace.shared.open([url],

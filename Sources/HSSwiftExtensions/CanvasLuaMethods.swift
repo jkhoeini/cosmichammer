@@ -1,5 +1,6 @@
 import Cocoa
 import LuaSkin
+import os.log
 
 // MARK: - Module Functions
 
@@ -7,9 +8,6 @@ import LuaSkin
 /// Function
 /// Get or set whether or not canvas objects use a custom accessibility subrole for the containing system window.
 func canvas_useCustomAccessibilitySubrole(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
-
     if lua_gettop(L) == 1 {
         canvas_defaultCustomSubRole = lua_toboolean(L, 1) != 0
     }
@@ -21,10 +19,9 @@ func canvas_useCustomAccessibilitySubrole(_ L: UnsafeMutablePointer<lua_State>!)
 /// Constructor
 /// Create a new canvas object at the specified coordinates
 func canvas_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TTABLE, LS_TBREAK)
+    luaL_checktype(L, 1, LUA_TTABLE)
 
-    let canvasWindow = HSCanvasWindow(contentRect: skin.tableToRect(at: 1),
+    let canvasWindow = HSCanvasWindow(contentRect: lua_tableToRect(L, at: 1),
                                        styleMask: .borderless,
                                        backing: .buffered,
                                        defer: true)
@@ -32,7 +29,7 @@ func canvas_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     canvasView.wrapperWindow = canvasWindow
     canvasWindow.contentView = canvasView
 
-    skin.pushNSObject(canvasView)
+    lua_pushany(L, canvasView)
     return 1
 }
 
@@ -40,9 +37,7 @@ func canvas_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Function
 /// Returns the list of attributes and their specifications that are recognized for canvas elements by this module.
 func dumpLanguageDictionary(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TBREAK)
-    skin.pushNSObject(canvas_languageDictionary, withOptions: LS_NSConversionOptions.nsDescribeUnknownTypes.rawValue)
+    lua_pushany(L, canvas_languageDictionary)
     return 1
 }
 
@@ -50,16 +45,14 @@ func dumpLanguageDictionary(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Function
 /// Returns a table containing the default font, size, color, and paragraphStyle used by `hs.canvas` for text drawing objects.
 func default_textAttributes(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TBREAK)
     lua_newtable(L)
     if let fontName = (canvas_languageDictionary["textFont"] as? NSDictionary)?["default"] as? String {
         let size = ((canvas_languageDictionary["textSize"] as? NSDictionary)?["default"] as? NSNumber)?.doubleValue ?? 27.0
-        skin.pushNSObject(NSFont(name: fontName, size: CGFloat(size)))
+        lua_pushany(L, NSFont(name: fontName, size: CGFloat(size)))
         lua_setfield(L, -2, "font")
-        skin.pushNSObject((canvas_languageDictionary["textColor"] as? NSDictionary)?["default"])
+        lua_pushany(L, (canvas_languageDictionary["textColor"] as? NSDictionary)?["default"])
         lua_setfield(L, -2, "color")
-        skin.pushNSObject(NSParagraphStyle.default)
+        lua_pushany(L, NSParagraphStyle.default)
         lua_setfield(L, -2, "paragraphStyle")
     } else {
         return luaL_error(L, "\(canvas_USERDATA_TAG):unable to get default font name from element language dictionary")
@@ -72,15 +65,17 @@ func default_textAttributes(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 /// hs.canvas:draggingCallback(fn) -> canvasObject
 func canvas_draggingCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, canvas_USERDATA_TAG, LS_TFUNCTION | LS_TNIL, LS_TBREAK)
-    let canvasView = skin.luaObject(at:1, toClass: "HSCanvasView") as! HSCanvasView
+    luaL_checkudata(L, 1, canvas_USERDATA_TAG)
+    let canvasView = canvas_toHSCanvasViewFromLua(L, idx: 1) as! HSCanvasView
 
-    canvasView.draggingCallbackRef = skin.luaUnref(canvas_refTable, ref: canvasView.draggingCallbackRef)
+    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, canvasView.draggingCallbackRef)
+
+
+    canvasView.draggingCallbackRef = LUA_NOREF
     canvasView.unregisterDraggedTypes()
-    if skin.luaType(at: 2) == LUA_TFUNCTION {
+    if lua_type(L, 2) == LUA_TFUNCTION {
         lua_pushvalue(L, 2)
-        canvasView.draggingCallbackRef = skin.luaRef(canvas_refTable)
+        canvasView.draggingCallbackRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
         canvasView.registerForDraggedTypes([.fileURL])
     }
 
@@ -90,15 +85,13 @@ func canvas_draggingCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 /// hs.canvas:_accessibilitySubrole([subrole]) -> canvasObject | current value
 func canvas_accessibilitySubrole(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, canvas_USERDATA_TAG, LS_TSTRING | LS_TNIL | LS_TOPTIONAL, LS_TBREAK)
-    let canvasView = skin.luaObject(at:1, toClass: "HSCanvasView") as! HSCanvasView
+    let canvasView = canvas_toHSCanvasViewFromLua(L, idx: 1) as! HSCanvasView
     let canvasWindow = canvasView.window as? HSCanvasWindow
 
     if lua_gettop(L) == 1 {
-        skin.pushNSObject(canvasWindow?.subroleOverride as NSString?)
+        lua_pushany(L, canvasWindow?.subroleOverride as NSString?)
     } else {
-        canvasWindow?.subroleOverride = lua_isstring(L, 2) != 0 ? (skin.toNSObject(atIndex: 2) as? String) : nil
+        canvasWindow?.subroleOverride = lua_isstring(L, 2) != 0 ? (lua_tovalue(L, at: 2) as? String) : nil
         lua_pushvalue(L, 1)
     }
     return 1
@@ -106,12 +99,8 @@ func canvas_accessibilitySubrole(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 
 /// hs.canvas:show([fadeInTime]) -> canvasObject
 func canvas_show(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, canvas_USERDATA_TAG,
-                   LS_TNUMBER | LS_TOPTIONAL,
-                   LS_TBREAK)
 
-    let canvasView = skin.luaObject(at:1, toClass: "HSCanvasView") as! HSCanvasView
+    let canvasView = canvas_toHSCanvasViewFromLua(L, idx: 1) as! HSCanvasView
 
     if lua_gettop(L) == 1 {
         if canvas_parentIsWindow(canvasView) {
@@ -132,12 +121,8 @@ func canvas_show(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 /// hs.canvas:hide([fadeOutTime]) -> canvasObject
 func canvas_hide(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, canvas_USERDATA_TAG,
-                   LS_TNUMBER | LS_TOPTIONAL,
-                   LS_TBREAK)
 
-    let canvasView = skin.luaObject(at:1, toClass: "HSCanvasView") as! HSCanvasView
+    let canvasView = canvas_toHSCanvasViewFromLua(L, idx: 1) as! HSCanvasView
     let canvasWindow = canvasView.window as? HSCanvasWindow
 
     if lua_gettop(L) == 1 {
@@ -160,21 +145,20 @@ func canvas_hide(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 /// hs.canvas:mouseCallback(mouseCallbackFn) -> canvasObject
 func canvas_mouseCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, canvas_USERDATA_TAG,
-                   LS_TFUNCTION | LS_TNIL,
-                   LS_TBREAK)
 
-    let canvasView = skin.luaObject(at:1, toClass: "HSCanvasView") as! HSCanvasView
+    let canvasView = canvas_toHSCanvasViewFromLua(L, idx: 1) as! HSCanvasView
     let canvasWindow = canvasView.wrapperWindow
 
-    canvasView.mouseCallbackRef = skin.luaUnref(canvas_refTable, ref: canvasView.mouseCallbackRef)
+    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, canvasView.mouseCallbackRef)
+
+
+    canvasView.mouseCallbackRef = LUA_NOREF
     canvasView.previousTrackedIndex = UInt(NSNotFound)
     canvasWindow?.ignoresMouseEvents = true
 
     if lua_type(L, 2) == LUA_TFUNCTION {
         lua_pushvalue(L, 2)
-        canvasView.mouseCallbackRef = skin.luaRef(canvas_refTable)
+        canvasView.mouseCallbackRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
         canvasWindow?.ignoresMouseEvents = false
     }
 
@@ -184,12 +168,8 @@ func canvas_mouseCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 /// hs.canvas:clickActivating([flag]) -> canvasObject | currentValue
 func canvas_clickActivating(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, canvas_USERDATA_TAG,
-                   LS_TBOOLEAN | LS_TOPTIONAL,
-                   LS_TBREAK)
 
-    let canvasView = skin.luaObject(at:1, toClass: "HSCanvasView") as! HSCanvasView
+    let canvasView = canvas_toHSCanvasViewFromLua(L, idx: 1) as! HSCanvasView
     let canvasWindow = canvasView.wrapperWindow!
 
     if lua_type(L, 2) != LUA_TNONE {
@@ -209,14 +189,8 @@ func canvas_clickActivating(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.canvas:canvasMouseEvents([down], [up], [enterExit], [move]) -> canvasObject | current values
 func canvas_canvasMouseEvents(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, canvas_USERDATA_TAG,
-                   LS_TBOOLEAN | LS_TNIL | LS_TOPTIONAL,
-                   LS_TBOOLEAN | LS_TNIL | LS_TOPTIONAL,
-                   LS_TBOOLEAN | LS_TNIL | LS_TOPTIONAL,
-                   LS_TBOOLEAN | LS_TNIL | LS_TOPTIONAL,
-                   LS_TBREAK)
 
-    let canvasView = skin.luaObject(at:1, toClass: "HSCanvasView") as! HSCanvasView
+    let canvasView = canvas_toHSCanvasViewFromLua(L, idx: 1) as! HSCanvasView
 
     if lua_gettop(L) == 1 {
         lua_pushboolean(L, canvasView.canvasMouseDown ? 1 : 0)
@@ -237,20 +211,16 @@ func canvas_canvasMouseEvents(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 /// hs.canvas:topLeft([point]) -> canvasObject | currentValue
 func canvas_topLeft(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, canvas_USERDATA_TAG,
-                   LS_TTABLE | LS_TOPTIONAL,
-                   LS_TBREAK)
 
-    let canvasView = skin.luaObject(at:1, toClass: "HSCanvasView") as! HSCanvasView
+    let canvasView = canvas_toHSCanvasViewFromLua(L, idx: 1) as! HSCanvasView
     if canvas_parentIsWindow(canvasView) {
         let canvasWindow = canvasView.window as! HSCanvasWindow
         let oldFrame = canvas_RectWithFlippedYCoordinate(canvasWindow.frame)
 
         if lua_gettop(L) == 1 {
-            skin.pushNSPoint(oldFrame.origin)
+            lua_pushNSPoint(L, oldFrame.origin)
         } else {
-            let newCoord = skin.tableToPoint(at: 2)
+            let newCoord = lua_tableToPoint(L, at: 2)
             let newFrame = canvas_RectWithFlippedYCoordinate(NSMakeRect(newCoord.x, newCoord.y, oldFrame.size.width, oldFrame.size.height))
             canvasWindow.setFrame(newFrame, display: true, animate: false)
             lua_pushvalue(L, 1)
@@ -263,31 +233,26 @@ func canvas_topLeft(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 /// hs.canvas:imageFromCanvas() -> hs.image object
 func canvas_canvasAsImage(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, canvas_USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, canvas_USERDATA_TAG)
 
-    let canvasView = skin.luaObject(at:1, toClass: "HSCanvasView") as! HSCanvasView
+    let canvasView = canvas_toHSCanvasViewFromLua(L, idx: 1) as! HSCanvasView
     let image = canvasView.imageWithSubviews()
-    skin.pushNSObject(image)
+    lua_pushany(L, image)
     return 1
 }
 
 /// hs.canvas:size([size]) -> canvasObject | currentValue
 func canvas_size(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, canvas_USERDATA_TAG,
-                   LS_TTABLE | LS_TOPTIONAL,
-                   LS_TBREAK)
 
-    let canvasView = skin.luaObject(at:1, toClass: "HSCanvasView") as! HSCanvasView
+    let canvasView = canvas_toHSCanvasViewFromLua(L, idx: 1) as! HSCanvasView
     if canvas_parentIsWindow(canvasView) {
         let canvasWindow = canvasView.window as! HSCanvasWindow
         let oldFrame = canvasWindow.frame
 
         if lua_gettop(L) == 1 {
-            skin.pushNSSize(oldFrame.size)
+            lua_pushNSSize(L, oldFrame.size)
         } else {
-            let newSize = skin.tableToSize(at: 2)
+            let newSize = lua_tableToSize(L, at: 2)
             let newFrame = NSMakeRect(oldFrame.origin.x,
                                       oldFrame.origin.y + oldFrame.size.height - newSize.height,
                                       newSize.width,
@@ -334,7 +299,7 @@ func canvas_size(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
                         }
                     }
                 } else {
-                    skin.logError("\(canvas_USERDATA_TAG):unable to get absolute positioning info for index position \(i + 1)")
+                    os_log(.error, "%{public}s", "\(canvas_USERDATA_TAG):unable to get absolute positioning info for index position \(i + 1)")
                 }
             }
             canvasWindow.setFrame(newFrame, display: true, animate: false)
@@ -348,12 +313,8 @@ func canvas_size(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 /// hs.canvas:alpha([alpha]) -> canvasObject | currentValue
 func canvas_alpha(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, canvas_USERDATA_TAG,
-                   LS_TNUMBER | LS_TOPTIONAL,
-                   LS_TBREAK)
 
-    let canvasView = skin.luaObject(at:1, toClass: "HSCanvasView") as! HSCanvasView
+    let canvasView = canvas_toHSCanvasViewFromLua(L, idx: 1) as! HSCanvasView
     let canvasWindow = canvasView.window as? HSCanvasWindow
 
     if lua_gettop(L) == 1 {
@@ -388,12 +349,8 @@ func canvas_orderBelow(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 /// hs.canvas:level([level]) -> canvasObject | currentValue
 func canvas_level(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, canvas_USERDATA_TAG,
-                   LS_TNUMBER | LS_TSTRING | LS_TOPTIONAL,
-                   LS_TBREAK)
 
-    let canvasView = skin.luaObject(at:1, toClass: "HSCanvasView") as! HSCanvasView
+    let canvasView = canvas_toHSCanvasViewFromLua(L, idx: 1) as! HSCanvasView
     if canvas_parentIsWindow(canvasView) {
         let canvasWindow = canvasView.window!
 
@@ -402,18 +359,15 @@ func canvas_level(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
         } else {
             var targetLevel: lua_Integer
             if lua_type(L, 2) == LUA_TNUMBER {
-                skin.checkArgs(LS_TUSERDATA, canvas_USERDATA_TAG,
-                               LS_TNUMBER | LS_TINTEGER,
-                               LS_TBREAK)
                 targetLevel = lua_tointeger(L, 2)
             } else {
                 canvas_cg_windowLevels(L)
-                if lua_getfield(L, -1, (skin.toNSObject(atIndex: 2) as! NSString).utf8String) == LUA_TNUMBER {
+                if lua_getfield(L, -1, (lua_tovalue(L, at: 2) as! NSString).utf8String) == LUA_TNUMBER {
                     targetLevel = lua_tointeger(L, -1)
                     lua_pop(L, 2)
                 } else {
                     lua_pop(L, 2)
-                    return luaL_error(L, "unrecognized window level: \(skin.toNSObject(atIndex: 2) ?? "unknown")")
+                    return luaL_error(L, "unrecognized window level: \(lua_tovalue(L, at: 2) ?? "unknown")")
                 }
             }
 
@@ -432,12 +386,8 @@ func canvas_level(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 /// hs.canvas:wantsLayer([flag]) -> canvasObject | currentValue
 func canvas_wantsLayer(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, canvas_USERDATA_TAG,
-                   LS_TBOOLEAN | LS_TOPTIONAL,
-                   LS_TBREAK)
 
-    let canvasView = skin.luaObject(at:1, toClass: "HSCanvasView") as! HSCanvasView
+    let canvasView = canvas_toHSCanvasViewFromLua(L, idx: 1) as! HSCanvasView
 
     if lua_type(L, 2) != LUA_TNONE {
         canvasView.wantsLayer = lua_toboolean(L, 2) != 0
@@ -451,21 +401,14 @@ func canvas_wantsLayer(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 }
 
 func canvas_behavior(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, canvas_USERDATA_TAG,
-                   LS_TNUMBER | LS_TOPTIONAL,
-                   LS_TBREAK)
 
-    let canvasView = skin.luaObject(at:1, toClass: "HSCanvasView") as! HSCanvasView
+    let canvasView = canvas_toHSCanvasViewFromLua(L, idx: 1) as! HSCanvasView
     if canvas_parentIsWindow(canvasView) {
         let canvasWindow = canvasView.window!
 
         if lua_gettop(L) == 1 {
             lua_pushinteger(L, lua_Integer(canvasWindow.collectionBehavior.rawValue))
         } else {
-            skin.checkArgs(LS_TUSERDATA, canvas_USERDATA_TAG,
-                           LS_TNUMBER | LS_TINTEGER,
-                           LS_TBREAK)
             let newLevel = lua_tointeger(L, 2)
             canvasWindow.collectionBehavior = NSWindow.CollectionBehavior(rawValue: UInt(newLevel))
             lua_pushvalue(L, 1)
@@ -479,10 +422,6 @@ func canvas_behavior(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 /// hs.canvas:delete([fadeOutTime]) -> none
 func canvas_delete(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, canvas_USERDATA_TAG,
-                   LS_TNUMBER | LS_TOPTIONAL,
-                   LS_TBREAK)
 
     canvas_hide(L)
     lua_pop(L, 1) // remove userdata pushed by hide
@@ -493,10 +432,9 @@ func canvas_delete(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 /// hs.canvas:isShowing() -> boolean
 func canvas_isShowing(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, canvas_USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, canvas_USERDATA_TAG)
 
-    let canvasView = skin.luaObject(at:1, toClass: "HSCanvasView") as! HSCanvasView
+    let canvasView = canvas_toHSCanvasViewFromLua(L, idx: 1) as! HSCanvasView
     let canvasWindow = canvasView.window as? HSCanvasWindow
     if canvas_parentIsWindow(canvasView) {
         lua_pushboolean(L, (canvasWindow?.isVisible ?? false) ? 1 : 0)
@@ -508,10 +446,9 @@ func canvas_isShowing(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 /// hs.canvas:isOccluded() -> boolean
 func canvas_isOccluded(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, canvas_USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, canvas_USERDATA_TAG)
 
-    let canvasView = skin.luaObject(at:1, toClass: "HSCanvasView") as! HSCanvasView
+    let canvasView = canvas_toHSCanvasViewFromLua(L, idx: 1) as! HSCanvasView
     let canvasWindow = canvasView.window as? HSCanvasWindow
     if canvas_parentIsWindow(canvasView) {
         let visible = canvasWindow?.occlusionState.contains(.visible) ?? false
@@ -525,16 +462,14 @@ func canvas_isOccluded(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 /// hs.canvas:transformation([matrix]) -> canvasObject | current value
 func canvas_canvasTransformation(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, canvas_USERDATA_TAG, LS_TTABLE | LS_TNIL | LS_TOPTIONAL, LS_TBREAK)
-    let canvasView = skin.luaObject(at:1, toClass: "HSCanvasView") as! HSCanvasView
+    let canvasView = canvas_toHSCanvasViewFromLua(L, idx: 1) as! HSCanvasView
 
     if lua_gettop(L) == 1 {
-        skin.pushNSObject(canvasView.canvasTransform)
+        lua_pushany(L, canvasView.canvasTransform)
     } else {
         var transform = NSAffineTransform()
         if lua_type(L, 2) == LUA_TTABLE {
-            transform = skin.luaObject(at:2, toClass: "NSAffineTransform") as! NSAffineTransform
+            transform = lua_tovalue(L, at: 2) as! NSAffineTransform
         }
         canvasView.canvasTransform = transform
         canvasView.needsDisplay = true
@@ -545,18 +480,16 @@ func canvas_canvasTransformation(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 
 /// hs.canvas:elementCount() -> integer
 func canvas_elementCount(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, canvas_USERDATA_TAG, LS_TBREAK)
-    let canvasView = skin.luaObject(at:1, toClass: "HSCanvasView") as! HSCanvasView
+    luaL_checkudata(L, 1, canvas_USERDATA_TAG)
+    let canvasView = canvas_toHSCanvasViewFromLua(L, idx: 1) as! HSCanvasView
     lua_pushinteger(L, lua_Integer(canvasView.elementList.count))
     return 1
 }
 
 /// hs.canvas:minimumTextSize([index], text) -> table
 func canvas_getTextElementSize(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, canvas_USERDATA_TAG, LS_TBREAK | LS_TVARARG)
-    let canvasView = skin.luaObject(at:1, toClass: "HSCanvasView") as! HSCanvasView
+    luaL_checkudata(L, 1, canvas_USERDATA_TAG)
+    let canvasView = canvas_toHSCanvasViewFromLua(L, idx: 1) as! HSCanvasView
     var textIndex: Int32 = 2
     var elementIndex = UInt(NSNotFound)
 
@@ -567,7 +500,7 @@ func canvas_getTextElementSize(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
     let theSize: NSSize
     if lua_type(L, textIndex) == LUA_TSTRING {
-        let theText = skin.toNSObject(atIndex: textIndex) as? String ?? ""
+        let theText = lua_tovalue(L, at: textIndex) as? String ?? ""
         let myFont: String
         let mySize: NSNumber
         let alignment: String
@@ -598,23 +531,19 @@ func canvas_getTextElementSize(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
         ]
         theSize = (theText as NSString).size(withAttributes: attributes)
     } else {
-        let attrStr = skin.toNSObject(atIndex: textIndex) as? NSAttributedString ?? NSAttributedString()
+        let attrStr = lua_tovalue(L, at: textIndex) as? NSAttributedString ?? NSAttributedString()
         theSize = attrStr.size()
     }
-    skin.pushNSSize(theSize)
+    lua_pushNSSize(L, theSize)
     return 1
 }
 
 /// hs.canvas:canvasDefaultFor(keyName, [newValue]) -> canvasObject | currentValue
 func canvas_canvasDefaultFor(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, canvas_USERDATA_TAG,
-                   LS_TSTRING,
-                   LS_TANY | LS_TOPTIONAL,
-                   LS_TBREAK)
 
-    let canvasView = skin.luaObject(at:1, toClass: "HSCanvasView") as! HSCanvasView
-    let keyName = skin.toNSObject(atIndex: 2) as! String
+    let canvasView = canvas_toHSCanvasViewFromLua(L, idx: 1) as! HSCanvasView
+    let keyName = lua_tovalue(L, at: 2) as! String
 
     guard canvas_languageDictionary[keyName] != nil else {
         return luaL_argerror(L, 2, "attribute name \(keyName) unrecognized")
@@ -625,9 +554,9 @@ func canvas_canvasDefaultFor(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     }
 
     if lua_gettop(L) == 2 {
-        skin.pushNSObject(attributeDefault as AnyObject)
+        lua_pushany(L, attributeDefault as AnyObject)
     } else {
-        let keyValue = skin.toNSObject(atIndex: 3, withOptions: .nsRawTables)
+        let keyValue = lua_tovalue(L, at: 3)
         let result = AttributeValidity(rawValue: canvasView.setDefault(for: keyName, to: keyValue, withState: L)) ?? .invalid
         switch result {
         case .valid, .nulling:
@@ -648,11 +577,7 @@ func canvas_canvasDefaultFor(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.canvas:insertElement(elementTable, [index]) -> canvasObject
 func canvas_insertElementAtIndex(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, canvas_USERDATA_TAG,
-                   LS_TTABLE,
-                   LS_TNUMBER | LS_TINTEGER | LS_TOPTIONAL,
-                   LS_TBREAK)
-    let canvasView = skin.luaObject(at:1, toClass: "HSCanvasView") as! HSCanvasView
+    let canvasView = canvas_toHSCanvasViewFromLua(L, idx: 1) as! HSCanvasView
     let elementCount = canvasView.elementList.count
     let tablePosition = (lua_gettop(L) == 3) ? Int(lua_tointeger(L, 3)) - 1 : elementCount
 
@@ -660,7 +585,7 @@ func canvas_insertElementAtIndex(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
         return luaL_argerror(L, 3, "index \(tablePosition + 1) out of bounds")
     }
 
-    guard let element = skin.toNSObject(atIndex: 2, withOptions: .nsRawTables) as? NSDictionary else {
+    guard let element = lua_tovalue(L, at: 2) as? NSDictionary else {
         return luaL_argerror(L, 2, "invalid element definition; must contain key-value pairs")
     }
 
@@ -683,11 +608,7 @@ func canvas_insertElementAtIndex(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 
 /// hs.canvas:removeElement([index]) -> canvasObject
 func canvas_removeElementAtIndex(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, canvas_USERDATA_TAG,
-                   LS_TNUMBER | LS_TINTEGER | LS_TOPTIONAL,
-                   LS_TBREAK)
-    let canvasView = skin.luaObject(at:1, toClass: "HSCanvasView") as! HSCanvasView
+    let canvasView = canvas_toHSCanvasViewFromLua(L, idx: 1) as! HSCanvasView
     let elementCount = canvasView.elementList.count
     let tablePosition = (lua_gettop(L) == 2) ? Int(lua_tointeger(L, 2)) - 1 : elementCount - 1
 
@@ -710,13 +631,8 @@ func canvas_removeElementAtIndex(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 /// hs.canvas:elementAttribute(index, key, [value]) -> canvasObject | current value
 func canvas_elementAttributeAtIndex(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, canvas_USERDATA_TAG,
-                   LS_TNUMBER | LS_TINTEGER,
-                   LS_TSTRING,
-                   LS_TANY | LS_TOPTIONAL,
-                   LS_TBREAK)
-    let canvasView = skin.luaObject(at:1, toClass: "HSCanvasView") as! HSCanvasView
-    var keyName = skin.toNSObject(atIndex: 3) as! String
+    let canvasView = canvas_toHSCanvasViewFromLua(L, idx: 1) as! HSCanvasView
+    var keyName = lua_tovalue(L, at: 3) as! String
 
     let elementCount = canvasView.elementList.count
     let tablePosition = Int(lua_tointeger(L, 2)) - 1
@@ -748,9 +664,9 @@ func canvas_elementAttributeAtIndex(_ L: UnsafeMutablePointer<lua_State>!) -> In
 
     if lua_gettop(L) == 3 {
         let value = canvasView.getElementValue(for: keyName, atIndex: UInt(tablePosition), resolvePercentages: resolvePercentages, onlyIfSet: false)
-        skin.pushNSObject(value as AnyObject?)
+        lua_pushany(L, value as AnyObject?)
     } else {
-        let keyValue = skin.toNSObject(atIndex: 4, withOptions: .nsRawTables)
+        let keyValue = lua_tovalue(L, at: 4)
         let result = AttributeValidity(rawValue: canvasView.setElementValue(for: keyName, atIndex: UInt(tablePosition), to: keyValue, withState: L)) ?? .invalid
         switch result {
         case .valid, .nulling:
@@ -765,11 +681,7 @@ func canvas_elementAttributeAtIndex(_ L: UnsafeMutablePointer<lua_State>!) -> In
 /// hs.canvas:elementKeys(index, [optional]) -> table
 func canvas_elementKeysAtIndex(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, canvas_USERDATA_TAG,
-                   LS_TNUMBER | LS_TINTEGER,
-                   LS_TBOOLEAN | LS_TOPTIONAL,
-                   LS_TBREAK)
-    let canvasView = skin.luaObject(at:1, toClass: "HSCanvasView") as! HSCanvasView
+    let canvasView = canvas_toHSCanvasViewFromLua(L, idx: 1) as! HSCanvasView
     let elementCount = canvasView.elementList.count
     let tablePosition = Int(lua_tointeger(L, 2)) - 1
 
@@ -786,39 +698,31 @@ func canvas_elementKeysAtIndex(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
             }
         }
     }
-    skin.pushNSObject(list)
+    lua_pushany(L, list)
     return 1
 }
 
 /// hs.canvas:canvasDefaults([module]) -> table
 func canvas_canvasDefaults(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, canvas_USERDATA_TAG,
-                   LS_TBOOLEAN | LS_TOPTIONAL,
-                   LS_TBREAK)
-    let canvasView = skin.luaObject(at:1, toClass: "HSCanvasView") as! HSCanvasView
+    let canvasView = canvas_toHSCanvasViewFromLua(L, idx: 1) as! HSCanvasView
 
     if lua_gettop(L) == 2 && lua_toboolean(L, 2) != 0 {
         lua_newtable(L)
         for key in (canvas_languageDictionary as! [String: Any]).keys {
             if let keyValue = canvasView.getDefaultValue(for: key, onlyIfSet: false) {
-                skin.pushNSObject(keyValue as AnyObject)
+                lua_pushany(L, keyValue as AnyObject)
                 lua_setfield(L, -2, key)
             }
         }
     } else {
-        skin.pushNSObject(canvasView.canvasDefaults, withOptions: LS_NSConversionOptions.nsDescribeUnknownTypes.rawValue)
+        lua_pushany(L, canvasView.canvasDefaults)
     }
     return 1
 }
 
 /// hs.canvas:canvasDefaultKeys([module]) -> table
 func canvas_canvasDefaultKeys(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, canvas_USERDATA_TAG,
-                   LS_TBOOLEAN | LS_TOPTIONAL,
-                   LS_TBREAK)
-    let canvasView = skin.luaObject(at:1, toClass: "HSCanvasView") as! HSCanvasView
+    let canvasView = canvas_toHSCanvasViewFromLua(L, idx: 1) as! HSCanvasView
 
     let list = NSMutableSet(array: canvasView.canvasDefaults.allKeys)
     if lua_gettop(L) == 2 && lua_toboolean(L, 2) != 0 {
@@ -828,26 +732,21 @@ func canvas_canvasDefaultKeys(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
             }
         }
     }
-    skin.pushNSObject(list)
+    lua_pushany(L, list)
     return 1
 }
 
 /// hs.canvas:canvasElements() -> table
 func canvas_canvasElements(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, canvas_USERDATA_TAG, LS_TBREAK)
-    let canvasView = skin.luaObject(at:1, toClass: "HSCanvasView") as! HSCanvasView
-    skin.pushNSObject(canvasView.elementList, withOptions: LS_NSConversionOptions.nsDescribeUnknownTypes.rawValue)
+    luaL_checkudata(L, 1, canvas_USERDATA_TAG)
+    let canvasView = canvas_toHSCanvasViewFromLua(L, idx: 1) as! HSCanvasView
+    lua_pushany(L, canvasView.elementList)
     return 1
 }
 
 /// hs.canvas:elementBounds(index) -> rectTable
 func canvas_elementBoundsAtIndex(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, canvas_USERDATA_TAG,
-                   LS_TNUMBER | LS_TINTEGER,
-                   LS_TBREAK)
-    let canvasView = skin.luaObject(at:1, toClass: "HSCanvasView") as! HSCanvasView
+    let canvasView = canvas_toHSCanvasViewFromLua(L, idx: 1) as! HSCanvasView
 
     let elementCount = canvasView.elementList.count
     let tablePosition = Int(lua_tointeger(L, 2)) - 1
@@ -877,18 +776,14 @@ func canvas_elementBoundsAtIndex(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
             return 1
         }
     }
-    skin.pushNSRect(boundingBox)
+    lua_pushNSRect(L, boundingBox)
     return 1
 }
 
 /// hs.canvas:assignElement(elementTable, [index]) -> canvasObject
 func canvas_assignElementAtIndex(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, canvas_USERDATA_TAG,
-                   LS_TTABLE | LS_TNIL,
-                   LS_TNUMBER | LS_TINTEGER | LS_TOPTIONAL,
-                   LS_TBREAK)
-    let canvasView = skin.luaObject(at:1, toClass: "HSCanvasView") as! HSCanvasView
+    let canvasView = canvas_toHSCanvasViewFromLua(L, idx: 1) as! HSCanvasView
 
     let elementCount = canvasView.elementList.count
     let tablePosition = (lua_gettop(L) == 3) ? Int(lua_tointeger(L, 3)) - 1 : elementCount
@@ -904,7 +799,7 @@ func canvas_assignElementAtIndex(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
             return luaL_argerror(L, 3, "nil only valid for final element")
         }
     } else {
-        guard let element = skin.toNSObject(atIndex: 2, withOptions: .nsRawTables) as? NSDictionary else {
+        guard let element = lua_tovalue(L, at: 2) as? NSDictionary else {
             return luaL_argerror(L, 2, "invalid element definition; must contain key-value pairs")
         }
         guard let elementType = element["type"] as? String, ALL_TYPES.contains(elementType) else {

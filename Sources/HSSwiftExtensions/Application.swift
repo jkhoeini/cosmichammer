@@ -2,9 +2,10 @@ import Cocoa
 import Carbon
 import Carbon.HIToolbox
 import LuaSkin
+import os.log
 
 private let USERDATA_TAG = "hs.application"
-private var refTable: LSRefTable = LUA_NOREF
+private var refTable: Int32 = LUA_NOREF
 
 // Carbon enum constants not bridged to Swift
 private let kAXMenuItemModifierNone: Int      = 0
@@ -19,7 +20,7 @@ private var backgroundCallbacks = NSMutableSet()
 
 private func getApp(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> HSapplicationProtocol? {
     let skin = LuaSkin.skin(with: L)
-    return skin.toNSObject(at: idx) as? HSapplicationProtocol
+    return lua_tovalue(L, at: idx) as? HSapplicationProtocol
 }
 
 private func appClassMethod(_ sel: String, with arg1: Any? = nil) -> Any? {
@@ -53,10 +54,8 @@ private func application_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * An hs.application object
 private func application_frontmostapplication(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TBREAK)
     let result = HSapplication.frontmostApplication(withState: L)
-    skin.pushNSObject(result)
+    lua_pushany(L, result)
     return 1
 }
 
@@ -70,10 +69,8 @@ private func application_frontmostapplication(_ L: UnsafeMutablePointer<lua_Stat
 /// Returns:
 ///  * A table containing zero or more hs.application objects currently running on the system
 private func application_runningapplications(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TBREAK)
     let result = HSapplication.runningApplications(withState: L)
-    skin.pushNSObject(result)
+    lua_pushany(L, result)
     return 1
 }
 
@@ -87,11 +84,10 @@ private func application_runningapplications(_ L: UnsafeMutablePointer<lua_State
 /// Returns:
 ///  * An hs.application object if one can be found, otherwise nil
 private func application_applicationforpid(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TNUMBER, LS_TBREAK)
+    luaL_checktype(L, 1, LUA_TNUMBER)
     let pid = pid_t(lua_tointegerx(L, 1, nil))
     let result = HSapplication.application(forPID: pid, withState: L)
-    skin.pushNSObject(result)
+    lua_pushany(L, result)
     return 1
 }
 
@@ -105,11 +101,10 @@ private func application_applicationforpid(_ L: UnsafeMutablePointer<lua_State>!
 /// Returns:
 ///  * A table of zero or more hs.application objects that match the given identifier
 private func application_applicationsForBundleID(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING, LS_TBREAK)
-    let bundleID = skin.toNSObject(atIndex: 1) as! String
+    luaL_checktype(L, 1, LUA_TSTRING)
+    let bundleID = lua_tovalue(L, at: 1) as! String
     let result = HSapplication.applications(forBundleID: bundleID, withState: L)
-    skin.pushNSObject(result)
+    lua_pushany(L, result)
     return 1
 }
 
@@ -123,11 +118,10 @@ private func application_applicationsForBundleID(_ L: UnsafeMutablePointer<lua_S
 /// Returns:
 ///  * A string containing the application name, or nil if the bundle identifier could not be located
 private func application_nameForBundleID(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING, LS_TBREAK)
-    let bundleID = skin.toNSObject(atIndex: 1) as! String
+    luaL_checktype(L, 1, LUA_TSTRING)
+    let bundleID = lua_tovalue(L, at: 1) as! String
     let result = appClassMethod("nameForBundleID:", with: bundleID as NSString)
-    skin.pushNSObject(result)
+    lua_pushany(L, result)
     return 1
 }
 
@@ -141,11 +135,10 @@ private func application_nameForBundleID(_ L: UnsafeMutablePointer<lua_State>!) 
 /// Returns:
 ///  * A string containing the app bundle's filesystem path, or nil if the bundle identifier could not be located
 private func application_pathForBundleID(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING, LS_TBREAK)
-    let bundleID = skin.toNSObject(atIndex: 1) as! String
+    luaL_checktype(L, 1, LUA_TSTRING)
+    let bundleID = lua_tovalue(L, at: 1) as! String
     let result = appClassMethod("pathForBundleID:", with: bundleID as NSString)
-    skin.pushNSObject(result)
+    lua_pushany(L, result)
     return 1
 }
 
@@ -159,11 +152,10 @@ private func application_pathForBundleID(_ L: UnsafeMutablePointer<lua_State>!) 
 /// Returns:
 ///  * A table containing information about the application, or nil if the bundle identifier could not be located
 private func application_infoForBundleID(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING, LS_TBREAK)
-    let bundleID = skin.toNSObject(atIndex: 1) as! String
+    luaL_checktype(L, 1, LUA_TSTRING)
+    let bundleID = lua_tovalue(L, at: 1) as! String
     let result = appClassMethod("infoForBundleID:", with: bundleID as NSString)
-    skin.pushNSObject(result)
+    lua_pushany(L, result)
     return 1
 }
 
@@ -177,11 +169,10 @@ private func application_infoForBundleID(_ L: UnsafeMutablePointer<lua_State>!) 
 /// Returns:
 ///  * A table containing language IDs for localizations in the bundle. The strings are ordered according to the user's language preferences and available localizations.
 private func application_preferredLocalizationsForBundleID(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING, LS_TBREAK)
-    let bundleID = skin.toNSObject(atIndex: 1) as! String
+    luaL_checktype(L, 1, LUA_TSTRING)
+    let bundleID = lua_tovalue(L, at: 1) as! String
     let result = appClassMethod("preferredLocalizationsForBundleID:", with: bundleID as NSString)
-    skin.pushNSObject(result)
+    lua_pushany(L, result)
     return 1
 }
 
@@ -195,11 +186,10 @@ private func application_preferredLocalizationsForBundleID(_ L: UnsafeMutablePoi
 /// Returns:
 ///  * A table containing language IDs for localizations in the bundle. The strings are ordered according to the user's language preferences and available localizations.
 private func application_preferredLocalizationsForBundlePath(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING, LS_TBREAK)
-    let bundlePath = skin.toNSObject(atIndex: 1) as! String
+    luaL_checktype(L, 1, LUA_TSTRING)
+    let bundlePath = lua_tovalue(L, at: 1) as! String
     let result = appClassMethod("preferredLocalizationsForBundlePath:", with: bundlePath as NSString)
-    skin.pushNSObject(result)
+    lua_pushany(L, result)
     return 1
 }
 
@@ -213,11 +203,10 @@ private func application_preferredLocalizationsForBundlePath(_ L: UnsafeMutableP
 /// Returns:
 ///  * A table containing language IDs for all the localizations contained in the bundle.
 private func application_localizationsForBundleID(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING, LS_TBREAK)
-    let bundleID = skin.toNSObject(atIndex: 1) as! String
+    luaL_checktype(L, 1, LUA_TSTRING)
+    let bundleID = lua_tovalue(L, at: 1) as! String
     let result = appClassMethod("localizationsForBundleID:", with: bundleID as NSString)
-    skin.pushNSObject(result)
+    lua_pushany(L, result)
     return 1
 }
 
@@ -231,11 +220,10 @@ private func application_localizationsForBundleID(_ L: UnsafeMutablePointer<lua_
 /// Returns:
 ///  * A table containing language IDs for all the localizations contained in the bundle.
 private func application_localizationsForBundlePath(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING, LS_TBREAK)
-    let bundlePath = skin.toNSObject(atIndex: 1) as! String
+    luaL_checktype(L, 1, LUA_TSTRING)
+    let bundlePath = lua_tovalue(L, at: 1) as! String
     let result = appClassMethod("localizationsForBundlePath:", with: bundlePath as NSString)
-    skin.pushNSObject(result)
+    lua_pushany(L, result)
     return 1
 }
 
@@ -249,11 +237,10 @@ private func application_localizationsForBundlePath(_ L: UnsafeMutablePointer<lu
 /// Returns:
 ///  * A table containing information about the application, or nil if the bundle could not be located
 private func application_infoForBundlePath(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING, LS_TBREAK)
-    let bundlePath = skin.toNSObject(atIndex: 1) as! String
+    luaL_checktype(L, 1, LUA_TSTRING)
+    let bundlePath = lua_tovalue(L, at: 1) as! String
     let result = appClassMethod("infoForBundlePath:", with: bundlePath as NSString)
-    skin.pushNSObject(result)
+    lua_pushany(L, result)
     return 1
 }
 
@@ -267,10 +254,9 @@ private func application_infoForBundlePath(_ L: UnsafeMutablePointer<lua_State>!
 /// Returns:
 ///  * A string containing a bundle ID, or nil if none could be found
 private func application_bundleForUTI(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING, LS_TBREAK)
+    luaL_checktype(L, 1, LUA_TSTRING)
 
-    let uti = skin.toNSObject(atIndex: 1) as! NSString
+    let uti = lua_tovalue(L, at: 1) as! NSString
 
     var cfhandler: Unmanaged<CFString>? = LSCopyDefaultRoleHandlerForContentType(uti as CFString, LSRolesMask.all)
     if cfhandler == nil {
@@ -282,7 +268,7 @@ private func application_bundleForUTI(_ L: UnsafeMutablePointer<lua_State>!) -> 
     }
 
     let handler = cfhandler!.takeRetainedValue()
-    skin.pushNSObject(handler as NSString)
+    lua_pushany(L, handler as NSString)
     return 1
 }
 
@@ -306,10 +292,9 @@ private func application_bundleForUTI(_ L: UnsafeMutablePointer<lua_State>!) -> 
 ///    - minimized windows and hidden windows (i.e. belonging to hidden apps, e.g. via cmd-h) are always considered
 ///      to be in the current Space
 private func application_allWindows(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     guard let app = getApp(L, at: 1) else { lua_pushnil(L); return 1 }
-    skin.pushNSObject(app.allWindows())
+    lua_pushany(L, app.allWindows())
     return 1
 }
 
@@ -323,10 +308,9 @@ private func application_allWindows(_ L: UnsafeMutablePointer<lua_State>!) -> In
 /// Returns:
 ///  * An hs.window object representing the main window of the application, or nil if it has no windows
 private func application_mainWindow(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     guard let app = getApp(L, at: 1) else { lua_pushnil(L); return 1 }
-    skin.pushNSObject(app.mainWindow())
+    lua_pushany(L, app.mainWindow())
     return 1
 }
 
@@ -340,32 +324,27 @@ private func application_mainWindow(_ L: UnsafeMutablePointer<lua_State>!) -> In
 /// Returns:
 ///  * An hs.window object representing the window of the application that currently has focus, or nil if there are none
 private func application_focusedWindow(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     guard let app = getApp(L, at: 1) else { lua_pushnil(L); return 1 }
-    skin.pushNSObject(app.focusedWindow())
+    lua_pushany(L, app.focusedWindow())
     return 1
 }
 
 private func application__activate(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBOOLEAN, LS_TBREAK)
     guard let app = getApp(L, at: 1) else { lua_pushboolean(L, 0); return 1 }
     lua_pushboolean(L, app.activate(lua_toboolean(L, 2) != 0) ? 1 : 0)
     return 1
 }
 
 private func application_isunresponsive(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     guard let app = getApp(L, at: 1) else { lua_pushboolean(L, 0); return 1 }
     lua_pushboolean(L, app.isResponsive() ? 0 : 1)
     return 1
 }
 
 private func application__bringtofront(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     guard let app = getApp(L, at: 1) else { lua_pushboolean(L, 0); return 1 }
     lua_pushboolean(L, app.setFrontmost(lua_toboolean(L, 2) != 0) ? 1 : 0)
     return 1
@@ -381,10 +360,9 @@ private func application__bringtofront(_ L: UnsafeMutablePointer<lua_State>!) ->
 /// Returns:
 ///  * A string containing the name of the application
 private func application_title(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     guard let app = getApp(L, at: 1) else { lua_pushnil(L); return 1 }
-    skin.pushNSObject(app.title())
+    lua_pushany(L, app.title())
     return 1
 }
 
@@ -398,10 +376,9 @@ private func application_title(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * A string containing the bundle identifier of the application
 private func application_bundleID(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     guard let app = getApp(L, at: 1) else { lua_pushnil(L); return 1 }
-    skin.pushNSObject(app.bundleID())
+    lua_pushany(L, app.bundleID())
     return 1
 }
 
@@ -415,10 +392,9 @@ private func application_bundleID(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
 /// Returns:
 ///  * A string containing the filesystem path of the application or nil if the path could not be determined (e.g. if the application has terminated).
 private func application_path(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     guard let app = getApp(L, at: 1) else { lua_pushnil(L); return 1 }
-    skin.pushNSObject(app.path())
+    lua_pushany(L, app.path())
     return 1
 }
 
@@ -435,8 +411,7 @@ private func application_path(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Notes:
 ///  * If an application is terminated and re-launched, this method will still return false, as `hs.application` objects are tied to a specific instance of an application (i.e. its PID)
 private func application_isRunning(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     guard let app = getApp(L, at: 1) else { lua_pushboolean(L, 0); return 1 }
     lua_pushboolean(L, app.isRunning(withState: L) ? 1 : 0)
     return 1
@@ -452,8 +427,7 @@ private func application_isRunning(_ L: UnsafeMutablePointer<lua_State>!) -> Int
 /// Returns:
 ///  * A boolean indicating whether the application was successfully unhidden
 private func application_unhide(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     guard let app = getApp(L, at: 1) else { lua_pushboolean(L, 0); return 1 }
     app.hidden = false
     lua_pushboolean(L, app.hidden ? 0 : 1)
@@ -470,8 +444,7 @@ private func application_unhide(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 /// Returns:
 ///  * A boolean indicating whether the application was successfully hidden
 private func application_hide(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     guard let app = getApp(L, at: 1) else { lua_pushboolean(L, 0); return 1 }
     app.hidden = true
     lua_pushboolean(L, app.hidden ? 1 : 0)
@@ -488,8 +461,7 @@ private func application_hide(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * None
 private func application_kill(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     guard let app = getApp(L, at: 1) else { return 0 }
     app.kill()
     return 0
@@ -505,8 +477,7 @@ private func application_kill(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * None
 private func application_kill9(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     guard let app = getApp(L, at: 1) else { return 0 }
     app.kill9()
     return 0
@@ -522,8 +493,7 @@ private func application_kill9(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * A boolean indicating whether the application is hidden or not
 private func application_ishidden(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     guard let app = getApp(L, at: 1) else { lua_pushboolean(L, 0); return 1 }
     lua_pushboolean(L, app.hidden ? 1 : 0)
     return 1
@@ -539,8 +509,7 @@ private func application_ishidden(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
 /// Returns:
 ///  * True if the application is the frontmost application, otherwise false
 private func application_isfrontmost(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     guard let app = getApp(L, at: 1) else { lua_pushboolean(L, 0); return 1 }
     lua_pushboolean(L, app.isFrontmost() ? 1 : 0)
     return 1
@@ -557,8 +526,7 @@ private func application_isfrontmost(_ L: UnsafeMutablePointer<lua_State>!) -> I
 ///  * A boolean, true if the operation was successful, otherwise false
 private func application_setfrontmost(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     var allWindows = false
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     guard let app = getApp(L, at: 1) else { lua_pushboolean(L, 0); return 1 }
 
     if lua_type(L, 2) == LUA_TBOOLEAN {
@@ -579,8 +547,7 @@ private func application_setfrontmost(_ L: UnsafeMutablePointer<lua_State>!) -> 
 /// Returns:
 ///  * The UNIX process identifier of the application (i.e. a number)
 private func application_pid(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     guard let app = getApp(L, at: 1) else { lua_pushinteger(L, 0); return 1 }
     lua_pushinteger(L, lua_Integer(app.pid))
     return 1
@@ -596,8 +563,7 @@ private func application_pid(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * A number that is either 1 if the app is in the dock, 0 if it is not, or -1 if the application is prohibited from having GUI elements
 private func application_kind(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     guard let app = getApp(L, at: 1) else { lua_pushinteger(L, -1); return 1 }
     lua_pushinteger(L, lua_Integer(app.kind()))
     return 1
@@ -606,7 +572,6 @@ private func application_kind(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 // MARK: - Menu helpers
 
 private func _findmenuitembyname(_ L: UnsafeMutablePointer<lua_State>!, _ app: AXUIElement, _ name: String, _ nameIsRegex: Bool) -> AXUIElement? {
-    let skin = LuaSkin.skin(with: L)
 
     var menuBarRef: CFTypeRef?
     var error = AXUIElementCopyAttributeValue(app, kAXMenuBarAttribute as CFString, &menuBarRef)
@@ -639,14 +604,14 @@ private func _findmenuitembyname(_ L: UnsafeMutablePointer<lua_State>!, _ app: A
         var childcount: CFIndex = -1
         let childError = AXUIElementGetAttributeValueCount(element, kAXChildrenAttribute as CFString, &childcount)
         if childError != .success {
-            skin.logBreadcrumb("Got an error (\(childError.rawValue)) checking child count, skipping")
+            os_log(.debug, "%{public}s", "Got an error (\(childError.rawValue)) checking child count, skipping")
             continue
         }
         if childcount > 0 {
             var cfMenuchildren: CFArray?
             let menuChildError = AXUIElementCopyAttributeValues(element, kAXChildrenAttribute as CFString, 0, childcount, &cfMenuchildren)
             if menuChildError != .success {
-                skin.logBreadcrumb("Got an error (\(menuChildError.rawValue)) fetching menu children, skipping")
+                os_log(.debug, "%{public}s", "Got an error (\(menuChildError.rawValue)) fetching menu children, skipping")
                 continue
             }
             if let menuchildren = cfMenuchildren {
@@ -665,13 +630,12 @@ private func _findmenuitembyname(_ L: UnsafeMutablePointer<lua_State>!, _ app: A
     }
 
     if i == 0 {
-        skin.logWarn("_findmenuitembyname() overflowed 5000 iteration guard. This is either a Cosmic Hammer bug, or your menus are too deep")
+        os_log(.info, "%{public}s", "_findmenuitembyname() overflowed 5000 iteration guard. This is either a Cosmic Hammer bug, or your menus are too deep")
     }
     return nil
 }
 
 private func _findmenuitembypath(_ L: UnsafeMutablePointer<lua_State>!, _ app: AXUIElement, _ _path: [String]) -> AXUIElement? {
-    let skin = LuaSkin.skin(with: L)
     var foundItem: AXUIElement?
     let path = NSMutableArray(array: _path)
 
@@ -688,14 +652,14 @@ private func _findmenuitembypath(_ L: UnsafeMutablePointer<lua_State>!, _ app: A
         var count: CFIndex = -1
         error = AXUIElementGetAttributeValueCount(searchItem, kAXChildrenAttribute as CFString, &count)
         guard error == .success else {
-            skin.logBreadcrumb("Failed to get child count")
+            os_log(.debug, "%{public}s", "Failed to get child count")
             break
         }
 
         var cfChildren: CFArray?
         error = AXUIElementCopyAttributeValues(searchItem, kAXChildrenAttribute as CFString, 0, count, &cfChildren)
         guard error == .success, var children = cfChildren else {
-            skin.logBreadcrumb("Failed to get children")
+            os_log(.debug, "%{public}s", "Failed to get children")
             break
         }
 
@@ -705,7 +669,7 @@ private func _findmenuitembypath(_ L: UnsafeMutablePointer<lua_State>!, _ app: A
             var cfRole: CFTypeRef?
             error = AXUIElementCopyAttributeValue(aSearchElement, kAXRoleAttribute as CFString, &cfRole)
             guard error == .success else {
-                skin.logBreadcrumb("Failed to get role")
+                os_log(.debug, "%{public}s", "Failed to get role")
                 break
             }
             let isMenuRole = CFStringCompare(cfRole as! CFString, kAXMenuRole as CFString, [])
@@ -713,13 +677,13 @@ private func _findmenuitembypath(_ L: UnsafeMutablePointer<lua_State>!, _ app: A
                 var axMenuCount: CFIndex = -1
                 error = AXUIElementGetAttributeValueCount(aSearchElement, kAXChildrenAttribute as CFString, &axMenuCount)
                 guard error == .success else {
-                    skin.logBreadcrumb("Failed to get AXMenu child count")
+                    os_log(.debug, "%{public}s", "Failed to get AXMenu child count")
                     break
                 }
                 var axMenuChildren: CFArray?
                 error = AXUIElementCopyAttributeValues(aSearchElement, kAXChildrenAttribute as CFString, 0, axMenuCount, &axMenuChildren)
                 guard error == .success, let newChildren = axMenuChildren else {
-                    skin.logBreadcrumb("Failed to get AXMenu children")
+                    os_log(.debug, "%{public}s", "Failed to get AXMenu children")
                     break
                 }
                 children = newChildren
@@ -737,7 +701,7 @@ private func _findmenuitembypath(_ L: UnsafeMutablePointer<lua_State>!, _ app: A
             var cfTitle: CFTypeRef?
             let titleError = AXUIElementCopyAttributeValue(testMenuItem, kAXTitleAttribute as CFString, &cfTitle)
             if titleError != .success {
-                skin.logBreadcrumb("Unable to get menu item title")
+                os_log(.debug, "%{public}s", "Unable to get menu item title")
                 continue
             }
             if nextMenuItem == (cfTitle as? String ?? "") {
@@ -748,7 +712,7 @@ private func _findmenuitembypath(_ L: UnsafeMutablePointer<lua_State>!, _ app: A
         }
 
         if !found {
-            skin.logBreadcrumb("Unable to resolve complete search path")
+            os_log(.debug, "%{public}s", "Unable to resolve complete search path")
             break
         }
 
@@ -777,8 +741,6 @@ private func _findmenuitembypath(_ L: UnsafeMutablePointer<lua_State>!, _ app: A
 /// Notes:
 ///  * This can only search for menu items that don't have children - i.e. you can't search for the name of a submenu
 private func application_findmenuitem(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING | LS_TTABLE, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
     guard let app = getApp(L, at: 1) else { lua_pushnil(L); return 1 }
 
     var foundItem: AXUIElement?
@@ -803,16 +765,16 @@ private func application_findmenuitem(_ L: UnsafeMutablePointer<lua_State>!) -> 
         path = pathArray
         foundItem = _findmenuitembypath(L, app.elementRef, pathArray)
     } else {
-        skin.logWarn("hs.application:findMenuItem() Unrecognised type for menuItem argument. Expecting string or table")
+        os_log(.info, "%{public}s", "hs.application:findMenuItem() Unrecognised type for menuItem argument. Expecting string or table")
         lua_pushnil(L)
         return 1
     }
 
     guard let foundItem = foundItem else {
         if let name = name {
-            skin.logBreadcrumb("Couldn't find menu item \(name)")
+            os_log(.debug, "%{public}s", "Couldn't find menu item \(name)")
         } else if path != nil {
-            skin.logBreadcrumb("Couldn't find menu item")
+            os_log(.debug, "%{public}s", "Couldn't find menu item")
         }
         lua_pushnil(L)
         return 1
@@ -821,7 +783,7 @@ private func application_findmenuitem(_ L: UnsafeMutablePointer<lua_State>!) -> 
     var enabled: CFTypeRef?
     var error = AXUIElementCopyAttributeValue(foundItem, kAXEnabledAttribute as CFString, &enabled)
     if error != .success {
-        skin.logBreadcrumb("hs.application:findMenuItem: AXEnabled Error: \(error.rawValue)")
+        os_log(.debug, "%{public}s", "hs.application:findMenuItem: AXEnabled Error: \(error.rawValue)")
         lua_pushnil(L)
         return 1
     }
@@ -829,7 +791,7 @@ private func application_findmenuitem(_ L: UnsafeMutablePointer<lua_State>!) -> 
     var markchar: CFTypeRef?
     error = AXUIElementCopyAttributeValue(foundItem, kAXMenuItemMarkCharAttribute as CFString, &markchar)
     if error != .success && error != .noValue {
-        skin.logBreadcrumb("hs.application:findMenuItem: AXMenuItemMarkChar: \(error.rawValue)")
+        os_log(.debug, "%{public}s", "hs.application:findMenuItem: AXMenuItemMarkChar: \(error.rawValue)")
         lua_pushnil(L)
         return 1
     }
@@ -861,8 +823,6 @@ private func application_findmenuitem(_ L: UnsafeMutablePointer<lua_State>!) -> 
 /// Notes:
 ///  * Depending on the type of menu item involved, this will either activate or tick/untick the menu item
 private func application_selectmenuitem(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING | LS_TTABLE, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
     guard let app = getApp(L, at: 1) else { lua_pushnil(L); return 1 }
 
     var foundItem: AXUIElement?
@@ -885,20 +845,20 @@ private func application_selectmenuitem(_ L: UnsafeMutablePointer<lua_State>!) -
         }
         foundItem = _findmenuitembypath(L, app.elementRef, path)
     } else {
-        skin.logWarn("hs.application:selectMenuItem(): Unrecognised type for menuItem argument, expecting string or table")
+        os_log(.info, "%{public}s", "hs.application:selectMenuItem(): Unrecognised type for menuItem argument, expecting string or table")
         lua_pushnil(L)
         return 1
     }
 
     guard let foundItem = foundItem else {
-        skin.logBreadcrumb("Couldn't find \(name ?? "")")
+        os_log(.debug, "%{public}s", "Couldn't find \(name ?? "")")
         lua_pushnil(L)
         return 1
     }
 
     let error = AXUIElementPerformAction(foundItem, kAXPressAction as CFString)
     if error != .success {
-        skin.logBreadcrumb("hs.application:selectMenuItem(): AXPress error: \(error.rawValue)")
+        os_log(.debug, "%{public}s", "hs.application:selectMenuItem(): AXPress error: \(error.rawValue)")
         lua_pushnil(L)
         return 1
     }
@@ -1037,7 +997,6 @@ private func _getMenuStructure(_ menuItem: AXUIElement) -> Any {
 ///  * Using `hs.inspect()` on these tables, while useful for exploration, can be extremely slow, taking several minutes to correctly render very complex menus
 private func application_getMenus(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TFUNCTION | LS_TOPTIONAL, LS_TBREAK)
     guard let app = getApp(L, at: 1) else { lua_pushnil(L); return 1 }
 
     if lua_gettop(L) == 1 {
@@ -1049,7 +1008,7 @@ private func application_getMenus(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
             menus = _getMenuStructure(menuBar) as? NSMutableDictionary
         }
 
-        skin.pushNSObject(menus)
+        lua_pushany(L, menus)
     } else {
         lua_pushvalue(L, 2)
         let fnRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
@@ -1068,10 +1027,10 @@ private func application_getMenus(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
                 }
 
                 let _skin = LuaSkin.skin(with: nil)
-                lua_rawgeti(_skin.l, LUA_REGISTRYINDEX_VALUE, lua_Integer(fnRef))
-                _skin.pushNSObject(menus)
-                _skin.protectedCallAndError("hs.application:getMenus()", nargs: 1, nresults: 0)
-                luaL_unref(_skin.l, LUA_REGISTRYINDEX_VALUE, fnRef)
+                lua_rawgeti(LuaSkin.skin(with: nil).l!, LUA_REGISTRYINDEX_VALUE, lua_Integer(fnRef))
+                lua_pushany(L, menus)
+                if lua_pcall(L, 1, 0, 0) != LUA_OK { lua_pop(L, 1) }
+                luaL_unref(LuaSkin.skin(with: nil).l!, LUA_REGISTRYINDEX_VALUE, fnRef)
                 backgroundCallbacks.remove(NSNumber(value: fnRef))
             }
         }
@@ -1096,10 +1055,9 @@ private func application_getMenus(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
 /// Notes:
 ///  * The name parameter should match the name of the application on disk, e.g. "IntelliJ IDEA", rather than "IntelliJ"
 private func application_launchorfocus(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING, LS_TBREAK)
+    luaL_checktype(L, 1, LUA_TSTRING)
     guard let appClass = HSuicore.applicationClass else { lua_pushboolean(L, 0); return 1 }
-    let name = skin.toNSObject(atIndex: 1) as! NSString
+    let name = lua_tovalue(L, at: 1) as! NSString
     let result = (appClass as AnyObject).perform(Selector(("launchByName:")), with: name)
     lua_pushboolean(L, result != nil ? 1 : 0)
     return 1
@@ -1118,10 +1076,9 @@ private func application_launchorfocus(_ L: UnsafeMutablePointer<lua_State>!) ->
 /// Notes:
 ///  * Bundle identifiers typically take the form of `com.company.ApplicationName`
 private func application_launchorfocusbybundleID(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING, LS_TBREAK)
+    luaL_checktype(L, 1, LUA_TSTRING)
     guard let appClass = HSuicore.applicationClass else { lua_pushboolean(L, 0); return 1 }
-    let bundleID = skin.toNSObject(atIndex: 1) as! NSString
+    let bundleID = lua_tovalue(L, at: 1) as! NSString
     let result = (appClass as AnyObject).perform(Selector(("launchByBundleID:")), with: bundleID)
     lua_pushboolean(L, result != nil ? 1 : 0)
     return 1
@@ -1130,8 +1087,7 @@ private func application_launchorfocusbybundleID(_ L: UnsafeMutablePointer<lua_S
 // MARK: - hs.uielement methods
 
 private func application_uielement_isApplication(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     guard let app = getApp(L, at: 1) else { lua_pushboolean(L, 0); return 1 }
     if let uiElement = app.uiElement as? HSuielementProtocol {
         lua_pushboolean(L, uiElement.role == "AXApplication" ? 1 : 0)
@@ -1142,8 +1098,7 @@ private func application_uielement_isApplication(_ L: UnsafeMutablePointer<lua_S
 }
 
 private func application_uielement_isWindow(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     guard let app = getApp(L, at: 1) else { lua_pushboolean(L, 0); return 1 }
     if let uiElement = app.uiElement as? HSuielementProtocol {
         lua_pushboolean(L, uiElement.isWindow ? 1 : 0)
@@ -1154,11 +1109,10 @@ private func application_uielement_isWindow(_ L: UnsafeMutablePointer<lua_State>
 }
 
 private func application_uielement_role(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     guard let app = getApp(L, at: 1) else { lua_pushnil(L); return 1 }
     if let uiElement = app.uiElement as? HSuielementProtocol {
-        skin.pushNSObject(uiElement.role as NSString)
+        lua_pushany(L, uiElement.role as NSString)
     } else {
         lua_pushnil(L)
     }
@@ -1166,11 +1120,10 @@ private func application_uielement_role(_ L: UnsafeMutablePointer<lua_State>!) -
 }
 
 private func application_uielement_selectedText(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     guard let app = getApp(L, at: 1) else { lua_pushnil(L); return 1 }
     if let uiElement = app.uiElement as? HSuielementProtocol {
-        skin.pushNSObject(uiElement.selectedText as NSString?)
+        lua_pushany(L, uiElement.selectedText as NSString?)
     } else {
         lua_pushnil(L)
     }
@@ -1178,12 +1131,10 @@ private func application_uielement_selectedText(_ L: UnsafeMutablePointer<lua_St
 }
 
 private func application_uielement_newWatcher(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TFUNCTION, LS_TANY | LS_TOPTIONAL, LS_TBREAK)
     guard let app = getApp(L, at: 1) else { lua_pushnil(L); return 1 }
     if let uiElement = app.uiElement as? HSuielementProtocol {
         let watcher = uiElement.newWatcher(atIndex: 2, withUserdataAtIndex: 3, withLuaState: L)
-        skin.pushNSObject(watcher)
+        lua_pushany(L, watcher)
     } else {
         lua_pushnil(L)
     }
@@ -1204,14 +1155,13 @@ private func pushHSapplication(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any
 }
 
 private func toHSapplicationFromLua(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> Any! {
-    let skin = LuaSkin.skin(with: L)
     if luaL_testudata(L, idx, USERDATA_TAG) != nil {
         let ptr = luaL_checkudata(L, idx, USERDATA_TAG)!
             .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
         guard let rawPtr = ptr.pointee else { return nil }
         return Unmanaged<NSObject>.fromOpaque(rawPtr).takeUnretainedValue()
     } else {
-        skin.logError("expected \(USERDATA_TAG) object, found \(String(cString: lua_typename(L, lua_type(L, idx))))")
+        os_log(.error, "%{public}s", "expected \(USERDATA_TAG) object, found \(String(cString: lua_typename(L, lua_type(L, idx))))")
     }
     return nil
 }
@@ -1219,8 +1169,7 @@ private func toHSapplicationFromLua(_ L: UnsafeMutablePointer<lua_State>!, _ idx
 // MARK: - Infrastructure
 
 private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     let app = getApp(L, at: 1)
     let title = app?.title() ?? "?"
     lua_pushstring(L, "\(USERDATA_TAG): \(title) (\(String(describing: lua_topointer(L, 1)!)))")
@@ -1231,8 +1180,8 @@ private func userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     var isEqual = false
     if luaL_testudata(L, 1, USERDATA_TAG) != nil && luaL_testudata(L, 2, USERDATA_TAG) != nil {
         let skin = LuaSkin.skin(with: L)
-        if let app1 = skin.toNSObject(at: 1) as? HSapplicationProtocol,
-           let app2 = skin.toNSObject(at: 2) as? HSapplicationProtocol {
+        if let app1 = lua_tovalue(L, at: 1) as? HSapplicationProtocol,
+           let app2 = lua_tovalue(L, at: 2) as? HSapplicationProtocol {
             isEqual = app1.runningApp.isEqual(app2.runningApp)
         }
     }
@@ -1241,8 +1190,7 @@ private func userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 }
 
 private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     let ptr = luaL_checkudata(L, 1, USERDATA_TAG)!
         .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
     if let rawPtr = ptr.pointee {

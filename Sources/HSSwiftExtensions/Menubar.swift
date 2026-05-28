@@ -1,11 +1,12 @@
 import Cocoa
 import Carbon
 import LuaSkin
+import os.log
 
 // MARK: - Definitions
 
 let mb_USERDATA_TAG = "hs.menubar"
-var mb_refTable: LSRefTable = LUA_NOREF
+var mb_refTable: Int32 = LUA_NOREF
 
 func mb_get_item_arg(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> UnsafeMutablePointer<menubaritem_t> {
     return luaL_checkudata(L, idx, mb_USERDATA_TAG)!.assumingMemoryBound(to: menubaritem_t.self)
@@ -38,7 +39,6 @@ func mb_get_item_arg(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> Uns
 ///  * A hidden menubaritem can be added to the system menubar by calling hs.menubar:returnToMenuBar() or used as a pop-up menu by calling hs.menubar:popupMenu().
 func menubarNew(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TBOOLEAN | LS_TOPTIONAL, LS_TSTRING | LS_TOPTIONAL, LS_TBREAK)
 
     let statusBar = NSStatusBar.system
     var statusItem: NSStatusItem
@@ -50,7 +50,7 @@ func menubarNew(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     }
 
     if lua_isstring(L, 2) {
-        let autosaveName = skin.toNSObject(at:2) as! String
+        let autosaveName = lua_tovalue(L, at: 2) as! String
 
         let preferredPositionString = "NSStatusItem Preferred Position"
         var key = "HS\(preferredPositionString) \(autosaveName)"
@@ -95,14 +95,11 @@ func menubarNew(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * Either the menubar item, if its autosave name was changed, or the current value of the autosave name
 func menubar_autosaveName(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, mb_USERDATA_TAG,
-                   LS_TSTRING | LS_TOPTIONAL,
-                   LS_TBREAK)
     let menuBarItem = mb_get_item_arg(L, 1)
     let menuItem = Unmanaged<NSStatusItem>.fromOpaque(menuBarItem.pointee.menuBarItemObject!).takeUnretainedValue()
 
     if lua_gettop(L) == 2 {
-        let autosaveName = skin.toNSObject(at:2) as! String
+        let autosaveName = lua_tovalue(L, at: 2) as! String
 
         let preferredPositionString = "NSStatusItem Preferred Position"
         var key = "HS\(preferredPositionString) \(autosaveName)"
@@ -115,7 +112,7 @@ func menubar_autosaveName(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
         lua_settop(L, 1)
     } else {
-        skin.pushNSObject(menuItem.autosaveName as NSString?)
+        lua_pushany(L, menuItem.autosaveName as NSString?)
     }
     return 1
 }
@@ -130,10 +127,6 @@ func menubar_autosaveName(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * Either the menubar item, if its image position was changed, or the current value of the image position
 func menubarImagePosition(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, mb_USERDATA_TAG,
-                   LS_TNUMBER | LS_TINTEGER | LS_TOPTIONAL,
-                   LS_TBREAK)
     let menuBarItem = mb_get_item_arg(L, 1)
     let menuItem = Unmanaged<NSStatusItem>.fromOpaque(menuBarItem.pointee.menuBarItemObject!).takeUnretainedValue()
     let button = menuItem.button!
@@ -162,8 +155,6 @@ func menubarImagePosition(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * Has no affect on the display of a pop-up menu, but changes will be be in effect if hs.menubar:returnToMenuBar() is called on the menubaritem.
 func menubarSetTitle(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, mb_USERDATA_TAG,
-                   LS_TANY | LS_TOPTIONAL, LS_TBREAK)
     let menuBarItem = mb_get_item_arg(L, 1)
 
     var titleText: String? = nil
@@ -172,9 +163,9 @@ func menubarSetTitle(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let argType = lua_type(L, 2)
     if argType == LUA_TSTRING || argType == LUA_TNUMBER {
         _ = luaL_checkstring(L, 2)
-        titleText = skin.toNSObject(at:2) as? String
+        titleText = lua_tovalue(L, at: 2) as? String
     } else if luaL_testudata(L, 2, "hs.styledtext") != nil || argType == LUA_TTABLE {
-        titleAText = skin.luaObject(at:2, toClass: "NSAttributedString") as? NSAttributedString
+        titleAText = lua_tovalue(L, at: 2) as? NSAttributedString
     } else if !lua_isnoneornil(L, 2) {
         return luaL_error(L, "expected string, styled-text object, or nil")
     }
@@ -210,8 +201,7 @@ func menubarSetIcon(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     if lua_isnoneornil(L, 2) {
         iconImage = nil
     } else {
-        let skin = LuaSkin.skin(with: L)
-        iconImage = skin.luaObject(at:2, toClass: "NSImage") as? NSImage
+        iconImage = lua_tovalue(L, at: 2) as? NSImage
 
         guard let image = iconImage else {
             lua_pushnil(L)
@@ -244,10 +234,8 @@ func menubarSetIcon(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * Has no affect on the display of a pop-up menu, but changes will be be in effect if hs.menubar:returnToMenuBar() is called on the menubaritem.
 func menubarSetTooltip(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, mb_USERDATA_TAG,
-                   LS_TSTRING, LS_TBREAK)
     let menuBarItem = mb_get_item_arg(L, 1)
-    let toolTipText = skin.toNSObject(at:2) as! String
+    let toolTipText = lua_tovalue(L, at: 2) as! String
     Unmanaged<NSStatusItem>.fromOpaque(menuBarItem.pointee.menuBarItemObject!).takeUnretainedValue().button?.toolTip = toolTipText
 
     lua_settop(L, 1)
@@ -273,15 +261,14 @@ func menubarSetTooltip(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * If a menu has been attached to the menubar item, this callback will never be called
 ///  * Has no affect on the display of a pop-up menu, but changes will be be in effect if hs.menubar:returnToMenuBar() is called on the menubaritem.
 func menubarSetClickCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, mb_USERDATA_TAG,
-                   LS_TFUNCTION | LS_TNIL | LS_TOPTIONAL, LS_TBREAK)
 
     let menuBarItem = mb_get_item_arg(L, 1)
     let statusItem = Unmanaged<NSStatusItem>.fromOpaque(menuBarItem.pointee.menuBarItemObject!).takeUnretainedValue()
 
     // Remove any existing click callback
-    menuBarItem.pointee.click_fn = skin.luaUnref(mb_refTable, ref: menuBarItem.pointee.click_fn)
+    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, menuBarItem.pointee.click_fn)
+
+    menuBarItem.pointee.click_fn = LUA_NOREF
     if let callback = menuBarItem.pointee.click_callback {
         statusItem.button?.target = nil
         statusItem.button?.action = nil
@@ -291,7 +278,7 @@ func menubarSetClickCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
     if lua_isfunction(L, 2) {
         lua_pushvalue(L, 2)
-        menuBarItem.pointee.click_fn = skin.luaRef(mb_refTable)
+        menuBarItem.pointee.click_fn = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
         let object = HSMenubarItemClickDelegate()
         object.fn = menuBarItem.pointee.click_fn
         menuBarItem.pointee.click_callback = Unmanaged.passRetained(object).toOpaque()
@@ -316,7 +303,6 @@ func menubarSetClickCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * the menubaritem
 func menubarSetMenu(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
 
     let menuBarItem = mb_get_item_arg(L, 1)
     let statusItem = Unmanaged<NSStatusItem>.fromOpaque(menuBarItem.pointee.menuBarItemObject!).takeUnretainedValue()
@@ -338,7 +324,7 @@ func menubarSetMenu(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
         delegate = HSMenubarItemMenuDelegate()
         delegate!.stateBoxImageSize = menuBarItem.pointee.stateBoxImageSize
         lua_pushvalue(L, 2)
-        delegate!.fn = skin.luaRef(mb_refTable)
+        delegate!.fn = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
         mb_dynamicMenuDelegates.add(delegate!)
 
     default:
@@ -418,7 +404,6 @@ func menubar_delete(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * This method is blocking. Cosmic Hammer will be unable to respond to any other activity while the pop-up menu is being displayed.
 ///  * `darkMode` uses an undocumented macOS API call, so may break in a future release.
 func menubar_render(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     let menuBarItem = mb_get_item_arg(L, 1)
     let statusItem = Unmanaged<NSStatusItem>.fromOpaque(menuBarItem.pointee.menuBarItemObject!).takeUnretainedValue()
     let menu = statusItem.menu
@@ -451,7 +436,7 @@ func menubar_render(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
         lua_pop(L, 1)
 
     default:
-        skin.logError("hs.menubar:popupMenu() argument must be a valid hs.geometry.point table")
+        os_log(.error, "%{public}s", "hs.menubar:popupMenu() argument must be a valid hs.geometry.point table")
         lua_pushnil(L)
         return 1
     }
@@ -460,7 +445,7 @@ func menubar_render(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
         if let callback = menuBarItem.pointee.click_callback {
             Unmanaged<HSMenubarItemClickDelegate>.fromOpaque(callback).takeUnretainedValue().click(nil)
         } else {
-            skin.logWarn("hs.menubar:popupMenu() Missing menu object")
+            os_log(.info, "%{public}s", "hs.menubar:popupMenu() Missing menu object")
         }
         lua_settop(L, 1)
         return 1
@@ -564,16 +549,13 @@ func menubar_isInMenubar(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * the menubar item title, or an empty string, if there isn't one.  If `styled` is not set or is false, then a string is returned; otherwise a styledtextObject will be returned.
 func menubarGetTitle(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, mb_USERDATA_TAG,
-                   LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
     let menuBarItem = mb_get_item_arg(L, 1)
     let statusItem = Unmanaged<NSStatusItem>.fromOpaque(menuBarItem.pointee.menuBarItemObject!).takeUnretainedValue()
 
     if lua_gettop(L) == 2 && lua_toboolean(L, 2) != 0 {
-        skin.pushNSObject(statusItem.button?.attributedTitle)
+        lua_pushany(L, statusItem.button?.attributedTitle)
     } else {
-        skin.pushNSObject(statusItem.button?.title as NSString?)
+        lua_pushany(L, statusItem.button?.title as NSString?)
     }
     return 1
 }
@@ -592,8 +574,7 @@ func menubarGetIcon(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let statusItem = Unmanaged<NSStatusItem>.fromOpaque(menuBarItem.pointee.menuBarItemObject!).takeUnretainedValue()
 
     if let theImage = statusItem.button?.image {
-        let skin = LuaSkin.skin(with: L)
-        skin.pushNSObject(theImage)
+        lua_pushany(L, theImage)
     } else {
         lua_pushnil(L)
     }
@@ -622,18 +603,15 @@ func menubarFrame(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * if a parameter is provided, returns the menubar item; otherwise returns the current value.
 func menubarStateImageSize(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, mb_USERDATA_TAG,
-                   LS_TTABLE | LS_TNIL | LS_TOPTIONAL, LS_TBREAK)
     let menuBarItem = mb_get_item_arg(L, 1)
     let statusItem = Unmanaged<NSStatusItem>.fromOpaque(menuBarItem.pointee.menuBarItemObject!).takeUnretainedValue()
 
     if lua_gettop(L) == 1 {
-        skin.pushNSSize(menuBarItem.pointee.stateBoxImageSize)
+        lua_pushNSSize(L, menuBarItem.pointee.stateBoxImageSize)
     } else {
         var newSize: NSSize
         if lua_type(L, 2) == LUA_TTABLE {
-            newSize = skin.tableToSize(at: 2)
+            newSize = lua_tableToSize(L, at: 2)
         } else {
             let defaultFromFont = NSFont.menuFont(ofSize: 0).pointSize
             newSize = NSSize(width: defaultFromFont, height: defaultFromFont)

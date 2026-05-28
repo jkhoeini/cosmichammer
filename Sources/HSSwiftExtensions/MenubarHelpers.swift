@@ -1,6 +1,7 @@
 import Cocoa
 import Carbon
 import LuaSkin
+import os.log
 
 // MARK: - Callback Objects
 
@@ -10,13 +11,13 @@ import LuaSkin
 
     func callback_runner() {
         let skin = LuaSkin.skin(with: nil)
-        let L = skin.l!
+        let L = LuaSkin.skin(with: nil).l!
 
         var fn_result: Bool
 
         let event = NSApp.currentEvent
 
-        skin.pushLuaRef(mb_refTable, ref: fn)
+        lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(fn))
 
         if let event = event {
             let theFlags = event.modifierFlags
@@ -43,16 +44,16 @@ import LuaSkin
             lua_pushboolean(L, isFnKey ? 1 : 0)
             lua_setfield(L, -2, "fn")
 
-            skin.pushLuaRef(mb_refTable, ref: item)
+            lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(item))
 
-            fn_result = skin.protectedCallAndTraceback(2, nresults: 1)
+            fn_result = lua_pcall(L, 2, 1, 0) == LUA_OK
         } else {
-            fn_result = skin.protectedCallAndTraceback(0, nresults: 1)
+            fn_result = lua_pcall(L, 0, 1, 0) == LUA_OK
         }
 
         if !fn_result {
             let errorMsg = String(cString: lua_tostring(L, -1)!)
-            skin.logError("hs.menubar:setClickCallback() callback error: \(errorMsg)")
+            os_log(.error, "%{public}s", "hs.menubar:setClickCallback() callback error: \(errorMsg)")
             return
         }
     }
@@ -74,7 +75,7 @@ var mb_dynamicMenuDelegates: NSMutableArray!
 @objc class HSMenubarItemClickDelegate: HSMenubarCallbackObject {
     @objc func click(_ sender: Any?) {
         let skin = LuaSkin.skin(with: nil)
-        _lua_stackguard_entry(skin.l)
+        let L = skin.l!
         // Issue #909 -- if the callback causes the menu to be replaced, we crash if this delegate
         // disappears from beneath us... this keeps it from being collected before the callback is done.
         var myDelegate: NSObject? = nil
@@ -82,8 +83,7 @@ var mb_dynamicMenuDelegates: NSMutableArray!
             myDelegate = menuItem.representedObject as? NSObject
         }
         callback_runner()
-        lua_pop(skin.l, 1)
-        _lua_stackguard_exit(skin.l)
+        lua_pop(L, 1)
         myDelegate = nil // NOTE: DO NOT USE `self` AFTER THIS POINT
     }
 }
@@ -93,17 +93,16 @@ var mb_dynamicMenuDelegates: NSMutableArray!
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         let skin = LuaSkin.skin(with: nil)
-        _lua_stackguard_entry(skin.l)
+        let L = skin.l!
         callback_runner()
 
-        if lua_type(skin.l, lua_gettop(skin.l)) == LUA_TTABLE {
-            mb_erase_menu_items(skin.l, menu)
-            mb_parse_table(skin.l, lua_gettop(skin.l), menu, stateBoxImageSize)
+        if lua_type(L, lua_gettop(L)) == LUA_TTABLE {
+            mb_erase_menu_items(L, menu)
+            mb_parse_table(L, lua_gettop(L), menu, stateBoxImageSize)
         } else {
-            skin.logError("hs.menubar:setMenu() callback must return a valid table")
+            os_log(.error, "%{public}s", "hs.menubar:setMenu() callback must return a valid table")
         }
-        lua_pop(skin.l, 1)
-        _lua_stackguard_exit(skin.l)
+        lua_pop(L, 1)
     }
 }
 
@@ -122,7 +121,7 @@ func mb_parse_table(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32, _ menu:
     lua_pushnil(L)
     while lua_next(L, idx) != 0 {
         if lua_type(L, -1) != LUA_TTABLE {
-            skin.logBreadcrumb("Error: table entry is not a menu item table: \(String(cString: lua_typename(L, lua_type(L, -1))))")
+            os_log(.debug, "%{public}s", "Error: table entry is not a menu item table: \(String(cString: lua_typename(L, lua_type(L, -1))))")
             lua_pop(L, 1)
             continue
         }
@@ -131,7 +130,7 @@ func mb_parse_table(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32, _ menu:
         let titleType = lua_getfield(L, -1, "title")
 
         if !lua_isstring(L, -1) && luaL_testudata(L, -1, "hs.styledtext") == nil {
-            skin.logBreadcrumb("Error: malformed menu table entry. Instead of a title string, we found: \(String(cString: lua_typename(L, lua_type(L, -1))))")
+            os_log(.debug, "%{public}s", "Error: malformed menu table entry. Instead of a title string, we found: \(String(cString: lua_typename(L, lua_type(L, -1))))")
             lua_pop(L, 2)
             continue
         }
@@ -157,7 +156,7 @@ func mb_parse_table(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32, _ menu:
                     mb_parse_table(L, lua_gettop(L), subMenu, stateBoxImageSize)
                     menuItem.submenu = subMenu
                 } else {
-                    skin.logError("hs.menubar menu recursion depth exceeded.")
+                    os_log(.error, "%{public}s", "hs.menubar menu recursion depth exceeded.")
                 }
             }
             lua_pop(L, 1)
@@ -167,8 +166,10 @@ func mb_parse_table(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32, _ menu:
             if lua_isfunction(L, -1) {
                 let delegate = HSMenubarItemClickDelegate()
                 lua_pushvalue(L, -1)
-                delegate.fn = skin.luaRef(mb_refTable)
-                delegate.item = skin.luaRef(mb_refTable, at: -2)
+                delegate.fn = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+                lua_pushvalue(L, -2)
+
+                delegate.item = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
                 menuItem.target = delegate
                 menuItem.action = #selector(HSMenubarItemClickDelegate.click(_:))
                 menuItem.representedObject = delegate
@@ -195,7 +196,7 @@ func mb_parse_table(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32, _ menu:
 
             // MARK: state key
             lua_getfield(L, -1, "state")
-            if let state = skin.toNSObject(at:-1) as? String {
+            if let state = lua_tovalue(L, at: -1) as? String {
                 if state == "on"    { menuItem.state = .on }
                 if state == "off"   { menuItem.state = .off }
                 if state == "mixed" { menuItem.state = .mixed }
@@ -205,7 +206,7 @@ func mb_parse_table(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32, _ menu:
             // MARK: tooltip key
             lua_getfield(L, -1, "tooltip")
             if lua_isstring(L, -1) {
-                menuItem.toolTip = skin.toNSObject(at:-1) as? String
+                menuItem.toolTip = lua_tovalue(L, at: -1) as? String
             }
             lua_pop(L, 1)
 
@@ -259,7 +260,7 @@ func mb_parse_table(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32, _ menu:
             // MARK: shortcut key
             lua_getfield(L, -1, "shortcut")
             if lua_isstring(L, -1) {
-                let shortcutKey = skin.toNSObject(at:-1) as! String
+                let shortcutKey = lua_tovalue(L, at: -1) as! String
                 menuItem.keyEquivalent = shortcutKey
                 menuItem.keyEquivalentModifierMask = []
             }
@@ -273,12 +274,15 @@ func mb_parse_table(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32, _ menu:
 
 // Recursively remove all items from a menu, de-allocating their delegates as we go
 func mb_erase_menu_items(_ L: UnsafeMutablePointer<lua_State>!, _ menu: NSMenu) {
-    let skin = LuaSkin.skin(with: L)
 
     for menuItem in menu.items {
         if let target = menuItem.representedObject as? HSMenubarItemClickDelegate {
-            target.fn = skin.luaUnref(mb_refTable, ref: target.fn)
-            target.item = skin.luaUnref(mb_refTable, ref: target.item)
+            luaL_unref(L, LUA_REGISTRYINDEX_VALUE, target.fn)
+
+            target.fn = LUA_NOREF
+            luaL_unref(L, LUA_REGISTRYINDEX_VALUE, target.item)
+
+            target.item = LUA_NOREF
             menuItem.target = nil
             menuItem.action = nil
             menuItem.representedObject = nil
@@ -293,10 +297,11 @@ func mb_erase_menu_items(_ L: UnsafeMutablePointer<lua_State>!, _ menu: NSMenu) 
 
 // Remove and clean up a dynamic menu delegate
 func mb_erase_menu_delegate(_ L: UnsafeMutablePointer<lua_State>!, _ menu: NSMenu) {
-    let skin = LuaSkin.skin(with: L)
 
     if let delegate = menu.delegate as? HSMenubarItemMenuDelegate {
-        delegate.fn = skin.luaUnref(mb_refTable, ref: delegate.fn)
+        luaL_unref(L, LUA_REGISTRYINDEX_VALUE, delegate.fn)
+
+        delegate.fn = LUA_NOREF
         mb_dynamicMenuDelegates.remove(delegate)
         menu.delegate = nil
     }

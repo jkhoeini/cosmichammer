@@ -1,9 +1,10 @@
 import Cocoa
 import Carbon
 import LuaSkin
+import os.log
 
 private let USERDATA_TAG = "hs.window"
-private var refTable: LSRefTable = LUA_NOREF
+private var refTable: Int32 = LUA_NOREF
 
 @_silgen_name("CGSSetDebugOptions")
 private func cgsSetDebugOptions(_ options: Int32)
@@ -32,7 +33,7 @@ private let kCGSDebugOptionNoShadows: Int32 = 16384
 
 private func getWindow(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> HSwindowProtocol? {
     let skin = LuaSkin.skin(with: L)
-    return skin.toNSObject(at: idx) as? HSwindowProtocol
+    return lua_tovalue(L, at: idx) as? HSwindowProtocol
 }
 
 // MARK: - Helpers
@@ -48,7 +49,6 @@ private var systemWideElement: AXUIElement = {
 /// Gets a table containing all the window data retrieved from CGWindowListCreate.
 private func window_list(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let allWindows = lua_toboolean(L, 1) != 0
-    let skin = LuaSkin.skin(with: L)
 
     var windows = CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID) as? [NSDictionary] ?? []
 
@@ -69,7 +69,7 @@ private func window_list(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
         }
     }
 
-    skin.pushNSObject(windows as NSArray)
+    lua_pushany(L, windows as NSArray)
     return 1
 }
 
@@ -77,8 +77,7 @@ private func window_list(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Function
 /// Sets the timeout value used in the accessibility API.
 private func window_timeout(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TNUMBER, LS_TBREAK)
+    luaL_checktype(L, 1, LUA_TNUMBER)
     let value = Float(lua_tonumber(L, 1))
     let result = AXUIElementSetMessagingTimeout(systemWideElement, value)
     if result == .illegalArgument {
@@ -99,11 +98,9 @@ private func window_timeout(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Constructor
 /// Returns the window that has keyboard/mouse focus
 private func window_focusedwindow(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TBREAK)
     if let windowClass = HSuicore.windowClass {
         let result = (windowClass as AnyObject).perform(Selector(("focusedWindow")))?.takeUnretainedValue()
-        skin.pushNSObject(result)
+        lua_pushany(L, result)
     } else {
         lua_pushnil(L)
     }
@@ -124,8 +121,6 @@ private func window_setShadows(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Function
 /// Returns a snapshot of the window specified by the ID
 private func window_snapshotForID(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TNUMBER | LS_TSTRING, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
     let windowID = CGWindowID(lua_tointeger(L, 1))
     let keepTransparency = lua_toboolean(L, 2) != 0
     if let windowClass = HSuicore.windowClass {
@@ -134,7 +129,7 @@ private func window_snapshotForID(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
             with: NSNumber(value: windowID),
             with: NSNumber(value: keepTransparency)
         )?.takeUnretainedValue()
-        skin.pushNSObject(result)
+        lua_pushany(L, result)
     } else {
         lua_pushnil(L)
     }
@@ -142,11 +137,9 @@ private func window_snapshotForID(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
 }
 
 private func window__orderedwinids(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TBREAK)
     if let windowClass = HSuicore.windowClass {
         let result = (windowClass as AnyObject).perform(Selector(("orderedWindowIDs")))?.takeUnretainedValue()
-        skin.pushNSObject(result)
+        lua_pushany(L, result)
     } else {
         lua_pushnil(L)
     }
@@ -156,83 +149,79 @@ private func window__orderedwinids(_ L: UnsafeMutablePointer<lua_State>!) -> Int
 // MARK: - Instance Methods
 
 private func window_title(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     guard let win = getWindow(L, at: 1) else { lua_pushnil(L); return 1 }
-    skin.pushNSObject(win.title() as NSString?)
+    lua_pushany(L, win.title() as NSString?)
     return 1
 }
 
 private func window_subrole(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     guard let win = getWindow(L, at: 1) else { lua_pushnil(L); return 1 }
-    skin.pushNSObject(win.subRole() as NSString?)
+    lua_pushany(L, win.subRole() as NSString?)
     return 1
 }
 
 private func window_role(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     guard let win = getWindow(L, at: 1) else { lua_pushnil(L); return 1 }
-    skin.pushNSObject(win.role() as NSString?)
+    lua_pushany(L, win.role() as NSString?)
     return 1
 }
 
 private func window_isstandard(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     guard let win = getWindow(L, at: 1) else { lua_pushboolean(L, 0); return 1 }
     lua_pushboolean(L, win.isStandard() ? 1 : 0)
     return 1
 }
 
 private func window__topleft(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     guard let win = getWindow(L, at: 1) else { lua_pushnil(L); return 1 }
-    skin.pushNSPoint(win.getTopLeft())
+    lua_pushNSPoint(L, win.getTopLeft())
     return 1
 }
 
 private func window__size(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     guard let win = getWindow(L, at: 1) else { lua_pushnil(L); return 1 }
-    skin.pushNSSize(win.getSize())
+    lua_pushNSSize(L, win.getSize())
     return 1
 }
 
 private func window__settopleft(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TTABLE, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
+
+    luaL_checktype(L, 2, LUA_TTABLE)
     guard let win = getWindow(L, at: 1) else { lua_pushvalue(L, 1); return 1 }
-    win.setTopLeft(skin.tableToPoint(at: 2))
+    win.setTopLeft(lua_tableToPoint(L, at: 2))
     lua_pushvalue(L, 1)
     return 1
 }
 
 private func window__setsize(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TTABLE, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
+
+    luaL_checktype(L, 2, LUA_TTABLE)
     guard let win = getWindow(L, at: 1) else { lua_pushvalue(L, 1); return 1 }
-    win.setSize(skin.tableToSize(at: 2))
+    win.setSize(lua_tableToSize(L, at: 2))
     lua_pushvalue(L, 1)
     return 1
 }
 
 private func window__setframe(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TTABLE, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
+
+    luaL_checktype(L, 2, LUA_TTABLE)
     guard let win = getWindow(L, at: 1) else { lua_pushvalue(L, 1); return 1 }
-    win.setFrame(skin.tableToRect(at: 2))
+    win.setFrame(lua_tableToRect(L, at: 2))
     lua_pushvalue(L, 1)
     return 1
 }
 
 private func window__togglezoom(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     guard let win = getWindow(L, at: 1) else { lua_pushvalue(L, 1); return 1 }
     win.toggleZoom()
     lua_pushvalue(L, 1)
@@ -240,16 +229,14 @@ private func window__togglezoom(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 }
 
 private func window_getZoomButtonRect(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     guard let win = getWindow(L, at: 1) else { lua_pushnil(L); return 1 }
-    skin.pushNSRect(win.getZoomButtonRect())
+    lua_pushNSRect(L, win.getZoomButtonRect())
     return 1
 }
 
 private func window_isMaximizable(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     guard let win = getWindow(L, at: 1) else { lua_pushnil(L); return 1 }
 
     var button: CFTypeRef?
@@ -267,16 +254,13 @@ private func window_isMaximizable(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
 }
 
 private func window__close(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     guard let win = getWindow(L, at: 1) else { lua_pushboolean(L, 0); return 1 }
     lua_pushboolean(L, win.close() ? 1 : 0)
     return 1
 }
 
 private func window_focustab(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TNUMBER | LS_TINTEGER, LS_TBREAK)
     guard let win = getWindow(L, at: 1) else { lua_pushboolean(L, 0); return 1 }
     let tabIndex = Int32(lua_tointeger(L, 2))
     lua_pushboolean(L, win.focusTab(tabIndex) ? 1 : 0)
@@ -284,16 +268,13 @@ private func window_focustab(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 }
 
 private func window_tabcount(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     guard let win = getWindow(L, at: 1) else { lua_pushinteger(L, 0); return 1 }
     lua_pushinteger(L, lua_Integer(win.getTabCount()))
     return 1
 }
 
 private func window__setfullscreen(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBOOLEAN, LS_TBREAK)
     guard let win = getWindow(L, at: 1) else { lua_pushvalue(L, 1); return 1 }
     win.setFullscreen(lua_toboolean(L, 2) != 0)
     lua_pushvalue(L, 1)
@@ -301,16 +282,14 @@ private func window__setfullscreen(_ L: UnsafeMutablePointer<lua_State>!) -> Int
 }
 
 private func window_isfullscreen(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     guard let win = getWindow(L, at: 1) else { lua_pushnil(L); return 1 }
     lua_pushboolean(L, win.isFullscreen() ? 1 : 0)
     return 1
 }
 
 private func window__minimize(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     guard let win = getWindow(L, at: 1) else { lua_pushvalue(L, 1); return 1 }
     win.setMinimized(true)
     lua_pushvalue(L, 1)
@@ -318,8 +297,7 @@ private func window__minimize(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 }
 
 private func window__unminimize(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     guard let win = getWindow(L, at: 1) else { lua_pushvalue(L, 1); return 1 }
     win.setMinimized(false)
     lua_pushvalue(L, 1)
@@ -327,30 +305,27 @@ private func window__unminimize(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 }
 
 private func window_isminimized(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     guard let win = getWindow(L, at: 1) else { lua_pushboolean(L, 0); return 1 }
     lua_pushboolean(L, win.isMinimized() ? 1 : 0)
     return 1
 }
 
 private func window_pid(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     guard let win = getWindow(L, at: 1) else { lua_pushnil(L); return 1 }
     lua_pushinteger(L, lua_Integer(win.pid))
     return 1
 }
 
 private func window_application(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     guard let win = getWindow(L, at: 1) else { lua_pushnil(L); return 1 }
 
     lua_settop(L, 0)
 
     if let app = HSapplication(pid: win.pid, withState: L) {
-        skin.pushNSObject(app)
+        lua_pushany(L, app)
     } else {
         lua_pushnil(L)
     }
@@ -358,8 +333,7 @@ private func window_application(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 }
 
 private func window_becomemain(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     guard let win = getWindow(L, at: 1) else { lua_pushvalue(L, 1); return 1 }
     win.becomeMain()
     lua_pushvalue(L, 1)
@@ -367,8 +341,7 @@ private func window_becomemain(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 }
 
 private func window_raise(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     guard let win = getWindow(L, at: 1) else { lua_pushvalue(L, 1); return 1 }
     win.raise()
     lua_pushvalue(L, 1)
@@ -376,19 +349,17 @@ private func window_raise(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 }
 
 private func window_id(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     guard let win = getWindow(L, at: 1) else { lua_pushnil(L); return 1 }
     lua_pushinteger(L, lua_Integer(win.winID))
     return 1
 }
 
 private func window_snapshot(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     guard let win = getWindow(L, at: 1) else { lua_pushnil(L); return 1 }
     let keepTransparency = lua_toboolean(L, 2) != 0
-    skin.pushNSObject(win.snapshot(keepTransparency))
+    lua_pushany(L, win.snapshot(keepTransparency))
     return 1
 }
 
@@ -426,8 +397,7 @@ private func windowCornerRadius(for windowID: CGWindowID) -> CGFloat? {
 ///  * Standard windows on macOS Sequoia/Tahoe have a corner radius of approximately 10.
 ///  * Returns 0 for windows whose corner radius cannot be determined.
 private func window_cornerRadius(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     guard let win = getWindow(L, at: 1) else {
         lua_pushnumber(L, 0)
         return 1
@@ -452,8 +422,6 @@ private func window_cornerRadius(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 ///  * Standard windows on macOS Sequoia/Tahoe have a corner radius of approximately 10.
 ///  * Returns 0 for windows whose corner radius cannot be determined or for invalid window IDs.
 private func window_cornerRadiusForID(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TNUMBER | LS_TINTEGER, LS_TBREAK)
     let windowID = CGWindowID(lua_tointeger(L, 1))
     let radius = windowCornerRadius(for: windowID) ?? 0
     lua_pushnumber(L, lua_Number(radius))
@@ -463,8 +431,7 @@ private func window_cornerRadiusForID(_ L: UnsafeMutablePointer<lua_State>!) -> 
 // MARK: - hs.uielement methods on hs.window
 
 private func window_uielement_isApplication(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     guard let win = getWindow(L, at: 1) else { lua_pushboolean(L, 0); return 1 }
     let element = HSuielement(withElement: win.elementRef)
     lua_pushboolean(L, element.isApplication ? 1 : 0)
@@ -472,8 +439,7 @@ private func window_uielement_isApplication(_ L: UnsafeMutablePointer<lua_State>
 }
 
 private func window_uielement_isWindow(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     guard let win = getWindow(L, at: 1) else { lua_pushboolean(L, 0); return 1 }
     let element = HSuielement(withElement: win.elementRef)
     lua_pushboolean(L, element.isWindow ? 1 : 0)
@@ -481,30 +447,26 @@ private func window_uielement_isWindow(_ L: UnsafeMutablePointer<lua_State>!) ->
 }
 
 private func window_uielement_role(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     guard let win = getWindow(L, at: 1) else { lua_pushnil(L); return 1 }
     let element = HSuielement(withElement: win.elementRef)
-    skin.pushNSObject(element.role as NSString)
+    lua_pushany(L, element.role as NSString)
     return 1
 }
 
 private func window_uielement_selectedText(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     guard let win = getWindow(L, at: 1) else { lua_pushnil(L); return 1 }
     let element = HSuielement(withElement: win.elementRef)
-    skin.pushNSObject(element.selectedText as NSString?)
+    lua_pushany(L, element.selectedText as NSString?)
     return 1
 }
 
 private func window_uielement_newWatcher(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TFUNCTION, LS_TANY | LS_TOPTIONAL, LS_TBREAK)
     guard let win = getWindow(L, at: 1) else { lua_pushnil(L); return 1 }
     let element = HSuielement(withElement: win.elementRef)
     let watcher = element.newWatcher(atIndex: 2, withUserdataAtIndex: 3, withLuaState: L)
-    skin.pushNSObject(watcher)
+    lua_pushany(L, watcher)
     return 1
 }
 
@@ -522,14 +484,13 @@ private func pushHSwindow(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) ->
 }
 
 private func toHSwindowFromLua(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> Any! {
-    let skin = LuaSkin.skin(with: L)
     if luaL_testudata(L, idx, USERDATA_TAG) != nil {
         let ptr = luaL_checkudata(L, idx, USERDATA_TAG)!
             .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
         guard let rawPtr = ptr.pointee else { return nil }
         return Unmanaged<NSObject>.fromOpaque(rawPtr).takeUnretainedValue()
     } else {
-        skin.logError("\(USERDATA_TAG): expected \(USERDATA_TAG) object, found \(String(cString: lua_typename(L, lua_type(L, idx))))")
+        os_log(.error, "%{public}s", "\(USERDATA_TAG): expected \(USERDATA_TAG) object, found \(String(cString: lua_typename(L, lua_type(L, idx))))")
     }
     return nil
 }
@@ -537,8 +498,7 @@ private func toHSwindowFromLua(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int
 // MARK: - Infrastructure
 
 private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     let win = getWindow(L, at: 1)
     let title = win?.title() ?? "nil"
     lua_pushstring(L, "\(USERDATA_TAG): \(title) (\(String(describing: lua_topointer(L, 1)!)))")
@@ -549,8 +509,8 @@ private func userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     var isEqual = false
     if luaL_testudata(L, 1, USERDATA_TAG) != nil && luaL_testudata(L, 2, USERDATA_TAG) != nil {
         let skin = LuaSkin.skin(with: L)
-        if let w1 = skin.toNSObject(at: 1) as? HSwindowProtocol,
-           let w2 = skin.toNSObject(at: 2) as? HSwindowProtocol {
+        if let w1 = lua_tovalue(L, at: 1) as? HSwindowProtocol,
+           let w2 = lua_tovalue(L, at: 2) as? HSwindowProtocol {
             isEqual = CFEqual(w1.elementRef, w2.elementRef)
         }
     }
@@ -559,8 +519,7 @@ private func userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 }
 
 private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     let ptr = luaL_checkudata(L, 1, USERDATA_TAG)!
         .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
     if let rawPtr = ptr.pointee {

@@ -7,6 +7,7 @@
 
 import Cocoa
 import LuaSkin
+import os.log
 
 // MARK: - Tag Constants
 
@@ -118,11 +119,10 @@ public func getElementRefPropertyFromClassObject(_ object: NSObject) -> AXUIElem
 @_cdecl("new_application")
 @discardableResult
 public func new_application(_ L: UnsafeMutablePointer<lua_State>!, _ pid: pid_t) -> Bool {
-    let skin = LuaSkin.skin(with: L)
     let obj = HSapplication(pid: pid, withState: L)
 
     if let obj = obj {
-        skin.pushNSObject(obj)
+        lua_pushany(L, obj)
         return true
     } else {
         lua_pushnil(L)
@@ -133,9 +133,8 @@ public func new_application(_ L: UnsafeMutablePointer<lua_State>!, _ pid: pid_t)
 @_cdecl("new_window")
 @discardableResult
 public func new_window(_ L: UnsafeMutablePointer<lua_State>!, _ win: AXUIElement) -> Bool {
-    let skin = LuaSkin.skin(with: L)
     guard let hswClass: AnyClass = NSClassFromString("HSwindow") else {
-        skin.logError("\(String(cString: USERDATA_TAG)):new_window - HSwindow class not present; may require Cosmic Hammer upgrade")
+        os_log(.error, "%{public}s", "\(String(cString: USERDATA_TAG)):new_window - HSwindow class not present; may require Cosmic Hammer upgrade")
         lua_pushnil(L)
         return false
     }
@@ -147,7 +146,7 @@ public func new_window(_ L: UnsafeMutablePointer<lua_State>!, _ win: AXUIElement
     if let obj = obj {
         // the HSapplication initializer retains its elementRef; the HSwindow one doesn't
         // ARC manages CF object lifetimes in Swift — no manual retain needed
-        skin.pushNSObject(obj)
+        lua_pushany(L, obj)
         return true
     } else {
         lua_pushnil(L)
@@ -161,9 +160,8 @@ private func pushCFTypeHamster(
     _ L: UnsafeMutablePointer<lua_State>!,
     _ theItem: CFTypeRef?,
     _ alreadySeen: NSMutableDictionary,
-    _ refTable: LSRefTable
+    _ refTable: Int32
 ) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
 
     guard let theItem = theItem else {
         lua_pushnil(L)
@@ -175,14 +173,14 @@ private func pushCFTypeHamster(
     if theType == CFArrayGetTypeID() {
         let seenKey = theItem as AnyObject
         if let seenRef = alreadySeen[seenKey] as? NSNumber {
-            skin.pushLuaRef(refTable, ref: seenRef.int32Value)
+            lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(seenRef.int32Value))
             return 1
         }
         lua_newtable(L)
-        let ref = skin.luaRef(refTable)
+        let ref = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
         let seenRef = NSNumber(value: ref)
         alreadySeen[seenKey] = seenRef
-        skin.pushLuaRef(refTable, ref: seenRef.int32Value)
+        lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(seenRef.int32Value))
         for thing in (theItem as! NSArray) {
             _ = pushCFTypeHamster(L, thing as CFTypeRef, alreadySeen, refTable)
             lua_rawseti(L, -2, luaL_len(L, -2) + 1)
@@ -190,14 +188,14 @@ private func pushCFTypeHamster(
     } else if theType == CFDictionaryGetTypeID() {
         let seenKey = theItem as AnyObject
         if let seenRef = alreadySeen[seenKey] as? NSNumber {
-            skin.pushLuaRef(refTable, ref: seenRef.int32Value)
+            lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(seenRef.int32Value))
             return 1
         }
         lua_newtable(L)
-        let ref = skin.luaRef(refTable)
+        let ref = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
         let seenRef = NSNumber(value: ref)
         alreadySeen[seenKey] = seenRef
-        skin.pushLuaRef(refTable, ref: seenRef.int32Value)
+        lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(seenRef.int32Value))
         let dict = theItem as! NSDictionary
         let keys = dict.allKeys
         let values = dict.allValues
@@ -245,25 +243,25 @@ private func pushCFTypeHamster(
             lua_pushstring(L, "unrecognized value type (\(theItem))")
         }
     } else if theType == CGColor.typeID {
-        skin.pushNSObject(NSColor(cgColor: theItem as! CGColor))
+        lua_pushany(L, NSColor(cgColor: theItem as! CGColor))
     } else if theType == CGImage.typeID {
         let cgImage = theItem as! CGImage
         let imageSize = NSSize(width: cgImage.width, height: cgImage.height)
-        skin.pushNSObject(NSImage(cgImage: cgImage, size: imageSize))
+        lua_pushany(L, NSImage(cgImage: cgImage, size: imageSize))
     } else if theType == CFAttributedStringGetTypeID() {
-        skin.pushNSObject(theItem as! NSAttributedString)
+        lua_pushany(L, theItem as! NSAttributedString)
     } else if theType == CFNullGetTypeID() {
-        skin.pushNSObject(NSNull())
+        lua_pushany(L, NSNull())
     } else if theType == CFBooleanGetTypeID() || theType == CFNumberGetTypeID() {
-        skin.pushNSObject(theItem as! NSNumber)
+        lua_pushany(L, theItem as! NSNumber)
     } else if theType == CFDataGetTypeID() {
-        skin.pushNSObject(theItem as! NSData)
+        lua_pushany(L, theItem as! NSData)
     } else if theType == CFDateGetTypeID() {
-        skin.pushNSObject(theItem as! NSDate)
+        lua_pushany(L, theItem as! NSDate)
     } else if theType == CFStringGetTypeID() {
-        skin.pushNSObject(theItem as! NSString)
+        lua_pushany(L, theItem as! NSString)
     } else if theType == CFURLGetTypeID() {
-        skin.pushNSObject(theItem as! NSURL)
+        lua_pushany(L, theItem as! NSURL)
     } else if theType == AXUIElementGetTypeID() {
         pushAXUIElement(L, theItem as! AXUIElement)
     } else if theType == AXObserverGetTypeID() {
@@ -274,19 +272,18 @@ private func pushCFTypeHamster(
         pushAXTextMarkerRange(L, theItem)
     } else {
         let typeLabel = "unrecognized type: \(theType)"
-        skin.logDebug("\(String(cString: USERDATA_TAG)):\(typeLabel)")
+        os_log(.debug, "%{public}s", "\(String(cString: USERDATA_TAG)):\(typeLabel)")
         lua_pushstring(L, typeLabel)
     }
     return 1
 }
 
 private func lua_toCFTypeHamster(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32, _ seen: NSMutableDictionary) -> CFTypeRef {
-    let skin = LuaSkin.skin(with: L)
     let index = lua_absindex(L, idx)
 
     let seenKey = NSValue(pointer: lua_topointer(L, index))
     if seen[seenKey] != nil {
-        skin.logWarn("\(String(cString: USERDATA_TAG)):multiple references to same table not currently supported for conversion")
+        os_log(.info, "%{public}s", "\(String(cString: USERDATA_TAG)):multiple references to same table not currently supported for conversion")
         return kCFNull
     }
 
@@ -297,7 +294,7 @@ private func lua_toCFTypeHamster(_ L: UnsafeMutablePointer<lua_State>!, _ idx: I
     let luaType = lua_type(L, index)
 
     if luaType == LUA_TSTRING {
-        let holder: Any? = skin.toNSObject(atIndex: index)
+        let holder: Any? = lua_tovalue(L, at: index)
         if let str = holder as? NSString {
             return str as CFString
         } else if let data = holder as? NSData {
@@ -390,20 +387,20 @@ private func lua_toCFTypeHamster(_ L: UnsafeMutablePointer<lua_State>!, _ idx: I
                 rfc3339.locale = Locale(identifier: "en_US_POSIX")
                 rfc3339.dateFormat = "yyyy'-'MM'-'dd'T'HH':'mm':'ss'Z'"
                 rfc3339.timeZone = TimeZone(secondsFromGMT: 0)
-                let str = skin.toNSObject(atIndex: -1) as? String
+                let str = lua_tovalue(L, at: -1) as? String
                 lua_pop(L, 1)
                 if let str = str, let date = rfc3339.date(from: str) {
                     return CFDateCreate(kCFAllocatorDefault, (date as NSDate).timeIntervalSinceReferenceDate)
                 }
-                skin.logError("\(String(cString: USERDATA_TAG)):invalid date format specified for conversion")
+                os_log(.error, "%{public}s", "\(String(cString: USERDATA_TAG)):invalid date format specified for conversion")
                 return kCFNull
             } else {
                 lua_pop(L, 1)
-                skin.logError("\(String(cString: USERDATA_TAG)):invalid date format specified for conversion")
+                os_log(.error, "%{public}s", "\(String(cString: USERDATA_TAG)):invalid date format specified for conversion")
                 return kCFNull
             }
         } else if has__luaSkinType {
-            let object = skin.toNSObject(atIndex: index)
+            let object = lua_tovalue(L, at: index)
             if let color = object as? NSColor        { return color.cgColor }
             else if let url = object as? NSURL       { return url as CFURL }
             else if let img = object as? NSImage      {
@@ -413,7 +410,7 @@ private func lua_toCFTypeHamster(_ L: UnsafeMutablePointer<lua_State>!, _ idx: I
             else {
                 lua_getfield(L, index, "__luaSkinType")
                 let typeName = String(cString: lua_tostring(L, -1)!)
-                skin.logError("\(String(cString: USERDATA_TAG)):__luaSkinType table \(typeName) not supported for conversion")
+                os_log(.error, "%{public}s", "\(String(cString: USERDATA_TAG)):__luaSkinType table \(typeName) not supported for conversion")
                 lua_pop(L, 1)
                 return kCFNull
             }
@@ -421,7 +418,7 @@ private func lua_toCFTypeHamster(_ L: UnsafeMutablePointer<lua_State>!, _ idx: I
             // real CFDictionary or CFArray
             seen[seenKey] = NSNumber(value: true)
             let len = luaL_len(L, index)
-            if len == skin.countNatIndex(index) { // CFArray
+            if len == luaL_len(L, index) { // CFArray
                 let holder = CFArrayCreateMutable(kCFAllocatorDefault, 0, &kCFTypeArrayCallBacks_)!
                 for i in 0..<len {
                     lua_geti(L, index, lua_Integer(i + 1))
@@ -447,7 +444,7 @@ private func lua_toCFTypeHamster(_ L: UnsafeMutablePointer<lua_State>!, _ idx: I
         }
     } else if luaType == LUA_TUSERDATA {
         if luaL_testudata(L, index, "hs.styledtext") != nil {
-            return skin.toNSObject(atIndex: index) as! CFAttributedString
+            return lua_tovalue(L, at: index) as! CFAttributedString
         } else if luaL_testudata(L, index, USERDATA_TAG) != nil {
             let ref = get_axuielementref(L, index, USERDATA_TAG)
             return ref
@@ -461,12 +458,12 @@ private func lua_toCFTypeHamster(_ L: UnsafeMutablePointer<lua_State>!, _ idx: I
             let ref = get_axtextmarkerrangeref(L, index, AXTEXTMRKRNG_TAG)
             return ref
         } else {
-            skin.logError("\(String(cString: USERDATA_TAG)):unrecognized userdata is not supported for conversion")
+            os_log(.error, "%{public}s", "\(String(cString: USERDATA_TAG)):unrecognized userdata is not supported for conversion")
             return kCFNull
         }
     } else if luaType != LUA_TNIL {
         let typeName = String(cString: lua_typename(L, luaType))
-        skin.logError("\(String(cString: USERDATA_TAG)):type \(typeName) not supported for conversion")
+        os_log(.error, "%{public}s", "\(String(cString: USERDATA_TAG)):type \(typeName) not supported for conversion")
         return kCFNull
     }
 
@@ -481,13 +478,12 @@ private var kCFTypeDictionaryValueCallBacks_ = kCFTypeDictionaryValueCallBacks
 
 @_cdecl("pushCFTypeToLua")
 @discardableResult
-public func pushCFTypeToLua(_ L: UnsafeMutablePointer<lua_State>!, _ theItem: CFTypeRef?, _ refTable: LSRefTable) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
+public func pushCFTypeToLua(_ L: UnsafeMutablePointer<lua_State>!, _ theItem: CFTypeRef?, _ refTable: Int32) -> Int32 {
     let alreadySeen = NSMutableDictionary()
     _ = pushCFTypeHamster(L, theItem, alreadySeen, refTable)
     for entry in alreadySeen {
         if let seenRef = entry.value as? NSNumber {
-            skin.luaUnref(refTable, ref: seenRef.int32Value)
+            luaL_unref(L, LUA_REGISTRYINDEX_VALUE, seenRef.int32Value)
         }
     }
     return 1

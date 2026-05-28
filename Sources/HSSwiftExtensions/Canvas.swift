@@ -1,5 +1,6 @@
 import Cocoa
 import LuaSkin
+import os.log
 
 // MARK: - HSGifAnimator stub
 // HSGifAnimator is defined in Canvas.h / imageAdditions.m (ObjC). Since this
@@ -51,7 +52,7 @@ import LuaSkin
 // #define VIEW_DEBUG
 
 let canvas_USERDATA_TAG = "hs.canvas"
-var canvas_refTable: LSRefTable = LUA_NOREF
+var canvas_refTable: Int32 = LUA_NOREF
 var canvas_defaultCustomSubRole: Bool = true
 
 // Can't have "static" or "constant" dynamic NSObjects like NSArray, so define in lua_open
@@ -788,7 +789,7 @@ func canvas_isValueValidForDictionary(_ keyName: NSString, _ keyValue: Any?, _ a
     } while false
 
     if let msg = errorMessage {
-        LuaSkin.skin(with: nil).logError("\(canvas_USERDATA_TAG):\(msg)")
+        os_log(.error, "%{public}s:%{public}s", canvas_USERDATA_TAG, msg)
         validity = .invalid
     }
     return validity
@@ -796,7 +797,7 @@ func canvas_isValueValidForDictionary(_ keyName: NSString, _ keyValue: Any?, _ a
 
 func canvas_isValueValidForAttribute(_ keyName: NSString, _ keyValue: Any?) -> AttributeValidity {
     guard let attributeDefinition = canvas_languageDictionary[keyName] as? NSDictionary else {
-        LuaSkin.skin(with: nil).logError("\(canvas_USERDATA_TAG):\(keyName) is not a valid canvas attribute")
+        os_log(.error, "%{public}s:%{public}@ is not a valid canvas attribute", canvas_USERDATA_TAG, keyName)
         return .invalid
     }
     return canvas_isValueValidForDictionary(keyName, keyValue, attributeDefinition)
@@ -833,24 +834,18 @@ func canvas_RectWithFlippedYCoordinate(_ theRect: NSRect) -> NSRect {
 }
 
 func canvas_orderHelper(_ L: UnsafeMutablePointer<lua_State>!, mode: NSWindow.OrderingMode) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, canvas_USERDATA_TAG,
-                   LS_TBREAK | LS_TVARARG)
+    luaL_checkudata(L, 1, canvas_USERDATA_TAG)
 
-    let canvasView = skin.luaObject(at:1, toClass: "HSCanvasView") as! HSCanvasView
+    let canvasView = canvas_toHSCanvasViewFromLua(L, idx: 1) as! HSCanvasView
     if canvas_parentIsWindow(canvasView) {
         let canvasWindow = canvasView.window as! HSCanvasWindow
 
         var relativeTo: Int = 0
 
         if lua_gettop(L) > 1 {
-            if lua_type(L, 2) == LUA_TNIL {
-                skin.checkArgs(LS_TUSERDATA, canvas_USERDATA_TAG, LS_TNIL, LS_TBREAK)
-            } else {
-                skin.checkArgs(LS_TUSERDATA, canvas_USERDATA_TAG,
-                               LS_TUSERDATA, canvas_USERDATA_TAG,
-                               LS_TBREAK)
-                let otherView = skin.luaObject(at:2, toClass: "HSCanvasView") as! HSCanvasView
+            if lua_type(L, 2) != LUA_TNIL {
+                luaL_checkudata(L, 2, canvas_USERDATA_TAG)
+                let otherView = canvas_toHSCanvasViewFromLua(L, idx: 2) as! HSCanvasView
                 if let otherWindow = otherView.window as? HSCanvasWindow {
                     relativeTo = otherWindow.windowNumber
                 }
@@ -876,7 +871,7 @@ func canvas_orderHelper(_ L: UnsafeMutablePointer<lua_State>!, mode: NSWindow.Or
 // MARK: - Module Constants
 
 func canvas_pushCompositeTypes(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    LuaSkin.skin(with: L).pushNSObject(COMPOSITING_TYPES as NSDictionary)
+    lua_pushany(L, COMPOSITING_TYPES)
     return 1
 }
 
@@ -934,13 +929,13 @@ func canvas_pushHSCanvasView(_ L: UnsafeMutablePointer<lua_State>!, obj: Any!) -
 }
 
 func canvas_toHSCanvasViewFromLua(_ L: UnsafeMutablePointer<lua_State>!, idx: Int32) -> Any! {
-    let skin = LuaSkin.skin(with: L)
     if luaL_testudata(L, idx, canvas_USERDATA_TAG) != nil {
         let ptr = luaL_checkudata(L, idx, canvas_USERDATA_TAG)!
         let opaque = ptr.assumingMemoryBound(to: UnsafeMutableRawPointer.self).pointee
         return Unmanaged<HSCanvasView>.fromOpaque(opaque).takeUnretainedValue()
     } else {
-        skin.logError("expected \(canvas_USERDATA_TAG) object, found \(String(cString: lua_typename(L, lua_type(L, idx))))")
+        os_log(.error, "expected %{public}s object, found %{public}s",
+               canvas_USERDATA_TAG, String(cString: lua_typename(L, lua_type(L, idx))))
         return nil
     }
 }
@@ -948,23 +943,21 @@ func canvas_toHSCanvasViewFromLua(_ L: UnsafeMutablePointer<lua_State>!, idx: In
 // MARK: - Cosmic Hammer/Lua Infrastructure
 
 func canvas_userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    let obj = skin.luaObject(at:1, toClass: "HSCanvasView") as! HSCanvasView
+    let obj = canvas_toHSCanvasViewFromLua(L, idx: 1) as! HSCanvasView
     let title: String
     if canvas_parentIsWindow(obj) {
         title = NSStringFromRect(canvas_RectWithFlippedYCoordinate(obj.window!.frame))
     } else {
         title = NSStringFromRect(obj.frame)
     }
-    skin.pushNSObject("\(canvas_USERDATA_TAG): \(title) (\(Unmanaged.passUnretained(obj).toOpaque()))" as NSString)
+    lua_pushstring(L, "\(canvas_USERDATA_TAG): \(title) (\(Unmanaged.passUnretained(obj).toOpaque()))")
     return 1
 }
 
 func canvas_userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     if luaL_testudata(L, 1, canvas_USERDATA_TAG) != nil && luaL_testudata(L, 2, canvas_USERDATA_TAG) != nil {
-        let skin = LuaSkin.skin(with: L)
-        let obj1 = skin.luaObject(at:1, toClass: "HSCanvasView") as! HSCanvasView
-        let obj2 = skin.luaObject(at:2, toClass: "HSCanvasView") as! HSCanvasView
+        let obj1 = canvas_toHSCanvasViewFromLua(L, idx: 1) as! HSCanvasView
+        let obj2 = canvas_toHSCanvasViewFromLua(L, idx: 2) as! HSCanvasView
         lua_pushboolean(L, obj1 === obj2 ? 1 : 0)
     } else {
         lua_pushboolean(L, 0)
@@ -973,7 +966,6 @@ func canvas_userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 }
 
 func canvas_userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     let ptr = luaL_checkudata(L, 1, canvas_USERDATA_TAG)!
     let opaque = ptr.assumingMemoryBound(to: UnsafeMutableRawPointer.self).pointee
     let theView = Unmanaged<HSCanvasView>.fromOpaque(opaque).takeRetainedValue()
@@ -981,8 +973,10 @@ func canvas_userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     theView.selfRefCount -= 1
     if theView.selfRefCount == 0 {
         if !canvas_parentIsWindow(theView) { theView.removeFromSuperview() }
-        theView.mouseCallbackRef    = skin.luaUnref(canvas_refTable, ref: theView.mouseCallbackRef)
-        theView.draggingCallbackRef = skin.luaUnref(canvas_refTable, ref: theView.draggingCallbackRef)
+        luaL_unref(L, LUA_REGISTRYINDEX_VALUE, theView.mouseCallbackRef)
+        theView.mouseCallbackRef = LUA_NOREF
+        luaL_unref(L, LUA_REGISTRYINDEX_VALUE, theView.draggingCallbackRef)
+        theView.draggingCallbackRef = LUA_NOREF
 
         let tile = NSApplication.shared.dockTile
         if let tileView = tile.contentView, tileView === theView {

@@ -2,11 +2,12 @@ import Foundation
 import Cocoa
 import Carbon
 import LuaSkin
+import os.log
 import WebKit
 
 // MARK: - Module State
 
-private var refTable: LSRefTable = 0
+private var refTable: Int32 = 0
 private var delegates: NSMutableArray = NSMutableArray()
 
 // MARK: - Helper Functions
@@ -45,50 +46,43 @@ private func responseBodyToId(_ httpResponse: HTTPURLResponse?, _ bodyData: Data
 
     func connectionDidFinishLoading(_ connection: NSURLConnection) {
         if fn == LUA_NOREF { return }
-        let skin = LuaSkin.skin(with: nil)
-        let L = skin.l!
-        _lua_stackguard_entry(L)
+        let L = LuaSkin.skin(with: nil).l!
 
-        skin.pushLuaRef(refTable, ref: fn)
+        lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(fn))
         lua_pushinteger(L, lua_Integer(httpResponse?.statusCode ?? 0))
-        skin.pushNSObject(responseBodyToId(httpResponse, receivedData as Data) as? NSObject)
-        skin.pushNSObject(httpResponse?.allHeaderFields as? NSDictionary)
-        skin.protectedCallAndError("hs.http connectionDelegate:didFinishLoading", nargs: 3, nresults: 0)
+        lua_pushany(L, responseBodyToId(httpResponse, receivedData as Data) as? NSObject)
+        lua_pushany(L, httpResponse?.allHeaderFields as? NSDictionary)
+        if lua_pcall(L, 3, 0, 0) != LUA_OK { lua_pop(L, 1) }
 
         remove_delegate(L, self)
-        _lua_stackguard_exit(L)
     }
 
     func connection(_ connection: NSURLConnection, didFailWithError error: Error) {
         if fn == LUA_NOREF { return }
         let skin = LuaSkin.skin(with: nil)
-        _lua_stackguard_entry(skin.l)
+        let L = LuaSkin.skin(with: nil).l!
 
         let errorMessage = "Connection failed: \(error.localizedDescription) - \((error as NSError).userInfo[NSURLErrorFailingURLStringErrorKey] ?? "")"
-        skin.pushLuaRef(refTable, ref: fn)
-        lua_pushinteger(skin.l, -1)
-        skin.pushNSObject(errorMessage as NSString)
-        skin.protectedCallAndError("hs.http connectionDelegate:didFailWithError", nargs: 2, nresults: 0)
-        remove_delegate(skin.l, self)
-        _lua_stackguard_exit(skin.l)
+        lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(fn))
+        lua_pushinteger(L, -1)
+        lua_pushany(L, errorMessage as NSString)
+        if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
+        remove_delegate(L, self)
     }
 
     func connection(_ connection: NSURLConnection, willSend request: URLRequest, redirectResponse response: URLResponse?) -> URLRequest? {
         if fn == LUA_NOREF { return nil }
 
         if let httpResp = response as? HTTPURLResponse, !enableRedirect {
-            let skin = LuaSkin.skin(with: nil)
-            let L = skin.l!
-            _lua_stackguard_entry(L)
+            let L = LuaSkin.skin(with: nil).l!
 
-            skin.pushLuaRef(refTable, ref: fn)
+            lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(fn))
             lua_pushinteger(L, lua_Integer(httpResp.statusCode))
-            skin.pushNSObject(responseBodyToId(httpResponse, receivedData as Data) as? NSObject)
-            skin.pushNSObject(httpResp.allHeaderFields as NSDictionary)
-            skin.protectedCallAndError("hs.http connectionDelegate:didFinishLoading during redirection", nargs: 3, nresults: 0)
+            lua_pushany(L, responseBodyToId(httpResponse, receivedData as Data) as? NSObject)
+            lua_pushany(L, httpResp.allHeaderFields as NSDictionary)
+            if lua_pcall(L, 3, 0, 0) != LUA_OK { lua_pop(L, 1) }
 
             remove_delegate(L, self)
-            _lua_stackguard_exit(L)
 
             connection.cancel()
             return nil
@@ -107,9 +101,10 @@ private func store_delegate(_ delegate: ConnectionDelegate) {
 
 /// Remove a delegate either if loading has finished or if it needs to be garbage collected.
 private func remove_delegate(_ L: UnsafeMutablePointer<lua_State>!, _ delegate: ConnectionDelegate) {
-    let skin = LuaSkin.skin(with: L)
     delegate.connection?.cancel()
-    delegate.fn = skin.luaUnref(refTable, ref: delegate.fn)
+    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, delegate.fn)
+
+    delegate.fn = LUA_NOREF
     delegates.remove(delegate)
 }
 
@@ -139,9 +134,8 @@ private func getBodyFromStack(_ L: UnsafeMutablePointer<lua_State>!, _ index: In
 
 /// Gets all information for the request from the stack and creates a request
 private func getRequestFromStack(_ L: UnsafeMutablePointer<lua_State>!, _ cachePolicy: String?) -> NSMutableURLRequest {
-    let skin = LuaSkin.skin(with: L)
-    let url: String = skin.toNSObject(atIndex: 1) as! String
-    let method: String = skin.toNSObject(atIndex: 2) as! String
+    let url: String = lua_tovalue(L, at: 1) as! String
+    let method: String = lua_tovalue(L, at: 2) as! String
 
     let selectedCachePolicy: NSURLRequest.CachePolicy
     switch cachePolicy {
@@ -202,13 +196,11 @@ private func extractHeadersFromStack(_ L: UnsafeMutablePointer<lua_State>!, _ in
 ///  * If the Content-Type response header begins `text/` then the response body return value is a UTF8 string. Any other content type passes the response body, unaltered, as a stream of bytes.
 ///  * If enableRedirect is set to true, response body will be empty string. Http body will be dropped even though response has the body. This seems the limitation of 'connection:willSendRequest:redirectResponse' method.
 private func http_doAsyncRequest(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING, LS_TSTRING, LS_TSTRING | LS_TNIL, LS_TTABLE | LS_TNIL, LS_TFUNCTION, LS_TSTRING | LS_TBOOLEAN | LS_TOPTIONAL, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
 
     var cachePolicy: String? = nil
     var enableRedirect = true
     if lua_type(L, 6) == LUA_TSTRING {
-        cachePolicy = skin.toNSObject(atIndex: 6) as? String
+        cachePolicy = lua_tovalue(L, at: 6) as? String
     } else if lua_type(L, 6) == LUA_TBOOLEAN {
         enableRedirect = lua_toboolean(L, 6) != 0
     }
@@ -226,7 +218,7 @@ private func http_doAsyncRequest(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
     let delegate = ConnectionDelegate()
     delegate.enableRedirect = enableRedirect
     delegate.receivedData = NSMutableData()
-    delegate.fn = skin.luaRef(refTable)
+    delegate.fn = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
 
     store_delegate(delegate)
 
@@ -259,10 +251,8 @@ private func http_doAsyncRequest(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 ///  * If you attempt to connect to a local Cosmic Hammer server created with `hs.httpserver`, then Cosmic Hammer will block until the connection times out (60 seconds), return a failed result due to the timeout, and then the `hs.httpserver` callback function will be invoked (so any side effects of the function will occur, but it's results will be lost).  Use [hs.http.doAsyncRequest](#doAsyncRequest) to avoid this.
 ///  * If the Content-Type response header begins `text/` then the response body return value is a UTF8 string. Any other content type passes the response body, unaltered, as a stream of bytes.
 private func http_doRequest(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING, LS_TSTRING, LS_TSTRING | LS_TNIL | LS_TOPTIONAL, LS_TTABLE | LS_TNIL | LS_TOPTIONAL, LS_TSTRING | LS_TOPTIONAL, LS_TBREAK)
 
-    let cachePolicy: String? = skin.toNSObject(atIndex: 5) as? String
+    let cachePolicy: String? = lua_tovalue(L, at: 5) as? String
 
     let request = getRequestFromStack(L, cachePolicy)
     getBodyFromStack(L, 3, request)
@@ -274,20 +264,19 @@ private func http_doRequest(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let httpResponse = response as? HTTPURLResponse
 
     lua_pushinteger(L, lua_Integer(httpResponse?.statusCode ?? 0))
-    skin.pushNSObject(responseBodyToId(httpResponse, dataReply) as? NSObject)
-    skin.pushNSObject(httpResponse?.allHeaderFields as? NSDictionary)
+    lua_pushany(L, responseBodyToId(httpResponse, dataReply) as? NSObject)
+    lua_pushany(L, httpResponse?.allHeaderFields as? NSDictionary)
 
     return 3
 }
 
 // NOTE: this function is wrapped in init.lua
 private func http_encodeForQuery(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     _ = luaL_checkstring(L, 1)
-    let value: String = skin.toNSObject(atIndex: 1) as! String
+    let value: String = lua_tovalue(L, at: 1) as! String
 
     let encoded = value.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? value
-    skin.pushNSObject(encoded as NSString)
+    lua_pushany(L, encoded as NSString)
     return 1
 }
 
@@ -323,7 +312,6 @@ private func http_encodeForQuery(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 ///    * standardizedURL          - the URL with any instances of ".." or "." removed from its path
 ///    * user                     - the username, if specified in the URL
 private func http_urlParts(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
 
     let theURL: NSURL
     if lua_type(L, 1) == LUA_TUSERDATA {
@@ -335,30 +323,30 @@ private func http_urlParts(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
         theURL = theView.url! as NSURL
     } else {
         _ = luaL_checkstring(L, 1)
-        theURL = NSURL(string: skin.toNSObject(atIndex: 1) as! String)!
+        theURL = NSURL(string: lua_tovalue(L, at: 1) as! String)!
     }
 
     lua_newtable(L)
-    skin.pushNSObject(theURL.absoluteString as NSString?);     lua_setfield(L, -2, "absoluteString")
-    skin.pushNSObject(theURL.absoluteURL as NSURL?);           lua_setfield(L, -2, "absoluteURL")
-    skin.pushNSObject(theURL.baseURL as NSURL?);               lua_setfield(L, -2, "baseURL")
+    lua_pushany(L, theURL.absoluteString as NSString?);     lua_setfield(L, -2, "absoluteString")
+    lua_pushany(L, theURL.absoluteURL as NSURL?);           lua_setfield(L, -2, "absoluteURL")
+    lua_pushany(L, theURL.baseURL as NSURL?);               lua_setfield(L, -2, "baseURL")
     lua_pushstring(L, theURL.fileSystemRepresentation);        lua_setfield(L, -2, "fileSystemRepresentation")
-    skin.pushNSObject(theURL.fragment as NSString?);           lua_setfield(L, -2, "fragment")
-    skin.pushNSObject(theURL.host as NSString?);               lua_setfield(L, -2, "host")
-    skin.pushNSObject(theURL.lastPathComponent as NSString?);  lua_setfield(L, -2, "lastPathComponent")
-    skin.pushNSObject(theURL.parameterString as NSString?);    lua_setfield(L, -2, "parameterString")
-    skin.pushNSObject(theURL.password as NSString?);           lua_setfield(L, -2, "password")
-    skin.pushNSObject(theURL.path as NSString?);               lua_setfield(L, -2, "path")
-    skin.pushNSObject(theURL.pathComponents as NSArray?);      lua_setfield(L, -2, "pathComponents")
-    skin.pushNSObject(theURL.pathExtension as NSString?);      lua_setfield(L, -2, "pathExtension")
-    skin.pushNSObject(theURL.port);                            lua_setfield(L, -2, "port")
-    skin.pushNSObject(theURL.query as NSString?);              lua_setfield(L, -2, "query")
-    skin.pushNSObject(theURL.relativePath as NSString?);       lua_setfield(L, -2, "relativePath")
-    skin.pushNSObject(theURL.relativeString as NSString?);     lua_setfield(L, -2, "relativeString")
-    skin.pushNSObject(theURL.resourceSpecifier as NSString?);  lua_setfield(L, -2, "resourceSpecifier")
-    skin.pushNSObject(theURL.scheme as NSString?);             lua_setfield(L, -2, "scheme")
-    skin.pushNSObject(theURL.standardized as NSURL?);          lua_setfield(L, -2, "standardizedURL")
-    skin.pushNSObject(theURL.user as NSString?);               lua_setfield(L, -2, "user")
+    lua_pushany(L, theURL.fragment as NSString?);           lua_setfield(L, -2, "fragment")
+    lua_pushany(L, theURL.host as NSString?);               lua_setfield(L, -2, "host")
+    lua_pushany(L, theURL.lastPathComponent as NSString?);  lua_setfield(L, -2, "lastPathComponent")
+    lua_pushany(L, theURL.parameterString as NSString?);    lua_setfield(L, -2, "parameterString")
+    lua_pushany(L, theURL.password as NSString?);           lua_setfield(L, -2, "password")
+    lua_pushany(L, theURL.path as NSString?);               lua_setfield(L, -2, "path")
+    lua_pushany(L, theURL.pathComponents as NSArray?);      lua_setfield(L, -2, "pathComponents")
+    lua_pushany(L, theURL.pathExtension as NSString?);      lua_setfield(L, -2, "pathExtension")
+    lua_pushany(L, theURL.port);                            lua_setfield(L, -2, "port")
+    lua_pushany(L, theURL.query as NSString?);              lua_setfield(L, -2, "query")
+    lua_pushany(L, theURL.relativePath as NSString?);       lua_setfield(L, -2, "relativePath")
+    lua_pushany(L, theURL.relativeString as NSString?);     lua_setfield(L, -2, "relativeString")
+    lua_pushany(L, theURL.resourceSpecifier as NSString?);  lua_setfield(L, -2, "resourceSpecifier")
+    lua_pushany(L, theURL.scheme as NSString?);             lua_setfield(L, -2, "scheme")
+    lua_pushany(L, theURL.standardized as NSURL?);          lua_setfield(L, -2, "standardizedURL")
+    lua_pushany(L, theURL.user as NSString?);               lua_setfield(L, -2, "user")
     lua_pushboolean(L, theURL.isFileURL ? 1 : 0);             lua_setfield(L, -2, "isFileURL")
 
     if theURL.query != nil {
@@ -371,10 +359,10 @@ private func http_urlParts(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
                 for item in queryItems {
                     lua_newtable(L)
                     if let value = item.value {
-                        skin.pushNSObject(value as NSString)
+                        lua_pushany(L, value as NSString)
                         lua_setfield(L, -2, item.name)
                     } else {
-                        skin.pushNSObject(item.name as NSString)
+                        lua_pushany(L, item.name as NSString)
                         lua_rawseti(L, -2, 1)
                     }
                     lua_rawseti(L, -2, luaL_len(L, -2) + 1)
@@ -392,36 +380,34 @@ private func http_urlParts(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 // not used here yet... but they are used in hs.webview. This seems a more logical location for them.
 
 private func NSURLResponse_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     let theResponse = obj as! URLResponse
 
     lua_newtable(L)
     lua_pushinteger(L, lua_Integer(theResponse.expectedContentLength)); lua_setfield(L, -2, "expectedContentLength")
-    skin.pushNSObject(theResponse.suggestedFilename as NSString?);      lua_setfield(L, -2, "suggestedFilename")
-    skin.pushNSObject(theResponse.mimeType as NSString?);               lua_setfield(L, -2, "MIMEType")
-    skin.pushNSObject(theResponse.textEncodingName as NSString?);       lua_setfield(L, -2, "textEncodingName")
-    skin.pushNSObject(theResponse.url as NSURL?);                       lua_setfield(L, -2, "URL")
+    lua_pushany(L, theResponse.suggestedFilename as NSString?);      lua_setfield(L, -2, "suggestedFilename")
+    lua_pushany(L, theResponse.mimeType as NSString?);               lua_setfield(L, -2, "MIMEType")
+    lua_pushany(L, theResponse.textEncodingName as NSString?);       lua_setfield(L, -2, "textEncodingName")
+    lua_pushany(L, theResponse.url as NSURL?);                       lua_setfield(L, -2, "URL")
 
     if let httpResponse = obj as? HTTPURLResponse {
         lua_pushinteger(L, lua_Integer(httpResponse.statusCode)); lua_setfield(L, -2, "statusCode")
-        skin.pushNSObject(HTTPURLResponse.localizedString(forStatusCode: httpResponse.statusCode) as NSString)
+        lua_pushany(L, HTTPURLResponse.localizedString(forStatusCode: httpResponse.statusCode) as NSString)
         lua_setfield(L, -2, "statusCodeDescription")
-        skin.pushNSObject(httpResponse.allHeaderFields as NSDictionary); lua_setfield(L, -2, "allHeaderFields")
+        lua_pushany(L, httpResponse.allHeaderFields as NSDictionary); lua_setfield(L, -2, "allHeaderFields")
     }
 
     return 1
 }
 
 private func NSURLRequest_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     let request = obj as! URLRequest
 
     lua_newtable(L)
-    skin.pushNSObject(request.mainDocumentURL as NSURL?);         lua_setfield(L, -2, "mainDocumentURL")
-    skin.pushNSObject(request.url as NSURL?);                     lua_setfield(L, -2, "URL")
-    skin.pushNSObject(request.allHTTPHeaderFields as NSDictionary?); lua_setfield(L, -2, "HTTPHeaderFields")
-    skin.pushNSObject(request.httpBody as NSData?);               lua_setfield(L, -2, "HTTPBody")
-    skin.pushNSObject(request.httpMethod as NSString?);           lua_setfield(L, -2, "HTTPMethod")
+    lua_pushany(L, request.mainDocumentURL as NSURL?);         lua_setfield(L, -2, "mainDocumentURL")
+    lua_pushany(L, request.url as NSURL?);                     lua_setfield(L, -2, "URL")
+    lua_pushany(L, request.allHTTPHeaderFields as NSDictionary?); lua_setfield(L, -2, "HTTPHeaderFields")
+    lua_pushany(L, request.httpBody as NSData?);               lua_setfield(L, -2, "HTTPBody")
+    lua_pushany(L, request.httpMethod as NSString?);           lua_setfield(L, -2, "HTTPMethod")
 
     lua_pushnumber(L, lua_Number(request.timeoutInterval));       lua_setfield(L, -2, "timeoutInterval")
     lua_pushboolean(L, request.httpShouldHandleCookies ? 1 : 0); lua_setfield(L, -2, "HTTPShouldHandleCookies")
@@ -459,16 +445,16 @@ private func table_toNSURLRequest(_ L: UnsafeMutablePointer<lua_State>!, _ idx: 
     switch lua_type(L, idx) {
     case LUA_TTABLE:
         if lua_getfield(L, -1, "URL") == LUA_TSTRING {
-            request.url = URL(string: skin.toNSObject(atIndex: -1) as! String)
+            request.url = URL(string: lua_tovalue(L, at: -1) as! String)
         } else {
             lua_pop(L, 2)
-            skin.logError("URL field missing in NSURLRequest table")
+            os_log(.error, "%{public}s", "URL field missing in NSURLRequest table")
             return nil
         }
         lua_pop(L, 1)
 
         if lua_getfield(L, -1, "mainDocumentURL") == LUA_TSTRING {
-            request.mainDocumentURL = URL(string: skin.toNSObject(atIndex: -1) as! String)
+            request.mainDocumentURL = URL(string: lua_tovalue(L, at: -1) as! String)
         }
         lua_pop(L, 1)
 
@@ -480,7 +466,7 @@ private func table_toNSURLRequest(_ L: UnsafeMutablePointer<lua_State>!, _ idx: 
         lua_pop(L, 1)
 
         if lua_getfield(L, -1, "HTTPMethod") == LUA_TSTRING {
-            request.httpMethod = (skin.toNSObject(atIndex: -1) as? String) ?? "GET"
+            request.httpMethod = (lua_tovalue(L, at: -1) as? String) ?? "GET"
         }
         lua_pop(L, 1)
 
@@ -500,7 +486,7 @@ private func table_toNSURLRequest(_ L: UnsafeMutablePointer<lua_State>!, _ idx: 
         lua_pop(L, 1)
 
         if lua_getfield(L, -1, "cachePolicy") == LUA_TSTRING {
-            let cp: String = skin.toNSObject(atIndex: -1) as! String
+            let cp: String = lua_tovalue(L, at: -1) as! String
             switch cp {
             case "protocolCachePolicy": request.cachePolicy = .useProtocolCachePolicy
             case "ignoreLocalCache":    request.cachePolicy = .reloadIgnoringLocalCacheData
@@ -512,7 +498,7 @@ private func table_toNSURLRequest(_ L: UnsafeMutablePointer<lua_State>!, _ idx: 
         lua_pop(L, 1)
 
         if lua_getfield(L, -1, "networkServiceType") == LUA_TSTRING {
-            let nst: String = skin.toNSObject(atIndex: -1) as! String
+            let nst: String = lua_tovalue(L, at: -1) as! String
             switch nst {
             case "default":    request.networkServiceType = .default
             case "VoIP":       request.networkServiceType = .voip
@@ -525,7 +511,7 @@ private func table_toNSURLRequest(_ L: UnsafeMutablePointer<lua_State>!, _ idx: 
         lua_pop(L, 1)
 
         if lua_getfield(L, -1, "HTTPHeaderFields") == LUA_TTABLE {
-            if var fields = skin.toNSObject(atIndex: -1) as? [String: Any] {
+            if var fields = lua_tovalue(L, at: -1) as? [String: Any] {
                 var toRemove = [String]()
 
                 for (key, value) in fields {
@@ -554,10 +540,10 @@ private func table_toNSURLRequest(_ L: UnsafeMutablePointer<lua_State>!, _ idx: 
         lua_pop(L, 1)
 
     case LUA_TSTRING:
-        request = NSMutableURLRequest(url: URL(string: skin.toNSObject(atIndex: idx) as! String)!)
+        request = NSMutableURLRequest(url: URL(string: lua_tovalue(L, at: idx) as! String)!)
 
     default:
-        skin.logError("Unexpected type passed as a NSURLRequest: \(String(cString: lua_typename(L, lua_type(L, idx))))")
+        os_log(.error, "%{public}s", "Unexpected type passed as a NSURLRequest: \(String(cString: lua_typename(L, lua_type(L, idx))))")
         lua_pop(L, 1)
         return nil
     }

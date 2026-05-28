@@ -4,7 +4,7 @@ import LuaSkin
 // MARK: axtextmarker.m — AXTextMarker / AXTextMarkerRange
 // MARK: ============================================================
 
-var textmarkerRefTable: LSRefTable = LUA_NOREF
+var textmarkerRefTable: Int32 = LUA_NOREF
 
 // MARK: - Push Helpers
 
@@ -34,10 +34,11 @@ public func pushAXTextMarkerRange(_ L: UnsafeMutablePointer<lua_State>!, _ theEl
 
 /// hs.axuielement.axtextmarker.newMarker(string) -> axTextMarkerObject | nil, errorString
 private func axtextmarker_newMarker(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING, LS_TBREAK)
+    luaL_checktype(L, 1, LUA_TSTRING)
 
-    let bytesAsData = skin.toNSObject(atIndex: 1, withOptions: .nsLuaStringAsDataOnly) as! NSData
+    var len: Int = 0
+    let bytes = lua_tolstring(L, 1, &len)!
+    let bytesAsData = NSData(bytes: bytes, length: len)
     if let marker = AXTextMarkerCreate(kCFAllocatorDefault, bytesAsData.bytes.assumingMemoryBound(to: UInt8.self), bytesAsData.length) {
         pushAXTextMarker(L, marker)
     } else {
@@ -50,8 +51,8 @@ private func axtextmarker_newMarker(_ L: UnsafeMutablePointer<lua_State>!) -> In
 
 /// hs.axuielement.axtextmarker.newRange(startMarker, endMarker) -> axTextMarkerRangeObject | nil, errorString
 private func axtextmarker_newRange(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, axuielement_AXTEXTMARKER_TAG, LS_TUSERDATA, axuielement_AXTEXTMARKER_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, axuielement_AXTEXTMARKER_TAG)
+    luaL_checkudata(L, 2, axuielement_AXTEXTMARKER_TAG)
     let startMarker = get_axtextmarkerref(L, 1, axuielement_AXTEXTMARKER_TAG)
     let endMarker   = get_axtextmarkerref(L, 2, axuielement_AXTEXTMARKER_TAG)
 
@@ -66,24 +67,17 @@ private func axtextmarker_newRange(_ L: UnsafeMutablePointer<lua_State>!) -> Int
 }
 
 private func axtextmarker_AXTextMarkerGetTypeID_fn(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TBREAK)
     lua_pushinteger(L, lua_Integer(AXTextMarkerGetTypeID()))
     return 1
 }
 
 private func axtextmarker_AXTextMarkerRangeGetTypeID_fn(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TBREAK)
     lua_pushinteger(L, lua_Integer(AXTextMarkerRangeGetTypeID()))
     return 1
 }
 
 /// hs.axuielement.axtextmarker._functionCheck() -> table
 private func axtextmarker_availabilityCheck(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TBREAK)
-
     lua_newtable(L)
     lua_pushboolean(L, 1); lua_setfield(L, -2, "AXTextMarkerGetTypeID")
     lua_pushboolean(L, 1); lua_setfield(L, -2, "AXTextMarkerCreate")
@@ -100,8 +94,7 @@ private func axtextmarker_availabilityCheck(_ L: UnsafeMutablePointer<lua_State>
 
 /// hs.axuielement.axtextmarker:bytes() -> string
 private func axtextmarker_markerBytes(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, axuielement_AXTEXTMARKER_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, axuielement_AXTEXTMARKER_TAG)
     let marker = get_axtextmarkerref(L, 1, axuielement_AXTEXTMARKER_TAG)
 
     let length = AXTextMarkerGetLength(marker)
@@ -115,8 +108,7 @@ private func axtextmarker_markerBytes(_ L: UnsafeMutablePointer<lua_State>!) -> 
 
 /// hs.axuielement.axtextmarker:length() -> integer
 private func axtextmarker_markerLength(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, axuielement_AXTEXTMARKER_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, axuielement_AXTEXTMARKER_TAG)
     let marker = get_axtextmarkerref(L, 1, axuielement_AXTEXTMARKER_TAG)
 
     lua_pushinteger(L, lua_Integer(AXTextMarkerGetLength(marker)))
@@ -125,8 +117,7 @@ private func axtextmarker_markerLength(_ L: UnsafeMutablePointer<lua_State>!) ->
 
 /// hs.axuielement.axtextmarker:startMarker() -> axTextMarkerObject | nil, errorString
 private func axtextmarker_rangeStartMarker(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, axuielement_AXTEXTMRKRNG_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, axuielement_AXTEXTMRKRNG_TAG)
     let range = get_axtextmarkerrangeref(L, 1, axuielement_AXTEXTMRKRNG_TAG)
 
     if let marker = AXTextMarkerRangeCopyStartMarker(range) {
@@ -141,8 +132,7 @@ private func axtextmarker_rangeStartMarker(_ L: UnsafeMutablePointer<lua_State>!
 
 /// hs.axuielement.axtextmarker:endMarker() -> axTextMarkerObject | nil, errorString
 private func axtextmarker_rangeEndMarker(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, axuielement_AXTEXTMRKRNG_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, axuielement_AXTEXTMRKRNG_TAG)
     let range = get_axtextmarkerrangeref(L, 1, axuielement_AXTEXTMRKRNG_TAG)
 
     if let marker = AXTextMarkerRangeCopyEndMarker(range) {
@@ -158,11 +148,10 @@ private func axtextmarker_rangeEndMarker(_ L: UnsafeMutablePointer<lua_State>!) 
 // MARK: - Cosmic Hammer/Lua Infrastructure (textmarker)
 
 private func textmarker_userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     let tag = luaL_testudata(L, 1, axuielement_AXTEXTMARKER_TAG) != nil ? axuielement_AXTEXTMARKER_TAG : axuielement_AXTEXTMRKRNG_TAG
     let tagStr = String(cString: tag)
-    let ptr = Int(bitPattern: lua_topointer(L, 1))
-    skin.pushNSObject(NSString(format: "%@: (0x%lx)", tagStr as NSString, ptr))
+    let desc = "\(tagStr): (\(String(describing: lua_topointer(L, 1)!)))"
+    lua_pushstring(L, desc)
     return 1
 }
 

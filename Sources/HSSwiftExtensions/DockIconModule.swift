@@ -91,8 +91,6 @@ private func icon_setBadge(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Notes:
 ///  * If you update the canvas object by changing any of its components, it will not be reflected in the dock icon until you invoke [hs.dockicon.tileUpdate](#tileUpdate).
 private func icon_docktileCanvas(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TANY | LS_TOPTIONAL, LS_TBREAK)
     let tile = NSApplication.shared.dockTile
 
     if lua_gettop(L) != 0 {
@@ -100,8 +98,11 @@ private func icon_docktileCanvas(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
         if lua_type(L, 1) == LUA_TNIL {
             tile.contentView = nil
         } else {
-            skin.checkArgs(LS_TUSERDATA, "hs.canvas", LS_TBREAK)
-            tile.contentView = skin.toNSObject(atIndex: 1) as? NSView
+            luaL_checkudata(L, 1, "hs.canvas")
+            let ptr = lua_touserdata(L, 1)!.assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
+            if let rawPtr = ptr.pointee {
+                tile.contentView = Unmanaged<AnyObject>.fromOpaque(rawPtr).takeUnretainedValue() as? NSView
+            }
         }
         tile.display()
         // if canvas removed from tile, reattach it so it can be displayed as a canvas again
@@ -113,7 +114,11 @@ private func icon_docktileCanvas(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
             }
         }
     }
-    skin.pushNSObject(tile.contentView)
+    if tile.contentView != nil {
+        lua_pushany(L, "\(tile.contentView!)")
+    } else {
+        lua_pushnil(L)
+    }
     return 1
 }
 
@@ -130,11 +135,8 @@ private func icon_docktileCanvas(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 /// Notes:
 ///  * the size returned specifies the display size of the dock icon tile. If your canvas item is larger than this, then only the top left portion corresponding to the size returned will be displayed.
 private func icon_docktileSize(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TBREAK)
     let tile = NSApplication.shared.dockTile
-
-    skin.pushNSSize(tile.size)
+    lua_pushNSSize(L, tile.size)
     return 1
 }
 
@@ -151,10 +153,7 @@ private func icon_docktileSize(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Notes:
 ///  * Changes made to a canvas object are not reflected automatically like they are when a canvas is being displayed on the screen; you must invoke this method after making changes to the canvas for the updates to be reflected in the dock icon.
 private func icon_docktileUpdate(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TBREAK)
     let tile = NSApplication.shared.dockTile
-
     tile.display()
     return 0
 }

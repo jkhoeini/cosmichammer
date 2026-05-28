@@ -1,8 +1,9 @@
 import Cocoa
 import LuaSkin
+import os.log
 
 private let USERDATA_TAG = "hs.dialog"
-private var refTable: LSRefTable = LUA_NOREF
+private var refTable: Int32 = LUA_NOREF
 
 // MARK: - Support Functions and Classes
 
@@ -31,15 +32,12 @@ private class HSColorPanel: NSObject {
         if callbackRef != LUA_NOREF {
             DispatchQueue.main.async { [weak self] in
                 guard let self = self, self.callbackRef != LUA_NOREF else { return }
-                let skin = LuaSkin.skin(with: nil)
-                _lua_stackguard_entry(skin.l)
-                let L = skin.l!
+                let L = LuaSkin.skin(with: nil).l!
                 let cp = NSColorPanel.shared
-                skin.pushLuaRef(refTable, ref: self.callbackRef)
-                skin.pushNSObject(cp.color)
+                lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(self.callbackRef))
+                lua_pushany(L, cp.color)
                 lua_pushboolean(L, 1)
-                skin.protectedCallAndError("hs.dialog color close callback", nargs: 2, nresults: 0)
-                _lua_stackguard_exit(skin.l)
+                if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
             }
         }
     }
@@ -49,14 +47,11 @@ private class HSColorPanel: NSObject {
         if callbackRef != LUA_NOREF {
             DispatchQueue.main.async { [weak self] in
                 guard let self = self, self.callbackRef != LUA_NOREF else { return }
-                let skin = LuaSkin.skin(with: nil)
-                _lua_stackguard_entry(skin.l)
-                let L = skin.l!
-                skin.pushLuaRef(refTable, ref: self.callbackRef)
-                skin.pushNSObject(colorPanel.color)
+                let L = LuaSkin.skin(with: nil).l!
+                lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(self.callbackRef))
+                lua_pushany(L, colorPanel.color)
                 lua_pushboolean(L, 0)
-                skin.protectedCallAndError("hs.dialog color callback", nargs: 2, nresults: 0)
-                _lua_stackguard_exit(skin.l)
+                if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
             }
         }
     }
@@ -82,20 +77,19 @@ private var cpReceiverObject: HSColorPanel?
 ///  * Example:
 ///      `hs.dialog.color.callback(function(a,b) print("COLOR CALLBACK:\nSelected Color: " .. hs.inspect(a) .. "\nPanel Closed: " .. hs.inspect(b)) end)`
 private func colorPanelCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TFUNCTION | LS_TNIL | LS_TOPTIONAL, LS_TBREAK)
 
     if cpReceiverObject!.callbackRef != LUA_NOREF {
-        skin.pushLuaRef(refTable, ref: cpReceiverObject!.callbackRef)
+        lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(cpReceiverObject!.callbackRef))
     } else {
         lua_pushnil(L)
     }
     if lua_gettop(L) == 2 { // we just added to it...
         // in either case, we need to remove an existing callback, so...
-        cpReceiverObject!.callbackRef = skin.luaUnref(refTable, ref: cpReceiverObject!.callbackRef)
+        luaL_unref(L, LUA_REGISTRYINDEX_VALUE, cpReceiverObject!.callbackRef)
+        cpReceiverObject!.callbackRef = LUA_NOREF
         if lua_type(L, 1) == LUA_TFUNCTION {
             lua_pushvalue(L, 1)
-            cpReceiverObject!.callbackRef = skin.luaRef(refTable)
+            cpReceiverObject!.callbackRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
         }
     }
     // return the *last* fn (or nil) so you can save it and re-attach it if something needs to
@@ -117,8 +111,6 @@ private func colorPanelCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 ///  * Example:
 ///      `hs.dialog.color.continuous(true)`
 private func colorPanelContinuous(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
     let cp = NSColorPanel.shared
     if lua_gettop(L) == 1 {
         cp.isContinuous = lua_toboolean(L, 1) != 0
@@ -141,8 +133,6 @@ private func colorPanelContinuous(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
 ///  * Example:
 ///      `hs.dialog.color.showsAlpha(true)`
 private func colorPanelShowsAlpha(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
     let cp = NSColorPanel.shared
     if lua_gettop(L) == 1 {
         cp.showsAlpha = lua_toboolean(L, 1) != 0
@@ -165,14 +155,12 @@ private func colorPanelShowsAlpha(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
 ///  * Example:
 ///      `hs.dialog.color.color(hs.drawing.color.blue)`
 private func colorPanelColor(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TTABLE | LS_TOPTIONAL, LS_TBREAK)
     let cp = NSColorPanel.shared
     if lua_gettop(L) == 1 {
-        let theColor = skin.luaObject(at: 1, toClass: "NSColor") as! NSColor
+        let theColor = lua_tovalue(L, at: 1) as! NSColor
         cp.color = theColor
     }
-    skin.pushNSObject(cp.color)
+    lua_pushany(L, cp.color)
     return 1
 }
 
@@ -199,11 +187,9 @@ private func colorPanelColor(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * Example:
 ///      `hs.dialog.color.mode("RGB")`
 private func colorPanelMode(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING | LS_TOPTIONAL, LS_TBREAK)
     let cp = NSColorPanel.shared
     if lua_gettop(L) == 1 {
-        let theMode = skin.toNSObject(atIndex: 1) as! String
+        let theMode = lua_tovalue(L, at: 1) as! String
         switch theMode {
         case "none":   cp.mode = .none
         case "gray":   cp.mode = .gray
@@ -220,17 +206,17 @@ private func colorPanelMode(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     }
 
     switch cp.mode {
-    case .none:          skin.pushNSObject("none")
-    case .gray:          skin.pushNSObject("gray")
-    case .RGB:           skin.pushNSObject("RGB")
-    case .CMYK:          skin.pushNSObject("CMYK")
-    case .HSB:           skin.pushNSObject("HSB")
-    case .customPalette: skin.pushNSObject("custom")
-    case .colorList:     skin.pushNSObject("list")
-    case .wheel:         skin.pushNSObject("wheel")
-    case .crayon:        skin.pushNSObject("crayon")
+    case .none:          lua_pushany(L, "none")
+    case .gray:          lua_pushany(L, "gray")
+    case .RGB:           lua_pushany(L, "RGB")
+    case .CMYK:          lua_pushany(L, "CMYK")
+    case .HSB:           lua_pushany(L, "HSB")
+    case .customPalette: lua_pushany(L, "custom")
+    case .colorList:     lua_pushany(L, "list")
+    case .wheel:         lua_pushany(L, "wheel")
+    case .crayon:        lua_pushany(L, "crayon")
     default:
-        skin.pushNSObject("** unrecognized mode:\(cp.mode.rawValue)")
+        lua_pushany(L, "** unrecognized mode:\(cp.mode.rawValue)")
     }
     return 1
 }
@@ -249,12 +235,10 @@ private func colorPanelMode(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * Example:
 ///      `hs.dialog.color.alpha(0.5)`
 private func colorPanelAlpha(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TNUMBER | LS_TOPTIONAL, LS_TBREAK)
 
     let cp = NSColorPanel.shared
     if lua_gettop(L) == 1 {
-        let alpha = skin.toNSObject(atIndex: 1) as! NSNumber
+        let alpha = lua_tovalue(L, at: 1) as! NSNumber
         let color = cp.color.withAlphaComponent(CGFloat(alpha.doubleValue))
         cp.color = color
     }
@@ -277,8 +261,6 @@ private func colorPanelAlpha(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * Example:
 ///      `hs.dialog.color.show()`
 private func colorPanelShow(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TBREAK)
     NSApp.orderFrontColorPanel(nil)
     return 0
 }
@@ -297,8 +279,6 @@ private func colorPanelShow(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * Example:
 ///      `hs.dialog.color.hide()`
 private func colorPanelHide(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TBREAK)
     NSColorPanel.shared.close()
     return 0
 }
@@ -327,9 +307,7 @@ private func colorPanelHide(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///      `hs.inspect(hs.dialog.chooseFileOrFolder("Please select a file:", "~/Desktop", true, false, true, {"jpeg", "pdf"}, true))`
 private func chooseFileOrFolder(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     // Check the Parameters:
-    let skin = LuaSkin.skin(with: L)
     //              [message],                 [defaultPath],             [canChooseFiles],           [canChooseDirectories],     [allowsMultipleSelection],  [allowedFileTypes],       [resolvesAliases]
-    skin.checkArgs(LS_TOPTIONAL | LS_TSTRING, LS_TOPTIONAL | LS_TSTRING, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBOOLEAN | LS_TOPTIONAL, LS_TTABLE | LS_TOPTIONAL, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
 
     // Create new NSOpenPanel:
     let panel = NSOpenPanel()
@@ -347,12 +325,12 @@ private func chooseFileOrFolder(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
     }
 
     // Message:
-    if let message = skin.toNSObject(atIndex: 1) as? String {
+    if let message = lua_tovalue(L, at: 1) as? String {
         panel.message = message
     }
 
     // Default Path:
-    if let path = skin.toNSObject(atIndex: 2) as? String {
+    if let path = lua_tovalue(L, at: 2) as? String {
         panel.directoryURL = URL(fileURLWithPath: path)
     }
 
@@ -419,20 +397,18 @@ private func webviewAlert(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let defaultButton = "OK"
     let defaultAlertStyle = NSAlert.Style.informational
 
-    let skin = LuaSkin.skin(with: L)
     //                            webview,      callbackFn,   message,    [informativeText],         [buttonOne],               [buttonTwo],                         [style]
-    skin.checkArgs(LS_TUSERDATA, "hs.webview", LS_TFUNCTION, LS_TSTRING, LS_TSTRING | LS_TOPTIONAL, LS_TSTRING | LS_TOPTIONAL, LS_TSTRING | LS_TNIL | LS_TOPTIONAL, LS_TSTRING | LS_TOPTIONAL, LS_TBREAK)
 
-    let webview = skin.toNSObject(atIndex: 1) as! NSWindow
+    let webview = lua_tovalue(L, at: 1) as! NSWindow
 
     lua_pushvalue(L, 2) // Copy the callback function to the top of the stack
-    var callbackRef = skin.luaRef(refTable) // Store what's at the top of the stack in the registry
+    var callbackRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE) // Store what's at the top of the stack in the registry
 
-    let message = skin.toNSObject(atIndex: 3) as! String
-    let informativeText = skin.toNSObject(atIndex: 4) as? String
-    let buttonOne = skin.toNSObject(atIndex: 5) as? String
-    let buttonTwo = skin.toNSObject(atIndex: 6) as? String
-    let style = skin.toNSObject(atIndex: 7) as? String
+    let message = lua_tovalue(L, at: 3) as! String
+    let informativeText = lua_tovalue(L, at: 4) as? String
+    let buttonOne = lua_tovalue(L, at: 5) as? String
+    let buttonTwo = lua_tovalue(L, at: 6) as? String
+    let style = lua_tovalue(L, at: 7) as? String
 
     let alert = NSAlert()
     alert.messageText = message
@@ -468,14 +444,16 @@ private func webviewAlert(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
         } else if result == .alertSecondButtonReturn {
             button = buttonTwo ?? defaultButton
         } else {
-            skin.logError("hs.dialog.webviewAlert() - Failed to detect which button was pressed.")
+            os_log(.error, "%{public}s", "hs.dialog.webviewAlert() - Failed to detect which button was pressed.")
             lua_pushnil(L)
         }
 
-        skin.pushLuaRef(refTable, ref: callbackRef) // Put the saved function back on the stack.
-        callbackRef = skin.luaUnref(refTable, ref: callbackRef) // Remove the stored function from the registry.
-        skin.pushNSObject(button)
-        skin.protectedCallAndError("hs.dialog:callback", nargs: 1, nresults: 0)
+        lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(callbackRef)) // Put the saved function back on the stack.
+        luaL_unref(L, LUA_REGISTRYINDEX_VALUE, callbackRef)
+
+        callbackRef = LUA_NOREF // Remove the stored function from the registry.
+        lua_pushany(L, button)
+        if lua_pcall(L, 1, 0, 0) != LUA_OK { lua_pop(L, 1) }
     }
 
     lua_pushnil(L)
@@ -506,16 +484,14 @@ private func webviewAlert(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 private func blockAlert(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let defaultButton = "OK"
 
-    let skin = LuaSkin.skin(with: L)
     //              message,    informativeText,
     //                                      [buttonOne],               [buttonTwo],               [style]
-    skin.checkArgs(LS_TSTRING, LS_TSTRING, LS_TSTRING | LS_TOPTIONAL, LS_TSTRING | LS_TOPTIONAL, LS_TSTRING | LS_TOPTIONAL, LS_TBREAK)
 
-    let message = skin.toNSObject(atIndex: 1) as! String
-    let informativeText = skin.toNSObject(atIndex: 2) as! String
-    let buttonOne = skin.toNSObject(atIndex: 3) as? String
-    let buttonTwo = skin.toNSObject(atIndex: 4) as? String
-    let style = skin.toNSObject(atIndex: 5) as? String
+    let message = lua_tovalue(L, at: 1) as! String
+    let informativeText = lua_tovalue(L, at: 2) as! String
+    let buttonOne = lua_tovalue(L, at: 3) as? String
+    let buttonTwo = lua_tovalue(L, at: 4) as? String
+    let style = lua_tovalue(L, at: 5) as? String
 
     let alert = NSAlert()
     alert.messageText = message
@@ -549,7 +525,7 @@ private func blockAlert(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     } else if result == .alertSecondButtonReturn {
         lua_pushvalue(L, 4)
     } else {
-        skin.logError("hs.dialog.alert() - Failed to detect which button was pressed.")
+        os_log(.error, "%{public}s", "hs.dialog.alert() - Failed to detect which button was pressed.")
         lua_pushnil(L)
     }
 
@@ -585,16 +561,14 @@ private func blockAlert(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 private func textPrompt(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let defaultButton = "OK"
 
-    let skin = LuaSkin.skin(with: L)
     //              message,    informativeText,
     //                                      [defaultText],             [buttonOne],               [buttonTwo]
-    skin.checkArgs(LS_TSTRING, LS_TSTRING, LS_TSTRING | LS_TOPTIONAL, LS_TSTRING | LS_TOPTIONAL, LS_TSTRING | LS_TOPTIONAL, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
 
-    let message = skin.toNSObject(atIndex: 1) as! String
-    let informativeText = skin.toNSObject(atIndex: 2) as! String
-    let defaultText = skin.toNSObject(atIndex: 3) as? String
-    let buttonOne = skin.toNSObject(atIndex: 4) as? String
-    let buttonTwo = skin.toNSObject(atIndex: 5) as? String
+    let message = lua_tovalue(L, at: 1) as! String
+    let informativeText = lua_tovalue(L, at: 2) as! String
+    let defaultText = lua_tovalue(L, at: 3) as? String
+    let buttonOne = lua_tovalue(L, at: 4) as? String
+    let buttonTwo = lua_tovalue(L, at: 5) as? String
     let secureField = (lua_type(L, 6) == LUA_TBOOLEAN) ? (lua_toboolean(L, 6) != 0) : false
 
     let alert = NSAlert()
@@ -644,7 +618,7 @@ private func textPrompt(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
         lua_pushvalue(L, 5)
         lua_pushstring(L, input.stringValue)
     } else {
-        skin.logError("hs.dialog.textPrompt() - Failed to detect which button was pressed.")
+        os_log(.error, "%{public}s", "hs.dialog.textPrompt() - Failed to detect which button was pressed.")
         lua_pushnil(L)
     }
 
@@ -654,7 +628,6 @@ private func textPrompt(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 // MARK: - Cosmic Hammer/Lua Infrastructure
 
 private func releaseReceivers(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     let cp = NSColorPanel.shared
     NotificationCenter.default.removeObserver(
         cpReceiverObject!,
@@ -664,7 +637,8 @@ private func releaseReceivers(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     cp.setTarget(nil)
     cp.setAction(nil)
     if cpReceiverObject!.callbackRef != LUA_NOREF {
-        let _ = skin.luaUnref(refTable, ref: cpReceiverObject!.callbackRef)
+        luaL_unref(L, LUA_REGISTRYINDEX_VALUE, cpReceiverObject!.callbackRef)
+        cpReceiverObject!.callbackRef = LUA_NOREF
     }
     cp.close() // Close the Color Panel
     cpReceiverObject = nil

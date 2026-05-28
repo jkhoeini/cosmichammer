@@ -1,6 +1,7 @@
 import Cocoa
 import Carbon
 import LuaSkin
+import os.log
 import IOKit
 import IOKit.hidsystem
 
@@ -58,8 +59,7 @@ private func parseModsFromIterator(_ L: UnsafeMutablePointer<lua_State>!, tableI
     lua_pushnil(L)
     while lua_next(L, tableIndex) != 0 {
         guard let modifier = lua_tostring(L, -1).map({ String(cString: $0) }) else {
-            let skin = LuaSkin.skin(with: L)
-            skin.logBreadcrumb("unexpected entry in modifiers table: \(lua_type(L, -1))")
+            os_log(.debug, "%{public}s", "unexpected entry in modifiers table: \(lua_type(L, -1))")
             lua_pop(L, 1); continue
         }
         switch modifier {
@@ -113,9 +113,8 @@ private func eventtap_event_newEvent(_ L: UnsafeMutablePointer<lua_State>!) -> I
 }
 
 private func eventtap_event_newEventFromData(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING, LS_TBREAK)
-    guard let data = skin.toNSObject(atIndex: 1, withOptions: .nsLuaStringAsDataOnly) as? Data else {
+    luaL_checktype(L, 1, LUA_TSTRING)
+    guard let data = lua_tovalue(L, at: 1) as? Data else {
         lua_pushnil(L); return 1
     }
     if let event = CGEvent(withDataAllocator: nil, data: data as CFData) {
@@ -135,8 +134,7 @@ private func eventtap_event_newGesture(_ L: UnsafeMutablePointer<lua_State>!) ->
 private func eventtap_event_asData(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let event = getEvent(L, 1)
     if let data = event.data {
-        let skin = LuaSkin.skin(with: L)
-        skin.pushNSObject(data as NSData)
+        lua_pushany(L, data as NSData)
     } else {
         lua_pushnil(L)
     }
@@ -144,14 +142,12 @@ private func eventtap_event_asData(_ L: UnsafeMutablePointer<lua_State>!) -> Int
 }
 
 private func eventtap_event_location(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, EVENTTAP_EVENT_USERDATA_TAG, LS_TTABLE | LS_TOPTIONAL, LS_TBREAK)
     let event = getEvent(L, 1)
     if lua_gettop(L) == 1 {
         let loc = event.location
-        skin.pushNSPoint(NSPoint(x: loc.x, y: loc.y))
+        lua_pushNSPoint(L, NSPoint(x: loc.x, y: loc.y))
     } else {
-        let point = skin.tableToPoint(at: 2)
+        let point = lua_tableToPoint(L, at: 2)
         event.location = CGPoint(x: point.x, y: point.y)
         lua_pushvalue(L, 1)
     }
@@ -159,8 +155,6 @@ private func eventtap_event_location(_ L: UnsafeMutablePointer<lua_State>!) -> I
 }
 
 private func eventtap_event_timestamp(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, EVENTTAP_EVENT_USERDATA_TAG, LS_TNUMBER | LS_TINTEGER | LS_TOPTIONAL, LS_TBREAK)
     let event = getEvent(L, 1)
     if lua_gettop(L) == 1 {
         lua_pushinteger(L, lua_Integer(event.timestamp))
@@ -172,8 +166,6 @@ private func eventtap_event_timestamp(_ L: UnsafeMutablePointer<lua_State>!) -> 
 }
 
 private func eventtap_event_setType(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, EVENTTAP_EVENT_USERDATA_TAG, LS_TNUMBER | LS_TINTEGER, LS_TBREAK)
     let event = getEvent(L, 1)
     event.type = CGEventType(rawValue: UInt32(lua_tointeger(L, 2)))!
     lua_pushvalue(L, 1)
@@ -181,8 +173,6 @@ private func eventtap_event_setType(_ L: UnsafeMutablePointer<lua_State>!) -> In
 }
 
 private func eventtap_event_rawFlags(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, EVENTTAP_EVENT_USERDATA_TAG, LS_TNUMBER | LS_TINTEGER | LS_TOPTIONAL, LS_TBREAK)
     let event = getEvent(L, 1)
     if lua_gettop(L) == 1 {
         lua_pushinteger(L, lua_Integer(event.flags.rawValue))
@@ -302,8 +292,7 @@ private func eventtap_event_setKeyCode(_ L: UnsafeMutablePointer<lua_State>!) ->
 }
 
 private func eventtap_event_getUnicodeString(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, EVENTTAP_EVENT_USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, EVENTTAP_EVENT_USERDATA_TAG)
     let event = getEvent(L, 1)
 
     var actual: Int = 0
@@ -311,15 +300,16 @@ private func eventtap_event_getUnicodeString(_ L: UnsafeMutablePointer<lua_State
     var buffer = [UniChar](repeating: 0, count: actual)
     event.keyboardGetUnicodeString(maxStringLength: actual, actualStringLength: &actual, unicodeString: &buffer)
     let str = NSString(characters: buffer, length: actual)
-    skin.pushNSObject(str)
+    lua_pushany(L, str)
     return 1
 }
 
 private func eventtap_event_setUnicodeString(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, EVENTTAP_EVENT_USERDATA_TAG, LS_TSTRING, LS_TBREAK)
+    luaL_checkudata(L, 1, EVENTTAP_EVENT_USERDATA_TAG)
+
+    luaL_checktype(L, 2, LUA_TSTRING)
     let event = getEvent(L, 1)
-    guard let theString = skin.toNSObject(atIndex: 2) as? NSString else {
+    guard let theString = lua_tovalue(L, at: 2) as? NSString else {
         lua_settop(L, 1); return 1
     }
 
@@ -335,11 +325,11 @@ private func eventtap_event_setUnicodeString(_ L: UnsafeMutablePointer<lua_State
 
 private func eventtap_event_post(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, EVENTTAP_EVENT_USERDATA_TAG, LS_TANY | LS_TOPTIONAL, LS_TBREAK)
+    luaL_checkudata(L, 1, EVENTTAP_EVENT_USERDATA_TAG)
     let event = getEvent(L, 1)
 
     if luaL_testudata(L, 2, APPLICATION_USERDATA_TAG) != nil {
-        if let app = skin.toNSObject(at: 2) as? HSapplicationProtocol {
+        if let app = lua_tovalue(L, at: 2) as? HSapplicationProtocol {
             event.postToPid(app.pid)
         }
     } else {
@@ -351,8 +341,7 @@ private func eventtap_event_post(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 }
 
 private func eventtap_event_getType(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, EVENTTAP_EVENT_USERDATA_TAG, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
+    luaL_checkudata(L, 1, EVENTTAP_EVENT_USERDATA_TAG)
     let event = getEvent(L, 1)
     let nsEvent = (lua_gettop(L) > 1) ? (lua_toboolean(L, 2) != 0) : false
 
@@ -428,19 +417,15 @@ private func eventtap_event_setProperty(_ L: UnsafeMutablePointer<lua_State>!) -
 // MARK: - Key Event Constructors
 
 private func eventtap_event_newKeyEvent(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     var hasModTable = false
     var keyCodePos: Int32 = 2
     var flags = CGEventFlags(rawValue: 0)
 
     if lua_type(L, 1) == LUA_TTABLE {
-        skin.checkArgs(LS_TTABLE, LS_TNUMBER | LS_TINTEGER, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
         flags = parseModsFromIterator(L, tableIndex: 1)
         hasModTable = true
     } else if lua_type(L, 1) == LUA_TNIL {
-        skin.checkArgs(LS_TNIL, LS_TNUMBER | LS_TINTEGER, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
     } else {
-        skin.checkArgs(LS_TNUMBER | LS_TINTEGER, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
         keyCodePos = 1
     }
 
@@ -456,8 +441,6 @@ private func eventtap_event_newKeyEvent(_ L: UnsafeMutablePointer<lua_State>!) -
 }
 
 private func eventtap_event_newSystemKeyEvent(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING, LS_TBOOLEAN, LS_TBREAK)
 
     guard let keyName = lua_tostring(L, 1).map({ String(cString: $0) }) else {
         lua_pushnil(L); return 1
@@ -490,7 +473,7 @@ private func eventtap_event_newSystemKeyEvent(_ L: UnsafeMutablePointer<lua_Stat
     ]
 
     guard let keyVal = keyMap[keyName] else {
-        skin.logError("Unknown system key for hs.eventtap.event.newSystemKeyEvent(): \(keyName)")
+        os_log(.error, "%{public}s", "Unknown system key for hs.eventtap.event.newSystemKeyEvent(): \(keyName)")
         lua_pushnil(L); return 1
     }
 
@@ -615,14 +598,13 @@ private func eventtap_event_systemKey(_ L: UnsafeMutablePointer<lua_State>!) -> 
 }
 
 private func eventtap_event_getTouches(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, EVENTTAP_EVENT_USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, EVENTTAP_EVENT_USERDATA_TAG)
     let event = getEvent(L, 1)
 
     if CGEventType(rawValue: UInt32(NSEvent.EventType.gesture.rawValue)) == event.type {
         if let nsEvent = NSEvent(cgEvent: event) {
             let touches = nsEvent.allTouches()
-            skin.pushNSObject(touches as NSSet)
+            lua_pushany(L, touches as NSSet)
         } else {
             lua_pushnil(L)
         }
@@ -633,8 +615,7 @@ private func eventtap_event_getTouches(_ L: UnsafeMutablePointer<lua_State>!) ->
 }
 
 private func eventtap_event_getTouchDetails(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, EVENTTAP_EVENT_USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, EVENTTAP_EVENT_USERDATA_TAG)
     let event = getEvent(L, 1)
 
     let gestureType = CGEventType(rawValue: UInt32(NSEvent.EventType.gesture.rawValue))
@@ -841,7 +822,6 @@ private func event_meta_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 // MARK: - NSTouch -> Lua helper
 
 private func pushNSTouch(_ L: UnsafeMutablePointer<lua_State>!, _ touch: NSTouch) {
-    let skin = LuaSkin.skin(with: L)
     lua_newtable(L)
 
     switch touch.type {
@@ -868,23 +848,23 @@ private func pushNSTouch(_ L: UnsafeMutablePointer<lua_State>!, _ touch: NSTouch
     lua_setfield(L, -2, "touching")
 
     if touch.type == .indirect {
-        skin.pushNSPoint(touch.normalizedPosition)
+        lua_pushNSPoint(L, touch.normalizedPosition)
         lua_setfield(L, -2, "normalizedPosition")
         // Private API: previousNormalizedPosition
         if touch.responds(to: Selector(("previousNormalizedPosition"))) {
             let prevPos = touch.perform(Selector(("previousNormalizedPosition")))!.takeUnretainedValue()
             // NSPoint is a struct, so use value(of:) for the point
             if let point = prevPos as? NSValue {
-                skin.pushNSPoint(point.pointValue)
+                lua_pushNSPoint(L, point.pointValue)
             } else {
-                skin.pushNSPoint(.zero)
+                lua_pushNSPoint(L, .zero)
             }
             lua_setfield(L, -2, "previousNormalizedPosition")
         }
     } else {
-        skin.pushNSPoint(touch.location(in: nil))
+        lua_pushNSPoint(L, touch.location(in: nil))
         lua_setfield(L, -2, "location")
-        skin.pushNSPoint(touch.previousLocation(in: nil))
+        lua_pushNSPoint(L, touch.previousLocation(in: nil))
         lua_setfield(L, -2, "previousLocation")
     }
 
@@ -912,7 +892,7 @@ private func pushNSTouch(_ L: UnsafeMutablePointer<lua_State>!, _ touch: NSTouch
     lua_pushstring(L, "\(Unmanaged.passUnretained(touch.device as AnyObject).toOpaque())")
     lua_setfield(L, -2, "device")
 
-    skin.pushNSSize(touch.deviceSize)
+    lua_pushNSSize(L, touch.deviceSize)
     lua_setfield(L, -2, "deviceSize")
 }
 

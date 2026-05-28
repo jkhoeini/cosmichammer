@@ -1,8 +1,9 @@
 import Cocoa
 import LuaSkin
+import os.log
 
 private let USERDATA_TAG = axuielement_USERDATA_TAG
-private var refTable: LSRefTable = LUA_NOREF
+private var refTable: Int32 = LUA_NOREF
 
 // MARK: - Support Functions
 
@@ -54,12 +55,11 @@ private func isApplicationOrSystem(_ theRef: AXUIElement) -> Bool {
 
 private func errorWrapper(_ L: UnsafeMutablePointer<lua_State>!, _ where_: NSString, _ what: NSString?, _ err: AXError) -> Int32 {
     let axErrMsg = AXErrorAsString(err)
-    let skin = LuaSkin.skin(with: L)
 
     if let what = what {
-        skin.logVerbose(String(format: "%s:%@ AXError %d for %@: %s", USERDATA_TAG, where_, err.rawValue, what, String(cString: axErrMsg)))
+        os_log(.debug, "%{public}s", String(format: "%s:%@ AXError %d for %@: %s", USERDATA_TAG, where_, err.rawValue, what, String(cString: axErrMsg)))
     } else {
-        skin.logVerbose(String(format: "%s:%@ AXError %d: %s", USERDATA_TAG, where_, err.rawValue, String(cString: axErrMsg)))
+        os_log(.debug, "%{public}s", String(format: "%s:%@ AXError %d: %s", USERDATA_TAG, where_, err.rawValue, String(cString: axErrMsg)))
     }
 
     lua_pushnil(L)
@@ -82,11 +82,9 @@ private func errorWrapper(_ L: UnsafeMutablePointer<lua_State>!, _ where_: NSStr
 /// Notes:
 ///  * if `windowObject` is a string or number, only the first item found with `hs.window.find` will be used by this function to create an axuielementObject.
 private func axuielement_getWindowElement(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     // vararg here to mimic original behavior and allow constructs to use `hs.window(...)` as arg as this may
     // return more than one result
-    skin.checkArgs(LS_TUSERDATA, "hs.window", LS_TBREAK | LS_TVARARG)
-    let object = skin.toNSObject(atIndex: 1) as! NSObject
+    let object = lua_tovalue(L, at: 1) as! NSObject
     if let ref = getElementRefPropertyFromClassObject(object) {
         pushAXUIElement(L, ref)
     } else {
@@ -108,11 +106,9 @@ private func axuielement_getWindowElement(_ L: UnsafeMutablePointer<lua_State>!)
 /// Notes:
 ///  * if `applicationObject` is a string or number, only the first item found with `hs.application.find` will be used by this function to create an axuielementObject.
 private func axuielement_getApplicationElement(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     // vararg here to mimic original behavior and allow constructs to use `hs.application(...)` as arg as this may
     // return more than one result
-    skin.checkArgs(LS_TUSERDATA, "hs.application", LS_TBREAK | LS_TVARARG)
-    let object = skin.toNSObject(atIndex: 1) as! NSObject
+    let object = lua_tovalue(L, at: 1) as! NSObject
     if let ref = getElementRefPropertyFromClassObject(object) {
         pushAXUIElement(L, ref)
     } else {
@@ -131,8 +127,6 @@ private func axuielement_getApplicationElement(_ L: UnsafeMutablePointer<lua_Sta
 /// Returns:
 ///  * the axuielementObject for the system attributes
 private func axuielement_getSystemWideElement(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TBREAK)
     let value = AXUIElementCreateSystemWide()
     pushAXUIElement(L, value)
     return 1
@@ -148,8 +142,7 @@ private func axuielement_getSystemWideElement(_ L: UnsafeMutablePointer<lua_Stat
 /// Returns:
 ///  * an axuielementObject for the application specified, or nil if it cannot be determined
 private func axuielement_getApplicationElementForPID(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TNUMBER, LS_TBREAK)
+    luaL_checktype(L, 1, LUA_TNUMBER)
     let thePid = pid_t(luaL_checkinteger(L, 1))
     let value = AXUIElementCreateApplication(thePid)
     if isApplicationOrSystem(value) {
@@ -172,8 +165,7 @@ private func axuielement_getApplicationElementForPID(_ L: UnsafeMutablePointer<l
 /// Returns:
 ///  * a new userdata object representing a new reference to the Accessibility object.
 private func axuielement_duplicateReference(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     let theRef = get_axuielementref(L, 1, USERDATA_TAG)
     pushAXUIElement(L, theRef)
     return 1
@@ -192,8 +184,7 @@ private func axuielement_duplicateReference(_ L: UnsafeMutablePointer<lua_State>
 /// Notes:
 ///  * Common attribute names can be found in the [hs.axuielement.attributes](#attributes) tables; however, this method will list only those names which are supported by this object, and is not limited to just those in the referenced table.
 private func axuielement_getAttributeNames(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     let theRef = get_axuielementref(L, 1, USERDATA_TAG)
     var attributeNames: CFArray?
     let errorState = AXUIElementCopyAttributeNames(theRef, &attributeNames)
@@ -201,7 +192,7 @@ private func axuielement_getAttributeNames(_ L: UnsafeMutablePointer<lua_State>!
     if errorState == .success {
         lua_newtable(L)
         for value in attributeNames! as [AnyObject] {
-            skin.pushNSObject(value)
+            lua_pushany(L, value)
             lua_rawseti(L, -2, luaL_len(L, -2) + 1)
         }
     } else {
@@ -224,8 +215,7 @@ private func axuielement_getAttributeNames(_ L: UnsafeMutablePointer<lua_State>!
 /// Notes:
 ///  * Common action names can be found in the [hs.axuielement.actions](#actions) table; however, this method will list only those names which are supported by this object, and is not limited to just those in the referenced table.
 private func axuielement_getActionNames(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     let theRef = get_axuielementref(L, 1, USERDATA_TAG)
     var attributeNames: CFArray?
     let errorState = AXUIElementCopyActionNames(theRef, &attributeNames)
@@ -233,7 +223,7 @@ private func axuielement_getActionNames(_ L: UnsafeMutablePointer<lua_State>!) -
     if errorState == .success {
         lua_newtable(L)
         for value in attributeNames! as [AnyObject] {
-            skin.pushNSObject(value)
+            lua_pushany(L, value)
             lua_rawseti(L, -2, luaL_len(L, -2) + 1)
         }
     } else {
@@ -256,15 +246,16 @@ private func axuielement_getActionNames(_ L: UnsafeMutablePointer<lua_State>!) -
 /// Notes:
 ///  * The action descriptions are provided by the target application; as such their accuracy and usefulness rely on the target application's developers.
 private func axuielement_getActionDescription(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
+
+    luaL_checktype(L, 2, LUA_TSTRING)
     let theRef = get_axuielementref(L, 1, USERDATA_TAG)
-    let action = skin.toNSObject(atIndex: 2) as! NSString
+    let action = lua_tovalue(L, at: 2) as! NSString
     var description: CFString?
     let errorState = AXUIElementCopyActionDescription(theRef, action as CFString, &description)
     var returnCount: Int32 = 1
     if errorState == .success {
-        skin.pushNSObject(description! as NSString)
+        lua_pushany(L, description! as NSString)
     } else if errorState == .noValue {
         lua_pushnil(L)
     } else {
@@ -284,10 +275,11 @@ private func axuielement_getActionDescription(_ L: UnsafeMutablePointer<lua_Stat
 /// Returns:
 ///  * the current value of the attribute, nil if the attribute has no value, or nil and an error string if an accessibility error occurred
 private func axuielement_getAttributeValue(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
+
+    luaL_checktype(L, 2, LUA_TSTRING)
     let theRef = get_axuielementref(L, 1, USERDATA_TAG)
-    let attribute = skin.toNSObject(atIndex: 2) as! NSString
+    let attribute = lua_tovalue(L, at: 2) as! NSString
     var value: CFTypeRef?
     let errorState = AXUIElementCopyAttributeValue(theRef, attribute as CFString, &value)
     var returnCount: Int32 = 1
@@ -319,8 +311,7 @@ private func axuielement_getAttributeValue(_ L: UnsafeMutablePointer<lua_State>!
 ///      * `_code` = -25212
 ///      * `error` = "Requested value does not exist"
 private func axuielement_getAllAttributeValues(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     let theRef = get_axuielementref(L, 1, USERDATA_TAG)
     let includeErrors = lua_gettop(L) == 2 ? (lua_toboolean(L, 2) != 0) : false
     var attributeNames: CFArray?
@@ -363,10 +354,11 @@ private func axuielement_getAllAttributeValues(_ L: UnsafeMutablePointer<lua_Sta
 /// Returns:
 ///  * the number of items in the value for the attribute, if it is an array, or nil and an error string if an accessibility error occurred
 private func axuielement_getAttributeValueCount(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
+
+    luaL_checktype(L, 2, LUA_TSTRING)
     let theRef = get_axuielementref(L, 1, USERDATA_TAG)
-    let attribute = skin.toNSObject(atIndex: 2) as! NSString
+    let attribute = lua_tovalue(L, at: 2) as! NSString
     var count: CFIndex = 0
     let errorState = AXUIElementGetAttributeValueCount(theRef, attribute as CFString, &count)
     var returnCount: Int32 = 1
@@ -389,8 +381,7 @@ private func axuielement_getAttributeValueCount(_ L: UnsafeMutablePointer<lua_St
 /// Returns:
 ///  * an array of the names of all parameterized attributes supported by the axuielementObject or nil and an error string if an accessibility error occurred
 private func axuielement_getParameterizedAttributeNames(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     let theRef = get_axuielementref(L, 1, USERDATA_TAG)
     var attributeNames: CFArray?
     let errorState = AXUIElementCopyParameterizedAttributeNames(theRef, &attributeNames)
@@ -398,7 +389,7 @@ private func axuielement_getParameterizedAttributeNames(_ L: UnsafeMutablePointe
     if errorState == .success {
         lua_newtable(L)
         for value in attributeNames! as [AnyObject] {
-            skin.pushNSObject(value)
+            lua_pushany(L, value)
             lua_rawseti(L, -2, luaL_len(L, -2) + 1)
         }
     } else {
@@ -418,10 +409,11 @@ private func axuielement_getParameterizedAttributeNames(_ L: UnsafeMutablePointe
 /// Returns:
 ///  * a boolean value indicating whether or not the value of the parameter can be modified or nil and an error string if an accessibility error occurred
 private func axuielement_isAttributeSettable(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
+
+    luaL_checktype(L, 2, LUA_TSTRING)
     let theRef = get_axuielementref(L, 1, USERDATA_TAG)
-    let attribute = skin.toNSObject(atIndex: 2) as! NSString
+    let attribute = lua_tovalue(L, at: 2) as! NSString
     var settable: DarwinBoolean = false
     let errorState = AXUIElementIsAttributeSettable(theRef, attribute as CFString, &settable)
     var returnCount: Int32 = 1
@@ -447,8 +439,7 @@ private func axuielement_isAttributeSettable(_ L: UnsafeMutablePointer<lua_State
 /// Notes:
 ///  * an accessibilityObject can become invalid for a variety of reasons, including but not limited to the element referred to no longer being available (e.g. an element referring to a window or one of its descendants that has been closed) or the application terminating.
 private func axuielement_isValid(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     let theRef = get_axuielementref(L, 1, USERDATA_TAG)
     var value: CFTypeRef?
     let errorState = AXUIElementCopyAttributeValue(theRef, "AXRole" as CFString, &value)
@@ -474,8 +465,7 @@ private func axuielement_isValid(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 /// Returns:
 ///  * the process ID for the application to which the accessibility object ultimately belongs or nil and an error string if an accessibility error occurred
 private func axuielement_getPid(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     let theRef = get_axuielementref(L, 1, USERDATA_TAG)
     var thePid: pid_t = 0
     let errorState = AXUIElementGetPid(theRef, &thePid)
@@ -502,10 +492,11 @@ private func axuielement_getPid(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 /// Notes:
 ///  * The return value only suggests success or failure, but is not a guarantee.  The receiving application may have internal logic which prevents the action from occurring at this time for some reason, even though this method returns success (the axuielementObject).  Contrawise, the requested action may trigger a requirement for a response from the user and thus appear to time out, causing this method to return false or nil.
 private func axuielement_performAction(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
+
+    luaL_checktype(L, 2, LUA_TSTRING)
     let theRef = get_axuielementref(L, 1, USERDATA_TAG)
-    let action = skin.toNSObject(atIndex: 2) as! NSString
+    let action = lua_tovalue(L, at: 2) as! NSString
     let errorState = AXUIElementPerformAction(theRef, action as CFString)
     var returnCount: Int32 = 1
     if errorState == .success {
@@ -537,15 +528,13 @@ private func axuielement_performAction(_ L: UnsafeMutablePointer<lua_State>!) ->
 ///  * If this method is called on an axuielementObject representing an application, the search is restricted to the application.
 ///  * If this method is called on an axuielementObject representing the system-wide element, the search is not restricted to any particular application.  See [hs.axuielement.systemElementAtPosition](#systemElementAtPosition).
 private func axuielement_getElementAtPosition(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TNUMBER | LS_TTABLE, LS_TNUMBER | LS_TOPTIONAL, LS_TBREAK)
     let theRef = get_axuielementref(L, 1, USERDATA_TAG)
     var returnCount: Int32 = 1
     if isApplicationOrSystem(theRef) {
         var x: Float
         var y: Float
         if lua_type(L, 2) == LUA_TTABLE && lua_gettop(L) == 2 {
-            let thePoint = skin.tableToPoint(at: 2)
+            let thePoint = lua_tableToPoint(L, at: 2)
             x = Float(thePoint.x)
             y = Float(thePoint.y)
         } else if lua_gettop(L) == 3 {
@@ -582,10 +571,8 @@ private func axuielement_getElementAtPosition(_ L: UnsafeMutablePointer<lua_Stat
 /// Notes:
 ///  * The specific parameter required for a each parameterized attribute is different and is often application specific thus requiring some experimentation. Notes regarding identified parameter types and thoughts on some still being investigated will be provided in the Cosmic Hammer Wiki, hopefully shortly after this module becomes part of a Cosmic Hammer release.
 private func axuielement_getParameterizedAttributeValue(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING, LS_TANY, LS_TBREAK)
     let theRef = get_axuielementref(L, 1, USERDATA_TAG)
-    let attribute = skin.toNSObject(atIndex: 2) as! NSString
+    let attribute = lua_tovalue(L, at: 2) as! NSString
     let parameter = lua_toCFType(L, 3)
     var value: CFTypeRef?
     let errorState = AXUIElementCopyParameterizedAttributeValue(theRef, attribute as CFString, parameter, &value)
@@ -612,10 +599,8 @@ private func axuielement_getParameterizedAttributeValue(_ L: UnsafeMutablePointe
 /// Returns:
 ///  * the axuielementObject on success; nil and an error string if the attribute could not be set or an accessibility error occurred.
 private func axuielement_setAttributeValue(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING, LS_TANY, LS_TBREAK)
     let theRef = get_axuielementref(L, 1, USERDATA_TAG)
-    let attribute = skin.toNSObject(atIndex: 2) as! NSString
+    let attribute = lua_tovalue(L, at: 2) as! NSString
     let value = lua_toCFType(L, 3)
     let errorState = AXUIElementSetAttributeValue(theRef, attribute as CFString, value)
     var returnCount: Int32 = 1
@@ -641,8 +626,7 @@ private func axuielement_setAttributeValue(_ L: UnsafeMutablePointer<lua_State>!
 /// Notes:
 ///  * An element is considered an application by this method if it has an AXRole of AXApplication and has a process identifier (pid).
 private func axuielement_toHSApplication(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     let theRef = get_axuielementref(L, 1, USERDATA_TAG)
     var value: CFTypeRef?
     let errorState = AXUIElementCopyAttributeValue(theRef, "AXRole" as CFString, &value)
@@ -676,8 +660,7 @@ private func axuielement_toHSApplication(_ L: UnsafeMutablePointer<lua_State>!) 
 /// Notes:
 ///  * An element is considered a window by this method if it has an AXRole of AXWindow.
 private func axuielement_toHSWindow(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     let theRef = get_axuielementref(L, 1, USERDATA_TAG)
     var value: CFTypeRef?
     let errorState = AXUIElementCopyAttributeValue(theRef, "AXRole" as CFString, &value)
@@ -708,8 +691,9 @@ private func axuielement_toHSWindow(_ L: UnsafeMutablePointer<lua_State>!) -> In
 ///  * Changing the timeout value for an axuielement object only changes the value for that specific element -- other axuieleement objects that may refer to the identical accessibility item are not affected.
 ///  * Setting the value to 0.0 resets the timeout -- if applied to the `systemWideElement`, the global default will be reset to its default value; if applied to another axuielement object, the timeout will be reset to the current global value as applied to the systemWideElement.
 private func axuielement_setTimeout(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TNUMBER, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
+
+    luaL_checktype(L, 2, LUA_TNUMBER)
     let theRef = get_axuielementref(L, 1, USERDATA_TAG)
     var returnCount: Int32 = 1
     var timeout = Float(lua_tonumber(L, 2))
@@ -734,174 +718,173 @@ private func axuielement_setTimeout(_ L: UnsafeMutablePointer<lua_State>!) -> In
 ///  * This table is provided for reference only and is not intended to be comprehensive.
 ///  * You can view the contents of this table from the Cosmic Hammer console by typing in `hs.axuielement.attributes`
 private func axuielement_pushAttributesTable(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     lua_newtable(L)
-    skin.pushNSObject(NSAccessibility.Attribute.activationPoint.rawValue as NSString);                     lua_setfield(L, -2, "activationPoint")
-    skin.pushNSObject(kAXAllowedValuesAttribute as NSString);              lua_setfield(L, -2, "allowedValues")
-    skin.pushNSObject(kAXAlternateUIVisibleAttribute as NSString);         lua_setfield(L, -2, "alternateUIVisible")
-    skin.pushNSObject(kAXAMPMFieldAttribute as NSString);                  lua_setfield(L, -2, "AMPMField")
-    skin.pushNSObject(kAXAttachmentTextAttribute.takeUnretainedValue() as String as NSString);             lua_setfield(L, -2, "attachment")
-    skin.pushNSObject(kAXAutocorrectedTextAttribute.takeUnretainedValue() as String as NSString);          lua_setfield(L, -2, "autocorrected")
-    skin.pushNSObject(kAXBackgroundColorTextAttribute.takeUnretainedValue() as String as NSString);        lua_setfield(L, -2, "backgroundColor")
-    skin.pushNSObject(kAXCancelButtonAttribute as NSString);               lua_setfield(L, -2, "cancelButton")
-    skin.pushNSObject(kAXChildrenAttribute as NSString);                   lua_setfield(L, -2, "children")
-    skin.pushNSObject(kAXClearButtonAttribute as NSString);                lua_setfield(L, -2, "clearButton")
-    skin.pushNSObject(kAXCloseButtonAttribute as NSString);                lua_setfield(L, -2, "closeButton")
-    skin.pushNSObject(kAXColumnCountAttribute as NSString);                lua_setfield(L, -2, "columnCount")
-    skin.pushNSObject(kAXColumnHeaderUIElementsAttribute as NSString);     lua_setfield(L, -2, "columnHeaderUIElements")
-    skin.pushNSObject(kAXColumnIndexRangeAttribute as NSString);           lua_setfield(L, -2, "columnIndexRange")
-    skin.pushNSObject(kAXColumnsAttribute as NSString);                    lua_setfield(L, -2, "columns")
-    skin.pushNSObject(kAXColumnTitlesAttribute as NSString);               lua_setfield(L, -2, "columnTitles")
-    skin.pushNSObject(NSAccessibility.Attribute.containsProtectedContent.rawValue as NSString);            lua_setfield(L, -2, "containsProtectedContent")
-    skin.pushNSObject(kAXContentsAttribute as NSString);                   lua_setfield(L, -2, "contents")
-    skin.pushNSObject(kAXCriticalValueAttribute as NSString);              lua_setfield(L, -2, "criticalValue")
-    skin.pushNSObject(kAXDayFieldAttribute as NSString);                   lua_setfield(L, -2, "dayField")
-    skin.pushNSObject(kAXDecrementButtonAttribute as NSString);            lua_setfield(L, -2, "decrementButton")
-    skin.pushNSObject(kAXDefaultButtonAttribute as NSString);              lua_setfield(L, -2, "defaultButton")
-    skin.pushNSObject(kAXDescriptionAttribute as NSString);                lua_setfield(L, -2, "description")
-    skin.pushNSObject(kAXDisclosedByRowAttribute as NSString);             lua_setfield(L, -2, "disclosedByRow")
-    skin.pushNSObject(kAXDisclosedRowsAttribute as NSString);              lua_setfield(L, -2, "disclosedRows")
-    skin.pushNSObject(kAXDisclosingAttribute as NSString);                 lua_setfield(L, -2, "disclosing")
-    skin.pushNSObject(kAXDisclosureLevelAttribute as NSString);            lua_setfield(L, -2, "disclosureLevel")
-    skin.pushNSObject(kAXDocumentAttribute as NSString);                   lua_setfield(L, -2, "document")
-    skin.pushNSObject(kAXEditedAttribute as NSString);                     lua_setfield(L, -2, "edited")
-    skin.pushNSObject(kAXElementBusyAttribute as NSString);                lua_setfield(L, -2, "elementBusy")
-    skin.pushNSObject(kAXEnabledAttribute as NSString);                    lua_setfield(L, -2, "enabled")
-    skin.pushNSObject(kAXExpandedAttribute as NSString);                   lua_setfield(L, -2, "expanded")
-    skin.pushNSObject(kAXExtrasMenuBarAttribute as NSString);              lua_setfield(L, -2, "extrasMenuBar")
-    skin.pushNSObject(kAXFilenameAttribute as NSString);                   lua_setfield(L, -2, "filename")
-    skin.pushNSObject(kAXFocusedAttribute as NSString);                    lua_setfield(L, -2, "focused")
-    skin.pushNSObject(kAXFocusedApplicationAttribute as NSString);         lua_setfield(L, -2, "focusedApplication")
-    skin.pushNSObject(kAXFocusedUIElementAttribute as NSString);           lua_setfield(L, -2, "focusedUIElement")
-    skin.pushNSObject(kAXFocusedWindowAttribute as NSString);              lua_setfield(L, -2, "focusedWindow")
-    skin.pushNSObject(kAXFontTextAttribute.takeUnretainedValue() as String as NSString);                   lua_setfield(L, -2, "font")
-    skin.pushNSObject(kAXForegroundColorTextAttribute.takeUnretainedValue() as String as NSString);        lua_setfield(L, -2, "foregroundColor")
-    skin.pushNSObject(kAXFrontmostAttribute as NSString);                  lua_setfield(L, -2, "frontmost")
-    skin.pushNSObject(kAXFullScreenButtonAttribute as NSString);           lua_setfield(L, -2, "fullScreenButton")
-    skin.pushNSObject(kAXGrowAreaAttribute as NSString);                   lua_setfield(L, -2, "growArea")
-    skin.pushNSObject(kAXHandlesAttribute as NSString);                    lua_setfield(L, -2, "handles")
-    skin.pushNSObject(kAXHeaderAttribute as NSString);                     lua_setfield(L, -2, "header")
-    skin.pushNSObject(kAXHelpAttribute as NSString);                       lua_setfield(L, -2, "help")
-    skin.pushNSObject(kAXHiddenAttribute as NSString);                     lua_setfield(L, -2, "hidden")
-    skin.pushNSObject(kAXHorizontalScrollBarAttribute as NSString);        lua_setfield(L, -2, "horizontalScrollBar")
-    skin.pushNSObject(kAXHorizontalUnitDescriptionAttribute as NSString);  lua_setfield(L, -2, "horizontalUnitDescription")
-    skin.pushNSObject(kAXHorizontalUnitsAttribute as NSString);            lua_setfield(L, -2, "horizontalUnits")
-    skin.pushNSObject(kAXHourFieldAttribute as NSString);                  lua_setfield(L, -2, "hourField")
-    skin.pushNSObject(kAXIdentifierAttribute as NSString);                 lua_setfield(L, -2, "identifier")
-    skin.pushNSObject(kAXIncrementButtonAttribute as NSString);            lua_setfield(L, -2, "incrementButton")
-    skin.pushNSObject(kAXIncrementorAttribute as NSString);                lua_setfield(L, -2, "incrementor")
-    skin.pushNSObject(kAXIndexAttribute as NSString);                      lua_setfield(L, -2, "index")
-    skin.pushNSObject(kAXInsertionPointLineNumberAttribute as NSString);   lua_setfield(L, -2, "insertionPointLineNumber")
-    skin.pushNSObject(kAXIsApplicationRunningAttribute as NSString);       lua_setfield(L, -2, "isApplicationRunning")
-    skin.pushNSObject(kAXIsEditableAttribute as NSString);                 lua_setfield(L, -2, "isEditable")
-    skin.pushNSObject(kAXLabelUIElementsAttribute as NSString);            lua_setfield(L, -2, "labelUIElements")
-    skin.pushNSObject(kAXLabelValueAttribute as NSString);                 lua_setfield(L, -2, "labelValue")
-    skin.pushNSObject(kAXLinkTextAttribute.takeUnretainedValue() as String as NSString);                   lua_setfield(L, -2, "link")
-    skin.pushNSObject(kAXLinkedUIElementsAttribute as NSString);           lua_setfield(L, -2, "linkedUIElements")
-    skin.pushNSObject(kAXListItemIndexTextAttribute.takeUnretainedValue() as String as NSString);          lua_setfield(L, -2, "listItemIndex")
-    skin.pushNSObject(kAXListItemLevelTextAttribute.takeUnretainedValue() as String as NSString);          lua_setfield(L, -2, "listItemLevel")
-    skin.pushNSObject(kAXListItemPrefixTextAttribute.takeUnretainedValue() as String as NSString);         lua_setfield(L, -2, "listItemPrefix")
-    skin.pushNSObject(kAXMainAttribute as NSString);                       lua_setfield(L, -2, "main")
-    skin.pushNSObject(kAXMainWindowAttribute as NSString);                 lua_setfield(L, -2, "mainWindow")
-    skin.pushNSObject(kAXMarkedMisspelledTextAttribute.takeUnretainedValue() as String as NSString);       lua_setfield(L, -2, "markedMisspelled")
-    skin.pushNSObject(NSAccessibility.Attribute.markerGroupUIElement.rawValue as NSString);                lua_setfield(L, -2, "markerGroupUIElement")
-    skin.pushNSObject(kAXMarkerTypeAttribute as NSString);                 lua_setfield(L, -2, "markerType")
-    skin.pushNSObject(kAXMarkerTypeDescriptionAttribute as NSString);      lua_setfield(L, -2, "markerTypeDescription")
-    skin.pushNSObject(kAXMarkerUIElementsAttribute as NSString);           lua_setfield(L, -2, "markerUIElements")
-    skin.pushNSObject(NSAccessibility.Attribute.markerValues.rawValue as NSString);                        lua_setfield(L, -2, "markerValues")
-    skin.pushNSObject(kAXMatteContentUIElementAttribute as NSString);      lua_setfield(L, -2, "matteContentUIElement")
-    skin.pushNSObject(kAXMatteHoleAttribute as NSString);                  lua_setfield(L, -2, "matteHole")
-    skin.pushNSObject(kAXMaxValueAttribute as NSString);                   lua_setfield(L, -2, "maxValue")
-    skin.pushNSObject(kAXMenuBarAttribute as NSString);                    lua_setfield(L, -2, "menuBar")
-    skin.pushNSObject(kAXMenuItemCmdCharAttribute as NSString);            lua_setfield(L, -2, "menuItemCmdChar")
-    skin.pushNSObject(kAXMenuItemCmdGlyphAttribute as NSString);           lua_setfield(L, -2, "menuItemCmdGlyph")
-    skin.pushNSObject(kAXMenuItemCmdModifiersAttribute as NSString);       lua_setfield(L, -2, "menuItemCmdModifiers")
-    skin.pushNSObject(kAXMenuItemCmdVirtualKeyAttribute as NSString);      lua_setfield(L, -2, "menuItemCmdVirtualKey")
-    skin.pushNSObject(kAXMenuItemMarkCharAttribute as NSString);           lua_setfield(L, -2, "menuItemMarkChar")
-    skin.pushNSObject(kAXMenuItemPrimaryUIElementAttribute as NSString);   lua_setfield(L, -2, "menuItemPrimaryUIElement")
-    skin.pushNSObject(kAXMinimizeButtonAttribute as NSString);             lua_setfield(L, -2, "minimizeButton")
-    skin.pushNSObject(kAXMinimizedAttribute as NSString);                  lua_setfield(L, -2, "minimized")
-    skin.pushNSObject(kAXMinuteFieldAttribute as NSString);                lua_setfield(L, -2, "minuteField")
-    skin.pushNSObject(kAXMinValueAttribute as NSString);                   lua_setfield(L, -2, "minValue")
-    skin.pushNSObject(kAXMisspelledTextAttribute.takeUnretainedValue() as String as NSString);             lua_setfield(L, -2, "misspelled")
-    skin.pushNSObject(kAXModalAttribute as NSString);                      lua_setfield(L, -2, "modal")
-    skin.pushNSObject(kAXMonthFieldAttribute as NSString);                 lua_setfield(L, -2, "monthField")
-    skin.pushNSObject(kAXNaturalLanguageTextAttribute.takeUnretainedValue() as String as NSString);        lua_setfield(L, -2, "naturalLanguage")
-    skin.pushNSObject(kAXNextContentsAttribute as NSString);               lua_setfield(L, -2, "nextContents")
-    skin.pushNSObject(kAXNumberOfCharactersAttribute as NSString);         lua_setfield(L, -2, "numberOfCharacters")
-    skin.pushNSObject(kAXOrderedByRowAttribute as NSString);               lua_setfield(L, -2, "orderedByRow")
-    skin.pushNSObject(kAXOrientationAttribute as NSString);                lua_setfield(L, -2, "orientation")
-    skin.pushNSObject(kAXOverflowButtonAttribute as NSString);             lua_setfield(L, -2, "overflowButton")
-    skin.pushNSObject(kAXParentAttribute as NSString);                     lua_setfield(L, -2, "parent")
-    skin.pushNSObject(kAXPlaceholderValueAttribute as NSString);           lua_setfield(L, -2, "placeholderValue")
-    skin.pushNSObject(kAXPositionAttribute as NSString);                   lua_setfield(L, -2, "position")
-    skin.pushNSObject(kAXPreviousContentsAttribute as NSString);           lua_setfield(L, -2, "previousContents")
-    skin.pushNSObject(kAXProxyAttribute as NSString);                      lua_setfield(L, -2, "proxy")
-    skin.pushNSObject(kAXReplacementStringTextAttribute.takeUnretainedValue() as String as NSString);      lua_setfield(L, -2, "replacementString")
-    skin.pushNSObject(NSAccessibility.Attribute.required.rawValue as NSString);                            lua_setfield(L, -2, "required")
-    skin.pushNSObject(kAXRoleAttribute as NSString);                       lua_setfield(L, -2, "role")
-    skin.pushNSObject(kAXRoleDescriptionAttribute as NSString);            lua_setfield(L, -2, "roleDescription")
-    skin.pushNSObject(kAXRowCountAttribute as NSString);                   lua_setfield(L, -2, "rowCount")
-    skin.pushNSObject(kAXRowHeaderUIElementsAttribute as NSString);        lua_setfield(L, -2, "rowHeaderUIElements")
-    skin.pushNSObject(kAXRowIndexRangeAttribute as NSString);              lua_setfield(L, -2, "rowIndexRange")
-    skin.pushNSObject(kAXRowsAttribute as NSString);                       lua_setfield(L, -2, "rows")
-    skin.pushNSObject(kAXSearchButtonAttribute as NSString);               lua_setfield(L, -2, "searchButton")
-    skin.pushNSObject(NSAccessibility.Attribute.searchMenu.rawValue as NSString);                          lua_setfield(L, -2, "searchMenu")
-    skin.pushNSObject(kAXSecondFieldAttribute as NSString);                lua_setfield(L, -2, "secondField")
-    skin.pushNSObject(kAXSelectedAttribute as NSString);                   lua_setfield(L, -2, "selected")
-    skin.pushNSObject(kAXSelectedCellsAttribute as NSString);              lua_setfield(L, -2, "selectedCells")
-    skin.pushNSObject(kAXSelectedChildrenAttribute as NSString);           lua_setfield(L, -2, "selectedChildren")
-    skin.pushNSObject(kAXSelectedColumnsAttribute as NSString);            lua_setfield(L, -2, "selectedColumns")
-    skin.pushNSObject(kAXSelectedRowsAttribute as NSString);               lua_setfield(L, -2, "selectedRows")
-    skin.pushNSObject(kAXSelectedTextAttribute as NSString);               lua_setfield(L, -2, "selectedText")
-    skin.pushNSObject(kAXSelectedTextRangeAttribute as NSString);          lua_setfield(L, -2, "selectedTextRange")
-    skin.pushNSObject(kAXSelectedTextRangesAttribute as NSString);         lua_setfield(L, -2, "selectedTextRanges")
-    skin.pushNSObject(kAXServesAsTitleForUIElementsAttribute as NSString); lua_setfield(L, -2, "servesAsTitleForUIElements")
-    skin.pushNSObject(kAXShadowTextAttribute.takeUnretainedValue() as String as NSString);                 lua_setfield(L, -2, "shadow")
-    skin.pushNSObject(kAXSharedCharacterRangeAttribute as NSString);       lua_setfield(L, -2, "sharedCharacterRange")
-    skin.pushNSObject(kAXSharedFocusElementsAttribute as NSString);        lua_setfield(L, -2, "sharedFocusElements")
-    skin.pushNSObject(kAXSharedTextUIElementsAttribute as NSString);       lua_setfield(L, -2, "sharedTextUIElements")
-    skin.pushNSObject(kAXShownMenuUIElementAttribute as NSString);         lua_setfield(L, -2, "shownMenuUIElement")
-    skin.pushNSObject(kAXSizeAttribute as NSString);                       lua_setfield(L, -2, "size")
-    skin.pushNSObject(kAXSortDirectionAttribute as NSString);              lua_setfield(L, -2, "sortDirection")
-    skin.pushNSObject(kAXSplittersAttribute as NSString);                  lua_setfield(L, -2, "splitters")
-    skin.pushNSObject(kAXStrikethroughTextAttribute.takeUnretainedValue() as String as NSString);          lua_setfield(L, -2, "strikethrough")
-    skin.pushNSObject(kAXStrikethroughColorTextAttribute.takeUnretainedValue() as String as NSString);     lua_setfield(L, -2, "strikethroughColor")
-    skin.pushNSObject(kAXSubroleAttribute as NSString);                    lua_setfield(L, -2, "subrole")
-    skin.pushNSObject(kAXSuperscriptTextAttribute.takeUnretainedValue() as String as NSString);            lua_setfield(L, -2, "superscript")
-    skin.pushNSObject(kAXTabsAttribute as NSString);                       lua_setfield(L, -2, "tabs")
-    skin.pushNSObject(kAXTextAttribute as NSString);                       lua_setfield(L, -2, "text")
-    skin.pushNSObject(NSAttributedString.Key.accessibilityAlignment.rawValue as NSString);                 lua_setfield(L, -2, "textAlignment")
-    skin.pushNSObject(kAXTitleAttribute as NSString);                      lua_setfield(L, -2, "title")
-    skin.pushNSObject(kAXTitleUIElementAttribute as NSString);             lua_setfield(L, -2, "titleUIElement")
-    skin.pushNSObject(kAXToolbarButtonAttribute as NSString);              lua_setfield(L, -2, "toolbarButton")
-    skin.pushNSObject(kAXTopLevelUIElementAttribute as NSString);          lua_setfield(L, -2, "topLevelUIElement")
-    skin.pushNSObject(kAXUnderlineTextAttribute.takeUnretainedValue() as String as NSString);              lua_setfield(L, -2, "underline")
-    skin.pushNSObject(kAXUnderlineColorTextAttribute.takeUnretainedValue() as String as NSString);         lua_setfield(L, -2, "underlineColor")
-    skin.pushNSObject(kAXUnitDescriptionAttribute as NSString);            lua_setfield(L, -2, "unitDescription")
-    skin.pushNSObject(kAXUnitsAttribute as NSString);                      lua_setfield(L, -2, "units")
-    skin.pushNSObject(kAXURLAttribute as NSString);                        lua_setfield(L, -2, "URL")
-    skin.pushNSObject(kAXValueAttribute as NSString);                      lua_setfield(L, -2, "value")
-    skin.pushNSObject(kAXValueDescriptionAttribute as NSString);           lua_setfield(L, -2, "valueDescription")
-    skin.pushNSObject(kAXValueIncrementAttribute as NSString);             lua_setfield(L, -2, "valueIncrement")
-    skin.pushNSObject(kAXValueWrapsAttribute as NSString);                 lua_setfield(L, -2, "valueWraps")
-    skin.pushNSObject(kAXVerticalScrollBarAttribute as NSString);          lua_setfield(L, -2, "verticalScrollBar")
-    skin.pushNSObject(kAXVerticalUnitDescriptionAttribute as NSString);    lua_setfield(L, -2, "verticalUnitDescription")
-    skin.pushNSObject(kAXVerticalUnitsAttribute as NSString);              lua_setfield(L, -2, "verticalUnits")
-    skin.pushNSObject(kAXVisibleCellsAttribute as NSString);               lua_setfield(L, -2, "visibleCells")
-    skin.pushNSObject(kAXVisibleCharacterRangeAttribute as NSString);      lua_setfield(L, -2, "visibleCharacterRange")
-    skin.pushNSObject(kAXVisibleChildrenAttribute as NSString);            lua_setfield(L, -2, "visibleChildren")
-    skin.pushNSObject(kAXVisibleColumnsAttribute as NSString);             lua_setfield(L, -2, "visibleColumns")
-    skin.pushNSObject(kAXVisibleRowsAttribute as NSString);                lua_setfield(L, -2, "visibleRows")
-    skin.pushNSObject(kAXVisibleTextAttribute as NSString);                lua_setfield(L, -2, "visibleText")
-    skin.pushNSObject(kAXWarningValueAttribute as NSString);               lua_setfield(L, -2, "warningValue")
-    skin.pushNSObject(kAXWindowAttribute as NSString);                     lua_setfield(L, -2, "window")
-    skin.pushNSObject(kAXWindowsAttribute as NSString);                    lua_setfield(L, -2, "windows")
-    skin.pushNSObject(kAXYearFieldAttribute as NSString);                  lua_setfield(L, -2, "yearField")
-    skin.pushNSObject(kAXZoomButtonAttribute as NSString);                 lua_setfield(L, -2, "zoomButton")
+    lua_pushany(L, NSAccessibility.Attribute.activationPoint.rawValue as NSString);                     lua_setfield(L, -2, "activationPoint")
+    lua_pushany(L, kAXAllowedValuesAttribute as NSString);              lua_setfield(L, -2, "allowedValues")
+    lua_pushany(L, kAXAlternateUIVisibleAttribute as NSString);         lua_setfield(L, -2, "alternateUIVisible")
+    lua_pushany(L, kAXAMPMFieldAttribute as NSString);                  lua_setfield(L, -2, "AMPMField")
+    lua_pushany(L, kAXAttachmentTextAttribute.takeUnretainedValue() as String as NSString);             lua_setfield(L, -2, "attachment")
+    lua_pushany(L, kAXAutocorrectedTextAttribute.takeUnretainedValue() as String as NSString);          lua_setfield(L, -2, "autocorrected")
+    lua_pushany(L, kAXBackgroundColorTextAttribute.takeUnretainedValue() as String as NSString);        lua_setfield(L, -2, "backgroundColor")
+    lua_pushany(L, kAXCancelButtonAttribute as NSString);               lua_setfield(L, -2, "cancelButton")
+    lua_pushany(L, kAXChildrenAttribute as NSString);                   lua_setfield(L, -2, "children")
+    lua_pushany(L, kAXClearButtonAttribute as NSString);                lua_setfield(L, -2, "clearButton")
+    lua_pushany(L, kAXCloseButtonAttribute as NSString);                lua_setfield(L, -2, "closeButton")
+    lua_pushany(L, kAXColumnCountAttribute as NSString);                lua_setfield(L, -2, "columnCount")
+    lua_pushany(L, kAXColumnHeaderUIElementsAttribute as NSString);     lua_setfield(L, -2, "columnHeaderUIElements")
+    lua_pushany(L, kAXColumnIndexRangeAttribute as NSString);           lua_setfield(L, -2, "columnIndexRange")
+    lua_pushany(L, kAXColumnsAttribute as NSString);                    lua_setfield(L, -2, "columns")
+    lua_pushany(L, kAXColumnTitlesAttribute as NSString);               lua_setfield(L, -2, "columnTitles")
+    lua_pushany(L, NSAccessibility.Attribute.containsProtectedContent.rawValue as NSString);            lua_setfield(L, -2, "containsProtectedContent")
+    lua_pushany(L, kAXContentsAttribute as NSString);                   lua_setfield(L, -2, "contents")
+    lua_pushany(L, kAXCriticalValueAttribute as NSString);              lua_setfield(L, -2, "criticalValue")
+    lua_pushany(L, kAXDayFieldAttribute as NSString);                   lua_setfield(L, -2, "dayField")
+    lua_pushany(L, kAXDecrementButtonAttribute as NSString);            lua_setfield(L, -2, "decrementButton")
+    lua_pushany(L, kAXDefaultButtonAttribute as NSString);              lua_setfield(L, -2, "defaultButton")
+    lua_pushany(L, kAXDescriptionAttribute as NSString);                lua_setfield(L, -2, "description")
+    lua_pushany(L, kAXDisclosedByRowAttribute as NSString);             lua_setfield(L, -2, "disclosedByRow")
+    lua_pushany(L, kAXDisclosedRowsAttribute as NSString);              lua_setfield(L, -2, "disclosedRows")
+    lua_pushany(L, kAXDisclosingAttribute as NSString);                 lua_setfield(L, -2, "disclosing")
+    lua_pushany(L, kAXDisclosureLevelAttribute as NSString);            lua_setfield(L, -2, "disclosureLevel")
+    lua_pushany(L, kAXDocumentAttribute as NSString);                   lua_setfield(L, -2, "document")
+    lua_pushany(L, kAXEditedAttribute as NSString);                     lua_setfield(L, -2, "edited")
+    lua_pushany(L, kAXElementBusyAttribute as NSString);                lua_setfield(L, -2, "elementBusy")
+    lua_pushany(L, kAXEnabledAttribute as NSString);                    lua_setfield(L, -2, "enabled")
+    lua_pushany(L, kAXExpandedAttribute as NSString);                   lua_setfield(L, -2, "expanded")
+    lua_pushany(L, kAXExtrasMenuBarAttribute as NSString);              lua_setfield(L, -2, "extrasMenuBar")
+    lua_pushany(L, kAXFilenameAttribute as NSString);                   lua_setfield(L, -2, "filename")
+    lua_pushany(L, kAXFocusedAttribute as NSString);                    lua_setfield(L, -2, "focused")
+    lua_pushany(L, kAXFocusedApplicationAttribute as NSString);         lua_setfield(L, -2, "focusedApplication")
+    lua_pushany(L, kAXFocusedUIElementAttribute as NSString);           lua_setfield(L, -2, "focusedUIElement")
+    lua_pushany(L, kAXFocusedWindowAttribute as NSString);              lua_setfield(L, -2, "focusedWindow")
+    lua_pushany(L, kAXFontTextAttribute.takeUnretainedValue() as String as NSString);                   lua_setfield(L, -2, "font")
+    lua_pushany(L, kAXForegroundColorTextAttribute.takeUnretainedValue() as String as NSString);        lua_setfield(L, -2, "foregroundColor")
+    lua_pushany(L, kAXFrontmostAttribute as NSString);                  lua_setfield(L, -2, "frontmost")
+    lua_pushany(L, kAXFullScreenButtonAttribute as NSString);           lua_setfield(L, -2, "fullScreenButton")
+    lua_pushany(L, kAXGrowAreaAttribute as NSString);                   lua_setfield(L, -2, "growArea")
+    lua_pushany(L, kAXHandlesAttribute as NSString);                    lua_setfield(L, -2, "handles")
+    lua_pushany(L, kAXHeaderAttribute as NSString);                     lua_setfield(L, -2, "header")
+    lua_pushany(L, kAXHelpAttribute as NSString);                       lua_setfield(L, -2, "help")
+    lua_pushany(L, kAXHiddenAttribute as NSString);                     lua_setfield(L, -2, "hidden")
+    lua_pushany(L, kAXHorizontalScrollBarAttribute as NSString);        lua_setfield(L, -2, "horizontalScrollBar")
+    lua_pushany(L, kAXHorizontalUnitDescriptionAttribute as NSString);  lua_setfield(L, -2, "horizontalUnitDescription")
+    lua_pushany(L, kAXHorizontalUnitsAttribute as NSString);            lua_setfield(L, -2, "horizontalUnits")
+    lua_pushany(L, kAXHourFieldAttribute as NSString);                  lua_setfield(L, -2, "hourField")
+    lua_pushany(L, kAXIdentifierAttribute as NSString);                 lua_setfield(L, -2, "identifier")
+    lua_pushany(L, kAXIncrementButtonAttribute as NSString);            lua_setfield(L, -2, "incrementButton")
+    lua_pushany(L, kAXIncrementorAttribute as NSString);                lua_setfield(L, -2, "incrementor")
+    lua_pushany(L, kAXIndexAttribute as NSString);                      lua_setfield(L, -2, "index")
+    lua_pushany(L, kAXInsertionPointLineNumberAttribute as NSString);   lua_setfield(L, -2, "insertionPointLineNumber")
+    lua_pushany(L, kAXIsApplicationRunningAttribute as NSString);       lua_setfield(L, -2, "isApplicationRunning")
+    lua_pushany(L, kAXIsEditableAttribute as NSString);                 lua_setfield(L, -2, "isEditable")
+    lua_pushany(L, kAXLabelUIElementsAttribute as NSString);            lua_setfield(L, -2, "labelUIElements")
+    lua_pushany(L, kAXLabelValueAttribute as NSString);                 lua_setfield(L, -2, "labelValue")
+    lua_pushany(L, kAXLinkTextAttribute.takeUnretainedValue() as String as NSString);                   lua_setfield(L, -2, "link")
+    lua_pushany(L, kAXLinkedUIElementsAttribute as NSString);           lua_setfield(L, -2, "linkedUIElements")
+    lua_pushany(L, kAXListItemIndexTextAttribute.takeUnretainedValue() as String as NSString);          lua_setfield(L, -2, "listItemIndex")
+    lua_pushany(L, kAXListItemLevelTextAttribute.takeUnretainedValue() as String as NSString);          lua_setfield(L, -2, "listItemLevel")
+    lua_pushany(L, kAXListItemPrefixTextAttribute.takeUnretainedValue() as String as NSString);         lua_setfield(L, -2, "listItemPrefix")
+    lua_pushany(L, kAXMainAttribute as NSString);                       lua_setfield(L, -2, "main")
+    lua_pushany(L, kAXMainWindowAttribute as NSString);                 lua_setfield(L, -2, "mainWindow")
+    lua_pushany(L, kAXMarkedMisspelledTextAttribute.takeUnretainedValue() as String as NSString);       lua_setfield(L, -2, "markedMisspelled")
+    lua_pushany(L, NSAccessibility.Attribute.markerGroupUIElement.rawValue as NSString);                lua_setfield(L, -2, "markerGroupUIElement")
+    lua_pushany(L, kAXMarkerTypeAttribute as NSString);                 lua_setfield(L, -2, "markerType")
+    lua_pushany(L, kAXMarkerTypeDescriptionAttribute as NSString);      lua_setfield(L, -2, "markerTypeDescription")
+    lua_pushany(L, kAXMarkerUIElementsAttribute as NSString);           lua_setfield(L, -2, "markerUIElements")
+    lua_pushany(L, NSAccessibility.Attribute.markerValues.rawValue as NSString);                        lua_setfield(L, -2, "markerValues")
+    lua_pushany(L, kAXMatteContentUIElementAttribute as NSString);      lua_setfield(L, -2, "matteContentUIElement")
+    lua_pushany(L, kAXMatteHoleAttribute as NSString);                  lua_setfield(L, -2, "matteHole")
+    lua_pushany(L, kAXMaxValueAttribute as NSString);                   lua_setfield(L, -2, "maxValue")
+    lua_pushany(L, kAXMenuBarAttribute as NSString);                    lua_setfield(L, -2, "menuBar")
+    lua_pushany(L, kAXMenuItemCmdCharAttribute as NSString);            lua_setfield(L, -2, "menuItemCmdChar")
+    lua_pushany(L, kAXMenuItemCmdGlyphAttribute as NSString);           lua_setfield(L, -2, "menuItemCmdGlyph")
+    lua_pushany(L, kAXMenuItemCmdModifiersAttribute as NSString);       lua_setfield(L, -2, "menuItemCmdModifiers")
+    lua_pushany(L, kAXMenuItemCmdVirtualKeyAttribute as NSString);      lua_setfield(L, -2, "menuItemCmdVirtualKey")
+    lua_pushany(L, kAXMenuItemMarkCharAttribute as NSString);           lua_setfield(L, -2, "menuItemMarkChar")
+    lua_pushany(L, kAXMenuItemPrimaryUIElementAttribute as NSString);   lua_setfield(L, -2, "menuItemPrimaryUIElement")
+    lua_pushany(L, kAXMinimizeButtonAttribute as NSString);             lua_setfield(L, -2, "minimizeButton")
+    lua_pushany(L, kAXMinimizedAttribute as NSString);                  lua_setfield(L, -2, "minimized")
+    lua_pushany(L, kAXMinuteFieldAttribute as NSString);                lua_setfield(L, -2, "minuteField")
+    lua_pushany(L, kAXMinValueAttribute as NSString);                   lua_setfield(L, -2, "minValue")
+    lua_pushany(L, kAXMisspelledTextAttribute.takeUnretainedValue() as String as NSString);             lua_setfield(L, -2, "misspelled")
+    lua_pushany(L, kAXModalAttribute as NSString);                      lua_setfield(L, -2, "modal")
+    lua_pushany(L, kAXMonthFieldAttribute as NSString);                 lua_setfield(L, -2, "monthField")
+    lua_pushany(L, kAXNaturalLanguageTextAttribute.takeUnretainedValue() as String as NSString);        lua_setfield(L, -2, "naturalLanguage")
+    lua_pushany(L, kAXNextContentsAttribute as NSString);               lua_setfield(L, -2, "nextContents")
+    lua_pushany(L, kAXNumberOfCharactersAttribute as NSString);         lua_setfield(L, -2, "numberOfCharacters")
+    lua_pushany(L, kAXOrderedByRowAttribute as NSString);               lua_setfield(L, -2, "orderedByRow")
+    lua_pushany(L, kAXOrientationAttribute as NSString);                lua_setfield(L, -2, "orientation")
+    lua_pushany(L, kAXOverflowButtonAttribute as NSString);             lua_setfield(L, -2, "overflowButton")
+    lua_pushany(L, kAXParentAttribute as NSString);                     lua_setfield(L, -2, "parent")
+    lua_pushany(L, kAXPlaceholderValueAttribute as NSString);           lua_setfield(L, -2, "placeholderValue")
+    lua_pushany(L, kAXPositionAttribute as NSString);                   lua_setfield(L, -2, "position")
+    lua_pushany(L, kAXPreviousContentsAttribute as NSString);           lua_setfield(L, -2, "previousContents")
+    lua_pushany(L, kAXProxyAttribute as NSString);                      lua_setfield(L, -2, "proxy")
+    lua_pushany(L, kAXReplacementStringTextAttribute.takeUnretainedValue() as String as NSString);      lua_setfield(L, -2, "replacementString")
+    lua_pushany(L, NSAccessibility.Attribute.required.rawValue as NSString);                            lua_setfield(L, -2, "required")
+    lua_pushany(L, kAXRoleAttribute as NSString);                       lua_setfield(L, -2, "role")
+    lua_pushany(L, kAXRoleDescriptionAttribute as NSString);            lua_setfield(L, -2, "roleDescription")
+    lua_pushany(L, kAXRowCountAttribute as NSString);                   lua_setfield(L, -2, "rowCount")
+    lua_pushany(L, kAXRowHeaderUIElementsAttribute as NSString);        lua_setfield(L, -2, "rowHeaderUIElements")
+    lua_pushany(L, kAXRowIndexRangeAttribute as NSString);              lua_setfield(L, -2, "rowIndexRange")
+    lua_pushany(L, kAXRowsAttribute as NSString);                       lua_setfield(L, -2, "rows")
+    lua_pushany(L, kAXSearchButtonAttribute as NSString);               lua_setfield(L, -2, "searchButton")
+    lua_pushany(L, NSAccessibility.Attribute.searchMenu.rawValue as NSString);                          lua_setfield(L, -2, "searchMenu")
+    lua_pushany(L, kAXSecondFieldAttribute as NSString);                lua_setfield(L, -2, "secondField")
+    lua_pushany(L, kAXSelectedAttribute as NSString);                   lua_setfield(L, -2, "selected")
+    lua_pushany(L, kAXSelectedCellsAttribute as NSString);              lua_setfield(L, -2, "selectedCells")
+    lua_pushany(L, kAXSelectedChildrenAttribute as NSString);           lua_setfield(L, -2, "selectedChildren")
+    lua_pushany(L, kAXSelectedColumnsAttribute as NSString);            lua_setfield(L, -2, "selectedColumns")
+    lua_pushany(L, kAXSelectedRowsAttribute as NSString);               lua_setfield(L, -2, "selectedRows")
+    lua_pushany(L, kAXSelectedTextAttribute as NSString);               lua_setfield(L, -2, "selectedText")
+    lua_pushany(L, kAXSelectedTextRangeAttribute as NSString);          lua_setfield(L, -2, "selectedTextRange")
+    lua_pushany(L, kAXSelectedTextRangesAttribute as NSString);         lua_setfield(L, -2, "selectedTextRanges")
+    lua_pushany(L, kAXServesAsTitleForUIElementsAttribute as NSString); lua_setfield(L, -2, "servesAsTitleForUIElements")
+    lua_pushany(L, kAXShadowTextAttribute.takeUnretainedValue() as String as NSString);                 lua_setfield(L, -2, "shadow")
+    lua_pushany(L, kAXSharedCharacterRangeAttribute as NSString);       lua_setfield(L, -2, "sharedCharacterRange")
+    lua_pushany(L, kAXSharedFocusElementsAttribute as NSString);        lua_setfield(L, -2, "sharedFocusElements")
+    lua_pushany(L, kAXSharedTextUIElementsAttribute as NSString);       lua_setfield(L, -2, "sharedTextUIElements")
+    lua_pushany(L, kAXShownMenuUIElementAttribute as NSString);         lua_setfield(L, -2, "shownMenuUIElement")
+    lua_pushany(L, kAXSizeAttribute as NSString);                       lua_setfield(L, -2, "size")
+    lua_pushany(L, kAXSortDirectionAttribute as NSString);              lua_setfield(L, -2, "sortDirection")
+    lua_pushany(L, kAXSplittersAttribute as NSString);                  lua_setfield(L, -2, "splitters")
+    lua_pushany(L, kAXStrikethroughTextAttribute.takeUnretainedValue() as String as NSString);          lua_setfield(L, -2, "strikethrough")
+    lua_pushany(L, kAXStrikethroughColorTextAttribute.takeUnretainedValue() as String as NSString);     lua_setfield(L, -2, "strikethroughColor")
+    lua_pushany(L, kAXSubroleAttribute as NSString);                    lua_setfield(L, -2, "subrole")
+    lua_pushany(L, kAXSuperscriptTextAttribute.takeUnretainedValue() as String as NSString);            lua_setfield(L, -2, "superscript")
+    lua_pushany(L, kAXTabsAttribute as NSString);                       lua_setfield(L, -2, "tabs")
+    lua_pushany(L, kAXTextAttribute as NSString);                       lua_setfield(L, -2, "text")
+    lua_pushany(L, NSAttributedString.Key.accessibilityAlignment.rawValue as NSString);                 lua_setfield(L, -2, "textAlignment")
+    lua_pushany(L, kAXTitleAttribute as NSString);                      lua_setfield(L, -2, "title")
+    lua_pushany(L, kAXTitleUIElementAttribute as NSString);             lua_setfield(L, -2, "titleUIElement")
+    lua_pushany(L, kAXToolbarButtonAttribute as NSString);              lua_setfield(L, -2, "toolbarButton")
+    lua_pushany(L, kAXTopLevelUIElementAttribute as NSString);          lua_setfield(L, -2, "topLevelUIElement")
+    lua_pushany(L, kAXUnderlineTextAttribute.takeUnretainedValue() as String as NSString);              lua_setfield(L, -2, "underline")
+    lua_pushany(L, kAXUnderlineColorTextAttribute.takeUnretainedValue() as String as NSString);         lua_setfield(L, -2, "underlineColor")
+    lua_pushany(L, kAXUnitDescriptionAttribute as NSString);            lua_setfield(L, -2, "unitDescription")
+    lua_pushany(L, kAXUnitsAttribute as NSString);                      lua_setfield(L, -2, "units")
+    lua_pushany(L, kAXURLAttribute as NSString);                        lua_setfield(L, -2, "URL")
+    lua_pushany(L, kAXValueAttribute as NSString);                      lua_setfield(L, -2, "value")
+    lua_pushany(L, kAXValueDescriptionAttribute as NSString);           lua_setfield(L, -2, "valueDescription")
+    lua_pushany(L, kAXValueIncrementAttribute as NSString);             lua_setfield(L, -2, "valueIncrement")
+    lua_pushany(L, kAXValueWrapsAttribute as NSString);                 lua_setfield(L, -2, "valueWraps")
+    lua_pushany(L, kAXVerticalScrollBarAttribute as NSString);          lua_setfield(L, -2, "verticalScrollBar")
+    lua_pushany(L, kAXVerticalUnitDescriptionAttribute as NSString);    lua_setfield(L, -2, "verticalUnitDescription")
+    lua_pushany(L, kAXVerticalUnitsAttribute as NSString);              lua_setfield(L, -2, "verticalUnits")
+    lua_pushany(L, kAXVisibleCellsAttribute as NSString);               lua_setfield(L, -2, "visibleCells")
+    lua_pushany(L, kAXVisibleCharacterRangeAttribute as NSString);      lua_setfield(L, -2, "visibleCharacterRange")
+    lua_pushany(L, kAXVisibleChildrenAttribute as NSString);            lua_setfield(L, -2, "visibleChildren")
+    lua_pushany(L, kAXVisibleColumnsAttribute as NSString);             lua_setfield(L, -2, "visibleColumns")
+    lua_pushany(L, kAXVisibleRowsAttribute as NSString);                lua_setfield(L, -2, "visibleRows")
+    lua_pushany(L, kAXVisibleTextAttribute as NSString);                lua_setfield(L, -2, "visibleText")
+    lua_pushany(L, kAXWarningValueAttribute as NSString);               lua_setfield(L, -2, "warningValue")
+    lua_pushany(L, kAXWindowAttribute as NSString);                     lua_setfield(L, -2, "window")
+    lua_pushany(L, kAXWindowsAttribute as NSString);                    lua_setfield(L, -2, "windows")
+    lua_pushany(L, kAXYearFieldAttribute as NSString);                  lua_setfield(L, -2, "yearField")
+    lua_pushany(L, kAXZoomButtonAttribute as NSString);                 lua_setfield(L, -2, "zoomButton")
 
-    skin.pushNSObject(NSAttributedString.Key.accessibilityAnnotationTextAttribute.rawValue as NSString);   lua_setfield(L, -2, "annotationText")
-    skin.pushNSObject(NSAttributedString.Key.accessibilityCustomText.rawValue as NSString);                lua_setfield(L, -2, "customText")
+    lua_pushany(L, NSAttributedString.Key.accessibilityAnnotationTextAttribute.rawValue as NSString);   lua_setfield(L, -2, "annotationText")
+    lua_pushany(L, NSAttributedString.Key.accessibilityCustomText.rawValue as NSString);                lua_setfield(L, -2, "customText")
 
     return 1
 }
@@ -916,22 +899,21 @@ private func axuielement_pushAttributesTable(_ L: UnsafeMutablePointer<lua_State
 ///  * Parameterized attributes are attributes that take an argument when querying the element. There is very little documentation available for most of these and application developers can implement their own for which we may never be able to get any documentation. This table contains parameterized attribute names that are defined within the Apple documentation and a few others that have been discovered.
 ///  * Documentation covering what has been discovered through experimentation about parameterized attributes is planned and should be added to the Cosmic Hammer wiki shortly after this module becomes part of a formal release.
 private func axuielement_pushParameterizedAttributesTable(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     lua_newtable(L)
-    skin.pushNSObject(kAXAttributedStringForRangeParameterizedAttribute as NSString);  lua_setfield(L, -2, "attributedStringForRange")
-    skin.pushNSObject(kAXBoundsForRangeParameterizedAttribute as NSString);            lua_setfield(L, -2, "boundsForRange")
-    skin.pushNSObject(kAXCellForColumnAndRowParameterizedAttribute as NSString);       lua_setfield(L, -2, "cellForColumnAndRow")
-    skin.pushNSObject(kAXLayoutPointForScreenPointParameterizedAttribute as NSString); lua_setfield(L, -2, "layoutPointForScreenPoint")
-    skin.pushNSObject(kAXLayoutSizeForScreenSizeParameterizedAttribute as NSString);   lua_setfield(L, -2, "layoutSizeForScreenSize")
-    skin.pushNSObject(kAXLineForIndexParameterizedAttribute as NSString);              lua_setfield(L, -2, "lineForIndex")
-    skin.pushNSObject(kAXRangeForIndexParameterizedAttribute as NSString);             lua_setfield(L, -2, "rangeForIndex")
-    skin.pushNSObject(kAXRangeForLineParameterizedAttribute as NSString);              lua_setfield(L, -2, "rangeForLine")
-    skin.pushNSObject(kAXRangeForPositionParameterizedAttribute as NSString);          lua_setfield(L, -2, "rangeForPosition")
-    skin.pushNSObject(kAXRTFForRangeParameterizedAttribute as NSString);               lua_setfield(L, -2, "RTFForRange")
-    skin.pushNSObject(kAXScreenPointForLayoutPointParameterizedAttribute as NSString); lua_setfield(L, -2, "screenPointForLayoutPoint")
-    skin.pushNSObject(kAXScreenSizeForLayoutSizeParameterizedAttribute as NSString);   lua_setfield(L, -2, "screenSizeForLayoutSize")
-    skin.pushNSObject(kAXStringForRangeParameterizedAttribute as NSString);            lua_setfield(L, -2, "stringForRange")
-    skin.pushNSObject(kAXStyleRangeForIndexParameterizedAttribute as NSString);        lua_setfield(L, -2, "styleRangeForIndex")
+    lua_pushany(L, kAXAttributedStringForRangeParameterizedAttribute as NSString);  lua_setfield(L, -2, "attributedStringForRange")
+    lua_pushany(L, kAXBoundsForRangeParameterizedAttribute as NSString);            lua_setfield(L, -2, "boundsForRange")
+    lua_pushany(L, kAXCellForColumnAndRowParameterizedAttribute as NSString);       lua_setfield(L, -2, "cellForColumnAndRow")
+    lua_pushany(L, kAXLayoutPointForScreenPointParameterizedAttribute as NSString); lua_setfield(L, -2, "layoutPointForScreenPoint")
+    lua_pushany(L, kAXLayoutSizeForScreenSizeParameterizedAttribute as NSString);   lua_setfield(L, -2, "layoutSizeForScreenSize")
+    lua_pushany(L, kAXLineForIndexParameterizedAttribute as NSString);              lua_setfield(L, -2, "lineForIndex")
+    lua_pushany(L, kAXRangeForIndexParameterizedAttribute as NSString);             lua_setfield(L, -2, "rangeForIndex")
+    lua_pushany(L, kAXRangeForLineParameterizedAttribute as NSString);              lua_setfield(L, -2, "rangeForLine")
+    lua_pushany(L, kAXRangeForPositionParameterizedAttribute as NSString);          lua_setfield(L, -2, "rangeForPosition")
+    lua_pushany(L, kAXRTFForRangeParameterizedAttribute as NSString);               lua_setfield(L, -2, "RTFForRange")
+    lua_pushany(L, kAXScreenPointForLayoutPointParameterizedAttribute as NSString); lua_setfield(L, -2, "screenPointForLayoutPoint")
+    lua_pushany(L, kAXScreenSizeForLayoutSizeParameterizedAttribute as NSString);   lua_setfield(L, -2, "screenSizeForLayoutSize")
+    lua_pushany(L, kAXStringForRangeParameterizedAttribute as NSString);            lua_setfield(L, -2, "stringForRange")
+    lua_pushany(L, kAXStyleRangeForIndexParameterizedAttribute as NSString);        lua_setfield(L, -2, "styleRangeForIndex")
 
     return 1
 }
@@ -944,19 +926,18 @@ private func axuielement_pushParameterizedAttributesTable(_ L: UnsafeMutablePoin
 ///  * this table is provided for reference only and is not intended to be comprehensive.
 ///  * you can view the contents of this table from the Cosmic Hammer console by typing in `hs.axuielement.actions`
 private func axuielement_pushActionsTable(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     lua_newtable(L)
-    skin.pushNSObject(kAXCancelAction as NSString);          lua_setfield(L, -2, "cancel")
-    skin.pushNSObject(kAXConfirmAction as NSString);         lua_setfield(L, -2, "confirm")
-    skin.pushNSObject(kAXDecrementAction as NSString);       lua_setfield(L, -2, "decrement")
-    skin.pushNSObject(NSAccessibility.Action.delete.rawValue as NSString);                   lua_setfield(L, -2, "delete")
-    skin.pushNSObject(kAXIncrementAction as NSString);       lua_setfield(L, -2, "increment")
-    skin.pushNSObject(kAXPickAction as NSString);            lua_setfield(L, -2, "pick")
-    skin.pushNSObject(kAXPressAction as NSString);           lua_setfield(L, -2, "press")
-    skin.pushNSObject(kAXRaiseAction as NSString);           lua_setfield(L, -2, "raise")
-    skin.pushNSObject(kAXShowAlternateUIAction as NSString); lua_setfield(L, -2, "showAlternateUI")
-    skin.pushNSObject(kAXShowDefaultUIAction as NSString);   lua_setfield(L, -2, "showDefaultUI")
-    skin.pushNSObject(kAXShowMenuAction as NSString);        lua_setfield(L, -2, "showMenu")
+    lua_pushany(L, kAXCancelAction as NSString);          lua_setfield(L, -2, "cancel")
+    lua_pushany(L, kAXConfirmAction as NSString);         lua_setfield(L, -2, "confirm")
+    lua_pushany(L, kAXDecrementAction as NSString);       lua_setfield(L, -2, "decrement")
+    lua_pushany(L, NSAccessibility.Action.delete.rawValue as NSString);                   lua_setfield(L, -2, "delete")
+    lua_pushany(L, kAXIncrementAction as NSString);       lua_setfield(L, -2, "increment")
+    lua_pushany(L, kAXPickAction as NSString);            lua_setfield(L, -2, "pick")
+    lua_pushany(L, kAXPressAction as NSString);           lua_setfield(L, -2, "press")
+    lua_pushany(L, kAXRaiseAction as NSString);           lua_setfield(L, -2, "raise")
+    lua_pushany(L, kAXShowAlternateUIAction as NSString); lua_setfield(L, -2, "showAlternateUI")
+    lua_pushany(L, kAXShowDefaultUIAction as NSString);   lua_setfield(L, -2, "showDefaultUI")
+    lua_pushany(L, kAXShowMenuAction as NSString);        lua_setfield(L, -2, "showMenu")
     return 1
 }
 
@@ -968,68 +949,67 @@ private func axuielement_pushActionsTable(_ L: UnsafeMutablePointer<lua_State>!)
 ///  * this table is provided for reference only and is not intended to be comprehensive.
 ///  * you can view the contents of this table from the Cosmic Hammer console by typing in `hs.axuielement.roles`
 private func axuielement_pushRolesTable(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     lua_newtable(L)
-    skin.pushNSObject(kAXApplicationRole as NSString);        lua_setfield(L, -2, "application")
-    skin.pushNSObject(kAXBrowserRole as NSString);            lua_setfield(L, -2, "browser")
-    skin.pushNSObject(kAXBusyIndicatorRole as NSString);      lua_setfield(L, -2, "busyIndicator")
-    skin.pushNSObject(kAXButtonRole as NSString);             lua_setfield(L, -2, "button")
-    skin.pushNSObject(kAXCellRole as NSString);               lua_setfield(L, -2, "cell")
-    skin.pushNSObject(kAXCheckBoxRole as NSString);           lua_setfield(L, -2, "checkBox")
-    skin.pushNSObject(kAXColorWellRole as NSString);          lua_setfield(L, -2, "colorWell")
-    skin.pushNSObject(kAXColumnRole as NSString);             lua_setfield(L, -2, "column")
-    skin.pushNSObject(kAXComboBoxRole as NSString);           lua_setfield(L, -2, "comboBox")
-    skin.pushNSObject(kAXDateFieldRole as NSString);          lua_setfield(L, -2, "dateField")
-    skin.pushNSObject(kAXDisclosureTriangleRole as NSString); lua_setfield(L, -2, "disclosureTriangle")
-    skin.pushNSObject(kAXDockItemRole as NSString);           lua_setfield(L, -2, "dockItem")
-    skin.pushNSObject(kAXDrawerRole as NSString);             lua_setfield(L, -2, "drawer")
-    skin.pushNSObject(kAXGridRole as NSString);               lua_setfield(L, -2, "grid")
-    skin.pushNSObject(kAXGroupRole as NSString);              lua_setfield(L, -2, "group")
-    skin.pushNSObject(kAXGrowAreaRole as NSString);           lua_setfield(L, -2, "growArea")
-    skin.pushNSObject(kAXHandleRole as NSString);             lua_setfield(L, -2, "handle")
-    skin.pushNSObject(kAXHelpTagRole as NSString);            lua_setfield(L, -2, "helpTag")
-    skin.pushNSObject(kAXImageRole as NSString);              lua_setfield(L, -2, "image")
-    skin.pushNSObject(kAXIncrementorRole as NSString);        lua_setfield(L, -2, "incrementor")
-    skin.pushNSObject(kAXLayoutAreaRole as NSString);         lua_setfield(L, -2, "layoutArea")
-    skin.pushNSObject(kAXLayoutItemRole as NSString);         lua_setfield(L, -2, "layoutItem")
-    skin.pushNSObject(kAXLevelIndicatorRole as NSString);     lua_setfield(L, -2, "levelIndicator")
-    skin.pushNSObject(kAXListRole as NSString);               lua_setfield(L, -2, "list")
-    skin.pushNSObject(kAXMatteRole as NSString);              lua_setfield(L, -2, "matteRole")
-    skin.pushNSObject(kAXMenuRole as NSString);               lua_setfield(L, -2, "menu")
-    skin.pushNSObject(kAXMenuBarRole as NSString);            lua_setfield(L, -2, "menuBar")
-    skin.pushNSObject(kAXMenuBarItemRole as NSString);        lua_setfield(L, -2, "menuBarItem")
-    skin.pushNSObject(kAXMenuButtonRole as NSString);         lua_setfield(L, -2, "menuButton")
-    skin.pushNSObject(kAXMenuItemRole as NSString);           lua_setfield(L, -2, "menuItem")
-    skin.pushNSObject(kAXOutlineRole as NSString);            lua_setfield(L, -2, "outline")
-    skin.pushNSObject(kAXPopoverRole as NSString);            lua_setfield(L, -2, "popover")
-    skin.pushNSObject(kAXPopUpButtonRole as NSString);        lua_setfield(L, -2, "popUpButton")
-    skin.pushNSObject(kAXProgressIndicatorRole as NSString);  lua_setfield(L, -2, "progressIndicator")
-    skin.pushNSObject(kAXRadioButtonRole as NSString);        lua_setfield(L, -2, "radioButton")
-    skin.pushNSObject(kAXRadioGroupRole as NSString);         lua_setfield(L, -2, "radioGroup")
-    skin.pushNSObject(kAXRelevanceIndicatorRole as NSString); lua_setfield(L, -2, "relevanceIndicator")
-    skin.pushNSObject(kAXRowRole as NSString);                lua_setfield(L, -2, "row")
-    skin.pushNSObject(kAXRulerRole as NSString);              lua_setfield(L, -2, "ruler")
-    skin.pushNSObject(kAXRulerMarkerRole as NSString);        lua_setfield(L, -2, "rulerMarker")
-    skin.pushNSObject(kAXScrollAreaRole as NSString);         lua_setfield(L, -2, "scrollArea")
-    skin.pushNSObject(kAXScrollBarRole as NSString);          lua_setfield(L, -2, "scrollBar")
-    skin.pushNSObject(kAXSheetRole as NSString);              lua_setfield(L, -2, "sheet")
-    skin.pushNSObject(kAXSliderRole as NSString);             lua_setfield(L, -2, "slider")
-    skin.pushNSObject(kAXSplitGroupRole as NSString);         lua_setfield(L, -2, "splitGroup")
-    skin.pushNSObject(kAXSplitterRole as NSString);           lua_setfield(L, -2, "splitter")
-    skin.pushNSObject(kAXStaticTextRole as NSString);         lua_setfield(L, -2, "staticText")
-    skin.pushNSObject(kAXSystemWideRole as NSString);         lua_setfield(L, -2, "systemWide")
-    skin.pushNSObject(kAXTabGroupRole as NSString);           lua_setfield(L, -2, "tabGroup")
-    skin.pushNSObject(kAXTableRole as NSString);              lua_setfield(L, -2, "table")
-    skin.pushNSObject(kAXTextAreaRole as NSString);           lua_setfield(L, -2, "textArea")
-    skin.pushNSObject(kAXTextFieldRole as NSString);          lua_setfield(L, -2, "textField")
-    skin.pushNSObject(kAXTimeFieldRole as NSString);          lua_setfield(L, -2, "timeField")
-    skin.pushNSObject(kAXToolbarRole as NSString);            lua_setfield(L, -2, "toolbar")
-    skin.pushNSObject(kAXUnknownRole as NSString);            lua_setfield(L, -2, "unknown")
-    skin.pushNSObject(kAXValueIndicatorRole as NSString);     lua_setfield(L, -2, "valueIndicator")
-    skin.pushNSObject(kAXWindowRole as NSString);             lua_setfield(L, -2, "window")
+    lua_pushany(L, kAXApplicationRole as NSString);        lua_setfield(L, -2, "application")
+    lua_pushany(L, kAXBrowserRole as NSString);            lua_setfield(L, -2, "browser")
+    lua_pushany(L, kAXBusyIndicatorRole as NSString);      lua_setfield(L, -2, "busyIndicator")
+    lua_pushany(L, kAXButtonRole as NSString);             lua_setfield(L, -2, "button")
+    lua_pushany(L, kAXCellRole as NSString);               lua_setfield(L, -2, "cell")
+    lua_pushany(L, kAXCheckBoxRole as NSString);           lua_setfield(L, -2, "checkBox")
+    lua_pushany(L, kAXColorWellRole as NSString);          lua_setfield(L, -2, "colorWell")
+    lua_pushany(L, kAXColumnRole as NSString);             lua_setfield(L, -2, "column")
+    lua_pushany(L, kAXComboBoxRole as NSString);           lua_setfield(L, -2, "comboBox")
+    lua_pushany(L, kAXDateFieldRole as NSString);          lua_setfield(L, -2, "dateField")
+    lua_pushany(L, kAXDisclosureTriangleRole as NSString); lua_setfield(L, -2, "disclosureTriangle")
+    lua_pushany(L, kAXDockItemRole as NSString);           lua_setfield(L, -2, "dockItem")
+    lua_pushany(L, kAXDrawerRole as NSString);             lua_setfield(L, -2, "drawer")
+    lua_pushany(L, kAXGridRole as NSString);               lua_setfield(L, -2, "grid")
+    lua_pushany(L, kAXGroupRole as NSString);              lua_setfield(L, -2, "group")
+    lua_pushany(L, kAXGrowAreaRole as NSString);           lua_setfield(L, -2, "growArea")
+    lua_pushany(L, kAXHandleRole as NSString);             lua_setfield(L, -2, "handle")
+    lua_pushany(L, kAXHelpTagRole as NSString);            lua_setfield(L, -2, "helpTag")
+    lua_pushany(L, kAXImageRole as NSString);              lua_setfield(L, -2, "image")
+    lua_pushany(L, kAXIncrementorRole as NSString);        lua_setfield(L, -2, "incrementor")
+    lua_pushany(L, kAXLayoutAreaRole as NSString);         lua_setfield(L, -2, "layoutArea")
+    lua_pushany(L, kAXLayoutItemRole as NSString);         lua_setfield(L, -2, "layoutItem")
+    lua_pushany(L, kAXLevelIndicatorRole as NSString);     lua_setfield(L, -2, "levelIndicator")
+    lua_pushany(L, kAXListRole as NSString);               lua_setfield(L, -2, "list")
+    lua_pushany(L, kAXMatteRole as NSString);              lua_setfield(L, -2, "matteRole")
+    lua_pushany(L, kAXMenuRole as NSString);               lua_setfield(L, -2, "menu")
+    lua_pushany(L, kAXMenuBarRole as NSString);            lua_setfield(L, -2, "menuBar")
+    lua_pushany(L, kAXMenuBarItemRole as NSString);        lua_setfield(L, -2, "menuBarItem")
+    lua_pushany(L, kAXMenuButtonRole as NSString);         lua_setfield(L, -2, "menuButton")
+    lua_pushany(L, kAXMenuItemRole as NSString);           lua_setfield(L, -2, "menuItem")
+    lua_pushany(L, kAXOutlineRole as NSString);            lua_setfield(L, -2, "outline")
+    lua_pushany(L, kAXPopoverRole as NSString);            lua_setfield(L, -2, "popover")
+    lua_pushany(L, kAXPopUpButtonRole as NSString);        lua_setfield(L, -2, "popUpButton")
+    lua_pushany(L, kAXProgressIndicatorRole as NSString);  lua_setfield(L, -2, "progressIndicator")
+    lua_pushany(L, kAXRadioButtonRole as NSString);        lua_setfield(L, -2, "radioButton")
+    lua_pushany(L, kAXRadioGroupRole as NSString);         lua_setfield(L, -2, "radioGroup")
+    lua_pushany(L, kAXRelevanceIndicatorRole as NSString); lua_setfield(L, -2, "relevanceIndicator")
+    lua_pushany(L, kAXRowRole as NSString);                lua_setfield(L, -2, "row")
+    lua_pushany(L, kAXRulerRole as NSString);              lua_setfield(L, -2, "ruler")
+    lua_pushany(L, kAXRulerMarkerRole as NSString);        lua_setfield(L, -2, "rulerMarker")
+    lua_pushany(L, kAXScrollAreaRole as NSString);         lua_setfield(L, -2, "scrollArea")
+    lua_pushany(L, kAXScrollBarRole as NSString);          lua_setfield(L, -2, "scrollBar")
+    lua_pushany(L, kAXSheetRole as NSString);              lua_setfield(L, -2, "sheet")
+    lua_pushany(L, kAXSliderRole as NSString);             lua_setfield(L, -2, "slider")
+    lua_pushany(L, kAXSplitGroupRole as NSString);         lua_setfield(L, -2, "splitGroup")
+    lua_pushany(L, kAXSplitterRole as NSString);           lua_setfield(L, -2, "splitter")
+    lua_pushany(L, kAXStaticTextRole as NSString);         lua_setfield(L, -2, "staticText")
+    lua_pushany(L, kAXSystemWideRole as NSString);         lua_setfield(L, -2, "systemWide")
+    lua_pushany(L, kAXTabGroupRole as NSString);           lua_setfield(L, -2, "tabGroup")
+    lua_pushany(L, kAXTableRole as NSString);              lua_setfield(L, -2, "table")
+    lua_pushany(L, kAXTextAreaRole as NSString);           lua_setfield(L, -2, "textArea")
+    lua_pushany(L, kAXTextFieldRole as NSString);          lua_setfield(L, -2, "textField")
+    lua_pushany(L, kAXTimeFieldRole as NSString);          lua_setfield(L, -2, "timeField")
+    lua_pushany(L, kAXToolbarRole as NSString);            lua_setfield(L, -2, "toolbar")
+    lua_pushany(L, kAXUnknownRole as NSString);            lua_setfield(L, -2, "unknown")
+    lua_pushany(L, kAXValueIndicatorRole as NSString);     lua_setfield(L, -2, "valueIndicator")
+    lua_pushany(L, kAXWindowRole as NSString);             lua_setfield(L, -2, "window")
 
-    skin.pushNSObject(NSAccessibility.Role.link.rawValue as NSString);                        lua_setfield(L, -2, "link")
-    skin.pushNSObject(NSAccessibility.Role.pageRole.rawValue as NSString);                     lua_setfield(L, -2, "page")
+    lua_pushany(L, NSAccessibility.Role.link.rawValue as NSString);                        lua_setfield(L, -2, "link")
+    lua_pushany(L, NSAccessibility.Role.pageRole.rawValue as NSString);                     lua_setfield(L, -2, "page")
 
     return 1
 }
@@ -1042,51 +1022,50 @@ private func axuielement_pushRolesTable(_ L: UnsafeMutablePointer<lua_State>!) -
 ///  * this table is provided for reference only and is not intended to be comprehensive.
 ///  * you can view the contents of this table from the Cosmic Hammer console by typing in `hs.axuielement.subroles`
 private func axuielement_pushSubrolesTable(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     lua_newtable(L)
-    skin.pushNSObject(kAXApplicationDockItemSubrole as NSString);     lua_setfield(L, -2, "applicationDockItem")
-    skin.pushNSObject(kAXCloseButtonSubrole as NSString);             lua_setfield(L, -2, "closeButton")
-    skin.pushNSObject(kAXContentListSubrole as NSString);             lua_setfield(L, -2, "contentList")
-    skin.pushNSObject(kAXDecorativeSubrole as NSString);              lua_setfield(L, -2, "decorative")
-    skin.pushNSObject(kAXDecrementArrowSubrole as NSString);          lua_setfield(L, -2, "decrementArrow")
-    skin.pushNSObject(kAXDecrementPageSubrole as NSString);           lua_setfield(L, -2, "decrementPage")
-    skin.pushNSObject(NSAccessibility.Subrole.definitionList.rawValue as NSString);                   lua_setfield(L, -2, "definitionList")
-    skin.pushNSObject(kAXDescriptionListSubrole as NSString);         lua_setfield(L, -2, "descriptionList")
-    skin.pushNSObject(kAXDialogSubrole as NSString);                  lua_setfield(L, -2, "dialog")
-    skin.pushNSObject(kAXDockExtraDockItemSubrole as NSString);       lua_setfield(L, -2, "dockExtraDockItem")
-    skin.pushNSObject(kAXDocumentDockItemSubrole as NSString);        lua_setfield(L, -2, "documentDockItem")
-    skin.pushNSObject(kAXFloatingWindowSubrole as NSString);          lua_setfield(L, -2, "floatingWindow")
-    skin.pushNSObject(kAXFolderDockItemSubrole as NSString);          lua_setfield(L, -2, "folderDockItem")
-    skin.pushNSObject(kAXFullScreenButtonSubrole as NSString);        lua_setfield(L, -2, "fullScreenButton")
-    skin.pushNSObject(kAXIncrementArrowSubrole as NSString);          lua_setfield(L, -2, "incrementArrow")
-    skin.pushNSObject(kAXIncrementPageSubrole as NSString);           lua_setfield(L, -2, "incrementPage")
-    skin.pushNSObject(kAXMinimizeButtonSubrole as NSString);          lua_setfield(L, -2, "minimizeButton")
-    skin.pushNSObject(kAXMinimizedWindowDockItemSubrole as NSString); lua_setfield(L, -2, "minimizedWindowDockItem")
-    skin.pushNSObject(kAXOutlineRowSubrole as NSString);              lua_setfield(L, -2, "outlineRow")
-    skin.pushNSObject(kAXProcessSwitcherListSubrole as NSString);     lua_setfield(L, -2, "processSwitcherList")
-    skin.pushNSObject(kAXRatingIndicatorSubrole as NSString);         lua_setfield(L, -2, "ratingIndicator")
-    skin.pushNSObject(kAXSearchFieldSubrole as NSString);             lua_setfield(L, -2, "searchField")
-    skin.pushNSObject(kAXSecureTextFieldSubrole as NSString);         lua_setfield(L, -2, "secureTextField")
-    skin.pushNSObject(kAXSeparatorDockItemSubrole as NSString);       lua_setfield(L, -2, "separatorDockItem")
-    skin.pushNSObject(kAXSortButtonSubrole as NSString);              lua_setfield(L, -2, "sortButton")
-    skin.pushNSObject(kAXStandardWindowSubrole as NSString);          lua_setfield(L, -2, "standardWindow")
-    skin.pushNSObject(kAXSwitchSubrole as NSString);                  lua_setfield(L, -2, "switch")
-    skin.pushNSObject(kAXSystemDialogSubrole as NSString);            lua_setfield(L, -2, "systemDialog")
-    skin.pushNSObject(kAXSystemFloatingWindowSubrole as NSString);    lua_setfield(L, -2, "systemFloatingWindow")
-    skin.pushNSObject(kAXTableRowSubrole as NSString);                lua_setfield(L, -2, "tableRow")
-    skin.pushNSObject(NSAccessibility.Subrole.textAttachment.rawValue as NSString);                   lua_setfield(L, -2, "textAttachment")
-    skin.pushNSObject(NSAccessibility.Subrole.textLink.rawValue as NSString);                         lua_setfield(L, -2, "textLink")
-    skin.pushNSObject(kAXTimelineSubrole as NSString);                lua_setfield(L, -2, "timeline")
-    skin.pushNSObject(kAXToggleSubrole as NSString);                  lua_setfield(L, -2, "toggle")
-    skin.pushNSObject(kAXToolbarButtonSubrole as NSString);           lua_setfield(L, -2, "toolbarButton")
-    skin.pushNSObject(kAXTrashDockItemSubrole as NSString);           lua_setfield(L, -2, "trashDockItem")
-    skin.pushNSObject(kAXUnknownSubrole as NSString);                 lua_setfield(L, -2, "unknown")
-    skin.pushNSObject(kAXURLDockItemSubrole as NSString);             lua_setfield(L, -2, "URLDockItem")
-    skin.pushNSObject(kAXZoomButtonSubrole as NSString);              lua_setfield(L, -2, "zoomButton")
+    lua_pushany(L, kAXApplicationDockItemSubrole as NSString);     lua_setfield(L, -2, "applicationDockItem")
+    lua_pushany(L, kAXCloseButtonSubrole as NSString);             lua_setfield(L, -2, "closeButton")
+    lua_pushany(L, kAXContentListSubrole as NSString);             lua_setfield(L, -2, "contentList")
+    lua_pushany(L, kAXDecorativeSubrole as NSString);              lua_setfield(L, -2, "decorative")
+    lua_pushany(L, kAXDecrementArrowSubrole as NSString);          lua_setfield(L, -2, "decrementArrow")
+    lua_pushany(L, kAXDecrementPageSubrole as NSString);           lua_setfield(L, -2, "decrementPage")
+    lua_pushany(L, NSAccessibility.Subrole.definitionList.rawValue as NSString);                   lua_setfield(L, -2, "definitionList")
+    lua_pushany(L, kAXDescriptionListSubrole as NSString);         lua_setfield(L, -2, "descriptionList")
+    lua_pushany(L, kAXDialogSubrole as NSString);                  lua_setfield(L, -2, "dialog")
+    lua_pushany(L, kAXDockExtraDockItemSubrole as NSString);       lua_setfield(L, -2, "dockExtraDockItem")
+    lua_pushany(L, kAXDocumentDockItemSubrole as NSString);        lua_setfield(L, -2, "documentDockItem")
+    lua_pushany(L, kAXFloatingWindowSubrole as NSString);          lua_setfield(L, -2, "floatingWindow")
+    lua_pushany(L, kAXFolderDockItemSubrole as NSString);          lua_setfield(L, -2, "folderDockItem")
+    lua_pushany(L, kAXFullScreenButtonSubrole as NSString);        lua_setfield(L, -2, "fullScreenButton")
+    lua_pushany(L, kAXIncrementArrowSubrole as NSString);          lua_setfield(L, -2, "incrementArrow")
+    lua_pushany(L, kAXIncrementPageSubrole as NSString);           lua_setfield(L, -2, "incrementPage")
+    lua_pushany(L, kAXMinimizeButtonSubrole as NSString);          lua_setfield(L, -2, "minimizeButton")
+    lua_pushany(L, kAXMinimizedWindowDockItemSubrole as NSString); lua_setfield(L, -2, "minimizedWindowDockItem")
+    lua_pushany(L, kAXOutlineRowSubrole as NSString);              lua_setfield(L, -2, "outlineRow")
+    lua_pushany(L, kAXProcessSwitcherListSubrole as NSString);     lua_setfield(L, -2, "processSwitcherList")
+    lua_pushany(L, kAXRatingIndicatorSubrole as NSString);         lua_setfield(L, -2, "ratingIndicator")
+    lua_pushany(L, kAXSearchFieldSubrole as NSString);             lua_setfield(L, -2, "searchField")
+    lua_pushany(L, kAXSecureTextFieldSubrole as NSString);         lua_setfield(L, -2, "secureTextField")
+    lua_pushany(L, kAXSeparatorDockItemSubrole as NSString);       lua_setfield(L, -2, "separatorDockItem")
+    lua_pushany(L, kAXSortButtonSubrole as NSString);              lua_setfield(L, -2, "sortButton")
+    lua_pushany(L, kAXStandardWindowSubrole as NSString);          lua_setfield(L, -2, "standardWindow")
+    lua_pushany(L, kAXSwitchSubrole as NSString);                  lua_setfield(L, -2, "switch")
+    lua_pushany(L, kAXSystemDialogSubrole as NSString);            lua_setfield(L, -2, "systemDialog")
+    lua_pushany(L, kAXSystemFloatingWindowSubrole as NSString);    lua_setfield(L, -2, "systemFloatingWindow")
+    lua_pushany(L, kAXTableRowSubrole as NSString);                lua_setfield(L, -2, "tableRow")
+    lua_pushany(L, NSAccessibility.Subrole.textAttachment.rawValue as NSString);                   lua_setfield(L, -2, "textAttachment")
+    lua_pushany(L, NSAccessibility.Subrole.textLink.rawValue as NSString);                         lua_setfield(L, -2, "textLink")
+    lua_pushany(L, kAXTimelineSubrole as NSString);                lua_setfield(L, -2, "timeline")
+    lua_pushany(L, kAXToggleSubrole as NSString);                  lua_setfield(L, -2, "toggle")
+    lua_pushany(L, kAXToolbarButtonSubrole as NSString);           lua_setfield(L, -2, "toolbarButton")
+    lua_pushany(L, kAXTrashDockItemSubrole as NSString);           lua_setfield(L, -2, "trashDockItem")
+    lua_pushany(L, kAXUnknownSubrole as NSString);                 lua_setfield(L, -2, "unknown")
+    lua_pushany(L, kAXURLDockItemSubrole as NSString);             lua_setfield(L, -2, "URLDockItem")
+    lua_pushany(L, kAXZoomButtonSubrole as NSString);              lua_setfield(L, -2, "zoomButton")
 
-    skin.pushNSObject(NSAccessibility.Subrole.collectionListSubrole.rawValue as NSString);             lua_setfield(L, -2, "collectionList")
-    skin.pushNSObject(NSAccessibility.Subrole.tabButtonSubrole.rawValue as NSString);                  lua_setfield(L, -2, "tabButton")
-    skin.pushNSObject(NSAccessibility.Subrole.sectionListSubrole.rawValue as NSString);                lua_setfield(L, -2, "sectionList")
+    lua_pushany(L, NSAccessibility.Subrole.collectionListSubrole.rawValue as NSString);             lua_setfield(L, -2, "collectionList")
+    lua_pushany(L, NSAccessibility.Subrole.tabButtonSubrole.rawValue as NSString);                  lua_setfield(L, -2, "tabButton")
+    lua_pushany(L, NSAccessibility.Subrole.sectionListSubrole.rawValue as NSString);                lua_setfield(L, -2, "sectionList")
 
     return 1
 }
@@ -1099,11 +1078,10 @@ private func axuielement_pushSubrolesTable(_ L: UnsafeMutablePointer<lua_State>!
 ///  * this table is provided for reference only and may not be comprehensive.
 ///  * you can view the contents of this table from the Cosmic Hammer console by typing in `hs.axuielement.orientations`
 private func axuielement_pushOrientationsTable(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     lua_newtable(L)
-    skin.pushNSObject(kAXHorizontalOrientationValue as NSString); lua_setfield(L, -2, "horizontal")
-    skin.pushNSObject(kAXVerticalOrientationValue as NSString);   lua_setfield(L, -2, "vertical")
-    skin.pushNSObject(kAXUnknownOrientationValue as NSString);    lua_setfield(L, -2, "unknown")
+    lua_pushany(L, kAXHorizontalOrientationValue as NSString); lua_setfield(L, -2, "horizontal")
+    lua_pushany(L, kAXVerticalOrientationValue as NSString);   lua_setfield(L, -2, "vertical")
+    lua_pushany(L, kAXUnknownOrientationValue as NSString);    lua_setfield(L, -2, "unknown")
     return 1
 }
 
@@ -1115,11 +1093,10 @@ private func axuielement_pushOrientationsTable(_ L: UnsafeMutablePointer<lua_Sta
 ///  * this table is provided for reference only and may not be comprehensive.
 ///  * you can view the contents of this table from the Cosmic Hammer console by typing in `hs.axuielement.sortDirections`
 private func axuielement_pushSortDirectionsTable(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     lua_newtable(L)
-    skin.pushNSObject(kAXAscendingSortDirectionValue as NSString);  lua_setfield(L, -2, "ascending")
-    skin.pushNSObject(kAXDescendingSortDirectionValue as NSString); lua_setfield(L, -2, "descending")
-    skin.pushNSObject(kAXUnknownSortDirectionValue as NSString);    lua_setfield(L, -2, "unknown")
+    lua_pushany(L, kAXAscendingSortDirectionValue as NSString);  lua_setfield(L, -2, "ascending")
+    lua_pushany(L, kAXDescendingSortDirectionValue as NSString); lua_setfield(L, -2, "descending")
+    lua_pushany(L, kAXUnknownSortDirectionValue as NSString);    lua_setfield(L, -2, "unknown")
     return 1
 }
 
@@ -1131,16 +1108,15 @@ private func axuielement_pushSortDirectionsTable(_ L: UnsafeMutablePointer<lua_S
 ///  * this table is provided for reference only and may not be comprehensive.
 ///  * you can view the contents of this table from the Cosmic Hammer console by typing in `hs.axuielement.rulerMarkers`
 private func axuielement_pushRulerMarkerTypesTable(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     lua_newtable(L)
-    skin.pushNSObject(NSAccessibility.RulerMarkerTypeValue.centerTabStop.rawValue as NSString);   lua_setfield(L, -2, "centerTabStop")
-    skin.pushNSObject(NSAccessibility.RulerMarkerTypeValue.decimalTabStop.rawValue as NSString);  lua_setfield(L, -2, "decimalTabStop")
-    skin.pushNSObject(NSAccessibility.RulerMarkerTypeValue.firstLineIndent.rawValue as NSString); lua_setfield(L, -2, "firstLineIndent")
-    skin.pushNSObject(NSAccessibility.RulerMarkerTypeValue.headIndent.rawValue as NSString);      lua_setfield(L, -2, "headIndent")
-    skin.pushNSObject(NSAccessibility.RulerMarkerTypeValue.leftTabStop.rawValue as NSString);     lua_setfield(L, -2, "leftTabStop")
-    skin.pushNSObject(NSAccessibility.RulerMarkerTypeValue.rightTabStop.rawValue as NSString);    lua_setfield(L, -2, "rightTabStop")
-    skin.pushNSObject(NSAccessibility.RulerMarkerTypeValue.tailIndent.rawValue as NSString);      lua_setfield(L, -2, "tailIndent")
-    skin.pushNSObject(NSAccessibility.RulerMarkerTypeValue.unknown.rawValue as NSString);         lua_setfield(L, -2, "unknown")
+    lua_pushany(L, NSAccessibility.RulerMarkerTypeValue.centerTabStop.rawValue as NSString);   lua_setfield(L, -2, "centerTabStop")
+    lua_pushany(L, NSAccessibility.RulerMarkerTypeValue.decimalTabStop.rawValue as NSString);  lua_setfield(L, -2, "decimalTabStop")
+    lua_pushany(L, NSAccessibility.RulerMarkerTypeValue.firstLineIndent.rawValue as NSString); lua_setfield(L, -2, "firstLineIndent")
+    lua_pushany(L, NSAccessibility.RulerMarkerTypeValue.headIndent.rawValue as NSString);      lua_setfield(L, -2, "headIndent")
+    lua_pushany(L, NSAccessibility.RulerMarkerTypeValue.leftTabStop.rawValue as NSString);     lua_setfield(L, -2, "leftTabStop")
+    lua_pushany(L, NSAccessibility.RulerMarkerTypeValue.rightTabStop.rawValue as NSString);    lua_setfield(L, -2, "rightTabStop")
+    lua_pushany(L, NSAccessibility.RulerMarkerTypeValue.tailIndent.rawValue as NSString);      lua_setfield(L, -2, "tailIndent")
+    lua_pushany(L, NSAccessibility.RulerMarkerTypeValue.unknown.rawValue as NSString);         lua_setfield(L, -2, "unknown")
     return 1
 }
 
@@ -1152,20 +1128,18 @@ private func axuielement_pushRulerMarkerTypesTable(_ L: UnsafeMutablePointer<lua
 ///  * this table is provided for reference only and may not be comprehensive.
 ///  * you can view the contents of this table from the Cosmic Hammer console by typing in `hs.axuielement.units`
 private func axuielement_pushUnitsTable(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     lua_newtable(L)
-    skin.pushNSObject(NSAccessibility.RulerUnitValue.centimeters.rawValue as NSString); lua_setfield(L, -2, "centimeters")
-    skin.pushNSObject(NSAccessibility.RulerUnitValue.inches.rawValue as NSString);      lua_setfield(L, -2, "inches")
-    skin.pushNSObject(NSAccessibility.RulerUnitValue.picas.rawValue as NSString);       lua_setfield(L, -2, "picas")
-    skin.pushNSObject(NSAccessibility.RulerUnitValue.points.rawValue as NSString);      lua_setfield(L, -2, "points")
-    skin.pushNSObject(NSAccessibility.RulerUnitValue.unknown.rawValue as NSString);     lua_setfield(L, -2, "unknown")
+    lua_pushany(L, NSAccessibility.RulerUnitValue.centimeters.rawValue as NSString); lua_setfield(L, -2, "centimeters")
+    lua_pushany(L, NSAccessibility.RulerUnitValue.inches.rawValue as NSString);      lua_setfield(L, -2, "inches")
+    lua_pushany(L, NSAccessibility.RulerUnitValue.picas.rawValue as NSString);       lua_setfield(L, -2, "picas")
+    lua_pushany(L, NSAccessibility.RulerUnitValue.points.rawValue as NSString);      lua_setfield(L, -2, "points")
+    lua_pushany(L, NSAccessibility.RulerUnitValue.unknown.rawValue as NSString);     lua_setfield(L, -2, "unknown")
     return 1
 }
 
 // MARK: - Cosmic Hammer/Lua Infrastructure
 
 private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     let theRef = get_axuielementref(L, 1, USERDATA_TAG)
     var value: CFTypeRef?
     let errorState = AXUIElementCopyAttributeValue(theRef, "AXRole" as CFString, &value)
@@ -1181,7 +1155,7 @@ private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     } else {
         ptrStr = "0x0"
     }
-    skin.pushNSObject(NSString(format: "%s: %@ (%@)", USERDATA_TAG, title, ptrStr as NSString))
+    lua_pushany(L, NSString(format: "%s: %@ (%@)", USERDATA_TAG, title, ptrStr as NSString))
     return 1
 }
 

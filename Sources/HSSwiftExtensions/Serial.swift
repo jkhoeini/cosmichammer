@@ -1,10 +1,11 @@
 import Cocoa
 import LuaSkin
+import os.log
 import ORSSerial
 import IOKit.usb
 
 private let USERDATA_TAG = "hs.serial"
-private var refTable: LSRefTable = LUA_NOREF
+private var refTable: Int32 = LUA_NOREF
 
 private func get_objectFromUserdata<T: AnyObject>(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32, _ tag: UnsafePointer<CChar>) -> T {
     let ptr = luaL_checkudata(L, idx, tag)!.assumingMemoryBound(to: UnsafeMutableRawPointer.self)
@@ -85,7 +86,7 @@ class HSSerialPort: NSObject, ORSSerialPortDelegate {
     var portName: String?
     var portPath: String?
 
-    var lsCanary: LSGCCanary = LSGCCanary()
+    var lsCanary: UInt64 = UInt64()
 
     var parity: ORSSerialPortParity = .none
     var baudRate: NSNumber = NSNumber(value: 115200)
@@ -129,42 +130,36 @@ class HSSerialPort: NSObject, ORSSerialPortDelegate {
     func serialPortWasOpened(_ serialPort: ORSSerialPort) {
         guard callbackRef != Int32(LUA_NOREF) else { return }
         let skin = LuaSkin.skin(with: nil)
-        guard skin.check(lsCanary) else { return }
-
-        _lua_stackguard_entry(skin.l)
-        skin.pushLuaRef(refTable, ref: callbackRef)
-        skin.pushNSObject(self)
-        skin.pushNSObject("opened" as NSString)
-        skin.protectedCallAndError("hs.serial:callback", nargs: 2, nresults: 0)
-        _lua_stackguard_exit(skin.l)
+        let L = LuaSkin.skin(with: nil).l!
+        guard lua_isStateGenerationValid(lsCanary) else { return }
+        lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(callbackRef))
+        lua_pushany(L, self)
+        lua_pushany(L, "opened" as NSString)
+        if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
     }
 
     func serialPortWasClosed(_ serialPort: ORSSerialPort) {
         guard callbackRef != Int32(LUA_NOREF) else { return }
         let skin = LuaSkin.skin(with: nil)
-        guard skin.check(lsCanary) else { return }
-
-        _lua_stackguard_entry(skin.l)
-        skin.pushLuaRef(refTable, ref: callbackRef)
-        skin.pushNSObject(self)
-        skin.pushNSObject("closed" as NSString)
-        skin.protectedCallAndError("hs.serial:callback", nargs: 2, nresults: 0)
-        _lua_stackguard_exit(skin.l)
+        let L = LuaSkin.skin(with: nil).l!
+        guard lua_isStateGenerationValid(lsCanary) else { return }
+        lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(callbackRef))
+        lua_pushany(L, self)
+        lua_pushany(L, "closed" as NSString)
+        if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
     }
 
     func serialPort(_ serialPort: ORSSerialPort, didReceive data: Data) {
         guard callbackRef != Int32(LUA_NOREF) else { return }
         let skin = LuaSkin.skin(with: nil)
-        guard skin.check(lsCanary) else { return }
-
-        _lua_stackguard_entry(skin.l)
-        skin.pushLuaRef(refTable, ref: callbackRef)
-        skin.pushNSObject(self)
-        skin.pushNSObject("received" as NSString)
-        skin.pushNSObject(data as NSData)
-        skin.pushNSObject(data.hexadecimalString as NSString)
-        skin.protectedCallAndError("hs.serial:callback", nargs: 4, nresults: 0)
-        _lua_stackguard_exit(skin.l)
+        let L = LuaSkin.skin(with: nil).l!
+        guard lua_isStateGenerationValid(lsCanary) else { return }
+        lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(callbackRef))
+        lua_pushany(L, self)
+        lua_pushany(L, "received" as NSString)
+        lua_pushany(L, data as NSData)
+        lua_pushany(L, data.hexadecimalString as NSString)
+        if lua_pcall(L, 4, 0, 0) != LUA_OK { lua_pop(L, 1) }
     }
 
     func serialPort(_ serialPort: ORSSerialPort, didReceivePacket packetData: Data, matching descriptor: ORSSerialPacketDescriptor) {
@@ -174,14 +169,12 @@ class HSSerialPort: NSObject, ORSSerialPortDelegate {
     func serialPortWasRemovedFromSystem(_ serialPort: ORSSerialPort) {
         if callbackRef != Int32(LUA_NOREF) {
             let skin = LuaSkin.skin(with: nil)
-            guard skin.check(lsCanary) else { return }
-
-            _lua_stackguard_entry(skin.l)
-            skin.pushLuaRef(refTable, ref: callbackRef)
-            skin.pushNSObject(self)
-            skin.pushNSObject("removed" as NSString)
-            skin.protectedCallAndError("hs.serial:callback", nargs: 2, nresults: 0)
-            _lua_stackguard_exit(skin.l)
+            let L = LuaSkin.skin(with: nil).l!
+            guard lua_isStateGenerationValid(lsCanary) else { return }
+            lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(callbackRef))
+            lua_pushany(L, self)
+            lua_pushany(L, "removed" as NSString)
+            if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
         }
 
         self.serialPort = nil
@@ -190,15 +183,13 @@ class HSSerialPort: NSObject, ORSSerialPortDelegate {
     func serialPort(_ serialPort: ORSSerialPort, didEncounterError error: Error) {
         guard callbackRef != Int32(LUA_NOREF) else { return }
         let skin = LuaSkin.skin(with: nil)
-        guard skin.check(lsCanary) else { return }
-
-        _lua_stackguard_entry(skin.l)
-        skin.pushLuaRef(refTable, ref: callbackRef)
-        skin.pushNSObject(self)
-        skin.pushNSObject("error" as NSString)
-        skin.pushNSObject(error.localizedDescription as NSString)
-        skin.protectedCallAndError("hs.serial:callback", nargs: 3, nresults: 0)
-        _lua_stackguard_exit(skin.l)
+        let L = LuaSkin.skin(with: nil).l!
+        guard lua_isStateGenerationValid(lsCanary) else { return }
+        lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(callbackRef))
+        lua_pushany(L, self)
+        lua_pushany(L, "error" as NSString)
+        lua_pushany(L, error.localizedDescription as NSString)
+        if lua_pcall(L, 3, 0, 0) != LUA_OK { lua_pop(L, 1) }
     }
 
     // MARK: - Device notifications
@@ -206,39 +197,35 @@ class HSSerialPort: NSObject, ORSSerialPortDelegate {
     @objc func serialPortsWereConnected(_ notification: Notification) {
         guard deviceCallbackRef != Int32(LUA_NOREF) else { return }
         let skin = LuaSkin.skin(with: nil)
-        guard skin.check(lsCanary) else { return }
-
-        _lua_stackguard_entry(skin.l)
-        skin.pushLuaRef(refTable, ref: deviceCallbackRef)
-        skin.pushNSObject("connected" as NSString)
+        let L = LuaSkin.skin(with: nil).l!
+        guard lua_isStateGenerationValid(lsCanary) else { return }
+        lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(deviceCallbackRef))
+        lua_pushany(L, "connected" as NSString)
 
         let connectedPorts = (notification.userInfo?[ORSConnectedSerialPortsKey] as? [ORSSerialPort]) ?? []
         let result = NSMutableArray()
         for port in connectedPorts {
             result.add(port.name)
         }
-        skin.pushNSObject(result)
-        skin.protectedCallAndError("hs.serial:deviceCallback", nargs: 2, nresults: 0)
-        _lua_stackguard_exit(skin.l)
+        lua_pushany(L, result)
+        if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
     }
 
     @objc func serialPortsWereDisconnected(_ notification: Notification) {
         guard deviceCallbackRef != Int32(LUA_NOREF) else { return }
         let skin = LuaSkin.skin(with: nil)
-        guard skin.check(lsCanary) else { return }
-
-        _lua_stackguard_entry(skin.l)
-        skin.pushLuaRef(refTable, ref: deviceCallbackRef)
-        skin.pushNSObject("disconnected" as NSString)
+        let L = LuaSkin.skin(with: nil).l!
+        guard lua_isStateGenerationValid(lsCanary) else { return }
+        lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(deviceCallbackRef))
+        lua_pushany(L, "disconnected" as NSString)
 
         let disconnectedPorts = (notification.userInfo?[ORSDisconnectedSerialPortsKey] as? [ORSSerialPort]) ?? []
         let result = NSMutableArray()
         for port in disconnectedPorts {
             result.add(port.name)
         }
-        skin.pushNSObject(result)
-        skin.protectedCallAndError("hs.serial:deviceCallback", nargs: 2, nresults: 0)
-        _lua_stackguard_exit(skin.l)
+        lua_pushany(L, result)
+        if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
     }
 
     // MARK: - Port validation and creation
@@ -392,15 +379,14 @@ class HSSerialPort: NSObject, ORSSerialPortDelegate {
 /// Notes:
 ///  * A valid port name can be found by checking `hs.serial.availablePortNames()`.
 private func serial_newFromName(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING, LS_TBREAK)
+    luaL_checktype(L, 1, LUA_TSTRING)
 
-    let portName = skin.toNSObject(atIndex: 1) as! String
+    let portName = lua_tovalue(L, at: 1) as! String
     let serialPort = HSSerialPort()
-    serialPort.lsCanary = skin.createGCCanary()
+    serialPort.lsCanary = lua_currentStateGeneration()
 
     if serialPort.isPortNameValid(portName) {
-        skin.pushNSObject(serialPort)
+        lua_pushany(L, serialPort)
     } else {
         lua_pushnil(L)
     }
@@ -420,15 +406,14 @@ private func serial_newFromName(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 /// Notes:
 ///  * A valid port name can be found by checking `hs.serial.availablePortPaths()`.
 private func serial_newFromPath(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING, LS_TBREAK)
+    luaL_checktype(L, 1, LUA_TSTRING)
 
-    let path = skin.toNSObject(atIndex: 1) as! String
+    let path = lua_tovalue(L, at: 1) as! String
     let serialPort = HSSerialPort()
-    serialPort.lsCanary = skin.createGCCanary()
+    serialPort.lsCanary = lua_currentStateGeneration()
 
     if serialPort.isPathValid(path) {
-        skin.pushNSObject(serialPort)
+        lua_pushany(L, serialPort)
     } else {
         lua_pushnil(L)
     }
@@ -452,19 +437,21 @@ private func serial_newFromPath(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 ///    * `message` - If the `callbackType` is "received", then this will be the data received as a string. If the `callbackType` is "error", this will be the error message as a string.
 ///    * `hexadecimalString` - If the `callbackType` is "received", then this will be the data received as a hexadecimal string.
 private func serial_callback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TFUNCTION | LS_TNIL, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
 
-    let serialPort: HSSerialPort = skin.toNSObject(atIndex: 1) as! HSSerialPort
+    let serialPort: HSSerialPort = lua_tovalue(L, at: 1) as! HSSerialPort
 
-    serialPort.callbackRef = skin.luaUnref(refTable, ref: serialPort.callbackRef)
+    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, serialPort.callbackRef)
+
+
+    serialPort.callbackRef = LUA_NOREF
     if serialPort.callbackToken != nil {
         serialPort.callbackToken = nil
     }
 
     if lua_type(L, 2) != LUA_TNIL {
         lua_pushvalue(L, 2)
-        serialPort.callbackRef = skin.luaRef(refTable)
+        serialPort.callbackRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
     }
 
     lua_pushvalue(L, 1)
@@ -481,15 +468,13 @@ private func serial_callback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * A table containing the names of any connected serial port names as strings.
 private func serial_availablePortNames(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TBREAK)
 
     let portManager = ORSSerialPortManager.shared()
     let result = NSMutableArray()
     for port in portManager.availablePorts {
         result.add(port.name)
     }
-    skin.pushNSObject(result)
+    lua_pushany(L, result)
     return 1
 }
 
@@ -503,8 +488,6 @@ private func serial_availablePortNames(_ L: UnsafeMutablePointer<lua_State>!) ->
 /// Returns:
 ///  * A table containing the IOKit details of any connected serial ports, organised by port name.
 private func serial_availablePortDetails(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TBREAK)
 
     let portManager = ORSSerialPortManager.shared()
     let result = NSMutableDictionary()
@@ -512,7 +495,7 @@ private func serial_availablePortDetails(_ L: UnsafeMutablePointer<lua_State>!) 
         let attributes = port.ioDeviceAttributes ?? NSDictionary()
         result[port.name] = attributes
     }
-    skin.pushNSObject(result)
+    lua_pushany(L, result)
     return 1
 }
 
@@ -526,15 +509,13 @@ private func serial_availablePortDetails(_ L: UnsafeMutablePointer<lua_State>!) 
 /// Returns:
 ///  * A table containing the names of any connected serial port paths as strings.
 private func serial_availablePortPaths(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TBREAK)
 
     let portManager = ORSSerialPortManager.shared()
     let result = NSMutableArray()
     for port in portManager.availablePorts {
         result.add(port.path)
     }
-    skin.pushNSObject(result)
+    lua_pushany(L, result)
     return 1
 }
 
@@ -548,11 +529,10 @@ private func serial_availablePortPaths(_ L: UnsafeMutablePointer<lua_State>!) ->
 /// Returns:
 ///  * The name as a string.
 private func serial_name(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
-    let serialPort: HSSerialPort = skin.toNSObject(atIndex: 1) as! HSSerialPort
+    luaL_checkudata(L, 1, USERDATA_TAG)
+    let serialPort: HSSerialPort = lua_tovalue(L, at: 1) as! HSSerialPort
     if let name = serialPort.serialPort?.name {
-        skin.pushNSObject(name as NSString)
+        lua_pushany(L, name as NSString)
     } else {
         lua_pushnil(L)
     }
@@ -569,11 +549,10 @@ private func serial_name(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * The path as a string.
 private func serial_path(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
-    let serialPort: HSSerialPort = skin.toNSObject(atIndex: 1) as! HSSerialPort
+    luaL_checkudata(L, 1, USERDATA_TAG)
+    let serialPort: HSSerialPort = lua_tovalue(L, at: 1) as! HSSerialPort
     if let path = serialPort.serialPort?.path {
-        skin.pushNSObject(path as NSString)
+        lua_pushany(L, path as NSString)
     } else {
         lua_pushnil(L)
     }
@@ -590,9 +569,8 @@ private func serial_path(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * The `hs.serial` object or `nil` if the port could not be opened.
 private func serial_open(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
-    let serialPort: HSSerialPort = skin.toNSObject(atIndex: 1) as! HSSerialPort
+    luaL_checkudata(L, 1, USERDATA_TAG)
+    let serialPort: HSSerialPort = lua_tovalue(L, at: 1) as! HSSerialPort
     if serialPort.open() {
         lua_pushvalue(L, 1)
     } else {
@@ -611,9 +589,8 @@ private func serial_open(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * The `hs.serial` object.
 private func serial_close(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
-    let serialPort: HSSerialPort = skin.toNSObject(atIndex: 1) as! HSSerialPort
+    luaL_checkudata(L, 1, USERDATA_TAG)
+    let serialPort: HSSerialPort = lua_tovalue(L, at: 1) as! HSSerialPort
     serialPort.close()
     lua_pushvalue(L, 1)
     return 1
@@ -634,15 +611,13 @@ private func serial_close(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * This function supports the following standard baud rates as numbers: 300, 1200, 2400, 4800, 9600, 14400, 19200, 28800, 38400, 57600, 115200, 230400.
 ///  * If no baud rate is supplied, it defaults to 115200.
 private func serial_baudRate(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TNUMBER | LS_TOPTIONAL, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
 
-    let serialPort: HSSerialPort = skin.toNSObject(atIndex: 1) as! HSSerialPort
+    let serialPort: HSSerialPort = lua_tovalue(L, at: 1) as! HSSerialPort
 
     if lua_gettop(L) == 1 {
-        skin.pushNSObject(serialPort.baudRate)
+        lua_pushany(L, serialPort.baudRate)
     } else {
-        let proposedBaudRate = skin.toNSObject(atIndex: 2) as! NSNumber
+        let proposedBaudRate = lua_tovalue(L, at: 2) as! NSNumber
         let allowNonStandard = lua_isboolean(L, 3) && lua_toboolean(L, 3) != 0
 
         if allowNonStandard {
@@ -653,7 +628,7 @@ private func serial_baudRate(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
             if available.contains(proposedBaudRate) {
                 serialPort.changeBaudRate(proposedBaudRate)
             } else {
-                skin.logError("\(USERDATA_TAG): Invalid Baud Rate supplied. Possible baud rates are: 300, 1200, 2400, 4800, 9600, 14400, 19200, 28800, 38400, 57600, 115200 and 230400.")
+                os_log(.error, "%{public}s", "\(USERDATA_TAG): Invalid Baud Rate supplied. Possible baud rates are: 300, 1200, 2400, 4800, 9600, 14400, 19200, 28800, 38400, 57600, 115200 and 230400.")
             }
         }
         lua_pushvalue(L, 1)
@@ -671,21 +646,20 @@ private func serial_baudRate(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * If a value is specified, then this method returns the serial port object. Otherwise this method returns a string value of "none", "odd" or "even".
 private func serial_parity(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING | LS_TOPTIONAL, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
 
-    let serialPort: HSSerialPort = skin.toNSObject(atIndex: 1) as! HSSerialPort
+    let serialPort: HSSerialPort = lua_tovalue(L, at: 1) as! HSSerialPort
 
     if lua_gettop(L) == 1 {
         let parity = serialPort.serialPort?.parity ?? serialPort.parity
         switch parity {
-        case .none: skin.pushNSObject("none" as NSString)
-        case .odd:  skin.pushNSObject("odd" as NSString)
-        case .even: skin.pushNSObject("even" as NSString)
-        @unknown default: skin.pushNSObject("none" as NSString)
+        case .none: lua_pushany(L, "none" as NSString)
+        case .odd:  lua_pushany(L, "odd" as NSString)
+        case .even: lua_pushany(L, "even" as NSString)
+        @unknown default: lua_pushany(L, "none" as NSString)
         }
     } else {
-        let proposed = skin.toNSObject(atIndex: 2) as! String
+        let proposed = lua_tovalue(L, at: 2) as! String
         let available = ["none", "odd", "even"]
         if available.contains(proposed) {
             let newParity: ORSSerialPortParity
@@ -696,7 +670,7 @@ private func serial_parity(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
             }
             serialPort.changeParity(newParity)
         } else {
-            skin.logError("\(USERDATA_TAG): Invalid Parity string supplied. Should be 'none', 'odd' or 'even'.")
+            os_log(.error, "%{public}s", "\(USERDATA_TAG): Invalid Parity string supplied. Should be 'none', 'odd' or 'even'.")
         }
         lua_pushvalue(L, 1)
     }
@@ -716,9 +690,8 @@ private func serial_parity(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Notes:
 ///  * The default value is `false`.
 private func serial_usesDCDOutputFlowControl(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
-    let serialPort: HSSerialPort = skin.toNSObject(atIndex: 1) as! HSSerialPort
+    luaL_checkudata(L, 1, USERDATA_TAG)
+    let serialPort: HSSerialPort = lua_tovalue(L, at: 1) as! HSSerialPort
     if lua_gettop(L) == 1 {
         lua_pushboolean(L, serialPort.usesDCDOutputFlowControl ? 1 : 0)
     } else {
@@ -741,9 +714,8 @@ private func serial_usesDCDOutputFlowControl(_ L: UnsafeMutablePointer<lua_State
 /// Notes:
 ///  * The default value is `false`.
 private func serial_usesDTRDSRFlowControl(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
-    let serialPort: HSSerialPort = skin.toNSObject(atIndex: 1) as! HSSerialPort
+    luaL_checkudata(L, 1, USERDATA_TAG)
+    let serialPort: HSSerialPort = lua_tovalue(L, at: 1) as! HSSerialPort
     if lua_gettop(L) == 1 {
         lua_pushboolean(L, serialPort.usesDTRDSRFlowControl ? 1 : 0)
     } else {
@@ -766,9 +738,8 @@ private func serial_usesDTRDSRFlowControl(_ L: UnsafeMutablePointer<lua_State>!)
 /// Notes:
 ///  * The default value is `false`.
 private func serial_usesRTSCTSFlowControl(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
-    let serialPort: HSSerialPort = skin.toNSObject(atIndex: 1) as! HSSerialPort
+    luaL_checkudata(L, 1, USERDATA_TAG)
+    let serialPort: HSSerialPort = lua_tovalue(L, at: 1) as! HSSerialPort
     if lua_gettop(L) == 1 {
         lua_pushboolean(L, serialPort.usesRTSCTSFlowControl ? 1 : 0)
     } else {
@@ -792,9 +763,8 @@ private func serial_usesRTSCTSFlowControl(_ L: UnsafeMutablePointer<lua_State>!)
 ///  * The default value is `false`.
 ///  * Setting this to `true` is most likely required for Arduino devices prior to opening the serial port.
 private func serial_dtr(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
-    let serialPort: HSSerialPort = skin.toNSObject(atIndex: 1) as! HSSerialPort
+    luaL_checkudata(L, 1, USERDATA_TAG)
+    let serialPort: HSSerialPort = lua_tovalue(L, at: 1) as! HSSerialPort
     if lua_gettop(L) == 1 {
         lua_pushboolean(L, serialPort.dtr ? 1 : 0)
     } else {
@@ -818,9 +788,8 @@ private func serial_dtr(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * The default value is `false`.
 ///  * Setting this to `true` is most likely required for Arduino devices prior to opening the serial port.
 private func serial_rts(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
-    let serialPort: HSSerialPort = skin.toNSObject(atIndex: 1) as! HSSerialPort
+    luaL_checkudata(L, 1, USERDATA_TAG)
+    let serialPort: HSSerialPort = lua_tovalue(L, at: 1) as! HSSerialPort
     if lua_gettop(L) == 1 {
         lua_pushboolean(L, serialPort.rts ? 1 : 0)
     } else {
@@ -843,9 +812,8 @@ private func serial_rts(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Notes:
 ///  * The default value is `false`.
 private func serial_shouldEchoReceivedData(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
-    let serialPort: HSSerialPort = skin.toNSObject(atIndex: 1) as! HSSerialPort
+    luaL_checkudata(L, 1, USERDATA_TAG)
+    let serialPort: HSSerialPort = lua_tovalue(L, at: 1) as! HSSerialPort
     if lua_gettop(L) == 1 {
         lua_pushboolean(L, serialPort.shouldEchoReceivedData ? 1 : 0)
     } else {
@@ -868,17 +836,16 @@ private func serial_shouldEchoReceivedData(_ L: UnsafeMutablePointer<lua_State>!
 /// Notes:
 ///  * The default value is 1.
 private func serial_numberOfStopBits(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TNUMBER | LS_TOPTIONAL, LS_TBREAK)
-    let serialPort: HSSerialPort = skin.toNSObject(atIndex: 1) as! HSSerialPort
+    luaL_checkudata(L, 1, USERDATA_TAG)
+    let serialPort: HSSerialPort = lua_tovalue(L, at: 1) as! HSSerialPort
     if lua_gettop(L) == 1 {
-        skin.pushNSObject(NSNumber(value: serialPort.numberOfStopBits))
+        lua_pushany(L, NSNumber(value: serialPort.numberOfStopBits))
     } else {
         let proposed = UInt(lua_tointeger(L, 2))
         if proposed >= 1 && proposed <= 2 {
             serialPort.changeNumberOfStopBits(proposed)
         } else {
-            skin.logError("\(USERDATA_TAG): Invalid number of stop bits Should be 1 or 2.")
+            os_log(.error, "%{public}s", "\(USERDATA_TAG): Invalid number of stop bits Should be 1 or 2.")
         }
         lua_pushvalue(L, 1)
     }
@@ -896,17 +863,16 @@ private func serial_numberOfStopBits(_ L: UnsafeMutablePointer<lua_State>!) -> I
 ///  * If a value is specified, then this method returns the serial port object. Otherwise this method returns the data bits as a number.
 ///  * The default value is 8.
 private func serial_numberOfDataBits(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TNUMBER | LS_TOPTIONAL, LS_TBREAK)
-    let serialPort: HSSerialPort = skin.toNSObject(atIndex: 1) as! HSSerialPort
+    luaL_checkudata(L, 1, USERDATA_TAG)
+    let serialPort: HSSerialPort = lua_tovalue(L, at: 1) as! HSSerialPort
     if lua_gettop(L) == 1 {
-        skin.pushNSObject(NSNumber(value: serialPort.numberOfDataBits))
+        lua_pushany(L, NSNumber(value: serialPort.numberOfDataBits))
     } else {
         let proposed = UInt(lua_tointeger(L, 2))
         if proposed >= 5 && proposed <= 8 {
             serialPort.changeNumberOfDataBits(proposed)
         } else {
-            skin.logError("\(USERDATA_TAG): Invalid number of data bits Should be 1 or 2.")
+            os_log(.error, "%{public}s", "\(USERDATA_TAG): Invalid number of data bits Should be 1 or 2.")
         }
         lua_pushvalue(L, 1)
     }
@@ -923,9 +889,8 @@ private func serial_numberOfDataBits(_ L: UnsafeMutablePointer<lua_State>!) -> I
 /// Returns:
 ///  * `true` if open, otherwise `false`.
 private func serial_isOpen(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
-    let serialPort: HSSerialPort = skin.toNSObject(atIndex: 1) as! HSSerialPort
+    luaL_checkudata(L, 1, USERDATA_TAG)
+    let serialPort: HSSerialPort = lua_tovalue(L, at: 1) as! HSSerialPort
     lua_pushboolean(L, serialPort.isOpen ? 1 : 0)
     return 1
 }
@@ -940,10 +905,11 @@ private func serial_isOpen(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * None
 private func serial_sendData(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING, LS_TBREAK)
-    let serialPort: HSSerialPort = skin.toNSObject(atIndex: 1) as! HSSerialPort
-    let data = skin.toNSObject(atIndex: 2, withOptions: .nsLuaStringAsDataOnly) as! Data
+    luaL_checkudata(L, 1, USERDATA_TAG)
+
+    luaL_checktype(L, 2, LUA_TSTRING)
+    let serialPort: HSSerialPort = lua_tovalue(L, at: 1) as! HSSerialPort
+    let data = lua_tovalue(L, at: 2) as! Data
     serialPort.sendData(data)
     return 0
 }
@@ -966,13 +932,13 @@ private var watcherDeviceManager: HSSerialPort? = nil
 ///  * The callback function should expect 1 argument and should not return anything:
 ///    * `devices` - A table containing the names of any serial ports connected as strings.
 private func serial_deviceCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TFUNCTION | LS_TNIL, LS_TBREAK)
 
     if lua_type(L, 1) == LUA_TNIL {
         guard let manager = watcherDeviceManager else { return 0 }
         if manager.deviceCallbackRef != Int32(LUA_NOREF) {
-            manager.deviceCallbackRef = skin.luaUnref(refTable, ref: manager.deviceCallbackRef)
+            luaL_unref(L, LUA_REGISTRYINDEX_VALUE, manager.deviceCallbackRef)
+
+            manager.deviceCallbackRef = LUA_NOREF
         }
         manager.unwatchDevices()
         watcherDeviceManager = nil
@@ -981,10 +947,11 @@ private func serial_deviceCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int
 
     if watcherDeviceManager == nil {
         watcherDeviceManager = HSSerialPort()
-        watcherDeviceManager!.lsCanary = skin.createGCCanary()
+        watcherDeviceManager!.lsCanary = lua_currentStateGeneration()
     }
 
-    watcherDeviceManager!.deviceCallbackRef = skin.luaRef(refTable, at: 1)
+    lua_pushvalue(L, 1)
+    watcherDeviceManager!.deviceCallbackRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
     watcherDeviceManager!.watchDevices()
 
     return 0
@@ -1003,11 +970,10 @@ private func pushHSSerialPort(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!
 }
 
 private func toHSSerialPortFromLua(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> Any! {
-    let skin = LuaSkin.skin(with: L)
     if luaL_testudata(L, idx, USERDATA_TAG) != nil {
         return get_objectFromUserdata(L, idx, USERDATA_TAG) as HSSerialPort
     } else {
-        skin.logError("expected \(USERDATA_TAG) object, found \(String(cString: lua_typename(L, lua_type(L, idx))))")
+        os_log(.error, "%{public}s", "expected \(USERDATA_TAG) object, found \(String(cString: lua_typename(L, lua_type(L, idx))))")
         return nil
     }
 }
@@ -1015,19 +981,17 @@ private func toHSSerialPortFromLua(_ L: UnsafeMutablePointer<lua_State>!, _ idx:
 // MARK: - Cosmic Hammer/Lua Infrastructure
 
 private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    let obj = skin.luaObject(at:1, toClass: "HSSerialPort") as! HSSerialPort
+    let obj = lua_tovalue(L, at: 1) as! HSSerialPort
     let title = obj.portName ?? "unknown"
     let connected = obj.isOpen ? "Connected" : "Disconnected"
-    skin.pushNSObject("\(USERDATA_TAG): \(title) - \(connected) (\(String(describing: lua_topointer(L, 1)!)))" as NSString)
+    lua_pushany(L, "\(USERDATA_TAG): \(title) - \(connected) (\(String(describing: lua_topointer(L, 1)!)))" as NSString)
     return 1
 }
 
 private func userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     if luaL_testudata(L, 1, USERDATA_TAG) != nil && luaL_testudata(L, 2, USERDATA_TAG) != nil {
-        let skin = LuaSkin.skin(with: L)
-        let obj1 = skin.luaObject(at:1, toClass: "HSSerialPort") as! HSSerialPort
-        let obj2 = skin.luaObject(at:2, toClass: "HSSerialPort") as! HSSerialPort
+        let obj1 = lua_tovalue(L, at: 1) as! HSSerialPort
+        let obj2 = lua_tovalue(L, at: 2) as! HSSerialPort
         lua_pushboolean(L, obj1.isEqual(obj2) ? 1 : 0)
     } else {
         lua_pushboolean(L, 0)
@@ -1041,8 +1005,9 @@ private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
     obj.selfRefCount -= 1
     if obj.selfRefCount == 0 {
-        let skin = LuaSkin.skin(with: L)
-        obj.callbackRef = skin.luaUnref(refTable, ref: obj.callbackRef)
+        luaL_unref(L, LUA_REGISTRYINDEX_VALUE, obj.callbackRef)
+
+        obj.callbackRef = LUA_NOREF
 
         if obj.callbackToken != nil {
             obj.serialPort?.close()
@@ -1050,7 +1015,6 @@ private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
         }
 
         var tmpCanary = obj.lsCanary
-        skin.destroy(&tmpCanary)
         obj.lsCanary = tmpCanary
     }
 
@@ -1060,11 +1024,12 @@ private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 }
 
 private func meta_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
 
     if let manager = watcherDeviceManager {
         if manager.deviceCallbackRef != Int32(LUA_NOREF) {
-            manager.deviceCallbackRef = skin.luaUnref(refTable, ref: manager.deviceCallbackRef)
+            luaL_unref(L, LUA_REGISTRYINDEX_VALUE, manager.deviceCallbackRef)
+
+            manager.deviceCallbackRef = LUA_NOREF
         }
         manager.unwatchDevices()
         watcherDeviceManager = nil

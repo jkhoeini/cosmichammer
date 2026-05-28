@@ -1,5 +1,6 @@
 import Cocoa
 import LuaSkin
+import os.log
 import SystemConfiguration
 
 // SCDynamicStoreCopyDHCPInfo is not in the SystemConfiguration umbrella header,
@@ -11,7 +12,7 @@ private func _SCDynamicStoreCopyDHCPInfo(
 ) -> CFDictionary?
 
 private let USERDATA_TAG = "hs.network.configuration"
-private var refTable: LSRefTable = LUA_NOREF
+private var refTable: Int32 = LUA_NOREF
 private var dynamicStoreQueue: DispatchQueue! = nil
 
 private struct DynamicStoreData {
@@ -19,7 +20,7 @@ private struct DynamicStoreData {
     var callbackRef: Int32
     var selfRef: Int32
     var watcherEnabled: Bool
-    var lsCanary: LSGCCanary
+    var lsCanary: UInt64
 }
 
 private func getPtr(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> UnsafeMutablePointer<DynamicStoreData> {
@@ -35,16 +36,14 @@ private let doDynamicStoreCallback: SCDynamicStoreCallBack = { store, changedKey
     DispatchQueue.main.async {
         if thePtr.pointee.callbackRef != LUA_NOREF && thePtr.pointee.selfRef != LUA_NOREF {
             let skin = LuaSkin.skin(with: nil)
-            let L = skin.l!
-            if !skin.check(thePtr.pointee.lsCanary) {
+            let L = LuaSkin.skin(with: nil).l!
+            if !lua_isStateGenerationValid(thePtr.pointee.lsCanary) {
                 return
             }
-            _lua_stackguard_entry(L)
-            skin.pushLuaRef(refTable, ref: thePtr.pointee.callbackRef)
-            skin.pushLuaRef(refTable, ref: thePtr.pointee.selfRef)
-            skin.pushNSObject(nsChangedKeys)
-            skin.protectedCallAndError("hs.network.configuration callback", nargs: 2, nresults: 0)
-            _lua_stackguard_exit(L)
+            lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(thePtr.pointee.callbackRef))
+            lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(thePtr.pointee.selfRef))
+            lua_pushany(L, nsChangedKeys)
+            if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
         }
     }
 }
@@ -61,8 +60,6 @@ private let doDynamicStoreCallback: SCDynamicStoreCallBack = { store, changedKey
 /// Returns:
 ///  * the storeObject
 private func newStoreObject(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TBREAK)
     let theName = UUID().uuidString
     let thePtr = lua_newuserdata(L, MemoryLayout<DynamicStoreData>.size)!.assumingMemoryBound(to: DynamicStoreData.self)
     memset(thePtr, 0, MemoryLayout<DynamicStoreData>.size)
@@ -73,7 +70,7 @@ private func newStoreObject(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
         thePtr.pointee.callbackRef = LUA_NOREF
         thePtr.pointee.selfRef = LUA_NOREF
         thePtr.pointee.watcherEnabled = false
-        thePtr.pointee.lsCanary = skin.createGCCanary()
+        thePtr.pointee.lsCanary = lua_currentStateGeneration()
 
         luaL_getmetatable(L, USERDATA_TAG)
         lua_setmetatable(L, -2)
@@ -100,10 +97,6 @@ private func newStoreObject(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * if no parameters are provided, then all key-value pairs in the dynamic store are returned.
 private func dynamicStoreContents(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG,
-                   LS_TSTRING | LS_TTABLE | LS_TOPTIONAL,
-                   LS_TBOOLEAN | LS_TOPTIONAL,
-                   LS_TBREAK)
     let theStore = getPtr(L, 1).pointee.storeObject!
 
     var keys: NSArray
@@ -113,9 +106,9 @@ private func dynamicStoreContents(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
         keysIsPattern = true
     } else {
         if lua_type(L, 2) == LUA_TTABLE {
-            keys = skin.toNSObject(atIndex: 2) as! NSArray
+            keys = lua_tovalue(L, at: 2) as! NSArray
         } else {
-            keys = [skin.toNSObject(atIndex: 2)!] as NSArray
+            keys = [lua_tovalue(L, at: 2)!] as NSArray
         }
         if lua_gettop(L) == 3 { keysIsPattern = lua_toboolean(L, 3) != 0 }
     }
@@ -127,7 +120,7 @@ private func dynamicStoreContents(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
         results = SCDynamicStoreCopyMultiple(theStore, keys as CFArray, nil)
     }
     if let results = results {
-        skin.pushNSObject(results as NSDictionary, withOptions: LS_NSConversionOptions.nsDescribeUnknownTypes.rawValue | LS_NSConversionOptions.nsUnsignedLongLongPreserveBits.rawValue)
+        lua_pushany(L, results as NSDictionary)
     } else {
         return luaL_error(L, "** unable to get dynamicStore contents:\(String(cString: SCErrorString(SCError())))")
     }
@@ -144,13 +137,12 @@ private func dynamicStoreContents(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
 /// Returns:
 ///  * a table of keys from the dynamic store.
 private func dynamicStoreKeys(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING | LS_TOPTIONAL, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     let theStore = getPtr(L, 1).pointee.storeObject!
 
-    let keysPattern: String = (lua_gettop(L) == 1) ? ".*" : (skin.toNSObject(atIndex: 2) as! String)
+    let keysPattern: String = (lua_gettop(L) == 1) ? ".*" : (lua_tovalue(L, at: 2) as! String)
     if let results = SCDynamicStoreCopyKeyList(theStore, keysPattern as CFString) {
-        skin.pushNSObject(results as NSArray, withOptions: LS_NSConversionOptions.nsDescribeUnknownTypes.rawValue | LS_NSConversionOptions.nsUnsignedLongLongPreserveBits.rawValue)
+        lua_pushany(L, results as NSArray)
     } else {
         return luaL_error(L, "** unable to get dynamicStore keys:\(String(cString: SCErrorString(SCError())))")
     }
@@ -171,19 +163,18 @@ private func dynamicStoreKeys(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * a list of possible Service ID's can be retrieved with `hs.network.configuration:contents("Setup:/Network/Global/IPv4")`
 ///  * generates an error if the service ID is invalid or was not assigned an IP address via DHCP.
 private func dynamicStoreDHCPInfo(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING | LS_TOPTIONAL, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     let theStore = getPtr(L, 1).pointee.storeObject!
 
     let serviceID: CFString?
     if lua_gettop(L) == 2 {
-        serviceID = (skin.toNSObject(atIndex: 2) as! String) as CFString
+        serviceID = (lua_tovalue(L, at: 2) as! String) as CFString
     } else {
         serviceID = nil
     }
 
     if let results = _SCDynamicStoreCopyDHCPInfo(theStore, serviceID) {
-        skin.pushNSObject(results as NSDictionary, withOptions: LS_NSConversionOptions.nsDescribeUnknownTypes.rawValue | LS_NSConversionOptions.nsUnsignedLongLongPreserveBits.rawValue)
+        lua_pushany(L, results as NSDictionary)
     } else {
         return luaL_error(L, "** unable to get DHCP info:\(String(cString: SCErrorString(SCError())))")
     }
@@ -204,13 +195,12 @@ private func dynamicStoreDHCPInfo(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
 /// Notes:
 ///  * You can also retrieve this information as key-value pairs with `hs.network.configuration:contents("Setup:/System")`
 private func dynamicStoreComputerName(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     let theStore = getPtr(L, 1).pointee.storeObject!
 
     var encoding: CFStringEncoding = 0
     if let computerName = SCDynamicStoreCopyComputerName(theStore, &encoding) {
-        skin.pushNSObject(computerName as String)
+        lua_pushany(L, computerName as String)
         let encodingName: String
         switch encoding {
         case CFStringBuiltInEncodings.macRoman.rawValue:       encodingName = "MacRoman"
@@ -230,7 +220,7 @@ private func dynamicStoreComputerName(_ L: UnsafeMutablePointer<lua_State>!) -> 
         default:
             encodingName = "** unrecognized encoding:\(encoding)"
         }
-        skin.pushNSObject(encodingName)
+        lua_pushany(L, encodingName)
     } else {
         return luaL_error(L, "** error retrieving computer name:\(String(cString: SCErrorString(SCError())))")
     }
@@ -252,14 +242,13 @@ private func dynamicStoreComputerName(_ L: UnsafeMutablePointer<lua_State>!) -> 
 /// Notes:
 ///  * You can also retrieve this information as key-value pairs with `hs.network.configuration:contents("State:/Users/ConsoleUser")`
 private func dynamicStoreConsoleUser(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     let theStore = getPtr(L, 1).pointee.storeObject!
 
     var uid: uid_t = 0
     var gid: gid_t = 0
     if let consoleUser = SCDynamicStoreCopyConsoleUser(theStore, &uid, &gid) {
-        skin.pushNSObject(consoleUser as String)
+        lua_pushany(L, consoleUser as String)
         lua_pushinteger(L, lua_Integer(uid))
         lua_pushinteger(L, lua_Integer(gid))
     } else {
@@ -281,12 +270,11 @@ private func dynamicStoreConsoleUser(_ L: UnsafeMutablePointer<lua_State>!) -> I
 /// Notes:
 ///  * You can also retrieve this information as key-value pairs with `hs.network.configuration:contents("Setup:/System")`
 private func dynamicStoreLocalHostName(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     let theStore = getPtr(L, 1).pointee.storeObject!
 
     if let localHostName = SCDynamicStoreCopyLocalHostName(theStore) {
-        skin.pushNSObject(localHostName as String)
+        lua_pushany(L, localHostName as String)
     } else {
         return luaL_error(L, "** error retrieving local host name:\(String(cString: SCErrorString(SCError())))")
     }
@@ -315,10 +303,11 @@ func SCPreferencesCreateWithOptions(
 /// Returns:
 ///  * bool - true if the location was successfully changed, false if there was an error
 private func dynamicStoreSetLocation(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
 
-    let target = skin.toNSObject(atIndex: 2) as! String
+    luaL_checktype(L, 2, LUA_TSTRING)
+
+    let target = lua_tovalue(L, at: 2) as! String
 
     var authorization: AuthorizationRef?
     let flags: AuthorizationFlags = []
@@ -379,12 +368,11 @@ private func dynamicStoreSetLocation(_ L: UnsafeMutablePointer<lua_State>!) -> I
 ///  * You can also retrieve this information as key-value pairs with `hs.network.configuration:contents("Setup:")`
 ///  * If you have different locations defined in the Network preferences panel, this can be used to determine the currently active location.
 private func dynamicStoreLocation(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     let theStore = getPtr(L, 1).pointee.storeObject!
 
     if let location = SCDynamicStoreCopyLocation(theStore) {
-        skin.pushNSObject(location as String)
+        lua_pushany(L, location as String)
     } else {
         return luaL_error(L, "** error retrieving location:\(String(cString: SCErrorString(SCError())))")
     }
@@ -401,8 +389,7 @@ private func dynamicStoreLocation(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
 /// Returns:
 ///  * a table of key-value pairs mapping location UUIDs to their names
 private func dynamicStoreLocations(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     guard let prefs = SCPreferencesCreate(nil, "Cosmic Hammer" as CFString, nil) else {
         lua_pushnil(L)
         return 1
@@ -419,7 +406,7 @@ private func dynamicStoreLocations(_ L: UnsafeMutablePointer<lua_State>!) -> Int
         let name = SCNetworkSetGetName(location) as String? ?? ""
         dict[setID] = name
     }
-    skin.pushNSObject(dict)
+    lua_pushany(L, dict)
 
     return 1
 }
@@ -437,12 +424,11 @@ private func dynamicStoreLocations(_ L: UnsafeMutablePointer<lua_State>!) -> Int
 /// Notes:
 ///  * You can also retrieve this information as key-value pairs with `hs.network.configuration:contents("State:/Network/Global/Proxies")`
 private func dynamicStoreProxies(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     let theStore = getPtr(L, 1).pointee.storeObject!
 
     if let proxies = SCDynamicStoreCopyProxies(theStore) {
-        skin.pushNSObject(proxies as NSDictionary)
+        lua_pushany(L, proxies as NSDictionary)
     } else {
         return luaL_error(L, "** error retrieving proxies:\(String(cString: SCErrorString(SCError())))")
     }
@@ -463,21 +449,24 @@ private func dynamicStoreProxies(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 ///  * The callback function will be invoked each time a monitored key changes value and the callback function should accept two parameters: the storeObject itself, and an array of the keys which contain values that have changed.
 ///  * This method just sets the callback function.  You specify which keys to watch with [hs.network.configuration:monitorKeys](#monitorKeys) and start or stop the watcher with [hs.network.configuration:start](#start) or [hs.network.configuration:stop](#stop)
 private func dynamicStoreSetCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TFUNCTION | LS_TNIL, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     let thePtr = getPtr(L, 1)
 
     // in either case, we need to remove an existing callback, so...
-    thePtr.pointee.callbackRef = skin.luaUnref(refTable, ref: thePtr.pointee.callbackRef)
+    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, thePtr.pointee.callbackRef)
+
+    thePtr.pointee.callbackRef = LUA_NOREF
     if lua_type(L, 2) == LUA_TFUNCTION {
         lua_pushvalue(L, 2)
-        thePtr.pointee.callbackRef = skin.luaRef(refTable)
+        thePtr.pointee.callbackRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
         if thePtr.pointee.selfRef == LUA_NOREF {
             lua_pushvalue(L, 1)
-            thePtr.pointee.selfRef = skin.luaRef(refTable)
+            thePtr.pointee.selfRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
         }
     } else {
-        thePtr.pointee.selfRef = skin.luaUnref(refTable, ref: thePtr.pointee.selfRef)
+        luaL_unref(L, LUA_REGISTRYINDEX_VALUE, thePtr.pointee.selfRef)
+
+        thePtr.pointee.selfRef = LUA_NOREF
     }
 
     lua_pushvalue(L, 1)
@@ -497,8 +486,7 @@ private func dynamicStoreSetCallback(_ L: UnsafeMutablePointer<lua_State>!) -> I
 /// Notes:
 ///  * The callback function should be specified with [hs.network.configuration:setCallback](#setCallback) and the keys to monitor should be specified with [hs.network.configuration:monitorKeys](#monitorKeys).
 private func dynamicStoreStartWatcher(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     let thePtr = getPtr(L, 1)
     if !thePtr.pointee.watcherEnabled {
         if SCDynamicStoreSetDispatchQueue(thePtr.pointee.storeObject!, dynamicStoreQueue) {
@@ -521,11 +509,10 @@ private func dynamicStoreStartWatcher(_ L: UnsafeMutablePointer<lua_State>!) -> 
 /// Returns:
 ///  * the store object
 private func dynamicStoreStopWatcher(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     let thePtr = getPtr(L, 1)
     if !SCDynamicStoreSetDispatchQueue(thePtr.pointee.storeObject!, nil) {
-        skin.logBreadcrumb("\(USERDATA_TAG):stop, error removing watcher from dispatch queue:\(SCErrorString(SCError()))")
+        os_log(.debug, "%{public}s", "\(USERDATA_TAG):stop, error removing watcher from dispatch queue:\(SCErrorString(SCError()))")
     }
     thePtr.pointee.watcherEnabled = false
     lua_pushvalue(L, 1)
@@ -547,10 +534,6 @@ private func dynamicStoreStopWatcher(_ L: UnsafeMutablePointer<lua_State>!) -> I
 ///  * if no parameters are provided, then all key-value pairs in the dynamic store are monitored for changes.
 private func dynamicStoreMonitorKeys(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG,
-                   LS_TSTRING | LS_TTABLE | LS_TOPTIONAL,
-                   LS_TBOOLEAN | LS_TOPTIONAL,
-                   LS_TBREAK)
     let theStore = getPtr(L, 1).pointee.storeObject!
 
     var keys: NSArray
@@ -560,9 +543,9 @@ private func dynamicStoreMonitorKeys(_ L: UnsafeMutablePointer<lua_State>!) -> I
         keysIsPattern = true
     } else {
         if lua_type(L, 2) == LUA_TTABLE {
-            keys = skin.toNSObject(atIndex: 2) as! NSArray
+            keys = lua_tovalue(L, at: 2) as! NSArray
         } else {
-            keys = [skin.toNSObject(atIndex: 2)!] as NSArray
+            keys = [lua_tovalue(L, at: 2)!] as NSArray
         }
         if lua_gettop(L) == 3 { keysIsPattern = lua_toboolean(L, 3) != 0 }
     }
@@ -584,9 +567,8 @@ private func dynamicStoreMonitorKeys(_ L: UnsafeMutablePointer<lua_State>!) -> I
 // MARK: - Cosmic Hammer/Lua Infrastructure
 
 private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     let ptr = lua_topointer(L, 1)
-    skin.pushNSObject("\(USERDATA_TAG): (\(String(describing: ptr)))" as NSString)
+    lua_pushany(L, "\(USERDATA_TAG): (\(String(describing: ptr)))" as NSString)
     return 1
 }
 
@@ -605,13 +587,16 @@ private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
     let thePtr = getPtr(L, 1)
     if thePtr.pointee.callbackRef != LUA_NOREF {
-        thePtr.pointee.callbackRef = skin.luaUnref(refTable, ref: thePtr.pointee.callbackRef)
+        luaL_unref(L, LUA_REGISTRYINDEX_VALUE, thePtr.pointee.callbackRef)
+
+        thePtr.pointee.callbackRef = LUA_NOREF
         if !SCDynamicStoreSetDispatchQueue(thePtr.pointee.storeObject!, nil) {
-            skin.logBreadcrumb("\(USERDATA_TAG):__gc, error removing watcher from dispatch queue:\(SCErrorString(SCError()))")
+            os_log(.debug, "%{public}s", "\(USERDATA_TAG):__gc, error removing watcher from dispatch queue:\(SCErrorString(SCError()))")
         }
     }
-    thePtr.pointee.selfRef = skin.luaUnref(refTable, ref: thePtr.pointee.selfRef)
-    skin.destroy(&thePtr.pointee.lsCanary)
+    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, thePtr.pointee.selfRef)
+
+    thePtr.pointee.selfRef = LUA_NOREF
 
     // storeObject is managed by Swift ARC through the optional, no explicit CFRelease needed
     thePtr.pointee.storeObject = nil

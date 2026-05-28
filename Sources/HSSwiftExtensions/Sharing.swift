@@ -1,8 +1,9 @@
 import Cocoa
 import LuaSkin
+import os.log
 
 private let USERDATA_TAG = "hs.sharing"
-private var refTable: LSRefTable = LUA_NOREF
+private var refTable: Int32 = LUA_NOREF
 
 private func get_objectFromUserdata<T: AnyObject>(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32, _ tag: UnsafePointer<CChar>) -> T {
     let ptr = luaL_checkudata(L, idx, tag)!.assumingMemoryBound(to: UnsafeMutableRawPointer.self)
@@ -16,18 +17,18 @@ private func toNSURLFromLua(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32)
     let absIdx = lua_absindex(L, idx)
 
     if lua_type(L, absIdx) == LUA_TSTRING {
-        let str = skin.toNSObject(atIndex: absIdx) as! String
+        let str = lua_tovalue(L, at: absIdx) as! String
         return NSURL(string: str)
     } else if lua_type(L, absIdx) == LUA_TTABLE {
         if lua_getfield(L, absIdx, "url") == LUA_TSTRING {
-            let str = skin.toNSObject(atIndex: -1) as! String
+            let str = lua_tovalue(L, at: -1) as! String
             lua_pop(L, 1)
             return NSURL(string: str)
         }
         lua_pop(L, 1)
     }
 
-    skin.logError("expected string or table describing an NSURL, found \(String(cString: lua_typename(L, lua_type(L, absIdx))))")
+    os_log(.error, "%{public}s", "expected string or table describing an NSURL, found \(String(cString: lua_typename(L, lua_type(L, absIdx))))")
     return nil
 }
 
@@ -51,38 +52,35 @@ class HSSharingService: NSObject, NSSharingServiceDelegate {
     func sharingService(_ sharingService: NSSharingService, didFailToShareItems items: [Any], error: Error) {
         guard callbackRef != LUA_NOREF else { return }
         let skin = LuaSkin.skin(with: nil)
-        _lua_stackguard_entry(skin.l)
-        skin.pushLuaRef(refTable, ref: callbackRef)
-        skin.pushNSObject(self)
-        skin.pushNSObject("didFail" as NSString)
-        skin.pushNSObject(items as NSArray, withOptions: LS_NSConversionOptions.nsDescribeUnknownTypes.rawValue)
-        skin.pushNSObject(error.localizedDescription as NSString)
-        skin.protectedCallAndError("hs.sharing:didFail callback", nargs: 4, nresults: 0)
-        _lua_stackguard_exit(skin.l)
+        let L = LuaSkin.skin(with: nil).l!
+        lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(callbackRef))
+        lua_pushany(L, self)
+        lua_pushany(L, "didFail" as NSString)
+        lua_pushany(L, items as NSArray)
+        lua_pushany(L, error.localizedDescription as NSString)
+        if lua_pcall(L, 4, 0, 0) != LUA_OK { lua_pop(L, 1) }
     }
 
     func sharingService(_ sharingService: NSSharingService, didShareItems items: [Any]) {
         guard callbackRef != LUA_NOREF else { return }
         let skin = LuaSkin.skin(with: nil)
-        _lua_stackguard_entry(skin.l)
-        skin.pushLuaRef(refTable, ref: callbackRef)
-        skin.pushNSObject(self)
-        skin.pushNSObject("didShare" as NSString)
-        skin.pushNSObject(items as NSArray, withOptions: LS_NSConversionOptions.nsDescribeUnknownTypes.rawValue)
-        skin.protectedCallAndError("hs.sharing:didShare callback", nargs: 3, nresults: 0)
-        _lua_stackguard_exit(skin.l)
+        let L = LuaSkin.skin(with: nil).l!
+        lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(callbackRef))
+        lua_pushany(L, self)
+        lua_pushany(L, "didShare" as NSString)
+        lua_pushany(L, items as NSArray)
+        if lua_pcall(L, 3, 0, 0) != LUA_OK { lua_pop(L, 1) }
     }
 
     func sharingService(_ sharingService: NSSharingService, willShareItems items: [Any]) {
         guard callbackRef != LUA_NOREF else { return }
         let skin = LuaSkin.skin(with: nil)
-        _lua_stackguard_entry(skin.l)
-        skin.pushLuaRef(refTable, ref: callbackRef)
-        skin.pushNSObject(self)
-        skin.pushNSObject("willShare" as NSString)
-        skin.pushNSObject(items as NSArray, withOptions: LS_NSConversionOptions.nsDescribeUnknownTypes.rawValue)
-        skin.protectedCallAndError("hs.sharing:willShare callback", nargs: 3, nresults: 0)
-        _lua_stackguard_exit(skin.l)
+        let L = LuaSkin.skin(with: nil).l!
+        lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(callbackRef))
+        lua_pushany(L, self)
+        lua_pushany(L, "willShare" as NSString)
+        lua_pushany(L, items as NSArray)
+        if lua_pcall(L, 3, 0, 0) != LUA_OK { lua_pop(L, 1) }
     }
 }
 
@@ -98,14 +96,13 @@ class HSSharingService: NSObject, NSSharingServiceDelegate {
 /// Returns:
 ///  * a sharingObject or nil if the type identifier cannot be created on this system
 private func sharing_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING, LS_TBREAK)
+    luaL_checktype(L, 1, LUA_TSTRING)
 
-    let serviceName = skin.toNSObject(atIndex: 1) as! String
+    let serviceName = lua_tovalue(L, at: 1) as! String
     let wrapper = HSSharingService(serviceName: serviceName)
 
     if wrapper.sharingService != nil {
-        skin.pushNSObject(wrapper)
+        lua_pushany(L, wrapper)
     } else {
         lua_pushnil(L)
     }
@@ -125,12 +122,10 @@ private func sharing_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Notes:
 ///  * this function is intended to be used to determine the identifiers for sharing services available on your computer and that may not be included in the [hs.sharing.builtinSharingServices](#builtinSharingServices) table.
 private func sharing_servicesForItems(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TTABLE | LS_TOPTIONAL, LS_TBREAK)
 
     var items: [Any]?
     if lua_gettop(L) == 1 {
-        guard let arr = skin.toNSObject(atIndex: 1) as? [Any] else {
+        guard let arr = lua_tovalue(L, at: 1) as? [Any] else {
             return luaL_argerror(L, 1, "unrecognized element in array")
         }
         items = arr
@@ -145,7 +140,7 @@ private func sharing_servicesForItems(_ L: UnsafeMutablePointer<lua_State>!) -> 
             label = aService.perform(NSSelectorFromString("name"))?.takeUnretainedValue() as? String
         }
         if label == nil { label = aService.title }
-        skin.pushNSObject((label ?? "") as NSString)
+        lua_pushany(L, (label ?? "") as NSString)
         lua_rawseti(L, -2, luaL_len(L, -2) + 1)
     }
     return 1
@@ -171,14 +166,12 @@ private func sharing_servicesForItems(_ L: UnsafeMutablePointer<lua_State>!) -> 
 ///    * filePath      = a string specifying the actual path to the file in case the url is a file reference URL.  Note that setting this field with this method will be silently ignored; the field is automatically inserted if appropriate when returning an NSURL object to lua.
 ///    * __luaSkinType - a string specifying the macOS type this table represents when converted into an Objective-C type
 private func sharing_makeURL(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING | LS_TTABLE, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
 
     let shouldBeFileURL = lua_gettop(L) == 2 ? (lua_toboolean(L, 2) != 0) : false
 
     var theURL: NSURL?
     if shouldBeFileURL && lua_type(L, 1) == LUA_TSTRING {
-        let path = skin.toNSObject(atIndex: 1) as! String
+        let path = lua_tovalue(L, at: 1) as! String
         if !path.hasPrefix("file:") && !path.hasPrefix("FILE:") {
             theURL = NSURL(fileURLWithPath: NSString(string: path).expandingTildeInPath)
         }
@@ -189,7 +182,7 @@ private func sharing_makeURL(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     }
 
     if let url = theURL {
-        skin.pushNSObject(url)
+        lua_pushany(L, url)
     } else {
         lua_pushnil(L)
     }
@@ -211,12 +204,13 @@ private func sharing_makeURL(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Notes:
 ///  * You can check to see if all of your items can be shared with the [hs.sharing:canShareItems](#canShareItems) method.
 private func sharing_performWith(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TTABLE, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
 
-    let wrapper: HSSharingService = skin.toNSObject(atIndex: 1) as! HSSharingService
+    luaL_checktype(L, 2, LUA_TTABLE)
 
-    guard let items = skin.toNSObject(atIndex: 2) as? [Any] else {
+    let wrapper: HSSharingService = lua_tovalue(L, at: 1) as! HSSharingService
+
+    guard let items = lua_tovalue(L, at: 2) as? [Any] else {
         return luaL_argerror(L, 2, "unrecognized element in array")
     }
 
@@ -239,12 +233,13 @@ private func sharing_performWith(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 /// Returns:
 ///  * a boolean value indicating whether or not all of the specified items can be shared with the sharing service represented by the sharingObject.
 private func sharing_canPerformWith(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TTABLE, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
 
-    let wrapper: HSSharingService = skin.toNSObject(atIndex: 1) as! HSSharingService
+    luaL_checktype(L, 2, LUA_TTABLE)
 
-    guard let items = skin.toNSObject(atIndex: 2) as? [Any] else {
+    let wrapper: HSSharingService = lua_tovalue(L, at: 1) as! HSSharingService
+
+    guard let items = lua_tovalue(L, at: 2) as? [Any] else {
         return luaL_argerror(L, 2, "unrecognized element in array")
     }
 
@@ -272,15 +267,17 @@ private func sharing_canPerformWith(_ L: UnsafeMutablePointer<lua_State>!) -> In
 ///    * an array (table) containing the items being shared; if the message is "didFail" or "didShare", the items may be in a different order or converted to a different internal type to facilitate sharing.
 ///    * if the message is "didFail", the fourth argument will be a localized description of the error that occurred.
 private func sharing_callback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TFUNCTION | LS_TNIL, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
 
-    let wrapper: HSSharingService = skin.toNSObject(atIndex: 1) as! HSSharingService
+    let wrapper: HSSharingService = lua_tovalue(L, at: 1) as! HSSharingService
 
-    wrapper.callbackRef = skin.luaUnref(refTable, ref: wrapper.callbackRef)
+    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, wrapper.callbackRef)
+
+
+    wrapper.callbackRef = LUA_NOREF
     if lua_type(L, 2) == LUA_TFUNCTION {
         lua_pushvalue(L, 2)
-        wrapper.callbackRef = skin.luaRef(refTable)
+        wrapper.callbackRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
     }
     lua_pushvalue(L, 1)
     return 1
@@ -300,15 +297,13 @@ private func sharing_callback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * not all sharing services will make use of the value set by this method.
 ///  * the individual recipients should be specified as strings in the format expected by the sharing service; e.g. for items being shared in an email, the recipients should be email address, etc.
 private func sharing_recipients(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TTABLE | LS_TOPTIONAL, LS_TBREAK)
 
-    let wrapper: HSSharingService = skin.toNSObject(atIndex: 1) as! HSSharingService
+    let wrapper: HSSharingService = lua_tovalue(L, at: 1) as! HSSharingService
 
     if lua_gettop(L) == 1 {
-        skin.pushNSObject(wrapper.sharingService?.recipients as NSArray?)
+        lua_pushany(L, wrapper.sharingService?.recipients as NSArray?)
     } else {
-        guard let recipients = skin.toNSObject(atIndex: 2) as? [Any] else {
+        guard let recipients = lua_tovalue(L, at: 2) as? [Any] else {
             return luaL_argerror(L, 2, "expected table of strings")
         }
 
@@ -343,19 +338,18 @@ private func sharing_recipients(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 /// Notes:
 ///  * not all sharing services will make use of the value set by this method.
 private func sharing_subject(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING | LS_TOPTIONAL, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
 
-    let wrapper: HSSharingService = skin.toNSObject(atIndex: 1) as! HSSharingService
+    let wrapper: HSSharingService = lua_tovalue(L, at: 1) as! HSSharingService
 
     if lua_gettop(L) == 1 {
         if let subject = wrapper.sharingService?.subject {
-            skin.pushNSObject(subject as NSString)
+            lua_pushany(L, subject as NSString)
         } else {
             lua_pushnil(L)
         }
     } else {
-        wrapper.sharingService?.subject = skin.toNSObject(atIndex: 2) as? String
+        wrapper.sharingService?.subject = lua_tovalue(L, at: 2) as? String
         lua_pushvalue(L, 1)
     }
     return 1
@@ -374,10 +368,9 @@ private func sharing_subject(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Notes:
 ///  * not all sharing services will set a value for this property.
 private func sharing_attachmentURLs(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
-    let wrapper: HSSharingService = skin.toNSObject(atIndex: 1) as! HSSharingService
-    skin.pushNSObject(wrapper.sharingService?.attachmentFileURLs as NSArray?)
+    luaL_checkudata(L, 1, USERDATA_TAG)
+    let wrapper: HSSharingService = lua_tovalue(L, at: 1) as! HSSharingService
+    lua_pushany(L, wrapper.sharingService?.attachmentFileURLs as NSArray?)
     return 1
 }
 
@@ -394,11 +387,10 @@ private func sharing_attachmentURLs(_ L: UnsafeMutablePointer<lua_State>!) -> In
 /// Notes:
 ///  * According to the Apple API documentation, only the Twitter and Sina Weibo sharing services will set this property, but this has not been fully tested.
 private func sharing_accountName(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
-    let wrapper: HSSharingService = skin.toNSObject(atIndex: 1) as! HSSharingService
+    luaL_checkudata(L, 1, USERDATA_TAG)
+    let wrapper: HSSharingService = lua_tovalue(L, at: 1) as! HSSharingService
     if let name = wrapper.sharingService?.accountName {
-        skin.pushNSObject(name as NSString)
+        lua_pushany(L, name as NSString)
     } else {
         lua_pushnil(L)
     }
@@ -418,11 +410,10 @@ private func sharing_accountName(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 /// Notes:
 ///  * not all sharing services will set a value for this property.
 private func sharing_messageBody(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
-    let wrapper: HSSharingService = skin.toNSObject(atIndex: 1) as! HSSharingService
+    luaL_checkudata(L, 1, USERDATA_TAG)
+    let wrapper: HSSharingService = lua_tovalue(L, at: 1) as! HSSharingService
     if let body = wrapper.sharingService?.messageBody {
-        skin.pushNSObject(body as NSString)
+        lua_pushany(L, body as NSString)
     } else {
         lua_pushnil(L)
     }
@@ -442,10 +433,9 @@ private func sharing_messageBody(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 /// Notes:
 ///  * this string differs from the identifier used to create the sharing service object with [hs.sharing.newShare](#newShare) and is intended to provide a more friendly label for the service if you need to list or refer to it elsewhere.
 private func sharing_title(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
-    let wrapper: HSSharingService = skin.toNSObject(atIndex: 1) as! HSSharingService
-    skin.pushNSObject(wrapper.sharingService?.title as NSString?)
+    luaL_checkudata(L, 1, USERDATA_TAG)
+    let wrapper: HSSharingService = lua_tovalue(L, at: 1) as! HSSharingService
+    lua_pushany(L, wrapper.sharingService?.title as NSString?)
     return 1
 }
 
@@ -462,9 +452,8 @@ private func sharing_title(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Notes:
 ///  * this string will match the identifier used to create the sharing service object with [hs.sharing.newShare](#newShare)
 private func sharing_serviceName(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
-    let wrapper: HSSharingService = skin.toNSObject(atIndex: 1) as! HSSharingService
+    luaL_checkudata(L, 1, USERDATA_TAG)
+    let wrapper: HSSharingService = lua_tovalue(L, at: 1) as! HSSharingService
 
     var label: String?
     // Apple hid the "name" property, but it returns the identifier usable with sharingServiceNamed:
@@ -473,7 +462,7 @@ private func sharing_serviceName(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
     }
 
     if let l = label {
-        skin.pushNSObject(l as NSString)
+        lua_pushany(L, l as NSString)
     } else {
         lua_pushnil(L)
     }
@@ -493,10 +482,9 @@ private func sharing_serviceName(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 /// Notes:
 ///  * not all sharing services will set a value for this property.
 private func sharing_permanentLink(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
-    let wrapper: HSSharingService = skin.toNSObject(atIndex: 1) as! HSSharingService
-    skin.pushNSObject(wrapper.sharingService?.permanentLink as NSURL?)
+    luaL_checkudata(L, 1, USERDATA_TAG)
+    let wrapper: HSSharingService = lua_tovalue(L, at: 1) as! HSSharingService
+    lua_pushany(L, wrapper.sharingService?.permanentLink as NSURL?)
     return 1
 }
 
@@ -510,10 +498,9 @@ private func sharing_permanentLink(_ L: UnsafeMutablePointer<lua_State>!) -> Int
 /// Returns:
 ///  * an hs.image object or nil, if no alternate image representation for the sharing service is defined.
 private func sharing_alternateImage(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
-    let wrapper: HSSharingService = skin.toNSObject(atIndex: 1) as! HSSharingService
-    skin.pushNSObject(wrapper.sharingService?.alternateImage)
+    luaL_checkudata(L, 1, USERDATA_TAG)
+    let wrapper: HSSharingService = lua_tovalue(L, at: 1) as! HSSharingService
+    lua_pushany(L, wrapper.sharingService?.alternateImage)
     return 1
 }
 
@@ -527,25 +514,23 @@ private func sharing_alternateImage(_ L: UnsafeMutablePointer<lua_State>!) -> In
 /// Returns:
 ///  * an hs.image object or nil, if no image representation for the sharing service is defined.
 private func sharing_image(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
-    let wrapper: HSSharingService = skin.toNSObject(atIndex: 1) as! HSSharingService
-    skin.pushNSObject(wrapper.sharingService?.image)
+    luaL_checkudata(L, 1, USERDATA_TAG)
+    let wrapper: HSSharingService = lua_tovalue(L, at: 1) as! HSSharingService
+    lua_pushany(L, wrapper.sharingService?.image)
     return 1
 }
 
 // MARK: - Module Constants
 
 private func pushBuiltinSharingServices(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     lua_newtable(L)
-    skin.pushNSObject(NSSharingService.Name.addToAperture.rawValue as NSString);             lua_setfield(L, -2, "addToAperture")
-    skin.pushNSObject(NSSharingService.Name.addToIPhoto.rawValue as NSString);               lua_setfield(L, -2, "addToIPhoto")
-    skin.pushNSObject(NSSharingService.Name.addToSafariReadingList.rawValue as NSString);    lua_setfield(L, -2, "addToSafariReadingList")
-    skin.pushNSObject(NSSharingService.Name.composeEmail.rawValue as NSString);              lua_setfield(L, -2, "composeEmail")
-    skin.pushNSObject(NSSharingService.Name.composeMessage.rawValue as NSString);            lua_setfield(L, -2, "composeMessage")
-    skin.pushNSObject(NSSharingService.Name.sendViaAirDrop.rawValue as NSString);            lua_setfield(L, -2, "sendViaAirDrop")
-    skin.pushNSObject(NSSharingService.Name.useAsDesktopPicture.rawValue as NSString);       lua_setfield(L, -2, "useAsDesktopPicture")
+    lua_pushany(L, NSSharingService.Name.addToAperture.rawValue as NSString);             lua_setfield(L, -2, "addToAperture")
+    lua_pushany(L, NSSharingService.Name.addToIPhoto.rawValue as NSString);               lua_setfield(L, -2, "addToIPhoto")
+    lua_pushany(L, NSSharingService.Name.addToSafariReadingList.rawValue as NSString);    lua_setfield(L, -2, "addToSafariReadingList")
+    lua_pushany(L, NSSharingService.Name.composeEmail.rawValue as NSString);              lua_setfield(L, -2, "composeEmail")
+    lua_pushany(L, NSSharingService.Name.composeMessage.rawValue as NSString);            lua_setfield(L, -2, "composeMessage")
+    lua_pushany(L, NSSharingService.Name.sendViaAirDrop.rawValue as NSString);            lua_setfield(L, -2, "sendViaAirDrop")
+    lua_pushany(L, NSSharingService.Name.useAsDesktopPicture.rawValue as NSString);       lua_setfield(L, -2, "useAsDesktopPicture")
     return 1
 }
 
@@ -562,23 +547,21 @@ private func pushHSSharingService(_ L: UnsafeMutablePointer<lua_State>!, obj: An
 }
 
 private func toHSSharingServiceFromLua(_ L: UnsafeMutablePointer<lua_State>!, idx: Int32) -> Any! {
-    let skin = LuaSkin.skin(with: L)
     if luaL_testudata(L, idx, USERDATA_TAG) != nil {
         return get_objectFromUserdata(L, idx, USERDATA_TAG) as HSSharingService
     } else {
-        skin.logError("expected \(USERDATA_TAG) object, found \(String(cString: lua_typename(L, lua_type(L, idx))))")
+        os_log(.error, "%{public}s", "expected \(USERDATA_TAG) object, found \(String(cString: lua_typename(L, lua_type(L, idx))))")
         return nil
     }
 }
 
 private func pushNSURL(_ L: UnsafeMutablePointer<lua_State>!, obj: Any!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     let url = obj as! NSURL
     lua_newtable(L)
-    skin.pushNSObject(url.absoluteString as NSString?)
+    lua_pushany(L, url.absoluteString as NSString?)
     lua_setfield(L, -2, "url")
     if url.isFileURL {
-        skin.pushNSObject(url.path as NSString?)
+        lua_pushany(L, url.path as NSString?)
         lua_setfield(L, -2, "filePath")
     }
     lua_pushstring(L, "NSURL")
@@ -593,18 +576,16 @@ private func toNSURLFromLuaHelper(_ L: UnsafeMutablePointer<lua_State>!, idx: In
 // MARK: - Cosmic Hammer/Lua Infrastructure
 
 private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    let obj = skin.luaObject(at:1, toClass: "HSSharingService") as! HSSharingService
+    let obj = lua_tovalue(L, at: 1) as! HSSharingService
     let title = obj.sharingService?.title ?? "unknown"
-    skin.pushNSObject("\(USERDATA_TAG): \(title) (\(String(describing: lua_topointer(L, 1)!)))" as NSString)
+    lua_pushany(L, "\(USERDATA_TAG): \(title) (\(String(describing: lua_topointer(L, 1)!)))" as NSString)
     return 1
 }
 
 private func userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     if luaL_testudata(L, 1, USERDATA_TAG) != nil && luaL_testudata(L, 2, USERDATA_TAG) != nil {
-        let skin = LuaSkin.skin(with: L)
-        let obj1 = skin.luaObject(at:1, toClass: "HSSharingService") as! HSSharingService
-        let obj2 = skin.luaObject(at:2, toClass: "HSSharingService") as! HSSharingService
+        let obj1 = lua_tovalue(L, at: 1) as! HSSharingService
+        let obj2 = lua_tovalue(L, at: 2) as! HSSharingService
         lua_pushboolean(L, obj1.isEqual(obj2) ? 1 : 0)
     } else {
         lua_pushboolean(L, 0)
@@ -618,8 +599,9 @@ private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
     obj.selfRefCount -= 1
     if obj.selfRefCount == 0 {
-        let skin = LuaSkin.skin(with: L)
-        obj.callbackRef = skin.luaUnref(refTable, ref: obj.callbackRef)
+        luaL_unref(L, LUA_REGISTRYINDEX_VALUE, obj.callbackRef)
+
+        obj.callbackRef = LUA_NOREF
         obj.sharingService = nil
     }
 

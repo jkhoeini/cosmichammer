@@ -18,8 +18,7 @@ private class HSUserDefaultKVOWatcher: NSObject {
         guard let keyPath = keyPath, let fnCallbacks = watchedKeys[keyPath] as? NSMutableDictionary else { return }
 
         DispatchQueue.main.async {
-            let skin = LuaSkin.skin(with: nil)
-            let L = skin.l!
+            let L = LuaSkin.skin(with: nil).l!
             fnCallbacks.enumerateKeysAndObjects { _, refN, _ in
                 let ref = (refN as! NSNumber).int32Value
                 lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(ref))

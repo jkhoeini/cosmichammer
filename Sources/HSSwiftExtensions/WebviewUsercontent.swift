@@ -2,6 +2,7 @@ import Foundation
 import Cocoa
 import WebKit
 import LuaSkin
+import os.log
 
 private let USERDATA_UCC_TAG = "hs.webview.usercontent"
 private var refTable: Int32 = 0
@@ -25,11 +26,10 @@ private class HSUserContentController: WKUserContentController, WKScriptMessageH
                                didReceive message: WKScriptMessage) {
         if message.name == name && userContentCallback != LUA_NOREF {
             let skin = LuaSkin.skin(with: nil)
-            _lua_stackguard_entry(skin.l)
-            skin.pushLuaRef(refTable, ref: userContentCallback)
-            skin.pushNSObject(message)
-            skin.protectedCallAndError("hs.webview.usercontent callback", nargs: 1, nresults: 0)
-            _lua_stackguard_exit(skin.l)
+            let L = LuaSkin.skin(with: nil).l!
+            lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(userContentCallback))
+            lua_pushany(L, message)
+            if lua_pcall(L, 1, 0, 0) != LUA_OK { lua_pop(L, 1) }
         }
     }
 }
@@ -50,12 +50,11 @@ private class HSUserContentController: WKUserContentController, WKScriptMessageH
 ///  * This object should be provided as the final argument to the `hs.webview.new` constructor in order to tie the webview to this content controller.  All new windows which are created from this parent webview will also use this controller.
 ///  * See `hs.webview.usercontent:setCallback` for more information about the message port.
 private func ucc_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING, LS_TBREAK)
+    luaL_checktype(L, 1, LUA_TSTRING)
 
-    let theName = skin.toNSObject(atIndex: 1) as! String
+    let theName = lua_tovalue(L, at: 1) as! String
     let newUCC = HSUserContentController(name: theName)
-    skin.pushNSObject(newUCC)
+    lua_pushany(L, newUCC)
     return 1
 }
 
@@ -72,13 +71,14 @@ private func ucc_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * the usercontentControllerObject or nil if the script table was malformed in some way.
 private func ucc_inject(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_UCC_TAG, LS_TTABLE, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_UCC_TAG)
+
+    luaL_checktype(L, 2, LUA_TTABLE)
     let ptr = luaL_checkudata(L, 1, USERDATA_UCC_TAG)!
         .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
     let ucc = Unmanaged<HSUserContentController>.fromOpaque(ptr.pointee!).takeUnretainedValue()
 
-    let userScript = skin.luaObject(at: 2, toClass: "WKUserScript") as? WKUserScript
+    let userScript = lua_tovalue(L, at: 2) as? WKUserScript
     if let userScript = userScript {
         ucc.addUserScript(userScript)
         lua_pushvalue(L, 1)
@@ -104,13 +104,12 @@ private func ucc_inject(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Notes:
 ///  * Because the WKUserContentController class only allows for removing all scripts, you can use this method to generate a list of all scripts, modify it, and then use it in a loop to reapply the scripts if you need to remove just a few scripts.
 private func ucc_userScripts(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_UCC_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_UCC_TAG)
     let ptr = luaL_checkudata(L, 1, USERDATA_UCC_TAG)!
         .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
     let ucc = Unmanaged<HSUserContentController>.fromOpaque(ptr.pointee!).takeUnretainedValue()
 
-    skin.pushNSObject(ucc.userScripts as NSArray)
+    lua_pushany(L, ucc.userScripts as NSArray)
     return 1
 }
 
@@ -126,8 +125,7 @@ private func ucc_userScripts(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Notes:
 ///  * The WKUserContentController class only allows for removing all scripts.  If you need finer control, make a copy of the current scripts with `hs.webview.usercontent.userScripts()` first so you can recreate the scripts you want to keep.
 private func ucc_removeAllScripts(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_UCC_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_UCC_TAG)
     let ptr = luaL_checkudata(L, 1, USERDATA_UCC_TAG)!
         .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
     let ucc = Unmanaged<HSUserContentController>.fromOpaque(ptr.pointee!).takeUnretainedValue()
@@ -158,17 +156,19 @@ private func ucc_removeAllScripts(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
 ///
 ///  * Where *name* matches the name specified in the constructor and *message-object* is the object to post to the function.  This object can be a number, string, date, array, dictionary(table), or nil.
 private func ucc_setCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_UCC_TAG, LS_TFUNCTION | LS_TNIL, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_UCC_TAG)
     let ptr = luaL_checkudata(L, 1, USERDATA_UCC_TAG)!
         .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
     let ucc = Unmanaged<HSUserContentController>.fromOpaque(ptr.pointee!).takeUnretainedValue()
 
-    ucc.userContentCallback = skin.luaUnref(refTable, ref: ucc.userContentCallback)
+    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, ucc.userContentCallback)
+
+
+    ucc.userContentCallback = LUA_NOREF
 
     if lua_type(L, 2) == LUA_TFUNCTION {
         lua_pushvalue(L, 2)
-        ucc.userContentCallback = skin.luaRef(refTable)
+        ucc.userContentCallback = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
     }
 
     lua_pushvalue(L, 1)
@@ -178,7 +178,6 @@ private func ucc_setCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 // MARK: - NSObject <-> Lua converters
 
 private func HSUserContentController_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     let ucc = obj as! HSUserContentController
 
     if ucc.udRef == LUA_NOREF {
@@ -187,15 +186,14 @@ private func HSUserContentController_toLua(_ L: UnsafeMutablePointer<lua_State>!
         uccPtr.pointee = Unmanaged.passRetained(ucc).toOpaque()
         luaL_getmetatable(L, USERDATA_UCC_TAG)
         lua_setmetatable(L, -2)
-        ucc.udRef = skin.luaRef(refTable)
+        ucc.udRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
     }
 
-    skin.pushLuaRef(refTable, ref: ucc.udRef)
+    lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(ucc.udRef))
     return 1
 }
 
 private func WKUserScript_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     let script = obj as! WKUserScript
 
     lua_newtable(L)
@@ -207,23 +205,22 @@ private func WKUserScript_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: An
     @unknown default:      lua_pushstring(L, "unknown")
     }
     lua_setfield(L, -2, "injectionTime")
-    skin.pushNSObject(script.source as NSString)
+    lua_pushany(L, script.source as NSString)
     lua_setfield(L, -2, "source")
     return 1
 }
 
 private func WKScriptMessage_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     let message = obj as! WKScriptMessage
 
     lua_newtable(L)
-    skin.pushNSObject(message.body as? NSObject)
+    lua_pushany(L, message.body as? NSObject)
     lua_setfield(L, -2, "body")
-    skin.pushNSObject(message.frameInfo)
+    lua_pushany(L, message.frameInfo)
     lua_setfield(L, -2, "frameInfo")
-    skin.pushNSObject(message.name as NSString)
+    lua_pushany(L, message.name as NSString)
     lua_setfield(L, -2, "name")
-    skin.pushNSObject(message.webView?.window as? NSObject)
+    lua_pushany(L, message.webView?.window as? NSObject)
     lua_setfield(L, -2, "webView")
     return 1
 }
@@ -242,22 +239,22 @@ private func table_toWKUserScript(_ L: UnsafeMutablePointer<lua_State>!, _ idx: 
         lua_pop(L, 1)
 
         if lua_getfield(L, idx, "source") == LUA_TSTRING {
-            source = skin.toNSObject(atIndex: -1) as? String
+            source = lua_tovalue(L, at: -1) as? String
             lua_pop(L, 1)
         } else {
             lua_pop(L, 1)
-            skin.logWarn("source is required and must be a string")
+            os_log(.info, "%{public}s", "source is required and must be a string")
             return nil
         }
 
         if lua_getfield(L, idx, "injectionTime") == LUA_TSTRING {
-            let label = skin.toNSObject(atIndex: -1) as? String ?? ""
+            let label = lua_tovalue(L, at: -1) as? String ?? ""
             if label == "documentStart" {
                 injectionTime = .atDocumentStart
             } else if label == "documentEnd" {
                 injectionTime = .atDocumentEnd
             } else {
-                skin.logWarn("invalid injectionTime, \(label), defaulting to `documentStart`")
+                os_log(.info, "%{public}s", "invalid injectionTime, \(label), defaulting to `documentStart`")
             }
         }
         lua_pop(L, 1)
@@ -267,7 +264,7 @@ private func table_toWKUserScript(_ L: UnsafeMutablePointer<lua_State>!, _ idx: 
                                   forMainFrameOnly: mainFrame)
         return script
     } else {
-        skin.logWarn(String(format: "%s:invalid type for userscript, expected table, found %s",
+        os_log(.info, "%{public}s", String(format: "%s:invalid type for userscript, expected table, found %s",
                             USERDATA_UCC_TAG, String(cString: lua_typename(L, lua_type(L, idx)))))
         return nil
     }
@@ -306,13 +303,14 @@ private func userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 }
 
 private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     let ptr = luaL_checkudata(L, 1, USERDATA_UCC_TAG)!
         .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
 
     if let rawPtr = ptr.pointee {
         let ucc = Unmanaged<HSUserContentController>.fromOpaque(rawPtr).takeRetainedValue()
-        ucc.udRef = skin.luaUnref(refTable, ref: ucc.udRef)
+        luaL_unref(L, LUA_REGISTRYINDEX_VALUE, ucc.udRef)
+
+        ucc.udRef = LUA_NOREF
         ucc.removeAllUserScripts()
         ucc.removeScriptMessageHandler(forName: ucc.name)
         ptr.pointee = nil

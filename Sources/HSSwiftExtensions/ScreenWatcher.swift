@@ -26,8 +26,7 @@ private class MJScreenWatcher: NSObject {
     @objc func screensChanged(_ note: Notification) {
         guard fn != LUA_NOREF else { return }
 
-        let skin = LuaSkin.skin(with: nil)
-        let L = skin.l!
+        let L = LuaSkin.skin(with: nil).l!
 
         let argCount: Int32 = includeActive ? 1 : 0
 

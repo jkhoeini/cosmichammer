@@ -36,7 +36,7 @@ func SLSGetActiveSpace(_ cid: Int32) -> UInt64
 // MARK: - Module State
 
 private let USERDATA_TAG = "hs.spaces"
-private var refTable: LSRefTable = LUA_NOREF
+private var refTable: Int32 = LUA_NOREF
 private var regEx_UUID: NSRegularExpression?
 private var g_connection: Int32 = 0
 
@@ -61,8 +61,6 @@ private func workspace_is_macos_sonoma14_5_or_newer() -> Bool {
 /// Returns:
 ///  * true or false representing the status of the "Displays Have Separate Spaces" option within Mission Control.
 private func spaces_screensHaveSeparateSpaces(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TBREAK)
     lua_pushboolean(L, NSScreen.screensHaveSeparateSpaces ? 1 : 0)
     return 1
 }
@@ -80,10 +78,8 @@ private func spaces_screensHaveSeparateSpaces(_ L: UnsafeMutablePointer<lua_Stat
 /// Notes:
 ///  * the format and detail of this table is too complex and varied to describe here; suffice it to say this is the workhorse for this module and a careful examination of this table may be informative, but is not required in the normal course of using this module.
 private func spaces_managedDisplaySpaces(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TBREAK)
     if let managedDisplaySpaces = SLSCopyManagedDisplaySpaces(g_connection) {
-        skin.pushNSObject(managedDisplaySpaces as NSArray, withOptions: LS_NSConversionOptions.nsDescribeUnknownTypes.rawValue)
+        lua_pushany(L, managedDisplaySpaces as NSArray)
     } else {
         lua_pushnil(L)
         lua_pushstring(L, "SLSCopyManagedDisplaySpaces returned NULL")
@@ -105,8 +101,6 @@ private func spaces_managedDisplaySpaces(_ L: UnsafeMutablePointer<lua_State>!) 
 /// Notes:
 ///  * *usually* the currently active screen will be returned by `hs.screen.mainScreen()`; however some full screen applications may have focus without updating which screen is considered "main". You can use this function, and look up the screen UUID with [hs.spaces.spaceDisplay](#spaceDisplay) to determine the "true" focused screen if required.
 private func spaces_getActiveSpace(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TBREAK)
     lua_pushinteger(L, lua_Integer(SLSGetActiveSpace(g_connection)))
     return 1
 }
@@ -129,8 +123,6 @@ private func spaces_getActiveSpace(_ L: UnsafeMutablePointer<lua_State>!) -> Int
 ///  * Reviewing how third-party applications have generally pruned this list, I believe it will be necessary to use `hs.window.filter` to prune the list and access `hs.window` objects that are on the non-visible spaces.
 ///    * as `hs.window.filter` is scheduled to undergo a re-write soon to (hopefully) dramatically speed it up, I am providing this function *as is* at present for those who wish to experiment with it; however, I hope to make it more useful in the coming months and the contents may change in the future (the format won't, but hopefully the useless extras will disappear requiring less pruning logic on your end).
 private func spaces_windowsForSpace(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TNUMBER | LS_TINTEGER, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
     let sid = UInt64(lua_tointeger(L, 1))
     let includeMinimized: Bool = lua_gettop(L) > 1 ? (lua_toboolean(L, 2) != 0) : true
 
@@ -149,9 +141,13 @@ private func spaces_windowsForSpace(_ L: UnsafeMutablePointer<lua_State>!) -> In
     let spacesList = [NSNumber(value: sid)] as CFArray
 
     if let windowListRef = SLSCopyWindowsWithOptionsAndTags(g_connection, owner, spacesList, options, &setTags, &clearTags) {
-        skin.pushNSObject(windowListRef as NSArray)
+        lua_pushany(L, windowListRef as NSArray)
         lua_newtable(L)
-        skin.requireModule("hs.inspect")
+        lua_getglobal(L, "require")
+
+        lua_pushstring(L, "hs.inspect")
+
+        lua_pcall(L, 1, 1, 0)
         lua_setfield(L, -2, "__tostring")
         lua_setmetatable(L, -2)
     } else {
@@ -177,8 +173,6 @@ private func spaces_windowsForSpace(_ L: UnsafeMutablePointer<lua_State>!) -> In
 /// Notes:
 ///  * a window can only be moved from a user space to another user space -- you cannot move the window of a full screen (or tiled) application to another space. you also cannot move a window *to* the same space as a full screen application unless `force` is set to true and even then it works for floating windows only.
 private func spaces_moveWindowToSpace(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TNUMBER | LS_TINTEGER, LS_TNUMBER | LS_TINTEGER, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
     var wid = UInt32(lua_tointeger(L, 1))
     let sid = UInt64(lua_tointeger(L, 2))
     let force: Bool = lua_gettop(L) > 2 ? (lua_toboolean(L, 3) != 0) : false
@@ -235,16 +229,18 @@ private func spaces_moveWindowToSpace(_ L: UnsafeMutablePointer<lua_State>!) -> 
 ///  * For most windows, this will be a single element table; however some applications may create "sticky" windows that may appear on more than one space.
 ///    * For example, the container windows for `hs.canvas` objects which have the `canJoinAllSpaces` behavior set will appear on all spaces and the table returned by this function will contain all spaceIDs for the screen which displays the canvas.
 private func spaces_windowSpaces(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TNUMBER | LS_TINTEGER, LS_TBREAK)
     let wid = UInt32(lua_tointeger(L, 1))
 
     let windows = [NSNumber(value: wid)] as CFArray
     // 0x7 : kCGSAllSpacesMask
     if let spacesList = SLSCopySpacesForWindows(g_connection, 0x7, windows) {
-        skin.pushNSObject(spacesList as NSArray)
+        lua_pushany(L, spacesList as NSArray)
         lua_newtable(L)
-        skin.requireModule("hs.inspect")
+        lua_getglobal(L, "require")
+
+        lua_pushstring(L, "hs.inspect")
+
+        lua_pcall(L, 1, 1, 0)
         lua_setfield(L, -2, "__tostring")
         lua_setmetatable(L, -2)
     } else {
@@ -256,9 +252,8 @@ private func spaces_windowSpaces(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 }
 
 private func spaces_coreDesktopSendNotification(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING, LS_TBREAK)
-    let message = skin.toNSObject(atIndex: 1) as! NSString
+    luaL_checktype(L, 1, LUA_TSTRING)
+    let message = lua_tovalue(L, at: 1) as! NSString
 
     lua_pushinteger(L, lua_Integer(CoreDockSendNotification(message as CFString, 0).rawValue))
     return 1

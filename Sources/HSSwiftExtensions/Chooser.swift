@@ -198,7 +198,7 @@ import os.log
     @objc var invalidCallbackRef: Int32 = LUA_NOREF
 
     // A pointer to the hs.chooser module's references table
-    @objc var refTable: LSRefTable = LUA_NOREF
+    @objc var refTable: Int32 = LUA_NOREF
 
     // Our self-ref count
     @objc var selfRefCount: Int32 = 0
@@ -224,7 +224,7 @@ import os.log
 
     // MARK: - Initialiser
 
-    @objc init(refTable: LSRefTable, completionCallbackRef: Int32) {
+    @objc init(refTable: Int32, completionCallbackRef: Int32) {
         let panel = HSChooser.createChooserWindow()
         super.init(window: panel)
 
@@ -577,10 +577,12 @@ import os.log
         hasChosen = false
 
         // Call hs.chooser.globalCallback("willShow")
-        let skin = LuaSkin.skin(with: nil)
-        let L = skin.l!
-        _lua_stackguard_entry(L)
-        skin.requireModule("hs.chooser")
+        let L = LuaSkin.skin(with: nil).l!
+        lua_getglobal(L, "require")
+
+        lua_pushstring(L, "hs.chooser")
+
+        lua_pcall(L, 1, 1, 0)
         lua_getfield(L, -1, "globalCallback")
         lua_remove(L, -2)
 
@@ -588,12 +590,12 @@ import os.log
         if lua_type(L, -1) == LUA_TNIL {
             lua_remove(L, -1)
         } else if lua_type(L, -1) != LUA_TFUNCTION {
-            skin.logError("hs.chooser.globalCallback is expected to be a function, but is a \(String(cString: lua_typename(L, lua_type(L, -1))))")
+            os_log(.error, "%{public}s", "hs.chooser.globalCallback is expected to be a function, but is a \(String(cString: lua_typename(L, lua_type(L, -1))))")
             lua_remove(L, -1)
         } else {
-            skin.pushNSObject(self)
+            lua_pushany(L, self)
             lua_pushstring(L, "willOpen")
-            skin.protectedCallAndError("hs.chooser.globalCallback willOpen", nargs: 2, nresults: 0)
+            if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
         }
 
         resizeWindow()
@@ -614,20 +616,21 @@ import os.log
         controlTextDidChange(Notification(name: Notification.Name("Unused"), object: nil))
 
         if showCallbackRef != LUA_NOREF && showCallbackRef != LUA_REFNIL {
-            skin.pushLuaRef(refTable, ref: showCallbackRef)
-            skin.protectedCallAndError("hs.chooser:showCallback", nargs: 0, nresults: 0)
+            lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(showCallbackRef))
+            if lua_pcall(L, 0, 0, 0) != LUA_OK { lua_pop(L, 1) }
         }
-        _lua_stackguard_exit(skin.l)
     }
 
     @objc func hide() {
         window?.orderOut(nil)
 
         // Call hs.chooser.globalCallback("didClose")
-        let skin = LuaSkin.skin(with: nil)
-        let L = skin.l!
-        _lua_stackguard_entry(L)
-        skin.requireModule("hs.chooser")
+        let L = LuaSkin.skin(with: nil).l!
+        lua_getglobal(L, "require")
+
+        lua_pushstring(L, "hs.chooser")
+
+        lua_pcall(L, 1, 1, 0)
         lua_getfield(L, -1, "globalCallback")
         lua_remove(L, -2)
 
@@ -635,20 +638,19 @@ import os.log
         if lua_type(L, -1) == LUA_TNIL {
             lua_remove(L, -1)
         } else if lua_type(L, -1) != LUA_TFUNCTION {
-            skin.logError("hs.chooser.globalCallback is expected to be a function, but is a \(String(cString: lua_typename(L, lua_type(L, -1))))")
+            os_log(.error, "%{public}s", "hs.chooser.globalCallback is expected to be a function, but is a \(String(cString: lua_typename(L, lua_type(L, -1))))")
             lua_remove(L, -1)
         } else {
-            skin.pushNSObject(self)
+            lua_pushany(L, self)
             lua_pushstring(L, "didClose")
-            skin.protectedCallAndError("hs.chooser.globalCallback didClose", nargs: 2, nresults: 0)
+            if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
         }
 
         // Call hs.chooser:hideCallback()
         if hideCallbackRef != LUA_NOREF && hideCallbackRef != LUA_REFNIL {
-            skin.pushLuaRef(refTable, ref: hideCallbackRef)
-            skin.protectedCallAndError("hs.chooser:hideCallback", nargs: 0, nresults: 0)
+            lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(hideCallbackRef))
+            if lua_pcall(L, 0, 0, 0) != LUA_OK { lua_pop(L, 1) }
         }
-        _lua_stackguard_exit(L)
     }
 
     @objc var isVisible: Bool {
@@ -917,45 +919,40 @@ import os.log
         if row >= 0 && row < choiceCount {
             hasChosen = true
             let skin = LuaSkin.skin(with: nil)
-            _lua_stackguard_entry(skin.l)
+            let L = LuaSkin.skin(with: nil).l!
             let choice = choices![row] as! NSDictionary
 
             if let valid = choice["valid"], !(valid as AnyObject).boolValue,
                invalidCallbackRef != LUA_NOREF && invalidCallbackRef != LUA_REFNIL {
-                skin.pushLuaRef(refTable, ref: invalidCallbackRef)
-                skin.pushNSObject(choice)
-                skin.protectedCallAndError("hs.chooser:invalidCallback", nargs: 1, nresults: 0)
+                lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(invalidCallbackRef))
+                lua_pushany(L, choice)
+                if lua_pcall(L, 1, 0, 0) != LUA_OK { lua_pop(L, 1) }
             } else if completionCallbackRef != LUA_NOREF && completionCallbackRef != LUA_REFNIL {
                 hide()
-                skin.pushLuaRef(refTable, ref: completionCallbackRef)
-                skin.pushNSObject(choice)
-                skin.protectedCallAndError("hs.chooser:completionCallback", nargs: 1, nresults: 0)
+                lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(completionCallbackRef))
+                lua_pushany(L, choice)
+                if lua_pcall(L, 1, 0, 0) != LUA_OK { lua_pop(L, 1) }
             }
-
-            _lua_stackguard_exit(skin.l)
         } else if enableDefaultForQuery && completionCallbackRef != LUA_NOREF && completionCallbackRef != LUA_REFNIL {
             // No row remaining in choices, return just query
             hasChosen = true
             let skin = LuaSkin.skin(with: nil)
-            _lua_stackguard_entry(skin.l)
+            let L = LuaSkin.skin(with: nil).l!
             let choice: NSDictionary = ["text": queryField.stringValue]
             hide()
-            skin.pushLuaRef(refTable, ref: completionCallbackRef)
-            skin.pushNSObject(choice)
-            skin.protectedCallAndError("hs.chooser:completionCallback", nargs: 1, nresults: 0)
-
-            _lua_stackguard_exit(skin.l)
+            lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(completionCallbackRef))
+            lua_pushany(L, choice)
+            if lua_pcall(L, 1, 0, 0) != LUA_OK { lua_pop(L, 1) }
         }
     }
 
     @objc func didRightClick(atRow row: Int) {
         if rightClickCallbackRef != LUA_NOREF && rightClickCallbackRef != LUA_REFNIL {
             let skin = LuaSkin.skin(with: nil)
-            _lua_stackguard_entry(skin.l)
-            skin.pushLuaRef(refTable, ref: rightClickCallbackRef)
-            lua_pushinteger(skin.l, lua_Integer(row + 1))
-            skin.protectedCallAndError("hs.chooser:rightClickCallback", nargs: 1, nresults: 0)
-            _lua_stackguard_exit(skin.l)
+            let L = LuaSkin.skin(with: nil).l!
+            lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(rightClickCallbackRef))
+            lua_pushinteger(L, lua_Integer(row + 1))
+            if lua_pcall(L, 1, 0, 0) != LUA_OK { lua_pop(L, 1) }
         }
     }
 
@@ -964,18 +961,16 @@ import os.log
     @IBAction func cancel(_ sender: Any?) {
         hide()
         let skin = LuaSkin.skin(with: nil)
-        _lua_stackguard_entry(skin.l)
+        let L = LuaSkin.skin(with: nil).l!
 
         if completionCallbackRef == LUA_NOREF || completionCallbackRef == LUA_REFNIL {
-            skin.logWarn("Unable to call hs.chooser:completionCallback, reference is no longer valid")
-            _lua_stackguard_exit(skin.l)
+            os_log(.info, "%{public}s", "Unable to call hs.chooser:completionCallback, reference is no longer valid")
             return
         }
 
-        skin.pushLuaRef(refTable, ref: completionCallbackRef)
-        lua_pushnil(skin.l)
-        skin.protectedCallAndError("hs.chooser:completionCallback", nargs: 1, nresults: 0)
-        _lua_stackguard_exit(skin.l)
+        lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(completionCallbackRef))
+        lua_pushnil(L)
+        if lua_pcall(L, 1, 0, 0) != LUA_OK { lua_pop(L, 1) }
     }
 
     @IBAction @objc func queryDidPressEnter(_ sender: Any?) {
@@ -988,11 +983,10 @@ import os.log
         if queryChangedCallbackRef != LUA_NOREF && queryChangedCallbackRef != LUA_REFNIL {
             // We have a query callback set
             let skin = LuaSkin.skin(with: nil)
-            _lua_stackguard_entry(skin.l)
-            skin.pushLuaRef(refTable, ref: queryChangedCallbackRef)
-            skin.pushNSObject(queryString as NSString)
-            skin.protectedCallAndError("hs.chooser:queryChangedCallback", nargs: 1, nresults: 0)
-            _lua_stackguard_exit(skin.l)
+            let L = LuaSkin.skin(with: nil).l!
+            lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(queryChangedCallbackRef))
+            lua_pushany(L, queryString as NSString)
+            if lua_pcall(L, 1, 0, 0) != LUA_OK { lua_pop(L, 1) }
         } else {
             // We do not have a query callback set, so we are doing the filtering
             if !queryString.isEmpty {
@@ -1111,10 +1105,10 @@ import os.log
         } else if choicesCallbackRef != LUA_NOREF {
             if currentCallbackChoices == nil {
                 let skin = LuaSkin.skin(with: nil)
-                _lua_stackguard_entry(skin.l)
-                skin.pushLuaRef(refTable, ref: choicesCallbackRef)
-                if skin.protectedCallAndTraceback(0, nresults: 1) {
-                    currentCallbackChoices = skin.toNSObject(atIndex: -1) as? NSArray
+                let L = LuaSkin.skin(with: nil).l!
+                lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(choicesCallbackRef))
+                if lua_pcall(L, 0, 1, 0) == LUA_OK {
+                    currentCallbackChoices = lua_tovalue(L, at: -1) as? NSArray
 
                     var callbackChoicesTypeCheckPass = false
                     if let arr = currentCallbackChoices {
@@ -1131,11 +1125,10 @@ import os.log
                         currentCallbackChoices = nil
                     }
                 } else {
-                    let errMsg = skin.toNSObject(atIndex: -1)
-                    skin.logError("hs.chooser:choices error - \(errMsg ?? "unknown")")
+                    let errMsg = lua_tovalue(L, at: -1)
+                    os_log(.error, "%{public}s", "hs.chooser:choices error - \(errMsg ?? "unknown")")
                 }
-                lua_pop(skin.l, 1)
-                _lua_stackguard_exit(skin.l)
+                lua_pop(L, 1)
             }
 
             return currentCallbackChoices

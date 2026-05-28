@@ -1,11 +1,12 @@
 import Cocoa
 import LuaSkin
+import os.log
 
 private let USERDATA_TAG = "hs.spotlight"
 private let ITEM_UD_TAG  = "hs.spotlight.item"
 private let GROUP_UD_TAG = "hs.spotlight.group"
 
-private var refTable: LSRefTable = LUA_NOREF
+private var refTable: Int32 = LUA_NOREF
 private var moduleSearchQueue: OperationQueue?
 
 // MARK: - Support Functions and Classes
@@ -57,13 +58,12 @@ private class HSMetadataQuery: NSObject {
         DispatchQueue.main.async { [weak self] in
             guard let self = self, self.callbackRef != LUA_NOREF else { return }
             let skin = LuaSkin.skin(with: nil)
-            _lua_stackguard_entry(skin.l)
-            skin.pushLuaRef(refTable, ref: self.callbackRef)
-            skin.pushNSObject(self)
-            skin.pushNSObject(message as NSString)
-            skin.pushNSObject(notification.userInfo as NSDictionary?, withOptions: LS_NSConversionOptions.nsDescribeUnknownTypes.rawValue)
-            skin.protectedCallAndError("hs.spotlight", nargs: 3, nresults: 0)
-            _lua_stackguard_exit(skin.l)
+            let L = LuaSkin.skin(with: nil).l!
+            lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(self.callbackRef))
+            lua_pushany(L, self)
+            lua_pushany(L, message as NSString)
+            lua_pushany(L, notification.userInfo as NSDictionary?)
+            if lua_pcall(L, 3, 0, 0) != LUA_OK { lua_pop(L, 1) }
         }
     }
 }
@@ -91,9 +91,7 @@ private func get_itemFromUserdata(_ L: UnsafeMutablePointer<lua_State>!, at idx:
 /// Constructor
 /// Creates a new spotlightObject to use for Spotlight searches.
 private func spotlight_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TBREAK)
-    skin.pushNSObject(HSMetadataQuery())
+    lua_pushany(L, HSMetadataQuery())
     return 1
 }
 
@@ -101,16 +99,15 @@ private func spotlight_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Constructor
 /// Creates a new spotlightObject that limits its searches to the current results of another spotlightObject.
 private func spotlight_searchWithin(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
-    let query = skin.toNSObject(atIndex: 1) as! HSMetadataQuery
+    luaL_checkudata(L, 1, USERDATA_TAG)
+    let query = lua_tovalue(L, at: 1) as! HSMetadataQuery
 
     let newQuery = HSMetadataQuery()
     query.metadataSearch.disableUpdates()
     newQuery.metadataSearch.searchItems = query.metadataSearch.results
     query.metadataSearch.enableUpdates()
 
-    skin.pushNSObject(newQuery)
+    lua_pushany(L, newQuery)
     return 1
 }
 
@@ -118,16 +115,14 @@ private func spotlight_searchWithin(_ L: UnsafeMutablePointer<lua_State>!) -> In
 
 // wrapped in init.lua
 private func spotlight_searchScopes(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING | LS_TTABLE | LS_TOPTIONAL, LS_TBREAK)
-    let query = skin.toNSObject(atIndex: 1) as! HSMetadataQuery
+    let query = lua_tovalue(L, at: 1) as! HSMetadataQuery
 
     if lua_gettop(L) == 1 {
-        skin.pushNSObject(query.metadataSearch.searchScopes as NSArray)
+        lua_pushany(L, query.metadataSearch.searchScopes as NSArray)
     } else {
         var newScopes: [Any] = []
         var errorMessage: String?
-        guard let items = skin.toNSObject(atIndex: 2) else {
+        guard let items = lua_tovalue(L, at: 2) else {
             errorMessage = "unexpected type conversion error"
             return luaL_argerror(L, 2, errorMessage!)
         }
@@ -170,14 +165,16 @@ private func spotlight_searchScopes(_ L: UnsafeMutablePointer<lua_State>!) -> In
 /// Method
 /// Set or remove the callback function for the Spotlight search object.
 private func spotlight_callback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TFUNCTION | LS_TNIL, LS_TBREAK)
-    let query = skin.toNSObject(atIndex: 1) as! HSMetadataQuery
+    luaL_checkudata(L, 1, USERDATA_TAG)
+    let query = lua_tovalue(L, at: 1) as! HSMetadataQuery
 
-    query.callbackRef = skin.luaUnref(refTable, ref: query.callbackRef)
+    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, query.callbackRef)
+
+
+    query.callbackRef = LUA_NOREF
     if lua_type(L, 2) == LUA_TFUNCTION {
         lua_pushvalue(L, 2)
-        query.callbackRef = skin.luaRef(refTable)
+        query.callbackRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
     }
     lua_pushvalue(L, 1)
     return 1
@@ -185,9 +182,7 @@ private func spotlight_callback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 
 // wrapped in init.lua
 private func spotlight_callbackMessages(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING | LS_TTABLE | LS_TOPTIONAL, LS_TBREAK)
-    let query = skin.toNSObject(atIndex: 1) as! HSMetadataQuery
+    let query = lua_tovalue(L, at: 1) as! HSMetadataQuery
 
     if lua_gettop(L) == 1 {
         lua_newtable(L)
@@ -197,9 +192,9 @@ private func spotlight_callbackMessages(_ L: UnsafeMutablePointer<lua_State>!) -
         if query.wantProgress { lua_pushstring(L, "inProgress"); lua_rawseti(L, -2, luaL_len(L, -2) + 1) }
     } else {
         var items: [Any]
-        if let str = skin.toNSObject(atIndex: 2) as? String {
+        if let str = lua_tovalue(L, at: 2) as? String {
             items = [str]
-        } else if let arr = skin.toNSObject(atIndex: 2) as? [Any] {
+        } else if let arr = lua_tovalue(L, at: 2) as? [Any] {
             items = arr
         } else {
             return luaL_argerror(L, 2, "expected string or array of strings")
@@ -227,9 +222,8 @@ private func spotlight_callbackMessages(_ L: UnsafeMutablePointer<lua_State>!) -
 /// Method
 /// Get or set the time interval at which the spotlightObject will send "didUpdate" messages during the initial gathering phase.
 private func spotlight_updateInterval(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TNUMBER | LS_TOPTIONAL, LS_TBREAK)
-    let query = skin.toNSObject(atIndex: 1) as! HSMetadataQuery
+    luaL_checkudata(L, 1, USERDATA_TAG)
+    let query = lua_tovalue(L, at: 1) as! HSMetadataQuery
 
     if lua_gettop(L) == 1 {
         lua_pushnumber(L, query.metadataSearch.notificationBatchingInterval)
@@ -242,16 +236,14 @@ private func spotlight_updateInterval(_ L: UnsafeMutablePointer<lua_State>!) -> 
 
 // wrapped in init.lua
 private func spotlight_sortDescriptors(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TTABLE | LS_TSTRING | LS_TOPTIONAL, LS_TBREAK)
-    let query = skin.toNSObject(atIndex: 1) as! HSMetadataQuery
+    let query = lua_tovalue(L, at: 1) as! HSMetadataQuery
 
     if lua_gettop(L) == 1 {
-        skin.pushNSObject(query.metadataSearch.sortDescriptors as NSArray)
+        lua_pushany(L, query.metadataSearch.sortDescriptors as NSArray)
     } else {
         var newDescriptors: [NSSortDescriptor] = []
         var errorMessage: String?
-        guard let hopefuls = skin.toNSObject(atIndex: 2) else {
+        guard let hopefuls = lua_tovalue(L, at: 2) else {
             return luaL_argerror(L, 2, "unexpected type conversion error")
         }
         let items: [Any]
@@ -280,17 +272,15 @@ private func spotlight_sortDescriptors(_ L: UnsafeMutablePointer<lua_State>!) ->
 
 // wrapped in init.lua
 private func spotlight_valueListAttributes(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TTABLE | LS_TSTRING | LS_TOPTIONAL, LS_TBREAK)
-    let query = skin.toNSObject(atIndex: 1) as! HSMetadataQuery
+    let query = lua_tovalue(L, at: 1) as! HSMetadataQuery
 
     if lua_gettop(L) == 1 {
-        skin.pushNSObject(query.metadataSearch.valueListAttributes as NSArray)
+        lua_pushany(L, query.metadataSearch.valueListAttributes as NSArray)
     } else {
         var newAttributes: [String]
-        if let str = skin.toNSObject(atIndex: 2) as? String {
+        if let str = lua_tovalue(L, at: 2) as? String {
             newAttributes = [str]
-        } else if let arr = skin.toNSObject(atIndex: 2) as? [String] {
+        } else if let arr = lua_tovalue(L, at: 2) as? [String] {
             newAttributes = arr
         } else {
             return luaL_argerror(L, 2, "expected an array of attribute strings")
@@ -303,17 +293,15 @@ private func spotlight_valueListAttributes(_ L: UnsafeMutablePointer<lua_State>!
 
 // wrapped in init.lua
 private func spotlight_groupingAttributes(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TTABLE | LS_TSTRING | LS_TOPTIONAL, LS_TBREAK)
-    let query = skin.toNSObject(atIndex: 1) as! HSMetadataQuery
+    let query = lua_tovalue(L, at: 1) as! HSMetadataQuery
 
     if lua_gettop(L) == 1 {
-        skin.pushNSObject(query.metadataSearch.groupingAttributes as NSArray?)
+        lua_pushany(L, query.metadataSearch.groupingAttributes as NSArray?)
     } else {
         var newAttributes: [String]
-        if let str = skin.toNSObject(atIndex: 2) as? String {
+        if let str = lua_tovalue(L, at: 2) as? String {
             newAttributes = [str]
-        } else if let arr = skin.toNSObject(atIndex: 2) as? [String] {
+        } else if let arr = lua_tovalue(L, at: 2) as? [String] {
             newAttributes = arr
         } else {
             return luaL_argerror(L, 2, "expected an array of attribute strings")
@@ -328,12 +316,11 @@ private func spotlight_groupingAttributes(_ L: UnsafeMutablePointer<lua_State>!)
 /// Method
 /// Begin the gathering phase of a Spotlight query.
 private func spotlight_start(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
-    let query = skin.toNSObject(atIndex: 1) as! HSMetadataQuery
+    luaL_checkudata(L, 1, USERDATA_TAG)
+    let query = lua_tovalue(L, at: 1) as! HSMetadataQuery
 
     if query.metadataSearch.isStarted && !query.metadataSearch.isStopped {
-        skin.logInfo("query already started")
+        os_log(.info, "%{public}s", "query already started")
     } else {
         if query.metadataSearch.predicate != nil {
             query.metadataSearch.operationQueue?.addOperation {
@@ -351,14 +338,13 @@ private func spotlight_start(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Method
 /// Stop the Spotlight query.
 private func spotlight_stop(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
-    let query = skin.toNSObject(atIndex: 1) as! HSMetadataQuery
+    luaL_checkudata(L, 1, USERDATA_TAG)
+    let query = lua_tovalue(L, at: 1) as! HSMetadataQuery
 
     if query.metadataSearch.isStarted && !query.metadataSearch.isStopped {
         query.metadataSearch.stop()
     } else {
-        skin.logInfo("query not running")
+        os_log(.info, "%{public}s", "query not running")
     }
     lua_pushvalue(L, 1)
     return 1
@@ -368,9 +354,8 @@ private func spotlight_stop(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Method
 /// Returns a boolean specifying if the query is active or inactive.
 private func spotlight_isRunning(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
-    let query = skin.toNSObject(atIndex: 1) as! HSMetadataQuery
+    luaL_checkudata(L, 1, USERDATA_TAG)
+    let query = lua_tovalue(L, at: 1) as! HSMetadataQuery
 
     lua_pushboolean(L, (query.metadataSearch.isStarted && !query.metadataSearch.isStopped) ? 1 : 0)
     return 1
@@ -380,9 +365,8 @@ private func spotlight_isRunning(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 /// Method
 /// Returns a boolean specifying whether or not the query is in the active gathering phase.
 private func spotlight_isGathering(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
-    let query = skin.toNSObject(atIndex: 1) as! HSMetadataQuery
+    luaL_checkudata(L, 1, USERDATA_TAG)
+    let query = lua_tovalue(L, at: 1) as! HSMetadataQuery
 
     lua_pushboolean(L, query.metadataSearch.isGathering ? 1 : 0)
     return 1
@@ -392,13 +376,11 @@ private func spotlight_isGathering(_ L: UnsafeMutablePointer<lua_State>!) -> Int
 /// Method
 /// Specify the query string for the spotlightObject
 private func spotlight_predicate(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING | LS_TNIL | LS_TOPTIONAL, LS_TBREAK)
-    let query = skin.toNSObject(atIndex: 1) as! HSMetadataQuery
+    let query = lua_tovalue(L, at: 1) as! HSMetadataQuery
 
     if lua_gettop(L) == 1 {
         if let pred = query.metadataSearch.predicate {
-            skin.pushNSObject((pred as NSPredicate).predicateFormat as NSString)
+            lua_pushany(L, (pred as NSPredicate).predicateFormat as NSString)
         } else {
             lua_pushnil(L)
         }
@@ -406,7 +388,7 @@ private func spotlight_predicate(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
         if lua_type(L, 2) == LUA_TNIL {
             query.metadataSearch.predicate = nil
         } else {
-            let predicateStr = skin.toNSObject(atIndex: 2) as! String
+            let predicateStr = lua_tovalue(L, at: 2) as! String
             let queryPredicate = NSPredicate(format: predicateStr)
             query.metadataSearch.predicate = queryPredicate
         }
@@ -419,9 +401,8 @@ private func spotlight_predicate(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 /// Method
 /// Returns the number of results for the spotlightObject's query
 private func spotlight_resultCount(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
-    let query = skin.toNSObject(atIndex: 1) as! HSMetadataQuery
+    luaL_checkudata(L, 1, USERDATA_TAG)
+    let query = lua_tovalue(L, at: 1) as! HSMetadataQuery
 
     lua_pushinteger(L, lua_Integer(query.metadataSearch.resultCount))
     return 1
@@ -431,9 +412,7 @@ private func spotlight_resultCount(_ L: UnsafeMutablePointer<lua_State>!) -> Int
 /// Method
 /// Returns the spotlightItemObject at the specified index of the spotlightObject
 private func spotlight_resultAtIndex(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TNUMBER | LS_TINTEGER, LS_TBREAK)
-    let query = skin.toNSObject(atIndex: 1) as! HSMetadataQuery
+    let query = lua_tovalue(L, at: 1) as! HSMetadataQuery
 
     let index = lua_tointeger(L, 2)
     let count = query.metadataSearch.resultCount
@@ -447,7 +426,7 @@ private func spotlight_resultAtIndex(_ L: UnsafeMutablePointer<lua_State>!) -> I
     query.metadataSearch.disableUpdates()
     let item = query.metadataSearch.result(at: Int(index - 1)) as! NSMetadataItem
     query.metadataSearch.enableUpdates()
-    skin.pushNSObject(item)
+    lua_pushany(L, item)
     return 1
 }
 
@@ -455,11 +434,10 @@ private func spotlight_resultAtIndex(_ L: UnsafeMutablePointer<lua_State>!) -> I
 /// Method
 /// Returns the value list summaries for the Spotlight query
 private func spotlight_valueLists(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
-    let query = skin.toNSObject(atIndex: 1) as! HSMetadataQuery
+    luaL_checkudata(L, 1, USERDATA_TAG)
+    let query = lua_tovalue(L, at: 1) as! HSMetadataQuery
 
-    skin.pushNSObject(query.metadataSearch.valueLists as NSDictionary)
+    lua_pushany(L, query.metadataSearch.valueLists as NSDictionary)
     return 1
 }
 
@@ -467,11 +445,10 @@ private func spotlight_valueLists(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
 /// Method
 /// Returns the grouped results for a Spotlight query.
 private func spotlight_groupedResults(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
-    let query = skin.toNSObject(atIndex: 1) as! HSMetadataQuery
+    luaL_checkudata(L, 1, USERDATA_TAG)
+    let query = lua_tovalue(L, at: 1) as! HSMetadataQuery
 
-    skin.pushNSObject(query.metadataSearch.groupedResults as NSArray)
+    lua_pushany(L, query.metadataSearch.groupedResults as NSArray)
     return 1
 }
 
@@ -479,36 +456,31 @@ private func spotlight_groupedResults(_ L: UnsafeMutablePointer<lua_State>!) -> 
 
 /// hs.spotlight.group:attribute() -> string
 private func group_attribute(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, GROUP_UD_TAG, LS_TBREAK)
-    let resultGroup = skin.toNSObject(atIndex: 1) as! NSMetadataQueryResultGroup
-    skin.pushNSObject(resultGroup.attribute as NSString)
+    luaL_checkudata(L, 1, GROUP_UD_TAG)
+    let resultGroup = lua_tovalue(L, at: 1) as! NSMetadataQueryResultGroup
+    lua_pushany(L, resultGroup.attribute as NSString)
     return 1
 }
 
 /// hs.spotlight.group:value() -> value
 private func group_value(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, GROUP_UD_TAG, LS_TBREAK)
-    let resultGroup = skin.toNSObject(atIndex: 1) as! NSMetadataQueryResultGroup
-    skin.pushNSObject(resultGroup.value as? NSObject)
+    luaL_checkudata(L, 1, GROUP_UD_TAG)
+    let resultGroup = lua_tovalue(L, at: 1) as! NSMetadataQueryResultGroup
+    lua_pushany(L, resultGroup.value as? NSObject)
     return 1
 }
 
 /// hs.spotlight.group:count() -> integer
 private func group_resultCount(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, GROUP_UD_TAG, LS_TBREAK)
-    let resultGroup = skin.toNSObject(atIndex: 1) as! NSMetadataQueryResultGroup
+    luaL_checkudata(L, 1, GROUP_UD_TAG)
+    let resultGroup = lua_tovalue(L, at: 1) as! NSMetadataQueryResultGroup
     lua_pushinteger(L, lua_Integer(resultGroup.resultCount))
     return 1
 }
 
 /// hs.spotlight.group:resultAtIndex(index) -> spotlightItemObject
 private func group_resultAtIndex(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, GROUP_UD_TAG, LS_TNUMBER | LS_TINTEGER, LS_TBREAK)
-    let resultGroup = skin.toNSObject(atIndex: 1) as! NSMetadataQueryResultGroup
+    let resultGroup = lua_tovalue(L, at: 1) as! NSMetadataQueryResultGroup
 
     let index = lua_tointeger(L, 2)
     let count = resultGroup.resultCount
@@ -519,16 +491,15 @@ private func group_resultAtIndex(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
             return luaL_argerror(L, 2, "index must be between 1 and \(count) inclusive")
         }
     }
-    skin.pushNSObject(resultGroup.result(at: Int(index - 1)) as? NSObject)
+    lua_pushany(L, resultGroup.result(at: Int(index - 1)) as? NSObject)
     return 1
 }
 
 /// hs.spotlight.group:subgroups() -> table
 private func group_subgroups(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, GROUP_UD_TAG, LS_TBREAK)
-    let resultGroup = skin.toNSObject(atIndex: 1) as! NSMetadataQueryResultGroup
-    skin.pushNSObject(resultGroup.subgroups as NSArray?)
+    luaL_checkudata(L, 1, GROUP_UD_TAG)
+    let resultGroup = lua_tovalue(L, at: 1) as! NSMetadataQueryResultGroup
+    lua_pushany(L, resultGroup.subgroups as NSArray?)
     return 1
 }
 
@@ -536,20 +507,20 @@ private func group_subgroups(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 /// hs.spotlight.item:attributes() -> table
 private func item_attributes(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, ITEM_UD_TAG, LS_TBREAK)
-    let item = skin.toNSObject(atIndex: 1) as! NSMetadataItem
-    skin.pushNSObject(item.attributes as NSArray)
+    luaL_checkudata(L, 1, ITEM_UD_TAG)
+    let item = lua_tovalue(L, at: 1) as! NSMetadataItem
+    lua_pushany(L, item.attributes as NSArray)
     return 1
 }
 
 /// hs.spotlight.item:valueForAttribute(attribute) -> value
 private func item_valueForAttribute(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, ITEM_UD_TAG, LS_TSTRING, LS_TBREAK)
-    let item = skin.toNSObject(atIndex: 1) as! NSMetadataItem
-    let attribute = skin.toNSObject(atIndex: 2) as! String
-    skin.pushNSObject(item.value(forAttribute: attribute) as? NSObject, withOptions: LS_NSConversionOptions.nsDescribeUnknownTypes.rawValue)
+    luaL_checkudata(L, 1, ITEM_UD_TAG)
+
+    luaL_checktype(L, 2, LUA_TSTRING)
+    let item = lua_tovalue(L, at: 1) as! NSMetadataItem
+    let attribute = lua_tovalue(L, at: 2) as! String
+    lua_pushany(L, item.value(forAttribute: attribute) as? NSObject)
     return 1
 }
 
@@ -559,16 +530,15 @@ private func item_valueForAttribute(_ L: UnsafeMutablePointer<lua_State>!) -> In
 /// Constant
 /// A table of key-value pairs describing predefined search scopes for Spotlight queries
 private func push_searchScopes(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     lua_newtable(L)
-    skin.pushNSObject(NSMetadataQueryUserHomeScope as NSString);                              lua_setfield(L, -2, "userHome")
-    skin.pushNSObject(NSMetadataQueryLocalComputerScope as NSString);                         lua_setfield(L, -2, "localComputer")
-    skin.pushNSObject(NSMetadataQueryNetworkScope as NSString);                               lua_setfield(L, -2, "network")
-    skin.pushNSObject(NSMetadataQueryUbiquitousDocumentsScope as NSString);                   lua_setfield(L, -2, "iCloudDocuments")
-    skin.pushNSObject(NSMetadataQueryUbiquitousDataScope as NSString);                        lua_setfield(L, -2, "iCloudData")
-    skin.pushNSObject(NSMetadataQueryAccessibleUbiquitousExternalDocumentsScope as NSString);  lua_setfield(L, -2, "iCloudExternalDocuments")
-    skin.pushNSObject(NSMetadataQueryIndexedLocalComputerScope as NSString);                  lua_setfield(L, -2, "indexedLocalComputer")
-    skin.pushNSObject(NSMetadataQueryIndexedNetworkScope as NSString);                        lua_setfield(L, -2, "indexedNetwork")
+    lua_pushany(L, NSMetadataQueryUserHomeScope as NSString);                              lua_setfield(L, -2, "userHome")
+    lua_pushany(L, NSMetadataQueryLocalComputerScope as NSString);                         lua_setfield(L, -2, "localComputer")
+    lua_pushany(L, NSMetadataQueryNetworkScope as NSString);                               lua_setfield(L, -2, "network")
+    lua_pushany(L, NSMetadataQueryUbiquitousDocumentsScope as NSString);                   lua_setfield(L, -2, "iCloudDocuments")
+    lua_pushany(L, NSMetadataQueryUbiquitousDataScope as NSString);                        lua_setfield(L, -2, "iCloudData")
+    lua_pushany(L, NSMetadataQueryAccessibleUbiquitousExternalDocumentsScope as NSString);  lua_setfield(L, -2, "iCloudExternalDocuments")
+    lua_pushany(L, NSMetadataQueryIndexedLocalComputerScope as NSString);                  lua_setfield(L, -2, "indexedLocalComputer")
+    lua_pushany(L, NSMetadataQueryIndexedNetworkScope as NSString);                        lua_setfield(L, -2, "indexedNetwork")
     return 1
 }
 
@@ -576,7 +546,6 @@ private func push_searchScopes(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Constant
 /// A list of defined attribute keys as discovered in the macOS 10.12 SDK framework headers.
 private func push_commonAttributeKeys(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     lua_newtable(L)
 
     let keys: [String] = [
@@ -681,7 +650,7 @@ private func push_commonAttributeKeys(_ L: UnsafeMutablePointer<lua_State>!) -> 
         NSMetadataUbiquitousItemURLInLocalContainerKey,
     ]
     for key in keys {
-        skin.pushNSObject(key as NSString)
+        lua_pushany(L, key as NSString)
         lua_rawseti(L, -2, luaL_len(L, -2) + 1)
     }
     return 1
@@ -700,11 +669,10 @@ private func pushHSMetadataQuery(_ L: UnsafeMutablePointer<lua_State>!, obj: Any
 }
 
 private func toHSMetadataQueryFromLua(_ L: UnsafeMutablePointer<lua_State>!, idx: Int32) -> Any! {
-    let skin = LuaSkin.skin(with: L)
     if luaL_testudata(L, idx, USERDATA_TAG) != nil {
         return get_queryFromUserdata(L, at: idx)
     }
-    skin.logError("expected \(USERDATA_TAG) object, found \(String(cString: lua_typename(L, lua_type(L, idx))))")
+    os_log(.error, "%{public}s", "expected \(USERDATA_TAG) object, found \(String(cString: lua_typename(L, lua_type(L, idx))))")
     return nil
 }
 
@@ -718,11 +686,10 @@ private func pushNSMetadataQueryResultGroup(_ L: UnsafeMutablePointer<lua_State>
 }
 
 private func toNSMetadataQueryResultGroupFromLua(_ L: UnsafeMutablePointer<lua_State>!, idx: Int32) -> Any! {
-    let skin = LuaSkin.skin(with: L)
     if luaL_testudata(L, idx, GROUP_UD_TAG) != nil {
         return get_groupFromUserdata(L, at: idx)
     }
-    skin.logError("expected \(GROUP_UD_TAG) object, found \(String(cString: lua_typename(L, lua_type(L, idx))))")
+    os_log(.error, "%{public}s", "expected \(GROUP_UD_TAG) object, found \(String(cString: lua_typename(L, lua_type(L, idx))))")
     return nil
 }
 
@@ -736,19 +703,17 @@ private func pushNSMetadataItem(_ L: UnsafeMutablePointer<lua_State>!, obj: Any!
 }
 
 private func toNSMetadataItemFromLua(_ L: UnsafeMutablePointer<lua_State>!, idx: Int32) -> Any! {
-    let skin = LuaSkin.skin(with: L)
     if luaL_testudata(L, idx, ITEM_UD_TAG) != nil {
         return get_itemFromUserdata(L, at: idx)
     }
-    skin.logError("expected \(ITEM_UD_TAG) object, found \(String(cString: lua_typename(L, lua_type(L, idx))))")
+    os_log(.error, "%{public}s", "expected \(ITEM_UD_TAG) object, found \(String(cString: lua_typename(L, lua_type(L, idx))))")
     return nil
 }
 
 private func pushNSSortDescriptor(_ L: UnsafeMutablePointer<lua_State>!, obj: Any!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     let descriptor = obj as! NSSortDescriptor
     lua_newtable(L)
-    skin.pushNSObject(descriptor.key! as NSString); lua_setfield(L, -2, "key")
+    lua_pushany(L, descriptor.key! as NSString); lua_setfield(L, -2, "key")
     lua_pushboolean(L, descriptor.ascending ? 1 : 0); lua_setfield(L, -2, "ascending")
     lua_pushstring(L, "NSSortDescriptor"); lua_setfield(L, -2, "__luaSkinType")
     return 1
@@ -758,10 +723,10 @@ private func toNSSortDescriptorFromLua(_ L: UnsafeMutablePointer<lua_State>!, id
     let skin = LuaSkin.skin(with: L)
     let absIdx = lua_absindex(L, idx)
     if lua_type(L, absIdx) == LUA_TSTRING {
-        return NSSortDescriptor(key: skin.toNSObject(atIndex: absIdx) as? String, ascending: true)
+        return NSSortDescriptor(key: lua_tovalue(L, at: absIdx) as? String, ascending: true)
     } else if lua_type(L, absIdx) == LUA_TTABLE {
         if lua_getfield(L, absIdx, "key") == LUA_TSTRING {
-            let key = skin.toNSObject(atIndex: -1) as! String
+            let key = lua_tovalue(L, at: -1) as! String
             lua_pop(L, 1)
             var ascending = true
             if lua_getfield(L, absIdx, "ascending") == LUA_TBOOLEAN {
@@ -770,40 +735,37 @@ private func toNSSortDescriptorFromLua(_ L: UnsafeMutablePointer<lua_State>!, id
             lua_pop(L, 1)
             return NSSortDescriptor(key: key, ascending: ascending)
         } else {
-            skin.logError("key field missing in NSSortDescriptor table")
+            os_log(.error, "%{public}s", "key field missing in NSSortDescriptor table")
             lua_pop(L, 1)
         }
     } else {
-        skin.logError("expected string or table describing an NSSortDescriptor, found \(String(cString: lua_typename(L, lua_type(L, absIdx))))")
+        os_log(.error, "%{public}s", "expected string or table describing an NSSortDescriptor, found \(String(cString: lua_typename(L, lua_type(L, absIdx))))")
     }
     return nil
 }
 
 private func pushNSMetadataQueryAttributeValueTuple(_ L: UnsafeMutablePointer<lua_State>!, obj: Any!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     let tuple = obj as! NSMetadataQueryAttributeValueTuple
     lua_newtable(L)
-    skin.pushNSObject(tuple.attribute as NSString); lua_setfield(L, -2, "attribute")
+    lua_pushany(L, tuple.attribute as NSString); lua_setfield(L, -2, "attribute")
     lua_pushinteger(L, lua_Integer(tuple.count)); lua_setfield(L, -2, "count")
-    skin.pushNSObject(tuple.value as? NSObject); lua_setfield(L, -2, "value")
+    lua_pushany(L, tuple.value as? NSObject); lua_setfield(L, -2, "value")
     return 1
 }
 
 // MARK: - Cosmic Hammer/Lua Infrastructure
 
 private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    let obj = skin.toNSObject(atIndex: 1) as! HSMetadataQuery
+    let obj = lua_tovalue(L, at: 1) as! HSMetadataQuery
     let title = obj.metadataSearch.predicate?.predicateFormat ?? "<undefined>"
-    skin.pushNSObject("\(USERDATA_TAG): \(title) (\(String(describing: Unmanaged.passUnretained(obj).toOpaque())))" as NSString)
+    lua_pushany(L, "\(USERDATA_TAG): \(title) (\(String(describing: Unmanaged.passUnretained(obj).toOpaque())))" as NSString)
     return 1
 }
 
 private func userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     if luaL_testudata(L, 1, USERDATA_TAG) != nil && luaL_testudata(L, 2, USERDATA_TAG) != nil {
-        let skin = LuaSkin.skin(with: L)
-        let obj1 = skin.toNSObject(atIndex: 1) as! HSMetadataQuery
-        let obj2 = skin.toNSObject(atIndex: 2) as! HSMetadataQuery
+        let obj1 = lua_tovalue(L, at: 1) as! HSMetadataQuery
+        let obj2 = lua_tovalue(L, at: 2) as! HSMetadataQuery
         lua_pushboolean(L, obj1.isEqual(to: obj2) ? 1 : 0)
     } else {
         lua_pushboolean(L, 0)
@@ -816,8 +778,9 @@ private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let obj = Unmanaged<HSMetadataQuery>.fromOpaque(ptr.load(as: UnsafeRawPointer.self)).takeRetainedValue()
     obj.selfPushCount -= 1
     if obj.selfPushCount == 0 {
-        let skin = LuaSkin.skin(with: L)
-        obj.callbackRef = skin.luaUnref(refTable, ref: obj.callbackRef)
+        luaL_unref(L, LUA_REGISTRYINDEX_VALUE, obj.callbackRef)
+
+        obj.callbackRef = LUA_NOREF
         let nc = NotificationCenter.default
         nc.removeObserver(obj, name: .NSMetadataQueryDidFinishGathering, object: obj.metadataSearch)
         nc.removeObserver(obj, name: .NSMetadataQueryDidStartGathering, object: obj.metadataSearch)
@@ -831,18 +794,16 @@ private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 }
 
 private func group_userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    let obj = skin.toNSObject(atIndex: 1) as! NSMetadataQueryResultGroup
+    let obj = lua_tovalue(L, at: 1) as! NSMetadataQueryResultGroup
     let title = obj.attribute
-    skin.pushNSObject("\(GROUP_UD_TAG): \(title) (\(String(describing: lua_topointer(L, 1)!)))" as NSString)
+    lua_pushany(L, "\(GROUP_UD_TAG): \(title) (\(String(describing: lua_topointer(L, 1)!)))" as NSString)
     return 1
 }
 
 private func group_userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     if luaL_testudata(L, 1, GROUP_UD_TAG) != nil && luaL_testudata(L, 2, GROUP_UD_TAG) != nil {
-        let skin = LuaSkin.skin(with: L)
-        let obj1 = skin.toNSObject(atIndex: 1) as! NSMetadataQueryResultGroup
-        let obj2 = skin.toNSObject(atIndex: 2) as! NSMetadataQueryResultGroup
+        let obj1 = lua_tovalue(L, at: 1) as! NSMetadataQueryResultGroup
+        let obj2 = lua_tovalue(L, at: 2) as! NSMetadataQueryResultGroup
         lua_pushboolean(L, obj1.isEqual(to: obj2) ? 1 : 0)
     } else {
         lua_pushboolean(L, 0)
@@ -859,18 +820,16 @@ private func group_userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 }
 
 private func item_userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    let obj = skin.toNSObject(atIndex: 1) as! NSMetadataItem
+    let obj = lua_tovalue(L, at: 1) as! NSMetadataItem
     let title = obj.value(forAttribute: NSMetadataItemFSNameKey) as? String ?? "<undefined>"
-    skin.pushNSObject("\(ITEM_UD_TAG): \(title) (\(String(describing: lua_topointer(L, 1)!)))" as NSString)
+    lua_pushany(L, "\(ITEM_UD_TAG): \(title) (\(String(describing: lua_topointer(L, 1)!)))" as NSString)
     return 1
 }
 
 private func item_userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     if luaL_testudata(L, 1, ITEM_UD_TAG) != nil && luaL_testudata(L, 2, ITEM_UD_TAG) != nil {
-        let skin = LuaSkin.skin(with: L)
-        let obj1 = skin.toNSObject(atIndex: 1) as! NSMetadataItem
-        let obj2 = skin.toNSObject(atIndex: 2) as! NSMetadataItem
+        let obj1 = lua_tovalue(L, at: 1) as! NSMetadataItem
+        let obj2 = lua_tovalue(L, at: 2) as! NSMetadataItem
         lua_pushboolean(L, obj1.isEqual(to: obj2) ? 1 : 0)
     } else {
         lua_pushboolean(L, 0)

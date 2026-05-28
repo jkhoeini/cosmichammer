@@ -2,6 +2,7 @@ import Foundation
 import Cocoa
 import WebKit
 import LuaSkin
+import os.log
 
 // MARK: - HSWebViewWindow
 
@@ -15,7 +16,7 @@ class HSWebViewWindow: NSPanel, NSWindowDelegate {
     var titleFollow: Bool = true
     var deleteOnClose: Bool = false
     var closeOnEscape: Bool = false
-    var lsCanary: LSGCCanary = LSGCCanary()
+    var lsCanary: UInt64 = UInt64()
 
     override init(contentRect: NSRect, styleMask style: NSWindow.StyleMask,
                   backing backingStoreType: NSWindow.BackingStoreType, defer flag: Bool) {
@@ -56,27 +57,24 @@ class HSWebViewWindow: NSPanel, NSWindowDelegate {
     }
 
     func windowWillClose(_ notification: Notification) {
-        let skin = LuaSkin.skin(with: nil)
-        let L = skin.l!
+        let L = LuaSkin.skin(with: nil).l!
 
-        if !skin.check(lsCanary) { return }
-        _lua_stackguard_entry(L)
+        if !lua_isStateGenerationValid(lsCanary) { return }
 
         if windowCallback != LUA_NOREF {
-            skin.pushLuaRef(wv_refTable, ref: windowCallback)
-            skin.pushNSObject("closing" as NSString)
-            skin.pushNSObject(self)
-            skin.protectedCallAndError("hs.webview:windowCallback:closing", nargs: 2, nresults: 0)
+            lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(windowCallback))
+            lua_pushany(L, "closing" as NSString)
+            lua_pushany(L, self)
+            if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
         }
         if deleteOnClose {
             lua_pushcfunction(L, wv_userdata_gc)
-            skin.pushNSObject(self)
+            lua_pushany(L, self)
             if lua_pcall(L, 1, 0, 0) != LUA_OK {
-                skin.logError(String(format: "%s:error invoking _gc for deleteOnClose:%s", wv_USERDATA_TAG, lua_tostring(L, -1)!))
+                os_log(.error, "%{public}s", String(format: "%s:error invoking _gc for deleteOnClose:%s", wv_USERDATA_TAG, lua_tostring(L, -1)!))
                 lua_pop(L, 1)
             }
         }
-        _lua_stackguard_exit(L)
     }
 
     func windowDidBecomeKey(_ notification: Notification) {
@@ -84,13 +82,12 @@ class HSWebViewWindow: NSPanel, NSWindowDelegate {
             guard let self = self else { return }
             if self.windowCallback != LUA_NOREF {
                 let skin = LuaSkin.skin(with: nil)
-                _lua_stackguard_entry(skin.l)
-                skin.pushLuaRef(wv_refTable, ref: self.windowCallback)
-                skin.pushNSObject("focusChange" as NSString)
-                skin.pushNSObject(self)
-                lua_pushboolean(skin.l, 1)
-                skin.protectedCallAndError("hs.webview:windowCallback:focusChange", nargs: 3, nresults: 0)
-                _lua_stackguard_exit(skin.l)
+                let L = LuaSkin.skin(with: nil).l!
+                lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(self.windowCallback))
+                lua_pushany(L, "focusChange" as NSString)
+                lua_pushany(L, self)
+                lua_pushboolean(L, 1)
+                if lua_pcall(L, 3, 0, 0) != LUA_OK { lua_pop(L, 1) }
             }
         }
     }
@@ -100,13 +97,12 @@ class HSWebViewWindow: NSPanel, NSWindowDelegate {
             guard let self = self else { return }
             if self.windowCallback != LUA_NOREF {
                 let skin = LuaSkin.skin(with: nil)
-                _lua_stackguard_entry(skin.l)
-                skin.pushLuaRef(wv_refTable, ref: self.windowCallback)
-                skin.pushNSObject("focusChange" as NSString)
-                skin.pushNSObject(self)
-                lua_pushboolean(skin.l, 0)
-                skin.protectedCallAndError("hs.webview:windowCallback:focusChange", nargs: 3, nresults: 0)
-                _lua_stackguard_exit(skin.l)
+                let L = LuaSkin.skin(with: nil).l!
+                lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(self.windowCallback))
+                lua_pushany(L, "focusChange" as NSString)
+                lua_pushany(L, self)
+                lua_pushboolean(L, 0)
+                if lua_pcall(L, 3, 0, 0) != LUA_OK { lua_pop(L, 1) }
             }
         }
     }
@@ -116,13 +112,12 @@ class HSWebViewWindow: NSPanel, NSWindowDelegate {
             guard let self = self else { return }
             if self.windowCallback != LUA_NOREF {
                 let skin = LuaSkin.skin(with: nil)
-                _lua_stackguard_entry(skin.l)
-                skin.pushLuaRef(wv_refTable, ref: self.windowCallback)
-                skin.pushNSObject("frameChange" as NSString)
-                skin.pushNSObject(self)
-                skin.pushNSRect(wv_RectWithFlippedYCoordinate(self.frame))
-                skin.protectedCallAndError("hs.webview:windowCallback:frameChange:resize", nargs: 3, nresults: 0)
-                _lua_stackguard_exit(skin.l)
+                let L = LuaSkin.skin(with: nil).l!
+                lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(self.windowCallback))
+                lua_pushany(L, "frameChange" as NSString)
+                lua_pushany(L, self)
+                lua_pushNSRect(L, wv_RectWithFlippedYCoordinate(self.frame))
+                if lua_pcall(L, 3, 0, 0) != LUA_OK { lua_pop(L, 1) }
             }
         }
     }
@@ -132,13 +127,12 @@ class HSWebViewWindow: NSPanel, NSWindowDelegate {
             guard let self = self else { return }
             if self.windowCallback != LUA_NOREF {
                 let skin = LuaSkin.skin(with: nil)
-                _lua_stackguard_entry(skin.l)
-                skin.pushLuaRef(wv_refTable, ref: self.windowCallback)
-                skin.pushNSObject("frameChange" as NSString)
-                skin.pushNSObject(self)
-                skin.pushNSRect(wv_RectWithFlippedYCoordinate(self.frame))
-                skin.protectedCallAndError("hs.webview:windowCallback:frameChange:move", nargs: 3, nresults: 0)
-                _lua_stackguard_exit(skin.l)
+                let L = LuaSkin.skin(with: nil).l!
+                lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(self.windowCallback))
+                lua_pushany(L, "frameChange" as NSString)
+                lua_pushany(L, self)
+                lua_pushNSRect(L, wv_RectWithFlippedYCoordinate(self.frame))
+                if lua_pcall(L, 3, 0, 0) != LUA_OK { lua_pop(L, 1) }
             }
         }
     }
@@ -160,19 +154,19 @@ class HSWebViewWindow: NSPanel, NSWindowDelegate {
         NSAnimationContext.beginGrouping()
         weak var bself = self
 
-        let outerSkin = LuaSkin.skin(with: L)
-        let lsCanary = outerSkin.createGCCanary()
+        let lsCanary = lua_currentStateGeneration()
         NSAnimationContext.current.duration = fadeTime
         NSAnimationContext.current.completionHandler = {
             let skin = LuaSkin.skin(with: nil)
-            if !skin.check(lsCanary) { return }
+            let L = LuaSkin.skin(with: nil).l!
+            if !lua_isStateGenerationValid(lsCanary) { return }
             if let mySelf = bself {
                 if deleteWindow {
                     mySelf.close()
                     lua_pushcfunction(L, wv_userdata_gc)
-                    skin.pushLuaRef(wv_refTable, ref: mySelf.udRef)
+                    lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(mySelf.udRef))
                     if lua_pcall(L, 1, 0, 0) != LUA_OK {
-                        skin.logBreadcrumb(String(format: "%s:error invoking _gc for delete (with fade) method:%s", wv_USERDATA_TAG, lua_tostring(L, -1)!))
+                        os_log(.debug, "%{public}s", String(format: "%s:error invoking _gc for delete (with fade) method:%s", wv_USERDATA_TAG, lua_tostring(L, -1)!))
                         lua_pop(L, 1)
                     }
                 } else {
@@ -180,8 +174,6 @@ class HSWebViewWindow: NSPanel, NSWindowDelegate {
                     mySelf.alphaValue = 1.0
                 }
             }
-            var mutableCanary = lsCanary
-            skin.destroy(&mutableCanary)
         }
         self.animator().alphaValue = 0.0
         NSAnimationContext.endGrouping()

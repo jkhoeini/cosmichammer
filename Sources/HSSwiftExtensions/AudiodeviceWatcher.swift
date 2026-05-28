@@ -4,6 +4,7 @@ import CoreAudio
 import AudioToolbox
 import Foundation
 import LuaSkin
+import os.log
 
 /// === hs.audiodevice.watcher ===
 ///
@@ -15,7 +16,7 @@ import LuaSkin
 struct AudioDeviceWatcher {
     var callback: Int32
     var running: Bool
-    var lsCanary: LSGCCanary
+    var lsCanary: UInt64
 }
 
 private let watcherWatchSelectors: [AudioObjectPropertySelector] = [
@@ -25,7 +26,7 @@ private let watcherWatchSelectors: [AudioObjectPropertySelector] = [
     kAudioHardwarePropertyDefaultSystemOutputDevice,
 ]
 
-private var watcherRefTable: LSRefTable = 0
+private var watcherRefTable: Int32 = 0
 private var theWatcher: UnsafeMutablePointer<AudioDeviceWatcher>? = nil
 
 // MARK: - CoreAudio helper functions
@@ -44,27 +45,26 @@ private func audiodevicewatcher_callback(
 
     DispatchQueue.main.async {
         let skin = LuaSkin.skin(with: nil)
+        let L = LuaSkin.skin(with: nil).l!
 
         guard let watcher = theWatcher else {
-            skin.logWarn("hs.audiodevice.watcher callback fired, but theWatcher is nil. This is a bug")
+            os_log(.info, "%{public}s", "hs.audiodevice.watcher callback fired, but theWatcher is nil. This is a bug")
             return
         }
 
-        if !skin.check(watcher.pointee.lsCanary) {
+        if !lua_isStateGenerationValid(watcher.pointee.lsCanary) {
             return
         }
-        _lua_stackguard_entry(skin.l)
 
         if watcher.pointee.callback == LUA_NOREF {
-            skin.logWarn("hs.audiodevice.watcher callback fired, but there is no callback. This is a bug")
+            os_log(.info, "%{public}s", "hs.audiodevice.watcher callback fired, but there is no callback. This is a bug")
         } else {
             for event in events {
-                skin.pushLuaRef(watcherRefTable, ref: watcher.pointee.callback)
-                skin.pushNSObject(event as NSString)
-                skin.protectedCallAndError("hs.audiodevice.watcher callback", nargs: 1, nresults: 0)
+                lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(watcher.pointee.callback))
+                lua_pushany(L, event as NSString)
+                if lua_pcall(L, 1, 0, 0) != LUA_OK { lua_pop(L, 1) }
             }
         }
-        _lua_stackguard_exit(skin.l)
     }
     return noErr
 }
@@ -92,24 +92,23 @@ private func audiodevicewatcher_callback(
 ///  * The callback will be called for each individual audio device event received from the OS, so you may receive multiple events for a single physical action (e.g. unplugging the default audio device will cause `dOut` and `dev#` events, and possibly `sOut` too)
 ///  * Passing nil will cause the watcher to stop if it is already running
 private func audiodevicewatcher_setCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TFUNCTION | LS_TNIL, LS_TBREAK)
 
     if theWatcher == nil {
         theWatcher = UnsafeMutablePointer<AudioDeviceWatcher>.allocate(capacity: 1)
         theWatcher!.initialize(to: AudioDeviceWatcher(
             callback: LUA_NOREF,
             running: false,
-            lsCanary: skin.createGCCanary()
+            lsCanary: lua_currentStateGeneration()
         ))
     }
 
-    theWatcher!.pointee.callback = skin.luaUnref(watcherRefTable, ref: theWatcher!.pointee.callback)
+    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, theWatcher!.pointee.callback)
+    theWatcher!.pointee.callback = LUA_NOREF
 
     switch lua_type(L, 1) {
     case LUA_TFUNCTION:
         lua_pushvalue(L, 1)
-        theWatcher!.pointee.callback = skin.luaRef(watcherRefTable)
+        theWatcher!.pointee.callback = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
     case LUA_TNIL:
         _ = audiodevicewatcher_stop(L)
     default:
@@ -129,9 +128,8 @@ private func audiodevicewatcher_setCallback(_ L: UnsafeMutablePointer<lua_State>
 /// Returns:
 ///  * None
 private func audiodevicewatcher_start(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     guard let watcher = theWatcher, watcher.pointee.callback != LUA_NOREF else {
-        skin.logError("You must call hs.audiodevice.watcher.setCallback() before hs.audiodevice.watcher.start()")
+        os_log(.error, "%{public}s", "You must call hs.audiodevice.watcher.setCallback() before hs.audiodevice.watcher.start()")
         return 0
     }
 
@@ -195,8 +193,6 @@ private func audiodevicewatcher_stop(_ L: UnsafeMutablePointer<lua_State>!) -> I
 /// Returns:
 ///  * A boolean, true if the watcher is running, false if not
 private func audiodevicewatcher_isRunning(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TBREAK)
 
     guard let watcher = theWatcher else {
         lua_pushboolean(L, 0)
@@ -212,8 +208,9 @@ private func audiodevicewatcher_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int
 
     if let watcher = theWatcher {
         _ = audiodevicewatcher_stop(L)
-        watcher.pointee.callback = skin.luaUnref(watcherRefTable, ref: watcher.pointee.callback)
-        skin.destroy(&watcher.pointee.lsCanary)
+        luaL_unref(L, LUA_REGISTRYINDEX_VALUE, watcher.pointee.callback)
+
+        watcher.pointee.callback = LUA_NOREF
         watcher.deinitialize(count: 1)
         watcher.deallocate()
         theWatcher = nil

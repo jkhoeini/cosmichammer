@@ -1,9 +1,10 @@
 import Cocoa
 import Carbon
 import LuaSkin
+import os.log
 
 private let USERDATA_TAG = "hs.eventtap"
-private var refTable: LSRefTable = LUA_NOREF
+private var refTable: Int32 = LUA_NOREF
 
 // Shared with libeventtap_event_new.swift (same module)
 let EVENTTAP_EVENT_USERDATA_TAG = "hs.eventtap.event"
@@ -30,7 +31,7 @@ private class Eventtap {
     var mask: CGEventMask = 0
     var tap: CFMachPort?
     var runloopsrc: CFRunLoopSource?
-    var lsCanary: LSGCCanary = LSGCCanary()
+    var lsCanary: UInt64 = UInt64()
 }
 
 private func getEventtap(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> Eventtap? {
@@ -49,27 +50,27 @@ private let eventtapCallback: CGEventTapCallBack = { proxy, type, event, userInf
     let skin = LuaSkin.skin(with: nil)
     let L = skin.l
 
-    if !skin.check(e.lsCanary) {
+    if !lua_isStateGenerationValid(e.lsCanary) {
         return Unmanaged.passUnretained(event)
     }
 
     if e.fn == LUA_NOREF || e.fn == LUA_REFNIL {
-        skin.logBreadcrumb("eventtap_callback called with LUA_NOREF/LUA_REFNIL")
+        os_log(.debug, "%{public}s", "eventtap_callback called with LUA_NOREF/LUA_REFNIL")
         return Unmanaged.passUnretained(event)
     }
 
     if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
-        skin.logBreadcrumb("eventtap restarted: (\(type.rawValue))")
+        os_log(.debug, "%{public}s", "eventtap restarted: (\(type.rawValue))")
         if let tap = e.tap { CGEvent.tapEnable(tap: tap, enable: true) }
         return Unmanaged.passUnretained(event)
     }
 
-    skin.pushLuaRef(refTable, ref: e.fn)
+    lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(e.fn))
     newEventtapEvent(L, event)
 
-    if !skin.protectedCallAndTraceback(1, nresults: 2) {
+    if lua_pcall(L, 1, 2, 0) != LUA_OK {
         let errorMsg = lua_tostring(L, -1).map { String(cString: $0) } ?? "unknown error"
-        skin.logError("hs.eventtap callback error: \(errorMsg)")
+        os_log(.error, "%{public}s", "hs.eventtap callback error: \(errorMsg)")
         lua_pop(L, 1)
         return nil
     }
@@ -104,13 +105,12 @@ private let eventtapCallback: CGEventTapCallBack = { proxy, type, event, userInf
 /// Generates and emits keystroke events for the supplied text
 private func eventtap_keyStrokes(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING, LS_TANY | LS_TOPTIONAL, LS_TBREAK)
 
-    let theString = skin.toNSObject(at: 1) as! NSString
+    let theString = lua_tovalue(L, at: 1) as! NSString
     var targetPid: pid_t = 0
 
     if lua_type(L, 2) == LUA_TUSERDATA && luaL_checkudata(L, 2, "hs.application") != nil {
-        if let app = skin.toNSObject(at: 2) as? HSapplicationProtocol {
+        if let app = lua_tovalue(L, at: 2) as? HSapplicationProtocol {
             targetPid = app.pid
         }
     }
@@ -147,13 +147,12 @@ private func eventtap_keyStrokes(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 /// Constructor
 /// Create a new event tap object
 private func eventtap_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
 
     luaL_checktype(L, 1, LUA_TTABLE)
     luaL_checktype(L, 2, LUA_TFUNCTION)
 
     let eventtap = Eventtap()
-    eventtap.lsCanary = skin.createGCCanary()
+    eventtap.lsCanary = lua_currentStateGeneration()
 
     lua_pushnil(L)
     while lua_next(L, 1) != 0 {
@@ -174,7 +173,7 @@ private func eventtap_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     }
 
     lua_pushvalue(L, 2)
-    eventtap.fn = skin.luaRef(refTable)
+    eventtap.fn = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
 
     let ud = lua_newuserdata(L, MemoryLayout<UnsafeMutableRawPointer>.size)!
         .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
@@ -189,7 +188,6 @@ private func eventtap_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Method
 /// Starts an event tap
 private func eventtap_start(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     guard let e = getEventtap(L, at: 1) else { return 0 }
 
     let tapEnabled = e.tap.map { CGEvent.tapIsEnabled(tap: $0) } ?? false
@@ -220,7 +218,7 @@ private func eventtap_start(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
                 CFRunLoopAddSource(CFRunLoopGetMain(), src, .commonModes)
             }
         } else {
-            skin.logError("hs.eventtap:start() Unable to create eventtap. Is Accessibility enabled?")
+            os_log(.error, "%{public}s", "hs.eventtap:start() Unable to create eventtap. Is Accessibility enabled?")
         }
     }
     lua_settop(L, 1)
@@ -302,8 +300,6 @@ private func checkKeyboardModifiers(_ L: UnsafeMutablePointer<lua_State>!) -> In
 /// Function
 /// Checks if macOS is preventing keyboard events from being sent to event taps
 private func secureInputEnabled(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TBREAK)
     lua_pushboolean(L, IsSecureEventInputEnabled() ? 1 : 0)
     return 1
 }
@@ -363,7 +359,6 @@ private func eventtap_doubleClickInterval(_ L: UnsafeMutablePointer<lua_State>!)
 // MARK: - Infrastructure
 
 private func eventtap_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     let ud = luaL_checkudata(L, 1, USERDATA_TAG)!
         .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
     if let rawPtr = ud.pointee {
@@ -379,9 +374,11 @@ private func eventtap_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
             e.runloopsrc = nil
         }
 
-        e.fn = skin.luaUnref(refTable, ref: e.fn)
+        luaL_unref(L, LUA_REGISTRYINDEX_VALUE, e.fn)
+
+
+        e.fn = LUA_NOREF
         var canary = e.lsCanary
-        skin.destroy(&canary)
         e.lsCanary = canary
 
         ud.pointee = nil

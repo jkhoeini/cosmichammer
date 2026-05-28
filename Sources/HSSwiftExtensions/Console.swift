@@ -1,7 +1,8 @@
 import Cocoa
 import LuaSkin
+import os.log
 
-private var refTable: LSRefTable = LUA_NOREF
+private var refTable: Int32 = LUA_NOREF
 
 // MARK: - Runtime access to MJConsoleWindowController (lives in HSExtensions, not visible at compile time)
 
@@ -90,9 +91,6 @@ private func consoleMaxOutputHistory() -> NSNumber {
 ///    end
 ///.   ```
 private func consoleDarkMode(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
-
     if lua_isboolean(L, 1) {
         consoleDarkModeSetEnabled(lua_toboolean(L, 1) != 0)
         let ctrl = consoleController()
@@ -117,18 +115,17 @@ private func consoleDarkMode(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * See the `hs.drawing.color` entry in the Dash documentation, or type `help.hs.drawing.color` in the Cosmic Hammer console to get more information on how to specify a color.
 ///  * Note this only affects future output -- anything already in the console will remain its current color.
 private func console_consolePrintColor(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     let ctrl = consoleController()
 
     if lua_type(L, 1) != LUA_TNONE {
         luaL_checktype(L, 1, LUA_TTABLE)
         ctrl.setValue(
-            skin.luaObject(at: 1, toClass: "NSColor") as! NSColor,
+            lua_tovalue(L, at: 1) as! NSColor,
             forKey: "MJColorForStdout"
         )
     }
 
-    skin.pushNSObject(consoleColorForStdout())
+    lua_pushany(L, consoleColorForStdout())
     return 1
 }
 
@@ -146,8 +143,6 @@ private func console_consolePrintColor(_ L: UnsafeMutablePointer<lua_State>!) ->
 ///  * A length value of zero will allow the history to grow infinitely
 ///  * The default console history is 100,000 characters
 private func console_maxOutputHistory(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TNUMBER | LS_TOPTIONAL, LS_TBREAK)
 
     if lua_type(L, 1) != LUA_TNONE {
         let size = NSNumber(value: Int32(lua_tointeger(L, 1)))
@@ -172,15 +167,14 @@ private func console_maxOutputHistory(_ L: UnsafeMutablePointer<lua_State>!) -> 
 ///  * See the `hs.drawing.color` entry in the Dash documentation, or type `help.hs.drawing.color` in the Cosmic Hammer console to get more information on how to specify a color.
 ///  * Note this only affects future output -- anything already in the console will remain its current font.
 private func console_consoleFont(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
 
     if lua_type(L, 1) != LUA_TNONE {
-        if let newFont = skin.luaObject(at: 1, toClass: "NSFont") as? NSFont {
+        if let newFont = lua_tovalue(L, at: 1) as? NSFont {
             consoleController().setValue(newFont, forKey: "consoleFont")
         }
     }
 
-    skin.pushNSObject(consoleFont())
+    lua_pushany(L, consoleFont())
     return 1
 }
 
@@ -198,18 +192,17 @@ private func console_consoleFont(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 ///  * See the `hs.drawing.color` entry in the Dash documentation, or type `help.hs.drawing.color` in the Cosmic Hammer console to get more information on how to specify a color.
 ///  * Note this only affects future output -- anything already in the console will remain its current color.
 private func console_consoleCommandColor(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     let ctrl = consoleController()
 
     if lua_type(L, 1) != LUA_TNONE {
         luaL_checktype(L, 1, LUA_TTABLE)
         ctrl.setValue(
-            skin.luaObject(at: 1, toClass: "NSColor") as! NSColor,
+            lua_tovalue(L, at: 1) as! NSColor,
             forKey: "MJColorForCommand"
         )
     }
 
-    skin.pushNSObject(consoleColorForCommand())
+    lua_pushany(L, consoleColorForCommand())
     return 1
 }
 
@@ -227,18 +220,17 @@ private func console_consoleCommandColor(_ L: UnsafeMutablePointer<lua_State>!) 
 ///  * See the `hs.drawing.color` entry in the Dash documentation, or type `help.hs.drawing.color` in the Cosmic Hammer console to get more information on how to specify a color.
 ///  * Note this only affects future output -- anything already in the console will remain its current color.
 private func console_consoleResultColor(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     let ctrl = consoleController()
 
     if lua_type(L, 1) != LUA_TNONE {
         luaL_checktype(L, 1, LUA_TTABLE)
         ctrl.setValue(
-            skin.luaObject(at: 1, toClass: "NSColor") as! NSColor,
+            lua_tovalue(L, at: 1) as! NSColor,
             forKey: "MJColorForResult"
         )
     }
 
-    skin.pushNSObject(consoleColorForResult())
+    lua_pushany(L, consoleColorForResult())
     return 1
 }
 
@@ -252,11 +244,14 @@ private func console_consoleResultColor(_ L: UnsafeMutablePointer<lua_State>!) -
 /// Returns:
 ///  * an hs.window object
 private func console_asWindow(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     let console = consoleWindow()
 
     let windowID = CGWindowID(console.windowNumber)
-    skin.requireModule("hs.window")
+    lua_getglobal(L, "require")
+
+    lua_pushstring(L, "hs.window")
+
+    lua_pcall(L, 1, 1, 0)
     lua_getfield(L, -1, "windowForID")
     lua_pushinteger(L, lua_Integer(windowID))
     lua_call(L, 1, 1)
@@ -276,15 +271,14 @@ private func console_asWindow(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Notes:
 ///  * See the `hs.drawing.color` entry in the Dash documentation, or type `help.hs.drawing.color` in the Cosmic Hammer console to get more information on how to specify a color.
 private func console_backgroundColor(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     let console = consoleWindow()
 
     if lua_type(L, 1) != LUA_TNONE {
         luaL_checktype(L, 1, LUA_TTABLE)
-        console.backgroundColor = skin.luaObject(at: 1, toClass: "NSColor") as! NSColor
+        console.backgroundColor = lua_tovalue(L, at: 1) as! NSColor
     }
 
-    skin.pushNSObject(console.backgroundColor)
+    lua_pushany(L, console.backgroundColor)
     return 1
 }
 
@@ -301,15 +295,14 @@ private func console_backgroundColor(_ L: UnsafeMutablePointer<lua_State>!) -> I
 /// Notes:
 ///  * See the `hs.drawing.color` entry in the Dash documentation, or type `help.hs.drawing.color` in the Cosmic Hammer console to get more information on how to specify a color.
 private func console_outputBackgroundColor(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     let output = consoleOutputView()
 
     if lua_type(L, 1) != LUA_TNONE {
         luaL_checktype(L, 1, LUA_TTABLE)
-        output.backgroundColor = skin.luaObject(at: 1, toClass: "NSColor") as! NSColor
+        output.backgroundColor = lua_tovalue(L, at: 1) as! NSColor
     }
 
-    skin.pushNSObject(output.backgroundColor)
+    lua_pushany(L, output.backgroundColor)
     return 1
 }
 
@@ -326,15 +319,14 @@ private func console_outputBackgroundColor(_ L: UnsafeMutablePointer<lua_State>!
 /// Notes:
 ///  * See the `hs.drawing.color` entry in the Dash documentation, or type `help.hs.drawing.color` in the Cosmic Hammer console to get more information on how to specify a color.
 private func console_inputBackgroundColor(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     let input = consoleInputField()
 
     if lua_type(L, 1) != LUA_TNONE {
         luaL_checktype(L, 1, LUA_TTABLE)
-        input.backgroundColor = skin.luaObject(at: 1, toClass: "NSColor") as! NSColor
+        input.backgroundColor = lua_tovalue(L, at: 1) as! NSColor
     }
 
-    skin.pushNSObject(input.backgroundColor)
+    lua_pushany(L, input.backgroundColor)
     return 1
 }
 
@@ -371,10 +363,8 @@ private func console_smartInsertDeleteEnabled(_ L: UnsafeMutablePointer<lua_Stat
 /// Returns:
 ///  * an array containing the history of commands entered into the Cosmic Hammer console.
 private func console_getHistory(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TBREAK)
 
-    skin.pushNSObject(consoleHistory())
+    lua_pushany(L, consoleHistory())
     return 1
 }
 
@@ -392,7 +382,6 @@ private func console_getHistory(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 ///  * You can specify the console content as a string or as an `hs.styledtext` object in either userdata or table format.
 private func console_setConsole(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TANY | LS_TOPTIONAL, LS_TBREAK)
     let ctrl = consoleController()
     let outputView = consoleOutputView()
 
@@ -405,7 +394,7 @@ private func console_setConsole(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
     } else {
         let theStr: NSAttributedString
         if lua_type(L, 1) == LUA_TUSERDATA && luaL_testudata(L, 1, "hs.styledtext") != nil {
-            theStr = skin.luaObject(at: 1, toClass: "NSAttributedString") as! NSAttributedString
+            theStr = lua_tovalue(L, at: 1) as! NSAttributedString
         } else {
             let consoleAttrs: [NSAttributedString.Key: Any] = [
                 .font: consoleFont(),
@@ -413,7 +402,7 @@ private func console_setConsole(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
             ]
             luaL_tolstring(L, 1, nil)
             theStr = NSAttributedString(
-                string: skin.toNSObject(atIndex: -1) as! String,
+                string: lua_tovalue(L, at: -1) as! String,
                 attributes: consoleAttrs
             )
             lua_pop(L, 1)
@@ -441,15 +430,13 @@ private func console_setConsole(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 /// Notes:
 ///  * If the text of the console is retrieved as a string, no color or style information in the console output is retrieved - only the raw text.
 private func console_getConsole(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
     let outputView = consoleOutputView()
     let styled = lua_isboolean(L, 1) ? (lua_toboolean(L, 1) != 0) : false
 
     if styled {
-        skin.pushNSObject(outputView.textStorage?.copy())
+        lua_pushany(L, outputView.textStorage?.copy())
     } else {
-        skin.pushNSObject(outputView.textStorage?.string)
+        lua_pushany(L, outputView.textStorage?.string)
     }
 
     return 1
@@ -468,11 +455,10 @@ private func console_getConsole(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 /// Notes:
 ///  * You can clear the console history by using an empty array (e.g. `hs.console.setHistory({})`
 private func console_setHistory(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TTABLE, LS_TBREAK)
+    luaL_checktype(L, 1, LUA_TTABLE)
     let ctrl = consoleController()
 
-    let newHistory = skin.toNSObject(atIndex: 1) as! NSMutableArray
+    let newHistory = lua_tovalue(L, at: 1) as! NSMutableArray
     ctrl.setValue(newHistory, forKey: "history")
     ctrl.setValue(newHistory.count, forKey: "historyIndex")
     lua_pushnil(L)
@@ -514,11 +500,11 @@ private func console_printStyledText(_ L: UnsafeMutablePointer<lua_State>!) -> I
             theStr.append(NSAttributedString(string: "\t", attributes: consoleAttrs))
         }
         if lua_type(L, i) == LUA_TUSERDATA && luaL_testudata(L, i, "hs.styledtext") != nil {
-            theStr.append(skin.luaObject(at: i, toClass: "NSAttributedString") as! NSAttributedString)
+            theStr.append(lua_tovalue(L, at: i) as! NSAttributedString)
         } else {
             luaL_tolstring(L, i, nil)
             theStr.append(NSAttributedString(
-                string: skin.toNSObject(atIndex: -1) as! String,
+                string: lua_tovalue(L, at: -1) as! String,
                 attributes: consoleAttrs
             ))
             lua_pop(L, 1)
@@ -548,8 +534,6 @@ private func console_printStyledText(_ L: UnsafeMutablePointer<lua_State>!) -> I
 /// Notes:
 ///  * see the notes for `hs.drawing.windowLevels`
 private func console_level(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TNUMBER | LS_TINTEGER | LS_TOPTIONAL, LS_TBREAK)
     let console = consoleWindow()
 
     if lua_gettop(L) == 1 {
@@ -577,8 +561,6 @@ private func console_level(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * the current, possibly new, value.
 private func console_alpha(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TNUMBER | LS_TOPTIONAL, LS_TBREAK)
     let console = consoleWindow()
 
     if lua_gettop(L) == 1 {
@@ -602,13 +584,10 @@ private func console_alpha(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Notes:
 ///  * Window behaviors determine how the webview object is handled by Spaces and Exposé. See `hs.drawing.windowBehaviors` for more information.
 private func console_behavior(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TNUMBER | LS_TOPTIONAL, LS_TBREAK)
 
     let console = consoleWindow()
 
     if lua_gettop(L) == 1 {
-        skin.checkArgs(LS_TNUMBER | LS_TINTEGER, LS_TBREAK)
         let newLevel = lua_tointeger(L, 1)
         console.collectionBehavior = NSWindow.CollectionBehavior(rawValue: UInt(newLevel))
     }
@@ -631,8 +610,6 @@ private func console_behavior(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 ///  * If a toolbar is attached to the console, you can achieve the same effect as this function with `hs.console.toolbar():inTitleBar(boolean)`
 private func console_titleVisibility(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING | LS_TOPTIONAL, LS_TBREAK)
     let console = consoleWindow()
     let mapping: [String: NSWindow.TitleVisibility] = [
         "visible": .visible,
@@ -640,7 +617,7 @@ private func console_titleVisibility(_ L: UnsafeMutablePointer<lua_State>!) -> I
     ]
 
     if lua_gettop(L) == 1 {
-        let key = skin.toNSObject(atIndex: 1) as! String
+        let key = lua_tovalue(L, at: 1) as! String
         if let value = mapping[key] {
             console.titleVisibility = value
             lua_pushvalue(L, 1)
@@ -652,9 +629,9 @@ private func console_titleVisibility(_ L: UnsafeMutablePointer<lua_State>!) -> I
 
     let titleVisibility = console.titleVisibility
     if let value = mapping.first(where: { $0.value == titleVisibility })?.key {
-        skin.pushNSObject(value)
+        lua_pushany(L, value)
     } else {
-        skin.logWarn("unrecognized titleVisibility \(titleVisibility.rawValue) -- notify developers")
+        os_log(.info, "%{public}s", "unrecognized titleVisibility \(titleVisibility.rawValue) -- notify developers")
         lua_pushnil(L)
     }
     return 1

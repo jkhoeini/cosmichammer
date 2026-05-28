@@ -1,5 +1,6 @@
 import Cocoa
 import LuaSkin
+import os.log
 
 // MARK: - HSCanvasView
 
@@ -190,27 +191,25 @@ import LuaSkin
     func doMouseCallback(_ message: String, for elementIdentifier: Any, at location: NSPoint) {
         guard mouseCallbackRef != LUA_NOREF else { return }
         let skin = LuaSkin.skin(with: nil)
-        _lua_stackguard_entry(skin.l)
-        skin.pushLuaRef(canvas_refTable, ref: mouseCallbackRef)
-        skin.pushNSObject(self)
-        skin.pushNSObject(message as NSString)
-        skin.pushNSObject(elementIdentifier as AnyObject)
-        lua_pushnumber(skin.l, lua_Number(location.x))
-        lua_pushnumber(skin.l, lua_Number(location.y))
-        skin.protectedCallAndError("hs.canvas:clickCallback for \(message)", nargs: 5, nresults: 0)
-        _lua_stackguard_exit(skin.l)
+        let L = LuaSkin.skin(with: nil).l!
+        lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(mouseCallbackRef))
+        lua_pushany(L, self)
+        lua_pushany(L, message as NSString)
+        lua_pushany(L, elementIdentifier as AnyObject)
+        lua_pushnumber(L, lua_Number(location.x))
+        lua_pushnumber(L, lua_Number(location.y))
+        if lua_pcall(L, 5, 0, 0) != LUA_OK { lua_pop(L, 1) }
     }
 
     func subviewCallback(_ sender: Any) {
         guard mouseCallbackRef != LUA_NOREF else { return }
         let skin = LuaSkin.skin(with: nil)
-        _lua_stackguard_entry(skin.l)
-        skin.pushLuaRef(canvas_refTable, ref: mouseCallbackRef)
-        skin.pushNSObject(self)
-        skin.pushNSObject("_subview_" as NSString)
-        skin.pushNSObject(sender as AnyObject)
-        skin.protectedCallAndError("hs.canvas:buttonCallback", nargs: 3, nresults: 0)
-        _lua_stackguard_exit(skin.l)
+        let L = LuaSkin.skin(with: nil).l!
+        lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(mouseCallbackRef))
+        lua_pushany(L, self)
+        lua_pushany(L, "_subview_" as NSString)
+        lua_pushany(L, sender as AnyObject)
+        if lua_pcall(L, 3, 0, 0) != LUA_OK { lua_pop(L, 1) }
     }
 
     override func mouseDown(with theEvent: NSEvent) {
@@ -442,16 +441,16 @@ import LuaSkin
 
         // fix "...Color" tables
         if keyName.hasSuffix("Color"), let dict = oldValue as? NSDictionary {
-            skin.pushNSObject(dict)
+            lua_pushany(L, dict)
             lua_pushstring(L, "NSColor")
             lua_setfield(L, -2, "__luaSkinType")
-            newValue = skin.toNSObject(atIndex: -1)
+            newValue = lua_tovalue(L, at: -1)
             lua_pop(L, 1)
         } else if keyName.hasSuffix("Color"), let arr = oldValue as? NSArray {
-            skin.pushNSObject(arr)
+            lua_pushany(L, arr)
             lua_pushstring(L, "NSColor")
             lua_setfield(L, -2, "__luaSkinType")
-            newValue = skin.toNSObject(atIndex: -1)
+            newValue = lua_tovalue(L, at: -1)
             lua_pop(L, 1)
 
         // fillGradientColors is an array of colors
@@ -461,10 +460,10 @@ import LuaSkin
                 oldArray.enumerateObjects { (anItem, idx, _) in
                     var item = anItem
                     if let dict = item as? NSDictionary {
-                        skin.pushNSObject(dict)
+                        lua_pushany(L, dict)
                         lua_pushstring(L, "NSColor")
                         lua_setfield(L, -2, "__luaSkinType")
-                        item = skin.toNSObject(atIndex: -1) as Any
+                        item = lua_tovalue(L, at: -1) as Any
                         lua_pop(L, 1)
                     }
                     if let color = item as? NSColor, color.usingColorSpace(.genericRGB) != nil {
@@ -484,26 +483,26 @@ import LuaSkin
 
         // fix NSAffineTransform table
         } else if keyName == "transformation", (oldValue is NSDictionary || oldValue is NSArray) {
-            skin.pushNSObject(oldValue as AnyObject)
+            lua_pushany(L, oldValue as AnyObject)
             lua_pushstring(L, "NSAffineTransform")
             lua_setfield(L, -2, "__luaSkinType")
-            newValue = skin.toNSObject(atIndex: -1)
+            newValue = lua_tovalue(L, at: -1)
             lua_pop(L, 1)
 
         // fix NSShadow table
         } else if keyName == "shadow", (oldValue is NSDictionary || oldValue is NSArray) {
-            skin.pushNSObject(oldValue as AnyObject)
+            lua_pushany(L, oldValue as AnyObject)
             lua_pushstring(L, "NSShadow")
             lua_setfield(L, -2, "__luaSkinType")
-            newValue = skin.toNSObject(atIndex: -1)
+            newValue = lua_tovalue(L, at: -1)
             lua_pop(L, 1)
 
         // fix hs.styledText as Table
         } else if keyName == "text", (oldValue is NSDictionary || oldValue is NSArray) {
-            skin.pushNSObject(oldValue as AnyObject)
+            lua_pushany(L, oldValue as AnyObject)
             lua_pushstring(L, "NSAttributedString")
             lua_setfield(L, -2, "__luaSkinType")
-            newValue = skin.toNSObject(atIndex: -1)
+            newValue = lua_tovalue(L, at: -1)
             lua_pop(L, 1)
 
         // recurse into fields which have subfields
@@ -1146,10 +1145,9 @@ import LuaSkin
     }
 
     func fadeOut(_ fadeTime: TimeInterval, andDelete deleteView: Bool, withState L: UnsafeMutablePointer<lua_State>!) {
-        let skin = LuaSkin.skin(with: L)
         if selfRef != LUA_NOREF { return } // already in a fade
-        skin.pushNSObject(self)
-        selfRef = skin.luaRef(canvas_refTable)
+        lua_pushany(L, self)
+        selfRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
 
         let alphaSetting = self.alphaValue
         NSAnimationContext.beginGrouping()
@@ -1157,8 +1155,9 @@ import LuaSkin
         NSAnimationContext.current.duration = fadeTime
         NSAnimationContext.current.completionHandler = {
             guard let mySelf = bself else { return }
-            let bSkin = LuaSkin.skin(with: nil)
-            mySelf.selfRef = bSkin.luaUnref(canvas_refTable, ref: mySelf.selfRef)
+            let bL = LuaSkin.skin(with: nil).l!
+            luaL_unref(bL, LUA_REGISTRYINDEX_VALUE, mySelf.selfRef)
+            mySelf.selfRef = LUA_NOREF
 
             if deleteView {
                 mySelf.removeFromSuperview()
@@ -1178,23 +1177,22 @@ import LuaSkin
         guard draggingCallbackRef != LUA_NOREF else { return isAllGood }
 
         let skin = LuaSkin.skin(with: nil)
-        let L = skin.l!
-        _lua_stackguard_entry(L)
+        let L = LuaSkin.skin(with: nil).l!
         var argCount: Int32 = 2
-        skin.pushLuaRef(canvas_refTable, ref: draggingCallbackRef)
-        skin.pushNSObject(self)
-        skin.pushNSObject(message as NSString)
+        lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(draggingCallbackRef))
+        lua_pushany(L, self)
+        lua_pushany(L, message as NSString)
 
         if let sender = sender {
             lua_newtable(L)
             let pasteboard = sender.draggingPasteboard
-            skin.pushNSObject(pasteboard.name.rawValue as NSString)
+            lua_pushany(L, pasteboard.name.rawValue as NSString)
             lua_setfield(L, -2, "pasteboard")
 
             lua_pushinteger(L, lua_Integer(sender.draggingSequenceNumber))
             lua_setfield(L, -2, "sequence")
 
-            skin.pushNSPoint(sender.draggingLocation)
+            lua_pushNSPoint(L, sender.draggingLocation)
             lua_setfield(L, -2, "mouse")
 
             let operation = sender.draggingSourceOperationMask
@@ -1213,13 +1211,12 @@ import LuaSkin
             argCount += 1
         }
 
-        if skin.protectedCallAndTraceback(argCount, nresults: 1) {
+        if lua_pcall(L, argCount, 1, 0) == LUA_OK {
             isAllGood = lua_isnoneornil(L, -1) ? true : (lua_toboolean(L, -1) != 0)
         } else {
-            skin.logError("\(canvas_USERDATA_TAG):draggingCallback error: \(skin.toNSObject(atIndex: -1) ?? "unknown" as NSString)")
+            os_log(.error, "%{public}s", "\(canvas_USERDATA_TAG):draggingCallback error: \(lua_tovalue(L, at: -1) ?? "unknown" as NSString)")
         }
         lua_pop(L, 1)
-        _lua_stackguard_exit(L)
 
         return isAllGood
     }

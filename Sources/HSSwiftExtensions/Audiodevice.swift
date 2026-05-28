@@ -16,7 +16,7 @@ struct AudioDeviceUserData {
     var deviceId: AudioDeviceID
     var callback: Int32
     var watcherRunning: Bool
-    var lsCanary: LSGCCanary
+    var lsCanary: UInt64
 }
 
 // Define a datatype for hs.audiodevice.datasource objects
@@ -42,7 +42,7 @@ private let watchSelectors: [AudioObjectPropertySelector] = [
     kAudioDevicePropertyDeviceIsRunningSomewhere,
 ]
 
-private var refTable: LSRefTable = 0
+private var refTable: Int32 = 0
 
 // MARK: - Function forward declarations (not needed in Swift, but noting for parity)
 
@@ -86,30 +86,28 @@ private func audiodevice_callback(
         guard let clientData = clientData else { return }
         let userData = clientData.assumingMemoryBound(to: AudioDeviceUserData.self)
         let skin = LuaSkin.skin(with: nil)
-        if !skin.check(userData.pointee.lsCanary) {
+        let L = LuaSkin.skin(with: nil).l!
+        if !lua_isStateGenerationValid(userData.pointee.lsCanary) {
             return
         }
-
-        _lua_stackguard_entry(skin.l)
         if userData.pointee.callback == LUA_NOREF {
-            skin.logError("hs.audiodevice.watcher callback fired, but no function has been set with hs.audiodevice.watcher.setCallback()")
+            os_log(.error, "%{public}s", "hs.audiodevice.watcher callback fired, but no function has been set with hs.audiodevice.watcher.setCallback()")
         } else {
             for event in events {
-                skin.pushLuaRef(refTable, ref: userData.pointee.callback)
+                lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(userData.pointee.callback))
 
                 if let uid = deviceUIDNS {
-                    lua_pushstring(skin.l, uid)
+                    lua_pushstring(L, uid)
                 } else {
-                    lua_pushnil(skin.l)
+                    lua_pushnil(L)
                 }
 
-                skin.pushNSObject(event["mSelector"] as? String)
-                skin.pushNSObject(event["mScope"] as? String)
-                skin.pushNSObject(event["mElement"])
-                skin.protectedCallAndError("hs.audiodevice:watcherCallback", nargs: 4, nresults: 0)
+                lua_pushany(L, event["mSelector"] as? String)
+                lua_pushany(L, event["mScope"] as? String)
+                lua_pushany(L, event["mElement"])
+                if lua_pcall(L, 4, 0, 0) != LUA_OK { lua_pop(L, 1) }
             }
         }
-        _lua_stackguard_exit(skin.l)
     }
     return noErr
 }
@@ -149,8 +147,7 @@ func new_device(_ L: UnsafeMutablePointer<lua_State>!, _ deviceId: AudioDeviceID
     audioDevice.pointee.callback = LUA_NOREF
     audioDevice.pointee.watcherRunning = false
 
-    let skin = LuaSkin.skin(with: L)
-    audioDevice.pointee.lsCanary = skin.createGCCanary()
+    audioDevice.pointee.lsCanary = lua_currentStateGeneration()
 
     luaL_getmetatable(L, USERDATA_TAG)
     lua_setmetatable(L, -2)
@@ -178,8 +175,6 @@ func new_dataSource(_ L: UnsafeMutablePointer<lua_State>!, _ deviceID: AudioDevi
 /// Returns:
 ///  * A table of zero or more audio devices connected to the system
 private func audiodevice_alldevices(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TBREAK)
 
     var propertyAddress = AudioObjectPropertyAddress(
         mSelector: kAudioHardwarePropertyDevices,
@@ -227,8 +222,6 @@ private func audiodevice_alldevices(_ L: UnsafeMutablePointer<lua_State>!) -> In
 /// Returns:
 ///  * An hs.audiodevice object, or nil if no suitable device could be found
 private func audiodevice_defaultoutputdevice(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TBREAK)
 
     var propertyAddress = AudioObjectPropertyAddress(
         mSelector: kAudioHardwarePropertyDefaultOutputDevice,
@@ -258,8 +251,6 @@ private func audiodevice_defaultoutputdevice(_ L: UnsafeMutablePointer<lua_State
 /// Returns:
 ///  * An hs.audiodevice object, or nil if no suitable device could be found
 private func audiodevice_defaultinputdevice(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TBREAK)
 
     var propertyAddress = AudioObjectPropertyAddress(
         mSelector: kAudioHardwarePropertyDefaultInputDevice,
@@ -289,8 +280,6 @@ private func audiodevice_defaultinputdevice(_ L: UnsafeMutablePointer<lua_State>
 /// Returns:
 ///  * An hs.audiodevice object, or nil if no suitable device could be found
 private func audiodevice_defaulteffectdevice(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TBREAK)
 
     var propertyAddress = AudioObjectPropertyAddress(
         mSelector: kAudioHardwarePropertyDefaultSystemOutputDevice,
@@ -322,8 +311,7 @@ private func audiodevice_defaulteffectdevice(_ L: UnsafeMutablePointer<lua_State
 /// Returns:
 ///  * True if the audio device was successfully selected, otherwise false.
 private func audiodevice_setdefaultoutputdevice(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
 
     let audioDevice = userdataToAudioDevice(L, 1)
     var deviceId = audioDevice.pointee.deviceId
@@ -355,8 +343,7 @@ private func audiodevice_setdefaultoutputdevice(_ L: UnsafeMutablePointer<lua_St
 /// Returns:
 ///  * True if the audio device was successfully selected, otherwise false.
 private func audiodevice_setdefaulteffectdevice(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
 
     let audioDevice = userdataToAudioDevice(L, 1)
     var deviceId = audioDevice.pointee.deviceId
@@ -388,8 +375,7 @@ private func audiodevice_setdefaulteffectdevice(_ L: UnsafeMutablePointer<lua_St
 /// Returns:
 ///  * True if the audio device was successfully selected, otherwise false.
 private func audiodevice_setdefaultinputdevice(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
 
     let audioDevice = userdataToAudioDevice(L, 1)
     var deviceId = audioDevice.pointee.deviceId
@@ -421,8 +407,7 @@ private func audiodevice_setdefaultinputdevice(_ L: UnsafeMutablePointer<lua_Sta
 /// Returns:
 ///  * A string containing the name of the audio device, or nil if it has no name
 private func audiodevice_name(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
 
     let audioDevice = userdataToAudioDevice(L, 1)
     let deviceId = audioDevice.pointee.deviceId
@@ -456,8 +441,7 @@ private func audiodevice_name(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * A string containing the UID of the audio device, or nil if it has no UID.
 private func audiodevice_uid(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
 
     let audioDevice = userdataToAudioDevice(L, 1)
     let deviceId = audioDevice.pointee.deviceId
@@ -498,8 +482,7 @@ private func audiodevice_uid(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * True if the audio device is in use, False if not. nil if an error occurred.
 private func audiodevice_inUse(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
 
     let audioDevice = userdataToAudioDevice(L, 1)
     let deviceId = audioDevice.pointee.deviceId
@@ -540,8 +523,7 @@ private func audiodevice_inUse(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * True if the audio device's Input is muted. False if it's not muted, nil if it does not support muting
 private func audiodevice_inputMuted(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
 
     let audioDevice = userdataToAudioDevice(L, 1)
     let deviceId = audioDevice.pointee.deviceId
@@ -573,8 +555,7 @@ private func audiodevice_inputMuted(_ L: UnsafeMutablePointer<lua_State>!) -> In
 /// Returns:
 ///  * True if the audio device's Output is muted. False if it's not muted, nil if it does not support muting
 private func audiodevice_outputMuted(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
 
     let audioDevice = userdataToAudioDevice(L, 1)
     let deviceId = audioDevice.pointee.deviceId
@@ -609,8 +590,7 @@ private func audiodevice_outputMuted(_ L: UnsafeMutablePointer<lua_State>!) -> I
 /// Notes:
 ///  * If a device is capable of both input and output, this method will prefer the output. See `:inputMuted()` and `:outputMuted()` for specific variants.
 private func audiodevice_muted(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
 
     let audioDevice = userdataToAudioDevice(L, 1)
     let deviceId = audioDevice.pointee.deviceId
@@ -644,8 +624,6 @@ private func audiodevice_muted(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * True if the device's Input mutedness state was set, or False if it does not support muting
 private func audiodevice_setInputMuted(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBOOLEAN, LS_TBREAK)
 
     let audioDevice = userdataToAudioDevice(L, 1)
     let deviceId = audioDevice.pointee.deviceId
@@ -677,8 +655,6 @@ private func audiodevice_setInputMuted(_ L: UnsafeMutablePointer<lua_State>!) ->
 /// Returns:
 ///  * True if the device's Output mutedness state was set, or False if it does not support muting
 private func audiodevice_setOutputMuted(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBOOLEAN, LS_TBREAK)
 
     let audioDevice = userdataToAudioDevice(L, 1)
     let deviceId = audioDevice.pointee.deviceId
@@ -713,8 +689,6 @@ private func audiodevice_setOutputMuted(_ L: UnsafeMutablePointer<lua_State>!) -
 /// Notes:
 ///  * If a device is capable of both input and output, this method will prefer the output. See `:setInputMuted()` and `:setOutputMuted()` for specific variants.
 private func audiodevice_setmuted(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBOOLEAN, LS_TBREAK)
 
     let audioDevice = userdataToAudioDevice(L, 1)
     let deviceId = audioDevice.pointee.deviceId
@@ -751,8 +725,7 @@ private func audiodevice_setmuted(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
 /// Notes:
 ///  * The return value will be a floating point number
 private func audiodevice_inputVolume(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
 
     let audioDevice = userdataToAudioDevice(L, 1)
     let deviceId = audioDevice.pointee.deviceId
@@ -792,8 +765,7 @@ private func audiodevice_inputVolume(_ L: UnsafeMutablePointer<lua_State>!) -> I
 /// Notes:
 ///  * The return value will be a floating point number
 private func audiodevice_outputVolume(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
 
     let audioDevice = userdataToAudioDevice(L, 1)
     let deviceId = audioDevice.pointee.deviceId
@@ -834,8 +806,7 @@ private func audiodevice_outputVolume(_ L: UnsafeMutablePointer<lua_State>!) -> 
 ///  * The return value will be a floating point number
 ///  * This method will inspect the device to determine if it is an input or output device, and return the appropriate volume. For devices that are both input and output devices, see `:inputVolume()` and `:outputVolume()`
 private func audiodevice_volume(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
 
     let audioDevice = userdataToAudioDevice(L, 1)
     let deviceId = audioDevice.pointee.deviceId
@@ -872,8 +843,9 @@ private func audiodevice_volume(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 /// Notes:
 ///  * The volume level is a floating point number. Depending on your audio hardware, it may not be possible to increase volume in single digit increments
 private func audiodevice_setInputVolume(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TNUMBER, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
+
+    luaL_checktype(L, 2, LUA_TNUMBER)
 
     let audioDevice = userdataToAudioDevice(L, 1)
     let deviceId = audioDevice.pointee.deviceId
@@ -911,8 +883,9 @@ private func audiodevice_setInputVolume(_ L: UnsafeMutablePointer<lua_State>!) -
 /// Notes:
 ///  * The volume level is a floating point number. Depending on your audio hardware, it may not be possible to increase volume in single digit increments
 private func audiodevice_setOutputVolume(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TNUMBER, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
+
+    luaL_checktype(L, 2, LUA_TNUMBER)
 
     let audioDevice = userdataToAudioDevice(L, 1)
     let deviceId = audioDevice.pointee.deviceId
@@ -951,8 +924,9 @@ private func audiodevice_setOutputVolume(_ L: UnsafeMutablePointer<lua_State>!) 
 ///  * The volume level is a floating point number. Depending on your audio hardware, it may not be possible to increase volume in single digit increments.
 ///  * This method will inspect the device to determine if it is an input or output device, and set the appropriate volume. For devices that are both input and output devices, see `:setInputVolume()` and `:setOutputVolume()`
 private func audiodevice_setvolume(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TNUMBER, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
+
+    luaL_checktype(L, 2, LUA_TNUMBER)
 
     let audioDevice = userdataToAudioDevice(L, 1)
     let deviceId = audioDevice.pointee.deviceId
@@ -993,8 +967,7 @@ private func audiodevice_setvolume(_ L: UnsafeMutablePointer<lua_State>!) -> Int
 ///  * The return value will be a floating point number
 ///  * This method will inspect the device to determine if it is an input or output device, and return the appropriate volume. For devices that are both input and output devices, see `:inputVolume()` and `:outputVolume()`
 private func audiodevice_balance(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
 
     let audioDevice = userdataToAudioDevice(L, 1)
     let deviceId = audioDevice.pointee.deviceId
@@ -1031,8 +1004,9 @@ private func audiodevice_balance(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 /// Notes:
 ///  * This method will inspect the device to determine if it is an input or output device, and set the appropriate volume. For devices that are both input and output devices, see `:setInputVolume()` and `:setOutputVolume()`
 private func audiodevice_setbalance(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TNUMBER, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
+
+    luaL_checktype(L, 2, LUA_TNUMBER)
 
     let audioDevice = userdataToAudioDevice(L, 1)
     let deviceId = audioDevice.pointee.deviceId
@@ -1073,8 +1047,7 @@ private func audiodevice_setbalance(_ L: UnsafeMutablePointer<lua_State>!) -> In
 ///  * This method only works on devices that have hardware support (often microphones with a built-in headphone jack)
 ///  * This setting corresponds to the "Thru" setting in Audio MIDI Setup
 private func audiodevice_thru(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
 
     let audioDevice = userdataToAudioDevice(L, 1)
     let deviceId = audioDevice.pointee.deviceId
@@ -1112,8 +1085,6 @@ private func audiodevice_thru(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * This method only works on devices that have hardware support (often microphones with a built-in headphone jack)
 ///  * This setting corresponds to the "Thru" setting in Audio MIDI Setup
 private func audiodevice_setThru(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBOOLEAN, LS_TBREAK)
 
     let audioDevice = userdataToAudioDevice(L, 1)
     let deviceId = audioDevice.pointee.deviceId
@@ -1147,8 +1118,7 @@ private func audiodevice_setThru(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 /// Returns:
 ///  * A boolean, true if the device is an output device, false if not
 private func audiodevice_isOutputDevice(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
 
     let audioDevice = userdataToAudioDevice(L, 1)
     lua_pushboolean(L, isOutputDevice(audioDevice.pointee.deviceId) ? 1 : 0)
@@ -1166,8 +1136,7 @@ private func audiodevice_isOutputDevice(_ L: UnsafeMutablePointer<lua_State>!) -
 /// Returns:
 ///  * A boolean, true if the device is an input device, false if not
 private func audiodevice_isInputDevice(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
 
     let audioDevice = userdataToAudioDevice(L, 1)
     lua_pushboolean(L, isInputDevice(audioDevice.pointee.deviceId) ? 1 : 0)
@@ -1185,8 +1154,7 @@ private func audiodevice_isInputDevice(_ L: UnsafeMutablePointer<lua_State>!) ->
 /// Returns:
 ///  * A string containing the transport type, or nil if an error occurred
 private func audiodevice_transportType(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
 
     let audioDevice = userdataToAudioDevice(L, 1)
     let deviceId = audioDevice.pointee.deviceId
@@ -1235,8 +1203,7 @@ private func audiodevice_transportType(_ L: UnsafeMutablePointer<lua_State>!) ->
 /// Returns:
 ///  * A boolean, true if a jack is connected, false if not, or nil if the device does not support jack sense
 private func audiodevice_jackConnected(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
 
     let audioDevice = userdataToAudioDevice(L, 1)
     let deviceId = audioDevice.pointee.deviceId
@@ -1269,8 +1236,7 @@ private func audiodevice_jackConnected(_ L: UnsafeMutablePointer<lua_State>!) ->
 /// Returns:
 ///  * A boolean, true if the device supports input data sources, false if not
 private func audiodevice_supportsInputDataSources(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
 
     let audioDevice = userdataToAudioDevice(L, 1)
     let deviceId = audioDevice.pointee.deviceId
@@ -1296,8 +1262,7 @@ private func audiodevice_supportsInputDataSources(_ L: UnsafeMutablePointer<lua_
 /// Returns:
 ///  * A boolean, true if the device supports output data sources, false if not
 private func audiodevice_supportsOutputDataSources(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
 
     let audioDevice = userdataToAudioDevice(L, 1)
     let deviceId = audioDevice.pointee.deviceId
@@ -1326,8 +1291,7 @@ private func audiodevice_supportsOutputDataSources(_ L: UnsafeMutablePointer<lua
 /// Notes:
 ///  * Before calling this method, you should check the result of hs.audiodevice:supportsInputDataSources()
 private func audiodevice_currentInputDataSource(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
 
     let audioDevice = userdataToAudioDevice(L, 1)
     let deviceId = audioDevice.pointee.deviceId
@@ -1363,8 +1327,7 @@ private func audiodevice_currentInputDataSource(_ L: UnsafeMutablePointer<lua_St
 /// Notes:
 ///  * Before calling this method, you should check the result of hs.audiodevice:supportsOutputDataSources()
 private func audiodevice_currentOutputDataSource(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
 
     let audioDevice = userdataToAudioDevice(L, 1)
     let deviceId = audioDevice.pointee.deviceId
@@ -1397,8 +1360,7 @@ private func audiodevice_currentOutputDataSource(_ L: UnsafeMutablePointer<lua_S
 /// Returns:
 ///  * A list of hs.audiodevice.dataSource objects, or nil if an error occurred
 private func audiodevice_allOutputDataSources(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
 
     let audioDevice = userdataToAudioDevice(L, 1)
     let deviceId = audioDevice.pointee.deviceId
@@ -1445,8 +1407,7 @@ private func audiodevice_allOutputDataSources(_ L: UnsafeMutablePointer<lua_Stat
 /// Returns:
 ///  * A list of hs.audiodevice.dataSource objects, or nil if an error occurred
 private func audiodevice_allInputDataSources(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
 
     let audioDevice = userdataToAudioDevice(L, 1)
     let deviceId = audioDevice.pointee.deviceId
@@ -1513,17 +1474,19 @@ private func audiodevice_allInputDataSources(_ L: UnsafeMutablePointer<lua_State
 ///  * You will receive many events to your callback, so filtering on the name/scope/element arguments is vital. For example, on a stereo device, it is not uncommon to receive a `volm` event for each audio channel when the volume changes, or multiple `mute` events for channels. Dragging a volume slider in the system Sound preferences will produce a large number of `volm` events. Plugging/unplugging headphones may trigger `volm` events in addition to `jack` ones, etc.
 ///  * If you need to use the `hs.audiodevice` object in your callback, use `hs.audiodevice.findDeviceByUID()` to obtain it fro the first callback argument
 private func audiodevice_watcherSetCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TFUNCTION | LS_TNIL, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
 
     let audioDevice = userdataToAudioDevice(L, 1)
 
-    audioDevice.pointee.callback = skin.luaUnref(refTable, ref: audioDevice.pointee.callback)
+    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, audioDevice.pointee.callback)
+
+
+    audioDevice.pointee.callback = LUA_NOREF
 
     switch lua_type(L, 2) {
     case LUA_TFUNCTION:
         lua_pushvalue(L, 2)
-        audioDevice.pointee.callback = skin.luaRef(refTable)
+        audioDevice.pointee.callback = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
     case LUA_TNIL:
         watcherStop(audioDevice)
     default:
@@ -1545,13 +1508,12 @@ private func audiodevice_watcherSetCallback(_ L: UnsafeMutablePointer<lua_State>
 /// Returns:
 ///  * The `hs.audiodevice` object, or nil if an error occurred
 private func audiodevice_watcherStart(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
 
     let audioDevice = userdataToAudioDevice(L, 1)
 
     if audioDevice.pointee.callback == LUA_NOREF {
-        skin.logError("You must call hs.audiodevice:setCallback() before hs.audiodevice:start()")
+        os_log(.error, "%{public}s", "You must call hs.audiodevice:setCallback() before hs.audiodevice:start()")
         lua_pushnil(L)
         return 1
     }
@@ -1608,8 +1570,7 @@ func watcherStop(_ audioDevice: UnsafeMutablePointer<AudioDeviceUserData>) {
 /// Returns:
 ///  * The `hs.audiodevice` object
 private func audiodevice_watcherStop(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
 
     let audioDevice = userdataToAudioDevice(L, 1)
 
@@ -1630,8 +1591,7 @@ private func audiodevice_watcherStop(_ L: UnsafeMutablePointer<lua_State>!) -> I
 /// Returns:
 ///  * A boolean, true if the watcher is running, false if not
 private func audiodevice_watcherIsRunning(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
 
     let audioDevice = userdataToAudioDevice(L, 1)
 
@@ -1641,8 +1601,7 @@ private func audiodevice_watcherIsRunning(_ L: UnsafeMutablePointer<lua_State>!)
 }
 
 private func audiodevice_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
 
     let audioDevice = userdataToAudioDevice(L, 1)
     let deviceId = audioDevice.pointee.deviceId
@@ -1665,14 +1624,12 @@ private func audiodevice_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
     }
 
     let ptr = lua_topointer(L, 1)
-    skin.pushNSObject("\(USERDATA_TAG): \(deviceNameNS) (\(String(describing: ptr)))" as NSString)
+    lua_pushany(L, "\(USERDATA_TAG): \(deviceNameNS) (\(String(describing: ptr)))" as NSString)
 
     return 1
 }
 
 private func audiodevice_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
 
     let deviceA = userdataToAudioDevice(L, 1)
     let deviceB = userdataToAudioDevice(L, 2)
@@ -1683,14 +1640,16 @@ private func audiodevice_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 private func audiodevice_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
 
     let audioDevice = userdataToAudioDevice(L, 1)
 
     _ = audiodevice_watcherStop(L)
 
-    audioDevice.pointee.callback = skin.luaUnref(refTable, ref: audioDevice.pointee.callback)
-    skin.destroy(&audioDevice.pointee.lsCanary)
+    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, audioDevice.pointee.callback)
+
+
+    audioDevice.pointee.callback = LUA_NOREF
 
     return 0
 }
@@ -1744,8 +1703,7 @@ func get_datasource_name(_ hostDevice: AudioDeviceID, _ dataSource: UInt32) -> S
 /// Returns:
 ///  * A string containing the name of the datasource
 private func datasource_name(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_DATASOURCE_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_DATASOURCE_TAG)
 
     let dataSource = userdataToDataSource(L, 1)
     let name = get_datasource_name(dataSource.pointee.hostDevice, dataSource.pointee.dataSource)
@@ -1765,8 +1723,7 @@ private func datasource_name(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * The `hs.audiodevice.datasource` object
 private func datasource_setDefault(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_DATASOURCE_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_DATASOURCE_TAG)
 
     let dataSource = userdataToDataSource(L, 1)
     let scope: AudioObjectPropertyScope
@@ -1796,8 +1753,7 @@ private func datasource_setDefault(_ L: UnsafeMutablePointer<lua_State>!) -> Int
 }
 
 private func datasource_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_DATASOURCE_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_DATASOURCE_TAG)
 
     let dataSource = userdataToDataSource(L, 1)
     let name = get_datasource_name(dataSource.pointee.hostDevice, dataSource.pointee.dataSource)
@@ -1809,8 +1765,6 @@ private func datasource_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 }
 
 private func datasource_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_DATASOURCE_TAG, LS_TUSERDATA, USERDATA_DATASOURCE_TAG, LS_TBREAK)
 
     let sourceA = userdataToDataSource(L, 1)
     let sourceB = userdataToDataSource(L, 2)

@@ -29,7 +29,7 @@ private let kIOUSBDeviceInterfaceID_: CFUUID = CFUUIDGetConstantUUIDWithBytes(
 
 // MARK: - Global variables
 
-var razerRefTable: LSRefTable = LUA_NOREF
+var razerRefTable: Int32 = LUA_NOREF
 
 private var razerManager: HSRazerManager?
 
@@ -136,7 +136,7 @@ private struct HSRazerReportBuilder {
 
     @objc var lastScrollWheelEvent: Double = 0
 
-    @objc var lsCanary: LSGCCanary = LSGCCanary()
+    @objc var lsCanary: UInt64 = UInt64()
 
     @objc init(device: IOHIDDevice, manager: HSRazerManager) {
         super.init()
@@ -189,15 +189,14 @@ private struct HSRazerReportBuilder {
 
         guard buttonCallbackRef != LUA_NOREF else { return }
 
-        let skin = LuaSkin.shared(with: nil) as! LuaSkin
+        guard lua_isStateGenerationValid(lsCanary) else { return }
 
-        guard skin.check(lsCanary) else { return }
-
-        skin.pushLuaRef(razerRefTable, ref: buttonCallbackRef)
-        skin.pushNSObject(self)
-        skin.pushNSObject(buttonName as NSString)
-        skin.pushNSObject(buttonAction as NSString)
-        skin.protectedCallAndError("hs.razer:callback", nargs: 3, nresults: 0)
+        let L = LuaSkin.skin(with: nil).l!
+        lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(buttonCallbackRef))
+        lua_pushany(L, self)
+        lua_pushany(L, buttonName as NSString)
+        lua_pushany(L, buttonAction as NSString)
+        if lua_pcall(L, 3, 0, 0) != LUA_OK { lua_pop(L, 1) }
     }
 
     // MARK: - Event Tap for Scroll Wheel
@@ -540,8 +539,8 @@ private func razerEventTapCallback(
         return Unmanaged.passUnretained(event)
     }
 
-    let skin = LuaSkin.shared(with: nil) as! LuaSkin
-    guard skin.check(device.lsCanary) else {
+    let skin = LuaSkin.skin(with: nil)
+    guard lua_isStateGenerationValid(device.lsCanary) else {
         return Unmanaged.passUnretained(event)
     }
 
@@ -979,16 +978,16 @@ private func hidDisconnect(
 
         devices.add(razerDevice)
 
-        let skin = LuaSkin.shared(with: nil) as! LuaSkin
-        razerDevice.lsCanary = skin.createGCCanary()
+        razerDevice.lsCanary = lua_currentStateGeneration()
 
         if discoveryCallbackRef == LUA_NOREF || discoveryCallbackRef == LUA_REFNIL {
-            skin.logWarn("hs.razer detected a device connecting, but no discovery callback has been set. See hs.razer.discoveryCallback()")
+            os_log(.info, "%{public}s", "hs.razer detected a device connecting, but no discovery callback has been set. See hs.razer.discoveryCallback()")
         } else {
-            skin.pushLuaRef(razerRefTable, ref: discoveryCallbackRef)
-            lua_pushboolean(skin.l, 1)
-            skin.pushNSObject(razerDevice)
-            skin.protectedCallAndError("hs.razer:deviceDidConnect", nargs: 2, nresults: 0)
+            let L = LuaSkin.skin(with: nil).l!
+            lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(discoveryCallbackRef))
+            lua_pushboolean(L, 1)
+            lua_pushany(L, razerDevice)
+            if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
         }
 
         return razerDevice
@@ -1000,14 +999,14 @@ private func hidDisconnect(
             guard razerDevice.device == device else { continue }
 
             razerDevice.invalidate()
-            let skin = LuaSkin.shared(with: nil) as! LuaSkin
             if discoveryCallbackRef == LUA_NOREF || discoveryCallbackRef == LUA_REFNIL {
-                skin.logWarn("hs.razer detected a device disconnecting, but no callback has been set. See hs.razer.discoveryCallback()")
+                os_log(.info, "%{public}s", "hs.razer detected a device disconnecting, but no callback has been set. See hs.razer.discoveryCallback()")
             } else {
-                skin.pushLuaRef(razerRefTable, ref: discoveryCallbackRef)
-                lua_pushboolean(skin.l, 0)
-                skin.pushNSObject(razerDevice)
-                skin.protectedCallAndError("hs.razer:deviceDidDisconnect", nargs: 2, nresults: 0)
+                let L = LuaSkin.skin(with: nil).l!
+                lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(discoveryCallbackRef))
+                lua_pushboolean(L, 0)
+                lua_pushany(L, razerDevice)
+                if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
             }
 
             devices.removeObject(at: index)
@@ -1033,11 +1032,11 @@ private func hidDisconnect(
 /// Notes:
 ///  * This function must be called before any other parts of this module are used
 private let razer_init: lua_CFunction = { L in
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TFUNCTION, LS_TBREAK)
+    luaL_checktype(L, 1, LUA_TFUNCTION)
 
     razerManager = HSRazerManager()
-    razerManager!.discoveryCallbackRef = skin.luaRef(razerRefTable, at: 1)
+    lua_pushvalue(L, 1)
+    razerManager!.discoveryCallbackRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
     razerManager!.startHIDManager()
 
     return 0
@@ -1055,16 +1054,15 @@ private let razer_init: lua_CFunction = { L in
 /// Returns:
 ///  * None
 private let razer_discoveryCallback: lua_CFunction = { L in
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TFUNCTION | LS_TNIL, LS_TBREAK)
-
     if razerManager == nil {
         razerManager = HSRazerManager()
     }
-    razerManager!.discoveryCallbackRef = skin.luaUnref(razerRefTable, ref: razerManager!.discoveryCallbackRef)
+    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, razerManager!.discoveryCallbackRef)
+    razerManager!.discoveryCallbackRef = LUA_NOREF
 
-    if lua_type(skin.l, 1) == LUA_TFUNCTION {
-        razerManager!.discoveryCallbackRef = skin.luaRef(razerRefTable, at: 1)
+    if lua_type(L, 1) == LUA_TFUNCTION {
+        lua_pushvalue(L, 1)
+        razerManager!.discoveryCallbackRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
     }
 
     return 0
@@ -1080,9 +1078,7 @@ private let razer_discoveryCallback: lua_CFunction = { L in
 /// Returns:
 ///  * A number containing the number of Razer devices attached to the system
 private let razer_numDevices: lua_CFunction = { L in
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TBREAK)
-    lua_pushinteger(skin.l, lua_Integer(razerManager?.devices.count ?? 0))
+    lua_pushinteger(L, lua_Integer(razerManager?.devices.count ?? 0))
     return 1
 }
 
@@ -1096,10 +1092,9 @@ private let razer_numDevices: lua_CFunction = { L in
 /// Returns:
 ///  * An hs.razer object or `nil` if something goes wrong
 private let razer_getDevice: lua_CFunction = { L in
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TNUMBER, LS_TBREAK)
+    luaL_checktype(L, 1, LUA_TNUMBER)
 
-    let deviceNumber = Int(lua_tointeger(skin.l, 1)) - 1
+    let deviceNumber = Int(lua_tointeger(L, 1)) - 1
 
     guard let manager = razerManager, deviceNumber >= 0, deviceNumber < manager.devices.count else {
         lua_pushnil(L)
@@ -1107,7 +1102,7 @@ private let razer_getDevice: lua_CFunction = { L in
     }
 
     if let razer = manager.devices[deviceNumber] as? HSRazerDevice {
-        skin.pushNSObject(razer)
+        lua_pushany(L, razer)
     } else {
         lua_pushnil(L)
     }
@@ -1127,10 +1122,9 @@ private let razer_getDevice: lua_CFunction = { L in
 /// Returns:
 ///  * The device name as a string.
 private let razer_name: lua_CFunction = { L in
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
-    let razer: HSRazerDevice = skin.luaObject(at: 1, toClass: "HSRazerDevice") as! HSRazerDevice
-    skin.pushNSObject(razer.name as NSString)
+    luaL_checkudata(L, 1, USERDATA_TAG)
+    let razer: HSRazerDevice = lua_tovalue(L, at: 1) as! HSRazerDevice
+    lua_pushany(L, razer.name as NSString)
     return 1
 }
 
@@ -1150,30 +1144,31 @@ private let razer_name: lua_CFunction = { L in
 ///    * `buttonName` - The name of the button as a string.
 ///    * `buttonAction` - A string containing "pressed", "released", "up" or "down".
 private let razer_callback: lua_CFunction = { L in
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TFUNCTION | LS_TNIL, LS_TBREAK)
-    let device: HSRazerDevice = skin.luaObject(at: 1, toClass: "HSRazerDevice") as! HSRazerDevice
-    device.buttonCallbackRef = skin.luaUnref(razerRefTable, ref: device.buttonCallbackRef)
-    if lua_type(skin.l, 2) == LUA_TFUNCTION {
-        device.buttonCallbackRef = skin.luaRef(razerRefTable, at: 2)
+    luaL_checkudata(L, 1, USERDATA_TAG)
+    let device: HSRazerDevice = lua_tovalue(L, at: 1) as! HSRazerDevice
+    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, device.buttonCallbackRef)
+
+    device.buttonCallbackRef = LUA_NOREF
+    if lua_type(L, 2) == LUA_TFUNCTION {
+        lua_pushvalue(L, 2)
+
+        device.buttonCallbackRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
     }
-    lua_pushvalue(skin.l, 1)
+    lua_pushvalue(L, 1)
     return 1
 }
 
 private let razer_remapping: lua_CFunction = { L in
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
-    let razer: HSRazerDevice = skin.luaObject(at: 1, toClass: "HSRazerDevice") as! HSRazerDevice
-    skin.pushNSObject(razer.remapping)
+    luaL_checkudata(L, 1, USERDATA_TAG)
+    let razer: HSRazerDevice = lua_tovalue(L, at: 1) as! HSRazerDevice
+    lua_pushany(L, razer.remapping)
     return 1
 }
 
 private let razer_productID: lua_CFunction = { L in
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
-    let razer: HSRazerDevice = skin.luaObject(at: 1, toClass: "HSRazerDevice") as! HSRazerDevice
-    skin.pushNSObject(NSNumber(value: razer.productID))
+    luaL_checkudata(L, 1, USERDATA_TAG)
+    let razer: HSRazerDevice = lua_tovalue(L, at: 1) as! HSRazerDevice
+    lua_pushany(L, NSNumber(value: razer.productID))
     return 1
 }
 
@@ -1191,26 +1186,25 @@ private let razer_productID: lua_CFunction = { L in
 ///  * The brightness as a number or `nil` if something goes wrong.
 ///  * A plain text error message if not successful.
 private let razer_brightness: lua_CFunction = { L in
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TNUMBER | LS_TOPTIONAL, LS_TBREAK)
-    let razer: HSRazerDevice = skin.luaObject(at: 1, toClass: "HSRazerDevice") as! HSRazerDevice
+    luaL_checkudata(L, 1, USERDATA_TAG)
+    let razer: HSRazerDevice = lua_tovalue(L, at: 1) as! HSRazerDevice
 
     if lua_gettop(L) == 1 {
         let result = razer.getBrightness()
         lua_pushvalue(L, 1)
-        if result.success { skin.pushNSObject(result.brightness); lua_pushnil(L) }
-        else { lua_pushnil(L); skin.pushNSObject(result.errorMessage) }
+        if result.success { lua_pushany(L, result.brightness); lua_pushnil(L) }
+        else { lua_pushnil(L); lua_pushany(L, result.errorMessage) }
     } else {
-        let brightness = skin.toNSObject(atIndex: 2) as! NSNumber
+        let brightness = lua_tovalue(L, at: 2) as! NSNumber
         if brightness.intValue < 0 || brightness.intValue > 100 {
             lua_pushvalue(L, 1); lua_pushboolean(L, 0)
-            skin.pushNSObject("The brightness must be between 0 and 100." as NSString)
+            lua_pushany(L, "The brightness must be between 0 and 100." as NSString)
             return 3
         }
         let result = razer.setBrightness(brightness)
         lua_pushvalue(L, 1)
-        if result.success { skin.pushNSObject(result.brightness); lua_pushnil(L) }
-        else { lua_pushnil(L); skin.pushNSObject(result.errorMessage) }
+        if result.success { lua_pushany(L, result.brightness); lua_pushnil(L) }
+        else { lua_pushnil(L); lua_pushany(L, result.errorMessage) }
     }
     return 3
 }
@@ -1229,21 +1223,20 @@ private let razer_brightness: lua_CFunction = { L in
 ///  * `true` for on, `false` for off`, or `nil` if something has gone wrong
 ///  * A plain text error message if not successful.
 private let razer_orangeStatusLight: lua_CFunction = { L in
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
-    let razer: HSRazerDevice = skin.luaObject(at: 1, toClass: "HSRazerDevice") as! HSRazerDevice
+    luaL_checkudata(L, 1, USERDATA_TAG)
+    let razer: HSRazerDevice = lua_tovalue(L, at: 1) as! HSRazerDevice
 
     if lua_gettop(L) == 1 {
         let result = razer.getOrangeStatusLight()
         lua_pushvalue(L, 1)
         if result.success { lua_pushboolean(L, result.orangeStatusLight ? 1 : 0); lua_pushnil(L) }
-        else { lua_pushnil(L); skin.pushNSObject(result.errorMessage) }
+        else { lua_pushnil(L); lua_pushany(L, result.errorMessage) }
     } else {
         let active = lua_toboolean(L, 2) != 0
         let result = razer.setOrangeStatusLight(active)
         lua_pushvalue(L, 1)
         if result.success { lua_pushboolean(L, active ? 1 : 0); lua_pushnil(L) }
-        else { lua_pushnil(L); skin.pushNSObject(result.errorMessage) }
+        else { lua_pushnil(L); lua_pushany(L, result.errorMessage) }
     }
     return 3
 }
@@ -1260,21 +1253,20 @@ private let razer_orangeStatusLight: lua_CFunction = { L in
 ///  * `true` for on, `false` for off`, or `nil` if something has gone wrong
 ///  * A plain text error message if not successful.
 private let razer_greenStatusLight: lua_CFunction = { L in
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
-    let razer: HSRazerDevice = skin.luaObject(at: 1, toClass: "HSRazerDevice") as! HSRazerDevice
+    luaL_checkudata(L, 1, USERDATA_TAG)
+    let razer: HSRazerDevice = lua_tovalue(L, at: 1) as! HSRazerDevice
 
     if lua_gettop(L) == 1 {
         let result = razer.getGreenStatusLight()
         lua_pushvalue(L, 1)
         if result.success { lua_pushboolean(L, result.greenStatusLight ? 1 : 0); lua_pushnil(L) }
-        else { lua_pushnil(L); skin.pushNSObject(result.errorMessage) }
+        else { lua_pushnil(L); lua_pushany(L, result.errorMessage) }
     } else {
         let active = lua_toboolean(L, 2) != 0
         let result = razer.setGreenStatusLight(active)
         lua_pushvalue(L, 1)
         if result.success { lua_pushboolean(L, active ? 1 : 0); lua_pushnil(L) }
-        else { lua_pushnil(L); skin.pushNSObject(result.errorMessage) }
+        else { lua_pushnil(L); lua_pushany(L, result.errorMessage) }
     }
     return 3
 }
@@ -1291,21 +1283,20 @@ private let razer_greenStatusLight: lua_CFunction = { L in
 ///  * `true` for on, `false` for off`, or `nil` if something has gone wrong
 ///  * A plain text error message if not successful.
 private let razer_blueStatusLight: lua_CFunction = { L in
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
-    let razer: HSRazerDevice = skin.luaObject(at: 1, toClass: "HSRazerDevice") as! HSRazerDevice
+    luaL_checkudata(L, 1, USERDATA_TAG)
+    let razer: HSRazerDevice = lua_tovalue(L, at: 1) as! HSRazerDevice
 
     if lua_gettop(L) == 1 {
         let result = razer.getBlueStatusLight()
         lua_pushvalue(L, 1)
         if result.success { lua_pushboolean(L, result.blueStatusLight ? 1 : 0); lua_pushnil(L) }
-        else { lua_pushnil(L); skin.pushNSObject(result.errorMessage) }
+        else { lua_pushnil(L); lua_pushany(L, result.errorMessage) }
     } else {
         let active = lua_toboolean(L, 2) != 0
         let result = razer.setBlueStatusLight(active)
         lua_pushvalue(L, 1)
         if result.success { lua_pushboolean(L, active ? 1 : 0); lua_pushnil(L) }
-        else { lua_pushnil(L); skin.pushNSObject(result.errorMessage) }
+        else { lua_pushnil(L); lua_pushany(L, result.errorMessage) }
     }
     return 3
 }
@@ -1324,12 +1315,13 @@ private let razer_blueStatusLight: lua_CFunction = { L in
 ///  * `true` if successful otherwise `false`.
 ///  * A plain text error message if not successful.
 private let razer_backlightsStatic: lua_CFunction = { L in
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TTABLE, LS_TBREAK)
-    let razer: HSRazerDevice = skin.luaObject(at: 1, toClass: "HSRazerDevice") as! HSRazerDevice
-    let color: NSColor = skin.luaObject(at: 2, toClass: "NSColor") as! NSColor
+    luaL_checkudata(L, 1, USERDATA_TAG)
+
+    luaL_checktype(L, 2, LUA_TTABLE)
+    let razer: HSRazerDevice = lua_tovalue(L, at: 1) as! HSRazerDevice
+    let color: NSColor = lua_tovalue(L, at: 2) as! NSColor
     let result = razer.setBacklightToStaticColor(color)
-    lua_pushvalue(L, 1); lua_pushboolean(L, result.success ? 1 : 0); skin.pushNSObject(result.errorMessage)
+    lua_pushvalue(L, 1); lua_pushboolean(L, result.success ? 1 : 0); lua_pushany(L, result.errorMessage)
     return 3
 }
 
@@ -1345,11 +1337,10 @@ private let razer_backlightsStatic: lua_CFunction = { L in
 ///  * `true` if successful otherwise `false`.
 ///  * A plain text error message if not successful.
 private let razer_backlightsOff: lua_CFunction = { L in
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
-    let razer: HSRazerDevice = skin.luaObject(at: 1, toClass: "HSRazerDevice") as! HSRazerDevice
+    luaL_checkudata(L, 1, USERDATA_TAG)
+    let razer: HSRazerDevice = lua_tovalue(L, at: 1) as! HSRazerDevice
     let result = razer.setBacklightToOff()
-    lua_pushvalue(L, 1); lua_pushboolean(L, result.success ? 1 : 0); skin.pushNSObject(result.errorMessage)
+    lua_pushvalue(L, 1); lua_pushboolean(L, result.success ? 1 : 0); lua_pushany(L, result.errorMessage)
     return 3
 }
 
@@ -1366,23 +1357,21 @@ private let razer_backlightsOff: lua_CFunction = { L in
 ///  * `true` if successful otherwise `false`
 ///  * A plain text error message if not successful.
 private let razer_backlightsWave: lua_CFunction = { L in
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TNUMBER, LS_TSTRING, LS_TBREAK)
-    let razer: HSRazerDevice = skin.luaObject(at: 1, toClass: "HSRazerDevice") as! HSRazerDevice
-    let speed = skin.toNSObject(atIndex: 2) as! NSNumber
-    let direction = skin.toNSObject(atIndex: 3) as! NSString
+    let razer: HSRazerDevice = lua_tovalue(L, at: 1) as! HSRazerDevice
+    let speed = lua_tovalue(L, at: 2) as! NSNumber
+    let direction = lua_tovalue(L, at: 3) as! NSString
 
     if speed.intValue < 1 || speed.intValue > 255 {
         lua_pushvalue(L, 1); lua_pushboolean(L, 0)
-        skin.pushNSObject("The speed must be between 1 and 255." as NSString); return 3
+        lua_pushany(L, "The speed must be between 1 and 255." as NSString); return 3
     }
     if direction != "left" && direction != "right" {
         lua_pushvalue(L, 1); lua_pushboolean(L, 0)
-        skin.pushNSObject("The direction must be 'left' or 'right'." as NSString); return 3
+        lua_pushany(L, "The direction must be 'left' or 'right'." as NSString); return 3
     }
 
     let result = razer.setBacklightToWave(speed: speed, direction: direction as String)
-    lua_pushvalue(L, 1); lua_pushboolean(L, result.success ? 1 : 0); skin.pushNSObject(result.errorMessage)
+    lua_pushvalue(L, 1); lua_pushboolean(L, result.success ? 1 : 0); lua_pushany(L, result.errorMessage)
     return 3
 }
 
@@ -1398,11 +1387,10 @@ private let razer_backlightsWave: lua_CFunction = { L in
 ///  * `true` if successful otherwise `false`
 ///  * A plain text error message if not successful.
 private let razer_backlightsSpectrum: lua_CFunction = { L in
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
-    let razer: HSRazerDevice = skin.luaObject(at: 1, toClass: "HSRazerDevice") as! HSRazerDevice
+    luaL_checkudata(L, 1, USERDATA_TAG)
+    let razer: HSRazerDevice = lua_tovalue(L, at: 1) as! HSRazerDevice
     let result = razer.setBacklightToSpectrum()
-    lua_pushvalue(L, 1); lua_pushboolean(L, result.success ? 1 : 0); skin.pushNSObject(result.errorMessage)
+    lua_pushvalue(L, 1); lua_pushboolean(L, result.success ? 1 : 0); lua_pushany(L, result.errorMessage)
     return 3
 }
 
@@ -1419,19 +1407,17 @@ private let razer_backlightsSpectrum: lua_CFunction = { L in
 ///  * `true` if successful otherwise `false`
 ///  * A plain text error message if not successful.
 private let razer_backlightsReactive: lua_CFunction = { L in
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TNUMBER, LS_TTABLE, LS_TBREAK)
-    let razer: HSRazerDevice = skin.luaObject(at: 1, toClass: "HSRazerDevice") as! HSRazerDevice
-    let speed = skin.toNSObject(atIndex: 2) as! NSNumber
-    let color: NSColor = skin.luaObject(at: 3, toClass: "NSColor") as! NSColor
+    let razer: HSRazerDevice = lua_tovalue(L, at: 1) as! HSRazerDevice
+    let speed = lua_tovalue(L, at: 2) as! NSNumber
+    let color: NSColor = lua_tovalue(L, at: 3) as! NSColor
 
     if speed.intValue < 1 || speed.intValue > 4 {
         lua_pushvalue(L, 1); lua_pushboolean(L, 0)
-        skin.pushNSObject("The speed must be between 1 and 4." as NSString); return 3
+        lua_pushany(L, "The speed must be between 1 and 4." as NSString); return 3
     }
 
     let result = razer.setBacklightToReactive(color: color, speed: speed)
-    lua_pushvalue(L, 1); lua_pushboolean(L, result.success ? 1 : 0); skin.pushNSObject(result.errorMessage)
+    lua_pushvalue(L, 1); lua_pushboolean(L, result.success ? 1 : 0); lua_pushany(L, result.errorMessage)
     return 3
 }
 
@@ -1452,23 +1438,21 @@ private let razer_backlightsReactive: lua_CFunction = { L in
 /// Notes:
 ///  * If neither `color` nor `secondaryColor` is provided, then random colors will be used.
 private let razer_backlightsStarlight: lua_CFunction = { L in
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TNUMBER, LS_TTABLE | LS_TOPTIONAL | LS_TNIL, LS_TTABLE | LS_TOPTIONAL | LS_TNIL, LS_TBREAK)
-    let razer: HSRazerDevice = skin.luaObject(at: 1, toClass: "HSRazerDevice") as! HSRazerDevice
-    let speed = skin.toNSObject(atIndex: 2) as! NSNumber
+    let razer: HSRazerDevice = lua_tovalue(L, at: 1) as! HSRazerDevice
+    let speed = lua_tovalue(L, at: 2) as! NSNumber
 
     if speed.intValue < 1 || speed.intValue > 3 {
         lua_pushvalue(L, 1); lua_pushboolean(L, 0)
-        skin.pushNSObject("The speed must be between 1 and 3." as NSString); return 3
+        lua_pushany(L, "The speed must be between 1 and 3." as NSString); return 3
     }
 
     var color: NSColor? = nil
     var secondaryColor: NSColor? = nil
-    if lua_type(L, 3) == LUA_TTABLE { color = skin.luaObject(at: 3, toClass: "NSColor") as? NSColor }
-    if lua_type(L, 4) == LUA_TTABLE { secondaryColor = skin.luaObject(at: 4, toClass: "NSColor") as? NSColor }
+    if lua_type(L, 3) == LUA_TTABLE { color = lua_tovalue(L, at: 3) as? NSColor }
+    if lua_type(L, 4) == LUA_TTABLE { secondaryColor = lua_tovalue(L, at: 4) as? NSColor }
 
     let result = razer.setBacklightToStarlight(color: color, secondaryColor: secondaryColor, speed: speed)
-    lua_pushvalue(L, 1); lua_pushboolean(L, result.success ? 1 : 0); skin.pushNSObject(result.errorMessage)
+    lua_pushvalue(L, 1); lua_pushboolean(L, result.success ? 1 : 0); lua_pushany(L, result.errorMessage)
     return 3
 }
 
@@ -1488,17 +1472,15 @@ private let razer_backlightsStarlight: lua_CFunction = { L in
 /// Notes:
 ///  * If neither `color` nor `secondaryColor` is provided, then random colors will be used.
 private let razer_backlightsBreathing: lua_CFunction = { L in
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TTABLE | LS_TOPTIONAL | LS_TNIL, LS_TTABLE | LS_TOPTIONAL | LS_TNIL, LS_TBREAK)
-    let razer: HSRazerDevice = skin.luaObject(at: 1, toClass: "HSRazerDevice") as! HSRazerDevice
+    let razer: HSRazerDevice = lua_tovalue(L, at: 1) as! HSRazerDevice
 
     var color: NSColor? = nil
     var secondaryColor: NSColor? = nil
-    if lua_type(L, 2) == LUA_TTABLE { color = skin.luaObject(at: 2, toClass: "NSColor") as? NSColor }
-    if lua_type(L, 3) == LUA_TTABLE { secondaryColor = skin.luaObject(at: 3, toClass: "NSColor") as? NSColor }
+    if lua_type(L, 2) == LUA_TTABLE { color = lua_tovalue(L, at: 2) as? NSColor }
+    if lua_type(L, 3) == LUA_TTABLE { secondaryColor = lua_tovalue(L, at: 3) as? NSColor }
 
     let result = razer.setBacklightToBreathing(color: color, secondaryColor: secondaryColor)
-    lua_pushvalue(L, 1); lua_pushboolean(L, result.success ? 1 : 0); skin.pushNSObject(result.errorMessage)
+    lua_pushvalue(L, 1); lua_pushboolean(L, result.success ? 1 : 0); lua_pushany(L, result.errorMessage)
     return 3
 }
 
@@ -1521,8 +1503,10 @@ private let razer_backlightsBreathing: lua_CFunction = { L in
 ///   ```
 private let razer_backlightsCustom: lua_CFunction = { L in
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TTABLE, LS_TBREAK)
-    let razer: HSRazerDevice = skin.luaObject(at: 1, toClass: "HSRazerDevice") as! HSRazerDevice
+    luaL_checkudata(L, 1, USERDATA_TAG)
+
+    luaL_checktype(L, 2, LUA_TTABLE)
+    let razer: HSRazerDevice = lua_tovalue(L, at: 1) as! HSRazerDevice
 
     let customColors = NSMutableDictionary()
     lua_pushnil(L)
@@ -1534,7 +1518,7 @@ private let razer_backlightsCustom: lua_CFunction = { L in
     }
 
     let result = razer.setBacklightToCustom(colors: customColors)
-    lua_pushvalue(L, 1); lua_pushboolean(L, result.success ? 1 : 0); skin.pushNSObject(result.errorMessage)
+    lua_pushvalue(L, 1); lua_pushboolean(L, result.success ? 1 : 0); lua_pushany(L, result.errorMessage)
     return 3
 }
 
@@ -1553,12 +1537,11 @@ private func pushHSRazerDevice(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any
 }
 
 private func toHSRazerDeviceFromLua(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> Any! {
-    let skin = LuaSkin.skin(with: L)
 
     if luaL_testudata(L, idx, USERDATA_TAG) != nil {
         return getObjectFromUserdata(L, idx, USERDATA_TAG) as HSRazerDevice
     } else {
-        skin.logError("expected \(USERDATA_TAG) object, found \(String(cString: lua_typename(L, lua_type(L, idx))))")
+        os_log(.error, "%{public}s", "expected \(USERDATA_TAG) object, found \(String(cString: lua_typename(L, lua_type(L, idx))))")
         return nil
     }
 }
@@ -1566,19 +1549,17 @@ private func toHSRazerDeviceFromLua(_ L: UnsafeMutablePointer<lua_State>!, _ idx
 // MARK: - Cosmic Hammer/Lua Infrastructure
 
 private let razer_object_tostring: lua_CFunction = { L in
-    let skin = LuaSkin.skin(with: L)
-    let obj: HSRazerDevice = skin.luaObject(at: 1, toClass: "HSRazerDevice") as! HSRazerDevice
+    let obj: HSRazerDevice = lua_tovalue(L, at: 1) as! HSRazerDevice
     let title = obj.name
     let ptrVal = Int(bitPattern: lua_topointer(L, 1))
-    skin.pushNSObject("\(USERDATA_TAG): \(title) (0x\(String(ptrVal, radix: 16)))" as NSString)
+    lua_pushany(L, "\(USERDATA_TAG): \(title) (0x\(String(ptrVal, radix: 16)))" as NSString)
     return 1
 }
 
 private let razer_object_eq: lua_CFunction = { L in
     if luaL_testudata(L, 1, USERDATA_TAG) != nil && luaL_testudata(L, 2, USERDATA_TAG) != nil {
-        let skin = LuaSkin.skin(with: L)
-        let obj1: HSRazerDevice = skin.luaObject(at: 1, toClass: "HSRazerDevice") as! HSRazerDevice
-        let obj2: HSRazerDevice = skin.luaObject(at: 2, toClass: "HSRazerDevice") as! HSRazerDevice
+        let obj1: HSRazerDevice = lua_tovalue(L, at: 1) as! HSRazerDevice
+        let obj2: HSRazerDevice = lua_tovalue(L, at: 2) as! HSRazerDevice
         lua_pushboolean(L, obj1.isEqual(obj2) ? 1 : 0)
     } else {
         lua_pushboolean(L, 0)
@@ -1587,7 +1568,6 @@ private let razer_object_eq: lua_CFunction = { L in
 }
 
 private let razer_object_gc: lua_CFunction = { L in
-    let skin = LuaSkin.skin(with: L)
 
     let ptr = luaL_checkudata(L, 1, USERDATA_TAG)!
     let opaquePtr = ptr.load(as: UnsafeRawPointer.self)
@@ -1596,7 +1576,9 @@ private let razer_object_gc: lua_CFunction = { L in
     theDevice.selfRefCount -= 1
     if theDevice.selfRefCount == 0 {
         theDevice.destroyEventTap()
-        theDevice.buttonCallbackRef = skin.luaUnref(razerRefTable, ref: theDevice.buttonCallbackRef)
+        luaL_unref(L, LUA_REGISTRYINDEX_VALUE, theDevice.buttonCallbackRef)
+
+        theDevice.buttonCallbackRef = LUA_NOREF
     }
 
     lua_pushnil(L)

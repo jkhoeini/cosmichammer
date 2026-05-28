@@ -53,18 +53,17 @@ private class HSWifiScan: NSObject {
     @objc func invokeCallback(_ object: Any?) {
         if fnRef != LUA_NOREF {
             let skin = LuaSkin.skin(with: nil)
-            _lua_stackguard_entry(skin.l)
-            skin.pushLuaRef(refTable, ref: fnRef)
+            let L = LuaSkin.skin(with: nil).l!
+            lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(fnRef))
             if let error = object as? NSError {
                 skin.logInfo(error.localizedDescription)
-                skin.pushNSObject(error.localizedDescription as NSString)
+                lua_pushany(L, error.localizedDescription as NSString)
             } else if let networks = object as? Set<CWNetwork> {
-                skin.pushNSObject(networks as NSSet)
+                lua_pushany(L, networks as NSSet)
             } else {
-                lua_pushnil(skin.l)
+                lua_pushnil(L)
             }
-            skin.protectedCallAndError("hs.wifi callback", nargs: 1, nresults: 0)
-            _lua_stackguard_exit(skin.l)
+            if lua_pcall(L, 1, 0, 0) != LUA_OK { lua_pop(L, 1) }
         }
     }
 }
@@ -82,8 +81,6 @@ private class HSWifiScan: NSObject {
 /// Returns:
 ///  * True if the power change was successful, or false and an error string if an error occurred attempting to set the power state.  Returns nil if there is a problem attaching to the interface.
 private func setPower(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TBOOLEAN, LS_TSTRING | LS_TOPTIONAL, LS_TBREAK)
     let powerState = lua_toboolean(L, 1) != 0
     var theName: String?
     if lua_gettop(L) == 2 {
@@ -117,8 +114,6 @@ private func setPower(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * None
 private func disassociate(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING | LS_TOPTIONAL, LS_TBREAK)
     var theName: String?
     if lua_gettop(L) == 1 {
         theName = String(cString: luaL_checkstring(L, 1))
@@ -146,21 +141,19 @@ private func disassociate(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * This function blocks Cosmic Hammer until the operation is completed
 ///  * If multiple access points are available with the same SSID, one will be chosen at random to connect to
 private func associate(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING, LS_TSTRING, LS_TSTRING | LS_TOPTIONAL, LS_TBREAK)
 
     var success = false
     var interfaceName: String?
 
     if lua_type(L, 3) == LUA_TSTRING {
-        interfaceName = skin.toNSObject(atIndex: 3) as? String
+        interfaceName = lua_tovalue(L, at: 3) as? String
     }
 
     let interface = get_wifi_interface(interfaceName)
-    let ssid = skin.toNSObject(atIndex: 1) as? String
+    let ssid = lua_tovalue(L, at: 1) as? String
     let networks = try? interface?.scanForNetworks(withName: ssid)
     if let network = networks?.first {
-        let password = skin.toNSObject(atIndex: 2) as? String ?? ""
+        let password = lua_tovalue(L, at: 2) as? String ?? ""
         success = (try? interface?.associate(to: network, password: password)) != nil
     }
 
@@ -181,11 +174,9 @@ private func associate(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Notes:
 ///  * For most systems, this will be one interface, but the result is still returned as an array.
 private func wifi_interfaces(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TBREAK)
     let sharedClient = CWWiFiClient.shared()
     if let names = sharedClient.interfaceNames() {
-        skin.pushNSObject(NSSet(array: names))
+        lua_pushany(L, NSSet(array: names))
     } else {
         lua_pushnil(L)
     }
@@ -205,8 +196,6 @@ private func wifi_interfaces(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Notes:
 ///  * WARNING: This function will block all Lua execution until the scan has completed. It's probably not very sensible to use this function very much, if at all.
 private func wifi_scan(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING | LS_TOPTIONAL, LS_TBREAK)
     var theName: String?
     if lua_gettop(L) == 1 {
         theName = String(cString: luaL_checkstring(L, 1))
@@ -241,13 +230,11 @@ private func wifi_scan(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * returns a scan object
 private func wifi_scan_background(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TFUNCTION | LS_TNIL, LS_TSTRING | LS_TOPTIONAL, LS_TBREAK)
 
     var callbackRef: Int32 = LUA_NOREF
     if lua_type(L, 1) != LUA_TNIL {
         lua_pushvalue(L, 1)
-        callbackRef = skin.luaRef(refTable)
+        callbackRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
     }
 
     var theName: String?
@@ -275,8 +262,6 @@ private func wifi_scan_background(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
 /// Returns:
 ///  * A string containing the SSID of the WiFi network currently joined, or nil if no there is no WiFi connection
 private func wifi_current_ssid(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING | LS_TOPTIONAL, LS_TBREAK)
     var theName: String?
     if lua_gettop(L) == 1 {
         theName = String(cString: luaL_checkstring(L, 1))
@@ -302,8 +287,6 @@ private func wifi_current_ssid(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * A table containing details about the interface.
 private func interfaceDetails(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING | LS_TOPTIONAL, LS_TBREAK)
     var theName: String?
     if lua_gettop(L) == 1 {
         theName = String(cString: luaL_checkstring(L, 1))
@@ -311,7 +294,7 @@ private func interfaceDetails(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
     let interface = get_wifi_interface(theName)
     if let iface = interface {
-        skin.pushNSObject(iface)
+        lua_pushany(L, iface)
     } else {
         lua_pushnil(L)
     }
@@ -331,8 +314,7 @@ private func interfaceDetails(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * a boolean value indicating whether or not the scan has been completed.
 private func backgroundScanIsDone(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     let scannerPtr = luaL_checkudata(L, 1, USERDATA_TAG)!
         .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
     let scanner = Unmanaged<HSWifiScan>.fromOpaque(scannerPtr.pointee!).takeUnretainedValue()
@@ -343,21 +325,20 @@ private func backgroundScanIsDone(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
 // MARK: - Lua<->NSObject Conversion Functions
 
 private func pushCWInterface(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     let theInterface = obj as! CWInterface
     lua_newtable(L)
 
-    skin.pushNSObject(theInterface.wlanChannel())
+    lua_pushany(L, theInterface.wlanChannel())
     lua_setfield(L, -2, "wlanChannel")
     lua_pushnumber(L, lua_Number(theInterface.transmitRate()))
     lua_setfield(L, -2, "transmitRate")
     lua_pushinteger(L, lua_Integer(theInterface.transmitPower()))
     lua_setfield(L, -2, "transmitPower")
-    skin.pushNSObject(theInterface.supportedWLANChannels() as NSSet?)
+    lua_pushany(L, theInterface.supportedWLANChannels() as NSSet?)
     lua_setfield(L, -2, "supportedChannels")
-    skin.pushNSObject(theInterface.ssidData() as NSData?)
+    lua_pushany(L, theInterface.ssidData() as NSData?)
     lua_setfield(L, -2, "ssidData")
-    skin.pushNSObject(theInterface.ssid() as NSString?)
+    lua_pushany(L, theInterface.ssid() as NSString?)
     lua_setfield(L, -2, "ssid")
     lua_pushboolean(L, theInterface.serviceActive() ? 1 : 0)
     lua_setfield(L, -2, "active")
@@ -392,7 +373,7 @@ private func pushCWInterface(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!)
     lua_setfield(L, -2, "power")
     lua_pushinteger(L, lua_Integer(theInterface.noiseMeasurement()))
     lua_setfield(L, -2, "noise")
-    skin.pushNSObject(theInterface.interfaceName as NSString?)
+    lua_pushany(L, theInterface.interfaceName as NSString?)
     lua_setfield(L, -2, "interface")
 
     let modeStr: String
@@ -406,15 +387,15 @@ private func pushCWInterface(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!)
     lua_pushstring(L, modeStr)
     lua_setfield(L, -2, "interfaceMode")
 
-    skin.pushNSObject(theInterface.hardwareAddress() as NSString?)
+    lua_pushany(L, theInterface.hardwareAddress() as NSString?)
     lua_setfield(L, -2, "hardwareAddress")
-    skin.pushNSObject(theInterface.countryCode() as NSString?)
+    lua_pushany(L, theInterface.countryCode() as NSString?)
     lua_setfield(L, -2, "countryCode")
-    skin.pushNSObject(theInterface.configuration())
+    lua_pushany(L, theInterface.configuration())
     lua_setfield(L, -2, "configuration")
-    skin.pushNSObject(theInterface.cachedScanResults() as NSSet?)
+    lua_pushany(L, theInterface.cachedScanResults() as NSSet?)
     lua_setfield(L, -2, "cachedScanResults")
-    skin.pushNSObject(theInterface.bssid() as NSString?)
+    lua_pushany(L, theInterface.bssid() as NSString?)
     lua_setfield(L, -2, "bssid")
 
     let phyStr: String
@@ -469,7 +450,6 @@ private func pushCWChannel(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -
 }
 
 private func pushCWConfiguration(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     let theConfig = obj as! CWConfiguration
     lua_newtable(L)
     lua_pushboolean(L, theConfig.requireAdministratorForPower ? 1 : 0)
@@ -480,22 +460,21 @@ private func pushCWConfiguration(_ L: UnsafeMutablePointer<lua_State>!, _ obj: A
     lua_setfield(L, -2, "requireAdministratorForAssociation")
     lua_pushboolean(L, theConfig.rememberJoinedNetworks ? 1 : 0)
     lua_setfield(L, -2, "rememberJoinedNetworks")
-    skin.pushNSObject(theConfig.networkProfiles.array as NSArray)
+    lua_pushany(L, theConfig.networkProfiles.array as NSArray)
     lua_setfield(L, -2, "networkProfiles")
 
     return 1
 }
 
 private func pushCWNetwork(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     let theNetwork = obj as! CWNetwork
     lua_newtable(L)
 
-    skin.pushNSObject(theNetwork.wlanChannel)
+    lua_pushany(L, theNetwork.wlanChannel)
     lua_setfield(L, -2, "wlanChannel")
-    skin.pushNSObject(theNetwork.ssidData as NSData?)
+    lua_pushany(L, theNetwork.ssidData as NSData?)
     lua_setfield(L, -2, "ssidData")
-    skin.pushNSObject(theNetwork.ssid as NSString?)
+    lua_pushany(L, theNetwork.ssid as NSString?)
     lua_setfield(L, -2, "ssid")
     lua_pushinteger(L, lua_Integer(theNetwork.rssiValue))
     lua_setfield(L, -2, "rssi")
@@ -503,9 +482,9 @@ private func pushCWNetwork(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -
     lua_setfield(L, -2, "noise")
     lua_pushboolean(L, theNetwork.ibss ? 1 : 0)
     lua_setfield(L, -2, "ibss")
-    skin.pushNSObject(theNetwork.countryCode as NSString?)
+    lua_pushany(L, theNetwork.countryCode as NSString?)
     lua_setfield(L, -2, "countryCode")
-    skin.pushNSObject(theNetwork.bssid as NSString?)
+    lua_pushany(L, theNetwork.bssid as NSString?)
     lua_setfield(L, -2, "bssid")
     lua_pushinteger(L, lua_Integer(theNetwork.beaconInterval))
     lua_setfield(L, -2, "beaconInterval")
@@ -556,13 +535,12 @@ private func pushCWNetwork(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -
 }
 
 private func pushCWNetworkProfile(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     let theProfile = obj as! CWNetworkProfile
     lua_newtable(L)
 
-    skin.pushNSObject(theProfile.ssidData as NSData?)
+    lua_pushany(L, theProfile.ssidData as NSData?)
     lua_setfield(L, -2, "ssidData")
-    skin.pushNSObject(theProfile.ssid as NSString?)
+    lua_pushany(L, theProfile.ssid as NSString?)
     lua_setfield(L, -2, "ssid")
 
     let securityStr: String
@@ -595,11 +573,10 @@ private func pushCWNetworkProfile(_ L: UnsafeMutablePointer<lua_State>!, _ obj: 
 // MARK: - Cosmic Hammer Infrastructure
 
 private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     let scannerPtr = luaL_checkudata(L, 1, USERDATA_TAG)!
         .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
     let scanner = Unmanaged<HSWifiScan>.fromOpaque(scannerPtr.pointee!).takeUnretainedValue()
-    skin.pushNSObject(NSString(format: "%s: %s (%p)", USERDATA_TAG, scanner.isDone ? "done" : "scanning", scannerPtr))
+    lua_pushany(L, NSString(format: "%s: %s (%p)", USERDATA_TAG, scanner.isDone ? "done" : "scanning", scannerPtr))
     return 1
 }
 
@@ -607,9 +584,11 @@ private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let scannerPtr = luaL_checkudata(L, 1, USERDATA_TAG)!
         .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
     let scanner = Unmanaged<HSWifiScan>.fromOpaque(scannerPtr.pointee!).takeRetainedValue()
-    let skin = LuaSkin.skin(with: L)
 
-    scanner.fnRef = skin.luaUnref(refTable, ref: scanner.fnRef)
+    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, scanner.fnRef)
+
+
+    scanner.fnRef = LUA_NOREF
 
     // Remove the Metatable so future use of the variable in Lua won't think its valid
     lua_pushnil(L)

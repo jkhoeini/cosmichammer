@@ -26,8 +26,7 @@ private class AppWatcher: NSObject {
         guard let app = dict["NSWorkspaceApplicationKey" as NSString] as? NSRunningApplication else { return }
         guard running else { return }
 
-        let skin = LuaSkin.skin(with: nil)
-        guard let L = skin.l else { return }
+        let L = LuaSkin.skin(with: nil).l!
 
         // Depending on the event the name of the NSRunningApplication may not be available anymore.
         // Fallback to the application name provided directly in the notification dict.
@@ -47,8 +46,13 @@ private class AppWatcher: NSObject {
         lua_pushinteger(L, lua_Integer(event.rawValue))
 
         if let application = HSapplication(nsRunningApplication: app, withState: L) {
-            // Use LuaSkin's registered push helper for HSapplication userdata
-            skin.pushNSObject(application)
+            // Push HSapplication userdata directly
+            application.selfRefCount += 1
+            let valuePtr = lua_newuserdata(L, MemoryLayout<UnsafeMutableRawPointer>.size)!
+                .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
+            valuePtr.pointee = Unmanaged.passRetained(application as NSObject).toOpaque()
+            luaL_getmetatable(L, "hs.application")
+            lua_setmetatable(L, -2)
         } else {
             lua_pushnil(L)
         }

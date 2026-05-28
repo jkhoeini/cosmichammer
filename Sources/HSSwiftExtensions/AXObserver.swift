@@ -1,10 +1,11 @@
 import Cocoa
 import LuaSkin
+import os.log
 
 // MARK: observer.m — AXObserver Wrapper
 // MARK: ============================================================
 
-var observerRefTable: LSRefTable = LUA_NOREF
+var observerRefTable: Int32 = LUA_NOREF
 
 var observerDetails: NSMutableDictionary? = nil
 
@@ -55,9 +56,12 @@ func purgeWatchers(element: AXUIElement, notifications: NSMutableArray, observer
 
 func cleanupAXObserver(_ observer: AXObserver, _ details: NSMutableDictionary) {
     let skin = LuaSkin.skin(with: nil)
+    let L = LuaSkin.skin(with: nil).l!
 
     var callbackRef = (details[keyCallbackRef as String] as? NSNumber)?.int32Value ?? LUA_NOREF
-    callbackRef = skin.luaUnref(observerRefTable, ref: callbackRef)
+    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, callbackRef)
+
+    callbackRef = LUA_NOREF
     details[keyCallbackRef as String] = NSNumber(value: callbackRef)
 
     let isRunning = (details[keyIsRunning as String] as? NSNumber)?.boolValue ?? false
@@ -83,23 +87,23 @@ func cleanupAXObserver(_ observer: AXObserver, _ details: NSMutableDictionary) {
 
 let observerCallbackPtr: AXObserverCallbackWithInfo = { (observer, element, notification, info, refcon) in
     let skin = LuaSkin.skin(with: nil)
-    let L = skin.l!
+    let L = LuaSkin.skin(with: nil).l!
 
     let observerKey = observer as AnyObject
     guard let details = observerDetails?[observerKey] as? NSMutableDictionary else {
-        skin.logWarn("\(String(cString: axuielement_OBSERVER_TAG)):callback triggered for unregistered observer")
+        os_log(.info, "%{public}s", "\(String(cString: axuielement_OBSERVER_TAG)):callback triggered for unregistered observer")
         return
     }
 
     let callbackRef = (details[keyCallbackRef as String] as? NSNumber)?.int32Value ?? LUA_NOREF
     if callbackRef != LUA_NOREF {
-        skin.pushLuaRef(observerRefTable, ref: callbackRef)
+        lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(callbackRef))
         pushAXObserver(L, observer)
         pushAXUIElement(L, element)
-        skin.pushNSObject(notification as String)
+        lua_pushany(L, notification as String)
         pushCFTypeToLua(L, info, observerRefTable)
-        if !skin.protectedCallAndTraceback(4, nresults: 0) {
-            skin.logError("\(String(cString: axuielement_OBSERVER_TAG)):callback error:\(String(cString: lua_tostring(L, -1)!))")
+        if lua_pcall(L, 4, 0, 0) != LUA_OK {
+            os_log(.error, "%{public}s", "\(String(cString: axuielement_OBSERVER_TAG)):callback error:\(String(cString: lua_tostring(L, -1)!))")
             lua_pop(L, 1)
         }
     }
@@ -109,8 +113,6 @@ let observerCallbackPtr: AXObserverCallbackWithInfo = { (observer, element, noti
 
 /// hs.axuielement.observer.new(pid) -> observerObject
 private func axobserver_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TNUMBER | LS_TINTEGER, LS_TBREAK)
     let appPid = pid_t(lua_tointeger(L, 1))
     var observer: AXObserver?
     let err = AXObserverCreateWithInfoCallback(appPid, observerCallbackPtr, &observer)
@@ -127,8 +129,7 @@ private func axobserver_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 /// hs.axuielement.observer:start() -> observerObject
 private func axobserver_start(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, axuielement_OBSERVER_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, axuielement_OBSERVER_TAG)
     let observer = get_axobserverref(L, 1, axuielement_OBSERVER_TAG)
     let observerKey = observer as AnyObject
     let details = observerDetails![observerKey] as! NSMutableDictionary
@@ -144,8 +145,7 @@ private func axobserver_start(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 /// hs.axuielement.observer:stop() -> observerObject
 private func axobserver_stop(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, axuielement_OBSERVER_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, axuielement_OBSERVER_TAG)
     let observer = get_axobserverref(L, 1, axuielement_OBSERVER_TAG)
     let observerKey = observer as AnyObject
     let details = observerDetails![observerKey] as! NSMutableDictionary
@@ -161,8 +161,7 @@ private func axobserver_stop(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 /// hs.axuielement.observer:isRunning() -> boolean
 private func axobserver_isRunning(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, axuielement_OBSERVER_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, axuielement_OBSERVER_TAG)
     let observer = get_axobserverref(L, 1, axuielement_OBSERVER_TAG)
     let observerKey = observer as AnyObject
     let details = observerDetails![observerKey] as! NSMutableDictionary
@@ -174,25 +173,25 @@ private func axobserver_isRunning(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
 
 /// hs.axuielement.observer:callback([fn]) -> observerObject | fn | nil
 private func axobserver_callback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, axuielement_OBSERVER_TAG, LS_TFUNCTION | LS_TNIL | LS_TOPTIONAL, LS_TBREAK)
     let observer = get_axobserverref(L, 1, axuielement_OBSERVER_TAG)
     let observerKey = observer as AnyObject
     let details = observerDetails![observerKey] as! NSMutableDictionary
 
     var callbackRef = (details[keyCallbackRef as String] as? NSNumber)?.int32Value ?? LUA_NOREF
     if lua_gettop(L) == 2 {
-        callbackRef = skin.luaUnref(observerRefTable, ref: callbackRef)
+        luaL_unref(L, LUA_REGISTRYINDEX_VALUE, callbackRef)
+
+        callbackRef = LUA_NOREF
         details[keyCallbackRef as String] = NSNumber(value: callbackRef)
         if lua_type(L, 2) != LUA_TNIL {
             lua_pushvalue(L, 2)
-            callbackRef = skin.luaRef(observerRefTable)
+            callbackRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
             details[keyCallbackRef as String] = NSNumber(value: callbackRef)
             lua_pushvalue(L, 1)
         }
     } else {
         if callbackRef != LUA_NOREF {
-            skin.pushLuaRef(observerRefTable, ref: callbackRef)
+            lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(callbackRef))
         } else {
             lua_pushnil(L)
         }
@@ -202,13 +201,11 @@ private func axobserver_callback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 
 /// hs.axuielement.observer:addWatcher(element, notification) -> observerObject
 private func axobserver_addWatchedElement(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, axuielement_OBSERVER_TAG, LS_TUSERDATA, axuielement_USERDATA_TAG, LS_TSTRING, LS_TBREAK)
     let observer = get_axobserverref(L, 1, axuielement_OBSERVER_TAG)
     let observerKey = observer as AnyObject
     let details = observerDetails![observerKey] as! NSMutableDictionary
     let element  = get_axuielementref(L, 2, axuielement_USERDATA_TAG)
-    let what     = skin.toNSObject(atIndex: 3) as! String
+    let what     = lua_tovalue(L, at: 3) as! String
 
     let watching = details[keyWatching as String] as! NSMutableDictionary
     let elementKey = element as AnyObject
@@ -232,13 +229,11 @@ private func axobserver_addWatchedElement(_ L: UnsafeMutablePointer<lua_State>!)
 
 /// hs.axuielement.observer:removeWatcher(element, notification) -> observerObject
 private func axobserver_removeWatchedElement(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, axuielement_OBSERVER_TAG, LS_TUSERDATA, axuielement_USERDATA_TAG, LS_TSTRING, LS_TBREAK)
     let observer = get_axobserverref(L, 1, axuielement_OBSERVER_TAG)
     let observerKey = observer as AnyObject
     let details = observerDetails![observerKey] as! NSMutableDictionary
     let element  = get_axuielementref(L, 2, axuielement_USERDATA_TAG)
-    let what     = skin.toNSObject(atIndex: 3) as! String
+    let what     = lua_tovalue(L, at: 3) as! String
 
     let watching = details[keyWatching as String] as! NSMutableDictionary
     let elementKey = element as AnyObject
@@ -255,15 +250,13 @@ private func axobserver_removeWatchedElement(_ L: UnsafeMutablePointer<lua_State
 
 /// hs.axuielement.observer:watching([element]) -> table
 private func axobserver_watchedElements(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, axuielement_OBSERVER_TAG, LS_TBREAK | LS_TVARARG)
+    luaL_checkudata(L, 1, axuielement_OBSERVER_TAG)
     let observer = get_axobserverref(L, 1, axuielement_OBSERVER_TAG)
     let observerKey = observer as AnyObject
     let details = observerDetails![observerKey] as! NSMutableDictionary
 
     var element: AXUIElement? = nil
     if lua_gettop(L) > 1 {
-        skin.checkArgs(LS_TUSERDATA, axuielement_OBSERVER_TAG, LS_TUSERDATA, axuielement_USERDATA_TAG, LS_TBREAK)
         element = get_axuielementref(L, 2, axuielement_USERDATA_TAG)
     }
 
@@ -293,73 +286,70 @@ private func axobserver_watchedElements(_ L: UnsafeMutablePointer<lua_State>!) -
 // MARK: - Module Constants (observer)
 
 private func pushNotificationsTable(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     lua_newtable(L)
     // Focus notifications
-    skin.pushNSObject(kAXMainWindowChangedNotification as String);       lua_setfield(L, -2, "mainWindowChanged")
-    skin.pushNSObject(kAXFocusedWindowChangedNotification as String);    lua_setfield(L, -2, "focusedWindowChanged")
-    skin.pushNSObject(kAXFocusedUIElementChangedNotification as String); lua_setfield(L, -2, "focusedUIElementChanged")
+    lua_pushany(L, kAXMainWindowChangedNotification as String);       lua_setfield(L, -2, "mainWindowChanged")
+    lua_pushany(L, kAXFocusedWindowChangedNotification as String);    lua_setfield(L, -2, "focusedWindowChanged")
+    lua_pushany(L, kAXFocusedUIElementChangedNotification as String); lua_setfield(L, -2, "focusedUIElementChanged")
     // Application notifications
-    skin.pushNSObject(kAXApplicationActivatedNotification as String);    lua_setfield(L, -2, "applicationActivated")
-    skin.pushNSObject(kAXApplicationDeactivatedNotification as String);  lua_setfield(L, -2, "applicationDeactivated")
-    skin.pushNSObject(kAXApplicationHiddenNotification as String);       lua_setfield(L, -2, "applicationHidden")
-    skin.pushNSObject(kAXApplicationShownNotification as String);        lua_setfield(L, -2, "applicationShown")
+    lua_pushany(L, kAXApplicationActivatedNotification as String);    lua_setfield(L, -2, "applicationActivated")
+    lua_pushany(L, kAXApplicationDeactivatedNotification as String);  lua_setfield(L, -2, "applicationDeactivated")
+    lua_pushany(L, kAXApplicationHiddenNotification as String);       lua_setfield(L, -2, "applicationHidden")
+    lua_pushany(L, kAXApplicationShownNotification as String);        lua_setfield(L, -2, "applicationShown")
     // Window notifications
-    skin.pushNSObject(kAXWindowCreatedNotification as String);           lua_setfield(L, -2, "windowCreated")
-    skin.pushNSObject(kAXWindowMovedNotification as String);             lua_setfield(L, -2, "windowMoved")
-    skin.pushNSObject(kAXWindowResizedNotification as String);           lua_setfield(L, -2, "windowResized")
-    skin.pushNSObject(kAXWindowMiniaturizedNotification as String);      lua_setfield(L, -2, "windowMiniaturized")
-    skin.pushNSObject(kAXWindowDeminiaturizedNotification as String);    lua_setfield(L, -2, "windowDeminiaturized")
+    lua_pushany(L, kAXWindowCreatedNotification as String);           lua_setfield(L, -2, "windowCreated")
+    lua_pushany(L, kAXWindowMovedNotification as String);             lua_setfield(L, -2, "windowMoved")
+    lua_pushany(L, kAXWindowResizedNotification as String);           lua_setfield(L, -2, "windowResized")
+    lua_pushany(L, kAXWindowMiniaturizedNotification as String);      lua_setfield(L, -2, "windowMiniaturized")
+    lua_pushany(L, kAXWindowDeminiaturizedNotification as String);    lua_setfield(L, -2, "windowDeminiaturized")
     // New drawer, sheet, and help tag notifications
-    skin.pushNSObject(kAXDrawerCreatedNotification as String);           lua_setfield(L, -2, "drawerCreated")
-    skin.pushNSObject(kAXSheetCreatedNotification as String);            lua_setfield(L, -2, "sheetCreated")
-    skin.pushNSObject(kAXHelpTagCreatedNotification as String);          lua_setfield(L, -2, "helpTagCreated")
+    lua_pushany(L, kAXDrawerCreatedNotification as String);           lua_setfield(L, -2, "drawerCreated")
+    lua_pushany(L, kAXSheetCreatedNotification as String);            lua_setfield(L, -2, "sheetCreated")
+    lua_pushany(L, kAXHelpTagCreatedNotification as String);          lua_setfield(L, -2, "helpTagCreated")
     // Element notifications
-    skin.pushNSObject(kAXValueChangedNotification as String);            lua_setfield(L, -2, "valueChanged")
-    skin.pushNSObject(kAXUIElementDestroyedNotification as String);      lua_setfield(L, -2, "uIElementDestroyed")
-    skin.pushNSObject(kAXElementBusyChangedNotification as String);      lua_setfield(L, -2, "elementBusyChanged")
+    lua_pushany(L, kAXValueChangedNotification as String);            lua_setfield(L, -2, "valueChanged")
+    lua_pushany(L, kAXUIElementDestroyedNotification as String);      lua_setfield(L, -2, "uIElementDestroyed")
+    lua_pushany(L, kAXElementBusyChangedNotification as String);      lua_setfield(L, -2, "elementBusyChanged")
     // Menu notifications
-    skin.pushNSObject(kAXMenuOpenedNotification as String);              lua_setfield(L, -2, "menuOpened")
-    skin.pushNSObject(kAXMenuClosedNotification as String);              lua_setfield(L, -2, "menuClosed")
-    skin.pushNSObject(kAXMenuItemSelectedNotification as String);        lua_setfield(L, -2, "menuItemSelected")
+    lua_pushany(L, kAXMenuOpenedNotification as String);              lua_setfield(L, -2, "menuOpened")
+    lua_pushany(L, kAXMenuClosedNotification as String);              lua_setfield(L, -2, "menuClosed")
+    lua_pushany(L, kAXMenuItemSelectedNotification as String);        lua_setfield(L, -2, "menuItemSelected")
     // Table and outline view notifications
-    skin.pushNSObject(kAXRowCountChangedNotification as String);         lua_setfield(L, -2, "rowCountChanged")
-    skin.pushNSObject(kAXRowCollapsedNotification as String);            lua_setfield(L, -2, "rowCollapsed")
-    skin.pushNSObject(kAXRowExpandedNotification as String);             lua_setfield(L, -2, "rowExpanded")
+    lua_pushany(L, kAXRowCountChangedNotification as String);         lua_setfield(L, -2, "rowCountChanged")
+    lua_pushany(L, kAXRowCollapsedNotification as String);            lua_setfield(L, -2, "rowCollapsed")
+    lua_pushany(L, kAXRowExpandedNotification as String);             lua_setfield(L, -2, "rowExpanded")
     // Miscellaneous notifications
-    skin.pushNSObject(kAXSelectedChildrenChangedNotification as String); lua_setfield(L, -2, "selectedChildrenChanged")
-    skin.pushNSObject(kAXResizedNotification as String);                 lua_setfield(L, -2, "resized")
-    skin.pushNSObject(kAXMovedNotification as String);                   lua_setfield(L, -2, "moved")
-    skin.pushNSObject(kAXCreatedNotification as String);                 lua_setfield(L, -2, "created")
-    skin.pushNSObject(kAXAnnouncementRequestedNotification as String);   lua_setfield(L, -2, "announcementRequested")
-    skin.pushNSObject(kAXLayoutChangedNotification as String);           lua_setfield(L, -2, "layoutChanged")
-    skin.pushNSObject(kAXSelectedCellsChangedNotification as String);    lua_setfield(L, -2, "selectedCellsChanged")
-    skin.pushNSObject(kAXSelectedChildrenMovedNotification as String);   lua_setfield(L, -2, "selectedChildrenMoved")
-    skin.pushNSObject(kAXSelectedColumnsChangedNotification as String);  lua_setfield(L, -2, "selectedColumnsChanged")
-    skin.pushNSObject(kAXSelectedRowsChangedNotification as String);     lua_setfield(L, -2, "selectedRowsChanged")
-    skin.pushNSObject(kAXSelectedTextChangedNotification as String);     lua_setfield(L, -2, "selectedTextChanged")
-    skin.pushNSObject(kAXTitleChangedNotification as String);            lua_setfield(L, -2, "titleChanged")
-    skin.pushNSObject(kAXUnitsChangedNotification as String);            lua_setfield(L, -2, "unitsChanged")
+    lua_pushany(L, kAXSelectedChildrenChangedNotification as String); lua_setfield(L, -2, "selectedChildrenChanged")
+    lua_pushany(L, kAXResizedNotification as String);                 lua_setfield(L, -2, "resized")
+    lua_pushany(L, kAXMovedNotification as String);                   lua_setfield(L, -2, "moved")
+    lua_pushany(L, kAXCreatedNotification as String);                 lua_setfield(L, -2, "created")
+    lua_pushany(L, kAXAnnouncementRequestedNotification as String);   lua_setfield(L, -2, "announcementRequested")
+    lua_pushany(L, kAXLayoutChangedNotification as String);           lua_setfield(L, -2, "layoutChanged")
+    lua_pushany(L, kAXSelectedCellsChangedNotification as String);    lua_setfield(L, -2, "selectedCellsChanged")
+    lua_pushany(L, kAXSelectedChildrenMovedNotification as String);   lua_setfield(L, -2, "selectedChildrenMoved")
+    lua_pushany(L, kAXSelectedColumnsChangedNotification as String);  lua_setfield(L, -2, "selectedColumnsChanged")
+    lua_pushany(L, kAXSelectedRowsChangedNotification as String);     lua_setfield(L, -2, "selectedRowsChanged")
+    lua_pushany(L, kAXSelectedTextChangedNotification as String);     lua_setfield(L, -2, "selectedTextChanged")
+    lua_pushany(L, kAXTitleChangedNotification as String);            lua_setfield(L, -2, "titleChanged")
+    lua_pushany(L, kAXUnitsChangedNotification as String);            lua_setfield(L, -2, "unitsChanged")
     return 1
 }
 
 // MARK: - Cosmic Hammer/Lua Infrastructure (observer)
 
 private func observer_userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     let tagStr = String(cString: axuielement_OBSERVER_TAG)
     let ptr = Int(bitPattern: lua_topointer(L, 1))
-    skin.pushNSObject(NSString(format: "%@: (0x%lx)", tagStr as NSString, ptr))
+    lua_pushany(L, NSString(format: "%@: (0x%lx)", tagStr as NSString, ptr))
     return 1
 }
 
 private func observer_userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     let observer = get_axobserverref(L, 1, axuielement_OBSERVER_TAG)
     let observerKey = observer as AnyObject
 
     guard let details = observerDetails?[observerKey] as? NSMutableDictionary else {
-        skin.logWarn("\(String(cString: axuielement_OBSERVER_TAG)):__gc triggered for unregistered observer")
+        os_log(.info, "%{public}s", "\(String(cString: axuielement_OBSERVER_TAG)):__gc triggered for unregistered observer")
         lua_pushnil(L)
         lua_setmetatable(L, 1)
         return 0

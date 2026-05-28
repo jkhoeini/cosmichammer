@@ -1,12 +1,13 @@
 import Cocoa
 import LuaSkin
+import os.log
 
 // NSUserNotification and its relations are deprecated but we're not ready to switch quite yet...
 
 // MARK: - Constants
 
 let nt_USERDATA_TAG = "hs.notify"
-var nt_refTable: LSRefTable = LUA_NOREF
+var nt_refTable: Int32 = LUA_NOREF
 
 // changes made to userInfo dictionary in userNotificationCenter:didDeliverNotification: are not
 // kept (is notification object a copy?) so we can't update delivered if it's in that particular
@@ -69,22 +70,19 @@ class HSModuleNotificationManager: NSObject, NSUserNotificationCenterDelegate {
         userInfo[KEY_DELIVERED] = true // just in case its a holdover from before a reload/relaunch
 
         let skin = LuaSkin.skin(with: nil)
-        let L = skin.l!
-
-        _lua_stackguard_entry(L)
-        if !skin.requireModule(nt_USERDATA_TAG) {
-            skin.logError("\(nt_USERDATA_TAG):_didActivateNotification - unable to load tag handler: \(String(cString: lua_tostring(L, -1)!))")
+        let L = LuaSkin.skin(with: nil).l!
+        if !(lua_getglobal(L, "require") == LUA_OK && { lua_pushstring(L, nt_USERDATA_TAG); return lua_pcall(L, 1, 1, 0) == LUA_OK }()) {
+            os_log(.error, "%{public}s", "\(nt_USERDATA_TAG):_didActivateNotification - unable to load tag handler: \(String(cString: lua_tostring(L, -1)!))")
             lua_pop(L, 1) // remove error message
-            _lua_stackguard_exit(L)
             return
         }
         lua_getfield(L, -1, "_tag_handler") // now we know the function hs.notify._tag_handler is on the stack...
-        skin.pushNSObject(userInfo[KEY_FNTAG])
-        skin.pushNSObject(notification)
+        lua_pushany(L, userInfo[KEY_FNTAG])
+        lua_pushany(L, notification)
 
-        if !skin.protectedCallAndError("\(nt_USERDATA_TAG) callback", nargs: 2, nresults: 0) {
+        if lua_pcall(L, 2, 0, 0) != LUA_OK {
+            lua_pop(L, 1) // pop error message
             lua_pop(L, 1) // pop the hs.notify module
-            _lua_stackguard_exit(L)
             return
         }
         lua_pop(L, 1) // pop the hs.notify module
@@ -100,7 +98,6 @@ class HSModuleNotificationManager: NSObject, NSUserNotificationCenterDelegate {
             NSUserNotificationCenter.default.removeDeliveredNotification(notification)
             NSUserNotificationCenter.default.removeScheduledNotification(notification)
         }
-        _lua_stackguard_exit(skin.l)
     }
 
     // Should notification show, even if we're the foremost application?
@@ -157,8 +154,6 @@ func nt_getNotification(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> 
 /// Notes:
 ///  * This will withdraw all notifications for Cosmic Hammer, including those not sent by this module or that linger from a previous load of Cosmic Hammer.
 let notification_withdraw_all: lua_CFunction = { L in
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TBREAK)
     NSUserNotificationCenter.default.removeAllDeliveredNotifications()
     return 0
 }
@@ -173,8 +168,6 @@ let notification_withdraw_all: lua_CFunction = { L in
 /// Returns:
 ///  * None
 let notification_withdraw_allScheduled: lua_CFunction = { L in
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TBREAK)
     NSUserNotificationCenter.default.scheduledNotifications = []
     return 0
 }
@@ -210,11 +203,9 @@ let notification_withdraw_allScheduled: lua_CFunction = { L in
 /// end)
 /// ~~~
 let notification_deliveredNotifications: lua_CFunction = { L in
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TBREAK)
     let deliveredNotifications = NSUserNotificationCenter.default.deliveredNotifications
 
-    skin.pushNSObject(deliveredNotifications as NSArray)
+    lua_pushany(L, deliveredNotifications as NSArray)
     // just in case pushNSUserNotification had to recreate our entries in nt_specifics
     for notification in deliveredNotifications {
         if let gus = notification.userInfo?[KEY_ID] as? String {
@@ -241,9 +232,7 @@ let notification_deliveredNotifications: lua_CFunction = { L in
 ///
 ///  * You can use this function along with [hs.notify:getFunctionTag](#getFunctionTag) to re=register necessary callback functions with [hs.notify.register](#register) when Cosmic Hammer is restarted.
 let notification_scheduledNotifications: lua_CFunction = { L in
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TBREAK)
-    skin.pushNSObject(NSUserNotificationCenter.default.scheduledNotifications as NSArray)
+    lua_pushany(L, NSUserNotificationCenter.default.scheduledNotifications as NSArray)
     return 1
 }
 
@@ -252,15 +241,14 @@ let notification_scheduledNotifications: lua_CFunction = { L in
 // Constructor
 // Returns a new notification object with the specified information and the assigned callback function.
 let notification_new: lua_CFunction = { L in
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING, LS_TBREAK)
+    luaL_checktype(L, 1, LUA_TSTRING)
     let gus = ProcessInfo.processInfo.globallyUniqueString
 
     let userInfo: NSMutableDictionary = [
         KEY_LOCKED:        false,
         KEY_ID:            gus,
         KEY_WITHDRAWAFTER: 0.0,
-        KEY_FNTAG:         skin.toNSObject(atIndex: 1)!,
+        KEY_FNTAG:         lua_tovalue(L, at: 1)!,
         KEY_ALWAYSPRESENT: true,
         KEY_AUTOWITHDRAW:  true,
         KEY_SELFREFCOUNT:  0,
@@ -273,7 +261,7 @@ let notification_new: lua_CFunction = { L in
     notification.userInfo = [KEY_ID: gus]
     notification.hasActionButton = false
 
-    skin.pushNSObject(notification)
+    lua_pushany(L, notification)
     return 1
 }
 
@@ -337,11 +325,10 @@ func nt_pushNSUserNotification(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any
 }
 
 func nt_toNSUserNotificationFromLua(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> Any? {
-    let skin = LuaSkin.skin(with: L)
     if luaL_testudata(L, idx, nt_USERDATA_TAG) != nil {
         return nt_getNotification(L, idx)
     } else {
-        skin.logError("expected \(nt_USERDATA_TAG) object, found \(String(cString: lua_typename(L, lua_type(L, idx))!))")
+        os_log(.error, "%{public}s", "expected \(nt_USERDATA_TAG) object, found \(String(cString: lua_typename(L, lua_type(L, idx))!))")
     }
     return nil
 }
@@ -349,11 +336,10 @@ func nt_toNSUserNotificationFromLua(_ L: UnsafeMutablePointer<lua_State>!, _ idx
 // MARK: - Cosmic Hammer/Lua Infrastructure
 
 let nt_userdata_tostring: lua_CFunction = { L in
-    let skin = LuaSkin.skin(with: L)
-    let obj = skin.luaObject(at: 1, toClass: "NSUserNotification") as! NSUserNotification
+    let obj = lua_tovalue(L, at: 1) as! NSUserNotification
     let title = obj.title ?? ""
     let ptr = lua_topointer(L, 1)
-    skin.pushNSObject(NSString(string: "\(nt_USERDATA_TAG): \(title) (\(String(describing: ptr)))"))
+    lua_pushany(L, NSString(string: "\(nt_USERDATA_TAG): \(title) (\(String(describing: ptr)))"))
     return 1
 }
 
@@ -361,9 +347,8 @@ let nt_userdata_eq: lua_CFunction = { L in
     // can't get here if at least one of us isn't a userdata type, and we only care if both types are ours,
     // so use luaL_testudata before the macro causes a lua error
     if luaL_testudata(L, 1, nt_USERDATA_TAG) != nil && luaL_testudata(L, 2, nt_USERDATA_TAG) != nil {
-        let skin = LuaSkin.skin(with: L)
-        let obj1 = skin.luaObject(at: 1, toClass: "NSUserNotification") as! NSUserNotification
-        let obj2 = skin.luaObject(at: 2, toClass: "NSUserNotification") as! NSUserNotification
+        let obj1 = lua_tovalue(L, at: 1) as! NSUserNotification
+        let obj2 = lua_tovalue(L, at: 2) as! NSUserNotification
         lua_pushboolean(L, obj1.isEqual(to: obj2) ? 1 : 0)
     } else {
         lua_pushboolean(L, 0)

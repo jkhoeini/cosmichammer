@@ -2,6 +2,7 @@ import Foundation
 import Cocoa
 import WebKit
 import LuaSkin
+import os.log
 
 // MARK: - HSWebViewView
 
@@ -83,39 +84,36 @@ class HSWebViewView: WKWebView, WKNavigationDelegate, WKUIDelegate {
 
             if self.policyCallback != LUA_NOREF && challenge.previousFailureCount < 3 {
                 let skin = LuaSkin.skin(with: nil)
-                _lua_stackguard_entry(skin.l)
-                skin.pushLuaRef(wv_refTable, ref: self.policyCallback)
-                lua_pushstring(skin.l, "authenticationChallenge")
-                skin.pushNSObject(webView.window as? HSWebViewWindow)
-                skin.pushNSObject(challenge)
+                let L = LuaSkin.skin(with: nil).l!
+                lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(self.policyCallback))
+                lua_pushstring(L, "authenticationChallenge")
+                lua_pushany(L, webView.window as? HSWebViewWindow)
+                lua_pushany(L, challenge)
 
-                if !skin.protectedCallAndTraceback(3, nresults: 1) {
-                    let errorMsg = lua_tostring(skin.l, -1).map({ String(cString: $0) }) ?? "unknown error"
-                    skin.logError("hs.webview:policyCallback() authenticationChallenge callback error: \(errorMsg)")
+                if lua_pcall(L, 3, 1, 0) != LUA_OK {
+                    let errorMsg = lua_tostring(L, -1).map({ String(cString: $0) }) ?? "unknown error"
+                    os_log(.error, "%{public}s", "hs.webview:policyCallback() authenticationChallenge callback error: \(errorMsg)")
                 } else {
-                    if lua_type(skin.l, -1) == LUA_TTABLE {
-                        lua_getfield(skin.l, -1, "user")
-                        let userName = (lua_type(skin.l, -1) == LUA_TSTRING) ? (skin.toNSObject(atIndex: -1) as? String ?? "") : ""
-                        lua_pop(skin.l, 1)
+                    if lua_type(L, -1) == LUA_TTABLE {
+                        lua_getfield(L, -1, "user")
+                        let userName = (lua_type(L, -1) == LUA_TSTRING) ? (lua_tovalue(L, at: -1) as? String ?? "") : ""
+                        lua_pop(L, 1)
 
-                        lua_getfield(skin.l, -1, "password")
-                        let password = (lua_type(skin.l, -1) == LUA_TSTRING) ? (skin.toNSObject(atIndex: -1) as? String ?? "") : ""
-                        lua_pop(skin.l, 1)
+                        lua_getfield(L, -1, "password")
+                        let password = (lua_type(L, -1) == LUA_TSTRING) ? (lua_tovalue(L, at: -1) as? String ?? "") : ""
+                        lua_pop(L, 1)
 
                         let credential = URLCredential(user: userName, password: password, persistence: .forSession)
                         completionHandler(.useCredential, credential)
-                        lua_pop(skin.l, 1)
-                        _lua_stackguard_exit(skin.l)
+                        lua_pop(L, 1)
                         return
-                    } else if lua_toboolean(skin.l, -1) == 0 {
+                    } else if lua_toboolean(L, -1) == 0 {
                         completionHandler(.cancelAuthenticationChallenge, nil)
-                        lua_pop(skin.l, 1)
-                        _lua_stackguard_exit(skin.l)
+                        lua_pop(L, 1)
                         return
                     }
                 }
-                lua_pop(skin.l, 1)
-                _lua_stackguard_exit(skin.l)
+                lua_pop(L, 1)
             }
 
             if let targetWindow = self.window {
@@ -169,17 +167,17 @@ class HSWebViewView: WKWebView, WKNavigationDelegate, WKUIDelegate {
 
             if status == .recoverableTrustFailure && self.sslCallback != LUA_NOREF {
                 let skin = LuaSkin.skin(with: nil)
-                _lua_stackguard_entry(skin.l)
-                skin.pushLuaRef(wv_refTable, ref: self.sslCallback)
-                skin.pushNSObject(webView.window as? HSWebViewWindow)
-                skin.pushNSObject(challenge.protectionSpace)
+                let L = LuaSkin.skin(with: nil).l!
+                lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(self.sslCallback))
+                lua_pushany(L, webView.window as? HSWebViewWindow)
+                lua_pushany(L, challenge.protectionSpace)
 
-                if !skin.protectedCallAndTraceback(2, nresults: 1) {
-                    let errorMsg = lua_tostring(skin.l, -1).map({ String(cString: $0) }) ?? "unknown error"
-                    skin.logError("hs.webview:sslCallback callback error: \(errorMsg)")
+                if lua_pcall(L, 2, 1, 0) != LUA_OK {
+                    let errorMsg = lua_tostring(L, -1).map({ String(cString: $0) }) ?? "unknown error"
+                    os_log(.error, "%{public}s", "hs.webview:sslCallback callback error: \(errorMsg)")
                     completionHandler(.performDefaultHandling, nil)
                 } else {
-                    if lua_type(skin.l, -1) == LUA_TBOOLEAN && lua_toboolean(skin.l, -1) != 0 && examineInvalidCertificates {
+                    if lua_type(L, -1) == LUA_TBOOLEAN && lua_toboolean(L, -1) != 0 && examineInvalidCertificates {
                         let exceptions = SecTrustCopyExceptions(serverTrust)
                         SecTrustSetExceptions(serverTrust, exceptions)
                         completionHandler(.useCredential, URLCredential(trust: serverTrust))
@@ -187,8 +185,7 @@ class HSWebViewView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                         completionHandler(.performDefaultHandling, nil)
                     }
                 }
-                lua_pop(skin.l, 1)
-                _lua_stackguard_exit(skin.l)
+                lua_pop(L, 1)
             } else {
                 completionHandler(.performDefaultHandling, nil)
             }
@@ -202,21 +199,20 @@ class HSWebViewView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                  decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
         if self.policyCallback != LUA_NOREF {
             let skin = LuaSkin.skin(with: nil)
-            _lua_stackguard_entry(skin.l)
-            skin.pushLuaRef(wv_refTable, ref: self.policyCallback)
-            lua_pushstring(skin.l, "navigationAction")
-            skin.pushNSObject(webView.window as? HSWebViewWindow)
-            skin.pushNSObject(navigationAction)
+            let L = LuaSkin.skin(with: nil).l!
+            lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(self.policyCallback))
+            lua_pushstring(L, "navigationAction")
+            lua_pushany(L, webView.window as? HSWebViewWindow)
+            lua_pushany(L, navigationAction)
 
-            if !skin.protectedCallAndTraceback(3, nresults: 1) {
-                let errorMsg = lua_tostring(skin.l, -1).map({ String(cString: $0) }) ?? "unknown error"
-                skin.logError("hs.webview:policyCallback() navigationAction callback error: \(errorMsg)")
+            if lua_pcall(L, 3, 1, 0) != LUA_OK {
+                let errorMsg = lua_tostring(L, -1).map({ String(cString: $0) }) ?? "unknown error"
+                os_log(.error, "%{public}s", "hs.webview:policyCallback() navigationAction callback error: \(errorMsg)")
                 decisionHandler(.cancel)
             } else {
-                decisionHandler(lua_toboolean(skin.l, -1) != 0 ? .allow : .cancel)
+                decisionHandler(lua_toboolean(L, -1) != 0 ? .allow : .cancel)
             }
-            lua_pop(skin.l, 1)
-            _lua_stackguard_exit(skin.l)
+            lua_pop(L, 1)
         } else {
             decisionHandler(.allow)
         }
@@ -226,21 +222,20 @@ class HSWebViewView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                  decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
         if self.policyCallback != LUA_NOREF {
             let skin = LuaSkin.skin(with: nil)
-            _lua_stackguard_entry(skin.l)
-            skin.pushLuaRef(wv_refTable, ref: self.policyCallback)
-            lua_pushstring(skin.l, "navigationResponse")
-            skin.pushNSObject(webView.window as? HSWebViewWindow)
-            skin.pushNSObject(navigationResponse)
+            let L = LuaSkin.skin(with: nil).l!
+            lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(self.policyCallback))
+            lua_pushstring(L, "navigationResponse")
+            lua_pushany(L, webView.window as? HSWebViewWindow)
+            lua_pushany(L, navigationResponse)
 
-            if !skin.protectedCallAndTraceback(3, nresults: 1) {
-                let errorMsg = lua_tostring(skin.l, -1).map({ String(cString: $0) }) ?? "unknown error"
-                skin.logError("hs.webview:policyCallback() navigationResponse callback error: \(errorMsg)")
+            if lua_pcall(L, 3, 1, 0) != LUA_OK {
+                let errorMsg = lua_tostring(L, -1).map({ String(cString: $0) }) ?? "unknown error"
+                os_log(.error, "%{public}s", "hs.webview:policyCallback() navigationResponse callback error: \(errorMsg)")
                 decisionHandler(.cancel)
             } else {
-                decisionHandler(lua_toboolean(skin.l, -1) != 0 ? .allow : .cancel)
+                decisionHandler(lua_toboolean(L, -1) != 0 ? .allow : .cancel)
             }
-            lua_pop(skin.l, 1)
-            _lua_stackguard_exit(skin.l)
+            lua_pop(L, 1)
         } else {
             decisionHandler(.allow)
         }
@@ -253,7 +248,7 @@ class HSWebViewView: WKWebView, WKNavigationDelegate, WKUIDelegate {
         guard (webView as? HSWebViewView)?.allowNewWindows == true else { return nil }
 
         let skin = LuaSkin.skin(with: nil)
-        _lua_stackguard_entry(skin.l)
+        let L = LuaSkin.skin(with: nil).l!
 
         let parent = webView.window as! HSWebViewWindow
         var theRect = parent.contentRect(forFrameRect: parent.frame)
@@ -268,11 +263,11 @@ class HSWebViewView: WKWebView, WKNavigationDelegate, WKUIDelegate {
         newWindow.parentWebView = parent
         newWindow.deleteOnClose = true
         newWindow.isOpaque = parent.isOpaque
-        newWindow.lsCanary = skin.createGCCanary()
+        newWindow.lsCanary = lua_currentStateGeneration()
 
         if parent.windowCallback != LUA_NOREF {
-            skin.pushLuaRef(wv_refTable, ref: parent.windowCallback)
-            newWindow.windowCallback = skin.luaRef(wv_refTable)
+            lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(parent.windowCallback))
+            newWindow.windowCallback = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
         }
 
         let newView = HSWebViewView(frame: (newWindow.contentView! as NSView).bounds, configuration: configuration)
@@ -284,48 +279,44 @@ class HSWebViewView: WKWebView, WKNavigationDelegate, WKUIDelegate {
         newView.setValue(NSNumber(value: newWindow.isOpaque), forKey: "drawsTransparentBackground")
 
         if (webView as! HSWebViewView).navigationCallback != LUA_NOREF {
-            skin.pushLuaRef(wv_refTable, ref: (webView as! HSWebViewView).navigationCallback)
-            newView.navigationCallback = skin.luaRef(wv_refTable)
+            lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer((webView as! HSWebViewView).navigationCallback))
+            newView.navigationCallback = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
         }
         if (webView as! HSWebViewView).policyCallback != LUA_NOREF {
-            skin.pushLuaRef(wv_refTable, ref: (webView as! HSWebViewView).policyCallback)
-            newView.policyCallback = skin.luaRef(wv_refTable)
+            lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer((webView as! HSWebViewView).policyCallback))
+            newView.policyCallback = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
         }
 
         if self.policyCallback != LUA_NOREF {
-            skin.pushLuaRef(wv_refTable, ref: self.policyCallback)
-            lua_pushstring(skin.l, "newWindow")
-            skin.pushNSObject(newWindow)
-            skin.pushNSObject(navigationAction)
-            skin.pushNSObject(windowFeatures)
+            lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(self.policyCallback))
+            lua_pushstring(L, "newWindow")
+            lua_pushany(L, newWindow)
+            lua_pushany(L, navigationAction)
+            lua_pushany(L, windowFeatures)
 
-            if !skin.protectedCallAndTraceback(4, nresults: 1) {
-                let errorMsg = lua_tostring(skin.l, -1).map({ String(cString: $0) }) ?? "unknown error"
-                lua_pop(skin.l, 1)
-                skin.logError("hs.webview:policyCallback() newWindow callback error: \(errorMsg)")
+            if lua_pcall(L, 4, 1, 0) != LUA_OK {
+                let errorMsg = lua_tostring(L, -1).map({ String(cString: $0) }) ?? "unknown error"
+                lua_pop(L, 1)
+                os_log(.error, "%{public}s", "hs.webview:policyCallback() newWindow callback error: \(errorMsg)")
 
-                lua_pushcfunction(skin.l, wv_userdata_gc)
-                skin.pushNSObject(newWindow)
-                skin.protectedCallAndError("hs.webview:policyCallback() newWindow removal", nargs: 1, nresults: 0)
-                _lua_stackguard_exit(skin.l)
+                lua_pushcfunction(L, wv_userdata_gc)
+                lua_pushany(L, newWindow)
+                if lua_pcall(L, 1, 0, 0) != LUA_OK { lua_pop(L, 1) }
                 return nil
             } else {
-                if lua_toboolean(skin.l, -1) == 0 {
-                    lua_pop(skin.l, 1)
-                    lua_pushcfunction(skin.l, wv_userdata_gc)
-                    skin.pushNSObject(newWindow)
-                    skin.protectedCallAndError("hs.webview:policyCallback() newWindow removal rejection", nargs: 1, nresults: 0)
-                    _lua_stackguard_exit(skin.l)
+                if lua_toboolean(L, -1) == 0 {
+                    lua_pop(L, 1)
+                    lua_pushcfunction(L, wv_userdata_gc)
+                    lua_pushany(L, newWindow)
+                    if lua_pcall(L, 1, 0, 0) != LUA_OK { lua_pop(L, 1) }
                     return nil
                 }
             }
-            lua_pop(skin.l, 1)
+            lua_pop(L, 1)
         }
 
         parent.children.add(newWindow)
         newWindow.makeKeyAndOrderFront(nil)
-
-        _lua_stackguard_exit(skin.l)
         return newView
     }
 
@@ -403,37 +394,36 @@ class HSWebViewView: WKWebView, WKNavigationDelegate, WKUIDelegate {
 
         if self.navigationCallback != LUA_NOREF {
             let skin = LuaSkin.skin(with: nil)
-            _lua_stackguard_entry(skin.l)
+            let L = LuaSkin.skin(with: nil).l!
             var numberOfArguments: Int32 = 3
-            skin.pushLuaRef(wv_refTable, ref: self.navigationCallback)
-            lua_pushstring(skin.l, action)
-            skin.pushNSObject(theView.window as? HSWebViewWindow)
+            lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(self.navigationCallback))
+            lua_pushstring(L, action)
+            lua_pushany(L, theView.window as? HSWebViewWindow)
             let navStr = String(describing: Unmanaged.passUnretained(navigation as AnyObject).toOpaque())
-            lua_pushstring(skin.l, navStr)
+            lua_pushstring(L, navStr)
 
             if let error = error {
                 numberOfArguments += 1
-                wv_NSError_toLua(skin.l, error)
+                wv_NSError_toLua(L, error)
             }
 
-            if !skin.protectedCallAndTraceback(numberOfArguments, nresults: 1) {
-                let errorMsg = lua_tostring(skin.l, -1).map({ String(cString: $0) }) ?? "unknown error"
-                skin.logError("hs.webview:navigationCallback() \(action) callback error: \(errorMsg)")
+            if lua_pcall(L, numberOfArguments, 1, 0) != LUA_OK {
+                let errorMsg = lua_tostring(L, -1).map({ String(cString: $0) }) ?? "unknown error"
+                os_log(.error, "%{public}s", "hs.webview:navigationCallback() \(action) callback error: \(errorMsg)")
             } else {
                 if error != nil {
-                    if lua_type(skin.l, -1) == LUA_TSTRING {
-                        luaL_tolstring(skin.l, -1, nil)
-                        let theHTML = skin.toNSObject(atIndex: -1) as? String ?? ""
-                        lua_pop(skin.l, 1)
+                    if lua_type(L, -1) == LUA_TSTRING {
+                        luaL_tolstring(L, -1, nil)
+                        let theHTML = lua_tovalue(L, at: -1) as? String ?? ""
+                        lua_pop(L, 1)
                         theView.loadHTMLString(theHTML, baseURL: nil)
                         actionRequiredAfterReturn = false
-                    } else if lua_type(skin.l, -1) == LUA_TBOOLEAN && lua_toboolean(skin.l, -1) != 0 {
+                    } else if lua_type(L, -1) == LUA_TBOOLEAN && lua_toboolean(L, -1) != 0 {
                         actionRequiredAfterReturn = false
                     }
                 }
             }
-            lua_pop(skin.l, 1)
-            _lua_stackguard_exit(skin.l)
+            lua_pop(L, 1)
         }
 
         return actionRequiredAfterReturn

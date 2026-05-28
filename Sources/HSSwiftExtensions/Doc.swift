@@ -1,9 +1,10 @@
 import Cocoa
 import LuaSkin
+import os.log
 
 private let USERDATA_TAG = "hs.doc" // we're using it as a module tag for console messages
 
-private var refTable: LSRefTable = LUA_NOREF
+private var refTable: Int32 = LUA_NOREF
 private var refTriggerFn: Int32 = LUA_NOREF
 
 private var registeredFiles: NSMutableDictionary!
@@ -74,7 +75,6 @@ private extension String {
 }
 
 private func processRegisteredFile(_ L: UnsafeMutablePointer<lua_State>!, _ path: NSString) -> Bool {
-    let skin = LuaSkin.skin(with: L)
 
     var error: NSError?
     var rawFile: Data?
@@ -84,7 +84,7 @@ private func processRegisteredFile(_ L: UnsafeMutablePointer<lua_State>!, _ path
         error = e
     }
     guard let rawFile = rawFile, error == nil else {
-        skin.logError("\(USERDATA_TAG).processRegisteredFile - unable to open '\(path)' (\(error?.localizedDescription ?? "unknown"))")
+        os_log(.error, "%{public}s", "\(USERDATA_TAG).processRegisteredFile - unable to open '\(path)' (\(error?.localizedDescription ?? "unknown"))")
         return false
     }
 
@@ -95,11 +95,11 @@ private func processRegisteredFile(_ L: UnsafeMutablePointer<lua_State>!, _ path
         error = e
     }
     if let error = error {
-        skin.logError("\(USERDATA_TAG).processRegisteredFile - error parsing JSON for \(path): \(error.localizedDescription)")
+        os_log(.error, "%{public}s", "\(USERDATA_TAG).processRegisteredFile - error parsing JSON for \(path): \(error.localizedDescription)")
         return false
     }
     guard let obj = obj else {
-        skin.logError("\(USERDATA_TAG).processRegisteredFile - error parsing JSON for \(path): input resolved to nil")
+        os_log(.error, "%{public}s", "\(USERDATA_TAG).processRegisteredFile - error parsing JSON for \(path): input resolved to nil")
         return false
     }
 
@@ -109,7 +109,7 @@ private func processRegisteredFile(_ L: UnsafeMutablePointer<lua_State>!, _ path
     let root: NSMutableDictionary = isSpoon ? (documentationTree["spoon"] as! NSMutableDictionary) : documentationTree
 
     guard let objArray = obj as? NSArray else {
-        skin.logError("\(USERDATA_TAG).processRegisteredFile - malformed documentation file \(path): proper format requires an array of entries")
+        os_log(.error, "%{public}s", "\(USERDATA_TAG).processRegisteredFile - malformed documentation file \(path): proper format requires an array of entries")
         return false
     }
 
@@ -126,7 +126,7 @@ private func processRegisteredFile(_ L: UnsafeMutablePointer<lua_State>!, _ path
             var pos = root
 
             guard let entry = element as? NSDictionary, let entryName = entry["name"] as? NSString else {
-                skin.logError("\(USERDATA_TAG).processRegisteredFile - malformed entry in \(path) -- expected module dictionary with 'name' key at index \(idx + 1) in \(path); skipping")
+                os_log(.error, "%{public}s", "\(USERDATA_TAG).processRegisteredFile - malformed entry in \(path) -- expected module dictionary with 'name' key at index \(idx + 1) in \(path); skipping")
                 continue
             }
 
@@ -144,20 +144,20 @@ private func processRegisteredFile(_ L: UnsafeMutablePointer<lua_State>!, _ path
                 //    In theory additions or changes to the module could be defined elsewhere. Bad style, so log anyways, and we'll
                 //    decide how to officially handle it if it becomes normal as opposed to an "in-development" shortcut. For now,
                 //    assume since coredocs are loaded first, that this is an in-progress update that should overwrite the original.
-                skin.logInfo("\(USERDATA_TAG).processRegisteredFile - duplicate module entry in \(path) for \(entryName) (\(entry["desc"] ?? ""))")
+                os_log(.info, "%{public}s", "\(USERDATA_TAG).processRegisteredFile - duplicate module entry in \(path) for \(entryName) (\(entry["desc"] ?? ""))")
             }
             pos["__json__"] = entry
             pos["__type__"] = "module" // this is more than a placeholder now
 
             if let itemsAttached = entry["items"] {
                 guard let itemsArray = itemsAttached as? NSArray else {
-                    skin.logInfo("\(USERDATA_TAG).processRegisteredFile - malformed entry in \(path) -- expected array or nil in 'items' key for \(entryName) at index \(idx + 1); skipping")
+                    os_log(.info, "%{public}s", "\(USERDATA_TAG).processRegisteredFile - malformed entry in \(path) -- expected array or nil in 'items' key for \(entryName) at index \(idx + 1); skipping")
                     continue
                 }
 
                 for (idx2, itemElement) in itemsArray.enumerated() {
                     guard let itemEntry = itemElement as? NSDictionary, let itemName = itemEntry["name"] as? NSString else {
-                        skin.logInfo("\(USERDATA_TAG).processRegisteredFile - malformed entry in \(path) -- expected item dictionary with 'name' key for \(entryName) at index \(idx2 + 1); skipping")
+                        os_log(.info, "%{public}s", "\(USERDATA_TAG).processRegisteredFile - malformed entry in \(path) -- expected item dictionary with 'name' key for \(entryName) at index \(idx2 + 1); skipping")
                         continue
                     }
 
@@ -167,23 +167,23 @@ private func processRegisteredFile(_ L: UnsafeMutablePointer<lua_State>!, _ path
                         if pos[part] != nil {
                             // FIXME: Duplicate Handling
                             //     See above for current behavior and reasoning
-                            skin.logInfo("\(USERDATA_TAG).processRegisteredFile - duplicate item in \(path): \(itemName) (\(entry["def"] ?? "")) for \(entryName)")
+                            os_log(.info, "%{public}s", "\(USERDATA_TAG).processRegisteredFile - duplicate item in \(path): \(itemName) (\(entry["def"] ?? "")) for \(entryName)")
                         }
                         let itemDict = NSMutableDictionary(dictionary: ["__type__": "entry"])
                         itemDict["__json__"] = itemEntry
                         pos[part] = itemDict
                     } else {
-                        skin.logInfo("\(USERDATA_TAG).processRegisteredFile - malformed entry in \(path) -- item name (\(itemName)) invalid for \(entryName) at index \(idx2 + 1); skipping")
+                        os_log(.info, "%{public}s", "\(USERDATA_TAG).processRegisteredFile - malformed entry in \(path) -- item name (\(itemName)) invalid for \(entryName) at index \(idx2 + 1); skipping")
                     }
                 }
             } // no items at all is ok, we only log when items isn't an array
         }
 
         // make sure watchers knows that something has changed
-        skin.pushLuaRef(refTable, ref: refTriggerFn)
+        lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(refTriggerFn))
         lua_call(L, 0, 0)
     } else {
-        skin.logError("\(USERDATA_TAG).processRegisteredFile - error initializing regex: \(regexError?.localizedDescription ?? "unknown")")
+        os_log(.error, "%{public}s", "\(USERDATA_TAG).processRegisteredFile - error initializing regex: \(regexError?.localizedDescription ?? "unknown")")
     }
 
     return true
@@ -235,11 +235,9 @@ func getPosInTreeFor(_ target: NSString) -> NSMutableDictionary? {
 
 // documented in init.lua
 private func doc_help(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING | LS_TNIL | LS_TOPTIONAL, LS_TBREAK)
     var identifier: NSString = ""
     if lua_gettop(L) == 1 && lua_type(L, 1) == LUA_TSTRING {
-        identifier = skin.toNSObject(atIndex: 1) as! NSString
+        identifier = lua_tovalue(L, at: 1) as! NSString
     }
 
     findUnloadedDocumentationFiles(L)
@@ -306,7 +304,7 @@ private func doc_help(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
         }
     }
 
-    skin.pushNSObject(result)
+    lua_pushany(L, result)
     return 1
 }
 
@@ -324,9 +322,7 @@ private func doc_help(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Notes:
 ///  * this function just registers the documentation file; it won't actually be loaded and parsed until [hs.doc.help](#help) is invoked.
 private func doc_registerJSONFile(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
-    var path = skin.toNSObject(atIndex: 1) as! NSString
+    var path = lua_tovalue(L, at: 1) as! NSString
     let isSpoon = lua_gettop(L) > 1 ? lua_toboolean(L, 2) != 0 : false
 
     // some tricks used to figure out if the docs.json file exists duplicate final "/" before "docs.json"
@@ -336,7 +332,7 @@ private func doc_registerJSONFile(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
 
     if registeredFiles[path] != nil {
         lua_pushboolean(L, 0)
-        skin.pushNSObject("File '\(path)' already registered" as NSString)
+        lua_pushany(L, "File '\(path)' already registered" as NSString)
         return 2
     }
 
@@ -362,13 +358,12 @@ private func doc_registerJSONFile(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
 /// Notes:
 ///  * This function requires the rebuilding of the entire documentation tree for all remaining registered files, so the next time help is queried with [hs.doc.help](#help), there may be a slight one-time delay.
 private func doc_unregisterJSONFile(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING, LS_TBREAK)
-    let path = skin.toNSObject(atIndex: 1) as! NSString
+    luaL_checktype(L, 1, LUA_TSTRING)
+    let path = lua_tovalue(L, at: 1) as! NSString
 
     if registeredFiles[path] == nil {
         lua_pushboolean(L, 0)
-        skin.pushNSObject("File '\(path)' was not registered" as NSString)
+        lua_pushany(L, "File '\(path)' was not registered" as NSString)
         return 2
     }
 
@@ -392,10 +387,9 @@ private func doc_unregisterJSONFile(_ L: UnsafeMutablePointer<lua_State>!) -> In
 
 // documented in init.lua
 private func doc_registeredFiles(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
 
     let sortedPaths = (registeredFiles.allKeys as! [String]).sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
-    skin.pushNSObject(sortedPaths as NSArray)
+    lua_pushany(L, sortedPaths as NSArray)
     return 1
 }
 
@@ -403,11 +397,9 @@ private func doc_registeredFiles(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 
 // returns list of children in documentTree for __index and __pairs of helper table for `help`
 private func internal_arrayOfChildren(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING | LS_TNIL | LS_TOPTIONAL, LS_TBREAK)
     var identifier: NSString = ""
     if lua_gettop(L) == 1 && lua_type(L, 1) == LUA_TSTRING {
-        identifier = skin.toNSObject(atIndex: 1) as! NSString
+        identifier = lua_tovalue(L, at: 1) as! NSString
     }
 
     lua_newtable(L)
@@ -416,7 +408,7 @@ private func internal_arrayOfChildren(_ L: UnsafeMutablePointer<lua_State>!) -> 
         for entry in pos.allKeys {
             let key = entry as! String
             if !(key.hasPrefix("__") && key.hasSuffix("__")) {
-                skin.pushNSObject(key as NSString)
+                lua_pushany(L, key as NSString)
                 lua_rawseti(L, -2, luaL_len(L, -2) + 1)
             }
         }
@@ -426,8 +418,6 @@ private func internal_arrayOfChildren(_ L: UnsafeMutablePointer<lua_State>!) -> 
 
 // used by doc_help and when json being rebuilt for hsdocs
 private func internal_loadRegisteredFiles(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TBREAK)
 
     findUnloadedDocumentationFiles(L)
     return 0
@@ -435,14 +425,15 @@ private func internal_loadRegisteredFiles(_ L: UnsafeMutablePointer<lua_State>!)
 
 // used to register lua function to trigger `hs.watchable` change counter so hsdocs knows when doc files have been updated
 private func internal_registerTriggerFunction(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TFUNCTION, LS_TBREAK)
+    luaL_checktype(L, 1, LUA_TFUNCTION)
 
     if refTriggerFn != LUA_NOREF && refTriggerFn != LUA_REFNIL {
-        refTriggerFn = skin.luaUnref(refTable, ref: refTriggerFn)
+        luaL_unref(L, LUA_REGISTRYINDEX_VALUE, refTriggerFn)
+
+        refTriggerFn = LUA_NOREF
     }
     lua_pushvalue(L, 1)
-    refTriggerFn = skin.luaRef(refTable)
+    refTriggerFn = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
     return 0
 }
 
@@ -450,23 +441,22 @@ private func internal_registerTriggerFunction(_ L: UnsafeMutablePointer<lua_Stat
 
 // returns objectWrapper for registeredFiles
 private func internal_registeredFiles(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.pushNSObject(registeredFiles, withOptions: LS_NSConversionOptions.withObjectWrapper.rawValue | LS_NSConversionOptions.nsDescribeUnknownTypes.rawValue)
+    lua_pushany(L, registeredFiles)
     return 1
 }
 
 // returns objectWrapper for documentationTree
 private func internal_documentationTree(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.pushNSObject(documentationTree, withOptions: LS_NSConversionOptions.withObjectWrapper.rawValue | LS_NSConversionOptions.nsDescribeUnknownTypes.rawValue)
+    lua_pushany(L, documentationTree)
     return 1
 }
 
 // MARK: - Cosmic Hammer/Lua Infrastructure
 
 private func meta_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    refTriggerFn = skin.luaUnref(refTable, ref: refTriggerFn)
+    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, refTriggerFn)
+
+    refTriggerFn = LUA_NOREF
 
     // probably overkill, but lets just be official about it
     registeredFiles.removeAllObjects()

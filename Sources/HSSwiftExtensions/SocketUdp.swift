@@ -19,7 +19,7 @@ private let DEFAULT: NSString = "DEFAULT"
 private let SERVER: NSString = "SERVER"
 private let CLIENT: NSString = "CLIENT"
 
-private var refTable: LSRefTable = LUA_NOREF
+private var refTable: Int32 = LUA_NOREF
 private let USERDATA_TAG = "hs.socket.udp"
 
 // Helper to extract the HSAsyncUdpSocket from userdata
@@ -33,13 +33,12 @@ private func getUserData(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) ->
 private func udpConnectCallback(_ asyncUdpSocket: HSAsyncUdpSocket) {
     mainThreadDispatch {
         if asyncUdpSocket.connectCallbackRef != LUA_NOREF {
-            let skin = LuaSkin.skin(with: nil)
-            let L = skin.l!
-            _lua_stackguard_entry(L)
-            skin.pushLuaRef(refTable, ref: asyncUdpSocket.connectCallbackRef)
-            asyncUdpSocket.connectCallbackRef = skin.luaUnref(refTable, ref: asyncUdpSocket.connectCallbackRef)
-            skin.protectedCallAndError("hs.socket.udp:connect", nargs: 0, nresults: 0)
-            _lua_stackguard_exit(L)
+            let L = LuaSkin.skin(with: nil).l!
+            lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(asyncUdpSocket.connectCallbackRef))
+            luaL_unref(L, LUA_REGISTRYINDEX_VALUE, asyncUdpSocket.connectCallbackRef)
+
+            asyncUdpSocket.connectCallbackRef = LUA_NOREF
+            if lua_pcall(L, 0, 0, 0) != LUA_OK { lua_pop(L, 1) }
         }
     }
 }
@@ -47,14 +46,13 @@ private func udpConnectCallback(_ asyncUdpSocket: HSAsyncUdpSocket) {
 private func udpWriteCallback(_ asyncUdpSocket: HSAsyncUdpSocket, tag: Int) {
     mainThreadDispatch {
         if asyncUdpSocket.writeCallbackRef != LUA_NOREF {
-            let skin = LuaSkin.skin(with: nil)
-            let L = skin.l!
-            _lua_stackguard_entry(L)
-            skin.pushLuaRef(refTable, ref: asyncUdpSocket.writeCallbackRef)
-            skin.pushNSObject(NSNumber(value: tag))
-            asyncUdpSocket.writeCallbackRef = skin.luaUnref(refTable, ref: asyncUdpSocket.writeCallbackRef)
-            skin.protectedCallAndError("hs.socket.udp:write callback", nargs: 1, nresults: 0)
-            _lua_stackguard_exit(L)
+            let L = LuaSkin.skin(with: nil).l!
+            lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(asyncUdpSocket.writeCallbackRef))
+            lua_pushany(L, NSNumber(value: tag))
+            luaL_unref(L, LUA_REGISTRYINDEX_VALUE, asyncUdpSocket.writeCallbackRef)
+
+            asyncUdpSocket.writeCallbackRef = LUA_NOREF
+            if lua_pcall(L, 1, 0, 0) != LUA_OK { lua_pop(L, 1) }
         }
     }
 }
@@ -62,14 +60,11 @@ private func udpWriteCallback(_ asyncUdpSocket: HSAsyncUdpSocket, tag: Int) {
 private func udpReadCallback(_ asyncUdpSocket: HSAsyncUdpSocket, data: Data, address: Data) {
     mainThreadDispatch {
         if asyncUdpSocket.readCallbackRef != LUA_NOREF {
-            let skin = LuaSkin.skin(with: nil)
-            let L = skin.l!
-            _lua_stackguard_entry(L)
-            skin.pushLuaRef(refTable, ref: asyncUdpSocket.readCallbackRef)
-            skin.pushNSObject(String(data: data, encoding: .utf8) as NSString?)
-            skin.pushNSObject(address as NSData)
-            skin.protectedCallAndError("hs.socket.udp:read callback", nargs: 2, nresults: 0)
-            _lua_stackguard_exit(L)
+            let L = LuaSkin.skin(with: nil).l!
+            lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(asyncUdpSocket.readCallbackRef))
+            lua_pushany(L, String(data: data, encoding: .utf8) as NSString?)
+            lua_pushany(L, address as NSData)
+            if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
         }
     }
 }
@@ -797,21 +792,25 @@ private class HSAsyncUdpSocket {
 ///  * An [`hs.socket.udp`](#new) object.
 ///
 private func socketudp_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TFUNCTION | LS_TNIL | LS_TOPTIONAL, LS_TBREAK)
     let udpDelegateQueue = DispatchQueue(label: "udpDelegateQueue")
     let asyncUdpSocket = HSAsyncUdpSocket(queue: udpDelegateQueue)
 
     if lua_type(L, 1) == LUA_TFUNCTION {
         lua_pushvalue(L, 1)
-        asyncUdpSocket.readCallbackRef = skin.luaRef(refTable)
+        asyncUdpSocket.readCallbackRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
     }
 
-    skin.requireModule("hs.socket")
+    lua_getglobal(L, "require")
+
+
+    lua_pushstring(L, "hs.socket")
+
+
+    lua_pcall(L, 1, 1, 0)
     for field in ["udp", "timeout"] {
-        lua_getfield(skin.l, -1, field)
+        lua_getfield(L, -1, field)
     }
-    asyncUdpSocket.socketTimeout = lua_tonumber(skin.l, -1)
+    asyncUdpSocket.socketTimeout = lua_tonumber(L, -1)
 
     let userData = lua_newuserdata(L, MemoryLayout<AsyncSocketUserData>.size)!
         .assumingMemoryBound(to: AsyncSocketUserData.self)
@@ -846,21 +845,21 @@ private func socketudp_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// * You can only connect a socket once.
 ///
 private func socketudp_connect(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING, LS_TNUMBER | LS_TINTEGER, LS_TFUNCTION | LS_TOPTIONAL, LS_TBREAK)
     let asyncUdpSocket = getUserData(L, 1)
-    let theHost = skin.toNSObject(atIndex:2) as! String
-    let thePort = (skin.toNSObject(atIndex:3) as! NSNumber).uint16Value
+    let theHost = lua_tovalue(L, at: 2) as! String
+    let thePort = (lua_tovalue(L, at: 3) as! NSNumber).uint16Value
 
     if lua_type(L, 4) == LUA_TFUNCTION {
         lua_pushvalue(L, 4)
-        asyncUdpSocket.connectCallbackRef = skin.luaRef(refTable)
+        asyncUdpSocket.connectCallbackRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
     }
 
     do {
         try asyncUdpSocket.connect(toHost: theHost, onPort: thePort)
     } catch {
-        asyncUdpSocket.connectCallbackRef = skin.luaUnref(refTable, ref: asyncUdpSocket.connectCallbackRef)
+        luaL_unref(L, LUA_REGISTRYINDEX_VALUE, asyncUdpSocket.connectCallbackRef)
+
+        asyncUdpSocket.connectCallbackRef = LUA_NOREF
         LuaSkin.skin(with: nil).logError("Unable to connect: \(error.localizedDescription)")
         lua_pushnil(L)
         return 1
@@ -881,10 +880,8 @@ private func socketudp_connect(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * The [`hs.socket.udp`](#new) object, or `nil` if an error occurred.
 ///
 private func socketudp_listen(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TNUMBER | LS_TINTEGER, LS_TBREAK)
     let asyncUdpSocket = getUserData(L, 1)
-    let thePort = (skin.toNSObject(atIndex:2) as! NSNumber).uint16Value
+    let thePort = (lua_tovalue(L, at: 2) as! NSNumber).uint16Value
 
     do {
         try asyncUdpSocket.bind(toPort: thePort)
@@ -911,8 +908,7 @@ private func socketudp_listen(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * The [`hs.socket.udp`](#new) object.
 ///
 private func socketudp_close(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     let asyncUdpSocket = getUserData(L, 1)
 
     asyncUdpSocket.close()
@@ -935,8 +931,7 @@ private func socketudp_close(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * Call one of the receive methods to resume.
 ///
 private func socketudp_pause(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     let asyncUdpSocket = getUserData(L, 1)
 
     asyncUdpSocket.pauseReceiving()
@@ -946,14 +941,14 @@ private func socketudp_pause(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 }
 
 private func socketudp_receiveContinuous(_ L: UnsafeMutablePointer<lua_State>!, readContinuous: Bool) -> Bool {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TFUNCTION | LS_TOPTIONAL, LS_TBREAK)
     let asyncUdpSocket = getUserData(L, 1)
 
     if lua_type(L, 2) == LUA_TFUNCTION {
-        asyncUdpSocket.readCallbackRef = skin.luaUnref(refTable, ref: asyncUdpSocket.readCallbackRef)
+        luaL_unref(L, LUA_REGISTRYINDEX_VALUE, asyncUdpSocket.readCallbackRef)
+
+        asyncUdpSocket.readCallbackRef = LUA_NOREF
         lua_pushvalue(L, 2)
-        asyncUdpSocket.readCallbackRef = skin.luaRef(refTable)
+        asyncUdpSocket.readCallbackRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
     }
 
     if asyncUdpSocket.readCallbackRef == LUA_NOREF {
@@ -1060,37 +1055,33 @@ private func socketudp_receiveOne(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
 ///  * For connected sockets, data can only be sent to the connected address.
 ///
 private func socketudp_send(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING, LS_TANY | LS_TOPTIONAL, LS_TANY | LS_TOPTIONAL, LS_TANY | LS_TOPTIONAL, LS_TANY | LS_TOPTIONAL, LS_TBREAK)
     let asyncUdpSocket = getUserData(L, 1)
 
-    let sendData = skin.toNSObject(atIndex: 2, withOptions: .nsLuaStringAsDataOnly) as! Data
+    let sendData = lua_tovalue(L, at: 2) as! Data
 
     if asyncUdpSocket.isConnected() {
-        skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING, LS_TNUMBER | LS_TINTEGER | LS_TFUNCTION | LS_TNIL | LS_TOPTIONAL, LS_TFUNCTION | LS_TOPTIONAL, LS_TBREAK)
         let tag: Int = lua_type(L, 3) == LUA_TNUMBER ? Int(lua_tointeger(L, 3)) : -1
         if lua_type(L, 3) == LUA_TFUNCTION {
             lua_pushvalue(L, 3)
-            asyncUdpSocket.writeCallbackRef = skin.luaRef(refTable)
+            asyncUdpSocket.writeCallbackRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
         }
         if lua_type(L, 3) != LUA_TFUNCTION && lua_type(L, 4) == LUA_TFUNCTION {
             lua_pushvalue(L, 4)
-            asyncUdpSocket.writeCallbackRef = skin.luaRef(refTable)
+            asyncUdpSocket.writeCallbackRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
         }
 
         asyncUdpSocket.send(sendData, withTimeout: asyncUdpSocket.socketTimeout, tag: tag)
     } else {
-        skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING, LS_TSTRING, LS_TNUMBER | LS_TINTEGER, LS_TNUMBER | LS_TINTEGER | LS_TFUNCTION | LS_TNIL | LS_TOPTIONAL, LS_TFUNCTION | LS_TOPTIONAL, LS_TBREAK)
-        let theHost = skin.toNSObject(atIndex:3) as! String
-        let thePort = (skin.toNSObject(atIndex:4) as! NSNumber).uint16Value
+        let theHost = lua_tovalue(L, at: 3) as! String
+        let thePort = (lua_tovalue(L, at: 4) as! NSNumber).uint16Value
         let tag: Int = lua_type(L, 5) == LUA_TNUMBER ? Int(lua_tointeger(L, 5)) : -1
         if lua_type(L, 5) == LUA_TFUNCTION {
             lua_pushvalue(L, 5)
-            asyncUdpSocket.writeCallbackRef = skin.luaRef(refTable)
+            asyncUdpSocket.writeCallbackRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
         }
         if lua_type(L, 5) != LUA_TFUNCTION && lua_type(L, 6) == LUA_TFUNCTION {
             lua_pushvalue(L, 6)
-            asyncUdpSocket.writeCallbackRef = skin.luaRef(refTable)
+            asyncUdpSocket.writeCallbackRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
         }
 
         asyncUdpSocket.send(sendData, toHost: theHost, port: thePort, withTimeout: asyncUdpSocket.socketTimeout, tag: tag)
@@ -1117,8 +1108,7 @@ private func socketudp_send(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * The reason this is generally disabled by default (by the OS) is to prevent accidental broadcast messages from flooding the network.
 ///
 private func socketudp_enableBroadcast(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     let asyncUdpSocket = getUserData(L, 1)
     let enableFlag: Bool = !(lua_type(L, 2) == LUA_TBOOLEAN && lua_toboolean(L, 3) == 0)
 
@@ -1151,8 +1141,7 @@ private func socketudp_enableBroadcast(_ L: UnsafeMutablePointer<lua_State>!) ->
 ///  * Must be called before binding the socket.
 ///
 private func socketudp_enableReusePort(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     let asyncUdpSocket = getUserData(L, 1)
     let enableFlag: Bool = !(lua_type(L, 2) == LUA_TBOOLEAN && lua_toboolean(L, 3) == 0)
 
@@ -1185,8 +1174,6 @@ private func socketudp_enableReusePort(_ L: UnsafeMutablePointer<lua_State>!) ->
 ///  * The convenience constructor [`hs.socket.server`](#server) will automatically bind the socket and requires closing and relistening to use this method.
 ///
 private func socketudp_enableIPversion(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TNUMBER | LS_TINTEGER, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
     let asyncUdpSocket = getUserData(L, 1)
     let ipVersion = UInt8(lua_tointeger(L, 2))
     let enableFlag: Bool = !(lua_type(L, 3) == LUA_TBOOLEAN && lua_toboolean(L, 3) == 0)
@@ -1221,8 +1208,6 @@ private func socketudp_enableIPversion(_ L: UnsafeMutablePointer<lua_State>!) ->
 ///  * If a DNS lookup returns both IPv4 and IPv6 results, then the protocol used depends on the configured preference.
 ///
 private func socketudp_preferIPversion(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TNUMBER | LS_TINTEGER | LS_TOPTIONAL, LS_TBREAK)
     let asyncUdpSocket = getUserData(L, 1)
 
     if lua_type(L, 2) == LUA_TNUMBER && lua_tointeger(L, 2) == 4 {
@@ -1257,8 +1242,6 @@ private func socketudp_preferIPversion(_ L: UnsafeMutablePointer<lua_State>!) ->
 ///  * If you set the buffer size too small, the sockets API in the OS will silently discard any extra data.
 ///
 private func socketudp_setReceiveBufferSize(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TNUMBER | LS_TINTEGER, LS_TNUMBER | LS_TINTEGER | LS_TOPTIONAL, LS_TBREAK)
     let asyncUdpSocket = getUserData(L, 1)
     let bufferSize = UInt(lua_tointeger(L, 2))
     let ipv4BufferSize = bufferSize > UInt(UInt16.max) ? UInt16.max : UInt16(bufferSize)
@@ -1295,15 +1278,16 @@ private func socketudp_setReceiveBufferSize(_ L: UnsafeMutablePointer<lua_State>
 ///  * A callback must be set in order to read data from the socket.
 ///
 private func socketudp_setCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TFUNCTION | LS_TNIL | LS_TOPTIONAL, LS_TBREAK)
     let asyncUdpSocket = getUserData(L, 1)
 
-    asyncUdpSocket.readCallbackRef = skin.luaUnref(refTable, ref: asyncUdpSocket.readCallbackRef)
+    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, asyncUdpSocket.readCallbackRef)
+
+
+    asyncUdpSocket.readCallbackRef = LUA_NOREF
 
     if lua_type(L, 2) == LUA_TFUNCTION {
         lua_pushvalue(L, 2)
-        asyncUdpSocket.readCallbackRef = skin.luaRef(refTable)
+        asyncUdpSocket.readCallbackRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
     }
 
     lua_pushvalue(L, 1)
@@ -1324,8 +1308,9 @@ private func socketudp_setCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int
 ///  *  If the timeout value is negative, the operations will not use a timeout, which is the default.
 ///
 private func socketudp_setTimeout(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TNUMBER, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
+
+    luaL_checktype(L, 2, LUA_TNUMBER)
     let asyncUdpSocket = getUserData(L, 1)
     asyncUdpSocket.socketTimeout = lua_tonumber(L, 2)
 
@@ -1348,8 +1333,7 @@ private func socketudp_setTimeout(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
 ///  * This method will only return `true` if the [`hs.socket.udp:connect`](#connect) method has been explicitly called.
 ///
 private func socketudp_connected(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     let asyncUdpSocket = getUserData(L, 1)
 
     lua_pushboolean(L, asyncUdpSocket.isConnected() ? 1 : 0)
@@ -1372,8 +1356,7 @@ private func socketudp_connected(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 ///  * An active listening socket will not be closed, but will not be 'connected' unless the [`hs.socket.udp:connect`](#connect) method has been called.
 ///
 private func socketudp_closed(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     let asyncUdpSocket = getUserData(L, 1)
 
     lua_pushboolean(L, asyncUdpSocket.isClosed() ? 1 : 0)
@@ -1416,8 +1399,7 @@ private func socketudp_closed(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///    * userData - `string`
 ///
 private func socketudp_info(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     let asyncUdpSocket = getUserData(L, 1)
 
     let info: NSDictionary = [
@@ -1448,7 +1430,7 @@ private func socketudp_info(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
         "userData": asyncUdpSocket.userData() ?? "",
     ]
 
-    skin.pushNSObject(info)
+    lua_pushany(L, info)
     return 1
 }
 
@@ -1470,11 +1452,16 @@ private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let asyncUdpSocket: HSAsyncUdpSocket = Unmanaged.fromOpaque(userData.pointee.asyncSocket!).takeRetainedValue()
     userData.pointee.asyncSocket = nil
 
-    let skin = LuaSkin.skin(with: L)
     asyncUdpSocket.close()
-    asyncUdpSocket.readCallbackRef = skin.luaUnref(refTable, ref: asyncUdpSocket.readCallbackRef)
-    asyncUdpSocket.writeCallbackRef = skin.luaUnref(refTable, ref: asyncUdpSocket.writeCallbackRef)
-    asyncUdpSocket.connectCallbackRef = skin.luaUnref(refTable, ref: asyncUdpSocket.connectCallbackRef)
+    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, asyncUdpSocket.readCallbackRef)
+
+    asyncUdpSocket.readCallbackRef = LUA_NOREF
+    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, asyncUdpSocket.writeCallbackRef)
+
+    asyncUdpSocket.writeCallbackRef = LUA_NOREF
+    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, asyncUdpSocket.connectCallbackRef)
+
+    asyncUdpSocket.connectCallbackRef = LUA_NOREF
 
     return 0
 }

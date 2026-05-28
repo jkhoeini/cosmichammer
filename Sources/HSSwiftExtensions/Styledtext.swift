@@ -1,8 +1,9 @@
 import Cocoa
 import LuaSkin
+import os.log
 
 private let USERDATA_TAG = "hs.styledtext"
-private var refTable: LSRefTable = LUA_NOREF
+private var refTable: Int32 = LUA_NOREF
 
 // MARK: - Helpers
 
@@ -156,16 +157,14 @@ private func luaNameForAttributeKey(_ key: NSAttributedString.Key) -> String? {
 ///
 ///  * Passing an `hs.styledtext` object as the first parameter without specifying an `attributes` table is the equivalent of invoking `hs.styledtext:copy`.
 private func string_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING | LS_TNUMBER | LS_TTABLE, LS_TTABLE | LS_TOPTIONAL, LS_TBREAK)
-    let newString = (skin.luaObject(at:1, toClass: "NSAttributedString") as! NSAttributedString).mutableCopy() as! NSMutableAttributedString
+    let newString = (lua_tovalue(L, at: 1) as! NSAttributedString).mutableCopy() as! NSMutableAttributedString
     if lua_gettop(L) == 2 {
-        if let attributes = skin.luaObject(at:2, toClass: "hs.styledtext.AttributesDictionary") as? [NSAttributedString.Key: Any] {
+        if let attributes = lua_tovalue(L, at: 2) as? [NSAttributedString.Key: Any] {
             let theRange = NSRange(location: 0, length: newString.length)
             newString.addAttributes(attributes, range: theRange)
         }
     }
-    skin.pushNSObject(newString)
+    lua_pushany(L, newString)
     return 1
 }
 
@@ -183,12 +182,10 @@ private func string_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Notes:
 ///  * See also `hs.styledtext.getStyledTextFromFile`
 private func getStyledTextFromData(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING, LS_TSTRING | LS_TOPTIONAL, LS_TBREAK)
 
     var dataType: NSAttributedString.DocumentType = .html
     if lua_type(L, 2) != LUA_TNONE {
-        if let requestType = skin.toNSObject(atIndex: 2) as? String,
+        if let requestType = lua_tovalue(L, at: 2) as? String,
            let resolved = documentType(from: requestType) {
             dataType = resolved
         } else {
@@ -196,7 +193,7 @@ private func getStyledTextFromData(_ L: UnsafeMutablePointer<lua_State>!) -> Int
         }
     }
 
-    let theInput: Any! = skin.toNSObject(atIndex: 1, withOptions: .nsPreserveLuaStringExactly)
+    let theInput: Any! = lua_tovalue(L, at: 1)
     let dataToPresent: Data
     if let str = theInput as? String {
         dataToPresent = str.data(using: .utf8)!
@@ -208,7 +205,7 @@ private func getStyledTextFromData(_ L: UnsafeMutablePointer<lua_State>!) -> Int
         let newString = try NSAttributedString(data: dataToPresent,
                                                options: [.documentType: dataType],
                                                documentAttributes: nil)
-        skin.pushNSObject(newString)
+        lua_pushany(L, newString)
     } catch {
         return luaL_error(L, "setTextFromData: conversion error: \(error.localizedDescription)")
     }
@@ -229,12 +226,10 @@ private func getStyledTextFromData(_ L: UnsafeMutablePointer<lua_State>!) -> Int
 /// Notes:
 ///  * See also `hs.styledtext.getStyledTextFromData`
 private func getStyledTextFromFile(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING, LS_TSTRING | LS_TOPTIONAL, LS_TBREAK)
 
     var dataType: NSAttributedString.DocumentType = .html
     if lua_type(L, 2) != LUA_TNONE {
-        if let requestType = skin.toNSObject(atIndex: 2) as? String,
+        if let requestType = lua_tovalue(L, at: 2) as? String,
            let resolved = documentType(from: requestType) {
             dataType = resolved
         } else {
@@ -242,12 +237,12 @@ private func getStyledTextFromFile(_ L: UnsafeMutablePointer<lua_State>!) -> Int
         }
     }
 
-    let path = (skin.toNSObject(atIndex: 1) as! NSString).expandingTildeInPath
+    let path = (lua_tovalue(L, at: 1) as! NSString).expandingTildeInPath
     do {
         let newString = try NSAttributedString(url: URL(fileURLWithPath: path),
                                                options: [.documentType: dataType],
                                                documentAttributes: nil)
-        skin.pushNSObject(newString)
+        lua_pushany(L, newString)
     } catch {
         return luaL_error(L, "setTextFromFile: conversion error: \(error.localizedDescription)")
     }
@@ -266,11 +261,9 @@ private func getStyledTextFromFile(_ L: UnsafeMutablePointer<lua_State>!) -> Int
 /// Returns:
 ///  * a table containing the names of every font installed for the system.  The individual names are strings which can be used in the `hs.drawing:setTextFont(fontname)` method.
 private func fontNames(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TBREAK)
 
     if let names = NSFontManager.shared.availableFonts as NSArray? {
-        skin.pushNSObject(names.sortedArray(using: #selector(NSString.localizedCaseInsensitiveCompare(_:))) as NSArray)
+        lua_pushany(L, names.sortedArray(using: #selector(NSString.localizedCaseInsensitiveCompare(_:))) as NSArray)
     } else {
         lua_pushnil(L)
     }
@@ -287,11 +280,9 @@ private func fontNames(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * a table containing the names of every font family installed for the system.
 private func fontFamilies(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TBREAK)
 
     if let families = NSFontManager.shared.availableFontFamilies as NSArray? {
-        skin.pushNSObject(families.sortedArray(using: #selector(NSString.localizedCaseInsensitiveCompare(_:))) as NSArray)
+        lua_pushany(L, families.sortedArray(using: #selector(NSString.localizedCaseInsensitiveCompare(_:))) as NSArray)
     } else {
         lua_pushnil(L)
     }
@@ -299,12 +290,11 @@ private func fontFamilies(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 }
 
 private func fontsForFamily(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING, LS_TBREAK)
+    luaL_checktype(L, 1, LUA_TSTRING)
 
-    if let fontFamily = skin.toNSObject(atIndex: 1) as? String {
+    if let fontFamily = lua_tovalue(L, at: 1) as? String {
         let details = NSFontManager.shared.availableMembers(ofFontFamily: fontFamily)
-        skin.pushNSObject(details as NSArray?)
+        lua_pushany(L, details as NSArray?)
     } else {
         lua_pushboolean(L, 0)
     }
@@ -324,16 +314,14 @@ private func fontsForFamily(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * a table containing the name and size of the font which most closely matches the specified font and the trait change requested.  If no such font is available, then the original font is returned unchanged.
 private func font_convertFont(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TTABLE | LS_TSTRING, LS_TNUMBER | LS_TBOOLEAN, LS_TBREAK)
 
-    guard let theFont = skin.luaObject(at:1, toClass: "NSFont") as? NSFont else {
+    guard let theFont = lua_tovalue(L, at: 1) as? NSFont else {
         return luaL_argerror(L, 1, "does not specify a font")
     }
     if lua_type(L, 2) == LUA_TNUMBER {
-        skin.pushNSObject(NSFontManager.shared.convert(theFont, toHaveTrait: NSFontTraitMask(rawValue: UInt(luaL_checkinteger(L, 2)))))
+        lua_pushany(L, NSFontManager.shared.convert(theFont, toHaveTrait: NSFontTraitMask(rawValue: UInt(luaL_checkinteger(L, 2)))))
     } else {
-        skin.pushNSObject(NSFontManager.shared.convertWeight(lua_toboolean(L, 2) != 0, of: theFont))
+        lua_pushany(L, NSFontManager.shared.convertWeight(lua_toboolean(L, 2) != 0, of: theFont))
     }
     return 1
 }
@@ -351,8 +339,6 @@ private func font_convertFont(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Notes:
 ///  * specifying 0 or an empty table will match all fonts that are neither italic nor bold.  This would be the same list as you'd get with { hs.styledtext.fontTraits.unBold, hs.styledtext.fontTraits.unItalic } as the parameter.
 private func fontNamesWithTraits(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TNUMBER | LS_TTABLE | LS_TOPTIONAL, LS_TBREAK)
 
     var theTraits: NSFontTraitMask = NSFontTraitMask(rawValue: 0)
 
@@ -425,10 +411,9 @@ private func fontTraits(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * `true` if valid, otherwise `false`.
 private func validFont(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING, LS_TBREAK)
+    luaL_checktype(L, 1, LUA_TSTRING)
 
-    let fontName = skin.toNSObject(atIndex: 1) as! String
+    let fontName = lua_tovalue(L, at: 1) as! String
     let theFont = NSFont(name: fontName, size: 1)
     lua_pushboolean(L, theFont != nil ? 1 : 0)
     return 1
@@ -447,16 +432,15 @@ private func validFont(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * a table containing font information keys
 private func fontInformation(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TTABLE | LS_TSTRING, LS_TBREAK)
 
     let theFont = skin.luaObject(at:-1, toClass: "NSFont") as! NSFont
 
     lua_newtable(L)
-    skin.pushNSObject(theFont.fontName as NSString)
+    lua_pushany(L, theFont.fontName as NSString)
     lua_setfield(L, -2, "fontName")
-    skin.pushNSObject(theFont.familyName as NSString?)
+    lua_pushany(L, theFont.familyName as NSString?)
     lua_setfield(L, -2, "familyName")
-    skin.pushNSObject(theFont.displayName as NSString?)
+    lua_pushany(L, theFont.displayName as NSString?)
     lua_setfield(L, -2, "displayName")
     lua_pushboolean(L, theFont.isFixedPitch ? 1 : 0)
     lua_setfield(L, -2, "fixedPitch")
@@ -511,15 +495,15 @@ private func fontInformation(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * The path to the font or `nil` if the font name is not valid.
 private func fontPath(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING, LS_TBREAK)
+    luaL_checktype(L, 1, LUA_TSTRING)
 
-    let fontName = skin.toNSObject(atIndex: 1) as! String
+    let skin = LuaSkin.skin(with: L)
+    let fontName = lua_tovalue(L, at: 1) as! String
     if NSFont(name: fontName, size: 1) != nil {
         let theFont = skin.luaObject(at:-1, toClass: "NSFont") as! NSFont
         let fontRef = CTFontDescriptorCreateWithNameAndSize(theFont.fontName as CFString, theFont.pointSize)
         if let url = CTFontDescriptorCopyAttribute(fontRef, kCTFontURLAttribute) as? URL {
-            skin.pushNSObject(url.path as NSString)
+            lua_pushany(L, url.path as NSString)
         } else {
             lua_pushnil(L)
         }
@@ -579,36 +563,33 @@ private func defineLineAppliesTo(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 /// Constant
 /// A table containing the system default fonts and sizes.
 private func defineDefaultFonts(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TBREAK)
     lua_newtable(L)
-    skin.pushNSObject(NSFont.boldSystemFont(ofSize: 0));     lua_setfield(L, -2, "boldSystem")
-    skin.pushNSObject(NSFont.controlContentFont(ofSize: 0)); lua_setfield(L, -2, "controlContent")
-    skin.pushNSObject(NSFont.labelFont(ofSize: 0));          lua_setfield(L, -2, "label")
-    skin.pushNSObject(NSFont.menuFont(ofSize: 0));           lua_setfield(L, -2, "menu")
-    skin.pushNSObject(NSFont.menuBarFont(ofSize: 0));        lua_setfield(L, -2, "menuBar")
-    skin.pushNSObject(NSFont.messageFont(ofSize: 0));        lua_setfield(L, -2, "message")
-    skin.pushNSObject(NSFont.paletteFont(ofSize: 0));        lua_setfield(L, -2, "palette")
-    skin.pushNSObject(NSFont.systemFont(ofSize: 0));         lua_setfield(L, -2, "system")
-    skin.pushNSObject(NSFont.titleBarFont(ofSize: 0));       lua_setfield(L, -2, "titleBar")
-    skin.pushNSObject(NSFont.toolTipsFont(ofSize: 0));       lua_setfield(L, -2, "toolTips")
-    skin.pushNSObject(NSFont.userFont(ofSize: 0));           lua_setfield(L, -2, "user")
-    skin.pushNSObject(NSFont.userFixedPitchFont(ofSize: 0)); lua_setfield(L, -2, "userFixedPitch")
+    lua_pushany(L, NSFont.boldSystemFont(ofSize: 0));     lua_setfield(L, -2, "boldSystem")
+    lua_pushany(L, NSFont.controlContentFont(ofSize: 0)); lua_setfield(L, -2, "controlContent")
+    lua_pushany(L, NSFont.labelFont(ofSize: 0));          lua_setfield(L, -2, "label")
+    lua_pushany(L, NSFont.menuFont(ofSize: 0));           lua_setfield(L, -2, "menu")
+    lua_pushany(L, NSFont.menuBarFont(ofSize: 0));        lua_setfield(L, -2, "menuBar")
+    lua_pushany(L, NSFont.messageFont(ofSize: 0));        lua_setfield(L, -2, "message")
+    lua_pushany(L, NSFont.paletteFont(ofSize: 0));        lua_setfield(L, -2, "palette")
+    lua_pushany(L, NSFont.systemFont(ofSize: 0));         lua_setfield(L, -2, "system")
+    lua_pushany(L, NSFont.titleBarFont(ofSize: 0));       lua_setfield(L, -2, "titleBar")
+    lua_pushany(L, NSFont.toolTipsFont(ofSize: 0));       lua_setfield(L, -2, "toolTips")
+    lua_pushany(L, NSFont.userFont(ofSize: 0));           lua_setfield(L, -2, "user")
+    lua_pushany(L, NSFont.userFixedPitchFont(ofSize: 0)); lua_setfield(L, -2, "userFixedPitch")
     return 1
 }
 
 // MARK: - Lua byte to ObjC char mapping validation
 
 private func luaToObjCMap(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     let theString = NSString(utf8String: lua_tostring(L, 1)!)!
     let theMap = luaByteToObjCharMap(theString)
-    skin.pushNSObject(theMap)
+    lua_pushany(L, theMap)
     lua_newtable(L)
     for entry in (theMap.allValues as! [NSNumber]) {
-        skin.pushNSObject(entry)
+        lua_pushany(L, entry)
         let keys = (theMap.allKeys(for: entry) as NSArray).sortedArray(using: #selector(NSNumber.compare(_:)))
-        skin.pushNSObject(keys as NSArray)
+        lua_pushany(L, keys as NSArray)
         lua_settable(L, -3)
     }
     return 2
@@ -626,10 +607,9 @@ private func luaToObjCMap(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * a copy of the styledText object
 private func string_copy(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     let theString = get_objectFromUserdata(L, at: 1)
-    skin.pushNSObject(theString.copy() as! NSAttributedString)
+    lua_pushany(L, theString.copy() as! NSAttributedString)
     return 1
 }
 
@@ -646,8 +626,6 @@ private func string_copy(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Notes:
 ///  * comparing two `hs.styledtext` objects with the `==` operator only compares whether or not the string values are identical.  This method also compares their attributes.
 private func string_identical(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let theString1 = get_objectFromUserdata(L, at: 1)
     let theString2 = get_objectFromUserdata(L, at: 2)
     lua_pushboolean(L, theString1.isEqual(to: theString2) ? 1 : 0)
@@ -665,8 +643,6 @@ private func string_identical(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * a table representing the `hs.styledtext` object.
 private func string_totable(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TNUMBER | LS_TOPTIONAL, LS_TNUMBER | LS_TOPTIONAL, LS_TBREAK)
 
     let theString = get_objectFromUserdata(L, at: 1)
     let theMap = luaByteToObjCharMap(theString.string as NSString)
@@ -713,7 +689,7 @@ private func string_totable(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
             var containsUnsupportedFields = false
             lua_newtable(L)
             for (key, value) in attributes {
-                skin.pushNSObject(value as AnyObject)
+                lua_pushany(L, value as AnyObject)
                 if let luaName = luaNameForAttributeKey(key) {
                     lua_setfield(L, -2, luaName)
                 } else {
@@ -748,8 +724,6 @@ private func string_totable(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Notes:
 ///  * `starts` and `ends` follow the conventions of `i` and `j` for Lua's `string.sub` function.
 private func string_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TNUMBER | LS_TOPTIONAL, LS_TNUMBER | LS_TOPTIONAL, LS_TBREAK)
 
     let theString = get_objectFromUserdata(L, at: 1)
     let theMap = luaByteToObjCharMap(theString.string as NSString)
@@ -786,11 +760,9 @@ private func string_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Notes:
 ///  * `starts` and `ends` follow the conventions of `i` and `j` for Lua's `string.sub` function.
 private func string_setStyleForRange(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TTABLE, LS_TNUMBER | LS_TOPTIONAL, LS_TNUMBER | LS_TOPTIONAL, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
 
     let theString = get_objectFromUserdata(L, at: 1)
-    let attributes = skin.luaObject(at:2, toClass: "hs.styledtext.AttributesDictionary") as? [NSAttributedString.Key: Any]
+    let attributes = lua_tovalue(L, at: 2) as? [NSAttributedString.Key: Any]
     let replaceAttributes = lua_isboolean(L, lua_gettop(L)) ? (lua_toboolean(L, lua_gettop(L)) != 0) : false
 
     let theMap = luaByteToObjCharMap(theString.string as NSString)
@@ -801,7 +773,7 @@ private func string_setStyleForRange(_ L: UnsafeMutablePointer<lua_State>!) -> I
 
     let resolved = luaRangeToObjCRange(theMap, len: len, luaI: luaI, luaJ: luaJ)
     if resolved.empty {
-        skin.pushNSObject(theString.copy() as! NSAttributedString)
+        lua_pushany(L, theString.copy() as! NSAttributedString)
     } else {
         let i = resolved.i
         let j = resolved.j
@@ -814,7 +786,7 @@ private func string_setStyleForRange(_ L: UnsafeMutablePointer<lua_State>!) -> I
                 newString.addAttributes(attributes, range: theRange)
             }
         }
-        skin.pushNSObject(newString)
+        lua_pushany(L, newString)
     }
     return 1
 }
@@ -834,8 +806,6 @@ private func string_setStyleForRange(_ L: UnsafeMutablePointer<lua_State>!) -> I
 /// Notes:
 ///  * `starts` and `ends` follow the conventions of `i` and `j` for Lua's `string.sub` function.
 private func string_removeStyleForRange(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TTABLE | LS_TOPTIONAL, LS_TNUMBER | LS_TOPTIONAL, LS_TNUMBER | LS_TOPTIONAL, LS_TBREAK)
 
     let theString = get_objectFromUserdata(L, at: 1)
     var attributeKeys: [NSAttributedString.Key] = []
@@ -865,7 +835,7 @@ private func string_removeStyleForRange(_ L: UnsafeMutablePointer<lua_State>!) -
 
     let resolved = luaRangeToObjCRange(theMap, len: len, luaI: luaI, luaJ: luaJ)
     if resolved.empty {
-        skin.pushNSObject(theString.copy() as! NSAttributedString)
+        lua_pushany(L, theString.copy() as! NSAttributedString)
     } else {
         let i = resolved.i
         let j = resolved.j
@@ -874,7 +844,7 @@ private func string_removeStyleForRange(_ L: UnsafeMutablePointer<lua_State>!) -
         for key in attributeKeys {
             newString.removeAttribute(key, range: theRange)
         }
-        skin.pushNSObject(newString)
+        lua_pushany(L, newString)
     }
     return 1
 }
@@ -892,8 +862,6 @@ private func string_removeStyleForRange(_ L: UnsafeMutablePointer<lua_State>!) -
 /// Returns:
 ///  * a copy of the `hs.styledtext` object with the specified substring replacement to the original object, or nil if an error occurs
 private func string_replaceSubstringForRange(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TANY, LS_TNUMBER | LS_TOPTIONAL, LS_TNUMBER | LS_TOPTIONAL, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
 
     let theString = get_objectFromUserdata(L, at: 1)
     var withAttributes = (lua_type(L, 2) == LUA_TSTRING || lua_type(L, 2) == LUA_TNUMBER) ? false : true
@@ -901,7 +869,7 @@ private func string_replaceSubstringForRange(_ L: UnsafeMutablePointer<lua_State
         withAttributes = lua_toboolean(L, lua_gettop(L)) != 0
     }
 
-    let subString = skin.luaObject(at:2, toClass: "NSAttributedString") as! NSAttributedString
+    let subString = lua_tovalue(L, at: 2) as! NSAttributedString
 
     let theMap = luaByteToObjCharMap(theString.string as NSString)
     let len = lua_Integer(theMap.count)
@@ -930,7 +898,7 @@ private func string_replaceSubstringForRange(_ L: UnsafeMutablePointer<lua_State
     } else {
         newString.replaceCharacters(in: theRange, with: subString.string)
     }
-    skin.pushNSObject(newString)
+    lua_pushany(L, newString)
 
     return 1
 }
@@ -945,14 +913,13 @@ private func string_replaceSubstringForRange(_ L: UnsafeMutablePointer<lua_State
 /// Returns:
 ///  * a string containing the converted data
 private func string_convert(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING | LS_TOPTIONAL, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
 
     let theString = get_objectFromUserdata(L, at: 1)
 
     var dataType: NSAttributedString.DocumentType = .html
     if lua_type(L, 2) != LUA_TNONE {
-        if let requestType = skin.toNSObject(atIndex: 2) as? String {
+        if let requestType = lua_tovalue(L, at: 2) as? String {
             // Note: simpleText omitted from convert (requires resource fork)
             switch requestType {
             case "text":       dataType = .plain
@@ -975,7 +942,7 @@ private func string_convert(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     do {
         let theResult = try theString.data(from: NSRange(location: 0, length: theString.length),
                                            documentAttributes: [.documentType: dataType])
-        skin.pushNSObject(theResult as NSData)
+        lua_pushany(L, theResult as NSData)
     } catch {
         return luaL_error(L, "convert: conversion error: \(error.localizedDescription)")
     }
@@ -992,10 +959,9 @@ private func string_convert(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * If the font can be registered returns `true`, otherwise `false` and an error message as string.
 private func registerFontByPath(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING, LS_TBREAK)
+    luaL_checktype(L, 1, LUA_TSTRING)
 
-    let path = (skin.toNSObject(atIndex: 1) as! NSString).expandingTildeInPath
+    let path = (lua_tovalue(L, at: 1) as! NSString).expandingTildeInPath
     var errorRef: Unmanaged<CFError>?
     CTFontManagerRegisterFontsForURL(URL(fileURLWithPath: path) as CFURL, .process, &errorRef)
     if let errorRef = errorRef {
@@ -1020,14 +986,13 @@ private func registerFontByPath(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 /// Returns:
 ///  * a copy of the `hs.styledtext` object with all alpha characters converted to upper case
 private func string_upper(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     let theString = get_objectFromUserdata(L, at: 1)
     let newString = theString.mutableCopy() as! NSMutableAttributedString
     if newString.length > 0 {
         let stringRange = NSRange(location: 0, length: theString.length)
         newString.replaceCharacters(in: stringRange, with: theString.string.uppercased())
-        skin.pushNSObject(newString)
+        lua_pushany(L, newString)
     } else {
         lua_pushnil(L)
     }
@@ -1044,14 +1009,13 @@ private func string_upper(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * a copy of the `hs.styledtext` object with all alpha characters converted to lower case
 private func string_lower(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     let theString = get_objectFromUserdata(L, at: 1)
     let newString = theString.mutableCopy() as! NSMutableAttributedString
     if newString.length > 0 {
         let stringRange = NSRange(location: 0, length: theString.length)
         newString.replaceCharacters(in: stringRange, with: theString.string.lowercased())
-        skin.pushNSObject(newString)
+        lua_pushany(L, newString)
     } else {
         lua_pushnil(L)
     }
@@ -1072,8 +1036,6 @@ private func string_lower(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Notes:
 ///  * `starts` and `ends` follow the conventions of `i` and `j` for Lua's `string.sub` function.
 private func string_sub(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TNUMBER, LS_TNUMBER | LS_TOPTIONAL, LS_TBREAK)
     let theString = get_objectFromUserdata(L, at: 1)
 
     let theMap = luaByteToObjCharMap(theString.string as NSString)
@@ -1087,12 +1049,12 @@ private func string_sub(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
     let resolved = luaRangeToObjCRange(theMap, len: len, luaI: luaI, luaJ: luaJ)
     if resolved.empty {
-        skin.pushNSObject(NSAttributedString(string: ""))
+        lua_pushany(L, NSAttributedString(string: ""))
     } else {
         let i = resolved.i
         let j = resolved.j
         let theRange = NSRange(location: Int(i - 1), length: Int(j - (i - 1)))
-        skin.pushNSObject(theString.attributedSubstring(from: theRange))
+        lua_pushany(L, theString.attributedSubstring(from: theRange))
     }
     return 1
 }
@@ -1106,7 +1068,7 @@ private func lua_toNSAttributedString(_ L: UnsafeMutablePointer<lua_State>!, at 
 
     if lua_type(L, idx) == LUA_TSTRING || lua_type(L, idx) == LUA_TNUMBER {
         luaL_tolstring(L, idx, nil)
-        theString = NSMutableAttributedString(string: skin.toNSObject(atIndex: -1) as! String)
+        theString = NSMutableAttributedString(string: lua_tovalue(L, at: -1) as! String)
         lua_pop(L, 1)
     } else if lua_type(L, idx) == LUA_TUSERDATA && luaL_testudata(L, idx, USERDATA_TAG) != nil {
         theString = get_objectFromUserdata(L, at: idx).mutableCopy() as? NSMutableAttributedString
@@ -1114,7 +1076,7 @@ private func lua_toNSAttributedString(_ L: UnsafeMutablePointer<lua_State>!, at 
         lua_rawgeti(L, idx, 1)
         luaL_tolstring(L, -1, nil)
         lua_remove(L, -2) // luaL_tolstring pushes its value onto the stack without removing/touching the original
-        theString = NSMutableAttributedString(string: skin.toNSObject(atIndex: -1) as! String)
+        theString = NSMutableAttributedString(string: lua_tovalue(L, at: -1) as! String)
         lua_pop(L, 1)
 
         let theMap = luaByteToObjCharMap(theString!.string as NSString)
@@ -1138,7 +1100,7 @@ private func lua_toNSAttributedString(_ L: UnsafeMutablePointer<lua_State>!, at 
                 }
                 lua_pop(L, 1) // attributes field
             } else {
-                skin.logWarn("skipping style specification \(locInTable - 1): expected table, found \(String(cString: lua_typename(L, lua_type(L, -1)))).")
+                os_log(.info, "%{public}s", "skipping style specification \(locInTable - 1): expected table, found \(String(cString: lua_typename(L, lua_type(L, -1)))).")
             }
             locInTable += 1
             lua_pop(L, 1)
@@ -1230,7 +1192,7 @@ private func table_toAttributesDictionary(_ L: UnsafeMutablePointer<lua_State>!,
         }
         lua_pop(L, 1)
     } else {
-        skin.logError("invalid attributes dictionary: expected table, found \(String(cString: lua_typename(L, lua_type(L, idx))))")
+        os_log(.error, "%{public}s", "invalid attributes dictionary: expected table, found \(String(cString: lua_typename(L, lua_type(L, idx))))")
     }
 
     return theAttributes
@@ -1246,11 +1208,10 @@ private func NSAttributedString_toLua(_ L: UnsafeMutablePointer<lua_State>!, obj
 }
 
 private func NSFont_toLua(_ L: UnsafeMutablePointer<lua_State>!, obj: Any!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     let theFont = obj as! NSFont
 
     lua_newtable(L)
-    skin.pushNSObject(theFont.fontName as NSString)
+    lua_pushany(L, theFont.fontName as NSString)
     lua_setfield(L, -2, "name")
     lua_pushnumber(L, lua_Number(theFont.pointSize))
     lua_setfield(L, -2, "size")
@@ -1265,10 +1226,10 @@ private func table_toNSFont(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32
     var theSize = NSFont.systemFontSize
 
     if lua_type(L, idx) == LUA_TSTRING {
-        theName = skin.toNSObject(atIndex: idx) as! String
+        theName = lua_tovalue(L, at: idx) as! String
     } else if lua_type(L, idx) == LUA_TTABLE {
         if lua_getfield(L, idx, "name") == LUA_TSTRING {
-            theName = skin.toNSObject(atIndex: -1) as! String
+            theName = lua_tovalue(L, at: -1) as! String
         }
         lua_pop(L, 1)
         if lua_getfield(L, idx, "size") == LUA_TNUMBER {
@@ -1276,19 +1237,18 @@ private func table_toNSFont(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32
         }
         lua_pop(L, 1)
     } else {
-        skin.logWarn("invalid font: expected table or string, found \(String(cString: lua_typename(L, lua_type(L, idx))))")
+        os_log(.info, "%{public}s", "invalid font: expected table or string, found \(String(cString: lua_typename(L, lua_type(L, idx))))")
     }
 
     if let theFont = NSFont(name: theName, size: theSize) {
         return theFont
     } else {
-        skin.logWarn("invalid font specified: \(theName)")
+        os_log(.info, "%{public}s", "invalid font specified: \(theName)")
         return NSFont.systemFont(ofSize: 0)
     }
 }
 
 private func NSShadow_toLua(_ L: UnsafeMutablePointer<lua_State>!, obj: Any!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     let theShadow = obj as! NSShadow
     let offset = theShadow.shadowOffset
 
@@ -1301,7 +1261,7 @@ private func NSShadow_toLua(_ L: UnsafeMutablePointer<lua_State>!, obj: Any!) ->
     lua_setfield(L, -2, "offset")
     lua_pushnumber(L, lua_Number(theShadow.shadowBlurRadius))
     lua_setfield(L, -2, "blurRadius")
-    skin.pushNSObject(theShadow.shadowColor)
+    lua_pushany(L, theShadow.shadowColor)
     lua_setfield(L, -2, "color")
     lua_pushstring(L, "NSShadow"); lua_setfield(L, -2, "__luaSkinType")
 
@@ -1313,7 +1273,7 @@ private func table_toNSShadow(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int
     let theShadow = NSShadow()
     if lua_type(L, idx) == LUA_TTABLE {
         if lua_getfield(L, idx, "offset") == LUA_TTABLE {
-            theShadow.shadowOffset = skin.tableToSize(at: -1)
+            theShadow.shadowOffset = lua_tableToSize(L, at: -1)
         }
         lua_pop(L, 1)
         if lua_getfield(L, idx, "blurRadius") == LUA_TNUMBER {
@@ -1325,7 +1285,7 @@ private func table_toNSShadow(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int
         }
         lua_pop(L, 1)
     } else {
-        skin.logWarn("invalid shadow object: expected table, found \(String(cString: lua_typename(L, lua_type(L, idx))))")
+        os_log(.info, "%{public}s", "invalid shadow object: expected table, found \(String(cString: lua_typename(L, lua_type(L, idx))))")
     }
     return theShadow
 }
@@ -1391,8 +1351,7 @@ private func NSParagraphStyle_toLua(_ L: UnsafeMutablePointer<lua_State>!, obj: 
     lua_pushboolean(L, thePS.allowsDefaultTighteningForTruncation ? 1 : 0)
     lua_setfield(L, -2, "allowsTighteningForTruncation")
 
-    let skin = LuaSkin.skin(with: L)
-    skin.pushNSObject(thePS.tabStops as NSArray?)
+    lua_pushany(L, thePS.tabStops as NSArray?)
     lua_setfield(L, -2, "tabStops")
     lua_pushinteger(L, lua_Integer(thePS.headerLevel))
     lua_setfield(L, -2, "headerLevel")
@@ -1406,20 +1365,20 @@ private func table_toNSParagraphStyle(_ L: UnsafeMutablePointer<lua_State>!, at 
 
     if lua_type(L, idx) == LUA_TTABLE {
         if lua_getfield(L, idx, "alignment") == LUA_TSTRING {
-            let theString = skin.toNSObject(atIndex: -1) as! String
+            let theString = lua_tovalue(L, at: -1) as! String
             switch theString {
             case "left":      thePS.alignment = .left
             case "right":     thePS.alignment = .right
             case "center":    thePS.alignment = .center
             case "justified": thePS.alignment = .justified
             case "natural":   thePS.alignment = .natural
-            default:          skin.logWarn("invalid alignment specified: \(theString)")
+            default:          os_log(.info, "%{public}s", "invalid alignment specified: \(theString)")
             }
         }
         lua_pop(L, 1)
 
         if lua_getfield(L, idx, "lineBreak") == LUA_TSTRING {
-            let theString = skin.toNSObject(atIndex: -1) as! String
+            let theString = lua_tovalue(L, at: -1) as! String
             switch theString {
             case "charWrap":        thePS.lineBreakMode = .byCharWrapping
             case "clip":            thePS.lineBreakMode = .byClipping
@@ -1427,18 +1386,18 @@ private func table_toNSParagraphStyle(_ L: UnsafeMutablePointer<lua_State>!, at 
             case "truncateTail":    thePS.lineBreakMode = .byTruncatingTail
             case "truncateMiddle":  thePS.lineBreakMode = .byTruncatingMiddle
             case "wordWrap":        thePS.lineBreakMode = .byWordWrapping
-            default:                skin.logWarn("invalid lineBreakMode: \(theString)")
+            default:                os_log(.info, "%{public}s", "invalid lineBreakMode: \(theString)")
             }
         }
         lua_pop(L, 1)
 
         if lua_getfield(L, idx, "baseWritingDirection") == LUA_TSTRING {
-            let theString = skin.toNSObject(atIndex: -1) as! String
+            let theString = lua_tovalue(L, at: -1) as! String
             switch theString {
             case "leftToRight":  thePS.baseWritingDirection = .leftToRight
             case "rightToLeft":  thePS.baseWritingDirection = .rightToLeft
             case "natural":      thePS.baseWritingDirection = .natural
-            default:             skin.logWarn("invalid baseWritingDirection: \(theString)")
+            default:             os_log(.info, "%{public}s", "invalid baseWritingDirection: \(theString)")
             }
         }
         lua_pop(L, 1)
@@ -1448,7 +1407,7 @@ private func table_toNSParagraphStyle(_ L: UnsafeMutablePointer<lua_State>!, at 
             if theNumber >= 0.0 {
                 thePS.defaultTabInterval = CGFloat(theNumber)
             } else {
-                skin.logWarn("defaultTabInterval must be non-negative")
+                os_log(.info, "%{public}s", "defaultTabInterval must be non-negative")
             }
         }
         lua_pop(L, 1)
@@ -1458,7 +1417,7 @@ private func table_toNSParagraphStyle(_ L: UnsafeMutablePointer<lua_State>!, at 
             if theNumber >= 0.0 {
                 thePS.firstLineHeadIndent = CGFloat(theNumber)
             } else {
-                skin.logWarn("firstLineHeadIndent must be non-negative")
+                os_log(.info, "%{public}s", "firstLineHeadIndent must be non-negative")
             }
         }
         lua_pop(L, 1)
@@ -1468,7 +1427,7 @@ private func table_toNSParagraphStyle(_ L: UnsafeMutablePointer<lua_State>!, at 
             if theNumber >= 0.0 {
                 thePS.headIndent = CGFloat(theNumber)
             } else {
-                skin.logWarn("headIndent must be non-negative")
+                os_log(.info, "%{public}s", "headIndent must be non-negative")
             }
         }
         lua_pop(L, 1)
@@ -1483,7 +1442,7 @@ private func table_toNSParagraphStyle(_ L: UnsafeMutablePointer<lua_State>!, at 
             if theNumber >= 0.0 {
                 thePS.maximumLineHeight = CGFloat(theNumber)
             } else {
-                skin.logWarn("maximumLineHeight must be non-negative")
+                os_log(.info, "%{public}s", "maximumLineHeight must be non-negative")
             }
         }
         lua_pop(L, 1)
@@ -1493,7 +1452,7 @@ private func table_toNSParagraphStyle(_ L: UnsafeMutablePointer<lua_State>!, at 
             if theNumber >= 0.0 {
                 thePS.minimumLineHeight = CGFloat(theNumber)
             } else {
-                skin.logWarn("minimumLineHeight must be non-negative")
+                os_log(.info, "%{public}s", "minimumLineHeight must be non-negative")
             }
         }
         lua_pop(L, 1)
@@ -1503,7 +1462,7 @@ private func table_toNSParagraphStyle(_ L: UnsafeMutablePointer<lua_State>!, at 
             if theNumber >= 0.0 {
                 thePS.lineSpacing = CGFloat(theNumber)
             } else {
-                skin.logWarn("lineSpacing must be non-negative")
+                os_log(.info, "%{public}s", "lineSpacing must be non-negative")
             }
         }
         lua_pop(L, 1)
@@ -1513,7 +1472,7 @@ private func table_toNSParagraphStyle(_ L: UnsafeMutablePointer<lua_State>!, at 
             if theNumber >= 0.0 {
                 thePS.paragraphSpacing = CGFloat(theNumber)
             } else {
-                skin.logWarn("paragraphSpacing must be non-negative")
+                os_log(.info, "%{public}s", "paragraphSpacing must be non-negative")
             }
         }
         lua_pop(L, 1)
@@ -1523,7 +1482,7 @@ private func table_toNSParagraphStyle(_ L: UnsafeMutablePointer<lua_State>!, at 
             if theNumber >= 0.0 {
                 thePS.paragraphSpacingBefore = CGFloat(theNumber)
             } else {
-                skin.logWarn("paragraphSpacingBefore must be non-negative")
+                os_log(.info, "%{public}s", "paragraphSpacingBefore must be non-negative")
             }
         }
         lua_pop(L, 1)
@@ -1533,7 +1492,7 @@ private func table_toNSParagraphStyle(_ L: UnsafeMutablePointer<lua_State>!, at 
             if theNumber >= 0.0 {
                 thePS.lineHeightMultiple = CGFloat(theNumber)
             } else {
-                skin.logWarn("lineHeightMultiple must be non-negative")
+                os_log(.info, "%{public}s", "lineHeightMultiple must be non-negative")
             }
         }
         lua_pop(L, 1)
@@ -1543,7 +1502,7 @@ private func table_toNSParagraphStyle(_ L: UnsafeMutablePointer<lua_State>!, at 
             if theNumber >= 0.0 && theNumber <= 1.0 {
                 thePS.hyphenationFactor = Float(theNumber)
             } else {
-                skin.logWarn("hyphenationFactor must be between 0.0 and 1.0 inclusive")
+                os_log(.info, "%{public}s", "hyphenationFactor must be between 0.0 and 1.0 inclusive")
             }
         }
         lua_pop(L, 1)
@@ -1563,7 +1522,7 @@ private func table_toNSParagraphStyle(_ L: UnsafeMutablePointer<lua_State>!, at 
             if theNumber >= 0 && theNumber <= 6 {
                 thePS.headerLevel = Int(theNumber)
             } else {
-                skin.logWarn("headerNumber must be between 0 and 6 inclusive")
+                os_log(.info, "%{public}s", "headerNumber must be between 0 and 6 inclusive")
             }
         }
         lua_pop(L, 1)
@@ -1578,7 +1537,7 @@ private func table_toNSParagraphStyle(_ L: UnsafeMutablePointer<lua_State>!, at 
                     }
                     lua_pop(L, 1)
                 } else {
-                    skin.logWarn("invalid tapStop at position \(pos): expected table, found \(String(cString: lua_typename(L, lua_type(L, -1))))")
+                    os_log(.info, "%{public}s", "invalid tapStop at position \(pos): expected table, found \(String(cString: lua_typename(L, lua_type(L, -1))))")
                 }
                 pos += 1
             }
@@ -1587,7 +1546,7 @@ private func table_toNSParagraphStyle(_ L: UnsafeMutablePointer<lua_State>!, at 
         }
         lua_pop(L, 1)
     } else {
-        skin.logWarn("invalid paragraphStyle: expected table, found \(String(cString: lua_typename(L, lua_type(L, idx))))")
+        os_log(.info, "%{public}s", "invalid paragraphStyle: expected table, found \(String(cString: lua_typename(L, lua_type(L, idx))))")
     }
     return thePS
 }
@@ -1619,13 +1578,13 @@ private func table_toNSTextTab(_ L: UnsafeMutablePointer<lua_State>!, at idx: In
 
     if lua_type(L, idx) == LUA_TTABLE {
         if lua_getfield(L, idx, "tabStopType") == LUA_TSTRING {
-            let theString = skin.toNSObject(atIndex: -1) as! String
+            let theString = lua_tovalue(L, at: -1) as! String
             switch theString {
             case "left":    tabStopType = .leftTabStopType
             case "right":   tabStopType = .rightTabStopType
             case "center":  tabStopType = .centerTabStopType
             case "decimal": tabStopType = .decimalTabStopType
-            default:        skin.logWarn("invalid tabStopType: \(theString)")
+            default:        os_log(.info, "%{public}s", "invalid tabStopType: \(theString)")
             }
         }
         lua_pop(L, 1)
@@ -1634,7 +1593,7 @@ private func table_toNSTextTab(_ L: UnsafeMutablePointer<lua_State>!, at idx: In
         }
         lua_pop(L, 1)
     } else {
-        skin.logError("invalid type for tabStop: expected table, found \(String(cString: lua_typename(L, lua_type(L, idx))))")
+        os_log(.error, "%{public}s", "invalid type for tabStop: expected table, found \(String(cString: lua_typename(L, lua_type(L, idx))))")
     }
     return NSTextTab(type: tabStopType, location: tabStopLocation)
 }
@@ -1653,13 +1612,12 @@ private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 }
 
 private func userdata_concat(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     if lua_type(L, 1) == LUA_TSTRING || lua_type(L, 1) == LUA_TNUMBER {
         let theString1 = String(cString: lua_tostring(L, 1)!)
         let theString2 = get_objectFromUserdata(L, at: 2).string
         let newString = NSMutableString(string: theString1)
         newString.append(theString2)
-        skin.pushNSObject(newString)
+        lua_pushany(L, newString)
     } else {
         let theString1 = get_objectFromUserdata(L, at: 1)
         let newString = theString1.mutableCopy() as! NSMutableAttributedString
@@ -1669,7 +1627,7 @@ private func userdata_concat(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
         } else {
             newString.append(get_objectFromUserdata(L, at: 2))
         }
-        skin.pushNSObject(newString)
+        lua_pushany(L, newString)
     }
     return 1
 }

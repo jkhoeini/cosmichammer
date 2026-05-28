@@ -1,13 +1,13 @@
 import Cocoa
 import LuaSkin
+import os.log
 
 // MARK: - Support Functions
 
 private func lua_to_pasteboard(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> NSPasteboard {
-    let skin = LuaSkin.skin(with: L)
     if !lua_isnoneornil(L, idx) {
         _ = luaL_checkstring(L, idx) // force number to string
-        let name = skin.toNSObject(atIndex: idx) as! NSPasteboard.Name
+        let name = lua_tovalue(L, at: idx) as! NSPasteboard.Name
         return NSPasteboard(name: name)
     } else {
         return NSPasteboard.general
@@ -51,14 +51,17 @@ private func pasteboard_setContents(_ L: UnsafeMutablePointer<lua_State>!) -> In
     let thePasteboard = lua_to_pasteboard(L, 2)
 
     luaL_tolstring(L, 1, nil)
-    let skin = LuaSkin.skin(with: L)
-    let str: Any? = skin.toNSObject(atIndex: -1, withOptions: LS_NSConversionOptions.nsPreserveLuaStringExactly)
+    var len: Int = 0
+    let ptr = lua_tolstring(L, -1, &len)
     thePasteboard.clearContents()
     var result = false
-    if let s = str as? NSString {
-        result = thePasteboard.setString(s as String, forType: .string)
-    } else if let d = str as? NSData {
-        result = thePasteboard.setData(d as Data, forType: .string)
+    if let ptr = ptr, len > 0 {
+        let data = Data(bytes: ptr, count: len)
+        if let str = String(data: data, encoding: .utf8) {
+            result = thePasteboard.setString(str, forType: .string)
+        } else {
+            result = thePasteboard.setData(data, forType: .string)
+        }
     }
 
     lua_pushboolean(L, result ? 1 : 0)
@@ -158,9 +161,9 @@ private func pasteboard_changeCount(_ L: UnsafeMutablePointer<lua_State>!) -> In
 ///  * You can not delete the system pasteboard, this function should only be called on custom pasteboards you have created
 private func pasteboard_delete(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING | LS_TNUMBER, LS_TBREAK) // prevents nil from being specified
+// prevents nil from being specified
     _ = luaL_checkstring(L, 1) // coerce number to string
-    let pbName = skin.toNSObject(atIndex: 1) as! String
+    let pbName = lua_tovalue(L, at: 1) as! String
     let systemNames: [NSPasteboard.Name] = [.general, .font, .ruler, .find, .drag]
     for sysName in systemNames {
         if pbName == sysName.rawValue {
@@ -185,15 +188,13 @@ private func pasteboard_delete(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * an array with each index representing an object on the pasteboard.  If the pasteboard contains only one element, this is equivalent to `{ hs.pasteboard.contentTypes(name) }`.
 private func allPBItemTypes(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TNUMBER | LS_TSTRING | LS_TNIL | LS_TOPTIONAL, LS_TBREAK)
     let thePasteboard = lua_to_pasteboard(L, 1)
     lua_newtable(L)
     if let items = thePasteboard.pasteboardItems {
         for item in items {
             lua_newtable(L)
             for type in item.types {
-                skin.pushNSObject(type.rawValue as NSString)
+                lua_pushany(L, type.rawValue as NSString)
                 lua_rawseti(L, -2, luaL_len(L, -2) + 1)
             }
             lua_rawseti(L, -2, luaL_len(L, -2) + 1)
@@ -216,10 +217,6 @@ private func allPBItemTypes(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Notes:
 ///  * almost all string and styledText objects are internally convertible and will be available with this method as well as [hs.pasteboard.readStyledText](#readStyledText). If the item is actually an `hs.styledtext` object, the string will be just the text of the object.
 private func readStringObjects(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TNUMBER | LS_TSTRING | LS_TNIL | LS_TBOOLEAN | LS_TOPTIONAL,
-                   LS_TBOOLEAN | LS_TOPTIONAL,
-                   LS_TBREAK)
 
     var pb: NSPasteboard
     var getAll = false
@@ -240,9 +237,9 @@ private func readStringObjects(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let results = pb.readObjects(forClasses: [NSString.self], options: [:])
     if let results = results, !results.isEmpty {
         if getAll {
-            skin.pushNSObject(results as NSArray)
+            lua_pushany(L, results as NSArray)
         } else {
-            skin.pushNSObject(results.first as? NSObject)
+            lua_pushany(L, results.first as? NSObject)
         }
     } else {
         lua_pushnil(L)
@@ -264,21 +261,19 @@ private func readStringObjects(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Notes:
 ///  * The UTI's of the items on the pasteboard can be determined with the [hs.pasteboard.allContentTypes](#allContentTypes) and [hs.pasteboard.contentTypes](#contentTypes) functions.
 private func readItemForType(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     var pb: NSPasteboard
     var type: String
     if lua_gettop(L) == 1 {
-        skin.checkArgs(LS_TSTRING, LS_TBREAK)
+        luaL_checktype(L, 1, LUA_TSTRING)
         pb = NSPasteboard.general
-        type = skin.toNSObject(atIndex: 1) as! String
+        type = lua_tovalue(L, at: 1) as! String
     } else {
-        skin.checkArgs(LS_TNUMBER | LS_TSTRING | LS_TNIL, LS_TSTRING, LS_TBREAK)
         pb = lua_to_pasteboard(L, 1)
-        type = skin.toNSObject(atIndex: 2) as! String
+        type = lua_tovalue(L, at: 2) as! String
     }
     let pasteboardType = NSPasteboard.PasteboardType(rawValue: type)
     if let data = pb.data(forType: pasteboardType) {
-        skin.pushNSObject(data as NSData)
+        lua_pushany(L, data as NSData)
     } else {
         lua_pushnil(L)
     }
@@ -300,21 +295,19 @@ private func readItemForType(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * The UTI's of the items on the pasteboard can be determined with the [hs.pasteboard.allContentTypes](#allContentTypes) and [hs.pasteboard.contentTypes](#contentTypes) functions.
 ///  * Property lists consist only of certain types of data: tables, strings, numbers, dates, binary data, and Boolean values.
 private func readPropertyListForType(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     var pb: NSPasteboard
     var type: String
     if lua_gettop(L) == 1 {
-        skin.checkArgs(LS_TSTRING, LS_TBREAK)
+        luaL_checktype(L, 1, LUA_TSTRING)
         pb = NSPasteboard.general
-        type = skin.toNSObject(atIndex: 1) as! String
+        type = lua_tovalue(L, at: 1) as! String
     } else {
-        skin.checkArgs(LS_TNUMBER | LS_TSTRING | LS_TNIL, LS_TSTRING, LS_TBREAK)
         pb = lua_to_pasteboard(L, 1)
-        type = skin.toNSObject(atIndex: 2) as! String
+        type = lua_tovalue(L, at: 2) as! String
     }
     let pasteboardType = NSPasteboard.PasteboardType(rawValue: type)
     if let plist = pb.propertyList(forType: pasteboardType) as? NSObject {
-        skin.pushNSObject(plist)
+        lua_pushany(L, plist)
     } else {
         lua_pushnil(L)
     }
@@ -337,17 +330,15 @@ private func readPropertyListForType(_ L: UnsafeMutablePointer<lua_State>!) -> I
 ///  * Only objects which have conversion functions built into Cosmic Hammer can be converted. A string representation describing unrecognized types wil be returned. If you find a common data type that you believe may be of interest to Cosmic Hammer users, feel free to contribute a conversion function or make a request in the Cosmic Hammer Google group or GitHub site.
 ///  * Some applications may define their own classes which can be archived.  Cosmic Hammer will be unable to recognize these types if the application does not make the object type available in one of its frameworks.  You *may* be able to load the necessary framework with `package.loadlib("/Applications/appname.app/Contents/Frameworks/frameworkname.framework/frameworkname", "*")` before retrieving the data, but a full representation of the data in Cosmic Hammer is probably not possible without support from the Application's developers.
 private func readArchivedDataForType(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     var pb: NSPasteboard
     var type: String
     if lua_gettop(L) == 1 {
-        skin.checkArgs(LS_TSTRING, LS_TBREAK)
+        luaL_checktype(L, 1, LUA_TSTRING)
         pb = NSPasteboard.general
-        type = skin.toNSObject(atIndex: 1) as! String
+        type = lua_tovalue(L, at: 1) as! String
     } else {
-        skin.checkArgs(LS_TNUMBER | LS_TSTRING | LS_TNIL, LS_TSTRING, LS_TBREAK)
         pb = lua_to_pasteboard(L, 1)
-        type = skin.toNSObject(atIndex: 2) as! String
+        type = lua_tovalue(L, at: 2) as! String
     }
     let pasteboardType = NSPasteboard.PasteboardType(rawValue: type)
     guard let holding = pb.data(forType: pasteboardType) else {
@@ -372,7 +363,7 @@ private func readArchivedDataForType(_ L: UnsafeMutablePointer<lua_State>!) -> I
             from: holding
         )
         if let obj = realItem as? NSObject {
-            skin.pushNSObject(obj, withOptions: LS_NSConversionOptions.nsDescribeUnknownTypes.rawValue)
+            lua_pushany(L, obj)
         } else {
             lua_pushnil(L)
         }
@@ -400,7 +391,6 @@ private func readArchivedDataForType(_ L: UnsafeMutablePointer<lua_State>!) -> I
 ///  * Only objects which have conversion functions built into Cosmic Hammer can be converted.
 ///  * A full list of NSObjects supported directly by Cosmic Hammer is planned in a future Wiki article.
 private func writeArchivedDataForType(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     var pb: NSPasteboard
     var add = false
     var type: String
@@ -415,15 +405,13 @@ private func writeArchivedDataForType(_ L: UnsafeMutablePointer<lua_State>!) -> 
         }
     }
     if lua_gettop(L) == 2 {
-        skin.checkArgs(LS_TSTRING, LS_TANY, LS_TBREAK)
         pb = NSPasteboard.general
-        type = skin.toNSObject(atIndex: 1) as! String
-        data = skin.toNSObject(atIndex: 2, withOptions: LS_NSConversionOptions.nsPreserveLuaStringExactly)
+        type = lua_tovalue(L, at: 1) as! String
+        data = lua_tovalue(L, at: 2)
     } else {
-        skin.checkArgs(LS_TNUMBER | LS_TSTRING | LS_TNIL, LS_TSTRING, LS_TANY, LS_TBREAK)
         pb = lua_to_pasteboard(L, 1)
-        type = skin.toNSObject(atIndex: 2) as! String
-        data = skin.toNSObject(atIndex: 3, withOptions: LS_NSConversionOptions.nsPreserveLuaStringExactly)
+        type = lua_tovalue(L, at: 2) as! String
+        data = lua_tovalue(L, at: 3)
     }
     guard let data = data else {
         return Int32(luaL_error(L, "unable to evaluate data string"))
@@ -457,7 +445,6 @@ private func writeArchivedDataForType(_ L: UnsafeMutablePointer<lua_State>!) -> 
 /// Notes:
 ///  * The UTI's of the items on the pasteboard can be determined with the [hs.pasteboard.allContentTypes](#allContentTypes) and [hs.pasteboard.contentTypes](#contentTypes) functions.
 private func writeItemForType(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     var pb: NSPasteboard
     var add = false
     var type: String
@@ -472,15 +459,13 @@ private func writeItemForType(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
         }
     }
     if lua_gettop(L) == 2 {
-        skin.checkArgs(LS_TSTRING, LS_TSTRING, LS_TBREAK)
         pb = NSPasteboard.general
-        type = skin.toNSObject(atIndex: 1) as! String
-        data = skin.toNSObject(atIndex: 2, withOptions: LS_NSConversionOptions.nsLuaStringAsDataOnly) as? Data
+        type = lua_tovalue(L, at: 1) as! String
+        data = lua_tovalue(L, at: 2) as? Data
     } else {
-        skin.checkArgs(LS_TNUMBER | LS_TSTRING | LS_TNIL, LS_TSTRING, LS_TSTRING, LS_TBREAK)
         pb = lua_to_pasteboard(L, 1)
-        type = skin.toNSObject(atIndex: 2) as! String
-        data = skin.toNSObject(atIndex: 3, withOptions: LS_NSConversionOptions.nsLuaStringAsDataOnly) as? Data
+        type = lua_tovalue(L, at: 2) as! String
+        data = lua_tovalue(L, at: 3) as? Data
     }
     guard let data = data else {
         return Int32(luaL_error(L, "unable to evaluate data string"))
@@ -510,7 +495,6 @@ private func writeItemForType(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * The UTI's of the items on the pasteboard can be determined with the [hs.pasteboard.allContentTypes](#allContentTypes) and [hs.pasteboard.contentTypes](#contentTypes) functions.
 ///  * Property lists consist only of certain types of data: tables, strings, numbers, dates, binary data, and Boolean values.
 private func writePropertyListForType(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     var pb: NSPasteboard
     var add = false
     var type: String
@@ -525,15 +509,13 @@ private func writePropertyListForType(_ L: UnsafeMutablePointer<lua_State>!) -> 
         }
     }
     if lua_gettop(L) == 2 {
-        skin.checkArgs(LS_TSTRING, LS_TANY, LS_TBREAK)
         pb = NSPasteboard.general
-        type = skin.toNSObject(atIndex: 1) as! String
-        data = skin.toNSObject(atIndex: 2, withOptions: LS_NSConversionOptions.nsPreserveLuaStringExactly)
+        type = lua_tovalue(L, at: 1) as! String
+        data = lua_tovalue(L, at: 2)
     } else {
-        skin.checkArgs(LS_TNUMBER | LS_TSTRING | LS_TNIL, LS_TSTRING, LS_TANY, LS_TBREAK)
         pb = lua_to_pasteboard(L, 1)
-        type = skin.toNSObject(atIndex: 2) as! String
-        data = skin.toNSObject(atIndex: 3, withOptions: LS_NSConversionOptions.nsPreserveLuaStringExactly)
+        type = lua_tovalue(L, at: 2) as! String
+        data = lua_tovalue(L, at: 3)
     }
     guard let data = data else {
         return Int32(luaL_error(L, "unable to evaluate data string"))
@@ -560,10 +542,6 @@ private func writePropertyListForType(_ L: UnsafeMutablePointer<lua_State>!) -> 
 /// Notes:
 ///  * almost all string and styledText objects are internally convertible and will be available with this method as well as [hs.pasteboard.readString](#readString). If the item on the clipboard is actually just a string, the `hs.styledtext` object representation will have no attributes set
 private func readAttributedStringObjects(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TNUMBER | LS_TSTRING | LS_TNIL | LS_TBOOLEAN | LS_TOPTIONAL,
-                   LS_TBOOLEAN | LS_TOPTIONAL,
-                   LS_TBREAK)
 
     var pb: NSPasteboard
     var getAll = false
@@ -584,9 +562,9 @@ private func readAttributedStringObjects(_ L: UnsafeMutablePointer<lua_State>!) 
     let results = pb.readObjects(forClasses: [NSAttributedString.self], options: [:])
     if let results = results, !results.isEmpty {
         if getAll {
-            skin.pushNSObject(results as NSArray)
+            lua_pushany(L, results as NSArray)
         } else {
-            skin.pushNSObject(results.first as? NSObject)
+            lua_pushany(L, results.first as? NSObject)
         }
     } else {
         lua_pushnil(L)
@@ -605,10 +583,6 @@ private func readAttributedStringObjects(_ L: UnsafeMutablePointer<lua_State>!) 
 /// Returns:
 ///  * By default the first sound on the clipboard, or a table of all sounds on the clipboard if the `all` parameter is provided and set to true.  Returns nil if no sounds are present.
 private func readSoundObjects(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TNUMBER | LS_TSTRING | LS_TNIL | LS_TBOOLEAN | LS_TOPTIONAL,
-                   LS_TBOOLEAN | LS_TOPTIONAL,
-                   LS_TBREAK)
 
     var pb: NSPasteboard
     var getAll = false
@@ -629,9 +603,9 @@ private func readSoundObjects(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let results = pb.readObjects(forClasses: [NSSound.self], options: [:])
     if let results = results, !results.isEmpty {
         if getAll {
-            skin.pushNSObject(results as NSArray)
+            lua_pushany(L, results as NSArray)
         } else {
-            skin.pushNSObject(results.first as? NSObject)
+            lua_pushany(L, results.first as? NSObject)
         }
     } else {
         lua_pushnil(L)
@@ -650,10 +624,6 @@ private func readSoundObjects(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * By default the first image on the clipboard, or a table of all images on the clipboard if the `all` parameter is provided and set to true.  Returns nil if no images are present.
 private func readImageObjects(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TNUMBER | LS_TSTRING | LS_TNIL | LS_TBOOLEAN | LS_TOPTIONAL,
-                   LS_TBOOLEAN | LS_TOPTIONAL,
-                   LS_TBREAK)
 
     var pb: NSPasteboard
     var getAll = false
@@ -674,9 +644,9 @@ private func readImageObjects(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let results = pb.readObjects(forClasses: [NSImage.self], options: [:])
     if let results = results, !results.isEmpty {
         if getAll {
-            skin.pushNSObject(results as NSArray)
+            lua_pushany(L, results as NSArray)
         } else {
-            skin.pushNSObject(results.first as? NSObject)
+            lua_pushany(L, results.first as? NSObject)
         }
     } else {
         lua_pushnil(L)
@@ -695,10 +665,6 @@ private func readImageObjects(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * By default the first url on the clipboard, or a table of all urls on the clipboard if the `all` parameter is provided and set to true.  Returns nil if no urls are present.
 private func readURLObjects(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TNUMBER | LS_TSTRING | LS_TNIL | LS_TBOOLEAN | LS_TOPTIONAL,
-                   LS_TBOOLEAN | LS_TOPTIONAL,
-                   LS_TBREAK)
 
     var pb: NSPasteboard
     var getAll = false
@@ -719,9 +685,9 @@ private func readURLObjects(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let results = pb.readObjects(forClasses: [NSURL.self], options: [:])
     if let results = results, !results.isEmpty {
         if getAll {
-            skin.pushNSObject(results as NSArray)
+            lua_pushany(L, results as NSArray)
         } else {
-            skin.pushNSObject(results.first as? NSObject)
+            lua_pushany(L, results.first as? NSObject)
         }
     } else {
         lua_pushnil(L)
@@ -740,10 +706,6 @@ private func readURLObjects(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * By default the first color on the clipboard, or a table of all colors on the clipboard if the `all` parameter is provided and set to true.  Returns nil if no colors are present.
 private func readColorObjects(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TNUMBER | LS_TSTRING | LS_TNIL | LS_TBOOLEAN | LS_TOPTIONAL,
-                   LS_TBOOLEAN | LS_TOPTIONAL,
-                   LS_TBREAK)
 
     var pb: NSPasteboard
     var getAll = false
@@ -764,9 +726,9 @@ private func readColorObjects(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let results = pb.readObjects(forClasses: [NSColor.self], options: [:])
     if let results = results, !results.isEmpty {
         if getAll {
-            skin.pushNSObject(results as NSArray)
+            lua_pushany(L, results as NSArray)
         } else {
-            skin.pushNSObject(results.first as? NSObject)
+            lua_pushany(L, results.first as? NSObject)
         }
     } else {
         lua_pushnil(L)
@@ -779,31 +741,31 @@ private func convertToPasteboardWritableObject(_ L: UnsafeMutablePointer<lua_Sta
     let luaType = lua_type(L, idx)
     if luaType == LUA_TSTRING || luaType == LUA_TNUMBER {
         luaL_tolstring(L, idx, nil) // force number to be a string, but don't change value in stack
-        let object = skin.toNSObject(atIndex: -1) as? NSPasteboardWriting
+        let object = lua_tovalue(L, at: -1) as? NSPasteboardWriting
         lua_pop(L, 1)
         return object
     } else if luaType == LUA_TTABLE {
         if lua_getfield(L, idx, "url") != Int32(LUA_TNIL) {
             if lua_type(L, -1) == LUA_TSTRING {
-                let urlStr = skin.toNSObject(atIndex: -1) as! String
+                let urlStr = lua_tovalue(L, at: -1) as! String
                 lua_pop(L, 1)
                 return NSURL(string: urlStr)
             } else {
                 lua_pop(L, 1)
-                skin.logError("url must be a table containing a url key with a string value")
+                os_log(.error, "%{public}s", "url must be a table containing a url key with a string value")
                 return nil
             }
         } else {
-            let color = skin.luaObject(at: idx, toClass: "NSColor") as? NSColor
+            let color = lua_tovalue(L, at: idx) as? NSColor
             lua_pop(L, 1) // the value from the url key check above
             return color
         }
     } else if luaL_testudata(L, idx, "hs.image") != nil ||
               luaL_testudata(L, idx, "hs.sound") != nil ||
               luaL_testudata(L, idx, "hs.styledtext") != nil {
-        return skin.toNSObject(atIndex: idx) as? NSPasteboardWriting
+        return lua_tovalue(L, at: idx) as? NSPasteboardWriting
     } else {
-        skin.logError("expected string, number, hs.image, hs.sound, hs.styledtext, color table or url table")
+        os_log(.error, "%{public}s", "expected string, number, hs.image, hs.sound, hs.styledtext, color table or url table")
         return nil
     }
 }
@@ -831,23 +793,20 @@ private func convertToPasteboardWritableObject(_ L: UnsafeMutablePointer<lua_Sta
 private func writeObjects(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
     var pboard: NSPasteboard
-    if lua_gettop(L) == 1 {
-        skin.checkArgs(LS_TANY, LS_TBREAK)
-        pboard = NSPasteboard.general
+    if lua_gettop(L) == 1 {        pboard = NSPasteboard.general
     } else {
-        skin.checkArgs(LS_TANY, LS_TNUMBER | LS_TSTRING | LS_TNIL, LS_TBREAK)
         pboard = lua_to_pasteboard(L, 2)
     }
 
     var objects: [NSPasteboardWriting] = []
     if lua_type(L, 1) != LUA_TTABLE ||
-       (lua_type(L, 1) == LUA_TTABLE && skin.maxNatIndex(1) == 0) {
+       (lua_type(L, 1) == LUA_TTABLE && luaL_len(L, 1) == 0) {
         guard let obj = convertToPasteboardWritableObject(L, 1) else {
             return Int32(luaL_error(L, "writeObjects error"))
         }
         objects.append(obj)
     } else {
-        let count = skin.maxNatIndex(1)
+        let count = luaL_len(L, 1)
         for i in 0..<count {
             lua_rawgeti(L, 1, lua_Integer(i + 1))
             guard let obj = convertToPasteboardWritableObject(L, -1) else {
@@ -877,10 +836,8 @@ private func writeObjects(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Notes:
 ///  * to properly manage system resources, you should release the created pasteboard with [hs.pasteboard.deletePasteboard](#deletePasteboard) when you are certain that it is no longer necessary.
 private func newUniquePasteboard(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TBREAK)
     let name = NSPasteboard.withUniqueName().name
-    skin.pushNSObject(name.rawValue as NSString)
+    lua_pushany(L, name.rawValue as NSString)
     return 1
 }
 
@@ -905,8 +862,6 @@ private func newUniquePasteboard(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 ///    * if the item on the clipboard is actually just a string, the `hs.styledtext` object representation will have no attributes set
 ///    * if the item is actually an `hs.styledtext` object, the string representation will be the text without any attributes.
 private func typesOnPasteboard(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TNUMBER | LS_TSTRING | LS_TNIL | LS_TOPTIONAL, LS_TBREAK)
     let pboard = lua_to_pasteboard(L, 1)
     lua_newtable(L)
     if pboard.canReadObject(forClasses: [NSString.self], options: [:]) {

@@ -1,9 +1,10 @@
 import Cocoa
 import Carbon
 import LuaSkin
+import os.log
 
 private let USERDATA_TAG = "hs.uielement"
-private var refTable: LSRefTable = LUA_NOREF
+private var refTable: Int32 = LUA_NOREF
 
 private func getObject(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> (NSObject & HSuielementProtocol)? {
     let ptr = luaL_checkudata(L, idx, USERDATA_TAG)!
@@ -16,14 +17,12 @@ private func getObject(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> 
 /// Function
 /// Gets the currently focused UI element
 private func uielement_focusedElement(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TBREAK)
     guard let cls = HSuicore.uielementClass else {
         lua_pushnil(L)
         return 1
     }
     let element = (cls as AnyObject).perform(Selector(("focusedElement")))?.takeUnretainedValue()
-    skin.pushNSObject(element)
+    lua_pushany(L, element)
     return 1
 }
 
@@ -31,9 +30,8 @@ private func uielement_focusedElement(_ L: UnsafeMutablePointer<lua_State>!) -> 
 /// Method
 /// Returns whether the UI element represents a window.
 private func uielement_iswindow(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
-    guard let element = skin.toNSObject(atIndex: 1) as? HSuielementProtocol else {
+    luaL_checkudata(L, 1, USERDATA_TAG)
+    guard let element = lua_tovalue(L, at: 1) as? HSuielementProtocol else {
         lua_pushboolean(L, 0)
         return 1
     }
@@ -45,13 +43,12 @@ private func uielement_iswindow(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 /// Method
 /// Returns the role of the element.
 private func uielement_role(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
-    guard let element = skin.toNSObject(atIndex: 1) as? HSuielementProtocol else {
+    luaL_checkudata(L, 1, USERDATA_TAG)
+    guard let element = lua_tovalue(L, at: 1) as? HSuielementProtocol else {
         lua_pushnil(L)
         return 1
     }
-    skin.pushNSObject(element.role as NSString)
+    lua_pushany(L, element.role as NSString)
     return 1
 }
 
@@ -59,13 +56,12 @@ private func uielement_role(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Method
 /// Returns the selected text in the element
 private func uielement_selectedText(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
-    guard let element = skin.toNSObject(atIndex: 1) as? HSuielementProtocol else {
+    luaL_checkudata(L, 1, USERDATA_TAG)
+    guard let element = lua_tovalue(L, at: 1) as? HSuielementProtocol else {
         lua_pushnil(L)
         return 1
     }
-    skin.pushNSObject(element.selectedText as NSString?)
+    lua_pushany(L, element.selectedText as NSString?)
     return 1
 }
 
@@ -73,15 +69,13 @@ private func uielement_selectedText(_ L: UnsafeMutablePointer<lua_State>!) -> In
 /// Method
 /// Creates a new watcher
 private func uielement_newWatcher(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TFUNCTION, LS_TANY | LS_TOPTIONAL, LS_TBREAK)
 
-    guard let uiElement = skin.toNSObject(atIndex: 1) as? HSuielementProtocol else {
+    guard let uiElement = lua_tovalue(L, at: 1) as? HSuielementProtocol else {
         lua_pushnil(L)
         return 1
     }
     let watcher = uiElement.newWatcher(atIndex: 2, withUserdataAtIndex: 3, withLuaState: L)
-    skin.pushNSObject(watcher)
+    lua_pushany(L, watcher)
     return 1
 }
 
@@ -99,14 +93,13 @@ private func pushHSuielement(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!)
 }
 
 private func toHSuielementFromLua(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> Any! {
-    let skin = LuaSkin.skin(with: L)
     if luaL_testudata(L, idx, USERDATA_TAG) != nil {
         let ptr = luaL_checkudata(L, idx, USERDATA_TAG)!
             .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
         guard let rawPtr = ptr.pointee else { return nil }
         return Unmanaged<NSObject>.fromOpaque(rawPtr).takeUnretainedValue()
     } else {
-        skin.logError("\(USERDATA_TAG): expected \(USERDATA_TAG) object, found \(String(cString: lua_typename(L, lua_type(L, idx))))")
+        os_log(.error, "%{public}s", "\(USERDATA_TAG): expected \(USERDATA_TAG) object, found \(String(cString: lua_typename(L, lua_type(L, idx))))")
     }
     return nil
 }
@@ -116,9 +109,8 @@ private func toHSuielementFromLua(_ L: UnsafeMutablePointer<lua_State>!, _ idx: 
 private func uielement_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     var isEqual = false
     if luaL_testudata(L, 1, USERDATA_TAG) != nil && luaL_testudata(L, 2, USERDATA_TAG) != nil {
-        let skin = LuaSkin.skin(with: L)
-        if let e1 = skin.toNSObject(atIndex: 1) as? HSuielementProtocol,
-           let e2 = skin.toNSObject(atIndex: 2) as? HSuielementProtocol {
+        if let e1 = lua_tovalue(L, at: 1) as? HSuielementProtocol,
+           let e2 = lua_tovalue(L, at: 2) as? HSuielementProtocol {
             isEqual = CFEqual(e1.elementRef, e2.elementRef)
         }
     }
@@ -127,8 +119,7 @@ private func uielement_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 }
 
 private func uielement_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     let ptr = luaL_checkudata(L, 1, USERDATA_TAG)!
         .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
     if let rawPtr = ptr.pointee {

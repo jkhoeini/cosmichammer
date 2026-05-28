@@ -32,8 +32,7 @@ private class SpaceWatcher: NSObject {
     // Call the lua callback function.
     func callback(dict: NSDictionary?, space: Int32) {
         if object.pointee.fn != LUA_NOREF {
-            let skin = LuaSkin.skin(with: nil)
-            let L = skin.l!
+            let L = LuaSkin.skin(with: nil).l!
 
             lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(object.pointee.fn))
             lua_pushinteger(L, lua_Integer(space))

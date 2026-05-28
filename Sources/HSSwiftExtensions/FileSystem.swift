@@ -22,6 +22,7 @@
 
 import Cocoa
 import LuaSkin
+import os.log
 
 // MARK: - Constants
 
@@ -759,9 +760,8 @@ private func link_info(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * A table containing the list of the file's tags, or nil if the file has no tags assigned; throws a lua error if an error accessing the file occurs
 private func tagsGet(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING, LS_TBREAK)
-    let path = skin.toNSObject(atIndex: 1) as! NSString
+    luaL_checktype(L, 1, LUA_TSTRING)
+    let path = lua_tovalue(L, at: 1) as! NSString
 
     guard let tags = tags_from_file(L, path) else {
         lua_pushnil(L)
@@ -791,9 +791,7 @@ private func tagsGet(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * true if the tags were updated; throws a lua error if an error occurs updating the tags
 private func tagsAdd(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING, LS_TTABLE, LS_TBREAK)
-    let path = skin.toNSObject(atIndex: 1) as! NSString
+    let path = lua_tovalue(L, at: 1) as! NSString
 
     let oldTags = NSMutableSet(array: (tags_from_file(L, path) as? [Any]) ?? [])
     let newTags = NSMutableSet(array: tags_from_lua_stack(L) as [AnyObject])
@@ -814,9 +812,7 @@ private func tagsAdd(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * true if the tags were set; throws a lua error if an error occurs setting the new tags
 private func tagsSet(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING, LS_TTABLE, LS_TBREAK)
-    let path = skin.toNSObject(atIndex: 1) as! NSString
+    let path = lua_tovalue(L, at: 1) as! NSString
 
     let tags = tags_from_lua_stack(L)
     lua_pushboolean(L, tags_to_file(L, path, tags) ? 1 : 0)
@@ -835,9 +831,7 @@ private func tagsSet(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * true if the tags were updated; throws a lua error if an error occurs updating the tags
 private func tagsRemove(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING, LS_TTABLE, LS_TBREAK)
-    let path = skin.toNSObject(atIndex: 1) as! NSString
+    let path = lua_tovalue(L, at: 1) as! NSString
     let removeTags = NSMutableSet(array: tags_from_lua_stack(L) as [AnyObject])
 
     let tags = NSMutableSet(array: (tags_from_file(L, path) as? [Any]) ?? [])
@@ -873,8 +867,7 @@ private func hs_temporaryDirectory(_ L: UnsafeMutablePointer<lua_State>!) -> Int
 /// Returns:
 ///  * a string containing the Uniform Type Identifier for the file location specified or nil if an error occurred
 private func hs_fileuti(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING, LS_TBREAK)
+    luaL_checktype(L, 1, LUA_TSTRING)
     let path = NSString(utf8String: path_at_index(L, 1)!)! as String
 
     var error: NSError?
@@ -886,9 +879,9 @@ private func hs_fileuti(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     }
     if let error = error {
         lua_pushnil(L)
-        skin.logError(error.localizedDescription)
+        os_log(.error, "%{public}s", error.localizedDescription)
     }
-    skin.pushNSObject(type as NSString?)
+    lua_pushany(L, type as NSString?)
     return 1
 }
 
@@ -907,10 +900,8 @@ private func hs_fileuti(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * the file UTI in the alternate format or nil if the UTI does not have an alternate of the specified type.
 private func hs_fileUTIalternate(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING, LS_TSTRING, LS_TBREAK)
-    let fileUTI = skin.toNSObject(atIndex: 1) as! NSString
-    let format = skin.toNSObject(atIndex: 2) as! NSString
+    let fileUTI = lua_tovalue(L, at: 1) as! NSString
+    let format = lua_tovalue(L, at: 2) as! NSString
 
     let convertTo: CFString
     if format.isEqual(to: "extension") {
@@ -926,7 +917,7 @@ private func hs_fileUTIalternate(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
     }
 
     let result = UTTypeCopyPreferredTagWithClass(fileUTI as CFString, convertTo)?.takeRetainedValue()
-    skin.pushNSObject(result as NSString?)
+    lua_pushany(L, result as NSString?)
     return 1
 }
 
@@ -941,10 +932,9 @@ private func hs_fileUTIalternate(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 ///  * A string containing the absolute path of `filepath` (i.e. one that doesn't include `.`, `..` or symlinks)
 ///  * Note that symlinks will be resolved to their target file
 private func hs_pathToAbsolute(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING, LS_TBREAK)
+    luaL_checktype(L, 1, LUA_TSTRING)
 
-    let filePath = skin.toNSObject(atIndex: 1) as! NSString
+    let filePath = lua_tovalue(L, at: 1) as! NSString
     let absolutePath = realpath((filePath as String).expandingTildeInPath, nil)
 
     guard let absolutePath = absolutePath else {
@@ -967,11 +957,10 @@ private func hs_pathToAbsolute(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * a string containing the display name of the file or directory at a specified path; returns nil if no file with the specified path exists.
 private func fs_displayName(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING, LS_TBREAK)
-    let filePath = skin.toNSObject(atIndex: 1) as! NSString
+    luaL_checktype(L, 1, LUA_TSTRING)
+    let filePath = lua_tovalue(L, at: 1) as! NSString
     if FileManager.default.fileExists(atPath: filePath.expandingTildeInPath) {
-        skin.pushNSObject(FileManager.default.displayName(atPath: filePath.expandingTildeInPath) as NSString)
+        lua_pushany(L, FileManager.default.displayName(atPath: filePath.expandingTildeInPath) as NSString)
     } else {
         lua_pushnil(L)
     }
@@ -988,10 +977,9 @@ private func fs_displayName(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * Bookmark data in a binary encoded string or `nil` if path is invalid.
 private func fs_pathToBookmark(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING, LS_TBREAK)
+    luaL_checktype(L, 1, LUA_TSTRING)
 
-    let filePath = skin.toNSObject(atIndex: 1) as! NSString
+    let filePath = lua_tovalue(L, at: 1) as! NSString
     let absolutePath = realpath((filePath as String).expandingTildeInPath, nil)
 
     guard absolutePath != nil else {
@@ -1001,7 +989,7 @@ private func fs_pathToBookmark(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
     let bookmarkData = try? (NSURL(fileURLWithPath: filePath as String) as URL)
         .bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
-    skin.pushNSObject(bookmarkData as NSData?)
+    lua_pushany(L, bookmarkData as NSData?)
     free(absolutePath)
     return 1
 }
@@ -1025,8 +1013,7 @@ private func fs_pathToBookmark(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///    user relaunches your app or restarts the system.
 ///  * No volumes are mounted during the resolution of the bookmark data.
 private func fs_pathFromBookmark(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING, LS_TBREAK)
+    luaL_checktype(L, 1, LUA_TSTRING)
 
     let data = lua_tostring(L, 1)
     let dataLength: Int = lua_rawlen(L, 1)
@@ -1043,7 +1030,7 @@ private func fs_pathFromBookmark(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
         let values = NSURL.resourceValues(forKeys: [URLResourceKey(rawValue: NSURLPathKey)],
                                           fromBookmarkData: bookmarkData as Data)
         if let path = values?[URLResourceKey(rawValue: NSURLPathKey)] as? NSString {
-            skin.pushNSObject(path)
+            lua_pushany(L, path)
             return 1
         }
         // URL resolved but no path key found
@@ -1053,7 +1040,7 @@ private func fs_pathFromBookmark(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
     } catch {
         let errorMessage = "Error resolving URL from bookmark: \(error)" as NSString
         lua_pushnil(L)
-        skin.pushNSObject(errorMessage)
+        lua_pushany(L, errorMessage)
         return 2
     }
 }
@@ -1068,10 +1055,9 @@ private func fs_pathFromBookmark(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 /// Returns:
 ///  * A string or `nil` if path is invalid.
 private func fs_urlFromPath(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING, LS_TBREAK)
+    luaL_checktype(L, 1, LUA_TSTRING)
 
-    let filePath = skin.toNSObject(atIndex: 1) as! NSString
+    let filePath = lua_tovalue(L, at: 1) as! NSString
     let absolutePath = realpath((filePath as String).expandingTildeInPath, nil)
 
     guard absolutePath != nil else {
@@ -1082,7 +1068,7 @@ private func fs_urlFromPath(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let urlPath = ((filePath as String).standardizingPath as NSString).resolvingSymlinksInPath
     let fileURL = NSURL(fileURLWithPath: urlPath)
 
-    skin.pushNSObject(fileURL.absoluteString as NSString?)
+    lua_pushany(L, fileURL.absoluteString as NSString?)
     free(absolutePath)
     return 1
 }
@@ -1110,11 +1096,8 @@ private func fs_urlFromPath(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///    * note that this function only checks to see if the regular expression returns a match for each filename found (not the path, just the filename component of the path). Any captures are ignored.
 private func fs_filesInPath(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING,
-                   LS_TTABLE | LS_TOPTIONAL,
-                   LS_TBREAK)
 
-    var path = skin.toNSObject(atIndex: 1) as! NSString
+    var path = lua_tovalue(L, at: 1) as! NSString
 
     var subdirs = false
     var followSymlinks = false
@@ -1150,7 +1133,7 @@ private func fs_filesInPath(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
                     }
                     relativePath = lua_toboolean(L, -1) != 0
                 case "ignore":
-                    ignore = skin.toNSObject(atIndex: -1) as? NSArray
+                    ignore = lua_tovalue(L, at: -1) as? NSArray
                     if let arr = ignore {
                         for entry in arr {
                             guard entry is NSString else {
@@ -1161,7 +1144,7 @@ private func fs_filesInPath(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
                         return luaL_argerror(L, 2, "ignore option expects table value")
                     }
                 case "except":
-                    except = skin.toNSObject(atIndex: -1) as? NSArray
+                    except = lua_tovalue(L, at: -1) as? NSArray
                     if let arr = except {
                         for entry in arr {
                             guard entry is NSString else {
@@ -1184,9 +1167,13 @@ private func fs_filesInPath(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     if except == nil { except = NSArray() }
 
     if ignore == nil {
-        skin.requireModule("\(USERDATA_TAG)")
+        lua_getglobal(L, "require")
+
+        lua_pushstring(L, "\(USERDATA_TAG)")
+
+        lua_pcall(L, 1, 1, 0)
         lua_getfield(L, -1, "defaultPathListExcludes")
-        ignore = skin.toNSObject(atIndex: -1) as? NSArray
+        ignore = lua_tovalue(L, at: -1) as? NSArray
         lua_pop(L, 2)
     }
 
@@ -1222,7 +1209,7 @@ private func fs_filesInPath(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     if !fileExists {
         return luaL_argerror(L, 1, "path does not specify a reachable file or directory")
     } else if !isDirectory.boolValue {
-        skin.pushNSObject(NSArray(array: [path]))
+        lua_pushany(L, NSArray(array: [path]))
         lua_pushinteger(L, 1)
         lua_pushinteger(L, 0)
         return 3
@@ -1326,7 +1313,7 @@ private func fs_filesInPath(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     // ensure consistent order
     foundPaths.sort(using: [NSSortDescriptor(key: "self", ascending: true, selector: #selector(NSString.compare(_:)))])
 
-    skin.pushNSObject(foundPaths)
+    lua_pushany(L, foundPaths)
     lua_pushinteger(L, lua_Integer(foundPaths.count))
     lua_pushinteger(L, dirCount)
     return 3

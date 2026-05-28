@@ -13,8 +13,7 @@ private class HSDistNotWatcher: NSObject {
 
     @objc func callback(_ note: NSNotification) {
         guard fnRef != LUA_NOREF && fnRef != LUA_REFNIL else { return }
-        let skin = LuaSkin.skin(with: nil)
-        let L = skin.l!
+        let L = LuaSkin.skin(with: nil).l!
         lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(fnRef))
         lua_pushany(L, note.name.rawValue)
         lua_pushany(L, note.object)

@@ -1,8 +1,9 @@
 import Cocoa
 import LuaSkin
+import os.log
 
 private let USERDATA_TAG = "hs.canvas.matrix"
-private var refTable: LSRefTable = LUA_NOREF
+private var refTable: Int32 = LUA_NOREF
 
 // MARK: - Module Functions
 
@@ -25,10 +26,7 @@ private var refTable: LSRefTable = LUA_NOREF
 /// [ 0,  0,  1 ]
 /// ~~~
 private func matrix_identity(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TTABLE | LS_TOPTIONAL,
-                   LS_TBREAK)
-    skin.pushNSObject(NSAffineTransform())
+    lua_pushany(L, NSAffineTransform())
     return 1
 }
 
@@ -48,12 +46,9 @@ private func matrix_identity(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * Inverting a matrix which represents a series of transformations has the effect of reversing or undoing the original transformations.
 ///  * This is useful when used with [hs.canvas.matrix.append](#append) to undo a previously applied transformation without actually replacing all of the transformations which may have been applied to a canvas element.
 private func matrix_invert(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TTABLE,
-                   LS_TBREAK)
-    let transform = skin.luaObject(at: 1, toClass: "NSAffineTransform") as! NSAffineTransform
+    let transform = lua_tovalue(L, at: 1) as! NSAffineTransform
     transform.invert()
-    skin.pushNSObject(transform)
+    lua_pushany(L, transform)
     return 1
 }
 
@@ -71,14 +66,10 @@ private func matrix_invert(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * Mathematically this method multiples the original matrix by the new one and returns the result of the multiplication.
 ///  * You can use this method to "stack" additional transformations on top of existing transformations, without having to know what the existing transformations in effect for the canvas element are.
 private func matrix_append(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TTABLE,
-                   LS_TTABLE,
-                   LS_TBREAK)
-    let transform1 = skin.luaObject(at: 1, toClass: "NSAffineTransform") as! NSAffineTransform
-    let transform2 = skin.luaObject(at: 2, toClass: "NSAffineTransform") as! NSAffineTransform
+    let transform1 = lua_tovalue(L, at: 1) as! NSAffineTransform
+    let transform2 = lua_tovalue(L, at: 2) as! NSAffineTransform
     transform1.append(transform2 as AffineTransform)
-    skin.pushNSObject(transform1)
+    lua_pushany(L, transform1)
     return 1
 }
 
@@ -96,14 +87,10 @@ private func matrix_append(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * Mathematically this method multiples the new matrix by the original one and returns the result of the multiplication.
 ///  * You can use this method to apply a transformation *before* the currently applied transformations, without having to know what the existing transformations in effect for the canvas element are.
 private func matrix_prepend(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TTABLE,
-                   LS_TTABLE,
-                   LS_TBREAK)
-    let transform1 = skin.luaObject(at: 1, toClass: "NSAffineTransform") as! NSAffineTransform
-    let transform2 = skin.luaObject(at: 2, toClass: "NSAffineTransform") as! NSAffineTransform
+    let transform1 = lua_tovalue(L, at: 1) as! NSAffineTransform
+    let transform2 = lua_tovalue(L, at: 2) as! NSAffineTransform
     transform1.prepend(transform2 as AffineTransform)
-    skin.pushNSObject(transform1)
+    lua_pushany(L, transform1)
     return 1
 }
 
@@ -121,21 +108,15 @@ private func matrix_prepend(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * The rotation of an element this matrix is applied to will be rotated about the origin (zero point).  To rotate an object about another point (its center for example), prepend a translation to the point to rotate about, and append a translation reversing the initial translation.
 ///    * e.g. `hs.canvas.matrix.translate(x, y):rotate(angle):translate(-x, -y)`
 private func matrix_rotate(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     var transform = NSAffineTransform()
     var argsAt: Int32 = 2
     if lua_type(L, 1) == LUA_TNUMBER {
-        skin.checkArgs(LS_TNUMBER,
-                       LS_TBREAK)
         argsAt = 1
     } else {
-        skin.checkArgs(LS_TTABLE,
-                       LS_TNUMBER,
-                       LS_TBREAK)
-        transform = skin.luaObject(at: 1, toClass: "NSAffineTransform") as! NSAffineTransform
+        transform = lua_tovalue(L, at: 1) as! NSAffineTransform
     }
     transform.rotate(byDegrees: CGFloat(lua_tonumber(L, argsAt)))
-    skin.pushNSObject(transform)
+    lua_pushany(L, transform)
     return 1
 }
 
@@ -154,21 +135,14 @@ private func matrix_scale(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     var transform = NSAffineTransform()
     var argsAt: Int32 = 2
     if lua_type(L, 1) == LUA_TNUMBER {
-        skin.checkArgs(LS_TNUMBER,
-                       LS_TNUMBER | LS_TOPTIONAL,
-                       LS_TBREAK)
         argsAt = 1
     } else {
-        skin.checkArgs(LS_TTABLE,
-                       LS_TNUMBER,
-                       LS_TNUMBER | LS_TOPTIONAL,
-                       LS_TBREAK)
-        transform = skin.luaObject(at: 1, toClass: "NSAffineTransform") as! NSAffineTransform
+        transform = lua_tovalue(L, at: 1) as! NSAffineTransform
     }
     let scaleX = CGFloat(lua_tonumber(L, argsAt))
     let scaleY = (lua_gettop(L) == (argsAt + 1)) ? CGFloat(lua_tonumber(L, argsAt + 1)) : scaleX
     transform.scaleX(by: scaleX, yBy: scaleY)
-    skin.pushNSObject(transform)
+    lua_pushany(L, transform)
     return 1
 }
 
@@ -187,16 +161,9 @@ private func matrix_shear(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     var transform = NSAffineTransform()
     var argsAt: Int32 = 2
     if lua_type(L, 1) == LUA_TNUMBER {
-        skin.checkArgs(LS_TNUMBER,
-                       LS_TNUMBER | LS_TOPTIONAL,
-                       LS_TBREAK)
         argsAt = 1
     } else {
-        skin.checkArgs(LS_TTABLE,
-                       LS_TNUMBER,
-                       LS_TNUMBER | LS_TOPTIONAL,
-                       LS_TBREAK)
-        transform = skin.luaObject(at: 1, toClass: "NSAffineTransform") as! NSAffineTransform
+        transform = lua_tovalue(L, at: 1) as! NSAffineTransform
     }
     let shearX = CGFloat(lua_tonumber(L, argsAt))
     let shearY = (lua_gettop(L) == (argsAt + 1)) ? CGFloat(lua_tonumber(L, argsAt + 1)) : shearX
@@ -207,7 +174,7 @@ private func matrix_shear(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     opStruct.m21 = shearY
     operation.transformStruct = opStruct
     transform.append(operation as AffineTransform)
-    skin.pushNSObject(transform)
+    lua_pushany(L, transform)
     return 1
 }
 
@@ -226,30 +193,22 @@ private func matrix_translate(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     var transform = NSAffineTransform()
     var argsAt: Int32 = 2
     if lua_type(L, 1) == LUA_TNUMBER {
-        skin.checkArgs(LS_TNUMBER,
-                       LS_TNUMBER | LS_TOPTIONAL,
-                       LS_TBREAK)
         argsAt = 1
     } else {
-        skin.checkArgs(LS_TTABLE,
-                       LS_TNUMBER,
-                       LS_TNUMBER | LS_TOPTIONAL,
-                       LS_TBREAK)
-        transform = skin.luaObject(at: 1, toClass: "NSAffineTransform") as! NSAffineTransform
+        transform = lua_tovalue(L, at: 1) as! NSAffineTransform
     }
     let translateX = CGFloat(lua_tonumber(L, argsAt))
     let translateY = (lua_gettop(L) == (argsAt + 1)) ? CGFloat(lua_tonumber(L, argsAt + 1)) : translateX
     transform.translateX(by: translateX, yBy: translateY)
-    skin.pushNSObject(transform)
+    lua_pushany(L, transform)
     return 1
 }
 
 // MARK: - Lua<->NSObject Conversion Functions
 
 private func pushNSAffineTransform(_ L: UnsafeMutablePointer<lua_State>!, obj: Any!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     guard let transform = obj as? NSAffineTransform else {
-        skin.logError("expected NSAffineTransform, found \(type(of: obj!))")
+        os_log(.error, "%{public}s", "expected NSAffineTransform, found \(type(of: obj!))")
         lua_pushnil(L)
         return 1
     }
@@ -271,7 +230,6 @@ private func pushNSAffineTransform(_ L: UnsafeMutablePointer<lua_State>!, obj: A
 }
 
 private func toNSAffineTransformFromLua(_ L: UnsafeMutablePointer<lua_State>!, idx: Int32) -> Any! {
-    let skin = LuaSkin.skin(with: L)
     let value = NSAffineTransform()
     var structure = value.transformStruct
 
@@ -280,41 +238,41 @@ private func toNSAffineTransformFromLua(_ L: UnsafeMutablePointer<lua_State>!, i
         if lua_getfield(L, absIdx, "m11") == LUA_TNUMBER {
             structure.m11 = CGFloat(lua_tonumber(L, -1))
         } else {
-            skin.logError("NSAffineTransform field m11 is not a number")
+            os_log(.error, "%{public}s", "NSAffineTransform field m11 is not a number")
         }
         lua_pop(L, 1)
         if lua_getfield(L, absIdx, "m12") == LUA_TNUMBER {
             structure.m12 = CGFloat(lua_tonumber(L, -1))
         } else {
-            skin.logError("NSAffineTransform field m12 is not a number")
+            os_log(.error, "%{public}s", "NSAffineTransform field m12 is not a number")
         }
         lua_pop(L, 1)
         if lua_getfield(L, absIdx, "m21") == LUA_TNUMBER {
             structure.m21 = CGFloat(lua_tonumber(L, -1))
         } else {
-            skin.logError("NSAffineTransform field m21 is not a number")
+            os_log(.error, "%{public}s", "NSAffineTransform field m21 is not a number")
         }
         lua_pop(L, 1)
         if lua_getfield(L, absIdx, "m22") == LUA_TNUMBER {
             structure.m22 = CGFloat(lua_tonumber(L, -1))
         } else {
-            skin.logError("NSAffineTransform field m22 is not a number")
+            os_log(.error, "%{public}s", "NSAffineTransform field m22 is not a number")
         }
         lua_pop(L, 1)
         if lua_getfield(L, absIdx, "tX") == LUA_TNUMBER {
             structure.tX = CGFloat(lua_tonumber(L, -1))
         } else {
-            skin.logError("NSAffineTransform field tX is not a number")
+            os_log(.error, "%{public}s", "NSAffineTransform field tX is not a number")
         }
         lua_pop(L, 1)
         if lua_getfield(L, absIdx, "tY") == LUA_TNUMBER {
             structure.tY = CGFloat(lua_tonumber(L, -1))
         } else {
-            skin.logError("NSAffineTransform field tY is not a number")
+            os_log(.error, "%{public}s", "NSAffineTransform field tY is not a number")
         }
         lua_pop(L, 1)
     } else {
-        skin.logError("expected NSAffineTransform table, found \(String(cString: lua_typename(L, lua_type(L, idx))))")
+        os_log(.error, "%{public}s", "expected NSAffineTransform table, found \(String(cString: lua_typename(L, lua_type(L, idx))))")
     }
 
     value.transformStruct = structure

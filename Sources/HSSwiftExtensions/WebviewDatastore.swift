@@ -6,6 +6,7 @@ import Foundation
 import Cocoa
 import WebKit
 import LuaSkin
+import os.log
 
 private let USERDATA_DS_TAG = "hs.webview.datastore"
 private var refTable: Int32 = LUA_NOREF
@@ -24,9 +25,7 @@ private var backgroundCallbacks = NSMutableSet()
 /// Returns:
 ///  * a list of strings where each string is a specific data type stored in a datastore.
 private func datastore_allWebsiteDataTypes(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TBREAK)
-    skin.pushNSObject(WKWebsiteDataStore.allWebsiteDataTypes() as NSSet)
+    lua_pushany(L, WKWebsiteDataStore.allWebsiteDataTypes() as NSSet)
     return 1
 }
 
@@ -43,9 +42,7 @@ private func datastore_allWebsiteDataTypes(_ L: UnsafeMutablePointer<lua_State>!
 /// Notes:
 ///  * this is the datastore used unless otherwise specified when creating an `hs.webview` instance.
 private func datastore_newDefaultDataStore(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TBREAK)
-    skin.pushNSObject(WKWebsiteDataStore.default())
+    lua_pushany(L, WKWebsiteDataStore.default())
     return 1
 }
 
@@ -62,9 +59,7 @@ private func datastore_newDefaultDataStore(_ L: UnsafeMutablePointer<lua_State>!
 /// Notes:
 ///  * The datastore represented by this object will be initially empty.  You can use this function to create a non-persistent datastore that you wish to share among multiple `hs.webview` instances.
 private func datastore_newPrivateDataStore(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TBREAK)
-    skin.pushNSObject(WKWebsiteDataStore.nonPersistent())
+    lua_pushany(L, WKWebsiteDataStore.nonPersistent())
     return 1
 }
 
@@ -78,14 +73,12 @@ private func datastore_newPrivateDataStore(_ L: UnsafeMutablePointer<lua_State>!
 /// Returns:
 ///  * a datastoreObject
 private func datastore_fromWebview(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, "hs.webview", LS_TBREAK)
     let ptr = luaL_checkudata(L, 1, "hs.webview")!
         .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
     let theWindow = Unmanaged<NSWindow>.fromOpaque(ptr.pointee!).takeUnretainedValue()
     let theView = theWindow.contentView as! WKWebView
     let theConfiguration = theView.configuration
-    skin.pushNSObject(theConfiguration.websiteDataStore)
+    lua_pushany(L, theConfiguration.websiteDataStore)
     return 1
 }
 
@@ -105,21 +98,18 @@ private func datastore_fromWebview(_ L: UnsafeMutablePointer<lua_State>!) -> Int
 ///  * the datastore object
 private func datastore_fetchRecords(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_DS_TAG,
-                   LS_TSTRING | LS_TTABLE | LS_TFUNCTION,
-                   LS_TFUNCTION | LS_TOPTIONAL, LS_TBREAK)
 
-    let dataStore = skin.toNSObject(atIndex: 1) as! WKWebsiteDataStore
+    let dataStore = lua_tovalue(L, at: 1) as! WKWebsiteDataStore
     var dataTypes: [String] = Array(WKWebsiteDataStore.allWebsiteDataTypes())
 
     lua_pushvalue(L, lua_gettop(L))
-    let fnRef = skin.luaRef(refTable)
+    let fnRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
     backgroundCallbacks.add(NSNumber(value: fnRef))
 
     if lua_type(L, 2) == LUA_TSTRING {
-        dataTypes = [skin.toNSObject(atIndex: 2) as! String]
+        dataTypes = [lua_tovalue(L, at: 2) as! String]
     } else if lua_type(L, 2) == LUA_TTABLE {
-        let arr = skin.toNSObject(atIndex: 2) as? [Any]
+        let arr = lua_tovalue(L, at: 2) as? [Any]
         if let arr = arr as? [String] {
             dataTypes = arr
         } else {
@@ -136,11 +126,10 @@ private func datastore_fetchRecords(_ L: UnsafeMutablePointer<lua_State>!) -> In
         DispatchQueue.main.async {
             if backgroundCallbacks.contains(NSNumber(value: fnRef)) {
                 let _skin = LuaSkin.skin(with: nil)
-                _skin.pushLuaRef(refTable, ref: fnRef)
-                _skin.pushNSObject(records as NSArray)
-                _skin.protectedCallAndError("hs.webview.datastore:fetchRecords callback",
-                                            nargs: 1, nresults: 0)
-                _skin.luaUnref(refTable, ref: fnRef)
+                lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(fnRef))
+                lua_pushany(L, records as NSArray)
+                if lua_pcall(L, 1, 0, 0) != LUA_OK { lua_pop(L, 1) }
+                luaL_unref(LuaSkin.skin(with: nil).l!, LUA_REGISTRYINDEX_VALUE, fnRef)
                 backgroundCallbacks.remove(NSNumber(value: fnRef))
             }
         }
@@ -163,30 +152,25 @@ private func datastore_fetchRecords(_ L: UnsafeMutablePointer<lua_State>!) -> In
 ///  * the datastore object
 private func datastore_removeRecords(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_DS_TAG,
-                   LS_TTABLE | LS_TSTRING,
-                   LS_TTABLE | LS_TSTRING,
-                   LS_TFUNCTION | LS_TOPTIONAL,
-                   LS_TBREAK)
-    let dataStore = skin.toNSObject(atIndex: 1) as! WKWebsiteDataStore
+    let dataStore = lua_tovalue(L, at: 1) as! WKWebsiteDataStore
 
     var recordNames: [String]
     var recordTypes: [String]
     var fnRef: Int32 = LUA_NOREF
 
     if lua_type(L, 2) == LUA_TSTRING {
-        recordNames = [skin.toNSObject(atIndex: 2) as! String]
+        recordNames = [lua_tovalue(L, at: 2) as! String]
     } else {
-        guard let arr = skin.toNSObject(atIndex: 2) as? [String] else {
+        guard let arr = lua_tovalue(L, at: 2) as? [String] else {
             return luaL_argerror(L, 2, "expected a single string or an array of string values")
         }
         recordNames = arr
     }
 
     if lua_type(L, 3) == LUA_TSTRING {
-        recordTypes = [skin.toNSObject(atIndex: 3) as! String]
+        recordTypes = [lua_tovalue(L, at: 3) as! String]
     } else {
-        guard let arr = skin.toNSObject(atIndex: 3) as? [String] else {
+        guard let arr = lua_tovalue(L, at: 3) as? [String] else {
             return luaL_argerror(L, 3, "expected a single string or an array of string values")
         }
         recordTypes = arr
@@ -199,7 +183,7 @@ private func datastore_removeRecords(_ L: UnsafeMutablePointer<lua_State>!) -> I
 
     if lua_type(L, 4) == LUA_TFUNCTION {
         lua_pushvalue(L, 4)
-        fnRef = skin.luaRef(refTable)
+        fnRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
         backgroundCallbacks.add(NSNumber(value: fnRef))
     }
 
@@ -209,10 +193,9 @@ private func datastore_removeRecords(_ L: UnsafeMutablePointer<lua_State>!) -> I
             DispatchQueue.main.async {
                 if fnRef != LUA_NOREF && backgroundCallbacks.contains(NSNumber(value: fnRef)) {
                     let _skin = LuaSkin.skin(with: nil)
-                    _skin.pushLuaRef(refTable, ref: fnRef)
-                    _skin.protectedCallAndError("hs.webview.datastore:removeRecordsFor callback",
-                                                nargs: 0, nresults: 0)
-                    _skin.luaUnref(refTable, ref: fnRef)
+                    lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(fnRef))
+                    if lua_pcall(L, 0, 0, 0) != LUA_OK { lua_pop(L, 1) }
+                    luaL_unref(LuaSkin.skin(with: nil).l!, LUA_REGISTRYINDEX_VALUE, fnRef)
                     backgroundCallbacks.remove(NSNumber(value: fnRef))
                 }
             }
@@ -236,12 +219,7 @@ private func datastore_removeRecords(_ L: UnsafeMutablePointer<lua_State>!) -> I
 ///  * the datastore object
 private func datastore_removeDataFrom(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_DS_TAG,
-                   LS_TNUMBER | LS_TINTEGER | LS_TSTRING,
-                   LS_TTABLE | LS_TSTRING,
-                   LS_TFUNCTION | LS_TOPTIONAL,
-                   LS_TBREAK)
-    let dataStore = skin.toNSObject(atIndex: 1) as! WKWebsiteDataStore
+    let dataStore = lua_tovalue(L, at: 1) as! WKWebsiteDataStore
 
     var theDate: Date
     var recordTypes: [String]
@@ -253,7 +231,7 @@ private func datastore_removeDataFrom(_ L: UnsafeMutablePointer<lua_State>!) -> 
         rfc3339DateFormatter.locale = enUSPOSIXLocale
         rfc3339DateFormatter.dateFormat = "yyyy'-'MM'-'dd'T'HH':'mm':'ss'Z'"
         rfc3339DateFormatter.timeZone = TimeZone(secondsFromGMT: 0)
-        guard let parsed = rfc3339DateFormatter.date(from: skin.toNSObject(atIndex: 2) as! String) else {
+        guard let parsed = rfc3339DateFormatter.date(from: lua_tovalue(L, at: 2) as! String) else {
             return luaL_argerror(L, 2, "invalid date format")
         }
         theDate = parsed
@@ -262,9 +240,9 @@ private func datastore_removeDataFrom(_ L: UnsafeMutablePointer<lua_State>!) -> 
     }
 
     if lua_type(L, 3) == LUA_TSTRING {
-        recordTypes = [skin.toNSObject(atIndex: 3) as! String]
+        recordTypes = [lua_tovalue(L, at: 3) as! String]
     } else {
-        guard let arr = skin.toNSObject(atIndex: 3) as? [String] else {
+        guard let arr = lua_tovalue(L, at: 3) as? [String] else {
             return luaL_argerror(L, 3, "expected a single string or an array of string values")
         }
         recordTypes = arr
@@ -277,7 +255,7 @@ private func datastore_removeDataFrom(_ L: UnsafeMutablePointer<lua_State>!) -> 
 
     if lua_type(L, 4) == LUA_TFUNCTION {
         lua_pushvalue(L, 4)
-        fnRef = skin.luaRef(refTable)
+        fnRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
         backgroundCallbacks.add(NSNumber(value: fnRef))
     }
 
@@ -285,10 +263,9 @@ private func datastore_removeDataFrom(_ L: UnsafeMutablePointer<lua_State>!) -> 
         DispatchQueue.main.async {
             if fnRef != LUA_NOREF && backgroundCallbacks.contains(NSNumber(value: fnRef)) {
                 let _skin = LuaSkin.skin(with: nil)
-                _skin.pushLuaRef(refTable, ref: fnRef)
-                _skin.protectedCallAndError("hs.webview.datastore:removeRecordsAfter callback",
-                                            nargs: 0, nresults: 0)
-                _skin.luaUnref(refTable, ref: fnRef)
+                lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(fnRef))
+                if lua_pcall(L, 0, 0, 0) != LUA_OK { lua_pop(L, 1) }
+                luaL_unref(LuaSkin.skin(with: nil).l!, LUA_REGISTRYINDEX_VALUE, fnRef)
                 backgroundCallbacks.remove(NSNumber(value: fnRef))
             }
         }
@@ -311,9 +288,8 @@ private func datastore_removeDataFrom(_ L: UnsafeMutablePointer<lua_State>!) -> 
 /// Notes:
 ///  * Note that this value is the inverse of `hs.webview:privateBrowsing()`, since private browsing uses a non-persistent datastore.
 private func datastore_persistent(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_DS_TAG, LS_TBREAK)
-    let dataStore = skin.toNSObject(atIndex: 1) as! WKWebsiteDataStore
+    luaL_checkudata(L, 1, USERDATA_DS_TAG)
+    let dataStore = lua_tovalue(L, at: 1) as! WKWebsiteDataStore
     lua_pushboolean(L, dataStore.isPersistent ? 1 : 0)
     return 1
 }
@@ -331,25 +307,23 @@ private func pushWKWebsiteDataStore(_ L: UnsafeMutablePointer<lua_State>!, _ obj
 }
 
 private func pushWKWebsiteDataRecord(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     let value = obj as! WKWebsiteDataRecord
 
     lua_newtable(L)
-    skin.pushNSObject(value.displayName as NSString)
+    lua_pushany(L, value.displayName as NSString)
     lua_setfield(L, -2, "displayName")
-    skin.pushNSObject(value.dataTypes as NSSet)
+    lua_pushany(L, value.dataTypes as NSSet)
     lua_setfield(L, -2, "dataTypes")
     return 1
 }
 
 private func toWKWebsiteDataStoreFromLua(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> Any! {
-    let skin = LuaSkin.skin(with: L)
     if luaL_testudata(L, idx, USERDATA_DS_TAG) != nil {
         let ptr = luaL_checkudata(L, idx, USERDATA_DS_TAG)!
             .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
         return Unmanaged<WKWebsiteDataStore>.fromOpaque(ptr.pointee!).takeUnretainedValue()
     } else {
-        skin.logError(String(format: "expected %s object, found %s",
+        os_log(.error, "%{public}s", String(format: "expected %s object, found %s",
                              USERDATA_DS_TAG, String(cString: lua_typename(L, lua_type(L, idx)))))
     }
     return nil
@@ -358,8 +332,7 @@ private func toWKWebsiteDataStoreFromLua(_ L: UnsafeMutablePointer<lua_State>!, 
 // MARK: - Cosmic Hammer/Lua Infrastructure
 
 private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    let obj = skin.luaObject(at: 1, toClass: "WKWebsiteDataStore") as? WKWebsiteDataStore
+    let obj = lua_tovalue(L, at: 1) as? WKWebsiteDataStore
     let title: String = (obj?.isPersistent ?? false) ? "persistent" : "non-persistent"
     let ptr = lua_topointer(L, 1)
     let ptrStr = ptr.map { String(describing: $0) } ?? "nil"
@@ -369,9 +342,8 @@ private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 private func userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     if luaL_testudata(L, 1, USERDATA_DS_TAG) != nil && luaL_testudata(L, 2, USERDATA_DS_TAG) != nil {
-        let skin = LuaSkin.skin(with: L)
-        let obj1 = skin.luaObject(at: 1, toClass: "WKWebsiteDataStore") as? WKWebsiteDataStore
-        let obj2 = skin.luaObject(at: 2, toClass: "WKWebsiteDataStore") as? WKWebsiteDataStore
+        let obj1 = lua_tovalue(L, at: 1) as? WKWebsiteDataStore
+        let obj2 = lua_tovalue(L, at: 2) as? WKWebsiteDataStore
         lua_pushboolean(L, (obj1 != nil && obj2 != nil && obj1!.isEqual(obj2!)) ? 1 : 0)
     } else {
         lua_pushboolean(L, 0)
@@ -392,10 +364,9 @@ private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 }
 
 private func meta_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     backgroundCallbacks.enumerateObjects { obj, _ in
         if let ref = obj as? NSNumber {
-            skin.luaUnref(refTable, ref: ref.int32Value)
+            luaL_unref(L, LUA_REGISTRYINDEX_VALUE, ref.int32Value)
         }
     }
     backgroundCallbacks.removeAllObjects()

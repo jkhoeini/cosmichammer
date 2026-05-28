@@ -1,9 +1,10 @@
 import Cocoa
 import Carbon
 import LuaSkin
+import os.log
 
 private let USERDATA_TAG = "hs.uielement.watcher"
-private var refTable: LSRefTable = LUA_NOREF
+private var refTable: Int32 = LUA_NOREF
 
 private func getWatcher(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> (NSObject & HSuielementWatcherProtocol)? {
     let ptr = luaL_checkudata(L, idx, USERDATA_TAG)!
@@ -13,11 +14,14 @@ private func getWatcher(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) ->
 }
 
 private func watcher_start(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TTABLE, LS_TBREAK)
-    guard let watcher = skin.toNSObject(atIndex: 1) as? HSuielementWatcherProtocol else { return 0 }
-    watcher.watcherRef = skin.luaRef(refTable, at: 1)
-    if let events = skin.toNSObject(atIndex: 2) as? [String] {
+    luaL_checkudata(L, 1, USERDATA_TAG)
+
+    luaL_checktype(L, 2, LUA_TTABLE)
+    guard let watcher = lua_tovalue(L, at: 1) as? HSuielementWatcherProtocol else { return 0 }
+    lua_pushvalue(L, 1)
+
+    watcher.watcherRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+    if let events = lua_tovalue(L, at: 2) as? [String] {
         watcher.start(events, withState: L)
     }
     lua_pushvalue(L, 1)
@@ -25,11 +29,12 @@ private func watcher_start(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 }
 
 private func watcher_stop(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
-    guard let watcher = skin.toNSObject(atIndex: 1) as? HSuielementWatcherProtocol else { return 0 }
+    luaL_checkudata(L, 1, USERDATA_TAG)
+    guard let watcher = lua_tovalue(L, at: 1) as? HSuielementWatcherProtocol else { return 0 }
     watcher.stop()
-    watcher.watcherRef = skin.luaUnref(refTable, ref: watcher.watcherRef)
+    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, watcher.watcherRef)
+
+    watcher.watcherRef = LUA_NOREF
     lua_pushvalue(L, 1)
     return 1
 }
@@ -38,9 +43,8 @@ private func watcher_stop(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Method
 /// Returns the PID of the element being watched
 private func watcher_pid(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
-    guard let watcher = skin.toNSObject(atIndex: 1) as? HSuielementWatcherProtocol else { return 0 }
+    luaL_checkudata(L, 1, USERDATA_TAG)
+    guard let watcher = lua_tovalue(L, at: 1) as? HSuielementWatcherProtocol else { return 0 }
     lua_pushnumber(L, lua_Number(watcher.pid))
     return 1
 }
@@ -49,31 +53,29 @@ private func watcher_pid(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Method
 /// Returns the element the watcher is watching.
 private func watcher_element(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
-    guard let watcher = skin.toNSObject(atIndex: 1) as? HSuielementWatcherProtocol else { return 0 }
+    luaL_checkudata(L, 1, USERDATA_TAG)
+    guard let watcher = lua_tovalue(L, at: 1) as? HSuielementWatcherProtocol else { return 0 }
 
     let element = HSuielement(withElement: watcher.elementRef)
 
     if element.isWindow {
         let window = HSwindow(axuiElementRef: watcher.elementRef)
-        skin.pushNSObject(window)
+        lua_pushany(L, window)
         return 1
     } else if element.isApplication {
         let app = HSapplication(pid: watcher.pid, withState: L)
-        skin.pushNSObject(app)
+        lua_pushany(L, app)
         return 1
     }
-    skin.pushNSObject(element)
+    lua_pushany(L, element)
     return 1
     lua_pushnil(L)
     return 1
 }
 
 private func watcher_watchDestroyed(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
-    guard let watcher = skin.toNSObject(atIndex: 1) as? HSuielementWatcherProtocol else { return 0 }
+    luaL_checkudata(L, 1, USERDATA_TAG)
+    guard let watcher = lua_tovalue(L, at: 1) as? HSuielementWatcherProtocol else { return 0 }
 
     if lua_type(L, 2) == LUA_TBOOLEAN {
         watcher.watchDestroyed = lua_toboolean(L, 2) != 0
@@ -98,14 +100,13 @@ private func pushHSuielementWatcher(_ L: UnsafeMutablePointer<lua_State>!, _ obj
 }
 
 private func toHSuielementWatcherFromLua(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> Any! {
-    let skin = LuaSkin.skin(with: L)
     if luaL_testudata(L, idx, USERDATA_TAG) != nil {
         let ptr = luaL_checkudata(L, idx, USERDATA_TAG)!
             .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
         guard let rawPtr = ptr.pointee else { return nil }
         return Unmanaged<NSObject>.fromOpaque(rawPtr).takeUnretainedValue()
     } else {
-        skin.logError("\(USERDATA_TAG): expected \(USERDATA_TAG) object, found \(String(cString: lua_typename(L, lua_type(L, idx))))")
+        os_log(.error, "%{public}s", "\(USERDATA_TAG): expected \(USERDATA_TAG) object, found \(String(cString: lua_typename(L, lua_type(L, idx))))")
     }
     return nil
 }
@@ -113,8 +114,7 @@ private func toHSuielementWatcherFromLua(_ L: UnsafeMutablePointer<lua_State>!, 
 // MARK: - Infrastructure
 
 private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     let desc = "\(USERDATA_TAG): (\(String(describing: lua_topointer(L, 1)!)))"
     lua_pushstring(L, desc)
     return 1
@@ -123,9 +123,8 @@ private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 private func userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     var isEqual = false
     if luaL_testudata(L, 1, USERDATA_TAG) != nil && luaL_testudata(L, 2, USERDATA_TAG) != nil {
-        let skin = LuaSkin.skin(with: L)
-        if let w1 = skin.toNSObject(atIndex: 1) as? NSObject,
-           let w2 = skin.toNSObject(atIndex: 2) as? NSObject {
+        if let w1 = lua_tovalue(L, at: 1) as? NSObject,
+           let w2 = lua_tovalue(L, at: 2) as? NSObject {
             isEqual = w1.isEqual(w2)
         }
     }
@@ -134,22 +133,22 @@ private func userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 }
 
 private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     let ptr = luaL_checkudata(L, 1, USERDATA_TAG)!
         .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
     if let rawPtr = ptr.pointee {
         let watcher = Unmanaged<NSObject>.fromOpaque(rawPtr).takeRetainedValue()
         if let w = watcher as? HSuielementWatcherProtocol {
             var tmplsCanary = w.lsCanary
-            skin.destroy(&tmplsCanary)
             w.lsCanary = tmplsCanary
 
             w.selfRefCount -= 1
             if w.selfRefCount == 0 {
                 w.stop()
-                w.handlerRef = skin.luaUnref(w.refTable, ref: w.handlerRef)
-                w.userDataRef = skin.luaUnref(w.refTable, ref: w.userDataRef)
+                luaL_unref(L, LUA_REGISTRYINDEX_VALUE, w.handlerRef)
+                w.handlerRef = LUA_NOREF
+                luaL_unref(L, LUA_REGISTRYINDEX_VALUE, w.userDataRef)
+                w.userDataRef = LUA_NOREF
             }
         }
         ptr.pointee = nil

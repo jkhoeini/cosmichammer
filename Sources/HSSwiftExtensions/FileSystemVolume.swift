@@ -57,8 +57,7 @@ private class VolumeWatcher: NSObject {
 
     // Call the lua callback function and pass the event type and info dict.
     func callback(_ dict: [AnyHashable: Any], withEvent event: VolumeEvent) {
-        let skin = LuaSkin.skin(with: nil)
-        let L = skin.l!
+        let L = LuaSkin.skin(with: nil).l!
 
         lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(object.pointee.fn))
         lua_pushinteger(L, lua_Integer(event.rawValue))

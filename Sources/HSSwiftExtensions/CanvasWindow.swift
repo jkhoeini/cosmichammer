@@ -1,5 +1,6 @@
 import Cocoa
 import LuaSkin
+import os.log
 
 // MARK: - HSCanvasWindow
 
@@ -9,7 +10,7 @@ import LuaSkin
     override init(contentRect: NSRect, styleMask style: NSWindow.StyleMask, backing backingStoreType: NSWindow.BackingStoreType, defer flag: Bool) {
         guard contentRect.origin.x.isFinite && contentRect.origin.y.isFinite &&
               contentRect.size.height.isFinite && contentRect.size.width.isFinite else {
-            LuaSkin.skin(with: nil).logError("\(canvas_USERDATA_TAG):coordinates must be finite numbers")
+            os_log(.error, "%{public}s:coordinates must be finite numbers", canvas_USERDATA_TAG)
             // Cannot return nil from a non-failable init in Swift; the ObjC version returned nil.
             // We initialize with zero rect and the caller checks for validity.
             super.init(contentRect: .zero, styleMask: style, backing: backingStoreType, defer: flag)
@@ -85,16 +86,19 @@ import LuaSkin
     }
 
     func fadeOut(_ fadeTime: TimeInterval, andDelete deleteCanvas: Bool, withState L: UnsafeMutablePointer<lua_State>!) {
-        let skin = LuaSkin.skin(with: L)
         guard let theView = self.contentView as? HSCanvasView else { return }
         if theView.selfRef != LUA_NOREF { return } // already in a fade
-        skin.pushNSObject(theView)
-        theView.selfRef = skin.luaRef(canvas_refTable)
+
+        // Push the canvas view userdata and create a reference to prevent GC during fade
+        lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(canvas_refTable))
+        // We need the view on the stack - push via its userdata
+        lua_pushany(L, theView)
+        theView.selfRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
 
         let alphaSetting = self.alphaValue
         NSAnimationContext.beginGrouping()
         weak var bself = self
-        let canary = skin.createGCCanary()
+        let generation = lua_currentStateGeneration()
 
         NSAnimationContext.current.duration = fadeTime
         NSAnimationContext.current.completionHandler = {
@@ -103,15 +107,10 @@ import LuaSkin
                       let myView = mySelf.contentView as? HSCanvasView,
                       myView.selfRef != LUA_NOREF else { return }
 
-                let bSkin = LuaSkin.skin(with: nil)
-                _lua_stackguard_entry(bSkin.l)
-
-                if skin.check(canary) {
-                    myView.selfRef = bSkin.luaUnref(canvas_refTable, ref: myView.selfRef)
+                if lua_isStateGenerationValid(generation) {
+                    luaL_unref(LuaSkin.skin(with: nil).l!, LUA_REGISTRYINDEX_VALUE, myView.selfRef)
+                    myView.selfRef = LUA_NOREF
                 }
-                var mutableCanary = canary
-                skin.destroy(&mutableCanary)
-                _lua_stackguard_exit(bSkin.l)
 
                 mySelf.orderOut(nil)
                 mySelf.alphaValue = alphaSetting

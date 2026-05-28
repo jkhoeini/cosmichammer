@@ -1,8 +1,9 @@
 import Cocoa
 import Carbon
 import LuaSkin
+import os.log
 
-private var refTable: LSRefTable = 0
+private var refTable: Int32 = 0
 private var colorCollectionsTable: Int32 = LUA_NOREF
 
 /// hs.drawing.color.lists() -> table
@@ -20,12 +21,10 @@ private var colorCollectionsTable: Int32 = LUA_NOREF
 ///  * This function provides a tostring metatable method which allows listing the defined color lists in the Cosmic Hammer console with: `hs.drawing.color.lists()`
 ///  * See also `hs.drawing.color.colorsFor`
 private func getColorLists(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TBREAK)
 
     lua_newtable(L)
     for colorList in NSColorList.availableColorLists {
-        skin.pushNSObject(colorList)
+        lua_pushany(L, colorList)
         lua_setfield(L, -2, colorList.name!.utf8CString.withUnsafeBufferPointer { $0.baseAddress! })
     }
     return 1
@@ -44,9 +43,8 @@ private func getColorLists(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Notes:
 ///  * See also `hs.drawing.color.asHSB`
 private func colorAsRGB(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TTABLE, LS_TBREAK)
-    let theColor = skin.luaObject(at: 1, toClass: "NSColor") as! NSColor
+    luaL_checktype(L, 1, LUA_TTABLE)
+    let theColor = lua_tovalue(L, at: 1) as! NSColor
 
     let safeColor = theColor.usingColorSpace(NSColorSpace.genericRGB)
 
@@ -76,9 +74,8 @@ private func colorAsRGB(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Notes:
 ///  * See also `hs.drawing.color.asRGB`
 private func colorAsHSB(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TTABLE, LS_TBREAK)
-    let theColor = skin.luaObject(at: 1, toClass: "NSColor") as! NSColor
+    luaL_checktype(L, 1, LUA_TTABLE)
+    let theColor = lua_tovalue(L, at: 1) as! NSColor
 
     let safeColor = theColor.usingColorSpace(NSColorSpace.genericRGB)
 
@@ -99,7 +96,6 @@ private func colorAsHSB(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 // C-API
 // Pushes the provided NSColor onto the Lua Stack as an array meeting the color table description provided in `hs.drawing.color`
 private func NSColor_tolua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     let theColor = obj as! NSColor
     let safeColor = theColor.usingColorSpace(NSColorSpace.genericRGB)
 
@@ -112,14 +108,14 @@ private func NSColor_tolua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -
         lua_pushstring(L, "NSColor") ; lua_setfield(L, -2, "__luaSkinType")
     } else if theColor.colorSpaceName == .named {
         lua_newtable(L)
-        skin.pushNSObject(theColor.catalogNameComponent)
+        lua_pushany(L, theColor.catalogNameComponent)
         lua_setfield(L, -2, "list")
-        skin.pushNSObject(theColor.colorNameComponent)
+        lua_pushany(L, theColor.colorNameComponent)
         lua_setfield(L, -2, "name")
         lua_pushstring(L, "NSColor") ; lua_setfield(L, -2, "__luaSkinType")
     } else if theColor.colorSpaceName == .pattern {
         lua_newtable(L)
-        skin.pushNSObject(theColor.patternImage)
+        lua_pushany(L, theColor.patternImage)
         lua_setfield(L, -2, "image")
         lua_pushstring(L, "NSColor") ; lua_setfield(L, -2, "__luaSkinType")
     } else {
@@ -133,12 +129,11 @@ private func NSColor_tolua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -
 // C-API
 // Pushes the provided NSColorList onto the Lua Stack as a table of color tables meeting the color table description provided in `hs.drawing.color`
 private func NSColorList_tolua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     let colorList = obj as! NSColorList
 
     lua_newtable(L)
     for key in colorList.allKeys {
-        skin.pushNSObject(colorList.color(withKey: key))
+        lua_pushany(L, colorList.color(withKey: key))
         lua_setfield(L, -2, key.utf8CString.withUnsafeBufferPointer { $0.baseAddress! })
     }
 
@@ -164,16 +159,16 @@ private func table_toNSColorHelper(_ L: UnsafeMutablePointer<lua_State>!, _ idx:
         switch lua_type(L, idx) {
         case LUA_TTABLE:
             if lua_getfield(L, idx, "list") == LUA_TSTRING {
-                colorList = skin.toNSObject(atIndex: -1) as? NSString
+                colorList = lua_tovalue(L, at: -1) as? NSString
             }
             lua_pop(L, 1)
             if lua_getfield(L, idx, "name") == LUA_TSTRING {
-                colorName = skin.toNSObject(atIndex: -1) as? NSString
+                colorName = lua_tovalue(L, at: -1) as? NSString
             }
             lua_pop(L, 1)
 
             if lua_getfield(L, idx, "hex") == LUA_TSTRING {
-                var hexString = skin.toNSObject(atIndex: -1) as! NSString
+                var hexString = lua_tovalue(L, at: -1) as! NSString
                 if hexString.hasPrefix("#")  { hexString = hexString.substring(from: 1) as NSString }
                 if hexString.hasPrefix("0x") { hexString = hexString.substring(from: 2) as NSString }
                 var isBadHex = true
@@ -197,7 +192,7 @@ private func table_toNSColorHelper(_ L: UnsafeMutablePointer<lua_State>!, _ idx:
                     }
                 }
                 if isBadHex {
-                    skin.logWarn("invalid hexadecimal string #\(hexString) specified for color, ignoring")
+                    os_log(.info, "%{public}s", "invalid hexadecimal string #\(hexString) specified for color, ignoring")
                 } else {
                     red   = CGFloat(rHex) / 255.0
                     green = CGFloat(gHex) / 255.0
@@ -244,12 +239,12 @@ private func table_toNSColorHelper(_ L: UnsafeMutablePointer<lua_State>!, _ idx:
             lua_pop(L, 1)
 
             if lua_getfield(L, idx, "image") == LUA_TUSERDATA && luaL_testudata(L, -1, "hs.image") != nil {
-                image = skin.toNSObject(atIndex: -1) as? NSImage
+                image = lua_tovalue(L, at: -1) as? NSImage
             }
             lua_pop(L, 1)
 
         default:
-            skin.logError("returning BLACK, unexpected type passed as a color: \(String(cString: lua_typename(L, lua_type(L, idx))))")
+            os_log(.error, "%{public}s", "returning BLACK, unexpected type passed as a color: \(String(cString: lua_typename(L, lua_type(L, idx))))")
         }
 
         if let colorList = colorList, let colorName = colorName, image == nil {
@@ -257,7 +252,7 @@ private func table_toNSColorHelper(_ L: UnsafeMutablePointer<lua_State>!, _ idx:
                 return holding
             }
             if colorCollectionsTable != LUA_NOREF {
-                skin.pushLuaRef(refTable, ref: colorCollectionsTable)
+                lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(colorCollectionsTable))
                 if lua_getfield(L, -1, (colorList as String).utf8CString.withUnsafeBufferPointer({ $0.baseAddress! })) == LUA_TTABLE {
                     if lua_getfield(L, -1, (colorName as String).utf8CString.withUnsafeBufferPointer({ $0.baseAddress! })) == LUA_TTABLE {
                         let holding = table_toNSColorHelper(L, lua_absindex(L, -1), level + 1)
@@ -270,7 +265,7 @@ private func table_toNSColorHelper(_ L: UnsafeMutablePointer<lua_State>!, _ idx:
             }
         }
     } else {
-        skin.logError("returning BLACK, color list/name dereference depth > \(COLOR_LOOP_LEVEL): loop?")
+        os_log(.error, "%{public}s", "returning BLACK, color list/name dereference depth > \(COLOR_LOOP_LEVEL): loop?")
     }
 
     if let image = image {
@@ -295,11 +290,10 @@ private func table_toNSColor(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32
 
 // register the lookup table for Lua defined color tables
 private func registerColorCollectionsTable(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TTABLE, LS_TBREAK)
+    luaL_checktype(L, 1, LUA_TTABLE)
 
     lua_pushvalue(L, 1)
-    colorCollectionsTable = skin.luaRef(refTable)
+    colorCollectionsTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
     return 0
 }
 
