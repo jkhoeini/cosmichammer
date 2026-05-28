@@ -4,7 +4,7 @@ import CFNetwork
 import SystemConfiguration
 
 private let USERDATA_TAG = "hs.network.reachability"
-private var refTable: LSRefTable = LUA_NOREF
+private var refTable: Int32 = LUA_NOREF
 private var reachabilityQueue: DispatchQueue! = nil
 
 private func getPtr(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> UnsafeMutablePointer<ReachabilityData> {
@@ -18,11 +18,10 @@ private struct ReachabilityData {
     var callbackRef: Int32
     var selfRef: Int32
     var watcherEnabled: Bool
-    var lsCanary: LSGCCanary
+    var generation: UInt64
 }
 
 private func pushSCNetworkReachability(_ L: UnsafeMutablePointer<lua_State>!, _ theRef: SCNetworkReachability) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     let thePtr = lua_newuserdata(L, MemoryLayout<ReachabilityData>.size)!.assumingMemoryBound(to: ReachabilityData.self)
     memset(thePtr, 0, MemoryLayout<ReachabilityData>.size)
 
@@ -30,7 +29,7 @@ private func pushSCNetworkReachability(_ L: UnsafeMutablePointer<lua_State>!, _ 
     thePtr.pointee.callbackRef = LUA_NOREF
     thePtr.pointee.selfRef = LUA_NOREF
     thePtr.pointee.watcherEnabled = false
-    thePtr.pointee.lsCanary = skin.createGCCanary()
+    thePtr.pointee.generation = lua_currentStateGeneration()
 
     luaL_getmetatable(L, USERDATA_TAG)
     lua_setmetatable(L, -2)
@@ -42,17 +41,14 @@ private let doReachabilityCallback: SCNetworkReachabilityCallBack = { target, fl
     let theRef = info.assumingMemoryBound(to: ReachabilityData.self)
     DispatchQueue.main.async {
         if theRef.pointee.callbackRef != LUA_NOREF && theRef.pointee.selfRef != LUA_NOREF {
-            let skin = LuaSkin.skin(with: nil)
-            let L = skin.l!
-            if !skin.check(theRef.pointee.lsCanary) {
-                return
-            }
-            _lua_stackguard_entry(L)
-            skin.pushLuaRef(refTable, ref: theRef.pointee.callbackRef)
-            skin.pushLuaRef(refTable, ref: theRef.pointee.selfRef)
+            let L = LuaSkin.skin(with: nil).l!
+            guard lua_isStateGenerationValid(theRef.pointee.generation) else { return }
+            lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(theRef.pointee.callbackRef))
+            lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(theRef.pointee.selfRef))
             lua_pushinteger(L, lua_Integer(flags.rawValue))
-            skin.protectedCallAndError("hs.network.reachability", nargs: 2, nresults: 0)
-            _lua_stackguard_exit(L)
+            if lua_pcall(L, 2, 0, 0) != LUA_OK {
+                lua_pop(L, 1)
+            }
         }
     }
 }
@@ -84,15 +80,13 @@ private func statusString(_ flags: SCNetworkReachabilityFlags) -> String {
 /// Notes:
 ///  * this object will reflect reachability status for any interface available on the computer.  To check for reachability from a specific interface, use [hs.network.reachability.forAddressPair](#addressPair).
 private func reachabilityForAddress(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING | LS_TNUMBER, LS_TBREAK)
-
     _ = luaL_checkstring(L, 1) // force number to be a string
     var results: UnsafeMutablePointer<addrinfo>?
     var hints = addrinfo()
     hints.ai_flags = AI_NUMERICHOST | AI_NUMERICSERV
     hints.ai_family = PF_UNSPEC
-    let ecode = getaddrinfo((skin.toNSObject(atIndex: 1) as! NSString).utf8String, nil, &hints, &results)
+    let addrStr = String(cString: lua_tostring(L, 1)!)
+    let ecode = getaddrinfo(addrStr, nil, &hints, &results)
     if ecode != 0 {
         if results != nil { freeaddrinfo(results) }
         return luaL_error(L, "address parse error: \(String(cString: gai_strerror(ecode)!))")
@@ -118,15 +112,13 @@ private func reachabilityForAddress(_ L: UnsafeMutablePointer<lua_State>!) -> In
 ///  * this object will reflect reachability status for a specific interface on the computer.  To check for reachability from any interface, use [hs.network.reachability.forAddress](#address).
 ///  * this constructor can be used to test for a specific local network.
 private func reachabilityForAddressPair(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING | LS_TNUMBER, LS_TSTRING | LS_TNUMBER, LS_TBREAK)
-
     _ = luaL_checkstring(L, 1) // force number to be a string
     var results1: UnsafeMutablePointer<addrinfo>?
     var hints = addrinfo()
     hints.ai_flags = AI_NUMERICHOST | AI_NUMERICSERV
     hints.ai_family = PF_UNSPEC
-    let ecode1 = getaddrinfo((skin.toNSObject(atIndex: 1) as! NSString).utf8String, nil, &hints, &results1)
+    let addrStr1 = String(cString: lua_tostring(L, 1)!)
+    let ecode1 = getaddrinfo(addrStr1, nil, &hints, &results1)
     if ecode1 != 0 {
         if results1 != nil { freeaddrinfo(results1) }
         return luaL_error(L, "local address parse error: \(String(cString: gai_strerror(ecode1)!))")
@@ -134,7 +126,8 @@ private func reachabilityForAddressPair(_ L: UnsafeMutablePointer<lua_State>!) -
 
     _ = luaL_checkstring(L, 2) // force number to be a string
     var results2: UnsafeMutablePointer<addrinfo>?
-    let ecode2 = getaddrinfo((skin.toNSObject(atIndex: 2) as! NSString).utf8String, nil, &hints, &results2)
+    let addrStr2 = String(cString: lua_tostring(L, 2)!)
+    let ecode2 = getaddrinfo(addrStr2, nil, &hints, &results2)
     if ecode2 != 0 {
         if results1 != nil { freeaddrinfo(results1) }
         if results2 != nil { freeaddrinfo(results2) }
@@ -163,10 +156,7 @@ private func reachabilityForAddressPair(_ L: UnsafeMutablePointer<lua_State>!) -
 ///  * this object will reflect reachability status for any interface available on the computer.
 ///  * this constructor relies on the hostname being resolvable, possibly through DNS, Bonjour, locally defined, etc.
 private func reachabilityForHostName(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING, LS_TBREAK)
-
-    let internalName = (skin.toNSObject(atIndex: 1) as! NSString).utf8String!
+    let internalName = luaL_checkstring(L, 1)!
     let theRef = SCNetworkReachabilityCreateWithName(kCFAllocatorDefault, internalName)!
     _ = pushSCNetworkReachability(L, theRef)
     return 1
@@ -187,8 +177,6 @@ private func reachabilityForHostName(_ L: UnsafeMutablePointer<lua_State>!) -> I
 /// Notes:
 ///  * The numeric representation is made up from a combination of the flags defined in [hs.network.reachability.flags](#flags).
 private func reachabilityStatus(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let theRef = getPtr(L, 1).pointee.reachabilityObj!
     var flags = SCNetworkReachabilityFlags()
     let valid = SCNetworkReachabilityGetFlags(theRef, &flags)
@@ -222,13 +210,11 @@ private func reachabilityStatus(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 ///    * 'l'|'-' indicates if the destination is actually a local address
 ///    * 'd'|'-' indicates if the destination is directly connected
 private func reachabilityStatusString(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let theRef = getPtr(L, 1).pointee.reachabilityObj!
     var flags = SCNetworkReachabilityFlags()
     let valid = SCNetworkReachabilityGetFlags(theRef, &flags)
     if valid {
-        skin.pushNSObject(statusString(flags) as NSString)
+        lua_pushstring(L, statusString(flags))
     } else {
         return luaL_error(L, "unable to get reachability flags:\(String(cString: SCErrorString(SCError())))")
     }
@@ -249,21 +235,25 @@ private func reachabilityStatusString(_ L: UnsafeMutablePointer<lua_State>!) -> 
 ///  * The callback function will be invoked each time the status for the given reachability object changes.  The callback function should expect 2 arguments, the reachability object itself and a numeric representation of the reachability flags, and should not return anything.
 ///  * This method just sets the callback function.  You can start or stop the watcher with [hs.network.reachability:start](#start) or [hs.network.reachability:stop](#stop)
 private func reachabilityCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TFUNCTION | LS_TNIL, LS_TBREAK)
     let theRef = getPtr(L, 1)
+    let argType = lua_type(L, 2)
+    guard argType == LUA_TFUNCTION || argType == LUA_TNIL else {
+        return luaL_error(L, "expected function or nil for argument 2")
+    }
 
     // in either case, we need to remove an existing callback, so...
-    theRef.pointee.callbackRef = skin.luaUnref(refTable, ref: theRef.pointee.callbackRef)
-    if lua_type(L, 2) == LUA_TFUNCTION {
+    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, theRef.pointee.callbackRef)
+    theRef.pointee.callbackRef = LUA_NOREF
+    if argType == LUA_TFUNCTION {
         lua_pushvalue(L, 2)
-        theRef.pointee.callbackRef = skin.luaRef(refTable)
+        theRef.pointee.callbackRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
         if theRef.pointee.selfRef == LUA_NOREF {
             lua_pushvalue(L, 1)
-            theRef.pointee.selfRef = skin.luaRef(refTable)
+            theRef.pointee.selfRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
         }
     } else {
-        theRef.pointee.selfRef = skin.luaUnref(refTable, ref: theRef.pointee.selfRef)
+        luaL_unref(L, LUA_REGISTRYINDEX_VALUE, theRef.pointee.selfRef)
+        theRef.pointee.selfRef = LUA_NOREF
     }
 
     lua_pushvalue(L, 1)
@@ -283,8 +273,6 @@ private func reachabilityCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
 /// Notes:
 ///  * The callback function should be specified with [hs.network.reachability:setCallback](#setCallback).
 private func reachabilityStartWatcher(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let theRef = getPtr(L, 1)
     if !theRef.pointee.watcherEnabled {
         var context = SCNetworkReachabilityContext(version: 0, info: theRef, retain: nil, release: nil, copyDescription: nil)
@@ -313,8 +301,6 @@ private func reachabilityStartWatcher(_ L: UnsafeMutablePointer<lua_State>!) -> 
 /// Returns:
 ///  * the reachability object
 private func reachabilityStopWatcher(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let theRef = getPtr(L, 1)
     SCNetworkReachabilitySetCallback(theRef.pointee.reachabilityObj!, nil, nil)
     SCNetworkReachabilitySetDispatchQueue(theRef.pointee.reachabilityObj!, nil)
@@ -361,7 +347,6 @@ private func pushReachabilityFlags(_ L: UnsafeMutablePointer<lua_State>!) -> Int
 // MARK: - Cosmic Hammer/Lua Infrastructure
 
 private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     let theRef = getPtr(L, 1).pointee.reachabilityObj!
     var flags = SCNetworkReachabilityFlags()
     let valid = SCNetworkReachabilityGetFlags(theRef, &flags)
@@ -372,7 +357,7 @@ private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
         flagString = "** unable to get reachability flags*"
     }
     let ptr = lua_topointer(L, 1)
-    skin.pushNSObject("\(USERDATA_TAG): \(flagString) (\(String(describing: ptr)))" as NSString)
+    lua_pushstring(L, "\(USERDATA_TAG): \(flagString) (\(String(describing: ptr)))")
     return 1
 }
 
@@ -388,15 +373,15 @@ private func userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 }
 
 private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     let theRef = getPtr(L, 1)
     if theRef.pointee.callbackRef != LUA_NOREF {
-        theRef.pointee.callbackRef = skin.luaUnref(refTable, ref: theRef.pointee.callbackRef)
+        luaL_unref(L, LUA_REGISTRYINDEX_VALUE, theRef.pointee.callbackRef)
+        theRef.pointee.callbackRef = LUA_NOREF
         SCNetworkReachabilitySetCallback(theRef.pointee.reachabilityObj!, nil, nil)
         SCNetworkReachabilitySetDispatchQueue(theRef.pointee.reachabilityObj!, nil)
     }
-    theRef.pointee.selfRef = skin.luaUnref(refTable, ref: theRef.pointee.selfRef)
-    skin.destroy(&theRef.pointee.lsCanary)
+    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, theRef.pointee.selfRef)
+    theRef.pointee.selfRef = LUA_NOREF
 
     theRef.pointee.reachabilityObj = nil
     lua_pushnil(L)

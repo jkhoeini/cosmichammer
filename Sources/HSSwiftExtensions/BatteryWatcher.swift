@@ -19,26 +19,23 @@ private struct BatteryWatcher {
     var t: CFRunLoopSource!
     var fn: Int32 = Int32(LUA_NOREF)
     var started: Bool = false
-    var lsCanary: LSGCCanary = LSGCCanary()
+    var generation: UInt64 = 0
 }
 
 private func callback(_ info: UnsafeMutableRawPointer?) {
-    let skin = LuaSkin.skin(with: nil)
-
     guard let info = info else { return }
     let watcher = info.assumingMemoryBound(to: BatteryWatcher.self)
 
-    if !skin.check(watcher.pointee.lsCanary) {
-        return
-    }
+    guard lua_isStateGenerationValid(watcher.pointee.generation) else { return }
 
-    _lua_stackguard_entry(skin.l)
+    let L = LuaSkin.skin(with: nil).l!
 
     if watcher.pointee.fn != Int32(LUA_NOREF) {
-        skin.pushLuaRef(refTable, ref: watcher.pointee.fn)
-        skin.protectedCallAndError("hs.battery.watcher callback", nargs: 0, nresults: 0)
+        lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(watcher.pointee.fn))
+        if lua_pcall(L, 0, 0, 0) != LUA_OK {
+            lua_pop(L, 1)
+        }
     }
-    _lua_stackguard_exit(skin.l)
 }
 
 /// hs.battery.watcher.new(fn) -> watcher
@@ -54,8 +51,6 @@ private func callback(_ info: UnsafeMutableRawPointer?) {
 /// Notes:
 ///  * Because the callback function accepts no arguments, tracking of state of changing battery attributes is the responsibility of the user (see https://github.com/jkhoeini/cosmichammer/issues/166 for discussion)
 private func battery_watcher_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-
     luaL_checktype(L, 1, LUA_TFUNCTION)
 
     let watcherPtr = lua_newuserdata(L, MemoryLayout<BatteryWatcher>.size)!
@@ -63,14 +58,14 @@ private func battery_watcher_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
     watcherPtr.pointee = BatteryWatcher()
 
     lua_pushvalue(L, 1)
-    watcherPtr.pointee.fn = skin.luaRef(refTable)
+    watcherPtr.pointee.fn = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
 
     luaL_getmetatable(L, USERDATA_TAG)
     lua_setmetatable(L, -2)
 
     watcherPtr.pointee.t = IOPSNotificationCreateRunLoopSource(callback, watcherPtr)?.takeRetainedValue()
     watcherPtr.pointee.started = false
-    watcherPtr.pointee.lsCanary = skin.createGCCanary()
+    watcherPtr.pointee.generation = lua_currentStateGeneration()
     return 1
 }
 
@@ -119,8 +114,6 @@ private func battery_watcher_stop(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
 }
 
 private func battery_watcher_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-
     let watcher = luaL_checkudata(L, 1, USERDATA_TAG)!
         .assumingMemoryBound(to: BatteryWatcher.self)
 
@@ -128,8 +121,8 @@ private func battery_watcher_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
     lua_pushvalue(L, 1)
     lua_call(L, 1, 1)
 
-    watcher.pointee.fn = skin.luaUnref(refTable, ref: watcher.pointee.fn)
-    skin.destroy(&watcher.pointee.lsCanary)
+    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, watcher.pointee.fn)
+    watcher.pointee.fn = Int32(LUA_NOREF)
     CFRunLoopSourceInvalidate(watcher.pointee.t)
     // CFRelease not needed in Swift (ARC)
     return 0

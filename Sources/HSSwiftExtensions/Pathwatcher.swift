@@ -4,7 +4,7 @@ import LuaSkin
 // Common Code
 
 private let USERDATA_TAG = "hs.pathwatcher"
-private var refTable: LSRefTable = 0
+private var refTable: Int32 = 0
 
 // Not so common code
 
@@ -12,7 +12,7 @@ private struct WatcherPath {
     var closureref: Int32
     var stream: FSEventStreamRef?
     var started: Bool
-    var lsCanary: LSGCCanary
+    var generation: UInt64
 }
 
 private func pusheventflagstable(_ L: UnsafeMutablePointer<lua_State>!, _ flags: FSEventStreamEventFlags) {
@@ -52,22 +52,16 @@ private let event_callback: FSEventStreamCallback = {
     guard let clientCallBackInfo = clientCallBackInfo else { return }
     let pw = clientCallBackInfo.assumingMemoryBound(to: WatcherPath.self)
 
-    let skin = LuaSkin.skin(with: nil)
-    let L = skin.l!
+    let L = LuaSkin.skin(with: nil).l!
 
-    if !skin.check(pw.pointee.lsCanary) {
-        return
-    }
-
-    _lua_stackguard_entry(L)
+    guard lua_isStateGenerationValid(pw.pointee.generation) else { return }
 
     guard let changedFiles = Unmanaged<CFArray>.fromOpaque(eventPaths).takeUnretainedValue() as? [String],
           changedFiles.count >= numEvents else {
-        _lua_stackguard_exit(L)
         return
     }
 
-    skin.pushLuaRef(refTable, ref: pw.pointee.closureref)
+    lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(pw.pointee.closureref))
 
     lua_newtable(L)
     for i in 0..<numEvents {
@@ -80,8 +74,9 @@ private let event_callback: FSEventStreamCallback = {
         lua_rawseti(L, -2, lua_Integer(i + 1))
     }
 
-    skin.protectedCallAndError("hs.pathwatcher callback", nargs: 2, nresults: 0)
-    _lua_stackguard_exit(L)
+    if lua_pcall(L, 2, 0, 0) != LUA_OK {
+        lua_pop(L, 1)
+    }
 }
 
 /// hs.pathwatcher.new(path, fn) -> watcher
@@ -122,21 +117,21 @@ private let event_callback: FSEventStreamCallback = {
 /// Notes:
 ///  * For more information about the event flags, see [the official documentation](https://developer.apple.com/reference/coreservices/1455361-fseventstreameventflags/)
 private func watcher_path_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING, LS_TFUNCTION, LS_TBREAK)
+    luaL_checktype(L, 1, LUA_TSTRING)
+    luaL_checktype(L, 2, LUA_TFUNCTION)
 
     let path = String(cString: lua_tostring(L, 1)!)
 
     let watcherPtr = lua_newuserdata(L, MemoryLayout<WatcherPath>.size)!
         .assumingMemoryBound(to: WatcherPath.self)
     watcherPtr.pointee.started = false
-    watcherPtr.pointee.lsCanary = skin.createGCCanary()
+    watcherPtr.pointee.generation = lua_currentStateGeneration()
 
     luaL_getmetatable(L, USERDATA_TAG)
     lua_setmetatable(L, -2)
 
     lua_pushvalue(L, 2)
-    watcherPtr.pointee.closureref = skin.luaRef(refTable)
+    watcherPtr.pointee.closureref = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
 
     var context = FSEventStreamContext(
         version: 0,
@@ -213,8 +208,6 @@ private func watcher_path_stop(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 }
 
 private func watcher_path_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-
     let watcherPtr = luaL_checkudata(L, 1, USERDATA_TAG)!
         .assumingMemoryBound(to: WatcherPath.self)
 
@@ -228,8 +221,8 @@ private func watcher_path_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
         FSEventStreamRelease(stream)
     }
 
-    watcherPtr.pointee.closureref = skin.luaUnref(refTable, ref: watcherPtr.pointee.closureref)
-    skin.destroy(&watcherPtr.pointee.lsCanary)
+    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, watcherPtr.pointee.closureref)
+    watcherPtr.pointee.closureref = Int32(LUA_NOREF)
 
     return 0
 }

@@ -4,7 +4,7 @@ import CFNetwork
 import SystemConfiguration
 
 private let USERDATA_TAG = "hs.network.host"
-private var refTable: LSRefTable = LUA_NOREF
+private var refTable: Int32 = LUA_NOREF
 
 private func getPtr(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> UnsafeMutablePointer<HSHostData> {
     return luaL_checkudata(L, idx, USERDATA_TAG)!.assumingMemoryBound(to: HSHostData.self)
@@ -18,11 +18,10 @@ private struct HSHostData {
     var resolveType: CFHostInfoType
     var selfRef: Int32
     var running: Bool
-    var lsCanary: LSGCCanary
+    var generation: UInt64
 }
 
 private func pushCFHost(_ L: UnsafeMutablePointer<lua_State>!, _ theHost: CFHost, _ resolveType: CFHostInfoType) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     let thePtr = lua_newuserdata(L, MemoryLayout<HSHostData>.size)!.assumingMemoryBound(to: HSHostData.self)
     memset(thePtr, 0, MemoryLayout<HSHostData>.size)
 
@@ -31,18 +30,17 @@ private func pushCFHost(_ L: UnsafeMutablePointer<lua_State>!, _ theHost: CFHost
     thePtr.pointee.resolveType = resolveType
     thePtr.pointee.selfRef = LUA_NOREF
     thePtr.pointee.running = false
-    thePtr.pointee.lsCanary = skin.createGCCanary()
+    thePtr.pointee.generation = lua_currentStateGeneration()
 
     luaL_getmetatable(L, USERDATA_TAG)
     lua_setmetatable(L, -2)
     // capture reference so __gc doesn't accidentally collect before callback if they don't save a reference to the object
     lua_pushvalue(L, -1)
-    thePtr.pointee.selfRef = skin.luaRef(refTable)
+    thePtr.pointee.selfRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
     return 1
 }
 
 private func pushQueryResults(_ L: UnsafeMutablePointer<lua_State>!, synchronous: Bool, theHost: CFHost, typeInfo: CFHostInfoType) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     var available: DarwinBoolean = false
     var argCount: Int32 = synchronous ? 1 : 2
     switch typeInfo {
@@ -70,7 +68,7 @@ private func pushQueryResults(_ L: UnsafeMutablePointer<lua_State>!, synchronous
     case .names:
         if !synchronous { lua_pushstring(L, "names") }
         if let theNames = CFHostGetNames(theHost, &available)?.takeUnretainedValue(), available.boolValue {
-            skin.pushNSObject(theNames as NSArray)
+            lua_pushany(L, theNames as NSArray)
         } else {
             lua_pushnil(L)
         }
@@ -132,23 +130,20 @@ private let handleCallback: CFHostClientCallBack = { theHost, typeInfo, error, i
     }
 
     DispatchQueue.main.async {
-        let skin = LuaSkin.skin(with: nil)
+        let L = LuaSkin.skin(with: nil).l!
         if theRef.pointee.callbackRef != LUA_NOREF {
-            let L = skin.l!
-            if !skin.check(theRef.pointee.lsCanary) {
-                return
-            }
-            _lua_stackguard_entry(L)
+            guard lua_isStateGenerationValid(theRef.pointee.generation) else { return }
             var argCount: Int32
-            skin.pushLuaRef(refTable, ref: theRef.pointee.callbackRef)
+            lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(theRef.pointee.callbackRef))
             if domain == 0 && errorNum == 0 {
                 argCount = pushQueryResults(L, synchronous: false, theHost: theRef.pointee.theHostObj!, typeInfo: theRef.pointee.resolveType)
             } else {
-                skin.pushNSObject("resolution error:\(expandCFStreamError(domain: domain, errorNum: errorNum))" as NSString)
+                lua_pushstring(L, "resolution error:\(expandCFStreamError(domain: domain, errorNum: errorNum))")
                 argCount = 1
             }
-            skin.protectedCallAndError("hs.network.host callback", nargs: argCount, nresults: 0)
-            _lua_stackguard_exit(L)
+            if lua_pcall(L, argCount, 0, 0) != LUA_OK {
+                lua_pop(L, 1)
+            }
         }
         CFHostSetClient(theRef.pointee.theHostObj!, nil, nil)
         CFHostUnscheduleFromRunLoop(theRef.pointee.theHostObj!, CFRunLoopGetCurrent(), CFRunLoopMode.defaultMode!.rawValue)
@@ -156,20 +151,19 @@ private let handleCallback: CFHostClientCallBack = { theHost, typeInfo, error, i
         theRef.pointee.running = false
         // allow __gc when their stored version goes away
         if theRef.pointee.selfRef != LUA_NOREF {
-            theRef.pointee.selfRef = skin.luaUnref(refTable, ref: theRef.pointee.selfRef)
+            luaL_unref(L, LUA_REGISTRYINDEX_VALUE, theRef.pointee.selfRef)
+            theRef.pointee.selfRef = LUA_NOREF
         }
     }
 }
 
 private func commonConstructor(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TFUNCTION | LS_TNIL, LS_TBREAK)
-
     let theRef = getPtr(L, 1)
     var streamError = CFStreamError()
     var argCount: Int32 = 1
     if lua_type(L, 2) == LUA_TNIL {
-        theRef.pointee.selfRef = skin.luaUnref(refTable, ref: theRef.pointee.selfRef)
+        luaL_unref(L, LUA_REGISTRYINDEX_VALUE, theRef.pointee.selfRef)
+        theRef.pointee.selfRef = LUA_NOREF
         if CFHostStartInfoResolution(theRef.pointee.theHostObj!, theRef.pointee.resolveType, &streamError) {
             argCount = pushQueryResults(L, synchronous: true, theHost: theRef.pointee.theHostObj!, typeInfo: theRef.pointee.resolveType)
         } else {
@@ -178,7 +172,7 @@ private func commonConstructor(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
         }
     } else {
         lua_pushvalue(L, 2)
-        theRef.pointee.callbackRef = skin.luaRef(refTable)
+        theRef.pointee.callbackRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
         var context = CFHostClientContext(version: 0, info: theRef, retain: nil, release: nil, copyDescription: nil)
         if CFHostSetClient(theRef.pointee.theHostObj!, handleCallback, &context) {
             CFHostScheduleWithRunLoop(theRef.pointee.theHostObj!, CFRunLoopGetCurrent(), CFRunLoopMode.defaultMode!.rawValue)
@@ -187,12 +181,14 @@ private func commonConstructor(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
                 lua_pushvalue(L, 1)
             } else {
                 CFHostUnscheduleFromRunLoop(theRef.pointee.theHostObj!, CFRunLoopGetCurrent(), CFRunLoopMode.defaultMode!.rawValue)
-                theRef.pointee.selfRef = skin.luaUnref(refTable, ref: theRef.pointee.selfRef)
+                luaL_unref(L, LUA_REGISTRYINDEX_VALUE, theRef.pointee.selfRef)
+                theRef.pointee.selfRef = LUA_NOREF
                 lua_pushstring(L, "resolution error:" + expandCFStreamError(domain: streamError.domain, errorNum: streamError.error))
                 return lua_error(L)
             }
         } else {
-            theRef.pointee.selfRef = skin.luaUnref(refTable, ref: theRef.pointee.selfRef)
+            luaL_unref(L, LUA_REGISTRYINDEX_VALUE, theRef.pointee.selfRef)
+            theRef.pointee.selfRef = LUA_NOREF
             lua_pushnil(L)
         }
     }
@@ -200,11 +196,10 @@ private func commonConstructor(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 }
 
 private func commonForHostName(_ L: UnsafeMutablePointer<lua_State>!, _ resolveType: CFHostInfoType) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING, LS_TFUNCTION | LS_TNIL | LS_TOPTIONAL, LS_TBREAK)
+    let hostName = String(cString: luaL_checkstring(L, 1)!)
     let synchronous = lua_isnoneornil(L, 2)
 
-    let theHost = CFHostCreateWithName(kCFAllocatorDefault, skin.toNSObject(atIndex: 1) as! CFString).takeRetainedValue()
+    let theHost = CFHostCreateWithName(kCFAllocatorDefault, hostName as CFString).takeRetainedValue()
 
     lua_pushcfunction(L, commonConstructor)
     _ = pushCFHost(L, theHost, resolveType)
@@ -218,8 +213,6 @@ private func commonForHostName(_ L: UnsafeMutablePointer<lua_State>!, _ resolveT
 }
 
 private func commonForAddress(_ L: UnsafeMutablePointer<lua_State>!, _ resolveType: CFHostInfoType) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING | LS_TNUMBER, LS_TFUNCTION | LS_TNIL | LS_TOPTIONAL, LS_TBREAK)
     let synchronous = lua_isnoneornil(L, 2)
 
     _ = luaL_checkstring(L, 1) // force number to be a string
@@ -227,7 +220,7 @@ private func commonForAddress(_ L: UnsafeMutablePointer<lua_State>!, _ resolveTy
     var hints = addrinfo()
     hints.ai_flags = AI_NUMERICHOST | AI_NUMERICSERV | AI_V4MAPPED_CFG
     hints.ai_family = PF_UNSPEC
-    let addrString = (skin.toNSObject(atIndex: 1) as! NSString).utf8String!
+    let addrString = String(cString: lua_tostring(L, 1)!)
     let ecode = getaddrinfo(addrString, nil, &hints, &results)
     if ecode != 0 {
         if results != nil { freeaddrinfo(results) }
@@ -343,8 +336,6 @@ private func getReachabilityForHostName(_ L: UnsafeMutablePointer<lua_State>!) -
 /// Returns:
 ///  * true, if resolution is still in progress, or false if resolution has already completed.
 private func resolutionIsRunning(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let theRef = getPtr(L, 1)
     lua_pushboolean(L, theRef.pointee.running ? 1 : 0)
     return 1
@@ -363,8 +354,6 @@ private func resolutionIsRunning(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 /// Notes:
 ///  * This method has no effect if the resolution has already completed.
 private func cancelResolution(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let theRef = getPtr(L, 1)
     if theRef.pointee.running {
         CFHostSetClient(theRef.pointee.theHostObj!, nil, nil)
@@ -373,7 +362,8 @@ private func cancelResolution(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
         theRef.pointee.running = false
     }
     // allow __gc when their stored version goes away
-    theRef.pointee.selfRef = skin.luaUnref(refTable, ref: theRef.pointee.selfRef)
+    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, theRef.pointee.selfRef)
+    theRef.pointee.selfRef = LUA_NOREF
     lua_settop(L, 1)
     return 1
 }
@@ -381,9 +371,8 @@ private func cancelResolution(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 // MARK: - Cosmic Hammer/Lua Infrastructure
 
 private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     let ptr = lua_topointer(L, 1)
-    skin.pushNSObject("\(USERDATA_TAG): (\(String(describing: ptr)))" as NSString)
+    lua_pushstring(L, "\(USERDATA_TAG): (\(String(describing: ptr)))")
     return 1
 }
 
@@ -399,12 +388,12 @@ private func userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 }
 
 private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     let theRef = getPtr(L, 1)
-    theRef.pointee.callbackRef = skin.luaUnref(refTable, ref: theRef.pointee.callbackRef)
+    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, theRef.pointee.callbackRef)
+    theRef.pointee.callbackRef = LUA_NOREF
     // in case __gc forced by reload
-    theRef.pointee.selfRef = skin.luaUnref(refTable, ref: theRef.pointee.selfRef)
-    skin.destroy(&theRef.pointee.lsCanary)
+    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, theRef.pointee.selfRef)
+    theRef.pointee.selfRef = LUA_NOREF
 
     lua_pushcfunction(L, cancelResolution)
     lua_pushvalue(L, 1)

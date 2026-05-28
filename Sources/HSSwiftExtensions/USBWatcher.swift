@@ -3,6 +3,7 @@ import Cocoa
 import IOKit
 import IOKit.usb
 import LuaSkin
+import os.log
 
 // kIOMessageServiceIsTerminated is a C macro not bridged to Swift
 private let kIOMessageServiceIsTerminated: UInt32 = 0xE000_0010
@@ -22,7 +23,7 @@ private struct USBWatcher {
     var gNotifyPort: IONotificationPortRef?
     var gAddedIter: io_iterator_t
     var runLoopSource: Unmanaged<CFRunLoopSource>?
-    var lsCanary: LSGCCanary
+    var generation: UInt64
 }
 
 // Private data for each USB device
@@ -45,14 +46,10 @@ private func DeviceNotification(refCon: UnsafeMutableRawPointer?,
     let watcher = privateDataRef.pointee.watcher
 
     if messageType == kIOMessageServiceIsTerminated {
-        let skin = LuaSkin.skin(with: nil)
-        let L = skin.l!
-        if !skin.check(watcher.pointee.lsCanary) {
-            return
-        }
-        _lua_stackguard_entry(L)
+        let L = LuaSkin.skin(with: nil).l!
+        guard lua_isStateGenerationValid(watcher.pointee.generation) else { return }
 
-        skin.pushLuaRef(refTable, ref: watcher.pointee.fn)
+        lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(watcher.pointee.fn))
 
         // Prepare the callback's argument table
         lua_newtable(L)
@@ -72,7 +69,9 @@ private func DeviceNotification(refCon: UnsafeMutableRawPointer?,
         lua_pushstring(L, "removed")
         lua_settable(L, -3)
 
-        skin.protectedCallAndError("hs.usb.watcher:removed callback", nargs: 1, nresults: 0)
+        if lua_pcall(L, 1, 0, 0) != LUA_OK {
+            lua_pop(L, 1)
+        }
 
         // Free the USB private data
         IOObjectRelease(privateDataRef.pointee.notification)
@@ -85,18 +84,18 @@ private func DeviceNotification(refCon: UnsafeMutableRawPointer?,
             privateDataRef.pointee.vendorName = nil
         }
         free(privateDataRef)
-
-        _lua_stackguard_exit(L)
     }
 }
 
 // Iterate over new devices
 private func DeviceAdded(refCon: UnsafeMutableRawPointer?, iterator: io_iterator_t) {
-    let skin = LuaSkin.skin(with: nil)
-    let L = skin.l!
-    _lua_stackguard_entry(L)
-
     let watcher = refCon!.assumingMemoryBound(to: USBWatcher.self)
+    guard lua_isStateGenerationValid(watcher.pointee.generation) else {
+        // drain iterator
+        while IOIteratorNext(iterator) != IO_OBJECT_NULL {}
+        return
+    }
+    let L = LuaSkin.skin(with: nil).l!
 
     var usbDevice = IOIteratorNext(iterator)
     while usbDevice != 0 {
@@ -147,14 +146,14 @@ private func DeviceAdded(refCon: UnsafeMutableRawPointer?, iterator: io_iterator
             &privateDataRef.pointee.notification
         )
         if kr != KERN_SUCCESS {
-            skin.logBreadcrumb(String(format: "IOServiceAddInterestNotification returned 0x%08x", kr))
+            os_log(.error, "IOServiceAddInterestNotification returned 0x%08x", kr)
         }
 
         IOObjectRelease(usbDevice)
 
         // Don't trigger callbacks for devices attached before the watcher starts
         if !watcher.pointee.isFirstRun && watcher.pointee.fn != LUA_REFNIL && watcher.pointee.fn != LUA_NOREF {
-            skin.pushLuaRef(refTable, ref: watcher.pointee.fn)
+            lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(watcher.pointee.fn))
 
             lua_newtable(L)
             lua_pushstring(L, "productName")
@@ -173,12 +172,13 @@ private func DeviceAdded(refCon: UnsafeMutableRawPointer?, iterator: io_iterator
             lua_pushstring(L, "added")
             lua_settable(L, -3)
 
-            skin.protectedCallAndError("hs.usb.watcher:added callback", nargs: 1, nresults: 0)
+            if lua_pcall(L, 1, 0, 0) != LUA_OK {
+                lua_pop(L, 1)
+            }
         }
 
         usbDevice = IOIteratorNext(iterator)
     }
-    _lua_stackguard_exit(L)
 }
 
 /// hs.usb.watcher.new(fn) -> watcher
@@ -196,8 +196,6 @@ private func DeviceAdded(refCon: UnsafeMutableRawPointer?, iterator: io_iterator
 /// Returns:
 ///  * A `hs.usb.watcher` object
 private func usb_watcher_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-
     luaL_checktype(L, 1, LUA_TFUNCTION)
 
     let usbwatcher = lua_newuserdata(L, MemoryLayout<USBWatcher>.size)!
@@ -205,11 +203,11 @@ private func usb_watcher_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     memset(usbwatcher, 0, MemoryLayout<USBWatcher>.size)
     lua_pushvalue(L, 1)
 
-    usbwatcher.pointee.fn = skin.luaRef(refTable)
+    usbwatcher.pointee.fn = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
     usbwatcher.pointee.running = false
     usbwatcher.pointee.gNotifyPort = IONotificationPortCreate(kIOMainPortDefault)
     usbwatcher.pointee.runLoopSource = IONotificationPortGetRunLoopSource(usbwatcher.pointee.gNotifyPort)
-    usbwatcher.pointee.lsCanary = skin.createGCCanary()
+    usbwatcher.pointee.generation = lua_currentStateGeneration()
 
     luaL_getmetatable(L, USERDATA_TAG)
     lua_setmetatable(L, -2)
@@ -227,14 +225,13 @@ private func usb_watcher_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * The `hs.usb.watcher` object
 private func usb_watcher_start(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     let usbwatcher = luaL_checkudata(L, 1, USERDATA_TAG)!.assumingMemoryBound(to: USBWatcher.self)
     lua_settop(L, 1)
 
     if usbwatcher.pointee.running { return 1 }
 
     guard let matchingDict = IOServiceMatching(kIOUSBDeviceClassName) else {
-        skin.logBreadcrumb("Unable to create USB watcher matching dictionary")
+        os_log(.error, "Unable to create USB watcher matching dictionary")
         return 1
     }
 
@@ -285,15 +282,13 @@ private func usb_watcher_stop(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 }
 
 private func usb_watcher_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     let usbwatcher = luaL_checkudata(L, 1, USERDATA_TAG)!.assumingMemoryBound(to: USBWatcher.self)
 
-    lua_pushcfunction(L, usb_watcher_stop)
-    lua_pushvalue(L, 1)
-    lua_call(L, 1, 1)
+    _ = usb_watcher_stop(L)
+    lua_pop(L, 1)
 
-    usbwatcher.pointee.fn = skin.luaUnref(refTable, ref: usbwatcher.pointee.fn)
-    skin.destroy(&usbwatcher.pointee.lsCanary)
+    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, usbwatcher.pointee.fn)
+    usbwatcher.pointee.fn = Int32(LUA_NOREF)
 
     IONotificationPortDestroy(usbwatcher.pointee.gNotifyPort)
 

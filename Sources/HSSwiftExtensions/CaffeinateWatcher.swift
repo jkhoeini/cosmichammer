@@ -60,7 +60,7 @@ import LuaSkin
 // MARK: - Common Code
 
 private let USERDATA_TAG = "hs.caffeinate.watcher"
-private var refTable: LSRefTable = 0
+private var refTable: Int32 = 0
 
 // MARK: - Userdata struct
 
@@ -68,7 +68,7 @@ private struct CaffeinateWatcherData {
     var running: Bool
     var fn: Int32
     var obj: UnsafeMutableRawPointer?  // Retained reference to CaffeinateWatcher
-    var lsCanary: LSGCCanary
+    var generation: UInt64
 }
 
 // MARK: - Event enum
@@ -101,18 +101,16 @@ private class CaffeinateWatcher: NSObject {
     // Call the lua callback function and pass the event type.
     func callback(dict: [AnyHashable: Any]?, event: CaffeinateEvent) {
         guard object.pointee.fn != LUA_NOREF else { return }
+        guard lua_isStateGenerationValid(object.pointee.generation) else { return }
 
-        let skin = LuaSkin.skin(with: nil)
-        skin.check(object.pointee.lsCanary)
-        let L = skin.l
+        let L = LuaSkin.skin(with: nil).l!
 
-        let savedTop = lua_gettop(L)
-
-        skin.pushLuaRef(refTable, ref: object.pointee.fn)
+        lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(object.pointee.fn))
         lua_pushinteger(L, lua_Integer(event.rawValue))
 
-        skin.protectedCallAndError("hs.caffeinate.watcher callback", nargs: 1, nresults: 0)
-        assert(savedTop == lua_gettop(L))
+        if lua_pcall(L, 1, 0, 0) != LUA_OK {
+            lua_pop(L, 1)
+        }
     }
 
     @objc func caffeinateDidWake(_ notification: Notification) {
@@ -232,20 +230,19 @@ private func unregister_observer(_ observer: CaffeinateWatcher) {
 /// Returns:
 ///  * An `hs.caffeinate.watcher` object
 private func caffeinate_watcher_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TFUNCTION, LS_TBREAK)
+    luaL_checktype(L, 1, LUA_TFUNCTION)
 
     let watcherPtr = lua_newuserdata(L, MemoryLayout<CaffeinateWatcherData>.size)!
         .assumingMemoryBound(to: CaffeinateWatcherData.self)
     memset(watcherPtr, 0, MemoryLayout<CaffeinateWatcherData>.size)
 
     lua_pushvalue(L, 1)
-    watcherPtr.pointee.fn = skin.luaRef(refTable)
+    watcherPtr.pointee.fn = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
     watcherPtr.pointee.running = false
 
     let watcher = CaffeinateWatcher(object: watcherPtr)
     watcherPtr.pointee.obj = Unmanaged.passRetained(watcher).toOpaque()
-    watcherPtr.pointee.lsCanary = skin.createGCCanary()
+    watcherPtr.pointee.generation = lua_currentStateGeneration()
 
     luaL_getmetatable(L, USERDATA_TAG)
     lua_setmetatable(L, -2)
@@ -262,10 +259,7 @@ private func caffeinate_watcher_new(_ L: UnsafeMutablePointer<lua_State>!) -> In
 /// Returns:
 ///  * An `hs.caffeinate.watcher` object
 private func caffeinate_watcher_start(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
-
-    let watcherPtr = lua_touserdata(L, 1)!.assumingMemoryBound(to: CaffeinateWatcherData.self)
+    let watcherPtr = luaL_checkudata(L, 1, USERDATA_TAG)!.assumingMemoryBound(to: CaffeinateWatcherData.self)
     lua_settop(L, 1)
 
     guard !watcherPtr.pointee.running else { return 1 }
@@ -286,10 +280,7 @@ private func caffeinate_watcher_start(_ L: UnsafeMutablePointer<lua_State>!) -> 
 /// Returns:
 ///  * An `hs.caffeinate.watcher` object
 private func caffeinate_watcher_stop(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
-
-    let watcherPtr = lua_touserdata(L, 1)!.assumingMemoryBound(to: CaffeinateWatcherData.self)
+    let watcherPtr = luaL_checkudata(L, 1, USERDATA_TAG)!.assumingMemoryBound(to: CaffeinateWatcherData.self)
     lua_settop(L, 1)
 
     guard watcherPtr.pointee.running else { return 1 }
@@ -302,14 +293,12 @@ private func caffeinate_watcher_stop(_ L: UnsafeMutablePointer<lua_State>!) -> I
 
 // Perform cleanup if the CaffeinateWatcher is not required anymore.
 private func caffeinate_watcher_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-
     let watcherPtr = luaL_checkudata(L, 1, USERDATA_TAG)!.assumingMemoryBound(to: CaffeinateWatcherData.self)
 
     _ = caffeinate_watcher_stop(L)
 
-    watcherPtr.pointee.fn = skin.luaUnref(refTable, ref: watcherPtr.pointee.fn)
-    skin.destroy(&watcherPtr.pointee.lsCanary)
+    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, watcherPtr.pointee.fn)
+    watcherPtr.pointee.fn = Int32(LUA_NOREF)
 
     // Release the retained CaffeinateWatcher
     if let obj = watcherPtr.pointee.obj {
@@ -382,7 +371,7 @@ public func luaopen_hs_libcaffeinatewatcher(_ L: UnsafeMutablePointer<lua_State>
     let skin = LuaSkin.skin(with: L)
     refTable = skin.registerLibrary(withObject: USERDATA_TAG, functions: caffeinateLib, metaFunctions: metaGcLib, objectFunctions: metaLib)
 
-    add_event_enum(skin.l)
+    add_event_enum(L)
 
     return 1
 }

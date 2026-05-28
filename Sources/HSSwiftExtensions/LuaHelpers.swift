@@ -443,3 +443,19 @@ func lua_tableToRect(_ L: UnsafeMutablePointer<lua_State>!, at index: Int32) -> 
     lua_pop(L, 4)
     return NSMakeRect(x, y, w, h)
 }
+
+// MARK: - GC Canary (replaces LSGCCanary)
+
+private var _luaStateGeneration: UInt64 = 0
+
+func lua_bumpStateGeneration() {
+    _luaStateGeneration &+= 1
+}
+
+func lua_currentStateGeneration() -> UInt64 {
+    return _luaStateGeneration
+}
+
+func lua_isStateGenerationValid(_ generation: UInt64) -> Bool {
+    return generation == _luaStateGeneration
+}
