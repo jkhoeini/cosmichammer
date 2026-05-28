@@ -8,10 +8,6 @@ private let vendorNameKey = kUSBVendorString as CFString
 private let productIDKey = kUSBProductID as CFString
 private let vendorIDKey = kUSBVendorID as CFString
 
-private func usb_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    return 0
-}
-
 /// hs.usb.attachedDevices() -> table or nil
 /// Function
 /// Gets details about currently attached USB devices
@@ -86,14 +82,9 @@ private var usblib: [luaL_Reg] = [
     luaL_Reg(name: nil, func: nil),
 ]
 
-private var metalib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("__gc"), func: usb_gc),
-    luaL_Reg(name: nil, func: nil),
-]
-
 @_cdecl("luaopen_hs_libusb")
 public func luaopen_hs_libusb(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.registerLibrary("hs.usb", functions: &usblib, metaFunctions: &metalib)
+    lua_createtable(L, 0, Int32(usblib.count - 1))
+    luaL_setfuncs(L, &usblib, 0)
     return 1
 }

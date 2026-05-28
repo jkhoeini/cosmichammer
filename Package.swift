@@ -28,13 +28,15 @@ let package = Package(
     dependencies: [
         .package(url: "https://github.com/armadsen/ORSSerialPort", exact: "2.1.0"),
         .package(url: "https://github.com/swiftlang/swift-markdown.git", from: "0.5.0"),
+        .package(url: "https://github.com/tomsci/LuaSwift.git", from: "1.0.0"),
     ],
     targets: [
         // ---------------------------------------------------------------
-        // LuaSkin — Lua 5.4 + Objective-C bridge
+        // LuaSkin — Objective-C bridge (uses LuaSwift's CLua for Lua runtime)
         // ---------------------------------------------------------------
         .target(
             name: "LuaSkin",
+            dependencies: [.product(name: "Lua", package: "LuaSwift")],
             path: "Sources/LuaSkin",
             exclude: ["Resources/luaskin.lua"],
             publicHeadersPath: "include",

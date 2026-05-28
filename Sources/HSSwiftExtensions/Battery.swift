@@ -64,12 +64,9 @@ private func battery_timeremaining(_ L: UnsafeMutablePointer<lua_State>!) -> Int
 /// Returns:
 ///  * A string containing one of {AC Power, Battery Power, UPS Power}.
 private func battery_powerSource(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TBREAK)
-
     if let sourcesBlob = IOPSCopyPowerSourcesInfo()?.takeRetainedValue() {
         let sourceType = IOPSGetProvidingPowerSourceType(sourcesBlob)?.takeUnretainedValue() as String?
-        skin.pushNSObject(sourceType as NSString?)
+        lua_pushany(L, sourceType)
         return 1
     } else {
         lua_pushnil(L)
@@ -94,9 +91,6 @@ private func battery_powerSource(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 ///    * "low"  - the system is in a low battery situation and can provide no more than 20 minutes of runtime. Note that this is a guess only; 20 minutes cannot be guaranteed and will be greatly influenced by what the computer is doing at the time, how many applications are running, screen brightness, etc.
 ///    * "critical" - the system is in a very low battery situation and can provide no more than 10 minutes of runtime. Note that this is a guess only; 10 minutes cannot be guaranteed and will be greatly influenced by what the computer is doing at the time, how many applications are running, screen brightness, etc.
 private func battery_batteryWarningLevel(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TBREAK)
-
     let level = IOPSGetBatteryWarningLevel()
     switch level {
     case kIOPSLowBatteryWarningNone:
@@ -121,8 +115,6 @@ private func battery_batteryWarningLevel(_ L: UnsafeMutablePointer<lua_State>!) 
 /// Returns:
 ///  * A table containing information about other batteries known to the system, or an empty table if no devices were found
 private func battery_others(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-
     var masterPort: mach_port_t = 0
     var ite: io_iterator_t = 0
     let batteryInfo = NSMutableArray(capacity: 5)
@@ -130,13 +122,13 @@ private func battery_others(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let kr = IOMainPort(bootstrap_port, &masterPort)
     guard kr == KERN_SUCCESS else {
         os_log(.error, "IOMasterPort() failed: %x", kr)
-        skin.pushNSObject(batteryInfo)
+        lua_pushany(L, batteryInfo)
         return 1
     }
 
     let krIter = IORegistryCreateIterator(masterPort, kIOServicePlane, IOOptionBits(kIORegistryIterateRecursively), &ite)
     guard krIter == KERN_SUCCESS else {
-        skin.pushNSObject(batteryInfo)
+        lua_pushany(L, batteryInfo)
         return 1
     }
 
@@ -163,7 +155,7 @@ private func battery_others(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     }
 
     IOObjectRelease(ite)
-    skin.pushNSObject(batteryInfo)
+    lua_pushany(L, batteryInfo)
     return 1
 }
 
@@ -204,14 +196,11 @@ private func battery_others(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * Please report any crashes from this function - it's likely that there are Bluetooth devices we haven't tested which may return weird data
 ///  * Many/Most/All non-Apple party products will likely return zeros for all of the battery related fields here, as will Apple HID devices. It seems that these private APIs mostly exist to support Apple/Beats headphones.
 private func battery_private(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TBREAK)
-
     let privateInfo = NSMutableArray()
 
     let connectedSel = NSSelectorFromString("connectedDevices")
     guard let devices = IOBluetoothDevice.perform(connectedSel)?.takeUnretainedValue() as? [IOBluetoothDevice] else {
-        skin.pushNSObject(privateInfo)
+        lua_pushany(L, privateInfo)
         return 1
     }
 
@@ -236,8 +225,8 @@ private func battery_private(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
         deviceInfo["primaryBud"] = priv.primaryBud == 1 ? "left" : "right"
         deviceInfo["isInEarDetectionSupported"] = priv.isInEarDetectionSupported ? "YES" : "NO"
-        deviceInfo["secondaryInEar"] = priv.secondaryInEar != 0 ? "NO" : "YES"
-        deviceInfo["primaryInEar"] = priv.primaryInEar != 0 ? "NO" : "YES"
+        deviceInfo["secondaryInEar"] = priv.secondaryInEar != 0 ? "YES" : "NO"
+        deviceInfo["primaryInEar"] = priv.primaryInEar != 0 ? "YES" : "NO"
 
         deviceInfo["isEnhancedDoubleTapSupported"] = priv.isEnhancedDoubleTapSupported ? "YES" : "NO"
         deviceInfo["rightDoubleTap"] = "\(priv.rightDoubleTap)"
@@ -248,16 +237,13 @@ private func battery_private(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
         privateInfo.add(deviceInfo)
     }
-    skin.pushNSObject(privateInfo)
+    lua_pushany(L, privateInfo)
     return 1
 }
 
 private func battery_externalAdapterDetails(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TBREAK)
-
     if let psuInfo = IOPSCopyExternalPowerAdapterDetails()?.takeRetainedValue() {
-        skin.pushNSObject(psuInfo as NSDictionary, withOptions: LS_NSConversionOptions.nsDescribeUnknownTypes.rawValue)
+        lua_pushany(L, psuInfo as NSDictionary)
     } else {
         lua_pushnil(L)
     }
@@ -265,9 +251,6 @@ private func battery_externalAdapterDetails(_ L: UnsafeMutablePointer<lua_State>
 }
 
 private func battery_powerSources(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TBREAK)
-
     guard let sourcesBlob = IOPSCopyPowerSourcesInfo()?.takeRetainedValue() else {
         lua_pushnil(L)
         lua_pushstring(L, "error retrieving power sources info")
@@ -283,9 +266,9 @@ private func battery_powerSources(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
     lua_newtable(L)
     for i in 0..<sourcesList.count {
         if let powerSource = IOPSGetPowerSourceDescription(sourcesBlob, sourcesList[i])?.takeUnretainedValue() as? NSDictionary {
-            skin.pushNSObject(powerSource, withOptions: LS_NSConversionOptions.nsDescribeUnknownTypes.rawValue)
+            lua_pushany(L, powerSource)
         } else {
-            skin.pushNSObject("unable to get description of power source \(i + 1)" as NSString)
+            lua_pushstring(L, "unable to get description of power source \(i + 1)")
         }
         lua_rawseti(L, -2, luaL_len(L, -2) + 1)
     }
@@ -293,15 +276,12 @@ private func battery_powerSources(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
 }
 
 private func battery_appleSmartBattery(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TBREAK)
-
     let entry = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceNameMatching("AppleSmartBattery"))
     if entry != 0 {
         var battery: Unmanaged<CFMutableDictionary>?
         IORegistryEntryCreateCFProperties(entry, &battery, nil, 0)
         if let batteryDict = battery?.takeRetainedValue() as? NSDictionary {
-            skin.pushNSObject(batteryDict, withOptions: LS_NSConversionOptions.nsDescribeUnknownTypes.rawValue)
+            lua_pushany(L, batteryDict)
         } else {
             lua_pushnil(L)
         }
@@ -315,9 +295,6 @@ private func battery_appleSmartBattery(_ L: UnsafeMutablePointer<lua_State>!) ->
 }
 
 private func battery_iopmBatteryInfo(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TBREAK)
-
     var masterPort: mach_port_t = 0
     var batteryInfo: Unmanaged<CFArray>?
 
@@ -335,7 +312,7 @@ private func battery_iopmBatteryInfo(_ L: UnsafeMutablePointer<lua_State>!) -> I
     }
 
     if let info = batteryInfo?.takeRetainedValue() as? NSArray {
-        skin.pushNSObject(info)
+        lua_pushany(L, info)
     } else {
         lua_pushnil(L)
     }
@@ -357,7 +334,7 @@ private var battery_lib: [luaL_Reg] = [
 
 @_cdecl("luaopen_hs_libbattery")
 public func luaopen_hs_libbattery(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.registerLibrary("hs.battery", functions: &battery_lib, metaFunctions: nil)
+    lua_createtable(L, 0, Int32(battery_lib.count - 1))
+    luaL_setfuncs(L, &battery_lib, 0)
     return 1
 }

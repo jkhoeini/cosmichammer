@@ -435,7 +435,7 @@ private let hashLookupTable: [HashEntry] = [
 // MARK: - HSHashObject
 
 private let USERDATA_TAG = "hs.hash"
-private var refTable: LSRefTable = LUA_NOREF
+private var refTable: Int32 = LUA_NOREF
 
 private class HSHashObjectNew: NSObject {
     var selfRefCount: Int = 0
@@ -475,13 +475,13 @@ private class HSHashObjectNew: NSObject {
 /// Returns:
 ///  * the new hash object
 private func hash_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING, LS_TSTRING | LS_TOPTIONAL, LS_TBREAK)
-    let hashName = skin.toNSObject(atIndex: 1) as! String
+    guard let hashNameC = luaL_checkstring(L, 1) else { return 0 }
+    let hashName = String(cString: hashNameC)
     var secret: Data? = nil
-    if lua_gettop(L) == 2 {
-        if let nsdata = skin.toNSObject(atIndex: 2, withOptions: .nsLuaStringAsDataOnly) as? NSData {
-            secret = nsdata as Data
+    if lua_gettop(L) == 2 && lua_type(L, 2) == LUA_TSTRING {
+        var len: Int = 0
+        if let ptr = lua_tolstring(L, 2, &len) {
+            secret = Data(bytes: ptr, count: len)
         }
     }
 
@@ -498,7 +498,7 @@ private func hash_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
     if hashFound {
         let object = HSHashObjectNew(hashType: hashType, secret: secret)
-        skin.pushNSObject(object)
+        pushHashObject(L, object)
     } else {
         return luaL_argerror(L, 1, "unrecognized hash type")
     }
@@ -517,11 +517,10 @@ private func hash_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * the hash object, or if the hash has already been calculated (finished), nil and an error string
 private func hash_append(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING, LS_TBREAK)
-    let object = skin.toNSObject(atIndex: 1) as! HSHashObjectNew
-    let nsdata = skin.toNSObject(atIndex: 2, withOptions: .nsLuaStringAsDataOnly) as! NSData
-    let data = nsdata as Data
+    guard let object = toHashObject(L, at: 1) else { return luaL_argerror(L, 1, "expected \(USERDATA_TAG)") }
+    var len: Int = 0
+    guard let ptr = luaL_checklstring(L, 2, &len) else { return 0 }
+    let data = Data(bytes: ptr, count: len)
 
     if object.value == nil {
         object.append(data)
@@ -545,10 +544,9 @@ private func hash_append(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * the hash object
 private func hash_appendFile(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TSTRING, LS_TBREAK)
-    let object = skin.toNSObject(atIndex: 1) as! HSHashObjectNew
-    var path = skin.toNSObject(atIndex: 2) as! String
+    guard let object = toHashObject(L, at: 1) else { return luaL_argerror(L, 1, "expected \(USERDATA_TAG)") }
+    guard let pathC = luaL_checkstring(L, 2) else { return 0 }
+    var path = String(cString: pathC)
 
     if object.value == nil {
         path = (path as NSString).expandingTildeInPath
@@ -584,9 +582,7 @@ private func hash_appendFile(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Notes:
 ///  * a hash that has been finished can no longer have data appended to it.
 private func hash_finish(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
-    let object = skin.toNSObject(atIndex: 1) as! HSHashObjectNew
+    guard let object = toHashObject(L, at: 1) else { return luaL_argerror(L, 1, "expected \(USERDATA_TAG)") }
 
     if object.value == nil { object.finish() }
 
@@ -604,21 +600,25 @@ private func hash_finish(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * a string containing the hash value or nil if the hash has not been finished.
 private func hash_value(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
-    let object = skin.toNSObject(atIndex: 1) as! HSHashObjectNew
+    guard let object = toHashObject(L, at: 1) else { return luaL_argerror(L, 1, "expected \(USERDATA_TAG)") }
     let inBinary = (lua_gettop(L) == 2) ? (lua_toboolean(L, 2) != 0) : false
 
     if let val = object.value {
         if inBinary {
-            skin.pushNSObject(val as NSData)
+            val.withUnsafeBytes { ptr in
+                if let base = ptr.baseAddress {
+                    lua_pushlstring(L, base.assumingMemoryBound(to: CChar.self), val.count)
+                } else {
+                    lua_pushlstring(L, "", 0)
+                }
+            }
         } else {
             var hex = ""
             hex.reserveCapacity(val.count * 2)
             for byte in val {
                 hex += String(format: "%02x", byte)
             }
-            skin.pushNSObject(hex as NSString)
+            lua_pushstring(L, hex)
         }
     } else {
         lua_pushnil(L)
@@ -636,9 +636,7 @@ private func hash_value(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * a string containing the hash type name.
 private func hash_type(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
-    let object = skin.toNSObject(atIndex: 1) as! HSHashObjectNew
+    guard let object = toHashObject(L, at: 1) else { return luaL_argerror(L, 1, "expected \(USERDATA_TAG)") }
     lua_pushstring(L, hashLookupTable[object.hashType].hashName)
     return 1
 }
@@ -655,43 +653,27 @@ private func hash_types(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 1
 }
 
-// MARK: - Lua<->NSObject Conversion Functions
+// MARK: - Userdata Push/Pull Helpers
 
-private func pushHSHashObjectNew(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any?) -> Int32 {
-    guard let value = obj as? HSHashObjectNew else { return 0 }
-    value.selfRefCount += 1
-    let valuePtr = lua_newuserdata(L, MemoryLayout<UnsafeMutableRawPointer>.size)!
-        .assumingMemoryBound(to: UnsafeMutableRawPointer.self)
-    valuePtr.pointee = Unmanaged.passRetained(value).toOpaque()
+/// Push an HSHashObjectNew as a Lua userdata with the correct metatable.
+private func pushHashObject(_ L: UnsafeMutablePointer<lua_State>!, _ obj: HSHashObjectNew) {
+    obj.selfRefCount += 1
+    let ptr = lua_newuserdata(L, MemoryLayout<UnsafeRawPointer>.size)!
+    ptr.storeBytes(of: Unmanaged.passRetained(obj).toOpaque(), as: UnsafeRawPointer.self)
     luaL_getmetatable(L, USERDATA_TAG)
     lua_setmetatable(L, -2)
-    return 1
 }
 
-private func toHSHashObjectNewFromLua(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> Any? {
-    let skin = LuaSkin.skin(with: L)
-    if luaL_testudata(L, idx, USERDATA_TAG) != nil {
-        let ptr = luaL_checkudata(L, idx, USERDATA_TAG)!
-            .assumingMemoryBound(to: UnsafeMutableRawPointer.self)
-        return Unmanaged<HSHashObjectNew>.fromOpaque(ptr.pointee).takeUnretainedValue()
-    } else {
-        skin.logError("\(USERDATA_TAG) expected \(USERDATA_TAG) object, found \(String(cString: lua_typename(L, lua_type(L, idx))))")
-    }
-    return nil
-}
-
-/// Helper to extract HSHashObjectNew from userdata at a given stack index.
-private func getHashObject(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> HSHashObjectNew? {
-    guard luaL_testudata(L, idx, USERDATA_TAG) != nil else { return nil }
-    let ptr = luaL_checkudata(L, idx, USERDATA_TAG)!
-        .assumingMemoryBound(to: UnsafeMutableRawPointer.self)
-    return Unmanaged<HSHashObjectNew>.fromOpaque(ptr.pointee).takeUnretainedValue()
+/// Extract an HSHashObjectNew from userdata at a given stack index.
+private func toHashObject(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> HSHashObjectNew? {
+    guard let ptr = luaL_testudata(L, idx, USERDATA_TAG) else { return nil }
+    return Unmanaged<HSHashObjectNew>.fromOpaque(ptr.load(as: UnsafeRawPointer.self)).takeUnretainedValue()
 }
 
 // MARK: - Cosmic Hammer/Lua Infrastructure
 
 private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    guard let obj = getHashObject(L, at: 1) else { return 0 }
+    guard let obj = toHashObject(L, at: 1) else { return 0 }
     var title = hashLookupTable[obj.hashType].hashName
     if obj.value == nil {
         title = "\(title) <in-progress>"
@@ -702,7 +684,7 @@ private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 }
 
 private func userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    if let obj1 = getHashObject(L, at: 1), let obj2 = getHashObject(L, at: 2) {
+    if let obj1 = toHashObject(L, at: 1), let obj2 = toHashObject(L, at: 2) {
         lua_pushboolean(L, obj1.isEqual(obj2) ? 1 : 0)
     } else {
         lua_pushboolean(L, 0)
@@ -711,16 +693,16 @@ private func userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 }
 
 private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let ptr = luaL_checkudata(L, 1, USERDATA_TAG)!
-    let opaquePtr = ptr.assumingMemoryBound(to: UnsafeMutableRawPointer.self).pointee
-    let obj = Unmanaged<HSHashObjectNew>.fromOpaque(opaquePtr).takeRetainedValue()
+    guard let ptr = luaL_testudata(L, 1, USERDATA_TAG) else { return 0 }
+    let raw = ptr.load(as: UnsafeRawPointer.self)
+    let obj = Unmanaged<HSHashObjectNew>.fromOpaque(raw).takeUnretainedValue()
     obj.selfRefCount -= 1
     if obj.selfRefCount == 0 {
         if obj.context != nil { obj.finish() }
     }
-    // Remove the Metatable so future use of the variable in Lua won't think its valid
     lua_pushnil(L)
     lua_setmetatable(L, 1)
+    Unmanaged<HSHashObjectNew>.fromOpaque(raw).release()
     return 0
 }
 
@@ -750,17 +732,22 @@ private var moduleLib: [luaL_Reg] = [
 
 @_cdecl("luaopen_hs_libhash")
 public func luaopen_hs_libhash(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    refTable = skin.registerLibrary(withObject: USERDATA_TAG,
-                                    functions: &moduleLib,
-                                    metaFunctions: nil,
-                                    objectFunctions: &userdata_metaLib)
+    // Create ref table in registry
+    lua_newtable(L)
+    refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+
+    // Register userdata metatable
+    luaL_newmetatable(L, USERDATA_TAG)
+    lua_pushvalue(L, -1)
+    lua_setfield(L, -2, "__index")  // mt.__index = mt
+    luaL_setfuncs(L, &userdata_metaLib, 0)
+    lua_pop(L, 1)
+
+    // Create module table
+    lua_createtable(L, 0, Int32(moduleLib.count - 1))
+    luaL_setfuncs(L, &moduleLib, 0)
 
     _ = hash_types(L); lua_setfield(L, -2, "types")
-
-    skin.registerPushNSHelper(pushHSHashObjectNew, forClass: "HSHashObjectNew")
-    skin.registerLuaObjectHelper(toHSHashObjectNewFromLua, forClass: "HSHashObjectNew",
-                                 withUserdataMapping: USERDATA_TAG)
 
     return 1
 }

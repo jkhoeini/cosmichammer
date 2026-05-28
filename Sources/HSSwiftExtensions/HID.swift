@@ -165,10 +165,14 @@ private func hid_capslock_off(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 }
 
 private func hid_led_set(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING, LS_TBOOLEAN, LS_TBREAK)
+    guard lua_type(L, 1) == LUA_TSTRING else {
+        return luaL_error(L, "expected string for argument 1")
+    }
+    guard lua_type(L, 2) == LUA_TBOOLEAN else {
+        return luaL_error(L, "expected boolean for argument 2")
+    }
 
-    let name = skin.toNSObject(atIndex: 1) as! String
+    let name = String(cString: lua_tostring(L, 1)!)
     let targetValue = Int(lua_toboolean(L, 2))
     var ret = false
 
@@ -180,7 +184,7 @@ private func hid_led_set(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     case "num":
         ret = hidled_set(UInt32(kHIDUsage_LED_NumLock), targetValue)
     default:
-        skin.logError("Unsupported LED name")
+        return luaL_error(L, "Unsupported LED name")
     }
 
     lua_pushboolean(L, ret ? 1 : 0)
@@ -198,7 +202,7 @@ private var hid_lib: [luaL_Reg] = [
 
 @_cdecl("luaopen_hs_libhid")
 func luaopen_hs_libhid(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.registerLibrary("hs.hid", functions: &hid_lib, metaFunctions: nil)
+    lua_createtable(L, 0, Int32(hid_lib.count - 1))
+    luaL_setfuncs(L, &hid_lib, 0)
     return 1
 }

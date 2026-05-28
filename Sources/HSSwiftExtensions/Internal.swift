@@ -166,7 +166,13 @@ private func hint_close(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let hint = get_hint_arg(L, 1)
     hint.close()
     lua_pushnil(L)
-    lua_setmetatable(L, -2)
+    lua_setmetatable(L, 1)
+    return 0
+}
+
+private func hint_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    guard let ptr = luaL_testudata(L, 1, USERDATA_TAG) else { return 0 }
+    Unmanaged<HintWindow>.fromOpaque(ptr.load(as: UnsafeRawPointer.self)).release()
     return 0
 }
 
@@ -219,15 +225,15 @@ private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 // MARK: - Lua registration tables
 
-private let hintslib: [luaL_Reg] = [
+private var hintslib: [luaL_Reg] = [
     luaL_Reg(name: strdup("test"), func: hints_test),
     luaL_Reg(name: strdup("new"), func: hints_new),
     luaL_Reg(name: nil, func: nil),
 ]
 
-private let hints_metalib: [luaL_Reg] = [
+private var hints_metalib: [luaL_Reg] = [
     luaL_Reg(name: strdup("__eq"), func: hint_eq),
-    luaL_Reg(name: strdup("__gc"), func: hint_close),
+    luaL_Reg(name: strdup("__gc"), func: hint_gc),
     luaL_Reg(name: strdup("__tostring"), func: userdata_tostring),
     luaL_Reg(name: strdup("close"), func: hint_close),
     luaL_Reg(name: nil, func: nil),
@@ -237,10 +243,16 @@ private let hints_metalib: [luaL_Reg] = [
 
 @_cdecl("luaopen_hs_libhints")
 public func luaopen_hs_libhints(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.registerLibrary(withObject: USERDATA_TAG,
-                         functions: hintslib,
-                         metaFunctions: nil,
-                         objectFunctions: hints_metalib)
+    // Register userdata metatable
+    luaL_newmetatable(L, USERDATA_TAG)
+    lua_pushvalue(L, -1)
+    lua_setfield(L, -2, "__index")  // mt.__index = mt
+    luaL_setfuncs(L, &hints_metalib, 0)
+    lua_pop(L, 1)
+
+    // Create module table
+    lua_createtable(L, 0, Int32(hintslib.count - 1))
+    luaL_setfuncs(L, &hintslib, 0)
+
     return 1
 }

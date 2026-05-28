@@ -1,8 +1,6 @@
 import Cocoa
 import LuaSkin
 
-// Source: https://gist.github.com/shpakovski/1902994
-
 private func transformDataWithFunction(
     _ inputData: NSData,
     _ function: (CFTypeRef, UnsafeMutablePointer<Unmanaged<CFError>?>?) -> SecTransform?
@@ -13,28 +11,30 @@ private func transformDataWithFunction(
     return NSData(data: outputDataRef as Data)
 }
 
-// hs.base64.encode(val) -> str
-// Function
-// Returns the base64 encoding of the string provided.
 private func base64_encode(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    LuaSkin.skin(with: L).checkArgs(LS_TNUMBER | LS_TSTRING, LS_TBREAK)
+    let t = lua_type(L, 1)
+    guard t == LUA_TNUMBER || t == LUA_TSTRING else {
+        return luaL_error(L, "expected string or number for argument 1")
+    }
     var sz: Int = 0
     let data = luaL_tolstring(L, 1, &sz)!
     let decodedStr = NSData(bytes: data, length: sz)
+    lua_pop(L, 1)
 
     let encodedStr = transformDataWithFunction(decodedStr, SecEncodeTransformCreate)
     lua_pushlstring(L, encodedStr.bytes.assumingMemoryBound(to: CChar.self), encodedStr.length)
     return 1
 }
 
-//  hs.base64.decode(str) -> val
-// Function
-// Returns a Lua string representing the given base64 string.
 private func base64_decode(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    LuaSkin.skin(with: L).checkArgs(LS_TNUMBER | LS_TSTRING, LS_TBREAK)
+    let t = lua_type(L, 1)
+    guard t == LUA_TNUMBER || t == LUA_TSTRING else {
+        return luaL_error(L, "expected string or number for argument 1")
+    }
     var sz: Int = 0
     let data = luaL_tolstring(L, 1, &sz)!
     let encodedStr = NSData(bytes: data, length: sz)
+    lua_pop(L, 1)
 
     let decodedStr = transformDataWithFunction(encodedStr, SecDecodeTransformCreate)
     lua_pushlstring(L, decodedStr.bytes.assumingMemoryBound(to: CChar.self), decodedStr.length)
@@ -49,7 +49,7 @@ private var base64_lib: [luaL_Reg] = [
 
 @_cdecl("luaopen_hs_libbase64")
 public func luaopen_hs_libbase64(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.registerLibrary("hs.base64", functions: &base64_lib, metaFunctions: nil)
+    lua_createtable(L, 0, Int32(base64_lib.count - 1))
+    luaL_setfuncs(L, &base64_lib, 0)
     return 1
 }

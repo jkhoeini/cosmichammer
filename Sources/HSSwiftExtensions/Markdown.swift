@@ -408,32 +408,42 @@ private func convertMarkdown(_ input: String, mode: ModeType) -> String {
 ///   * HARD_WRAP     - line breaks are replaced with <br> entities
 ///   * SPACE_HEADERS - require a space between the `#` and the name of a header (prevents collisions with the Issues filter)
 private func markdown_convert(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING, LS_TSTRING | LS_TOPTIONAL, LS_TBREAK)
+    let t1 = lua_type(L, 1)
+    guard t1 == LUA_TSTRING else {
+        return luaL_argerror(L, 1, "expected string")
+    }
 
     var mode: ModeType = .gfm
-    if lua_gettop(L) == 2 {
-        let modeString = skin.toNSObject(atIndex: 2) as! NSString
-        if modeString.isEqual(to: "gfm") {
+    if lua_gettop(L) >= 2 && lua_type(L, 2) == LUA_TSTRING {
+        let modeString = String(cString: lua_tostring(L, 2)!)
+        if modeString == "gfm" {
             mode = .gfm
-        } else if modeString.isEqual(to: "markdown") || modeString.isEqual(to: "readme") {
+        } else if modeString == "markdown" || modeString == "readme" {
             mode = .markdown
-        } else if modeString.isEqual(to: "plaintext") {
+        } else if modeString == "plaintext" {
             mode = .plaintext
         } else {
             return luaL_argerror(L, 2, "invalid mode, \(modeString), specified")
         }
     }
 
-    // Get input as raw bytes (NSData) and convert to String
-    let textBody = skin.toNSObject(atIndex: 1, withOptions: .nsLuaStringAsDataOnly) as! NSData
-    let inputString = String(data: textBody as Data, encoding: .utf8) ?? ""
+    // Get input as raw bytes and convert to String
+    var sz: Int = 0
+    let rawPtr = lua_tolstring(L, 1, &sz)!
+    let inputData = Data(bytes: rawPtr, count: sz)
+    let inputString = String(data: inputData, encoding: .utf8) ?? ""
 
     let output = convertMarkdown(inputString, mode: mode)
 
-    // Push result as NSData to preserve exact byte output
-    let outputData = (output as NSString).data(using: String.Encoding.utf8.rawValue) ?? Data()
-    skin.pushNSObject(outputData as NSData)
+    // Push result as raw bytes to preserve exact byte output
+    let outputData = output.data(using: .utf8) ?? Data()
+    outputData.withUnsafeBytes { ptr in
+        if let base = ptr.baseAddress {
+            lua_pushlstring(L, base.assumingMemoryBound(to: CChar.self), outputData.count)
+        } else {
+            lua_pushlstring(L, "", 0)
+        }
+    }
 
     return 1
 }
@@ -447,7 +457,7 @@ private var moduleLib: [luaL_Reg] = [
 
 @_cdecl("luaopen_hs_libmarkdown")
 public func luaopen_hs_libmarkdown(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.registerLibrary("hs.doc.markdown", functions: &moduleLib, metaFunctions: nil)
+    lua_createtable(L, 0, Int32(moduleLib.count - 1))
+    luaL_setfuncs(L, &moduleLib, 0)
     return 1
 }

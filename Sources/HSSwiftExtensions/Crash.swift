@@ -40,11 +40,15 @@ private func burnTheWorld(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Notes:
 ///  * Outside of a context of a Lua pcall() (or a C lua_pcall()), this will cause Cosmic Hammer to exit. We follow the safe behaviour of terminating the app on any unhandled Objective C exception.
 private func throwTheWorld(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING, LS_TSTRING, LS_TBREAK)
+    guard lua_type(L, 1) == LUA_TSTRING else {
+        return luaL_error(L, "expected string for argument 1")
+    }
+    guard lua_type(L, 2) == LUA_TSTRING else {
+        return luaL_error(L, "expected string for argument 2")
+    }
 
-    let name = skin.toNSObject(atIndex: 1) as! String
-    let message = skin.toNSObject(atIndex: 2) as! String
+    let name = String(cString: lua_tostring(L, 1)!)
+    let message = String(cString: lua_tostring(L, 2)!)
     NSException(name: NSExceptionName(rawValue: name), reason: message, userInfo: nil).raise()
 
     return 0
@@ -63,8 +67,8 @@ private func throwTheWorld(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Notes:
 ///  * This is probably only useful to extension developers.
 private func crashLog(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.logBreadcrumb(skin.toNSObject(atIndex: 1) as! String)
+    let msg = String(cString: luaL_checkstring(L, 1))
+    os_log(.info, "breadcrumb: %{public}s", msg)
 
     return 0
 }
@@ -80,11 +84,15 @@ private func crashLog(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * None
 private func crashKV(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING, LS_TSTRING, LS_TBREAK)
+    guard lua_type(L, 1) == LUA_TSTRING else {
+        return luaL_error(L, "expected string for argument 1")
+    }
+    guard lua_type(L, 2) == LUA_TSTRING else {
+        return luaL_error(L, "expected string for argument 2")
+    }
 
-    let _ = skin.toNSObject(atIndex: 1) as! String
-    let _ = skin.toNSObject(atIndex: 2) as! String
+    let _ = String(cString: lua_tostring(L, 1)!)
+    let _ = String(cString: lua_tostring(L, 2)!)
 
     return 0
 }
@@ -131,7 +139,7 @@ private var crashlib: [luaL_Reg] = [
 
 @_cdecl("luaopen_hs_libcrash")
 public func luaopen_hs_libcrash(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.registerLibrary("hs.crash", functions: &crashlib, metaFunctions: nil)
+    lua_createtable(L, 0, Int32(crashlib.count - 1))
+    luaL_setfuncs(L, &crashlib, 0)
     return 1
 }

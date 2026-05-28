@@ -57,8 +57,6 @@ private func LMUtoLux(_ value: UInt64) -> UInt64 {
 ///  * On Silicon based macs, this function uses a method similar to that used by `corebrightnessdiag` to retrieve the aggregate lux as reported to `sysdiagnose`.
 ///  * On Intel based macs, the raw sensor data is converted to lux via an algorithm used by Mozilla Firefox and is not guaranteed to give an accurate lux value.
 private func brightness_ambient(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-
     let serviceObject = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AppleLMUController"))
 
     if serviceObject == IO_OBJECT_NULL {
@@ -73,7 +71,7 @@ private func brightness_ambient(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
             if ourDSC.responds(to: sel) {
                 let key: NSString = "AggregatedLux"
                 if let result = ourDSC.perform(sel, with: key)?.takeRetainedValue() as? NSNumber {
-                    skin.pushNSObject(result)
+                    lua_pushnumber(L, result.doubleValue)
                     return 1
                 }
             }
@@ -122,7 +120,7 @@ private func brightness_ambient(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 /// Returns:
 ///  * True if the brightness was set, false if not
 private func brightness_set(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let level = Float(min(max(Double(luaL_checkinteger(L, 1)) / 100.0, 0.0), 1.0))
+    let level = Float(min(max(luaL_checknumber(L, 1) / 100.0, 0.0), 1.0))
     if let setBrightness = _setBrightness {
         let err = setBrightness(CGMainDisplayID(), level)
         lua_pushboolean(L, (err == Int32(CGError.success.rawValue)) ? 1 : 0)
@@ -167,7 +165,8 @@ private let brightnessLib: [luaL_Reg] = [
 
 @_cdecl("luaopen_hs_libbrightness")
 public func luaopen_hs_libbrightness(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.registerLibrary("hs.brightness", functions: brightnessLib, metaFunctions: nil)
+    var lib = brightnessLib
+    lua_createtable(L, 0, Int32(lib.count - 1))
+    luaL_setfuncs(L, &lib, 0)
     return 1
 }

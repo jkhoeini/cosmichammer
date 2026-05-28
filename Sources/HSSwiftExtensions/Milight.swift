@@ -3,9 +3,10 @@ import Carbon
 import LuaSkin
 
 private let USERDATA_TAG = "hs.milight"
+private var refTable: Int32 = LUA_NOREF
 
 private struct BridgeData {
-    var ip: UnsafePointer<CChar>?
+    var ip: UnsafeMutablePointer<CChar>?
     var port: Int32
     var socket: Int32
     var sockaddr: sockaddr_in
@@ -92,7 +93,7 @@ private func milight_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let bridge = lua_newuserdata(L, MemoryLayout<BridgeData>.size)!.assumingMemoryBound(to: BridgeData.self)
     memset(bridge, 0, MemoryLayout<BridgeData>.size)
 
-    bridge.pointee.ip = ip
+    bridge.pointee.ip = strdup(ip)
     bridge.pointee.port = port
 
     bridge.pointee.socket = socket(AF_INET, SOCK_DGRAM, 0)
@@ -128,6 +129,10 @@ private func milight_del(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let bridge = luaL_checkudata(L, 1, USERDATA_TAG)!.assumingMemoryBound(to: BridgeData.self)
 
     close(bridge.pointee.socket)
+    if let ip = bridge.pointee.ip {
+        free(ip)
+        bridge.pointee.ip = nil
+    }
 
     return 0
 }
@@ -146,7 +151,6 @@ private func milight_del(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Notes:
 ///  * This is a low level command, you typically should use a specific method for the operation you want to perform
 private func milight_send(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     let bridge = luaL_checkudata(L, 1, USERDATA_TAG)!.assumingMemoryBound(to: BridgeData.self)
 
     let cmd_key = UInt8(luaL_checkinteger(L, 2))
@@ -169,11 +173,7 @@ private func milight_send(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     if result == 3 {
         lua_pushboolean(L, 1)
         usleep(100000) // The bridge requires we sleep for 100ms after each command
-    } else if result == -1 {
-        skin.logBreadcrumb("milight: Error sending command: \(String(cString: strerror(errno)))")
-        lua_pushboolean(L, 0)
     } else {
-        skin.logBreadcrumb("milight: Error, incorrect amount of data written (\(result) bytes)")
         lua_pushboolean(L, 0)
     }
 
@@ -195,13 +195,13 @@ private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 1
 }
 
-private let milightlib: [luaL_Reg] = [
+private var milightlib: [luaL_Reg] = [
     luaL_Reg(name: strdup("_cacheCommands"), func: milight_cacheCommands),
     luaL_Reg(name: strdup("new"), func: milight_new),
     luaL_Reg(name: nil, func: nil),
 ]
 
-private let milight_objectlib: [luaL_Reg] = [
+private var milight_objectlib: [luaL_Reg] = [
     luaL_Reg(name: strdup("delete"), func: milight_del),
     luaL_Reg(name: strdup("send"), func: milight_send),
     luaL_Reg(name: strdup("__tostring"), func: userdata_tostring),
@@ -211,8 +211,20 @@ private let milight_objectlib: [luaL_Reg] = [
 
 @_cdecl("luaopen_hs_libmilight")
 public func luaopen_hs_libmilight(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.registerLibrary(withObject: USERDATA_TAG, functions: milightlib, metaFunctions: nil, objectFunctions: milight_objectlib)
+    // Create ref table in registry
+    lua_newtable(L)
+    refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+
+    // Register userdata metatable
+    luaL_newmetatable(L, USERDATA_TAG)
+    lua_pushvalue(L, -1)
+    lua_setfield(L, -2, "__index")  // mt.__index = mt
+    luaL_setfuncs(L, &milight_objectlib, 0)
+    lua_pop(L, 1)
+
+    // Create module table
+    lua_createtable(L, 0, Int32(milightlib.count - 1))
+    luaL_setfuncs(L, &milightlib, 0)
 
     return 1
 }

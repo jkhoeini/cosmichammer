@@ -18,8 +18,6 @@ import ScriptingBridge
 
 extension SBApplication: ShortcutsEventsApplication {}
 
-private var refTable: LSRefTable = LUA_NOREF
-
 // MARK: - Module Functions
 
 /// hs.shortcuts.list() -> []
@@ -36,9 +34,6 @@ private var refTable: LSRefTable = LUA_NOREF
 ///   * acceptsInput - A boolean indicating if the shortcut requires input
 ///   * actionCount - A number relating to how many actions are in the shortcut
 private func shortcuts_list(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TBREAK)
-
     guard let app: ShortcutsEventsApplication = SBApplication(bundleIdentifier: "com.apple.shortcuts.events") else {
         lua_pushnil(L)
         return 1
@@ -61,7 +56,7 @@ private func shortcuts_list(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
         }
     }
 
-    skin.pushNSObject(shortcuts as NSArray)
+    lua_pushany(L, shortcuts as NSArray)
     return 1
 }
 
@@ -75,10 +70,7 @@ private func shortcuts_list(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * None
 private func shortcuts_run(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING, LS_TBREAK)
-
-    let name = skin.toNSObject(at: 1) as! String
+    let name = String(cString: luaL_checkstring(L, 1))
 
     guard let app: ShortcutsEventsApplication = SBApplication(bundleIdentifier: "com.apple.shortcuts.events") else {
         return 0
@@ -106,7 +98,7 @@ private var moduleLib: [luaL_Reg] = [
 
 @_cdecl("luaopen_hs_libshortcuts")
 public func luaopen_hs_libshortcuts(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    refTable = skin.registerLibrary("hs.shortcuts", functions: &moduleLib, metaFunctions: nil)
+    lua_createtable(L, 0, Int32(moduleLib.count - 1))
+    luaL_setfuncs(L, &moduleLib, 0)
     return 1
 }

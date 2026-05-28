@@ -20,24 +20,14 @@ import Darwin.POSIX.sys.xattr
 ///  * "noSecurity"      - bypass authorization checking
 ///  * "noDefault"       - bypass the default extended attribute file (dot-underscore file)
 
-// MARK: - Constants
-
-// private let USERDATA_TAG = "hs.fs.xattr"
-private var refTable: LSRefTable = LUA_NOREF
-
 // MARK: - Support Functions
 
 private func parseOptionsTable(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    let optionList: NSArray
+    let optionList: [Any]
     if lua_type(L, idx) == LUA_TTABLE {
-        optionList = skin.toNSObject(atIndex: idx) as? NSArray ?? NSArray()
+        optionList = lua_tovalue(L, at: idx) as? [Any] ?? []
     } else {
-        optionList = NSArray()
-    }
-
-    if !(optionList is NSArray) {
-        return luaL_argerror(L, idx, "expected an array of strings")
+        optionList = []
     }
 
     var errMsg: String? = nil
@@ -107,15 +97,15 @@ private func expandErrno(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * True if the operation succeeds; otherwise throws a Lua error with a description of reason for failure.
 private func xattr_setxattr(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING, LS_TSTRING, LS_TSTRING, LS_TTABLE | LS_TOPTIONAL, LS_TNUMBER | LS_TINTEGER | LS_TOPTIONAL, LS_TBREAK)
-
-    var path = skin.toNSObject(atIndex: 1) as! NSString
+    var path = NSString(utf8String: luaL_checkstring(L, 1))!
     path = path.expandingTildeInPath as NSString
 
-    let attribute = skin.toNSObject(atIndex: 2) as! NSString
+    let attribute = NSString(utf8String: luaL_checkstring(L, 2))!
 
-    let value = skin.toNSObject(atIndex: 3, withOptions: .nsLuaStringAsDataOnly) as! NSData
+    // Get raw bytes from Lua string (not UTF-8 converted)
+    var valueLen: Int = 0
+    let valuePtr = luaL_checklstring(L, 3, &valueLen)!
+    let value = NSData(bytes: valuePtr, length: valueLen)
 
     let options = parseOptionsTable(L, 4)
 
@@ -144,13 +134,10 @@ private func xattr_setxattr(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * True if the operation succeeds; otherwise throws a Lua error with a description of reason for failure.
 private func xattr_removexattr(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING, LS_TSTRING, LS_TTABLE | LS_TOPTIONAL, LS_TBREAK)
-
-    var path = skin.toNSObject(atIndex: 1) as! NSString
+    var path = NSString(utf8String: luaL_checkstring(L, 1))!
     path = path.expandingTildeInPath as NSString
 
-    let attribute = skin.toNSObject(atIndex: 2) as! NSString
+    let attribute = NSString(utf8String: luaL_checkstring(L, 2))!
 
     let options = parseOptionsTable(L, 3)
 
@@ -178,13 +165,10 @@ private func xattr_removexattr(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Notes:
 ///  * See also [hs.fs.xattr.getHumanReadable](#getHumanReadable).
 private func xattr_getxattr(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING, LS_TSTRING, LS_TTABLE | LS_TOPTIONAL, LS_TNUMBER | LS_TINTEGER | LS_TOPTIONAL, LS_TBREAK)
-
-    var path = skin.toNSObject(atIndex: 1) as! NSString
+    var path = NSString(utf8String: luaL_checkstring(L, 1))!
     path = path.expandingTildeInPath as NSString
 
-    let attribute = skin.toNSObject(atIndex: 2) as! NSString
+    let attribute = NSString(utf8String: luaL_checkstring(L, 2))!
 
     let options = parseOptionsTable(L, 3)
 
@@ -198,7 +182,7 @@ private func xattr_getxattr(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
         let buffer = malloc(bufferSize)!
         bufferSize = getxattr(path.utf8String, attribute.utf8String, buffer, bufferSize, position, Int32(options))
         if bufferSize > 0 {
-            skin.pushNSObject(NSData(bytes: buffer, length: bufferSize))
+            lua_pushlstring(L, buffer.assumingMemoryBound(to: CChar.self), bufferSize)
         }
         free(buffer)
     } else if bufferSize == 0 {
@@ -225,10 +209,7 @@ private func xattr_getxattr(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * a table containing an array of strings identifying the extended attributes currently defined for the file or directory; note that the order of the attributes is nondeterministic and is not guaranteed to be the same for future queries.  Throws a Lua error on failure with a description of the reason for the failure.
 private func xattr_listxattr(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING, LS_TTABLE | LS_TOPTIONAL, LS_TBREAK)
-
-    var path = skin.toNSObject(atIndex: 1) as! NSString
+    var path = NSString(utf8String: luaL_checkstring(L, 1))!
     path = path.expandingTildeInPath as NSString
 
     let options = parseOptionsTable(L, 2)
@@ -270,8 +251,8 @@ private let moduleLib: [luaL_Reg] = [
 
 @_cdecl("luaopen_hs_libfsxattr")
 public func luaopen_hs_libfsxattr(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    refTable = skin.registerLibrary("hs.fs.xattr", functions: moduleLib, metaFunctions: nil)
-
+    var lib = moduleLib
+    lua_createtable(L, 0, Int32(lib.count - 1))
+    luaL_setfuncs(L, &lib, 0)
     return 1
 }
