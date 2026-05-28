@@ -47,8 +47,7 @@ private let eventtapCallback: CGEventTapCallBack = { proxy, type, event, userInf
     guard let userInfo = userInfo else { return Unmanaged.passUnretained(event) }
     let e = Unmanaged<Eventtap>.fromOpaque(userInfo).takeUnretainedValue()
 
-    let skin = LuaSkin.skin(with: nil)
-    let L = skin.l
+    let L = LuaSkin.skin(with: nil).l!
 
     if !lua_isStateGenerationValid(e.lsCanary) {
         return Unmanaged.passUnretained(event)

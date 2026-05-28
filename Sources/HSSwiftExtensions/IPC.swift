@@ -16,7 +16,6 @@ class HSIPCMessagePort: NSObject {
 private var callbackInProgress: Int = 0
 
 private let ipc_callback: CFMessagePortCallBack = { (local, msgid, data, info) -> Unmanaged<CFData>? in
-    let skin = LuaSkin.skin(with: nil)
     let L = LuaSkin.skin(with: nil).l!
     let port = Unmanaged<HSIPCMessagePort>.fromOpaque(info!).takeUnretainedValue()
     var outdata: Unmanaged<CFData>? = nil
@@ -210,8 +209,6 @@ private func ipc_isValid(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * status   - a boolean indicating whether or not the local port responded before the timeout (true) or if an error or timeout occurred waiting for the response (false)
 ///  * response - the response from the local port, usually a string, but may be nil if there was no response returned.  If status is false, will contain an error message describing the error.
 private func ipc_sendMessage(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-
     let port = lua_tovalue(L, at: 1) as! HSIPCMessagePort
     guard CFMessagePortIsValid(port.messagePort) else {
         return luaL_error(L, "ipc port is no longer valid (early)")
@@ -238,7 +235,7 @@ private func ipc_sendMessage(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let oneWay = lua_isboolean(L, -1) ? (lua_toboolean(L, -1) != 0) : false
 
     let portName = CFMessagePortGetName(port.messagePort) as String? ?? "unknown"
-    skin.logDebug("ipc_sendMessage on \(portName)")
+    os_log(.debug, "%{public}s", "ipc_sendMessage on \(portName)")
 
     var returnedData: Unmanaged<CFData>?
     guard CFMessagePortIsValid(port.messagePort) else {

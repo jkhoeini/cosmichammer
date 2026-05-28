@@ -125,10 +125,9 @@ private class PingableObject: SimplePing, SimplePingDelegate {
     }
 
     func simplePing(_ pinger: SimplePing, didFailWithError error: Error) {
-        let skin = LuaSkin.skin(with: nil)
         let L = LuaSkin.skin(with: nil).l!
         let errorReason = error.localizedDescription
-        skin.logDebug("\(USERDATA_TAG):didFailWithError:\(errorReason) - ping stopped.")
+        os_log(.debug, "%{public}s", "\(USERDATA_TAG):didFailWithError:\(errorReason) - ping stopped.")
         if callbackRef != LUA_NOREF {
             lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(callbackRef))
             lua_pushany(L, pinger as! PingableObject)

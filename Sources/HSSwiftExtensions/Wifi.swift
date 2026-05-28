@@ -1,6 +1,7 @@
 import Cocoa
 import CoreWLAN
 import LuaSkin
+import os.log
 
 private let USERDATA_TAG = "hs.wifi"
 private var refTable: Int32 = LUA_NOREF
@@ -52,11 +53,10 @@ private class HSWifiScan: NSObject {
 
     @objc func invokeCallback(_ object: Any?) {
         if fnRef != LUA_NOREF {
-            let skin = LuaSkin.skin(with: nil)
             let L = LuaSkin.skin(with: nil).l!
             lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(fnRef))
             if let error = object as? NSError {
-                skin.logInfo(error.localizedDescription)
+                os_log(.info, "%{public}s", error.localizedDescription)
                 lua_pushany(L, error.localizedDescription as NSString)
             } else if let networks = object as? Set<CWNetwork> {
                 lua_pushany(L, networks as NSSet)

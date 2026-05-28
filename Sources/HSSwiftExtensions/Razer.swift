@@ -539,7 +539,6 @@ private func razerEventTapCallback(
         return Unmanaged.passUnretained(event)
     }
 
-    let skin = LuaSkin.skin(with: nil)
     guard lua_isStateGenerationValid(device.lsCanary) else {
         return Unmanaged.passUnretained(event)
     }
@@ -1502,7 +1501,6 @@ private let razer_backlightsBreathing: lua_CFunction = { L in
 ///   hs.razer.new(0):backlightsCustom({hs.drawing.color.red, nil, hs.drawing.color.green, hs.drawing.color.blue})
 ///   ```
 private let razer_backlightsCustom: lua_CFunction = { L in
-    let skin = LuaSkin.skin(with: L)
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     luaL_checktype(L, 2, LUA_TTABLE)
@@ -1512,7 +1510,7 @@ private let razer_backlightsCustom: lua_CFunction = { L in
     lua_pushnil(L)
     while lua_next(L, 2) != 0 {
         let key = NSNumber(value: lua_tonumber(L, -2))
-        let color = skin.luaObject(at: -1, toClass: "NSColor") as? NSColor
+        let color = tableToNSColor(L, at: -1)
         if let color = color { customColors[key] = color }
         lua_pop(L, 1)
     }

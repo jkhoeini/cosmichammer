@@ -1,4 +1,4 @@
-import Foundation
+import Cocoa
 import LuaSkin
 
 // MARK: - Boolean detection
@@ -442,6 +442,59 @@ func lua_tableToRect(_ L: UnsafeMutablePointer<lua_State>!, at index: Int32) -> 
     let h: CGFloat = (lua_getfield(L, idx, "h") == LUA_TNUMBER) ? CGFloat(lua_tonumber(L, -1)) : 0.0
     lua_pop(L, 4)
     return NSMakeRect(x, y, w, h)
+}
+
+// MARK: - Typed userdata extraction helpers
+
+/// Extract an NSImage from hs.image userdata at the given stack index.
+func toNSImage(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> NSImage? {
+    guard let ptr = luaL_testudata(L, idx, "hs.image") else { return nil }
+    return Unmanaged<NSImage>.fromOpaque(ptr.load(as: UnsafeRawPointer.self)).takeUnretainedValue()
+}
+
+/// Extract an NSAttributedString from hs.styledtext userdata at the given stack index.
+func toNSAttributedString(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> NSAttributedString? {
+    guard let ptr = luaL_testudata(L, idx, "hs.styledtext") else { return nil }
+    return Unmanaged<NSAttributedString>.fromOpaque(ptr.load(as: UnsafeRawPointer.self)).takeUnretainedValue()
+}
+
+/// Convert a Lua color table `{red=, green=, blue=, alpha=}` to NSColor.
+func tableToNSColor(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> NSColor? {
+    guard lua_type(L, idx) == LUA_TTABLE else { return nil }
+    let absIdx = lua_absindex(L, idx)
+    lua_getfield(L, absIdx, "red")
+    let r = lua_isnumber(L, -1) != 0 ? CGFloat(lua_tonumber(L, -1)) : 0
+    lua_getfield(L, absIdx, "green")
+    let g = lua_isnumber(L, -1) != 0 ? CGFloat(lua_tonumber(L, -1)) : 0
+    lua_getfield(L, absIdx, "blue")
+    let b = lua_isnumber(L, -1) != 0 ? CGFloat(lua_tonumber(L, -1)) : 0
+    lua_getfield(L, absIdx, "alpha")
+    let a = lua_isnumber(L, -1) != 0 ? CGFloat(lua_tonumber(L, -1)) : 1.0
+    lua_pop(L, 4)
+    return NSColor(red: r, green: g, blue: b, alpha: a)
+}
+
+/// Convert a Lua font table `{name=, size=}` or font name string to NSFont.
+func tableToNSFont(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> NSFont? {
+    var theName = NSFont.systemFont(ofSize: 0).fontName
+    var theSize = NSFont.systemFontSize
+
+    if lua_type(L, idx) == LUA_TSTRING {
+        theName = String(cString: lua_tostring(L, idx)!)
+    } else if lua_type(L, idx) == LUA_TTABLE {
+        if lua_getfield(L, idx, "name") == LUA_TSTRING {
+            theName = String(cString: lua_tostring(L, -1)!)
+        }
+        lua_pop(L, 1)
+        if lua_getfield(L, idx, "size") == LUA_TNUMBER {
+            theSize = CGFloat(lua_tonumber(L, -1))
+        }
+        lua_pop(L, 1)
+    } else {
+        return nil
+    }
+
+    return NSFont(name: theName, size: theSize) ?? NSFont.systemFont(ofSize: theSize)
 }
 
 // MARK: - GC Canary (replaces LSGCCanary)

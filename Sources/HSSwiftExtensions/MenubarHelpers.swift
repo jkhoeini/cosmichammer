@@ -10,7 +10,6 @@ import os.log
     var item: Int32 = LUA_NOREF
 
     func callback_runner() {
-        let skin = LuaSkin.skin(with: nil)
         let L = LuaSkin.skin(with: nil).l!
 
         var fn_result: Bool
@@ -74,8 +73,7 @@ var mb_dynamicMenuDelegates: NSMutableArray!
 
 @objc class HSMenubarItemClickDelegate: HSMenubarCallbackObject {
     @objc func click(_ sender: Any?) {
-        let skin = LuaSkin.skin(with: nil)
-        let L = skin.l!
+        let L = LuaSkin.skin(with: nil).l!
         // Issue #909 -- if the callback causes the menu to be replaced, we crash if this delegate
         // disappears from beneath us... this keeps it from being collected before the callback is done.
         var myDelegate: NSObject? = nil
@@ -92,8 +90,7 @@ var mb_dynamicMenuDelegates: NSMutableArray!
     var stateBoxImageSize: NSSize = .zero
 
     func menuNeedsUpdate(_ menu: NSMenu) {
-        let skin = LuaSkin.skin(with: nil)
-        let L = skin.l!
+        let L = LuaSkin.skin(with: nil).l!
         callback_runner()
 
         if lua_type(L, lua_gettop(L)) == LUA_TTABLE {
@@ -116,8 +113,6 @@ func mb_proportionallyScaleStateImageSize(_ theImage: NSImage, _ stateBoxImageSi
 
 // Helper function to parse a Lua table and turn it into an NSMenu hierarchy
 func mb_parse_table(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32, _ menu: NSMenu, _ stateBoxImageSize: NSSize) {
-    let skin = LuaSkin.skin(with: L)
-
     lua_pushnil(L)
     while lua_next(L, idx) != 0 {
         if lua_type(L, -1) != LUA_TTABLE {
@@ -135,7 +130,14 @@ func mb_parse_table(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32, _ menu:
             continue
         }
 
-        let aTitle = skin.luaObject(at:-1, toClass: "NSAttributedString") as! NSAttributedString
+        let aTitle: NSAttributedString
+        if let styledText = toNSAttributedString(L, at: -1) {
+            aTitle = styledText
+        } else if lua_isstring(L, -1) {
+            aTitle = NSAttributedString(string: String(cString: lua_tostring(L, -1)!))
+        } else {
+            aTitle = NSAttributedString(string: "")
+        }
         let title = aTitle.string
 
         lua_pop(L, 1)
@@ -143,7 +145,7 @@ func mb_parse_table(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32, _ menu:
         if title == "-" {
             menu.addItem(.separator())
         } else {
-            let menuTitle = title ?? ""
+            let menuTitle = title
             let menuItem = NSMenuItem(title: menuTitle, action: nil, keyEquivalent: "")
             if titleType != LUA_TSTRING { menuItem.attributedTitle = aTitle }
 
@@ -220,40 +222,32 @@ func mb_parse_table(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32, _ menu:
 
             // MARK: image keys
             lua_getfield(L, -1, "image")
-            if luaL_testudata(L, -1, "hs.image") != nil {
-                if let image = skin.luaObject(at:-1, toClass: "NSImage") as? NSImage {
-                    menuItem.image = image.copy() as? NSImage
-                }
+            if let image = toNSImage(L, at: -1) {
+                menuItem.image = image.copy() as? NSImage
             }
             lua_pop(L, 1)
 
             lua_getfield(L, -1, "onStateImage")
-            if luaL_testudata(L, -1, "hs.image") != nil {
-                if let image = skin.luaObject(at:-1, toClass: "NSImage") as? NSImage {
-                    let imageCopy = image.copy() as! NSImage
-                    imageCopy.size = mb_proportionallyScaleStateImageSize(imageCopy, stateBoxImageSize)
-                    menuItem.onStateImage = imageCopy
-                }
+            if let image = toNSImage(L, at: -1) {
+                let imageCopy = image.copy() as! NSImage
+                imageCopy.size = mb_proportionallyScaleStateImageSize(imageCopy, stateBoxImageSize)
+                menuItem.onStateImage = imageCopy
             }
             lua_pop(L, 1)
 
             lua_getfield(L, -1, "offStateImage")
-            if luaL_testudata(L, -1, "hs.image") != nil {
-                if let image = skin.luaObject(at:-1, toClass: "NSImage") as? NSImage {
-                    let imageCopy = image.copy() as! NSImage
-                    imageCopy.size = mb_proportionallyScaleStateImageSize(imageCopy, stateBoxImageSize)
-                    menuItem.offStateImage = imageCopy
-                }
+            if let image = toNSImage(L, at: -1) {
+                let imageCopy = image.copy() as! NSImage
+                imageCopy.size = mb_proportionallyScaleStateImageSize(imageCopy, stateBoxImageSize)
+                menuItem.offStateImage = imageCopy
             }
             lua_pop(L, 1)
 
             lua_getfield(L, -1, "mixedStateImage")
-            if luaL_testudata(L, -1, "hs.image") != nil {
-                if let image = skin.luaObject(at:-1, toClass: "NSImage") as? NSImage {
-                    let imageCopy = image.copy() as! NSImage
-                    imageCopy.size = mb_proportionallyScaleStateImageSize(imageCopy, stateBoxImageSize)
-                    menuItem.mixedStateImage = imageCopy
-                }
+            if let image = toNSImage(L, at: -1) {
+                let imageCopy = image.copy() as! NSImage
+                imageCopy.size = mb_proportionallyScaleStateImageSize(imageCopy, stateBoxImageSize)
+                menuItem.mixedStateImage = imageCopy
             }
             lua_pop(L, 1)
 
