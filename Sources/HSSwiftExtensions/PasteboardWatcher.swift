@@ -7,7 +7,6 @@ import LuaSkin
 /// macOS doesn't offer any API for getting Pasteboard notifications, so this extension uses polling to check for Pasteboard changes at a chosen interval (defaults to 0.25).
 
 private let USERDATA_TAG = "hs.pasteboard.watcher"
-private var refTable: LSRefTable = 0
 
 // How often we should poll the Pasteboard for changes:
 private var pollingInterval: Double = 0.25
@@ -61,25 +60,19 @@ class HSPasteboardTimer: NSObject {
         // Trigger Lua Callback Function:
         let skin = LuaSkin.skin(with: nil)
         let L = skin.l!
-        _lua_stackguard_entry(L)
 
-        skin.pushLuaRef(refTable, ref: fnRef)
+        lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(fnRef))
 
         let result = pb.string(forType: .string)
         if let result = result {
-            skin.pushNSObject(result as NSString)
+            lua_pushany(L, result)
         } else {
             lua_pushnil(L)
         }
 
-        if !skin.protectedCallAndTraceback(1, nresults: 0) {
-            let errorMsg = String(cString: lua_tostring(L, -1)!)
-            skin.logBreadcrumb("hs.pasteboard.watcher callback error: \(errorMsg)")
-            skin.logError("hs.pasteboard.watcher callback error: \(errorMsg)")
-            lua_pop(L, 1) // clear error message from stack
+        if lua_pcall(L, 1, 0, 0) != LUA_OK {
+            lua_pop(L, 1)
         }
-
-        _lua_stackguard_exit(L)
     }
 
     func start() {
@@ -172,13 +165,12 @@ class HSPasteboardTimer: NSObject {
 ///  hs.pasteboard.writeObjects("This is on the general pasteboard.")
 ///  hs.pasteboard.writeObjects("This is on the special pasteboard.", "special")```
 private func pasteboardwatcher_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TFUNCTION, LS_TSTRING | LS_TOPTIONAL, LS_TBREAK)
+    luaL_checktype(L, 1, LUA_TFUNCTION)
 
-    let pbName = skin.toNSObject(atIndex: 2) as? String
+    let pbName: String? = (lua_type(L, 2) == LUA_TSTRING) ? String(cString: lua_tostring(L, 2)!) : nil
 
     lua_pushvalue(L, 1)
-    let callbackRef = skin.luaRef(refTable)
+    let callbackRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
 
     // Create the timer object:
     let timer = HSPasteboardTimer()
@@ -208,9 +200,6 @@ private func pasteboardwatcher_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int
 /// Returns:
 ///  * The `hs.pasteboard.watcher` object
 private func pasteboardwatcher_start(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
-
     let timer: HSPasteboardTimer? = get_objectFromUserdata(L, 1, USERDATA_TAG)
     lua_settop(L, 1)
 
@@ -230,8 +219,6 @@ private func pasteboardwatcher_start(_ L: UnsafeMutablePointer<lua_State>!) -> I
 /// Returns:
 ///  * A boolean value indicating whether or not the timer is currently running.
 private func pasteboardwatcher_running(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let timer: HSPasteboardTimer? = get_objectFromUserdata(L, 1, USERDATA_TAG)
 
     lua_pushboolean(L, (timer?.isRunning ?? false) ? 1 : 0)
@@ -249,8 +236,6 @@ private func pasteboardwatcher_running(_ L: UnsafeMutablePointer<lua_State>!) ->
 /// Returns:
 ///  * The `hs.pasteboard.watcher` object
 private func pasteboardwatcher_stop(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let timer: HSPasteboardTimer? = get_objectFromUserdata(L, 1, USERDATA_TAG)
     lua_settop(L, 1)
 
@@ -274,9 +259,7 @@ private func pasteboardwatcher_stop(_ L: UnsafeMutablePointer<lua_State>!) -> In
 ///  * This only affects new watchers, not existing/running ones.
 ///  * The default value is 0.25.
 private func pasteboardwatcher_interval(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TNUMBER | LS_TOPTIONAL, LS_TBREAK)
-    if lua_gettop(L) == 1 {
+    if lua_gettop(L) == 1 && lua_type(L, 1) == LUA_TNUMBER {
         pollingInterval = lua_tonumber(L, 1)
     }
     lua_pushnumber(L, pollingInterval)
@@ -284,12 +267,12 @@ private func pasteboardwatcher_interval(_ L: UnsafeMutablePointer<lua_State>!) -
 }
 
 private func pasteboardwatcher_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     let timer: HSPasteboardTimer? = get_objectFromUserdata_transfer(L, 1, USERDATA_TAG)
 
     if let timer = timer {
         timer.stop()
-        timer.fnRef = skin.luaUnref(refTable, ref: timer.fnRef)
+        luaL_unref(L, LUA_REGISTRYINDEX_VALUE, timer.fnRef)
+        timer.fnRef = LUA_NOREF
         timer.t = nil
         timer.pbName = nil
     }
@@ -310,8 +293,6 @@ private func meta_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 }
 
 private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let timer: HSPasteboardTimer? = get_objectFromUserdata(L, 1, USERDATA_TAG)
 
     let title: String
@@ -351,8 +332,21 @@ private let meta_gcLib: [luaL_Reg] = [
 
 @_cdecl("luaopen_hs_libpasteboardwatcher")
 public func luaopen_hs_libpasteboardwatcher(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    refTable = skin.registerLibrary(USERDATA_TAG, functions: pasteboardWatcher_lib, metaFunctions: meta_gcLib)
-    skin.registerObject(USERDATA_TAG, objectFunctions: pasteboardWatcher_metalib)
+    // Register userdata metatable
+    luaL_newmetatable(L, USERDATA_TAG)
+    lua_pushvalue(L, -1)
+    lua_setfield(L, -2, "__index")  // mt.__index = mt
+    luaL_setfuncs(L, pasteboardWatcher_metalib, 0)
+    lua_pop(L, 1)
+
+    // Create module table
+    lua_createtable(L, 0, Int32(pasteboardWatcher_lib.count - 1))
+    luaL_setfuncs(L, pasteboardWatcher_lib, 0)
+
+    // Set module metatable for __gc
+    lua_createtable(L, 0, 1)
+    luaL_setfuncs(L, meta_gcLib, 0)
+    lua_setmetatable(L, -2)
+
     return 1
 }

@@ -4,8 +4,6 @@ import LuaSkin
 
 private let USERDATA_TAG = "hs.distributednotifications"
 
-private var refTable: LSRefTable = LUA_NOREF
-
 // MARK: - HSDistNotWatcher Definition
 
 private class HSDistNotWatcher: NSObject {
@@ -16,13 +14,14 @@ private class HSDistNotWatcher: NSObject {
     @objc func callback(_ note: NSNotification) {
         guard fnRef != LUA_NOREF && fnRef != LUA_REFNIL else { return }
         let skin = LuaSkin.skin(with: nil)
-        _lua_stackguard_entry(skin.l)
-        skin.pushLuaRef(refTable, ref: fnRef)
-        skin.pushNSObject(note.name.rawValue)
-        skin.pushNSObject(note.object)
-        skin.pushNSObject(note.userInfo)
-        skin.protectedCallAndError("hs.distributednotification callback", nargs: 3, nresults: 0)
-        _lua_stackguard_exit(skin.l)
+        let L = skin.l!
+        lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(fnRef))
+        lua_pushany(L, note.name.rawValue)
+        lua_pushany(L, note.object)
+        lua_pushany(L, note.userInfo)
+        if lua_pcall(L, 3, 0, 0) != LUA_OK {
+            lua_pop(L, 1)
+        }
     }
 }
 
@@ -44,11 +43,10 @@ private class HSDistNotWatcher: NSObject {
 /// Notes:
 ///  * On Catalina and above, it is no longer possible to observe all notifications - the `name` parameter is effectively now required. See https://mjtsai.com/blog/2019/10/04/nsdistributednotificationcenter-no-longer-supports-nil-names/
 private func distnot_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TFUNCTION, LS_TSTRING | LS_TNIL | LS_TOPTIONAL, LS_TSTRING | LS_TNIL | LS_TOPTIONAL, LS_TBREAK)
+    luaL_checktype(L, 1, LUA_TFUNCTION)
 
-    let name: String? = lua_isnoneornil(L, 2) ? nil : (skin.toNSObject(atIndex: 2) as? String)
-    let obj: String? = lua_isnoneornil(L, 3) ? nil : (skin.toNSObject(atIndex: 3) as? String)
+    let name: String? = lua_isnoneornil(L, 2) ? nil : (lua_type(L, 2) == LUA_TSTRING ? String(cString: lua_tostring(L, 2)!) : nil)
+    let obj: String? = lua_isnoneornil(L, 3) ? nil : (lua_type(L, 3) == LUA_TSTRING ? String(cString: lua_tostring(L, 3)!) : nil)
 
     // Allocate userdata to store a pointer to the watcher
     let userData = lua_newuserdata(L, MemoryLayout<UnsafeMutableRawPointer>.size)!
@@ -62,7 +60,7 @@ private func distnot_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     userData.pointee = Unmanaged.passRetained(watcher).toOpaque()
 
     lua_pushvalue(L, 1)
-    watcher.fnRef = skin.luaRef(refTable)
+    watcher.fnRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
     watcher.name = name
     watcher.object = obj
 
@@ -83,14 +81,15 @@ private func distnot_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * None
 private func distnot_post(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING, LS_TSTRING | LS_TNIL | LS_TOPTIONAL, LS_TTABLE | LS_TNIL | LS_TOPTIONAL, LS_TBREAK)
+    guard lua_type(L, 1) == LUA_TSTRING else {
+        return luaL_error(L, "expected string for argument 1")
+    }
 
-    let object: String? = lua_isnoneornil(L, 2) ? nil : (skin.toNSObject(atIndex: 2) as? String)
-    let userInfo: [AnyHashable: Any]? = lua_isnoneornil(L, 3) ? nil : (skin.toNSObject(atIndex: 3) as? [AnyHashable: Any])
+    let noteName = String(cString: lua_tostring(L, 1)!)
+    let object: String? = (lua_type(L, 2) == LUA_TSTRING) ? String(cString: lua_tostring(L, 2)!) : nil
+    let userInfo: [AnyHashable: Any]? = (lua_type(L, 3) == LUA_TTABLE) ? (lua_tovalue(L, at: 3) as? [String: Any]) : nil
 
     let center = DistributedNotificationCenter.default()
-    let noteName = skin.toNSObject(atIndex: 1) as! String
     center.postNotificationName(
         NSNotification.Name(noteName),
         object: object,
@@ -111,10 +110,7 @@ private func distnot_post(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * The `hs.distributednotifications` object
 private func distnot_start(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
-
-    let userData = lua_touserdata(L, 1)!.assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
+    let userData = luaL_checkudata(L, 1, USERDATA_TAG)!.assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
     let watcher = Unmanaged<HSDistNotWatcher>.fromOpaque(userData.pointee!).takeUnretainedValue()
 
     let center = DistributedNotificationCenter.default()
@@ -141,10 +137,7 @@ private func distnot_start(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * The `hs.distributednotifications` object
 private func distnot_stop(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
-
-    let userData = lua_touserdata(L, 1)!.assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
+    let userData = luaL_checkudata(L, 1, USERDATA_TAG)!.assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
     let watcher = Unmanaged<HSDistNotWatcher>.fromOpaque(userData.pointee!).takeUnretainedValue()
 
     let center = DistributedNotificationCenter.default()
@@ -158,29 +151,24 @@ private func distnot_stop(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 // MARK: - Cosmic Hammer Infrastructure
 
 private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
-
-    let userData = lua_touserdata(L, 1)!.assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
+    let userData = luaL_checkudata(L, 1, USERDATA_TAG)!.assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
     let watcher = Unmanaged<HSDistNotWatcher>.fromOpaque(userData.pointee!).takeUnretainedValue()
 
     let ptr = Unmanaged.passUnretained(watcher).toOpaque()
-    skin.pushNSObject("\(USERDATA_TAG): name: \(watcher.name ?? "nil") object: \(watcher.object ?? "nil") (\(ptr))")
+    lua_pushstring(L, "\(USERDATA_TAG): name: \(watcher.name ?? "nil") object: \(watcher.object ?? "nil") (\(ptr))")
     return 1
 }
 
 private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
-
-    let userData = lua_touserdata(L, 1)!.assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
+    let userData = luaL_checkudata(L, 1, USERDATA_TAG)!.assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
     let watcher = Unmanaged<HSDistNotWatcher>.fromOpaque(userData.pointee!).takeRetainedValue()
 
     let center = DistributedNotificationCenter.default()
     let noteName: NSNotification.Name? = watcher.name.map { NSNotification.Name($0) }
     center.removeObserver(watcher, name: noteName, object: watcher.object)
 
-    watcher.fnRef = skin.luaUnref(refTable, ref: watcher.fnRef)
+    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, watcher.fnRef)
+    watcher.fnRef = LUA_NOREF
 
     // Remove the Metatable so future use of the variable in Lua won't think its valid
     lua_pushnil(L)
@@ -206,9 +194,16 @@ private var userdata_metaLib: [luaL_Reg] = [
 
 @_cdecl("luaopen_hs_libdistributednotifications")
 public func luaopen_hs_libdistributednotifications(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    refTable = skin.registerLibrary(USERDATA_TAG, functions: &distributednotificationslib, metaFunctions: nil)
-    skin.registerObject(USERDATA_TAG, objectFunctions: &userdata_metaLib)
+    // Register userdata metatable
+    luaL_newmetatable(L, USERDATA_TAG)
+    lua_pushvalue(L, -1)
+    lua_setfield(L, -2, "__index")  // mt.__index = mt
+    luaL_setfuncs(L, &userdata_metaLib, 0)
+    lua_pop(L, 1)
+
+    // Create module table
+    lua_createtable(L, 0, Int32(distributednotificationslib.count - 1))
+    luaL_setfuncs(L, &distributednotificationslib, 0)
 
     return 1
 }

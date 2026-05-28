@@ -3,7 +3,6 @@ import LuaSkin
 
 // Establish a unique context for identifying our observers
 private var myKVOContext: Int = 0 // See http://nshipster.com/key-value-observing/
-private var refTable: LSRefTable = LUA_NOREF
 
 // MARK: - HSUserDefaultKVOWatcher
 
@@ -20,14 +19,15 @@ private class HSUserDefaultKVOWatcher: NSObject {
 
         DispatchQueue.main.async {
             let skin = LuaSkin.skin(with: nil)
-            _lua_stackguard_entry(skin.l)
-            fnCallbacks.enumerateKeysAndObjects { watcherID, refN, _ in
+            let L = skin.l!
+            fnCallbacks.enumerateKeysAndObjects { _, refN, _ in
                 let ref = (refN as! NSNumber).int32Value
-                skin.pushLuaRef(refTable, ref: ref)
-                skin.pushNSObject(keyPath as NSString)
-                skin.protectedCallAndError("hs.settings:watcher \(watcherID) callback", nargs: 1, nresults: 0)
+                lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(ref))
+                lua_pushany(L, keyPath)
+                if lua_pcall(L, 1, 0, 0) != LUA_OK {
+                    lua_pop(L, 1)
+                }
             }
-            _lua_stackguard_exit(skin.l)
         }
     }
 }
@@ -57,8 +57,9 @@ private var watcherManager: HSUserDefaultKVOWatcher!
 ///  * This function cannot set dates or raw data types, see `hs.settings.setDate()` and `hs.settings.setData()`
 ///  * Assigning a nil value is equivalent to clearing the value with `hs.settings.clear`
 private func target_set(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING, LS_TANY | LS_TOPTIONAL, LS_TBREAK)
+    guard lua_type(L, 1) == LUA_TSTRING else {
+        return luaL_error(L, "expected string for argument 1")
+    }
 
     guard let key = String(validatingUTF8: luaL_checkstring(L, 1)) else {
         return luaL_error(L, "key must be a valid UTF8 string")
@@ -67,7 +68,7 @@ private func target_set(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     // Allow for missing second argument for backwards compatibility
     var val: Any? = nil
     if lua_gettop(L) == 2 {
-        val = skin.toNSObject(atIndex: 2, withOptions: [.nsPreserveLuaStringExactly, .nsRawTables])
+        val = lua_tovalue(L, at: 2)
     }
 
     do {
@@ -87,7 +88,8 @@ private func target_set(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * None
 private func target_setData(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    LuaSkin.skin(with: L).checkArgs(LS_TSTRING, LS_TSTRING, LS_TBREAK)
+    luaL_checktype(L, 1, LUA_TSTRING)
+    luaL_checktype(L, 2, LUA_TSTRING)
 
     guard let key = String(validatingUTF8: luaL_checkstring(L, 1)) else {
         return luaL_error(L, "key must be a valid UTF8 string")
@@ -127,7 +129,7 @@ private func date_from_string(_ dateString: String) -> Date? {
 /// Notes:
 ///  * See `hs.settings.dateFormat` for a convenient representation of the RFC3339 format, to use with other time/date related functions
 private func target_setDate(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    LuaSkin.skin(with: L).checkArgs(LS_TSTRING, LS_TSTRING | LS_TNUMBER, LS_TBREAK)
+    luaL_checktype(L, 1, LUA_TSTRING)
 
     guard let key = String(validatingUTF8: luaL_checkstring(L, 1)) else {
         return luaL_error(L, "key must be a valid UTF8 string")
@@ -163,15 +165,14 @@ private func target_setDate(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Notes:
 ///  * This function can load all of the datatypes supported by `hs.settings.set()`, `hs.settings.setData()` and `hs.settings.setDate()`
 private func target_get(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING, LS_TBREAK)
+    luaL_checktype(L, 1, LUA_TSTRING)
 
     guard let key = String(validatingUTF8: luaL_checkstring(L, 1)) else {
         return luaL_error(L, "key must be a valid UTF8 string")
     }
 
     let val = UserDefaults.standard.object(forKey: key)
-    skin.pushNSObject(val as AnyObject?)
+    lua_pushany(L, val)
     return 1
 }
 
@@ -185,7 +186,7 @@ private func target_get(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * A boolean, true if the setting was deleted, otherwise false
 private func target_clear(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    LuaSkin.skin(with: L).checkArgs(LS_TSTRING, LS_TBREAK)
+    luaL_checktype(L, 1, LUA_TSTRING)
 
     guard let key = String(validatingUTF8: luaL_checkstring(L, 1)) else {
         return luaL_error(L, "key must be a valid UTF8 string")
@@ -215,19 +216,16 @@ private func target_clear(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * Use `ipairs(hs.settings.getKeys())` to iterate over all available settings
 ///  * Use `hs.settings.getKeys()["someKey"]` to test for the existence of a particular key
 private func target_getKeys(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TBREAK)
-
     let mainID = Bundle.main.bundleIdentifier ?? ""
     let keys = UserDefaults.standard.persistentDomain(forName: mainID)?.keys.sorted() ?? []
 
     lua_newtable(L)
     for (i, key) in keys.enumerated() {
         lua_pushinteger(L, lua_Integer(i + 1))
-        skin.pushNSObject(key as NSString)
+        lua_pushstring(L, key)
         lua_settable(L, -3)
 
-        skin.pushNSObject(key as NSString)
+        lua_pushstring(L, key)
         lua_pushboolean(L, 1)
         lua_settable(L, -3)
     }
@@ -250,11 +248,11 @@ private func target_getKeys(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * the identifier is required so that multiple callbacks for the same key can be registered by separate modules; it's value doesn't affect what is being watched but does need to be unique between multiple watchers of the same key.
 ///  * Does not work with keys that include a period (.) in the key name because KVO uses dot notation to specify a sequence of properties.  If you know of a way to escape periods so that they are watchable as NSUSerDefault key names, please file an issue and share!
 private func target_watchKey(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING, LS_TSTRING, LS_TFUNCTION | LS_TNIL | LS_TOPTIONAL, LS_TBREAK)
+    luaL_checktype(L, 1, LUA_TSTRING)
+    luaL_checktype(L, 2, LUA_TSTRING)
 
-    let watcherID = skin.toNSObject(atIndex: 1) as! NSString
-    let keyPath = skin.toNSObject(atIndex: 2) as! NSString
+    let watcherID = String(cString: lua_tostring(L, 1)!) as NSString
+    let keyPath = String(cString: lua_tostring(L, 2)!) as NSString
 
     if watcherManager.watchedKeys[keyPath] == nil {
         watcherManager.watchedKeys[keyPath] = NSMutableDictionary()
@@ -267,18 +265,18 @@ private func target_watchKey(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
     if lua_gettop(L) == 2 {
         if let ref = refN {
-            skin.pushLuaRef(refTable, ref: ref.int32Value)
+            lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(ref.int32Value))
         } else {
             lua_pushnil(L)
         }
     } else {
         if let ref = refN {
-            skin.luaUnref(refTable, ref: ref.int32Value)
+            luaL_unref(L, LUA_REGISTRYINDEX_VALUE, ref.int32Value)
         }
         keyWatchers[watcherID] = nil
         if lua_type(L, 3) != LUA_TNIL {
             lua_pushvalue(L, 3)
-            keyWatchers[watcherID] = NSNumber(value: skin.luaRef(refTable))
+            keyWatchers[watcherID] = NSNumber(value: luaL_ref(L, LUA_REGISTRYINDEX_VALUE))
         }
         lua_pushvalue(L, 1)
     }
@@ -287,17 +285,15 @@ private func target_watchKey(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 // For debugging
 private func output_watchers(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    LuaSkin.skin(with: L).pushNSObject(watcherManager.watchedKeys)
+    lua_pushany(L, watcherManager.watchedKeys)
     return 1
 }
 
 private func meta_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-
     watcherManager.watchedKeys.enumerateKeysAndObjects { keyPath, watchers, _ in
         UserDefaults.standard.removeObserver(watcherManager!, forKeyPath: keyPath as! String, context: &myKVOContext)
         (watchers as! NSMutableDictionary).enumerateKeysAndObjects { _, refN, _ in
-            skin.luaUnref(refTable, ref: (refN as! NSNumber).int32Value)
+            luaL_unref(L, LUA_REGISTRYINDEX_VALUE, (refN as! NSNumber).int32Value)
         }
     }
     watcherManager.watchedKeys.removeAllObjects()
@@ -328,8 +324,14 @@ private var module_metaLib: [luaL_Reg] = [
 
 @_cdecl("luaopen_hs_libsettings")
 public func luaopen_hs_libsettings(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    refTable = skin.registerLibrary("hs.settings", functions: &settingslib, metaFunctions: &module_metaLib)
+    // Create module table with module-level __gc metatable
+    lua_createtable(L, 0, Int32(settingslib.count - 1))
+    luaL_setfuncs(L, &settingslib, 0)
+
+    // Set module metatable for __gc
+    lua_createtable(L, 0, 1)
+    luaL_setfuncs(L, &module_metaLib, 0)
+    lua_setmetatable(L, -2)
 
     watcherManager = HSUserDefaultKVOWatcher()
 

@@ -9,7 +9,6 @@ import LuaSkin
 /// NOTE: This extension determines the number of a Space, using OS X APIs that have been deprecated since 10.8 and will likely be removed in a future release. You should not depend on Space numbers being around forever!
 
 private let USERDATA_TAG = "hs.spaces.watcher"
-private var refTable: LSRefTable = 0
 
 // MARK: - Userdata Struct
 
@@ -35,12 +34,12 @@ private class SpaceWatcher: NSObject {
         if object.pointee.fn != LUA_NOREF {
             let skin = LuaSkin.skin(with: nil)
             let L = skin.l!
-            _lua_stackguard_entry(L)
 
-            skin.pushLuaRef(refTable, ref: object.pointee.fn)
+            lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(object.pointee.fn))
             lua_pushinteger(L, lua_Integer(space))
-            skin.protectedCallAndError("hs.spaces.watcher callback", nargs: 1, nresults: 0)
-            _lua_stackguard_exit(L)
+            if lua_pcall(L, 1, 0, 0) != LUA_OK {
+                lua_pop(L, 1)
+            }
         }
     }
 
@@ -64,15 +63,13 @@ private class SpaceWatcher: NSObject {
 /// Returns:
 ///  * An `hs.spaces.watcher` object
 private func space_watcher_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-
     luaL_checktype(L, 1, LUA_TFUNCTION)
 
     let spaceWatcher = lua_newuserdata(L, MemoryLayout<SpaceWatcherData>.size)!
         .assumingMemoryBound(to: SpaceWatcherData.self)
 
     lua_pushvalue(L, 1)
-    spaceWatcher.pointee.fn = skin.luaRef(refTable)
+    spaceWatcher.pointee.fn = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
     spaceWatcher.pointee.running = false
     spaceWatcher.pointee.selfRef = LUA_NOREF
 
@@ -94,8 +91,6 @@ private func space_watcher_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * The watcher object
 private func space_watcher_start(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-
     let spaceWatcher = luaL_checkudata(L, 1, USERDATA_TAG)!
         .assumingMemoryBound(to: SpaceWatcherData.self)
     lua_settop(L, 1)
@@ -105,7 +100,7 @@ private func space_watcher_start(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
         return 1
     }
 
-    spaceWatcher.pointee.selfRef = skin.luaRef(refTable)
+    spaceWatcher.pointee.selfRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
     spaceWatcher.pointee.running = true
 
     let center = NSWorkspace.shared.notificationCenter
@@ -141,20 +136,22 @@ private func space_watcher_stop(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
     }
 
     spaceWatcher.pointee.running = false
+    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, spaceWatcher.pointee.selfRef)
+    spaceWatcher.pointee.selfRef = LUA_NOREF
     let observer = Unmanaged<SpaceWatcher>.fromOpaque(spaceWatcher.pointee.obj!).takeUnretainedValue()
     NSWorkspace.shared.notificationCenter.removeObserver(observer)
     return 1
 }
 
 private func space_watcher_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-
     let spaceWatcher = luaL_checkudata(L, 1, USERDATA_TAG)!
         .assumingMemoryBound(to: SpaceWatcherData.self)
 
-    let _ = space_watcher_stop(L)
+    _ = space_watcher_stop(L)
+    lua_pop(L, 1)  // pop stop's self-return
 
-    spaceWatcher.pointee.fn = skin.luaUnref(refTable, ref: spaceWatcher.pointee.fn)
+    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, spaceWatcher.pointee.fn)
+    spaceWatcher.pointee.fn = LUA_NOREF
 
     let _: SpaceWatcher = Unmanaged.fromOpaque(spaceWatcher.pointee.obj!).takeRetainedValue()
     spaceWatcher.pointee.obj = nil
@@ -183,13 +180,16 @@ private var watcher_objectlib: [luaL_Reg] = [
 
 @_cdecl("luaopen_hs_libspaces_watcher")
 public func luaopen_hs_libspaces_watcher(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    refTable = skin.registerLibrary(
-        withObject: USERDATA_TAG,
-        functions: &watcherlib,
-        metaFunctions: nil,
-        objectFunctions: &watcher_objectlib
-    )
+    // Register userdata metatable
+    luaL_newmetatable(L, USERDATA_TAG)
+    lua_pushvalue(L, -1)
+    lua_setfield(L, -2, "__index")  // mt.__index = mt
+    luaL_setfuncs(L, &watcher_objectlib, 0)
+    lua_pop(L, 1)
+
+    // Create module table
+    lua_createtable(L, 0, Int32(watcherlib.count - 1))
+    luaL_setfuncs(L, &watcherlib, 0)
 
     return 1
 }

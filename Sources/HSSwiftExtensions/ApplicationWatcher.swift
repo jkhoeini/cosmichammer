@@ -4,7 +4,6 @@ import LuaSkin
 // MARK: - Module constants
 
 private let USERDATA_TAG = "hs.application.watcher"
-private var refTable: LSRefTable = LUA_NOREF
 
 // Event type enum matching the ObjC original
 private enum AppWatcherEvent: Int {
@@ -37,7 +36,7 @@ private class AppWatcher: NSObject {
             appName = dict["NSApplicationName" as NSString] as? String
         }
 
-        skin.pushLuaRef(refTable, ref: callbackRef)
+        lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(callbackRef))
 
         if let name = appName {
             lua_pushstring(L, name)
@@ -48,12 +47,15 @@ private class AppWatcher: NSObject {
         lua_pushinteger(L, lua_Integer(event.rawValue))
 
         if let application = HSapplication(nsRunningApplication: app, withState: L) {
+            // Use LuaSkin's registered push helper for HSapplication userdata
             skin.pushNSObject(application)
         } else {
             lua_pushnil(L)
         }
 
-        skin.protectedCallAndError("hs.application.watcher callback", nargs: 3, nresults: 0)
+        if lua_pcall(L, 3, 0, 0) != LUA_OK {
+            lua_pop(L, 1)
+        }
     }
 
     func registerObserver() {
@@ -135,13 +137,12 @@ private func getWatcher(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) ->
 /// Notes:
 ///  * If the function is called with an event type of `hs.application.watcher.terminated` then the application name parameter will be `nil` and the `hs.application` parameter, will only be useful for getting the UNIX process ID (i.e. the PID) of the application
 private func app_watcher_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     luaL_checktype(L, 1, LUA_TFUNCTION)
 
     let watcher = AppWatcher()
 
     lua_pushvalue(L, 1)
-    watcher.callbackRef = skin.luaRef(refTable)
+    watcher.callbackRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
     watcher.running = false
 
     let valuePtr = lua_newuserdata(L, MemoryLayout<UnsafeMutableRawPointer>.size)!
@@ -198,14 +199,14 @@ private func app_watcher_stop(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 }
 
 private func app_watcher_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     let ptr = luaL_checkudata(L, 1, USERDATA_TAG)!
         .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
     if let rawPtr = ptr.pointee {
         let watcher = Unmanaged<AnyObject>.fromOpaque(rawPtr).takeRetainedValue() as! AppWatcher
         watcher.running = false
         watcher.unregisterObserver()
-        watcher.callbackRef = skin.luaUnref(refTable, ref: watcher.callbackRef)
+        luaL_unref(L, LUA_REGISTRYINDEX_VALUE, watcher.callbackRef)
+        watcher.callbackRef = LUA_NOREF
         ptr.pointee = nil
     }
     return 0
@@ -263,11 +264,22 @@ private let metaLib: [luaL_Reg] = [
 
 @_cdecl("luaopen_hs_libapplicationwatcher")
 public func luaopen_hs_libapplicationwatcher(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    refTable = skin.registerLibrary(withObject: USERDATA_TAG,
-                                    functions: appLib,
-                                    metaFunctions: metaGcLib,
-                                    objectFunctions: metaLib)
+    // Register userdata metatable
+    luaL_newmetatable(L, USERDATA_TAG)
+    lua_pushvalue(L, -1)
+    lua_setfield(L, -2, "__index")  // mt.__index = mt
+    luaL_setfuncs(L, metaLib, 0)
+    lua_pop(L, 1)
+
+    // Create module table
+    lua_createtable(L, 0, Int32(appLib.count - 1))
+    luaL_setfuncs(L, appLib, 0)
+
+    // Set module metatable for __gc
+    lua_createtable(L, 0, 1)
+    luaL_setfuncs(L, metaGcLib, 0)
+    lua_setmetatable(L, -2)
+
     add_event_enum(L)
     return 1
 }

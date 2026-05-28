@@ -12,7 +12,6 @@ import LuaSkin
 /// This module is based primarily on code from the previous incarnation of Mjolnir.
 
 private let USERDATA_TAG = "hs.screen.watcher"
-private var refTable: LSRefTable = 0
 
 // MARK: - MJScreenWatcher
 
@@ -28,12 +27,11 @@ private class MJScreenWatcher: NSObject {
         guard fn != LUA_NOREF else { return }
 
         let skin = LuaSkin.skin(with: nil)
-        let L = skin.l
-        _lua_stackguard_entry(L)
+        let L = skin.l!
 
         let argCount: Int32 = includeActive ? 1 : 0
 
-        skin.pushLuaRef(refTable, ref: Int32(fn))
+        lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(fn))
         if includeActive {
             if note.name.rawValue == "NSWorkspaceActiveDisplayDidChangeNotification" {
                 lua_pushboolean(L, 1)
@@ -41,8 +39,9 @@ private class MJScreenWatcher: NSObject {
                 lua_pushnil(L)
             }
         }
-        skin.protectedCallAndError("hs.screen.watcher callback", nargs: argCount, nresults: 0)
-        _lua_stackguard_exit(L)
+        if lua_pcall(L, argCount, 0, 0) != LUA_OK {
+            lua_pop(L, 1)
+        }
     }
 }
 
@@ -69,8 +68,6 @@ private struct ScreenWatcherData {
 /// Notes:
 ///  * A screen layout change usually involves a change that is made from the Displays Preferences Panel or when a monitor is attached or removed. It can also be caused by a change in the Dock size or presence.
 private func screen_watcher_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-
     luaL_checktype(L, 1, LUA_TFUNCTION)
 
     let ptr = lua_newuserdata(L, MemoryLayout<ScreenWatcherData>.size)!
@@ -78,7 +75,7 @@ private func screen_watcher_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
     memset(ptr, 0, MemoryLayout<ScreenWatcherData>.size)
 
     lua_pushvalue(L, 1)
-    let fnRef = skin.luaRef(refTable)
+    let fnRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
 
     let object = MJScreenWatcher()
     object.fn = Int32(fnRef)
@@ -111,8 +108,7 @@ private func screen_watcher_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 ///    * Detecting a change in the active display relies on watching for the `NSWorkspaceActiveDisplayDidChangeNotification` message which is not documented by Apple.  While this message has been around at least since OS X 10.9, because it is undocumented, we cannot be positive that Apple won't remove it in a future OS X update.  Because this watcher works by listening for posted messages, should Apple remove this notification, your callback function will no longer receive messages about this change -- it won't crash or change behavior in any other way.  This documentation will be updated if this status changes.
 ///  * Plugging in or unplugging a monitor can cause both a screen layout callback and an active screen change callback.
 private func screen_watcher_new_with_active_screen(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TFUNCTION, LS_TBREAK)
+    luaL_checktype(L, 1, LUA_TFUNCTION)
 
     lua_pushcfunction(L, screen_watcher_new)
     lua_pushvalue(L, 1)
@@ -190,14 +186,14 @@ private func screen_watcher_stop(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 }
 
 private func screen_watcher_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     let ptr = luaL_checkudata(L, 1, USERDATA_TAG)!.assumingMemoryBound(to: ScreenWatcherData.self)
 
     lua_pushcfunction(L, screen_watcher_stop)
     lua_pushvalue(L, 1)
     lua_call(L, 1, 1)
 
-    skin.luaUnref(refTable, ref: ptr.pointee.fn)
+    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, ptr.pointee.fn)
+    ptr.pointee.fn = LUA_NOREF
 
     if let obj = ptr.pointee.obj {
         let _ = Unmanaged<MJScreenWatcher>.fromOpaque(obj).takeRetainedValue()
@@ -242,8 +238,21 @@ private var meta_gcLib: [luaL_Reg] = [
 
 @_cdecl("luaopen_hs_libscreenwatcher")
 public func luaopen_hs_libscreenwatcher(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    refTable = skin.registerLibrary(withObject: USERDATA_TAG, functions: &screenLib, metaFunctions: &meta_gcLib, objectFunctions: &screen_metalib)
+    // Register userdata metatable
+    luaL_newmetatable(L, USERDATA_TAG)
+    lua_pushvalue(L, -1)
+    lua_setfield(L, -2, "__index")  // mt.__index = mt
+    luaL_setfuncs(L, &screen_metalib, 0)
+    lua_pop(L, 1)
+
+    // Create module table
+    lua_createtable(L, 0, Int32(screenLib.count - 1))
+    luaL_setfuncs(L, &screenLib, 0)
+
+    // Set module metatable for __gc
+    lua_createtable(L, 0, 1)
+    luaL_setfuncs(L, &meta_gcLib, 0)
+    lua_setmetatable(L, -2)
 
     return 1
 }

@@ -27,7 +27,6 @@ import LuaSkin
 // MARK: - Constants
 
 private let USERDATA_TAG = "hs.fs.volume"
-private var refTable: LSRefTable = 0
 
 // MARK: - Event type enum
 
@@ -59,10 +58,9 @@ private class VolumeWatcher: NSObject {
     // Call the lua callback function and pass the event type and info dict.
     func callback(_ dict: [AnyHashable: Any], withEvent event: VolumeEvent) {
         let skin = LuaSkin.skin(with: nil)
-        let L = skin.l
-        _lua_stackguard_entry(L)
+        let L = skin.l!
 
-        skin.pushLuaRef(refTable, ref: object.pointee.fn)
+        lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(object.pointee.fn))
         lua_pushinteger(L, lua_Integer(event.rawValue))
 
         var tableArg = [String: Any]()
@@ -87,9 +85,10 @@ private class VolumeWatcher: NSObject {
             }
         }
 
-        skin.pushNSObject(tableArg as NSDictionary)
-        skin.protectedCallAndError("hs.fs.volume callback", nargs: 2, nresults: 0)
-        _lua_stackguard_exit(L)
+        lua_pushany(L, tableArg)
+        if lua_pcall(L, 2, 0, 0) != LUA_OK {
+            lua_pop(L, 1)
+        }
     }
 
     @objc func volumeDidMount(_ notification: Notification) {
@@ -152,21 +151,21 @@ private func unregister_observer(_ observer: VolumeWatcher) {
 ///  * A boolean, true if the volume was ejected, otherwise false
 ///  * A string, empty if the volume was ejected, otherwise it will contain the error message
 private func volume_eject(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING, LS_TBREAK)
+    luaL_checktype(L, 1, LUA_TSTRING)
+    let path = String(cString: lua_tostring(L, 1)!)
 
     let workspace = NSWorkspace.shared
-    var resultText: NSString = ""
+    var resultText = ""
 
     do {
-        try workspace.unmountAndEjectDevice(at: URL(fileURLWithPath: skin.toNSObject(atIndex: 1) as! String))
+        try workspace.unmountAndEjectDevice(at: URL(fileURLWithPath: path))
         lua_pushboolean(L, 1)
     } catch {
         lua_pushboolean(L, 0)
-        resultText = error.localizedDescription as NSString
+        resultText = error.localizedDescription
     }
 
-    skin.pushNSObject(resultText)
+    lua_pushstring(L, resultText)
     return 2
 }
 
@@ -182,15 +181,14 @@ private func volume_eject(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * An `hs.fs.volume` object
 private func volume_watcher_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TFUNCTION, LS_TBREAK)
+    luaL_checktype(L, 1, LUA_TFUNCTION)
 
     let watcher = lua_newuserdata(L, MemoryLayout<VolumeWatcher_t>.size)!
         .assumingMemoryBound(to: VolumeWatcher_t.self)
     memset(watcher, 0, MemoryLayout<VolumeWatcher_t>.size)
 
     lua_pushvalue(L, 1)
-    watcher.pointee.fn = skin.luaRef(refTable)
+    watcher.pointee.fn = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
     watcher.pointee.running = false
     let watcherObj = VolumeWatcher(object: watcher)
     watcher.pointee.obj = Unmanaged.passRetained(watcherObj).toOpaque()
@@ -210,10 +208,7 @@ private func volume_watcher_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 /// Returns:
 ///  * An `hs.fs.volume` object
 private func volume_watcher_start(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
-
-    let watcher = lua_touserdata(L, 1)!.assumingMemoryBound(to: VolumeWatcher_t.self)
+    let watcher = luaL_checkudata(L, 1, USERDATA_TAG)!.assumingMemoryBound(to: VolumeWatcher_t.self)
     lua_settop(L, 1)
 
     if watcher.pointee.running {
@@ -236,10 +231,7 @@ private func volume_watcher_start(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
 /// Returns:
 ///  * An `hs.fs.volume` object
 private func volume_watcher_stop(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
-
-    let watcher = lua_touserdata(L, 1)!.assumingMemoryBound(to: VolumeWatcher_t.self)
+    let watcher = luaL_checkudata(L, 1, USERDATA_TAG)!.assumingMemoryBound(to: VolumeWatcher_t.self)
     lua_settop(L, 1)
 
     if !watcher.pointee.running {
@@ -254,13 +246,12 @@ private func volume_watcher_stop(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 
 // Perform cleanup if the VolumeWatcher is not required anymore.
 private func volume_watcher_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-
     let watcher = luaL_checkudata(L, 1, USERDATA_TAG)!.assumingMemoryBound(to: VolumeWatcher_t.self)
 
     volume_watcher_stop(L)
 
-    watcher.pointee.fn = skin.luaUnref(refTable, ref: watcher.pointee.fn)
+    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, watcher.pointee.fn)
+    watcher.pointee.fn = LUA_NOREF
 
     if let obj = watcher.pointee.obj {
         let _ = Unmanaged<VolumeWatcher>.fromOpaque(obj).takeRetainedValue()
@@ -321,13 +312,23 @@ private let metaGcLib: [luaL_Reg] = [
 
 @_cdecl("luaopen_hs_libfsvolume")
 public func luaopen_hs_libfsvolume(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    refTable = skin.registerLibrary(withObject: USERDATA_TAG,
-                                    functions: appLib,
-                                    metaFunctions: metaGcLib,
-                                    objectFunctions: metaLib)
+    // Register userdata metatable
+    luaL_newmetatable(L, USERDATA_TAG)
+    lua_pushvalue(L, -1)
+    lua_setfield(L, -2, "__index")  // mt.__index = mt
+    luaL_setfuncs(L, metaLib, 0)
+    lua_pop(L, 1)
 
-    add_event_enum(skin.l)
+    // Create module table
+    lua_createtable(L, 0, Int32(appLib.count - 1))
+    luaL_setfuncs(L, appLib, 0)
+
+    // Set module metatable for __gc
+    lua_createtable(L, 0, 1)
+    luaL_setfuncs(L, metaGcLib, 0)
+    lua_setmetatable(L, -2)
+
+    add_event_enum(L)
 
     return 1
 }

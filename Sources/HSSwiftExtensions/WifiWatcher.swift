@@ -8,7 +8,6 @@ import CoreWLAN
 import LuaSkin
 
 private let USERDATA_TAG = "hs.wifi.watcher"
-private var refTable: Int32 = LUA_NOREF
 
 private var watchableTypes: [String: String] = [:]
 private var manager: HSWifiWatcherManager?
@@ -63,13 +62,12 @@ private class HSWifiWatcherManager: NSObject {
         case NSNotification.Name.CWScanCacheDidUpdate.rawValue:
             invokeCallbacks(for: "scanCacheUpdated", withDetails: [iface])
         default:
-            LuaSkin.skin(with: nil).logWarn("\(USERDATA_TAG):identifyNotification - unrecognized notification received: \(type)")
+            break // unrecognized notification
         }
     }
 
     func invokeCallbacks(for message: String, withDetails details: [Any]?) {
         guard watchableTypes[message] != nil else {
-            LuaSkin.skin(with: nil).logError("\(USERDATA_TAG):invokeCallbacksFor called with unrecognized label:\(message)")
             return
         }
         watchers.enumerateObjects { obj, _ in
@@ -79,22 +77,19 @@ private class HSWifiWatcherManager: NSObject {
                 if aWatcher.callbackRef != LUA_NOREF {
                     let skin = LuaSkin.skin(with: nil)
                     let L = skin.l!
-                    _lua_stackguard_entry(L)
-                    skin.pushLuaRef(refTable, ref: aWatcher.callbackRef)
+                    lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(aWatcher.callbackRef))
+                    // Use LuaSkin's registered push helper for HSWifiWatcher userdata
                     skin.pushNSObject(aWatcher)
-                    skin.pushNSObject(message as NSString)
+                    lua_pushstring(L, message)
                     let count = details?.count ?? 0
-                    if count > 0 {
-                        skin.growStack(Int32(count), withMessage: "hs.wifi.watcher:invokeCallbacksFor")
-                    }
                     if let details = details {
                         for argument in details {
-                            skin.pushNSObject(argument as? NSObject, withOptions: UInt(1 << 1))
+                            lua_pushany(L, argument)
                         }
                     }
-                    skin.protectedCallAndError("hs.wifi.watcher callback for \(message)",
-                                               nargs: Int32(2 + count), nresults: 0)
-                    _lua_stackguard_exit(L)
+                    if lua_pcall(L, Int32(2 + count), 0, 0) != LUA_OK {
+                        lua_pop(L, 1)
+                    }
                 }
             }
         }
@@ -136,10 +131,11 @@ private class HSWifiWatcher: NSObject {
 ///    * `watcher`, "scanCacheUpdated", `interface` - occurs when the scan cache of the Wi-Fi interface is updated with new information
 private func wifi_watcher_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TFUNCTION, LS_TBREAK)
+    luaL_checktype(L, 1, LUA_TFUNCTION)
     let newWatcher = HSWifiWatcher()
     lua_pushvalue(L, 1)
-    newWatcher.callbackRef = skin.luaRef(refTable)
+    newWatcher.callbackRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+    // Use LuaSkin's registered push helper for HSWifiWatcher userdata
     skin.pushNSObject(newWatcher)
     return 1
 }
@@ -157,7 +153,7 @@ private func wifi_watcher_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * The `hs.wifi.watcher` object
 private func wifi_watcher_start(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    // Use LuaSkin's registered object helper for HSWifiWatcher userdata
     let watcher: HSWifiWatcher = skin.toNSObject(atIndex: 1) as! HSWifiWatcher
     manager?.watchers.add(watcher)
     lua_pushvalue(L, 1)
@@ -175,7 +171,7 @@ private func wifi_watcher_start(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 ///  * The `hs.wifi.watcher` object
 private func wifi_watcher_stop(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    // Use LuaSkin's registered object helper for HSWifiWatcher userdata
     let watcher: HSWifiWatcher = skin.toNSObject(atIndex: 1) as! HSWifiWatcher
     manager?.watchers.remove(watcher)
     lua_pushvalue(L, 1)
@@ -197,12 +193,12 @@ private func wifi_watcher_stop(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * the special string "all" specifies that all event types should be watched for.
 private func wifi_watcher_watchingFor(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TTABLE | LS_TOPTIONAL, LS_TBREAK)
+    // Use LuaSkin's registered object helper for HSWifiWatcher userdata
     let watcher: HSWifiWatcher = skin.toNSObject(atIndex: 1) as! HSWifiWatcher
     if lua_gettop(L) == 1 {
-        skin.pushNSObject(watcher.watchingFor as NSSet?)
+        lua_pushany(L, watcher.watchingFor.map { Array($0) })
     } else {
-        let messages = skin.toNSObject(atIndex: 2) as? [Any]
+        let messages = lua_tovalue(L, at: 2) as? [Any]
         if let messages = messages as? [String] {
             for (idx, msg) in messages.enumerated() {
                 if watchableTypes[msg] == nil {
@@ -226,8 +222,7 @@ private func wifi_watcher_watchingFor(_ L: UnsafeMutablePointer<lua_State>!) -> 
 /// Constant
 /// A table containing the possible event types that this watcher can monitor for.
 private func pushEventTypes(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.pushNSObject(Array(watchableTypes.keys) as NSArray)
+    lua_pushany(L, Array(watchableTypes.keys))
     return 1
 }
 
@@ -267,10 +262,15 @@ private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 private func userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     if luaL_testudata(L, 1, USERDATA_TAG) != nil && luaL_testudata(L, 2, USERDATA_TAG) != nil {
-        let skin = LuaSkin.skin(with: L)
-        let obj1 = skin.luaObject(at: 1, toClass: "HSWifiWatcher") as? HSWifiWatcher
-        let obj2 = skin.luaObject(at: 2, toClass: "HSWifiWatcher") as? HSWifiWatcher
-        lua_pushboolean(L, (obj1 != nil && obj2 != nil && obj1!.isEqual(obj2!)) ? 1 : 0)
+        let ptr1 = luaL_checkudata(L, 1, USERDATA_TAG)!.assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
+        let ptr2 = luaL_checkudata(L, 2, USERDATA_TAG)!.assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
+        if let raw1 = ptr1.pointee, let raw2 = ptr2.pointee {
+            let obj1 = Unmanaged<HSWifiWatcher>.fromOpaque(raw1).takeUnretainedValue()
+            let obj2 = Unmanaged<HSWifiWatcher>.fromOpaque(raw2).takeUnretainedValue()
+            lua_pushboolean(L, obj1.isEqual(obj2) ? 1 : 0)
+        } else {
+            lua_pushboolean(L, 0)
+        }
     } else {
         lua_pushboolean(L, 0)
     }
@@ -284,7 +284,8 @@ private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
         let obj = Unmanaged<HSWifiWatcher>.fromOpaque(rawPtr).takeRetainedValue()
         obj.selfRef -= 1
         if obj.selfRef == 0 {
-            obj.callbackRef = LuaSkin.skin(with: L).luaUnref(refTable, ref: obj.callbackRef)
+            luaL_unref(L, LUA_REGISTRYINDEX_VALUE, obj.callbackRef)
+            obj.callbackRef = LUA_NOREF
             manager?.watchers.remove(obj)
         }
         ptr.pointee = nil
@@ -326,10 +327,22 @@ private var module_metaLib: [luaL_Reg] = [
 @_cdecl("luaopen_hs_libwifiwatcher")
 public func luaopen_hs_libwifiwatcher(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let skin = LuaSkin.skin(with: L)
-    refTable = skin.registerLibrary(withObject: USERDATA_TAG,
-                                    functions: &moduleLib,
-                                    metaFunctions: &module_metaLib,
-                                    objectFunctions: &userdata_metaLib)
+
+    // Register userdata metatable
+    luaL_newmetatable(L, USERDATA_TAG)
+    lua_pushvalue(L, -1)
+    lua_setfield(L, -2, "__index")  // mt.__index = mt
+    luaL_setfuncs(L, &userdata_metaLib, 0)
+    lua_pop(L, 1)
+
+    // Create module table
+    lua_createtable(L, 0, Int32(moduleLib.count - 1))
+    luaL_setfuncs(L, &moduleLib, 0)
+
+    // Set module metatable for __gc
+    lua_createtable(L, 0, 1)
+    luaL_setfuncs(L, &module_metaLib, 0)
+    lua_setmetatable(L, -2)
 
     watchableTypes = [
         "powerChange":       NSNotification.Name.CWPowerDidChange.rawValue,
@@ -344,6 +357,7 @@ public func luaopen_hs_libwifiwatcher(_ L: UnsafeMutablePointer<lua_State>!) -> 
 
     manager = HSWifiWatcherManager()
 
+    // Keep LuaSkin push/pull helpers for HSWifiWatcher userdata dispatch
     skin.registerPushNSHelper(pushHSWifiWatcher, forClass: "HSWifiWatcher")
     skin.registerLuaObjectHelper(toHSWifiWatcherFromLua, forClass: "HSWifiWatcher",
                                  withUserdataMapping: USERDATA_TAG)

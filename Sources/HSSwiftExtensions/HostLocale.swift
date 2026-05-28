@@ -4,7 +4,6 @@ import LuaSkin
 // MARK: - Constants
 
 private let USERDATA_TAG = "hs.host.locale"
-private var refTable: LSRefTable = LUA_NOREF
 private var callbackRef: Int32 = LUA_NOREF
 
 // MARK: - Support Functions and Classes
@@ -27,10 +26,11 @@ extension NSLocale {
         DispatchQueue.main.async {
             if callbackRef != LUA_NOREF {
                 let skin = LuaSkin.skin(with: nil)
-                _lua_stackguard_entry(skin.l)
-                skin.pushLuaRef(refTable, ref: callbackRef)
-                skin.protectedCallAndError("hs.host.locale callback", nargs: 0, nresults: 0)
-                _lua_stackguard_exit(skin.l)
+                let L = skin.l!
+                lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(callbackRef))
+                if lua_pcall(L, 0, 0, 0) != LUA_OK {
+                    lua_pop(L, 1)
+                }
             }
         }
     }
@@ -61,43 +61,41 @@ private var observerOfChanges: HSLocaleChangeObserver? = nil
 //       create support tables for what we care about right now and don't register them as helpers
 
 private func pushNSCalendar(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     let calendar = obj as! NSCalendar
 
     lua_newtable(L)
     // obj-c uses zero based indexing; lua uses 1 based indexing
     lua_pushinteger(L, lua_Integer(calendar.firstWeekday + 1));     lua_setfield(L, -2, "firstWeekday")
     lua_pushinteger(L, lua_Integer(calendar.minimumDaysInFirstWeek)); lua_setfield(L, -2, "minimumDaysInFirstWeek")
-    skin.pushNSObject(calendar.eraSymbols as NSArray);                          lua_setfield(L, -2, "eraSymbols")
-    skin.pushNSObject(calendar.longEraSymbols as NSArray);                      lua_setfield(L, -2, "longEraSymbols")
-    skin.pushNSObject(calendar.monthSymbols as NSArray);                        lua_setfield(L, -2, "monthSymbols")
-    skin.pushNSObject(calendar.quarterSymbols as NSArray);                      lua_setfield(L, -2, "quarterSymbols")
-    skin.pushNSObject(calendar.shortMonthSymbols as NSArray);                   lua_setfield(L, -2, "shortMonthSymbols")
-    skin.pushNSObject(calendar.shortQuarterSymbols as NSArray);                 lua_setfield(L, -2, "shortQuarterSymbols")
-    skin.pushNSObject(calendar.shortStandaloneMonthSymbols as NSArray);         lua_setfield(L, -2, "shortStandaloneMonthSymbols")
-    skin.pushNSObject(calendar.shortStandaloneQuarterSymbols as NSArray);       lua_setfield(L, -2, "shortStandaloneQuarterSymbols")
-    skin.pushNSObject(calendar.shortStandaloneWeekdaySymbols as NSArray);       lua_setfield(L, -2, "shortStandaloneWeekdaySymbols")
-    skin.pushNSObject(calendar.shortWeekdaySymbols as NSArray);                 lua_setfield(L, -2, "shortWeekdaySymbols")
-    skin.pushNSObject(calendar.standaloneMonthSymbols as NSArray);              lua_setfield(L, -2, "standaloneMonthSymbols")
-    skin.pushNSObject(calendar.standaloneQuarterSymbols as NSArray);            lua_setfield(L, -2, "standaloneQuarterSymbols")
-    skin.pushNSObject(calendar.standaloneWeekdaySymbols as NSArray);            lua_setfield(L, -2, "standaloneWeekdaySymbols")
-    skin.pushNSObject(calendar.veryShortMonthSymbols as NSArray);               lua_setfield(L, -2, "veryShortMonthSymbols")
-    skin.pushNSObject(calendar.veryShortStandaloneMonthSymbols as NSArray);     lua_setfield(L, -2, "veryShortStandaloneMonthSymbols")
-    skin.pushNSObject(calendar.veryShortStandaloneWeekdaySymbols as NSArray);   lua_setfield(L, -2, "veryShortStandaloneWeekdaySymbols")
-    skin.pushNSObject(calendar.veryShortWeekdaySymbols as NSArray);             lua_setfield(L, -2, "veryShortWeekdaySymbols")
-    skin.pushNSObject(calendar.weekdaySymbols as NSArray);                      lua_setfield(L, -2, "weekdaySymbols")
-    skin.pushNSObject(calendar.amSymbol as NSString);                           lua_setfield(L, -2, "AMSymbol")
-    skin.pushNSObject(calendar.calendarIdentifier.rawValue as NSString);        lua_setfield(L, -2, "calendarIdentifier")
-    skin.pushNSObject(calendar.pmSymbol as NSString);                           lua_setfield(L, -2, "PMSymbol")
+    lua_pushany(L, calendar.eraSymbols);                          lua_setfield(L, -2, "eraSymbols")
+    lua_pushany(L, calendar.longEraSymbols);                      lua_setfield(L, -2, "longEraSymbols")
+    lua_pushany(L, calendar.monthSymbols);                        lua_setfield(L, -2, "monthSymbols")
+    lua_pushany(L, calendar.quarterSymbols);                      lua_setfield(L, -2, "quarterSymbols")
+    lua_pushany(L, calendar.shortMonthSymbols);                   lua_setfield(L, -2, "shortMonthSymbols")
+    lua_pushany(L, calendar.shortQuarterSymbols);                 lua_setfield(L, -2, "shortQuarterSymbols")
+    lua_pushany(L, calendar.shortStandaloneMonthSymbols);         lua_setfield(L, -2, "shortStandaloneMonthSymbols")
+    lua_pushany(L, calendar.shortStandaloneQuarterSymbols);       lua_setfield(L, -2, "shortStandaloneQuarterSymbols")
+    lua_pushany(L, calendar.shortStandaloneWeekdaySymbols);       lua_setfield(L, -2, "shortStandaloneWeekdaySymbols")
+    lua_pushany(L, calendar.shortWeekdaySymbols);                 lua_setfield(L, -2, "shortWeekdaySymbols")
+    lua_pushany(L, calendar.standaloneMonthSymbols);              lua_setfield(L, -2, "standaloneMonthSymbols")
+    lua_pushany(L, calendar.standaloneQuarterSymbols);            lua_setfield(L, -2, "standaloneQuarterSymbols")
+    lua_pushany(L, calendar.standaloneWeekdaySymbols);            lua_setfield(L, -2, "standaloneWeekdaySymbols")
+    lua_pushany(L, calendar.veryShortMonthSymbols);               lua_setfield(L, -2, "veryShortMonthSymbols")
+    lua_pushany(L, calendar.veryShortStandaloneMonthSymbols);     lua_setfield(L, -2, "veryShortStandaloneMonthSymbols")
+    lua_pushany(L, calendar.veryShortStandaloneWeekdaySymbols);   lua_setfield(L, -2, "veryShortStandaloneWeekdaySymbols")
+    lua_pushany(L, calendar.veryShortWeekdaySymbols);             lua_setfield(L, -2, "veryShortWeekdaySymbols")
+    lua_pushany(L, calendar.weekdaySymbols);                      lua_setfield(L, -2, "weekdaySymbols")
+    lua_pushstring(L, calendar.amSymbol);                         lua_setfield(L, -2, "AMSymbol")
+    lua_pushstring(L, calendar.calendarIdentifier.rawValue);      lua_setfield(L, -2, "calendarIdentifier")
+    lua_pushstring(L, calendar.pmSymbol);                         lua_setfield(L, -2, "PMSymbol")
     return 1
 }
 
 private func pushNSCharacterSet(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     let charSet = obj as! NSCharacterSet
 
     // tweaked from http://stackoverflow.com/questions/26610931/list-of-characters-in-an-nscharacterset
-    let array = NSMutableArray()
+    var array = [String]()
     for plane: UInt32 in 0...16 {
         if charSet.hasMemberInPlane(UInt8(plane)) {
             var c = plane << 16
@@ -105,54 +103,51 @@ private func pushNSCharacterSet(_ L: UnsafeMutablePointer<lua_State>!, _ obj: An
                 if charSet.longCharacterIsMember(c) {
                     var c1 = c.littleEndian
                     if let s = NSString(bytes: &c1, length: 4, encoding: String.Encoding.utf32LittleEndian.rawValue) {
-                        array.add(s)
-                    } else {
-                        skin.logDebug("\(USERDATA_TAG):NSCharacterSet skipping 0x\(String(format: "%08x", c1)) : nil string representation")
+                        array.append(s as String)
                     }
                 }
                 c += 1
             }
         }
     }
-    skin.pushNSObject(array)
+    lua_pushany(L, array)
     return 1
 }
 
 private func pushNSLocale(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     let locale = obj as! NSLocale
 
     lua_newtable(L)
-    skin.pushNSObject(locale.object(forKey: .identifier) as? NSObject);                          lua_setfield(L, -2, "identifier")
-    skin.pushNSObject(locale.object(forKey: .languageCode) as? NSObject);                        lua_setfield(L, -2, "languageCode")
-    skin.pushNSObject(locale.object(forKey: .countryCode) as? NSObject);                         lua_setfield(L, -2, "countryCode")
-    skin.pushNSObject(locale.object(forKey: .scriptCode) as? NSObject);                          lua_setfield(L, -2, "scriptCode")
-    skin.pushNSObject(locale.object(forKey: .variantCode) as? NSObject);                         lua_setfield(L, -2, "variantCode")
+    lua_pushany(L, locale.object(forKey: .identifier));                          lua_setfield(L, -2, "identifier")
+    lua_pushany(L, locale.object(forKey: .languageCode));                        lua_setfield(L, -2, "languageCode")
+    lua_pushany(L, locale.object(forKey: .countryCode));                         lua_setfield(L, -2, "countryCode")
+    lua_pushany(L, locale.object(forKey: .scriptCode));                          lua_setfield(L, -2, "scriptCode")
+    lua_pushany(L, locale.object(forKey: .variantCode));                         lua_setfield(L, -2, "variantCode")
     _ = pushNSCharacterSet(L, locale.object(forKey: .exemplarCharacterSet) as Any);              lua_setfield(L, -2, "exemplarCharacterSet")
     _ = pushNSCalendar(L, locale.object(forKey: .calendar) as Any);                              lua_setfield(L, -2, "calendar")
-    skin.pushNSObject(locale.object(forKey: .collationIdentifier) as? NSObject);                 lua_setfield(L, -2, "collationIdentifier")
+    lua_pushany(L, locale.object(forKey: .collationIdentifier));                 lua_setfield(L, -2, "collationIdentifier")
 
     if let usesMetricSystem = locale.object(forKey: .usesMetricSystem) as? NSNumber {
-        skin.pushNSObject(usesMetricSystem)
+        lua_pushany(L, usesMetricSystem)
     } else {
         lua_pushboolean(L, 0)
     }
     lua_setfield(L, -2, "usesMetricSystem")
 
-    skin.pushNSObject(locale.object(forKey: .measurementSystem) as? NSObject);                   lua_setfield(L, -2, "measurementSystem")
-    skin.pushNSObject(locale.object(forKey: .decimalSeparator) as? NSObject);                    lua_setfield(L, -2, "decimalSeparator")
-    skin.pushNSObject(locale.object(forKey: .groupingSeparator) as? NSObject);                   lua_setfield(L, -2, "groupingSeparator")
-    skin.pushNSObject(locale.object(forKey: .currencySymbol) as? NSObject);                      lua_setfield(L, -2, "currencySymbol")
-    skin.pushNSObject(locale.object(forKey: .currencyCode) as? NSObject);                        lua_setfield(L, -2, "currencyCode")
-    skin.pushNSObject(locale.object(forKey: .collatorIdentifier) as? NSObject);                  lua_setfield(L, -2, "collatorIdentifier")
-    skin.pushNSObject(locale.object(forKey: .quotationBeginDelimiterKey) as? NSObject);          lua_setfield(L, -2, "quotationBeginDelimiterKey")
-    skin.pushNSObject(locale.object(forKey: .quotationEndDelimiterKey) as? NSObject);            lua_setfield(L, -2, "quotationEndDelimiterKey")
-    skin.pushNSObject(locale.object(forKey: .alternateQuotationBeginDelimiterKey) as? NSObject); lua_setfield(L, -2, "alternateQuotationBeginDelimiterKey")
-    skin.pushNSObject(locale.object(forKey: .alternateQuotationEndDelimiterKey) as? NSObject);   lua_setfield(L, -2, "alternateQuotationEndDelimiterKey")
+    lua_pushany(L, locale.object(forKey: .measurementSystem));                   lua_setfield(L, -2, "measurementSystem")
+    lua_pushany(L, locale.object(forKey: .decimalSeparator));                    lua_setfield(L, -2, "decimalSeparator")
+    lua_pushany(L, locale.object(forKey: .groupingSeparator));                   lua_setfield(L, -2, "groupingSeparator")
+    lua_pushany(L, locale.object(forKey: .currencySymbol));                      lua_setfield(L, -2, "currencySymbol")
+    lua_pushany(L, locale.object(forKey: .currencyCode));                        lua_setfield(L, -2, "currencyCode")
+    lua_pushany(L, locale.object(forKey: .collatorIdentifier));                  lua_setfield(L, -2, "collatorIdentifier")
+    lua_pushany(L, locale.object(forKey: .quotationBeginDelimiterKey));          lua_setfield(L, -2, "quotationBeginDelimiterKey")
+    lua_pushany(L, locale.object(forKey: .quotationEndDelimiterKey));            lua_setfield(L, -2, "quotationEndDelimiterKey")
+    lua_pushany(L, locale.object(forKey: .alternateQuotationBeginDelimiterKey)); lua_setfield(L, -2, "alternateQuotationBeginDelimiterKey")
+    lua_pushany(L, locale.object(forKey: .alternateQuotationEndDelimiterKey));   lua_setfield(L, -2, "alternateQuotationEndDelimiterKey")
 
     // See http://stackoverflow.com/a/41263725
-    if let tempUnit = locale.object(forKey: NSLocale.Key(rawValue: "kCFLocaleTemperatureUnitKey")) as? NSObject {
-        skin.pushNSObject(tempUnit)
+    if let tempUnit = locale.object(forKey: NSLocale.Key(rawValue: "kCFLocaleTemperatureUnitKey")) {
+        lua_pushany(L, tempUnit)
         lua_setfield(L, -2, "temperatureUnit")
     }
 
@@ -176,11 +171,8 @@ private func pushNSLocale(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any) -> 
 /// Notes:
 ///  * these values can be used with [hs.host.locale.details](#details) to get details for a specific locale.
 private func locale_availableLocaleIdentifiers(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TBREAK)
-
     let locales = NSLocale.availableLocaleIdentifiers
-    skin.pushNSObject(locales as NSArray)
+    lua_pushany(L, locales)
     return 1
 }
 
@@ -194,11 +186,8 @@ private func locale_availableLocaleIdentifiers(_ L: UnsafeMutablePointer<lua_Sta
 /// Returns:
 ///  * an array table of strings specifying the user's preferred languages as string identifiers.
 private func locale_preferredLanguages(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TBREAK)
-
     let languages = NSLocale.preferredLanguages
-    skin.pushNSObject(languages as NSArray)
+    lua_pushany(L, languages)
     return 1
 }
 
@@ -215,9 +204,7 @@ private func locale_preferredLanguages(_ L: UnsafeMutablePointer<lua_State>!) ->
 /// Notes:
 ///  * this value can be used with [hs.host.locale.details](#details) to get details for the returned locale.
 private func locale_currentIdentifier(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TBREAK)
-    skin.pushNSObject(NSLocale.current.identifier as NSString)
+    lua_pushstring(L, NSLocale.current.identifier)
     return 1
 }
 
@@ -255,14 +242,11 @@ private func locale_currentIdentifier(_ L: UnsafeMutablePointer<lua_State>!) -> 
 /// Notes:
 ///  * If you specify a locale identifier as an argument, it should be based on one of the strings returned by [hs.host.locale.availableLocales](#availableLocales).
 private func locale_localeInformation(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING | LS_TOPTIONAL, LS_TBREAK)
-
     let theLocale: NSLocale
-    if lua_gettop(L) == 0 {
+    if lua_gettop(L) == 0 || lua_type(L, 1) == LUA_TNIL {
         theLocale = NSLocale.current as NSLocale
     } else {
-        let localeName: String = skin.toNSObject(atIndex: 1) as! String
+        let localeName = String(cString: luaL_checkstring(L, 1))
         theLocale = NSLocale(localeIdentifier: localeName)
     }
 
@@ -285,8 +269,7 @@ private func locale_localeInformation(_ L: UnsafeMutablePointer<lua_State>!) -> 
 /// Notes:
 ///  * The `localeCode` and optional `baseLocaleCode` must be one of the strings returned by [hs.host.locale.availableLocales](#availableLocales).
 private func locale_localizedString(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING, LS_TSTRING | LS_TOPTIONAL, LS_TBREAK)
+    luaL_checktype(L, 1, LUA_TSTRING)
 
     let availableLocales = NSLocale.availableLocaleIdentifiers
     let theLocale: NSLocale
@@ -294,7 +277,7 @@ private func locale_localizedString(_ L: UnsafeMutablePointer<lua_State>!) -> In
     if lua_gettop(L) == 1 {
         theLocale = NSLocale.current as NSLocale
     } else {
-        let baseLocaleCode: String = skin.toNSObject(atIndex: 2) as! String
+        let baseLocaleCode = String(cString: luaL_checkstring(L, 2))
         guard availableLocales.contains(baseLocaleCode) else {
             lua_pushnil(L)
             return 1
@@ -302,7 +285,7 @@ private func locale_localizedString(_ L: UnsafeMutablePointer<lua_State>!) -> In
         theLocale = NSLocale(localeIdentifier: baseLocaleCode)
     }
 
-    let localeCode: String = skin.toNSObject(atIndex: 1) as! String
+    let localeCode = String(cString: lua_tostring(L, 1)!)
     guard availableLocales.contains(localeCode) else {
         lua_pushnil(L)
         return 1
@@ -311,25 +294,25 @@ private func locale_localizedString(_ L: UnsafeMutablePointer<lua_State>!) -> In
     let localizedString = (theLocale as Locale).localizedString(forLanguageCode: localeCode)
     let localizedStringWithDialect = theLocale.displayName(forKey: .identifier, value: localeCode)
 
-    skin.pushNSObject(localizedString as NSString?)
-    skin.pushNSObject(localizedStringWithDialect as NSString?)
+    if let s = localizedString { lua_pushstring(L, s) } else { lua_pushnil(L) }
+    if let s = localizedStringWithDialect { lua_pushstring(L, s) } else { lua_pushnil(L) }
     return 2
 }
 
 private func locale_registerCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TFUNCTION, LS_TBREAK)
-    callbackRef = skin.luaUnref(refTable, ref: callbackRef) // should be unnecessary, but just in case
+    luaL_checktype(L, 1, LUA_TFUNCTION)
+    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, callbackRef) // should be unnecessary, but just in case
+    callbackRef = LUA_NOREF
     lua_pushvalue(L, 1)
-    callbackRef = skin.luaRef(refTable)
+    callbackRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
     return 0
 }
 
 // MARK: - Cosmic Hammer/Lua Infrastructure
 
 private func meta_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    callbackRef = skin.luaUnref(refTable, ref: callbackRef)
+    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, callbackRef)
+    callbackRef = LUA_NOREF
     observerOfChanges?.stop()
     observerOfChanges = nil
     return 0
@@ -364,8 +347,14 @@ private var module_metaLib: [luaL_Reg] = [
 
 @_cdecl("luaopen_hs_libhost_locale")
 public func luaopen_hs_libhost_locale(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    refTable = skin.registerLibrary(USERDATA_TAG, functions: &moduleLib, metaFunctions: &module_metaLib)
+    // Create module table
+    lua_createtable(L, 0, Int32(moduleLib.count - 1))
+    luaL_setfuncs(L, &moduleLib, 0)
+
+    // Set module metatable for __gc
+    lua_createtable(L, 0, 1)
+    luaL_setfuncs(L, &module_metaLib, 0)
+    lua_setmetatable(L, -2)
 
     observerOfChanges = HSLocaleChangeObserver()
     observerOfChanges?.start()
