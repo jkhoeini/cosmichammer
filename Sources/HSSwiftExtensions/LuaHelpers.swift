@@ -318,6 +318,10 @@ private func lua_tovalue_recursive(_ L: UnsafeMutablePointer<lua_State>!, at ind
     case LUA_TTABLE:
         return lua_tableToValue(L, at: idx, depth: depth)
 
+    case LUA_TUSERDATA:
+        let ptr = lua_touserdata(L, idx)!
+        return Unmanaged<AnyObject>.fromOpaque(ptr.load(as: UnsafeRawPointer.self)).takeUnretainedValue()
+
     default:
         return nil
     }

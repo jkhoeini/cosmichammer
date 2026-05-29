@@ -35,13 +35,30 @@ LuaSkin → LuaSwift).
     (~$(MARKETING_VERSION)~, ~${EXECUTABLE_NAME}~, etc.) even though the
     justfile already ~sed~-replaces them. Use a simpler template format.
 
-*** TODO Fix failing SPM test suites that need macOS system APIs
-    Window suite fails (~openConsole~ nil), Markdown has ~Table~ type
-    ambiguity. Extensions that call AppKit, accessibility, audio, screen,
-    or window APIs get nil/crash without ~NSApplication~. Options:
-    (a) stub the missing ~hs.*~ core functions in ~LuaTestSetup.swift~,
-    (b) mark system-dependent tests with a trait and skip them in
-    ~swift test~, (c) add a second hosted-test target for integration tests.
+*** TODO Fix remaining 79 failing tests that need macOS system APIs
+    89 tests now pass (up from ~30) after adding pure-Lua-state tests.
+    79 tests still fail because they call AppKit, accessibility, audio,
+    screen, or window APIs that return nil without ~NSApplication~.
+
+    Untestable without hardware/host app (by design — not a code issue):
+    - Brightness (IOKit display sensor), HID (IOKit HID device),
+      Camera (AVCaptureDevice), Audiodevice (CoreAudio hardware),
+      Screen (NSScreen), Razer/StreamDeck (USB hardware),
+      Location (CoreLocation)
+
+    Testable with host app refactoring:
+    - Window/Application/Uielement/AXUIElement: need ~NSApplication~ +
+      accessibility permissions. Consider a hosted test target.
+    - Canvas/Webview/Menubar/Chooser/Dialog: need AppKit window server.
+      Consider ~.skipInHeadless~ trait.
+    - Hotkey/Eventtap: need CGEvent permissions. Skip in CI.
+
+    Testable NOW but blocked by missing stubs:
+    - Coresetup (11 failures): ~hs.consoleOnTop~, ~hs.menuIcon~, etc.
+      are not registered in test bootstrap. Fix by stubbing them in
+      ~LuaTestSetup.swift~.
+    - Image (1 failure): needs ~hs.drawing.color~ module to load.
+      Fix by registering the dependency chain.
 
 *** TODO Remove unnecessary ~@objc~ annotations
     482 ~@objc~ usages across ~Sources/HSSwiftExtensions/~ were required
