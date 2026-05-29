@@ -8,6 +8,7 @@
 
 import Foundation
 import LuaSkin
+import os.log
 
 // MARK: - UserDefaults key
 
@@ -34,14 +35,13 @@ func HSAppleScriptSetEnabled(_ enabled: Bool) {
 // MARK: - Run Lua string
 
 private func HSAppleScriptRunString(_ command: String, errorFor cmd: NSScriptCommand) -> String {
-    let skin = LuaSkin.shared(with: nil) as! LuaSkin
-    let L = skin.l!
+    let L = lua_getCurrentState()!
     _lua_stackguard_entry(L)
 
     lua_getglobal(L, "hs")
     if lua_getfield(L, -1, "__appleScriptRunString") != LUA_TFUNCTION {
         let typeName = String(cString: lua_typename(L, lua_type(L, -1)))
-        skin.logError("hs.__appleScriptRunString is not a function; found \(typeName)")
+        os_log(.error, "hs.__appleScriptRunString is not a function; found %{public}s", typeName)
         cmd.scriptErrorNumber = -50
         cmd.scriptErrorString = "hs.__appleScriptRunString is not a function"
         lua_pop(L, 2) // "hs", and whatever "hs.__appleScriptRunString" is
@@ -50,14 +50,14 @@ private func HSAppleScriptRunString(_ command: String, errorFor cmd: NSScriptCom
     }
 
     lua_pushstring(L, command)
-    if skin.protectedCallAndTraceback(1, nresults: 2) == false {
+    if lua_pcall(L, 1, 2, 0) != LUA_OK {
         let errMsg: String
         if let cStr = lua_tostring(L, -1) {
             errMsg = "hs.__appleScriptRunString callback error:\(String(cString: cStr))"
         } else {
             errMsg = "hs.__appleScriptRunString callback error: (unknown)"
         }
-        skin.logError(errMsg)
+        os_log(.error, "%{public}s", errMsg)
         cmd.scriptErrorNumber = -50
         cmd.scriptErrorString = errMsg
         lua_pop(L, 2) // "hs", and error message
@@ -65,7 +65,7 @@ private func HSAppleScriptRunString(_ command: String, errorFor cmd: NSScriptCom
         return "Error"
     }
 
-    let str = skin.toNSObject(at: -1) as? String ?? ""
+    let str = lua_tovalue(L, at: -1) as? String ?? ""
     let good = lua_toboolean(L, -2) != 0
     lua_pop(L, 3) // "hs" and two results from hs.__appleScriptRunString: boolean, string
     if good {

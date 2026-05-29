@@ -8,6 +8,7 @@ import ApplicationServices
 import LuaSkin
 import CoreGraphics
 import Darwin
+import os.log
 
 // MARK: - Private C API declarations
 
@@ -143,16 +144,17 @@ private func getWindowTabs(_ win: AXUIElement) -> AXUIElement? {
     @objc func newWatcher(atIndex callbackRefIndex: Int32,
                           withUserdataAtIndex userDataRefIndex: Int32,
                           withLuaState L: UnsafeMutablePointer<lua_State>!) -> NSObject? {
-        let skin = LuaSkin.skin(with: L)
-        let callbackRef = skin.luaRef(LUA_REGISTRYINDEX_VALUE, at: callbackRefIndex)
+        lua_pushvalue(L, callbackRefIndex)
+        let callbackRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
         var userDataRef: Int32 = LUA_REFNIL
         if lua_type(L, userDataRefIndex) != LUA_TNONE {
-            userDataRef = skin.luaRef(LUA_REGISTRYINDEX_VALUE, at: userDataRefIndex)
+            lua_pushvalue(L, userDataRefIndex)
+            userDataRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
         }
         let watcher = HSuielementWatcher(element: self,
                                         callbackRef: callbackRef,
                                         userdataRef: userDataRef)
-        watcher.lsCanary = skin.createGCCanary()
+        watcher.lsCanary = lua_currentStateGeneration()
         return watcher
     }
 
@@ -203,11 +205,11 @@ private let watcherCallback: AXObserverCallback = { _, element, notificationName
     guard let contextData = contextData else { return }
     let watcher = Unmanaged<HSuielementWatcher>.fromOpaque(contextData).takeUnretainedValue()
 
-    let skin = LuaSkin.skin(with: nil)
-    skin.check(watcher.lsCanary)
+    guard let L = lua_getCurrentState() else { return }
+    guard lua_isStateGenerationValid(watcher.lsCanary) else { return }
 
     // Push callback function
-    skin.pushLuaRef(watcher.refTable, ref: watcher.handlerRef)
+    lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(watcher.handlerRef))
 
     // Determine what kind of object to push as parameter 1
     let elementObj = HSuielement(withElement: element)
@@ -217,7 +219,7 @@ private let watcherCallback: AXObserverCallback = { _, element, notificationName
     } else if elementObj.isApplication {
         var pid: pid_t = 0
         AXUIElementGetPid(element, &pid)
-        if let app = HSapplication(pid: pid, withState: skin.l) {
+        if let app = HSapplication(pid: pid, withState: L) {
             pushObj = app
         } else {
             pushObj = elementObj
@@ -226,31 +228,31 @@ private let watcherCallback: AXObserverCallback = { _, element, notificationName
         pushObj = elementObj
     }
 
-    skin.pushNSObject(pushObj)
+    lua_pushany(L, pushObj)
 
     // Parameter 2: event name
     if let cstr = CFStringGetCStringPtr(notificationName, CFStringBuiltInEncodings.ASCII.rawValue) {
-        lua_pushstring(skin.l, cstr)
+        lua_pushstring(L, cstr)
     } else {
         let str = notificationName as String
-        lua_pushstring(skin.l, str)
+        lua_pushstring(L, str)
     }
 
     // Parameter 3: watcher
-    skin.pushLuaRef(watcher.refTable, ref: watcher.watcherRef)
+    lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(watcher.watcherRef))
 
     // Parameter 4: userData
     if watcher.userDataRef == LUA_NOREF || watcher.userDataRef == LUA_REFNIL {
-        lua_pushnil(skin.l)
+        lua_pushnil(L)
     } else {
-        skin.pushLuaRef(watcher.refTable, ref: watcher.userDataRef)
+        lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(watcher.userDataRef))
     }
 
-    if !skin.protectedCallAndTraceback(4, nresults: 0) {
-        if let errorMsg = lua_tostring(skin.l, -1) {
-            skin.logError(String(cString: errorMsg))
+    if lua_pcall(L, 4, 0, 0) != LUA_OK {
+        if let errorMsg = lua_tostring(L, -1) {
+            os_log(.error, "%{public}s", String(cString: errorMsg))
         }
-        lua_pop(skin.l, 1)
+        lua_pop(L, 1)
     }
 }
 
@@ -264,7 +266,7 @@ private let watcherCallback: AXObserverCallback = { _, element, notificationName
         get { _elementRef }
         set { _elementRef = newValue }
     }
-    @objc var refTable: LSRefTable
+    @objc var refTable: Int32
     @objc var handlerRef: Int32
     @objc var userDataRef: Int32
     @objc var watcherRef: Int32
@@ -276,7 +278,7 @@ private let watcherCallback: AXObserverCallback = { _, element, notificationName
     @objc var running: Bool = false
     @objc var pid: pid_t = 0
     @objc var watchDestroyed: Bool = false
-    @objc var lsCanary: LSGCCanary = LSGCCanary()
+    @objc var lsCanary: UInt64 = 0
 
     // NOTE: The Lua ref arguments must be on LUA_REGISTRYINDEX_VALUE, not some other reftable.
     @objc init(element: HSuielement, callbackRef: Int32, userdataRef: Int32) {
@@ -292,13 +294,12 @@ private let watcherCallback: AXObserverCallback = { _, element, notificationName
     }
 
     @objc func start(_ events: [String], withState L: UnsafeMutablePointer<lua_State>!) {
-        let skin = LuaSkin.skin(with: L)
         guard !running else { return }
 
         var obs: AXObserver?
         let err = AXObserverCreate(pid, watcherCallback, &obs)
         guard err == .success, let obs = obs else {
-            skin.logBreadcrumb("AXObserverCreate error: \(err.rawValue)")
+            os_log(.default, "BREADCRUMB: AXObserverCreate error: %d", err.rawValue)
             return
         }
 
@@ -339,9 +340,8 @@ private let watcherCallback: AXObserverCallback = { _, element, notificationName
     // MARK: Init / deinit
 
     @objc convenience init?(pid thePID: pid_t, withState L: UnsafeMutablePointer<lua_State>!) {
-        let skin = LuaSkin.skin(with: L)
         guard let app = NSRunningApplication(processIdentifier: thePID) else {
-            skin.logError("Unable to fetch NSRunningApplication for pid: \(thePID)")
+            os_log(.error, "Unable to fetch NSRunningApplication for pid: %d", thePID)
             return nil
         }
         self.init(nsRunningApplication: app, withState: L)
@@ -349,9 +349,8 @@ private let watcherCallback: AXObserverCallback = { _, element, notificationName
 
     @objc convenience init?(nsRunningApplication app: NSRunningApplication,
                              withState L: UnsafeMutablePointer<lua_State>!) {
-        let skin = LuaSkin.skin(with: L)
         guard let app2 = app as NSRunningApplication? else {
-            skin.logError("HSapplication::initWithNSRunningApplication called with invalid application")
+            os_log(.error, "HSapplication::initWithNSRunningApplication called with invalid application")
             return nil
         }
         let appRef = AXUIElementCreateApplication(app2.processIdentifier)
@@ -370,14 +369,13 @@ private let watcherCallback: AXObserverCallback = { _, element, notificationName
     // MARK: Class factory methods
 
     @objc static func frontmostApplication(withState L: UnsafeMutablePointer<lua_State>!) -> HSapplication? {
-        let skin = LuaSkin.skin(with: L)
         guard let app = NSWorkspace.shared.frontmostApplication else {
-            skin.logError("Unable to fetch frontmost application")
+            os_log(.error, "Unable to fetch frontmost application")
             return nil
         }
         let result = HSapplication(nsRunningApplication: app, withState: L)
         if result == nil {
-            skin.logError("HSapplication::frontmostApplication failed for app: \(app.localizedName ?? "<unknown>")")
+            os_log(.error, "HSapplication::frontmostApplication failed for app: %{public}s", app.localizedName ?? "<unknown>")
         }
         return result
     }
@@ -611,7 +609,7 @@ private let watcherCallback: AXObserverCallback = { _, element, notificationName
 
     @objc static func orderedWindowIDs() -> [NSNumber] {
         guard let wins = _CGWindowListCreate([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) else {
-            LuaSkin.skin(with: nil).logBreadcrumb("hs.window._orderedwinids CGWindowListCreate returned NULL")
+            os_log(.default, "BREADCRUMB: hs.window._orderedwinids CGWindowListCreate returned NULL")
             return []
         }
         guard let windowDescs = CGWindowListCreateDescriptionFromArray(wins) else { return [] }

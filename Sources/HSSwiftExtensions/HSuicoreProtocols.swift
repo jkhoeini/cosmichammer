@@ -29,7 +29,7 @@ import LuaSkin
 @objc protocol HSuielementWatcherProtocol: NSObjectProtocol {
     var selfRefCount: Int32 { get set }
     var elementRef: AXUIElement { get set }
-    var refTable: LSRefTable { get set }
+    var refTable: Int32 { get set }
     var handlerRef: Int32 { get set }
     var userDataRef: Int32 { get set }
     var watcherRef: Int32 { get set }
@@ -37,7 +37,7 @@ import LuaSkin
     var running: Bool { get set }
     var pid: pid_t { get set }
     var watchDestroyed: Bool { get set }
-    var lsCanary: LSGCCanary { get set }
+    var lsCanary: UInt64 { get set }
 
     func start(_ events: [String], withState L: UnsafeMutablePointer<lua_State>!)
     func stop()

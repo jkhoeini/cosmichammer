@@ -12,7 +12,7 @@ import LuaSkin
 import os.log
 
 @objc(HSLogger)
-class HSLogger: NSObject, LuaSkinDelegate {
+class HSLogger: NSObject {
 
     private var _L: UnsafeMutablePointer<lua_State>?
 

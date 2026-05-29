@@ -13,11 +13,10 @@ import os.log
 
 // MARK: - Module-level state (formerly static C variables)
 
-private var MJLuaLogDelegate: (any LuaSkinDelegate)?
+private var MJLuaLogDelegate: AnyObject?
 private var evalfn: Int32 = 0
 private var completionsForWordFn: Int32 = 0
 private var oldPanicFunction: lua_CFunction?
-private var refTable: LSRefTable = 0
 private var loghandler: (@convention(block) (NSString) -> Void)?
 
 // MARK: - String constants (from variables.h)
@@ -166,10 +165,13 @@ private func core_closeconsole(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * A boolean, true if the file was opened successfully, otherwise false
 private func core_open(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING, LS_TBREAK)
+    lsCheckArgs(L, LS_TSTRING, LS_TBREAK)
 
-    let path = skin.toNSObject(at: 1) as! String
+    guard let cStr = lua_tostring(L, 1) else {
+        lua_pushboolean(L, 0)
+        return 1
+    }
+    let path = String(cString: cStr)
     let pathURL = URL(fileURLWithPath: path)
     let result = NSWorkspace.shared.open(pathURL)
 
@@ -197,8 +199,6 @@ private func core_reload(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Constant
 /// A table containing read-only information about the Cosmic Hammer application instance currently running.
 private func push_hammerAppInfo(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-
     // Fetch the CPU architecture in use
     var arch = "Unknown"
     var utsname = utsname()
@@ -243,7 +243,7 @@ private func push_hammerAppInfo(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
         "debugBuild": isDebugBuild,
     ]
 
-    skin.pushNSObject(appInfo as NSDictionary)
+    lua_pushany(L, appInfo as NSDictionary)
     return 1
 }
 
@@ -356,7 +356,6 @@ private func core_screenRecordingState(_ L: UnsafeMutablePointer<lua_State>!) ->
 /// Notes:
 ///  * Will always return `true` on macOS 10.13 or earlier.
 private func core_microphoneState(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     let shouldprompt = lua_toboolean(L, 1) != 0
 
     switch AVCaptureDevice.authorizationStatus(for: .audio) {
@@ -366,7 +365,7 @@ private func core_microphoneState(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
         if shouldprompt {
             AVCaptureDevice.requestAccess(for: .audio) { granted in
                 if !granted {
-                    skin.logWarn("Cosmic Hammer has been declined Microphone access by the user.")
+                    os_log(.default, "Cosmic Hammer has been declined Microphone access by the user.")
                 }
             }
         }
@@ -392,7 +391,6 @@ private func core_microphoneState(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
 /// Notes:
 ///  * Will always return `true` on macOS 10.13 or earlier.
 private func core_cameraState(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     let shouldprompt = lua_toboolean(L, 1) != 0
 
     switch AVCaptureDevice.authorizationStatus(for: .video) {
@@ -402,7 +400,7 @@ private func core_cameraState(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
         if shouldprompt {
             AVCaptureDevice.requestAccess(for: .video) { granted in
                 if !granted {
-                    skin.logWarn("Cosmic Hammer has been declined Camera access by the user.")
+                    os_log(.default, "Cosmic Hammer has been declined Camera access by the user.")
                 }
             }
         }
@@ -425,8 +423,7 @@ private func core_cameraState(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * A boolean, true if dark mode is enabled otherwise false.
 private func preferencesDarkMode(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
+    lsCheckArgs(L, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
 
     if lua_isboolean(L, 1) {
         PreferencesDarkModeSetEnabled(lua_toboolean(L, 1) != 0)
@@ -462,8 +459,7 @@ private func preferencesDarkMode(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 ///      execute lua code "hs.alert([[Hello from AppleScript]])"
 ///    end tell```
 private func core_appleScript(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
+    lsCheckArgs(L, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
 
     if lua_isboolean(L, 1) {
         HSAppleScriptSetEnabled(lua_toboolean(L, 1) != 0)
@@ -486,8 +482,7 @@ private func core_appleScript(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Notes:
 ///  * This only refers to dock icon clicks while Cosmic Hammer is already running. The console window is not opened by launching the app
 private func core_openConsoleOnDockClick(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
+    lsCheckArgs(L, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
 
     if lua_isboolean(L, 1) {
         HSOpenConsoleOnDockClickSetEnabled(lua_toboolean(L, 1) != 0)
@@ -521,8 +516,7 @@ private func core_focus(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * The extension's object metatable, or nil if an error occurred
 private func core_getObjectMetatable(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TSTRING, LS_TBREAK)
+    lsCheckArgs(L, LS_TSTRING, LS_TBREAK)
     luaL_getmetatable(L, lua_tostring(L, 1))
     return 1
 }
@@ -542,9 +536,13 @@ private func core_getObjectMetatable(_ L: UnsafeMutablePointer<lua_State>!) -> I
 ///  * This function does not modify the original string - to actually replace it, assign the result of this function to the original string.
 ///  * This function is a more specifically targeted version of the `hs.utf8.fixUTF8(...)` function.
 private func core_cleanUTF8(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
-    skin.checkArgs(LS_TANY, LS_TBREAK)
-    skin.pushNSObject(skin.getValidUTF8(at: 1))
+    lsCheckArgs(L, LS_TANY, LS_TBREAK)
+    // luaL_tolstring coerces any value to a string representation
+    var len: Int = 0
+    let src = luaL_tolstring(L, 1, &len)
+    let cleaned = getValidUTF8(src, ofLength: len)
+    lua_pop(L, 1) // pop the luaL_tolstring result
+    lua_pushany(L, cleaned)
     return 1
 }
 
@@ -613,6 +611,51 @@ private var corelib: [luaL_Reg] = [
     luaL_Reg(name: nil, func: nil),
 ]
 
+// MARK: - UTF-8 validation helper
+
+/// Sanitize a byte buffer into valid UTF-8, replacing NULL bytes with the
+/// Unicode Empty Set character (U+2205) and invalid sequences with the
+/// Unicode Replacement Character (U+FFFD).
+private func getValidUTF8(_ src: UnsafePointer<CChar>?, ofLength sourceLength: Int) -> String {
+    guard let src = src, sourceLength > 0 else { return "" }
+    let nullChar: [UInt8] = [0xE2, 0x88, 0x85]     // U+2205
+    let invalidChar: [UInt8] = [0xEF, 0xBF, 0xBD]  // U+FFFD
+
+    // Rebind CChar pointer to UInt8 for unsigned byte comparisons
+    let bytes = UnsafeBufferPointer(start: UnsafeRawPointer(src).assumingMemoryBound(to: UInt8.self),
+                                    count: sourceLength)
+
+    var dest = Data()
+    dest.reserveCapacity(sourceLength)
+    var pos = 0
+    while pos < sourceLength {
+        let b = bytes[pos]
+        if b > 0 && b <= 127 {
+            dest.append(b); pos += 1
+        } else if b >= 194 && b <= 223 && pos + 1 < sourceLength &&
+                    bytes[pos + 1] >= 128 && bytes[pos + 1] <= 191 {
+            dest.append(b); dest.append(bytes[pos + 1]); pos += 2
+        } else if b >= 224 && b <= 239 && pos + 2 < sourceLength &&
+                    bytes[pos + 1] >= 128 && bytes[pos + 1] <= 191 &&
+                    bytes[pos + 2] >= 128 && bytes[pos + 2] <= 191 {
+            dest.append(b); dest.append(bytes[pos + 1]); dest.append(bytes[pos + 2]); pos += 3
+        } else if b >= 240 && b <= 244 && pos + 3 < sourceLength &&
+                    bytes[pos + 1] >= 128 && bytes[pos + 1] <= 191 &&
+                    bytes[pos + 2] >= 128 && bytes[pos + 2] <= 191 &&
+                    bytes[pos + 3] >= 128 && bytes[pos + 3] <= 191 {
+            dest.append(b); dest.append(bytes[pos + 1]); dest.append(bytes[pos + 2]); dest.append(bytes[pos + 3]); pos += 4
+        } else {
+            if b == 0 {
+                dest.append(contentsOf: nullChar)
+            } else {
+                dest.append(contentsOf: invalidChar)
+            }
+            pos += 1
+        }
+    }
+    return String(data: dest, encoding: .utf8) ?? ""
+}
+
 // MARK: - Lua environment lifecycle, high level
 
 /// Create and configure a Lua environment
@@ -652,33 +695,31 @@ private func MJLuaAtPanic(_ L: UnsafeMutablePointer<lua_State>?) -> Int32 {
     return 0
 }
 
-/// Create a Lua environment with LuaSkin
+/// Create a Lua environment
 @_cdecl("MJLuaAlloc")
 func MJLuaAlloc() {
     if MJLuaLogDelegate == nil {
-        MJLuaLogDelegate = (HSLoggerCreateWithLua(nil) as! any LuaSkinDelegate)
+        MJLuaLogDelegate = HSLoggerCreateWithLua(nil)
     }
-    var skin = LuaSkin.shared(withDelegate: MJLuaLogDelegate) as! LuaSkin
-    // on a reload, this won't get created in sharedWithDelegate:, so do it manually here
-    if LuaSkin.mainLuaState == nil {
-        skin.createLuaState()
-        skin.delegate = MJLuaLogDelegate
-        // make sure skin.L points to the main state since we just created a new one
-        skin = LuaSkin.shared(with: nil) as! LuaSkin
+    var L = lua_getCurrentState()
+    if L == nil {
+        L = luaL_newstate()
+        luaL_openlibs(L)
+        lua_setCurrentState(L)
+        lua_bumpStateGeneration()
     }
-    HSLoggerSetLuaState(MJLuaLogDelegate as AnyObject, skin.l)
-    oldPanicFunction = lua_atpanic(skin.l, MJLuaAtPanic)
+    HSLoggerSetLuaState(MJLuaLogDelegate!, L)
+    oldPanicFunction = lua_atpanic(L, MJLuaAtPanic)
 }
 
-/// Configure a Lua environment that has already been created by LuaSkin
+/// Configure a Lua environment that has already been created
 @_cdecl("MJLuaInit")
 func MJLuaInit() {
-    let skin = LuaSkin.shared(with: nil) as! LuaSkin
-    let L = skin.l!
+    let L = lua_getCurrentState()!
 
-    lua_setCurrentState(L)
-
-    refTable = skin.registerLibrary("core", functions: &corelib, metaFunctions: nil)
+    // Register the core library as the "hs" global table
+    lua_createtable(L, 0, Int32(corelib.count))
+    luaL_setfuncs(L, &corelib, 0)
     push_hammerAppInfo(L)
     lua_setfield(L, -2, "processInfo")
 
@@ -739,13 +780,14 @@ func MJLuaInit() {
             alert.alertStyle = .critical
             alert.runModal()
 
-            skin.logBreadcrumb("setup.lua returned incorrectly: \(debugPart)")
+            os_log(.default, "BREADCRUMB: setup.lua returned incorrectly: %{public}s", debugPart)
 
             // Fall through this, so we crash, so we can get the crash report
         }
-        evalfn = Int32(skin.luaRef(refTable))
-        completionsForWordFn = Int32(skin.luaRef(refTable))
-        skin.logBreadcrumb("setup.lua completed")
+        // setup.lua returns two functions on the stack; luaL_ref pops from the top
+        evalfn = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+        completionsForWordFn = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+        os_log(.default, "BREADCRUMB: setup.lua completed")
     }
 }
 
@@ -754,8 +796,7 @@ func MJLuaInit() {
 /// Accessibility State Callback
 @_cdecl("callAccessibilityStateCallback")
 func callAccessibilityStateCallback() {
-    let skin = LuaSkin.shared(with: nil) as! LuaSkin
-    let L = skin.l!
+    let L = lua_getCurrentState()!
     _lua_stackguard_entry(L)
 
     lua_getglobal(L, "hs")
@@ -765,7 +806,11 @@ func callAccessibilityStateCallback() {
         // There is no callback set, so just pop the callback and carry on
         lua_pop(L, 1)
     } else {
-        skin.protectedCallAndError("hs.callAccessibilityStateCallback", nargs: 0, nresults: 0)
+        if lua_pcall(L, 0, 0, 0) != LUA_OK {
+            let err = lua_tostring(L, -1).map { String(cString: $0) } ?? "(unknown)"
+            os_log(.error, "hs.callAccessibilityStateCallback: %{public}s", err)
+            lua_pop(L, 1)
+        }
     }
 
     // Pop the hs global off the stack
@@ -776,8 +821,7 @@ func callAccessibilityStateCallback() {
 /// Text Dropped to Dock Icon Callback
 @_cdecl("textDroppedToDockIcon")
 func textDroppedToDockIcon(_ pboardString: NSString) {
-    let skin = LuaSkin.shared(with: nil) as! LuaSkin
-    let L = skin.l!
+    let L = lua_getCurrentState()!
     _lua_stackguard_entry(L)
 
     lua_getglobal(L, "hs")
@@ -787,8 +831,12 @@ func textDroppedToDockIcon(_ pboardString: NSString) {
         // There is no callback set, so just pop the callback and carry on
         lua_pop(L, 1)
     } else {
-        skin.pushNSObject(pboardString)
-        skin.protectedCallAndError("hs.textDroppedToDockIconCallback", nargs: 1, nresults: 0)
+        lua_pushany(L, pboardString)
+        if lua_pcall(L, 1, 0, 0) != LUA_OK {
+            let err = lua_tostring(L, -1).map { String(cString: $0) } ?? "(unknown)"
+            os_log(.error, "hs.textDroppedToDockIconCallback: %{public}s", err)
+            lua_pop(L, 1)
+        }
     }
 
     // Pop the hs global off the stack
@@ -799,8 +847,7 @@ func textDroppedToDockIcon(_ pboardString: NSString) {
 /// File Dropped to Dock Icon Callback
 @_cdecl("fileDroppedToDockIcon")
 func fileDroppedToDockIcon(_ filePath: NSString) {
-    let skin = LuaSkin.shared(with: nil) as! LuaSkin
-    let L = skin.l!
+    let L = lua_getCurrentState()!
     _lua_stackguard_entry(L)
 
     lua_getglobal(L, "hs")
@@ -810,8 +857,12 @@ func fileDroppedToDockIcon(_ filePath: NSString) {
         // There is no callback set, so just pop the callback and carry on
         lua_pop(L, 1)
     } else {
-        skin.pushNSObject(filePath)
-        skin.protectedCallAndError("hs.fileDroppedToDockIconCallback", nargs: 1, nresults: 0)
+        lua_pushany(L, filePath)
+        if lua_pcall(L, 1, 0, 0) != LUA_OK {
+            let err = lua_tostring(L, -1).map { String(cString: $0) } ?? "(unknown)"
+            os_log(.error, "hs.fileDroppedToDockIconCallback: %{public}s", err)
+            lua_pop(L, 1)
+        }
     }
 
     // Pop the hs global off the stack
@@ -822,10 +873,7 @@ func fileDroppedToDockIcon(_ filePath: NSString) {
 /// Dock Icon Click Callback
 @_cdecl("callDockIconCallback")
 func callDockIconCallback() {
-    let skin = LuaSkin.shared(with: nil) as! LuaSkin
-    let L = skin.l
-
-    guard let L = L else {
+    guard let L = lua_getCurrentState() else {
         // It seems to be possible that NSApplicationDelegate:applicationShouldHandleReopen
         // can be called before a Lua state has been created. We need to bail out immediately
         // or we'll cause a crash.
@@ -841,7 +889,11 @@ func callDockIconCallback() {
         // There is no callback set, so just pop the callback and carry on
         lua_pop(L, 1)
     } else {
-        skin.protectedCallAndError("hs.dockIconClickCallback", nargs: 0, nresults: 0)
+        if lua_pcall(L, 0, 0, 0) != LUA_OK {
+            let err = lua_tostring(L, -1).map { String(cString: $0) } ?? "(unknown)"
+            os_log(.error, "hs.dockIconClickCallback: %{public}s", err)
+            lua_pop(L, 1)
+        }
     }
 
     // Pop the hs global off the stack
@@ -851,8 +903,7 @@ func callDockIconCallback() {
 
 /// Shutdown Callback
 private func callShutdownCallback(_ L: UnsafeMutablePointer<lua_State>!) {
-    let skin = LuaSkin.skin(with: L)
-    _lua_stackguard_entry(skin.l)
+    _lua_stackguard_entry(L)
 
     lua_getglobal(L, "hs")
     lua_getfield(L, -1, "shutdownCallback")
@@ -861,40 +912,46 @@ private func callShutdownCallback(_ L: UnsafeMutablePointer<lua_State>!) {
         // There is no callback set, so just pop the callback and carry on
         lua_pop(L, 1)
     } else {
-        skin.protectedCallAndError("hs.shutdownCallback", nargs: 0, nresults: 0)
+        if lua_pcall(L, 0, 0, 0) != LUA_OK {
+            let err = lua_tostring(L, -1).map { String(cString: $0) } ?? "(unknown)"
+            os_log(.error, "hs.shutdownCallback: %{public}s", err)
+            lua_pop(L, 1)
+        }
     }
 
     // Pop the hs global off the stack
     lua_pop(L, 1)
-    _lua_stackguard_exit(skin.l)
+    _lua_stackguard_exit(L)
 }
 
-/// Deconfigure a Lua environment that will shortly be destroyed by LuaSkin
+/// Deconfigure a Lua environment that will shortly be destroyed
 @_cdecl("MJLuaDeinit")
 func MJLuaDeinit() {
-    let skin = LuaSkin.shared(with: nil) as! LuaSkin
+    guard let L = lua_getCurrentState() else { return }
 
-    callShutdownCallback(skin.l)
+    callShutdownCallback(L)
 
     HSLoggerSetLuaState(MJLuaLogDelegate as AnyObject, nil)
 }
 
-/// Destroy a Lua environment with LuaSkin
+/// Destroy a Lua environment
 @_cdecl("MJLuaDealloc")
 func MJLuaDealloc() {
-    let skin = LuaSkin.shared(with: nil) as! LuaSkin
-    skin.destroyLuaState()
+    if let L = lua_getCurrentState() {
+        lua_close(L)
+        lua_setCurrentState(nil)
+        lua_bumpStateGeneration()
+    }
 }
 
 // MARK: - Run string / completions / get active state
 
 @_cdecl("MJLuaRunString")
 func MJLuaRunString(_ command: NSString) -> NSString {
-    let skin = LuaSkin.shared(with: nil) as! LuaSkin
-    let L = skin.l!
+    let L = lua_getCurrentState()!
     _lua_stackguard_entry(L)
 
-    skin.pushLuaRef(refTable, ref: evalfn)
+    lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(evalfn))
     if !lua_isfunction(L, -1) {
         os_log(.error, "ERROR: MJLuaRunString doesn't seem to have an evalfn")
         if lua_isstring(L, -1) {
@@ -906,9 +963,9 @@ func MJLuaRunString(_ command: NSString) -> NSString {
         return ""
     }
     lua_pushstring(L, (command as String).cString(using: .utf8))
-    if skin.protectedCallAndTraceback(1, nresults: 1) == false {
+    if lua_pcall(L, 1, 1, 0) != LUA_OK {
         if let errorMsg = lua_tostring(L, -1) {
-            skin.logError(String(cString: errorMsg))
+            os_log(.error, "%{public}s", String(cString: errorMsg))
         }
     }
 
@@ -918,7 +975,7 @@ func MJLuaRunString(_ command: NSString) -> NSString {
     if let s = s, let converted = String(data: Data(bytes: s, count: len), encoding: .utf8) {
         str = converted as NSString
     } else if let s = s {
-        str = skin.getValidUTF8(s, ofLength: len) as NSString
+        str = getValidUTF8(s, ofLength: len) as NSString
     } else {
         str = ""
     }
@@ -930,26 +987,28 @@ func MJLuaRunString(_ command: NSString) -> NSString {
 
 @_cdecl("MJLuaCompletionsForWord")
 func MJLuaCompletionsForWord(_ completionWord: NSString) -> NSArray {
-    let skin = LuaSkin.shared(with: nil) as! LuaSkin
-    _lua_stackguard_entry(skin.l)
+    let L = lua_getCurrentState()!
+    _lua_stackguard_entry(L)
 
-    skin.pushLuaRef(refTable, ref: completionsForWordFn)
-    skin.pushNSObject(completionWord)
-    if skin.protectedCallAndError("MJLuaCompletionsForWord", nargs: 1, nresults: 1) == false {
-        _lua_stackguard_exit(skin.l)
+    lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(completionsForWordFn))
+    lua_pushany(L, completionWord)
+    if lua_pcall(L, 1, 1, 0) != LUA_OK {
+        let err = lua_tostring(L, -1).map { String(cString: $0) } ?? "(unknown)"
+        os_log(.error, "MJLuaCompletionsForWord: %{public}s", err)
+        lua_pop(L, 1)
+        _lua_stackguard_exit(L)
         return []
     }
 
-    let completions = skin.toNSObject(at: -1) as? NSArray ?? []
-    lua_pop(skin.l, 1)
-    _lua_stackguard_exit(skin.l)
-    return completions
+    let completions = lua_tovalue(L, at: -1) as? [Any] ?? []
+    lua_pop(L, 1)
+    _lua_stackguard_exit(L)
+    return completions as NSArray
 }
 
 /// C-Code helper to return current active LuaState. Useful for callbacks to
 /// verify stored LuaState still matches active one if GC fails to clear it.
 @_cdecl("MJGetActiveLuaState")
 func MJGetActiveLuaState() -> UnsafeMutablePointer<lua_State>? {
-    let skin = LuaSkin.shared(with: nil) as! LuaSkin
-    return skin.l
+    return lua_getCurrentState()
 }
