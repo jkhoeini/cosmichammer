@@ -188,7 +188,6 @@ func canvas_clickActivating(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 /// hs.canvas:canvasMouseEvents([down], [up], [enterExit], [move]) -> canvasObject | current values
 func canvas_canvasMouseEvents(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
 
     let canvasView = canvas_toHSCanvasViewFromLua(L, idx: 1) as! HSCanvasView
 
@@ -540,7 +539,6 @@ func canvas_getTextElementSize(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 /// hs.canvas:canvasDefaultFor(keyName, [newValue]) -> canvasObject | currentValue
 func canvas_canvasDefaultFor(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
 
     let canvasView = canvas_toHSCanvasViewFromLua(L, idx: 1) as! HSCanvasView
     let keyName = lua_tovalue(L, at: 2) as! String
@@ -576,7 +574,6 @@ func canvas_canvasDefaultFor(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 /// hs.canvas:insertElement(elementTable, [index]) -> canvasObject
 func canvas_insertElementAtIndex(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     let canvasView = canvas_toHSCanvasViewFromLua(L, idx: 1) as! HSCanvasView
     let elementCount = canvasView.elementList.count
     let tablePosition = (lua_gettop(L) == 3) ? Int(lua_tointeger(L, 3)) - 1 : elementCount
@@ -630,7 +627,6 @@ func canvas_removeElementAtIndex(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 
 /// hs.canvas:elementAttribute(index, key, [value]) -> canvasObject | current value
 func canvas_elementAttributeAtIndex(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     let canvasView = canvas_toHSCanvasViewFromLua(L, idx: 1) as! HSCanvasView
     var keyName = lua_tovalue(L, at: 3) as! String
 
@@ -680,7 +676,6 @@ func canvas_elementAttributeAtIndex(_ L: UnsafeMutablePointer<lua_State>!) -> In
 
 /// hs.canvas:elementKeys(index, [optional]) -> table
 func canvas_elementKeysAtIndex(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     let canvasView = canvas_toHSCanvasViewFromLua(L, idx: 1) as! HSCanvasView
     let elementCount = canvasView.elementList.count
     let tablePosition = Int(lua_tointeger(L, 2)) - 1
@@ -782,7 +777,6 @@ func canvas_elementBoundsAtIndex(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 
 /// hs.canvas:assignElement(elementTable, [index]) -> canvasObject
 func canvas_assignElementAtIndex(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     let canvasView = canvas_toHSCanvasViewFromLua(L, idx: 1) as! HSCanvasView
 
     let elementCount = canvasView.elementList.count

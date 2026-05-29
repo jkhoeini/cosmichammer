@@ -52,7 +52,7 @@ private let event_callback: FSEventStreamCallback = {
     guard let clientCallBackInfo = clientCallBackInfo else { return }
     let pw = clientCallBackInfo.assumingMemoryBound(to: WatcherPath.self)
 
-    let L = LuaSkin.skin(with: nil).l!
+    let L = lua_getCurrentState()!
 
     guard lua_isStateGenerationValid(pw.pointee.generation) else { return }
 

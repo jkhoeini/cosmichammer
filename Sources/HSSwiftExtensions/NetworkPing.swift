@@ -114,8 +114,7 @@ private class PingableObject: SimplePing, SimplePingDelegate {
         }
 
         if callbackRef != LUA_NOREF {
-            let skin = LuaSkin.skin(with: nil)
-            let L = LuaSkin.skin(with: nil).l!
+            let L = lua_getCurrentState()!
             lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(callbackRef))
             lua_pushany(L, pinger as! PingableObject)
             lua_pushany(L, "didStart" as NSString)
@@ -125,7 +124,7 @@ private class PingableObject: SimplePing, SimplePingDelegate {
     }
 
     func simplePing(_ pinger: SimplePing, didFailWithError error: Error) {
-        let L = LuaSkin.skin(with: nil).l!
+        let L = lua_getCurrentState()!
         let errorReason = error.localizedDescription
         os_log(.debug, "%{public}s", "\(USERDATA_TAG):didFailWithError:\(errorReason) - ping stopped.")
         if callbackRef != LUA_NOREF {
@@ -142,8 +141,7 @@ private class PingableObject: SimplePing, SimplePingDelegate {
 
     func simplePing(_ pinger: SimplePing, didSendPacket packet: Data, sequenceNumber: UInt16) {
         if callbackRef != LUA_NOREF {
-            let skin = LuaSkin.skin(with: nil)
-            let L = LuaSkin.skin(with: nil).l!
+            let L = lua_getCurrentState()!
             lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(callbackRef))
             lua_pushany(L, pinger as! PingableObject)
             lua_pushany(L, "sendPacket" as NSString)
@@ -155,8 +153,7 @@ private class PingableObject: SimplePing, SimplePingDelegate {
 
     func simplePing(_ pinger: SimplePing, didFailToSendPacket packet: Data, sequenceNumber: UInt16, error: Error) {
         if callbackRef != LUA_NOREF {
-            let skin = LuaSkin.skin(with: nil)
-            let L = LuaSkin.skin(with: nil).l!
+            let L = lua_getCurrentState()!
             lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(callbackRef))
             lua_pushany(L, pinger as! PingableObject)
             lua_pushany(L, "sendPacketFailed" as NSString)
@@ -169,8 +166,7 @@ private class PingableObject: SimplePing, SimplePingDelegate {
 
     func simplePing(_ pinger: SimplePing, didReceivePingResponsePacket packet: Data, sequenceNumber: UInt16) {
         if callbackRef != LUA_NOREF {
-            let skin = LuaSkin.skin(with: nil)
-            let L = LuaSkin.skin(with: nil).l!
+            let L = lua_getCurrentState()!
             lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(callbackRef))
             lua_pushany(L, pinger as! PingableObject)
             lua_pushany(L, "receivedPacket" as NSString)
@@ -196,8 +192,7 @@ private class PingableObject: SimplePing, SimplePingDelegate {
             }
         }
         if notifyCallback && callbackRef != LUA_NOREF {
-            let skin = LuaSkin.skin(with: nil)
-            let L = LuaSkin.skin(with: nil).l!
+            let L = lua_getCurrentState()!
             lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(callbackRef))
             lua_pushany(L, pinger as! PingableObject)
             lua_pushany(L, "receivedUnexpectedPacket" as NSString)
@@ -503,7 +498,6 @@ private let echoRequest_hostAddress: lua_CFunction = { L in
 /// Notes:
 ///  * By convention, unless you are trying to test for specific network fragmentation or congestion problems, ICMP Echo Requests are generally 64 bytes in length (this includes the 8 byte header, giving 56 bytes of payload data).  If you do not specify a payload, a default payload which will result in a packet size of 64 bytes is constructed.
 private let echoRequest_sendPayload: lua_CFunction = { L in
-    let skin = LuaSkin.skin(with: L)
     luaL_checkudata(L, 1, USERDATA_TAG)
     let pinger = lua_tovalue(L, at: 1) as! PingableObject
     var payload: Data? = nil
@@ -598,7 +592,7 @@ private func pushPingableObject(_ L: UnsafeMutablePointer<lua_State>!, _ obj: An
     let value = obj as! PingableObject
 
     if value.selfRef != LUA_NOREF {
-        LuaSkin.skin(with: L).pushLuaRef(refTable, ref: value.selfRef)
+        lsPushLuaRef(L,refTable, ref: value.selfRef)
     } else {
         let valuePtr = lua_newuserdata(L, MemoryLayout<UnsafeMutableRawPointer>.size)!
             .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)

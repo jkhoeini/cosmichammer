@@ -1,6 +1,6 @@
 import Foundation
-import OSAKit
 import LuaSkin
+import OSAKit
 
 /// hs.osascript._osascript(source, language) -> bool, object, descriptor
 /// Function

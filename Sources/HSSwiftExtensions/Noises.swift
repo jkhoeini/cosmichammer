@@ -1,6 +1,6 @@
 import Cocoa
-import Foundation
 import LuaSkin
+import Foundation
 
 // MARK: - Constants
 

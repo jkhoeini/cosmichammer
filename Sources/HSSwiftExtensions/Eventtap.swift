@@ -1,6 +1,6 @@
 import Cocoa
-import Carbon
 import LuaSkin
+import Carbon
 import os.log
 
 private let USERDATA_TAG = "hs.eventtap"
@@ -47,7 +47,7 @@ private let eventtapCallback: CGEventTapCallBack = { proxy, type, event, userInf
     guard let userInfo = userInfo else { return Unmanaged.passUnretained(event) }
     let e = Unmanaged<Eventtap>.fromOpaque(userInfo).takeUnretainedValue()
 
-    let L = LuaSkin.skin(with: nil).l!
+    let L = lua_getCurrentState()!
 
     if !lua_isStateGenerationValid(e.lsCanary) {
         return Unmanaged.passUnretained(event)
@@ -103,7 +103,6 @@ private let eventtapCallback: CGEventTapCallBack = { proxy, type, event, userInf
 /// Function
 /// Generates and emits keystroke events for the supplied text
 private func eventtap_keyStrokes(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
 
     let theString = lua_tovalue(L, at: 1) as! NSString
     var targetPid: pid_t = 0

@@ -32,7 +32,7 @@ private class HSColorPanel: NSObject {
         if callbackRef != LUA_NOREF {
             DispatchQueue.main.async { [weak self] in
                 guard let self = self, self.callbackRef != LUA_NOREF else { return }
-                let L = LuaSkin.skin(with: nil).l!
+                let L = lua_getCurrentState()!
                 let cp = NSColorPanel.shared
                 lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(self.callbackRef))
                 lua_pushany(L, cp.color)
@@ -47,7 +47,7 @@ private class HSColorPanel: NSObject {
         if callbackRef != LUA_NOREF {
             DispatchQueue.main.async { [weak self] in
                 guard let self = self, self.callbackRef != LUA_NOREF else { return }
-                let L = LuaSkin.skin(with: nil).l!
+                let L = lua_getCurrentState()!
                 lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(self.callbackRef))
                 lua_pushany(L, colorPanel.color)
                 lua_pushboolean(L, 0)

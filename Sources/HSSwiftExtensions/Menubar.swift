@@ -1,6 +1,6 @@
 import Cocoa
-import Carbon
 import LuaSkin
+import Carbon
 import os.log
 
 // MARK: - Definitions
@@ -38,7 +38,6 @@ func mb_get_item_arg(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> Uns
 ///  * Calling this method with inMenuBar equal to false is equivalent to calling hs.menubar.new():removeFromMenuBar().
 ///  * A hidden menubaritem can be added to the system menubar by calling hs.menubar:returnToMenuBar() or used as a pop-up menu by calling hs.menubar:popupMenu().
 func menubarNew(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
 
     let statusBar = NSStatusBar.system
     var statusItem: NSStatusItem
@@ -94,7 +93,6 @@ func menubarNew(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * Either the menubar item, if its autosave name was changed, or the current value of the autosave name
 func menubar_autosaveName(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     let menuBarItem = mb_get_item_arg(L, 1)
     let menuItem = Unmanaged<NSStatusItem>.fromOpaque(menuBarItem.pointee.menuBarItemObject!).takeUnretainedValue()
 
@@ -154,7 +152,6 @@ func menubarImagePosition(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * If you set an icon as well as a title, they will both be displayed next to each other
 ///  * Has no affect on the display of a pop-up menu, but changes will be be in effect if hs.menubar:returnToMenuBar() is called on the menubaritem.
 func menubarSetTitle(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     let menuBarItem = mb_get_item_arg(L, 1)
 
     var titleText: String? = nil
@@ -233,7 +230,6 @@ func menubarSetIcon(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Notes:
 ///  * Has no affect on the display of a pop-up menu, but changes will be be in effect if hs.menubar:returnToMenuBar() is called on the menubaritem.
 func menubarSetTooltip(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     let menuBarItem = mb_get_item_arg(L, 1)
     let toolTipText = lua_tovalue(L, at: 2) as! String
     Unmanaged<NSStatusItem>.fromOpaque(menuBarItem.pointee.menuBarItemObject!).takeUnretainedValue().button?.toolTip = toolTipText

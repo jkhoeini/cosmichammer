@@ -1,6 +1,6 @@
 import Cocoa
-import Carbon
 import LuaSkin
+import Carbon
 import os.log
 
 private var refTable: Int32 = 0
@@ -143,7 +143,6 @@ private func NSColorList_tolua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any
 private let COLOR_LOOP_LEVEL = 10
 
 private func table_toNSColorHelper(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32, _ level: Int) -> NSColor {
-    let skin = LuaSkin.skin(with: L)
     var red: CGFloat = 0.0, green: CGFloat = 0.0, blue: CGFloat = 0.0, alpha: CGFloat = 1.0
     var hue: CGFloat = 0.0, saturation: CGFloat = 0.0, brightness: CGFloat = 0.0
     var white: CGFloat = 0.0

@@ -1,9 +1,9 @@
 import Cocoa
+import LuaSkin
 import Carbon
 import CoreAudio
 import AudioToolbox
 import Foundation
-import LuaSkin
 import os.log
 
 /// === hs.audiodevice.watcher ===
@@ -44,8 +44,7 @@ private func audiodevicewatcher_callback(
     }
 
     DispatchQueue.main.async {
-        let skin = LuaSkin.skin(with: nil)
-        let L = LuaSkin.skin(with: nil).l!
+        let L = lua_getCurrentState()!
 
         guard let watcher = theWatcher else {
             os_log(.info, "%{public}s", "hs.audiodevice.watcher callback fired, but theWatcher is nil. This is a bug")
@@ -204,7 +203,6 @@ private func audiodevicewatcher_isRunning(_ L: UnsafeMutablePointer<lua_State>!)
 }
 
 private func audiodevicewatcher_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
 
     if let watcher = theWatcher {
         _ = audiodevicewatcher_stop(L)

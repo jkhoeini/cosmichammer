@@ -1,6 +1,6 @@
 import Cocoa
-import Carbon
 import LuaSkin
+import Carbon
 import os.log
 
 private let USERDATA_TAG = "hs.uielement.watcher"

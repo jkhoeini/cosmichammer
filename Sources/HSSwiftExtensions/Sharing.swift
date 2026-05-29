@@ -13,7 +13,6 @@ private func get_objectFromUserdata<T: AnyObject>(_ L: UnsafeMutablePointer<lua_
 // MARK: - Support Functions and Classes
 
 private func toNSURLFromLua(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> NSURL? {
-    let skin = LuaSkin.skin(with: L)
     let absIdx = lua_absindex(L, idx)
 
     if lua_type(L, absIdx) == LUA_TSTRING {
@@ -51,8 +50,7 @@ class HSSharingService: NSObject, NSSharingServiceDelegate {
 
     func sharingService(_ sharingService: NSSharingService, didFailToShareItems items: [Any], error: Error) {
         guard callbackRef != LUA_NOREF else { return }
-        let skin = LuaSkin.skin(with: nil)
-        let L = LuaSkin.skin(with: nil).l!
+        let L = lua_getCurrentState()!
         lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(callbackRef))
         lua_pushany(L, self)
         lua_pushany(L, "didFail" as NSString)
@@ -63,8 +61,7 @@ class HSSharingService: NSObject, NSSharingServiceDelegate {
 
     func sharingService(_ sharingService: NSSharingService, didShareItems items: [Any]) {
         guard callbackRef != LUA_NOREF else { return }
-        let skin = LuaSkin.skin(with: nil)
-        let L = LuaSkin.skin(with: nil).l!
+        let L = lua_getCurrentState()!
         lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(callbackRef))
         lua_pushany(L, self)
         lua_pushany(L, "didShare" as NSString)
@@ -74,8 +71,7 @@ class HSSharingService: NSObject, NSSharingServiceDelegate {
 
     func sharingService(_ sharingService: NSSharingService, willShareItems items: [Any]) {
         guard callbackRef != LUA_NOREF else { return }
-        let skin = LuaSkin.skin(with: nil)
-        let L = LuaSkin.skin(with: nil).l!
+        let L = lua_getCurrentState()!
         lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(callbackRef))
         lua_pushany(L, self)
         lua_pushany(L, "willShare" as NSString)

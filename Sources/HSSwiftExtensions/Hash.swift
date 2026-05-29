@@ -1,6 +1,6 @@
 import Cocoa
-import CommonCrypto
 import LuaSkin
+import CommonCrypto
 import zlib
 
 // MARK: - SHA3 (Keccak) Pure-Swift Implementation

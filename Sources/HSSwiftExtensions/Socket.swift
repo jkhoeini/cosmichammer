@@ -39,7 +39,7 @@ private func tcpConnectCallback(_ asyncSocket: HSAsyncTcpSocket) {
         if asyncSocket.readCallbackRef != LUA_NOREF || asyncSocket.connectCallbackRef != LUA_NOREF {
             // Only fire if connectCallback is set
             guard asyncSocket.connectCallbackRef != LUA_NOREF else { return }
-            let L = LuaSkin.skin(with: nil).l!
+            let L = lua_getCurrentState()!
             lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(asyncSocket.connectCallbackRef))
             luaL_unref(L, LUA_REGISTRYINDEX_VALUE, asyncSocket.connectCallbackRef)
 
@@ -52,7 +52,7 @@ private func tcpConnectCallback(_ asyncSocket: HSAsyncTcpSocket) {
 private func tcpWriteCallback(_ asyncSocket: HSAsyncTcpSocket, tag: Int) {
     mainThreadDispatch {
         if asyncSocket.writeCallbackRef != LUA_NOREF {
-            let L = LuaSkin.skin(with: nil).l!
+            let L = lua_getCurrentState()!
             lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(asyncSocket.writeCallbackRef))
             lua_pushany(L, NSNumber(value: tag))
             luaL_unref(L, LUA_REGISTRYINDEX_VALUE, asyncSocket.writeCallbackRef)
@@ -66,7 +66,7 @@ private func tcpWriteCallback(_ asyncSocket: HSAsyncTcpSocket, tag: Int) {
 private func tcpReadCallback(_ asyncSocket: HSAsyncTcpSocket, data: Data, tag: Int) {
     mainThreadDispatch {
         if asyncSocket.readCallbackRef != LUA_NOREF {
-            let L = LuaSkin.skin(with: nil).l!
+            let L = lua_getCurrentState()!
             lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(asyncSocket.readCallbackRef))
             lua_pushany(L, data as NSData)
             lua_pushany(L, NSNumber(value: tag))
@@ -162,7 +162,7 @@ private class HSAsyncTcpSocket {
                 guard let self = self, let conn = conn else { return }
                 if !self.isConnectedFlag {
                     conn.cancel()
-                    LuaSkin.skin(with: nil).logError("TCP connect timed out")
+                    os_log(.error,"TCP connect timed out")
                 }
             }
             timeoutItem = item
@@ -177,18 +177,18 @@ private class HSAsyncTcpSocket {
                 self.isConnectedFlag = true
                 self.role = .default
                 self.cacheConnectionInfo(conn)
-                LuaSkin.skin(with: nil).logDebug("TCP socket connected")
+                os_log(.debug,"TCP socket connected")
                 if self.connectCallbackRef != LUA_NOREF {
                     tcpConnectCallback(self)
                 }
             case .failed(let err):
                 timeoutItem?.cancel()
                 self.isConnectedFlag = false
-                LuaSkin.skin(with: nil).logDebug("TCP socket disconnected: \(err)")
+                os_log(.debug, "%{public}s", "TCP socket disconnected: \(err)")
             case .cancelled:
                 timeoutItem?.cancel()
                 self.isConnectedFlag = false
-                LuaSkin.skin(with: nil).logDebug("TCP socket disconnected")
+                os_log(.debug,"TCP socket disconnected")
             default:
                 break
             }
@@ -212,7 +212,7 @@ private class HSAsyncTcpSocket {
                 guard let self = self, let conn = conn else { return }
                 if !self.isConnectedFlag {
                     conn.cancel()
-                    LuaSkin.skin(with: nil).logError("TCP Unix domain connect timed out")
+                    os_log(.error,"TCP Unix domain connect timed out")
                 }
             }
             timeoutItem = item
@@ -228,18 +228,18 @@ private class HSAsyncTcpSocket {
                 self.role = .default
                 self.unixSocketPath = path
                 self.cacheConnectionInfo(conn)
-                LuaSkin.skin(with: nil).logDebug("TCP Unix domain socket connected")
+                os_log(.debug,"TCP Unix domain socket connected")
                 if self.connectCallbackRef != LUA_NOREF {
                     tcpConnectCallback(self)
                 }
             case .failed(let err):
                 timeoutItem?.cancel()
                 self.isConnectedFlag = false
-                LuaSkin.skin(with: nil).logDebug("TCP Unix domain socket disconnected: \(err)")
+                os_log(.debug, "%{public}s", "TCP Unix domain socket disconnected: \(err)")
             case .cancelled:
                 timeoutItem?.cancel()
                 self.isConnectedFlag = false
-                LuaSkin.skin(with: nil).logDebug("TCP Unix domain socket disconnected")
+                os_log(.debug,"TCP Unix domain socket disconnected")
             default:
                 break
             }
@@ -277,15 +277,15 @@ private class HSAsyncTcpSocket {
                 if let port = nwListener.port {
                     self.localPort = port.rawValue
                 }
-                LuaSkin.skin(with: nil).logDebug("TCP Unix domain server listening")
+                os_log(.debug,"TCP Unix domain server listening")
             case .failed(let err):
-                LuaSkin.skin(with: nil).logDebug("TCP Unix domain server failed: \(err)")
+                os_log(.debug, "%{public}s", "TCP Unix domain server failed: \(err)")
             case .cancelled:
                 if let path = self.unixSocketPath {
                     try? FileManager.default.removeItem(atPath: path)
                     self.unixSocketPath = nil
                 }
-                LuaSkin.skin(with: nil).logDebug("TCP Unix domain server disconnected")
+                os_log(.debug,"TCP Unix domain server disconnected")
             default:
                 break
             }
@@ -387,11 +387,11 @@ private class HSAsyncTcpSocket {
                     self.localPort = port.rawValue
                 }
                 self.localHost = "0.0.0.0"
-                LuaSkin.skin(with: nil).logDebug("TCP server listening")
+                os_log(.debug,"TCP server listening")
             case .failed(let err):
-                LuaSkin.skin(with: nil).logDebug("TCP server failed: \(err)")
+                os_log(.debug, "%{public}s", "TCP server failed: \(err)")
             case .cancelled:
-                LuaSkin.skin(with: nil).logDebug("TCP server disconnected")
+                os_log(.debug,"TCP server disconnected")
                 self.lock.lock()
                 let clients = self.connectedSockets
                 self.connectedSockets.removeAll()
@@ -418,7 +418,7 @@ private class HSAsyncTcpSocket {
     }
 
     private func handleNewConnection(_ newConn: NWConnection) {
-        LuaSkin.skin(with: nil).logDebug("TCP client connected")
+        os_log(.debug,"TCP client connected")
 
         newConn.stateUpdateHandler = { [weak self, weak newConn] state in
             guard let self = self, let conn = newConn else { return }
@@ -426,7 +426,7 @@ private class HSAsyncTcpSocket {
             case .ready:
                 break
             case .failed(_), .cancelled:
-                LuaSkin.skin(with: nil).logDebug("TCP client disconnected")
+                os_log(.debug,"TCP client disconnected")
                 self.lock.lock()
                 self.connectedSockets.removeAll(where: { $0 === conn })
                 let id = ObjectIdentifier(conn)
@@ -497,7 +497,7 @@ private class HSAsyncTcpSocket {
         var timeoutItem: DispatchWorkItem? = nil
         if timeout >= 0 {
             let item = DispatchWorkItem {
-                LuaSkin.skin(with: nil).logError("TCP read timed out")
+                os_log(.error,"TCP read timed out")
             }
             timeoutItem = item
             delegateQueue.asyncAfter(deadline: .now() + timeout, execute: item)
@@ -507,7 +507,7 @@ private class HSAsyncTcpSocket {
             timeoutItem?.cancel()
             guard let self = self else { return }
             if let error = error {
-                LuaSkin.skin(with: nil).logDebug("TCP read error: \(error)")
+                os_log(.debug, "%{public}s", "TCP read error: \(error)")
                 return
             }
             var accumulated = buffer
@@ -564,7 +564,7 @@ private class HSAsyncTcpSocket {
         var timeoutItem: DispatchWorkItem? = nil
         if timeout >= 0 {
             let item = DispatchWorkItem {
-                LuaSkin.skin(with: nil).logError("TCP read timed out")
+                os_log(.error,"TCP read timed out")
             }
             timeoutItem = item
             delegateQueue.asyncAfter(deadline: .now() + timeout, execute: item)
@@ -574,7 +574,7 @@ private class HSAsyncTcpSocket {
             timeoutItem?.cancel()
             guard let self = self else { return }
             if let error = error {
-                LuaSkin.skin(with: nil).logDebug("TCP read error: \(error)")
+                os_log(.debug, "%{public}s", "TCP read error: \(error)")
                 return
             }
             if let content = content {
@@ -631,7 +631,7 @@ private class HSAsyncTcpSocket {
         conn.receive(minimumIncompleteLength: 1, maximumLength: 65536) { [weak self] content, _, isComplete, error in
             guard let self = self else { return }
             if let error = error {
-                LuaSkin.skin(with: nil).logDebug("TCP client read error: \(error)")
+                os_log(.debug, "%{public}s", "TCP client read error: \(error)")
                 return
             }
             var buf = self.clientReadBuffers[clientId] ?? Data()
@@ -696,7 +696,7 @@ private class HSAsyncTcpSocket {
     private func sendData(_ data: Data, on conn: NWConnection, timeout: TimeInterval, completion: @escaping () -> Void) {
         conn.send(content: data, completion: .contentProcessed { error in
             if let error = error {
-                LuaSkin.skin(with: nil).logDebug("TCP write error: \(error)")
+                os_log(.debug, "%{public}s", "TCP write error: \(error)")
             }
             completion()
         })
@@ -747,10 +747,10 @@ private class HSAsyncTcpSocket {
                 self.isConnectedFlag = true
                 self.isSecureFlag = true
                 self.cacheConnectionInfo(newConn)
-                LuaSkin.skin(with: nil).logDebug("TCP socket secured")
+                os_log(.debug,"TCP socket secured")
             case .failed(let err):
                 self.isConnectedFlag = false
-                LuaSkin.skin(with: nil).logDebug("TCP TLS handshake failed: \(err)")
+                os_log(.debug, "%{public}s", "TCP TLS handshake failed: \(err)")
             case .cancelled:
                 self.isConnectedFlag = false
             default:
@@ -1293,7 +1293,7 @@ private func get_socket_connections(_ asyncSocket: HSAsyncTcpSocket) -> Int {
 ///  * If the socket is bound for listening, this method returns `true` if there is at least one connection.
 ///
 private func socket_connected(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    LuaSkin.skin(with: L).checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    lsCheckArgs(L,LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let asyncSocket = getUserData(L, 1)
 
     lua_pushboolean(L, get_socket_connections(asyncSocket) != 0 ? 1 : 0)
@@ -1314,7 +1314,7 @@ private func socket_connected(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * This method returns at most 1 for default (non-listening) sockets.
 ///
 private func socket_connections(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    LuaSkin.skin(with: L).checkArgs(LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    lsCheckArgs(L,LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
     let asyncSocket = getUserData(L, 1)
 
     lua_pushinteger(L, lua_Integer(get_socket_connections(asyncSocket)))

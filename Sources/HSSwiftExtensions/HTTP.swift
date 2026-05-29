@@ -1,7 +1,7 @@
 import Foundation
+import LuaSkin
 import Cocoa
 import Carbon
-import LuaSkin
 import os.log
 import WebKit
 
@@ -46,7 +46,7 @@ private func responseBodyToId(_ httpResponse: HTTPURLResponse?, _ bodyData: Data
 
     func connectionDidFinishLoading(_ connection: NSURLConnection) {
         if fn == LUA_NOREF { return }
-        let L = LuaSkin.skin(with: nil).l!
+        let L = lua_getCurrentState()!
 
         lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(fn))
         lua_pushinteger(L, lua_Integer(httpResponse?.statusCode ?? 0))
@@ -59,8 +59,7 @@ private func responseBodyToId(_ httpResponse: HTTPURLResponse?, _ bodyData: Data
 
     func connection(_ connection: NSURLConnection, didFailWithError error: Error) {
         if fn == LUA_NOREF { return }
-        let skin = LuaSkin.skin(with: nil)
-        let L = LuaSkin.skin(with: nil).l!
+        let L = lua_getCurrentState()!
 
         let errorMessage = "Connection failed: \(error.localizedDescription) - \((error as NSError).userInfo[NSURLErrorFailingURLStringErrorKey] ?? "")"
         lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(fn))
@@ -74,7 +73,7 @@ private func responseBodyToId(_ httpResponse: HTTPURLResponse?, _ bodyData: Data
         if fn == LUA_NOREF { return nil }
 
         if let httpResp = response as? HTTPURLResponse, !enableRedirect {
-            let L = LuaSkin.skin(with: nil).l!
+            let L = lua_getCurrentState()!
 
             lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(fn))
             lua_pushinteger(L, lua_Integer(httpResp.statusCode))
@@ -115,7 +114,7 @@ private func getBodyFromStack(_ L: UnsafeMutablePointer<lua_State>!, _ index: In
     if !lua_isnoneornil(L, index) {
         var postData: Data?
         if lua_type(L, index) == LUA_TSTRING {
-            postData = LuaSkin.skin(with: L).toNSObject(atIndex: index, withOptions: .nsLuaStringAsDataOnly) as? Data
+            postData = lsToNSObject(L, atIndex: index, withOptions: .nsLuaStringAsDataOnly) as? Data
         } else {
             if let cstr = lua_tostring(L, index),
                let body = String(cString: cstr, encoding: .ascii) {
@@ -127,7 +126,7 @@ private func getBodyFromStack(_ L: UnsafeMutablePointer<lua_State>!, _ index: In
             request.setValue(postLength, forHTTPHeaderField: "Content-Length")
             request.httpBody = postData
         } else {
-            LuaSkin.skin(with: nil).logError("hs.http - getBodyFromStack - non-nil entry at stack index \(index) but unable to convert to NSData")
+            os_log(.error, "%{public}s","hs.http - getBodyFromStack - non-nil entry at stack index \(index) but unable to convert to NSData")
         }
     }
 }
@@ -438,7 +437,6 @@ private func NSURLRequest_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: An
 }
 
 private func table_toNSURLRequest(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> Any? {
-    let skin = LuaSkin.skin(with: L)
     var request = NSMutableURLRequest()
 
     lua_pushvalue(L, idx)

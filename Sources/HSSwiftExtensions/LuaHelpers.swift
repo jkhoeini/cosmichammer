@@ -497,6 +497,18 @@ func tableToNSFont(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> NSFo
     return NSFont(name: theName, size: theSize) ?? NSFont.systemFont(ofSize: theSize)
 }
 
+// MARK: - Global lua_State accessor
+
+private var _currentLuaState: UnsafeMutablePointer<lua_State>?
+
+func lua_setCurrentState(_ L: UnsafeMutablePointer<lua_State>?) {
+    _currentLuaState = L
+}
+
+func lua_getCurrentState() -> UnsafeMutablePointer<lua_State>? {
+    return _currentLuaState
+}
+
 // MARK: - GC Canary (replaces LSGCCanary)
 
 private var _luaStateGeneration: UInt64 = 0

@@ -60,8 +60,7 @@ private func netServiceErrorToString(_ error: [String: Any]) -> String {
 
     func performCallback(with argument: Any?, usingCallback fnRef: Int32) {
         if fnRef != Int32(LUA_NOREF) {
-            let skin = LuaSkin.skin(with: nil)
-            let L = LuaSkin.skin(with: nil).l!
+            let L = lua_getCurrentState()!
             var argCount: Int32 = 1
             lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(fnRef))
             lua_pushany(L, self)
@@ -94,7 +93,7 @@ private func netServiceErrorToString(_ error: [String: Any]) -> String {
             performCallback(with: ["error", netServiceErrorToString(errorDict as [String: Any])] as [Any],
                             usingCallback: callbackRef)
         } else {
-            LuaSkin.skin(with: nil).logWarn("\(USERDATA_TAG):publish error:\(netServiceErrorToString(errorDict as [String: Any]))")
+            os_log(.default, "%{public}s","\(USERDATA_TAG):publish error:\(netServiceErrorToString(errorDict as [String: Any]))")
         }
     }
 
@@ -107,7 +106,7 @@ private func netServiceErrorToString(_ error: [String: Any]) -> String {
             performCallback(with: ["error", netServiceErrorToString(errorDict as [String: Any])] as [Any],
                             usingCallback: callbackRef)
         } else {
-            LuaSkin.skin(with: nil).logWarn("\(USERDATA_TAG):resolve error:\(netServiceErrorToString(errorDict as [String: Any]))")
+            os_log(.default, "%{public}s","\(USERDATA_TAG):resolve error:\(netServiceErrorToString(errorDict as [String: Any]))")
         }
     }
 
@@ -590,7 +589,6 @@ private func toHSNetServiceWrapperFromLua(_ L: UnsafeMutablePointer<lua_State>!,
 }
 
 private func pushNSNetService(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any?) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     guard let netService = obj as? NetService else { return 0 }
     var valueRef: NSNumber? = nil
     var value: HSNetServiceWrapper? = nil

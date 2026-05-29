@@ -131,7 +131,7 @@ private class HSHTTPServer {
         let responseCallbackBlock = { [self] in
             guard self.fn != LUA_NOREF else { return }
 
-            let L = LuaSkin.skin(with: nil).l!
+            let L = lua_getCurrentState()!
 
             lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(refTable))
             lua_rawgeti(L, -1, lua_Integer(self.fn))
@@ -202,7 +202,7 @@ private class HSHTTPServer {
         let responseCallbackBlock = { [self] in
             guard self.wsCallback != LUA_NOREF else { return }
 
-            let L = LuaSkin.skin(with: nil).l!
+            let L = lua_getCurrentState()!
             lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(refTable))
             lua_rawgeti(L, -1, lua_Integer(self.wsCallback))
             lua_remove(L, -2)

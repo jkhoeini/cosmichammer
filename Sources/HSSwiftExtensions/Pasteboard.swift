@@ -160,7 +160,6 @@ private func pasteboard_changeCount(_ L: UnsafeMutablePointer<lua_State>!) -> In
 /// Notes:
 ///  * You can not delete the system pasteboard, this function should only be called on custom pasteboards you have created
 private func pasteboard_delete(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
 // prevents nil from being specified
     _ = luaL_checkstring(L, 1) // coerce number to string
     let pbName = lua_tovalue(L, at: 1) as! String
@@ -737,7 +736,6 @@ private func readColorObjects(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 }
 
 private func convertToPasteboardWritableObject(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> NSPasteboardWriting? {
-    let skin = LuaSkin.skin(with: L)
     let luaType = lua_type(L, idx)
     if luaType == LUA_TSTRING || luaType == LUA_TNUMBER {
         luaL_tolstring(L, idx, nil) // force number to be a string, but don't change value in stack
@@ -791,7 +789,6 @@ private func convertToPasteboardWritableObject(_ L: UnsafeMutablePointer<lua_Sta
 /// Notes:
 ///  * Most applications can only receive the first item on the clipboard.  Multiple items on a clipboard are most often used for intra-application communication where the sender and receiver are specifically written with multiple objects in mind.
 private func writeObjects(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     var pboard: NSPasteboard
     if lua_gettop(L) == 1 {        pboard = NSPasteboard.general
     } else {

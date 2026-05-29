@@ -129,8 +129,7 @@ class HSSerialPort: NSObject, ORSSerialPortDelegate {
 
     func serialPortWasOpened(_ serialPort: ORSSerialPort) {
         guard callbackRef != Int32(LUA_NOREF) else { return }
-        let skin = LuaSkin.skin(with: nil)
-        let L = LuaSkin.skin(with: nil).l!
+        let L = lua_getCurrentState()!
         guard lua_isStateGenerationValid(lsCanary) else { return }
         lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(callbackRef))
         lua_pushany(L, self)
@@ -140,8 +139,7 @@ class HSSerialPort: NSObject, ORSSerialPortDelegate {
 
     func serialPortWasClosed(_ serialPort: ORSSerialPort) {
         guard callbackRef != Int32(LUA_NOREF) else { return }
-        let skin = LuaSkin.skin(with: nil)
-        let L = LuaSkin.skin(with: nil).l!
+        let L = lua_getCurrentState()!
         guard lua_isStateGenerationValid(lsCanary) else { return }
         lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(callbackRef))
         lua_pushany(L, self)
@@ -151,8 +149,7 @@ class HSSerialPort: NSObject, ORSSerialPortDelegate {
 
     func serialPort(_ serialPort: ORSSerialPort, didReceive data: Data) {
         guard callbackRef != Int32(LUA_NOREF) else { return }
-        let skin = LuaSkin.skin(with: nil)
-        let L = LuaSkin.skin(with: nil).l!
+        let L = lua_getCurrentState()!
         guard lua_isStateGenerationValid(lsCanary) else { return }
         lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(callbackRef))
         lua_pushany(L, self)
@@ -168,8 +165,7 @@ class HSSerialPort: NSObject, ORSSerialPortDelegate {
 
     func serialPortWasRemovedFromSystem(_ serialPort: ORSSerialPort) {
         if callbackRef != Int32(LUA_NOREF) {
-            let skin = LuaSkin.skin(with: nil)
-            let L = LuaSkin.skin(with: nil).l!
+            let L = lua_getCurrentState()!
             guard lua_isStateGenerationValid(lsCanary) else { return }
             lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(callbackRef))
             lua_pushany(L, self)
@@ -182,8 +178,7 @@ class HSSerialPort: NSObject, ORSSerialPortDelegate {
 
     func serialPort(_ serialPort: ORSSerialPort, didEncounterError error: Error) {
         guard callbackRef != Int32(LUA_NOREF) else { return }
-        let skin = LuaSkin.skin(with: nil)
-        let L = LuaSkin.skin(with: nil).l!
+        let L = lua_getCurrentState()!
         guard lua_isStateGenerationValid(lsCanary) else { return }
         lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(callbackRef))
         lua_pushany(L, self)
@@ -196,8 +191,7 @@ class HSSerialPort: NSObject, ORSSerialPortDelegate {
 
     @objc func serialPortsWereConnected(_ notification: Notification) {
         guard deviceCallbackRef != Int32(LUA_NOREF) else { return }
-        let skin = LuaSkin.skin(with: nil)
-        let L = LuaSkin.skin(with: nil).l!
+        let L = lua_getCurrentState()!
         guard lua_isStateGenerationValid(lsCanary) else { return }
         lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(deviceCallbackRef))
         lua_pushany(L, "connected" as NSString)
@@ -213,8 +207,7 @@ class HSSerialPort: NSObject, ORSSerialPortDelegate {
 
     @objc func serialPortsWereDisconnected(_ notification: Notification) {
         guard deviceCallbackRef != Int32(LUA_NOREF) else { return }
-        let skin = LuaSkin.skin(with: nil)
-        let L = LuaSkin.skin(with: nil).l!
+        let L = lua_getCurrentState()!
         guard lua_isStateGenerationValid(lsCanary) else { return }
         lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(deviceCallbackRef))
         lua_pushany(L, "disconnected" as NSString)

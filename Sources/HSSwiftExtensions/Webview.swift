@@ -1,7 +1,7 @@
 import Foundation
+import LuaSkin
 import Cocoa
 import WebKit
-import LuaSkin
 import os.log
 
 let wv_USERDATA_TAG = "hs.webview"
@@ -383,7 +383,6 @@ func webview_magnification(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Method
 /// Render the given HTML in the webview with an optional base URL for relative links.
 func webview_html(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     let theWindow = wv_getWindowFromUD(L, 1)
     let theView = theWindow.contentView as! HSWebViewView
 
@@ -491,7 +490,7 @@ func webview_evaluateJavaScript(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
         if callbackRef != LUA_NOREF {
             DispatchQueue.main.async {
                 if !lua_isStateGenerationValid(lsCanary) { return }
-                let blockL = LuaSkin.skin(with: nil).l!
+                let blockL = lua_getCurrentState()!
                 lua_rawgeti(blockL, LUA_REGISTRYINDEX_VALUE, lua_Integer(callbackRef))
                 lua_pushany(blockL, obj as? NSObject)
                 wv_NSError_toLua(blockL, error as NSError?)
@@ -547,7 +546,6 @@ func webview_size(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Constructor
 /// Create a webviewObject and optionally modify its preferences.
 func webview_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     let windowRect = lua_tableToRect(L, at: 1)
 
     let theWindow = HSWebViewWindow(contentRect: windowRect, styleMask: .borderless, backing: .buffered, defer: true)

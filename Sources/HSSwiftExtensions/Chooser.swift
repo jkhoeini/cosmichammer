@@ -577,7 +577,7 @@ import os.log
         hasChosen = false
 
         // Call hs.chooser.globalCallback("willShow")
-        let L = LuaSkin.skin(with: nil).l!
+        let L = lua_getCurrentState()!
         lua_getglobal(L, "require")
 
         lua_pushstring(L, "hs.chooser")
@@ -625,7 +625,7 @@ import os.log
         window?.orderOut(nil)
 
         // Call hs.chooser.globalCallback("didClose")
-        let L = LuaSkin.skin(with: nil).l!
+        let L = lua_getCurrentState()!
         lua_getglobal(L, "require")
 
         lua_pushstring(L, "hs.chooser")
@@ -918,8 +918,7 @@ import os.log
 
         if row >= 0 && row < choiceCount {
             hasChosen = true
-            let skin = LuaSkin.skin(with: nil)
-            let L = LuaSkin.skin(with: nil).l!
+            let L = lua_getCurrentState()!
             let choice = choices![row] as! NSDictionary
 
             if let valid = choice["valid"], !(valid as AnyObject).boolValue,
@@ -936,8 +935,7 @@ import os.log
         } else if enableDefaultForQuery && completionCallbackRef != LUA_NOREF && completionCallbackRef != LUA_REFNIL {
             // No row remaining in choices, return just query
             hasChosen = true
-            let skin = LuaSkin.skin(with: nil)
-            let L = LuaSkin.skin(with: nil).l!
+            let L = lua_getCurrentState()!
             let choice: NSDictionary = ["text": queryField.stringValue]
             hide()
             lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(completionCallbackRef))
@@ -948,8 +946,7 @@ import os.log
 
     @objc func didRightClick(atRow row: Int) {
         if rightClickCallbackRef != LUA_NOREF && rightClickCallbackRef != LUA_REFNIL {
-            let skin = LuaSkin.skin(with: nil)
-            let L = LuaSkin.skin(with: nil).l!
+            let L = lua_getCurrentState()!
             lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(rightClickCallbackRef))
             lua_pushinteger(L, lua_Integer(row + 1))
             if lua_pcall(L, 1, 0, 0) != LUA_OK { lua_pop(L, 1) }
@@ -960,8 +957,7 @@ import os.log
 
     @IBAction func cancel(_ sender: Any?) {
         hide()
-        let skin = LuaSkin.skin(with: nil)
-        let L = LuaSkin.skin(with: nil).l!
+        let L = lua_getCurrentState()!
 
         if completionCallbackRef == LUA_NOREF || completionCallbackRef == LUA_REFNIL {
             os_log(.info, "%{public}s", "Unable to call hs.chooser:completionCallback, reference is no longer valid")
@@ -982,8 +978,7 @@ import os.log
 
         if queryChangedCallbackRef != LUA_NOREF && queryChangedCallbackRef != LUA_REFNIL {
             // We have a query callback set
-            let skin = LuaSkin.skin(with: nil)
-            let L = LuaSkin.skin(with: nil).l!
+            let L = lua_getCurrentState()!
             lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(queryChangedCallbackRef))
             lua_pushany(L, queryString as NSString)
             if lua_pcall(L, 1, 0, 0) != LUA_OK { lua_pop(L, 1) }
@@ -1023,7 +1018,7 @@ import os.log
     @objc func selectChoice(_ row: Int) {
         let numRows = getChoices()?.count ?? 0
         if row < 0 || row > numRows - 1 {
-            LuaSkin.skin(with: nil).logError("ERROR: unable to select row \(row) of \(numRows)")
+            os_log(.error, "%{public}s","ERROR: unable to select row \(row) of \(numRows)")
             return
         }
         choicesTableView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
@@ -1104,8 +1099,7 @@ import os.log
             return currentStaticChoices
         } else if choicesCallbackRef != LUA_NOREF {
             if currentCallbackChoices == nil {
-                let skin = LuaSkin.skin(with: nil)
-                let L = LuaSkin.skin(with: nil).l!
+                let L = lua_getCurrentState()!
                 lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(choicesCallbackRef))
                 if lua_pcall(L, 0, 1, 0) == LUA_OK {
                     currentCallbackChoices = lua_tovalue(L, at: -1) as? NSArray
@@ -1121,7 +1115,7 @@ import os.log
                         }
                     }
                     if !callbackChoicesTypeCheckPass {
-                        LuaSkin.skin(with: nil).logError("ERROR: data returned by hs.chooser:choices() callback could not be parsed correctly")
+                        os_log(.error, "%{public}s","ERROR: data returned by hs.chooser:choices() callback could not be parsed correctly")
                         currentCallbackChoices = nil
                     }
                 } else {

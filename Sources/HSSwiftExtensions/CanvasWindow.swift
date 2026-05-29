@@ -108,7 +108,7 @@ import os.log
                       myView.selfRef != LUA_NOREF else { return }
 
                 if lua_isStateGenerationValid(generation) {
-                    luaL_unref(LuaSkin.skin(with: nil).l!, LUA_REGISTRYINDEX_VALUE, myView.selfRef)
+                    luaL_unref(lua_getCurrentState()!, LUA_REGISTRYINDEX_VALUE, myView.selfRef)
                     myView.selfRef = LUA_NOREF
                 }
 

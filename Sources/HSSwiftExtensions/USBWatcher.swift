@@ -1,8 +1,8 @@
 import Foundation
+import LuaSkin
 import Cocoa
 import IOKit
 import IOKit.usb
-import LuaSkin
 import os.log
 
 // kIOMessageServiceIsTerminated is a C macro not bridged to Swift
@@ -46,7 +46,7 @@ private func DeviceNotification(refCon: UnsafeMutableRawPointer?,
     let watcher = privateDataRef.pointee.watcher
 
     if messageType == kIOMessageServiceIsTerminated {
-        let L = LuaSkin.skin(with: nil).l!
+        let L = lua_getCurrentState()!
         guard lua_isStateGenerationValid(watcher.pointee.generation) else { return }
 
         lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(watcher.pointee.fn))
@@ -95,7 +95,7 @@ private func DeviceAdded(refCon: UnsafeMutableRawPointer?, iterator: io_iterator
         while IOIteratorNext(iterator) != IO_OBJECT_NULL {}
         return
     }
-    let L = LuaSkin.skin(with: nil).l!
+    let L = lua_getCurrentState()!
 
     var usbDevice = IOIteratorNext(iterator)
     while usbDevice != 0 {

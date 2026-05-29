@@ -1,6 +1,6 @@
 import Cocoa
-import Darwin.POSIX.sys.time
 import LuaSkin
+import Darwin.POSIX.sys.time
 import os.log
 
 // MARK: - Common Code
@@ -28,7 +28,7 @@ class HSTimer: NSObject {
             return
         }
 
-        let L = LuaSkin.skin(with: nil).l!
+        let L = lua_getCurrentState()!
 
         if !timer.isValid {
             os_log(.error, "hs.timer callback fired on an invalid hs.timer object. This is a bug")

@@ -381,7 +381,6 @@ private func console_getHistory(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 /// Notes:
 ///  * You can specify the console content as a string or as an `hs.styledtext` object in either userdata or table format.
 private func console_setConsole(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     let ctrl = consoleController()
     let outputView = consoleOutputView()
 
@@ -485,7 +484,6 @@ private func console_setHistory(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 ///    end
 /// ~~~
 private func console_printStyledText(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     let ctrl = consoleController()
     let outputView = consoleOutputView()
     let consoleAttrs: [NSAttributedString.Key: Any] = [

@@ -16,7 +16,7 @@ class HSIPCMessagePort: NSObject {
 private var callbackInProgress: Int = 0
 
 private let ipc_callback: CFMessagePortCallBack = { (local, msgid, data, info) -> Unmanaged<CFData>? in
-    let L = LuaSkin.skin(with: nil).l!
+    let L = lua_getCurrentState()!
     let port = Unmanaged<HSIPCMessagePort>.fromOpaque(info!).takeUnretainedValue()
     var outdata: Unmanaged<CFData>? = nil
 
@@ -27,7 +27,7 @@ private let ipc_callback: CFMessagePortCallBack = { (local, msgid, data, info) -
 
     callbackInProgress += 1
     if port.callbackRef != LUA_NOREF {
-        let L = LuaSkin.skin(with: nil).l!
+        let L = lua_getCurrentState()!
         lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(port.callbackRef))
         lua_pushany(L, port)
         lua_pushinteger(L, lua_Integer(msgid))

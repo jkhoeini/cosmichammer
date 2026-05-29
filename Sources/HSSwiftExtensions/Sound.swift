@@ -25,7 +25,7 @@ private class HSSoundObject: NSObject, NSSoundDelegate {
     func sound(_ sound: NSSound, didFinishPlaying flag: Bool) {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
-            let L = LuaSkin.skin(with: nil).l!
+            let L = lua_getCurrentState()!
 
             if self.callbackRef != LUA_NOREF {
                 lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(self.callbackRef))
@@ -96,7 +96,6 @@ private func sound_getAudioEffectNames(_ L: UnsafeMutablePointer<lua_State>!) ->
 /// Notes:
 ///  * Sounds can only be loaded by name if they are System Sounds (i.e. those found in ~/Library/Sounds, /Library/Sounds, /Network/Library/Sounds and /System/Library/Sounds) or are sound files that have previously been loaded and named
 private func sound_byname(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     _ = luaL_checkstring(L, 1) // force number to be a string
     if let theSound = NSSound(named: NSSound.Name(lua_tovalue(L, at: 1) as! String)) {
         lua_pushany(L, theSound)
@@ -116,7 +115,6 @@ private func sound_byname(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * An `hs.sound` object or nil if the file could not be loaded
 private func sound_byfile(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     _ = luaL_checkstring(L, 1) // force number to be a string
     if let theSound = NSSound(contentsOfFile: lua_tovalue(L, at: 1) as! String, byReference: false) {
         lua_pushany(L, theSound)
@@ -349,7 +347,6 @@ private func sound_stopOnRelease(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 /// Notes:
 ///  * If remove the sound name by specifying `nil`, the sound will automatically be set to stop when Cosmic Hammer is reloaded.
 private func sound_name(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     let obj = lua_tovalue(L, at: 1) as! HSSoundObject
     if lua_gettop(L) == 2 {
         if lua_isnil(L, 2) {
@@ -382,7 +379,6 @@ private func sound_name(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Notes:
 ///  * To obtain the UID of a sound device, see `hs.audiodevice:uid()`
 private func sound_device(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     let obj = lua_tovalue(L, at: 1) as! NSSound
     if lua_gettop(L) == 2 {
         if lua_type(L, 2) == LUA_TNIL {

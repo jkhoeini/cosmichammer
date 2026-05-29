@@ -70,8 +70,7 @@ private class HSSpeechSynthesizer: NSSpeechSynthesizer, NSSpeechSynthesizerDeleg
 
     func speechSynthesizer(_ sender: NSSpeechSynthesizer, willSpeakWord wordToSpeak: NSRange, of text: String) {
         guard let synth = sender as? HSSpeechSynthesizer, synth.callbackRef != LUA_NOREF else { return }
-        let skin = LuaSkin.skin(with: nil)
-        let _L = LuaSkin.skin(with: nil).l!
+        let _L = lua_getCurrentState()!
         let charMap = luaByteToObjCharMap(text)
 
         lua_rawgeti(_L, LUA_REGISTRYINDEX_VALUE, lua_Integer(synth.callbackRef))
@@ -91,8 +90,7 @@ private class HSSpeechSynthesizer: NSSpeechSynthesizer, NSSpeechSynthesizerDeleg
 
     func speechSynthesizer(_ sender: NSSpeechSynthesizer, willSpeakPhoneme phonemeOpcode: Int16) {
         guard let synth = sender as? HSSpeechSynthesizer, synth.callbackRef != LUA_NOREF else { return }
-        let skin = LuaSkin.skin(with: nil)
-        let _L = LuaSkin.skin(with: nil).l!
+        let _L = lua_getCurrentState()!
 
         lua_rawgeti(_L, LUA_REGISTRYINDEX_VALUE, lua_Integer(synth.callbackRef))
         lua_pushany(_L, synth)
@@ -104,8 +102,7 @@ private class HSSpeechSynthesizer: NSSpeechSynthesizer, NSSpeechSynthesizerDeleg
     func speechSynthesizer(_ sender: NSSpeechSynthesizer, didEncounterErrorAt characterIndex: Int, of text: String, message errorMessage: String) {
         os_log(.error, "In error delegate")
         guard let synth = sender as? HSSpeechSynthesizer, synth.callbackRef != LUA_NOREF else { return }
-        let skin = LuaSkin.skin(with: nil)
-        let _L = LuaSkin.skin(with: nil).l!
+        let _L = lua_getCurrentState()!
         let charMap = luaByteToObjCharMap(text)
 
         lua_rawgeti(_L, LUA_REGISTRYINDEX_VALUE, lua_Integer(synth.callbackRef))
@@ -123,8 +120,7 @@ private class HSSpeechSynthesizer: NSSpeechSynthesizer, NSSpeechSynthesizerDeleg
 
     func speechSynthesizer(_ sender: NSSpeechSynthesizer, didEncounterSyncMessage errorMessage: String) {
         guard let synth = sender as? HSSpeechSynthesizer, synth.callbackRef != LUA_NOREF else { return }
-        let skin = LuaSkin.skin(with: nil)
-        let _L = LuaSkin.skin(with: nil).l!
+        let _L = lua_getCurrentState()!
         lua_rawgeti(_L, LUA_REGISTRYINDEX_VALUE, lua_Integer(synth.callbackRef))
         lua_pushany(_L, synth)
         lua_pushstring(_L, "didEncounterSync")
@@ -142,8 +138,7 @@ private class HSSpeechSynthesizer: NSSpeechSynthesizer, NSSpeechSynthesizerDeleg
     }
 
     func speechSynthesizer(_ sender: NSSpeechSynthesizer, didFinishSpeaking success: Bool) {
-        let skin = LuaSkin.skin(with: nil)
-        let _L = skin.l!
+        let _L = lua_getCurrentState()!
         let synth = sender as! HSSpeechSynthesizer
 
         if synth.callbackRef != LUA_NOREF {

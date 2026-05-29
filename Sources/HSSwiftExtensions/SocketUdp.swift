@@ -1,5 +1,6 @@
 import Cocoa
 import LuaSkin
+import os.log
 import Network
 
 // socket.h shared definitions are duplicated here since Swift can't import the C header directly.
@@ -33,7 +34,7 @@ private func getUserData(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) ->
 private func udpConnectCallback(_ asyncUdpSocket: HSAsyncUdpSocket) {
     mainThreadDispatch {
         if asyncUdpSocket.connectCallbackRef != LUA_NOREF {
-            let L = LuaSkin.skin(with: nil).l!
+            let L = lua_getCurrentState()!
             lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(asyncUdpSocket.connectCallbackRef))
             luaL_unref(L, LUA_REGISTRYINDEX_VALUE, asyncUdpSocket.connectCallbackRef)
 
@@ -46,7 +47,7 @@ private func udpConnectCallback(_ asyncUdpSocket: HSAsyncUdpSocket) {
 private func udpWriteCallback(_ asyncUdpSocket: HSAsyncUdpSocket, tag: Int) {
     mainThreadDispatch {
         if asyncUdpSocket.writeCallbackRef != LUA_NOREF {
-            let L = LuaSkin.skin(with: nil).l!
+            let L = lua_getCurrentState()!
             lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(asyncUdpSocket.writeCallbackRef))
             lua_pushany(L, NSNumber(value: tag))
             luaL_unref(L, LUA_REGISTRYINDEX_VALUE, asyncUdpSocket.writeCallbackRef)
@@ -60,7 +61,7 @@ private func udpWriteCallback(_ asyncUdpSocket: HSAsyncUdpSocket, tag: Int) {
 private func udpReadCallback(_ asyncUdpSocket: HSAsyncUdpSocket, data: Data, address: Data) {
     mainThreadDispatch {
         if asyncUdpSocket.readCallbackRef != LUA_NOREF {
-            let L = LuaSkin.skin(with: nil).l!
+            let L = lua_getCurrentState()!
             lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(asyncUdpSocket.readCallbackRef))
             lua_pushany(L, String(data: data, encoding: .utf8) as NSString?)
             lua_pushany(L, address as NSData)
@@ -259,21 +260,21 @@ private class HSAsyncUdpSocket {
                 self._connectedPort = port
                 self.cacheLocalInfoFromConnection(conn)
                 self.setUserData(DEFAULT)
-                LuaSkin.skin(with: nil).logDebug("UDP socket connected")
+                os_log(.debug,"UDP socket connected")
                 if self.connectCallbackRef != LUA_NOREF {
                     udpConnectCallback(self)
                 }
             case .failed(let err):
                 self._isConnected = false
-                LuaSkin.skin(with: nil).logError("UDP socket did not connect: \(err)")
+                os_log(.error, "%{public}s", "UDP socket did not connect: \(err)")
                 mainThreadDispatch {
-                    self.connectCallbackRef = LuaSkin.skin(with: nil).luaUnref(refTable, ref: self.connectCallbackRef)
+                    self.connectCallbackRef = lsLuaUnref(nil,refTable, ref: self.connectCallbackRef)
                 }
             case .cancelled:
                 self._isConnected = false
                 self._isClosed = true
                 self.setUserData(nil)
-                LuaSkin.skin(with: nil).logDebug("UDP socket closed")
+                os_log(.debug,"UDP socket closed")
             default:
                 break
             }
@@ -432,7 +433,7 @@ private class HSAsyncUdpSocket {
             Data(bytes: ptr, count: Int(addrLen))
         }
 
-        LuaSkin.skin(with: nil).logDebug("Data read from UDP socket")
+        os_log(.debug,"Data read from UDP socket")
         if readCallbackRef != LUA_NOREF {
             udpReadCallback(self, data: data, address: address)
         }
@@ -454,13 +455,13 @@ private class HSAsyncUdpSocket {
         conn.receiveMessage { [weak self] content, _, isComplete, error in
             guard let self = self else { return }
             if let error = error {
-                LuaSkin.skin(with: nil).logError("UDP receive error: \(error)")
+                os_log(.error, "%{public}s", "UDP receive error: \(error)")
                 return
             }
             if let data = content {
                 // Build a sockaddr from the connected endpoint info
                 let address = self.connectedAddress() ?? Data()
-                LuaSkin.skin(with: nil).logDebug("Data read from UDP socket")
+                os_log(.debug,"Data read from UDP socket")
                 if self.readCallbackRef != LUA_NOREF {
                     udpReadCallback(self, data: data, address: address)
                 }
@@ -475,18 +476,18 @@ private class HSAsyncUdpSocket {
 
     func send(_ data: Data, withTimeout timeout: TimeInterval, tag: Int) {
         guard let conn = connection else {
-            LuaSkin.skin(with: nil).logError("UDP send failed: not connected")
+            os_log(.error,"UDP send failed: not connected")
             return
         }
         conn.send(content: data, completion: .contentProcessed { [weak self] error in
             guard let self = self else { return }
             if let error = error {
-                LuaSkin.skin(with: nil).logError("Data not sent on UDP socket: \(error)")
+                os_log(.error, "%{public}s", "Data not sent on UDP socket: \(error)")
                 mainThreadDispatch {
-                    self.writeCallbackRef = LuaSkin.skin(with: nil).luaUnref(refTable, ref: self.writeCallbackRef)
+                    self.writeCallbackRef = lsLuaUnref(nil,refTable, ref: self.writeCallbackRef)
                 }
             } else {
-                LuaSkin.skin(with: nil).logDebug("Data written to UDP socket")
+                os_log(.debug,"Data written to UDP socket")
                 if self.writeCallbackRef != LUA_NOREF {
                     udpWriteCallback(self, tag: tag)
                 }
@@ -527,14 +528,14 @@ private class HSAsyncUdpSocket {
             }
 
             if sent {
-                LuaSkin.skin(with: nil).logDebug("Data written to UDP socket")
+                os_log(.debug,"Data written to UDP socket")
                 if self.writeCallbackRef != LUA_NOREF {
                     udpWriteCallback(self, tag: tag)
                 }
             } else {
-                LuaSkin.skin(with: nil).logError("Data not sent on UDP socket: could not resolve or send to \(host):\(port)")
+                os_log(.error, "%{public}s", "Data not sent on UDP socket: could not resolve or send to \(host):\(port)")
                 mainThreadDispatch {
-                    self.writeCallbackRef = LuaSkin.skin(with: nil).luaUnref(refTable, ref: self.writeCallbackRef)
+                    self.writeCallbackRef = lsLuaUnref(nil,refTable, ref: self.writeCallbackRef)
                 }
             }
         }
@@ -860,7 +861,7 @@ private func socketudp_connect(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
         luaL_unref(L, LUA_REGISTRYINDEX_VALUE, asyncUdpSocket.connectCallbackRef)
 
         asyncUdpSocket.connectCallbackRef = LUA_NOREF
-        LuaSkin.skin(with: nil).logError("Unable to connect: \(error.localizedDescription)")
+        os_log(.error, "%{public}s", "Unable to connect: \(error.localizedDescription)")
         lua_pushnil(L)
         return 1
     }
@@ -886,7 +887,7 @@ private func socketudp_listen(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     do {
         try asyncUdpSocket.bind(toPort: thePort)
     } catch {
-        LuaSkin.skin(with: nil).logError("Unable to bind port: \(error.localizedDescription)")
+        os_log(.error, "%{public}s", "Unable to bind port: \(error.localizedDescription)")
         lua_pushnil(L)
         return 1
     }
@@ -952,7 +953,7 @@ private func socketudp_receiveContinuous(_ L: UnsafeMutablePointer<lua_State>!, 
     }
 
     if asyncUdpSocket.readCallbackRef == LUA_NOREF {
-        LuaSkin.skin(with: nil).logError("No callback defined!")
+        os_log(.error,"No callback defined!")
         return false
     }
 
@@ -969,7 +970,7 @@ private func socketudp_receiveContinuous(_ L: UnsafeMutablePointer<lua_State>!, 
             try asyncUdpSocket.receiveOnce()
         }
     } catch {
-        LuaSkin.skin(with: nil).logError("Unable to read from UDP socket: \(error.localizedDescription)")
+        os_log(.error, "%{public}s", "Unable to read from UDP socket: \(error.localizedDescription)")
         return false
     }
 
@@ -1115,7 +1116,7 @@ private func socketudp_enableBroadcast(_ L: UnsafeMutablePointer<lua_State>!) ->
     do {
         try asyncUdpSocket.enableBroadcast(enableFlag)
     } catch {
-        LuaSkin.skin(with: nil).logError("Unable to enable broadcasting: \(error.localizedDescription)")
+        os_log(.error, "%{public}s", "Unable to enable broadcasting: \(error.localizedDescription)")
         lua_pushnil(L)
         return 1
     }
@@ -1148,7 +1149,7 @@ private func socketudp_enableReusePort(_ L: UnsafeMutablePointer<lua_State>!) ->
     do {
         try asyncUdpSocket.enableReusePort(enableFlag)
     } catch {
-        LuaSkin.skin(with: nil).logError("Unable to enable port reuse: \(error.localizedDescription)")
+        os_log(.error, "%{public}s", "Unable to enable port reuse: \(error.localizedDescription)")
         lua_pushnil(L)
         return 1
     }
@@ -1183,7 +1184,7 @@ private func socketudp_enableIPversion(_ L: UnsafeMutablePointer<lua_State>!) ->
     } else if ipVersion == 6 {
         asyncUdpSocket.setIPv6Enabled(enableFlag)
     } else {
-        LuaSkin.skin(with: nil).logError("Invalid IP version: \(ipVersion)")
+        os_log(.error, "%{public}s", "Invalid IP version: \(ipVersion)")
         lua_pushnil(L)
         return 1
     }

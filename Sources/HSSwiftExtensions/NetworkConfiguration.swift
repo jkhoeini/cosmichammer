@@ -35,8 +35,7 @@ private let doDynamicStoreCallback: SCDynamicStoreCallBack = { store, changedKey
     let nsChangedKeys = (changedKeys as NSArray).copy() as! NSArray
     DispatchQueue.main.async {
         if thePtr.pointee.callbackRef != LUA_NOREF && thePtr.pointee.selfRef != LUA_NOREF {
-            let skin = LuaSkin.skin(with: nil)
-            let L = LuaSkin.skin(with: nil).l!
+            let L = lua_getCurrentState()!
             if !lua_isStateGenerationValid(thePtr.pointee.lsCanary) {
                 return
             }
@@ -96,7 +95,6 @@ private func newStoreObject(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Notes:
 ///  * if no parameters are provided, then all key-value pairs in the dynamic store are returned.
 private func dynamicStoreContents(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     let theStore = getPtr(L, 1).pointee.storeObject!
 
     var keys: NSArray
@@ -533,7 +531,6 @@ private func dynamicStoreStopWatcher(_ L: UnsafeMutablePointer<lua_State>!) -> I
 /// Notes:
 ///  * if no parameters are provided, then all key-value pairs in the dynamic store are monitored for changes.
 private func dynamicStoreMonitorKeys(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     let theStore = getPtr(L, 1).pointee.storeObject!
 
     var keys: NSArray
@@ -584,7 +581,6 @@ private func userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 }
 
 private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     let thePtr = getPtr(L, 1)
     if thePtr.pointee.callbackRef != LUA_NOREF {
         luaL_unref(L, LUA_REGISTRYINDEX_VALUE, thePtr.pointee.callbackRef)

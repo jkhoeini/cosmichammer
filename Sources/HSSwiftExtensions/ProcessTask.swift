@@ -1,6 +1,6 @@
 import Cocoa
-import Foundation
 import LuaSkin
+import Foundation
 import os.log
 
 private let USERDATA_TAG = "hs.task"
@@ -109,7 +109,7 @@ private func create_task(_ userData: UnsafeMutablePointer<TaskUserdata>) {
     task.terminationHandler = { terminatedTask in
         // Ensure this callback happens on the main thread
         DispatchQueue.main.sync {
-            let L = LuaSkin.skin(with: nil).l!
+            let L = lua_getCurrentState()!
 
             let stdOutFH = (terminatedTask.standardOutput as? Pipe)?.fileHandleForReading
             let stdErrFH = (terminatedTask.standardError as? Pipe)?.fileHandleForReading
@@ -864,7 +864,7 @@ public func luaopen_hs_libtask(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
         }
 
         if userData.pointee.luaStreamCallback != LUA_NOREF && userData.pointee.luaStreamCallback != LUA_REFNIL {
-            let _L = LuaSkin.skin(with: nil).l!
+            let _L = lua_getCurrentState()!
 
             let task = userData.pointee.nsTask!.takeUnretainedValue() as! Process
             let stdOutFH = (task.standardOutput as? Pipe)?.fileHandleForReading

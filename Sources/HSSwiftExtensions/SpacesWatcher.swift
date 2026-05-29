@@ -1,7 +1,7 @@
 import Foundation
+import LuaSkin
 import Cocoa
 import CoreGraphics
-import LuaSkin
 
 /// === hs.spaces.watcher ===
 ///
@@ -32,7 +32,7 @@ private class SpaceWatcher: NSObject {
     // Call the lua callback function.
     func callback(dict: NSDictionary?, space: Int32) {
         if object.pointee.fn != LUA_NOREF {
-            let L = LuaSkin.skin(with: nil).l!
+            let L = lua_getCurrentState()!
 
             lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(object.pointee.fn))
             lua_pushinteger(L, lua_Integer(space))

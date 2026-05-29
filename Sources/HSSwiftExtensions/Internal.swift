@@ -1,6 +1,6 @@
 import Cocoa
-import Carbon
 import LuaSkin
+import Carbon
 
 private let USERDATA_TAG = "hs.hints.hint"
 

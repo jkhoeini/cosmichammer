@@ -1,6 +1,6 @@
 import Cocoa
-import Carbon
 import LuaSkin
+import Carbon
 import os.log
 
 // MARK: - Callback Objects
@@ -10,7 +10,7 @@ import os.log
     var item: Int32 = LUA_NOREF
 
     func callback_runner() {
-        let L = LuaSkin.skin(with: nil).l!
+        let L = lua_getCurrentState()!
 
         var fn_result: Bool
 
@@ -73,7 +73,7 @@ var mb_dynamicMenuDelegates: NSMutableArray!
 
 @objc class HSMenubarItemClickDelegate: HSMenubarCallbackObject {
     @objc func click(_ sender: Any?) {
-        let L = LuaSkin.skin(with: nil).l!
+        let L = lua_getCurrentState()!
         // Issue #909 -- if the callback causes the menu to be replaced, we crash if this delegate
         // disappears from beneath us... this keeps it from being collected before the callback is done.
         var myDelegate: NSObject? = nil
@@ -90,7 +90,7 @@ var mb_dynamicMenuDelegates: NSMutableArray!
     var stateBoxImageSize: NSSize = .zero
 
     func menuNeedsUpdate(_ menu: NSMenu) {
-        let L = LuaSkin.skin(with: nil).l!
+        let L = lua_getCurrentState()!
         callback_runner()
 
         if lua_type(L, lua_gettop(L)) == LUA_TTABLE {

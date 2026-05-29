@@ -28,7 +28,7 @@ private func callback(_ info: UnsafeMutableRawPointer?) {
 
     guard lua_isStateGenerationValid(watcher.pointee.generation) else { return }
 
-    let L = LuaSkin.skin(with: nil).l!
+    let L = lua_getCurrentState()!
 
     if watcher.pointee.fn != Int32(LUA_NOREF) {
         lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(watcher.pointee.fn))

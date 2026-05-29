@@ -1,6 +1,6 @@
 import Foundation
-import Cocoa
 import LuaSkin
+import Cocoa
 
 private let USERDATA_TAG = "hs.distributednotifications"
 
@@ -13,7 +13,7 @@ private class HSDistNotWatcher: NSObject {
 
     @objc func callback(_ note: NSNotification) {
         guard fnRef != LUA_NOREF && fnRef != LUA_REFNIL else { return }
-        let L = LuaSkin.skin(with: nil).l!
+        let L = lua_getCurrentState()!
         lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(fnRef))
         lua_pushany(L, note.name.rawValue)
         lua_pushany(L, note.object)

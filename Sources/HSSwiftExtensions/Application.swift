@@ -1,7 +1,7 @@
 import Cocoa
+import LuaSkin
 import Carbon
 import Carbon.HIToolbox
-import LuaSkin
 import os.log
 
 private let USERDATA_TAG = "hs.application"
@@ -19,7 +19,6 @@ private var backgroundCallbacks = NSMutableSet()
 // MARK: - Helper
 
 private func getApp(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> HSapplicationProtocol? {
-    let skin = LuaSkin.skin(with: L)
     return lua_tovalue(L, at: idx) as? HSapplicationProtocol
 }
 
@@ -884,7 +883,7 @@ private func _getMenuStructure(_ menuItem: AXUIElement) -> Any {
     let result = AXUIElementCopyMultipleAttributeValues(menuItem, attributeNames as CFArray, AXCopyMultipleAttributeOptions(rawValue: 0), &cfAttributeValues)
 
     if result != AXError.success {
-        LuaSkin.skin(with: nil).logBreadcrumb("Unable to fetch menu structure")
+        os_log(.default, "%{public}s","Unable to fetch menu structure")
     } else if let cfValues = cfAttributeValues {
         let firstElement = CFArrayGetValueAtIndex(cfValues, 0)
         if let firstElement = firstElement {
@@ -996,7 +995,6 @@ private func _getMenuStructure(_ menuItem: AXUIElement) -> Any {
 ///   * AXMenuItemCmdGlyph - An integer, corresponding to one of the defined glyphs in `hs.application.menuGlyphs` if the keyboard shortcut is a special character usually represented by a pictorial representation (think arrow keys, return, etc), or an empty string if no glyph is used in presenting the keyboard shortcut.
 ///  * Using `hs.inspect()` on these tables, while useful for exploration, can be extremely slow, taking several minutes to correctly render very complex menus
 private func application_getMenus(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     guard let app = getApp(L, at: 1) else { lua_pushnil(L); return 1 }
 
     if lua_gettop(L) == 1 {
@@ -1026,11 +1024,10 @@ private func application_getMenus(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
                     menus = _getMenuStructure(menuBar) as? NSMutableDictionary
                 }
 
-                let _skin = LuaSkin.skin(with: nil)
-                lua_rawgeti(LuaSkin.skin(with: nil).l!, LUA_REGISTRYINDEX_VALUE, lua_Integer(fnRef))
+                lua_rawgeti(lua_getCurrentState()!, LUA_REGISTRYINDEX_VALUE, lua_Integer(fnRef))
                 lua_pushany(L, menus)
                 if lua_pcall(L, 1, 0, 0) != LUA_OK { lua_pop(L, 1) }
-                luaL_unref(LuaSkin.skin(with: nil).l!, LUA_REGISTRYINDEX_VALUE, fnRef)
+                luaL_unref(lua_getCurrentState()!, LUA_REGISTRYINDEX_VALUE, fnRef)
                 backgroundCallbacks.remove(NSNumber(value: fnRef))
             }
         }
@@ -1179,7 +1176,6 @@ private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 private func userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     var isEqual = false
     if luaL_testudata(L, 1, USERDATA_TAG) != nil && luaL_testudata(L, 2, USERDATA_TAG) != nil {
-        let skin = LuaSkin.skin(with: L)
         if let app1 = lua_tovalue(L, at: 1) as? HSapplicationProtocol,
            let app2 = lua_tovalue(L, at: 2) as? HSapplicationProtocol {
             isEqual = app1.runningApp.isEqual(app2.runningApp)

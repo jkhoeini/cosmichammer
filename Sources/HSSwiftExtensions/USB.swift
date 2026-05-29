@@ -1,7 +1,7 @@
 import Cocoa
+import LuaSkin
 import IOKit
 import IOKit.usb
-import LuaSkin
 
 private let productNameKey = kUSBProductString as CFString
 private let vendorNameKey = kUSBVendorString as CFString

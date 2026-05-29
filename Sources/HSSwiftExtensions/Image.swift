@@ -534,7 +534,7 @@ private func imageWithContextFromASCII(_ L: UnsafeMutablePointer<lua_State>!) ->
 private func imageFromName(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let imageName = String(cString: luaL_checkstring(L, 1))
     if let newImage = NSImage(named: NSImage.Name(imageName)) {
-        LuaSkin.skin(with: L).pushNSObject(newImage)
+        lsPushNSObject(L,newImage)
     } else {
         lua_pushnil(L)
     }
@@ -571,7 +571,7 @@ private func imageFromURL(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
             let image = NSImage(contentsOf: theURL)
             DispatchQueue.main.async {
                 if backgroundCallbacks.contains(NSNumber(value: fnRef)) {
-                    let bgL = LuaSkin.skin(with: nil).l!
+                    let bgL = lua_getCurrentState()!
                     lua_rawgeti(bgL, LUA_REGISTRYINDEX_VALUE, lua_Integer(fnRef))
                     lua_pushany(bgL, image)
                     if lua_pcall(bgL, 1, 0, 0) != LUA_OK { lua_pop(bgL, 1) }
@@ -1245,7 +1245,7 @@ private func HSImage_toNSImage(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int
 // MARK: - Cosmic Hammer/Lua Infrastructure
 
 private func image_userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let testImage = LuaSkin.skin(with: L).luaObject(at: 1, toClass: "NSImage") as! NSImage
+    let testImage = lsLuaObjectAtIndex(L, 1, toClass: "NSImage") as! NSImage
     let theName = testImage.name() ?? ""
     lua_pushstring(L, "\(USERDATA_TAG): \(theName) (\(String(describing: lua_topointer(L, 1))))")
     return 1

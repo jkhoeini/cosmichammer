@@ -8,9 +8,9 @@
 //
 
 import Cocoa
+import LuaSkin
 import IOKit
 import IOKit.hid
-import LuaSkin
 import os.log
 
 // MARK: - Constants (mirroring streamdeck.h)
@@ -144,7 +144,6 @@ private func get_objectFromUserdata<T: AnyObject>(_ type: T.Type, _ L: UnsafeMut
 
     func deviceWriteSimpleReport(_ command: Data) -> IOReturn {
         if simpleReportLength == 0 {
-            let skin = LuaSkin.skin(with: nil)
             os_log(.error, "%{public}s", "Initialising Stream Deck device with no simple report length defined")
             return kIOReturnInternalError
         }
@@ -191,7 +190,7 @@ private func get_objectFromUserdata<T: AnyObject>(_ type: T.Type, _ L: UnsafeMut
     func deviceDidSendInput(_ newButtonStates: [NSNumber]) {
         guard isValid else { return }
 
-        let L = LuaSkin.skin(with: nil).l!
+        let L = lua_getCurrentState()!
 
         guard lua_isStateGenerationValid(lsCanary) else {
             return
@@ -218,7 +217,7 @@ private func get_objectFromUserdata<T: AnyObject>(_ type: T.Type, _ L: UnsafeMut
     func deviceDidSendEncoderInput(_ newPressEncoderStates: [NSNumber]) {
         guard isValid else { return }
 
-        let L = LuaSkin.skin(with: nil).l!
+        let L = lua_getCurrentState()!
 
         guard lua_isStateGenerationValid(lsCanary) else {
             return
@@ -247,7 +246,7 @@ private func get_objectFromUserdata<T: AnyObject>(_ type: T.Type, _ L: UnsafeMut
     func deviceDidSendEncoderTurn(button: Int32, turningLeft: Bool) {
         guard isValid else { return }
 
-        let L = LuaSkin.skin(with: nil).l!
+        let L = lua_getCurrentState()!
 
         guard lua_isStateGenerationValid(lsCanary) else {
             return
@@ -270,7 +269,7 @@ private func get_objectFromUserdata<T: AnyObject>(_ type: T.Type, _ L: UnsafeMut
     func deviceDidSendScreenTouch(eventType: String, startX: Int32, startY: Int32, endX: Int32, endY: Int32) {
         guard isValid else { return }
 
-        let L = LuaSkin.skin(with: nil).l!
+        let L = lua_getCurrentState()!
 
         guard lua_isStateGenerationValid(lsCanary) else {
             return
@@ -374,8 +373,6 @@ private func get_objectFromUserdata<T: AnyObject>(_ type: T.Type, _ L: UnsafeMut
     func setImage(_ image: NSImage, forButton button: Int32) {
         guard isValid else { return }
 
-        let skin = LuaSkin.skin(with: nil)
-
         // Resize the image
         let sourceImage = image.copy() as! NSImage
         let newSize = NSSize(width: CGFloat(imageWidth), height: CGFloat(imageHeight))
@@ -473,8 +470,6 @@ private func get_objectFromUserdata<T: AnyObject>(_ type: T.Type, _ L: UnsafeMut
 
     func setLCDImage(_ image: NSImage, forEncoder encoder: Int32) {
         guard isValid else { return }
-
-        let skin = LuaSkin.skin(with: nil)
 
         let sourceImage = image.copy() as! NSImage
         let encoderWidth = lcdStripWidth / encoderColumns
@@ -999,7 +994,7 @@ class HSStreamDeckDevicePedal: HSStreamDeckDevice {
     }
 
     func deviceDidConnect(_ hidDevice: IOHIDDevice) -> HSStreamDeckDevice? {
-        let L = LuaSkin.skin(with: nil).l!
+        let L = lua_getCurrentState()!
 
         guard lua_isStateGenerationValid(lsCanary) else {
             return nil
@@ -1059,7 +1054,7 @@ class HSStreamDeckDevicePedal: HSStreamDeckDevice {
     }
 
     func deviceDidDisconnect(_ hidDevice: IOHIDDevice) {
-        let L = LuaSkin.skin(with: nil).l!
+        let L = lua_getCurrentState()!
 
         guard lua_isStateGenerationValid(lsCanary) else {
             return

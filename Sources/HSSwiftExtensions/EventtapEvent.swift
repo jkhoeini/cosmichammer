@@ -1,6 +1,6 @@
 import Cocoa
-import Carbon
 import LuaSkin
+import Carbon
 import os.log
 import IOKit
 import IOKit.hidsystem
@@ -324,7 +324,6 @@ private func eventtap_event_setUnicodeString(_ L: UnsafeMutablePointer<lua_State
 }
 
 private func eventtap_event_post(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     luaL_checkudata(L, 1, EVENTTAP_EVENT_USERDATA_TAG)
     let event = getEvent(L, 1)
 

@@ -57,8 +57,7 @@ private class HSMetadataQuery: NSObject {
     func doCallback(for message: String, with notification: Notification) {
         DispatchQueue.main.async { [weak self] in
             guard let self = self, self.callbackRef != LUA_NOREF else { return }
-            let skin = LuaSkin.skin(with: nil)
-            let L = LuaSkin.skin(with: nil).l!
+            let L = lua_getCurrentState()!
             lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(self.callbackRef))
             lua_pushany(L, self)
             lua_pushany(L, message as NSString)
@@ -720,7 +719,6 @@ private func pushNSSortDescriptor(_ L: UnsafeMutablePointer<lua_State>!, obj: An
 }
 
 private func toNSSortDescriptorFromLua(_ L: UnsafeMutablePointer<lua_State>!, idx: Int32) -> Any! {
-    let skin = LuaSkin.skin(with: L)
     let absIdx = lua_absindex(L, idx)
     if lua_type(L, absIdx) == LUA_TSTRING {
         return NSSortDescriptor(key: lua_tovalue(L, at: absIdx) as? String, ascending: true)

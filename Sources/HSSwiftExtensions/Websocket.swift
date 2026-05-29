@@ -1,7 +1,7 @@
 import Foundation
+import LuaSkin
 import Cocoa
 import Carbon
-import LuaSkin
 
 private struct WebSocketUserData {
     var selfRef: Int32
@@ -45,7 +45,7 @@ private class HSWebSocketDelegate: NSObject, URLSessionWebSocketDelegate {
             if strongSelf.fn == LUA_NOREF { return }
             guard lua_isStateGenerationValid(strongSelf.stateGeneration) else { return }
 
-            let L = LuaSkin.skin(with: nil).l!
+            let L = lua_getCurrentState()!
 
             switch result {
             case .failure(let error):
@@ -85,7 +85,7 @@ private class HSWebSocketDelegate: NSObject, URLSessionWebSocketDelegate {
         isOpen = true
         if fn == LUA_NOREF { return }
         guard lua_isStateGenerationValid(self.stateGeneration) else { return }
-        let L = LuaSkin.skin(with: nil).l!
+        let L = lua_getCurrentState()!
         lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(refTable))
         lua_rawgeti(L, -1, lua_Integer(fn))
         lua_remove(L, -2)
@@ -100,7 +100,7 @@ private class HSWebSocketDelegate: NSObject, URLSessionWebSocketDelegate {
         isOpen = false
         if fn == LUA_NOREF { return }
         guard lua_isStateGenerationValid(self.stateGeneration) else { return }
-        let L = LuaSkin.skin(with: nil).l!
+        let L = lua_getCurrentState()!
         lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(refTable))
         lua_rawgeti(L, -1, lua_Integer(fn))
         lua_remove(L, -2)

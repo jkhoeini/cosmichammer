@@ -1,6 +1,6 @@
 import Cocoa
-import Carbon
 import LuaSkin
+import Carbon
 
 private let USERDATA_TAG = "hs.milight"
 private var refTable: Int32 = LUA_NOREF

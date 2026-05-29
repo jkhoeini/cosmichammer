@@ -29,8 +29,7 @@ private class HSSpeechRecognizer: NSSpeechRecognizer, NSSpeechRecognizerDelegate
 
     func speechRecognizer(_ sender: NSSpeechRecognizer, didRecognizeCommand command: String) {
         guard let recognizer = sender as? HSSpeechRecognizer, recognizer.callbackRef != LUA_NOREF else { return }
-        let skin = LuaSkin.skin(with: nil)
-        let L = LuaSkin.skin(with: nil).l!
+        let L = lua_getCurrentState()!
 
         lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(recognizer.callbackRef))
         lua_pushany(L, recognizer)
@@ -91,7 +90,6 @@ private func newSpeechRecognizer(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 /// Get or set the commands this speech recognizer will listen for.
 private func commands(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let recognizer = get_recognizerFromUserdata(L, at: 1)
-    let skin = LuaSkin.skin(with: L)
     if lua_gettop(L) == 2 {
         var theCommands: [String] = []
         let len = luaL_len(L, 2)

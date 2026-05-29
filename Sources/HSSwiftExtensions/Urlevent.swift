@@ -1,7 +1,7 @@
 import Cocoa
+import LuaSkin
 import Carbon
 import CoreServices
-import LuaSkin
 import os.log
 
 private var refTable: Int32 = 0
@@ -113,7 +113,7 @@ private class HSURLEventHandler: NSObject, HSOpenFileDelegate {
     }
 
     func callback(withURL openUrl: String, senderPID pid: pid_t) {
-        let L = LuaSkin.skin(with: nil).l!
+        let L = lua_getCurrentState()!
 
         if fnCallback == LUA_NOREF || fnCallback == LUA_REFNIL {
             os_log(.info, "%{public}s", "hs.urlevent callbackWithURL received a URL with no callback set: \(openUrl)")

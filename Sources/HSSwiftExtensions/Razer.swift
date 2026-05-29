@@ -1,8 +1,8 @@
 import Cocoa
+import LuaSkin
 import IOKit
 import IOKit.hid
 import IOKit.usb
-import LuaSkin
 import os.log
 
 // MARK: - Constants (mirroring razer.h)
@@ -191,7 +191,7 @@ private struct HSRazerReportBuilder {
 
         guard lua_isStateGenerationValid(lsCanary) else { return }
 
-        let L = LuaSkin.skin(with: nil).l!
+        let L = lua_getCurrentState()!
         lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(buttonCallbackRef))
         lua_pushany(L, self)
         lua_pushany(L, buttonName as NSString)
@@ -982,7 +982,7 @@ private func hidDisconnect(
         if discoveryCallbackRef == LUA_NOREF || discoveryCallbackRef == LUA_REFNIL {
             os_log(.info, "%{public}s", "hs.razer detected a device connecting, but no discovery callback has been set. See hs.razer.discoveryCallback()")
         } else {
-            let L = LuaSkin.skin(with: nil).l!
+            let L = lua_getCurrentState()!
             lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(discoveryCallbackRef))
             lua_pushboolean(L, 1)
             lua_pushany(L, razerDevice)
@@ -1001,7 +1001,7 @@ private func hidDisconnect(
             if discoveryCallbackRef == LUA_NOREF || discoveryCallbackRef == LUA_REFNIL {
                 os_log(.info, "%{public}s", "hs.razer detected a device disconnecting, but no callback has been set. See hs.razer.discoveryCallback()")
             } else {
-                let L = LuaSkin.skin(with: nil).l!
+                let L = lua_getCurrentState()!
                 lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(discoveryCallbackRef))
                 lua_pushboolean(L, 0)
                 lua_pushany(L, razerDevice)

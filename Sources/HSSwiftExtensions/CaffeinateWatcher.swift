@@ -1,6 +1,6 @@
 import Foundation
-import Cocoa
 import LuaSkin
+import Cocoa
 
 /// === hs.caffeinate.watcher ===
 ///
@@ -103,7 +103,7 @@ private class CaffeinateWatcher: NSObject {
         guard object.pointee.fn != LUA_NOREF else { return }
         guard lua_isStateGenerationValid(object.pointee.generation) else { return }
 
-        let L = LuaSkin.skin(with: nil).l!
+        let L = lua_getCurrentState()!
 
         lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(object.pointee.fn))
         lua_pushinteger(L, lua_Integer(event.rawValue))

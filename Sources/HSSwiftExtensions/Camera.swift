@@ -1,7 +1,7 @@
 import Cocoa
+import LuaSkin
 import AVFoundation
 import CoreMediaIO
-import LuaSkin
 import os.log
 
 // MARK: - Module declarations
@@ -40,7 +40,6 @@ private class HSCamera: NSObject {
     var canary: UInt64
 
     var isInUse: Bool {
-        let skin = LuaSkin.skin(with: nil)
         var dataSize: UInt32 = 0
         var dataUsed: UInt32 = 0
         var isInUseVal: UInt32 = 0
@@ -67,8 +66,7 @@ private class HSCamera: NSObject {
     }
 
     init(deviceID: CMIODeviceID) {
-        let skin = LuaSkin.skin(with: nil)
-        let L = LuaSkin.skin(with: nil).l!
+        let L = lua_getCurrentState()!
 
         self.deviceId = deviceID
         self.canary = lua_currentStateGeneration()
@@ -94,8 +92,7 @@ private class HSCamera: NSObject {
             }
 
             DispatchQueue.main.async {
-                let skin = LuaSkin.skin(with: nil)
-                let L = LuaSkin.skin(with: nil).l!
+                let L = lua_getCurrentState()!
                 guard let strongSelf = weakSelf else { return }
 
                 if !lua_isStateGenerationValid(strongSelf.canary) {
@@ -168,7 +165,6 @@ private class HSCamera: NSObject {
     }
 
     func getCameraUID() -> String? {
-        let skin = LuaSkin.skin(with: nil)
         var dataSize: UInt32 = 0
         var dataUsed: UInt32 = 0
 
@@ -199,7 +195,6 @@ private class HSCamera: NSObject {
     }
 
     func getCameraName() -> String? {
-        let skin = LuaSkin.skin(with: nil)
         guard let uid = self.uid,
               let avDevice = AVCaptureDevice(uniqueID: uid) else {
             os_log(.info, "%{public}s", "Unable to get camera name for: \(self.uid ?? "nil")")
@@ -238,7 +233,6 @@ private class HSCameraManager: NSObject {
     }
 
     func getCameras() -> [HSCamera] {
-        let skin = LuaSkin.skin(with: nil)
         var dataSize: UInt32 = 0
         var prop = CMIOObjectPropertyAddress(
             mSelector: CMIOObjectPropertySelector(kCMIOHardwarePropertyDevices),
@@ -301,8 +295,7 @@ private func allCameras(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 // This calls the devices watcher callback Lua function when a device is added/removed
 private func deviceWatcherDoCallback(_ deviceId: CMIODeviceID, _ event: String) {
-    let skin = LuaSkin.skin(with: nil)
-    let L = LuaSkin.skin(with: nil).l!
+    let L = lua_getCurrentState()!
 
     guard let watcher = deviceWatcher else {
         os_log(.info, "%{public}s", "hs.camera devices watcher callback fired, but deviceWatcher is nil. This is a bug")
@@ -489,7 +482,6 @@ private func setWatcherCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 /// Notes:
 ///  * The UID is not guaranteed to be stable across reboots
 private func camera_uid(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let camera: HSCamera = lua_tovalue(L, at: 1) as! HSCamera
@@ -507,7 +499,6 @@ private func camera_uid(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * A number containing the connection ID of the camera
 private func camera_cID(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let camera: HSCamera = lua_tovalue(L, at: 1) as! HSCamera
@@ -525,7 +516,6 @@ private func camera_cID(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * A string containing the name of the camera
 private func camera_name(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let camera: HSCamera = lua_tovalue(L, at: 1) as! HSCamera
@@ -543,7 +533,6 @@ private func camera_name(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * A boolean, True if the camera is in use, otherwise False
 private func camera_isinuse(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let camera: HSCamera = lua_tovalue(L, at: 1) as! HSCamera
@@ -566,7 +555,6 @@ private func camera_isinuse(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * The `hs.camera` object
 private func camera_propertyWatcherCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let camera: HSCamera = lua_tovalue(L, at: 1) as! HSCamera
@@ -598,7 +586,6 @@ private func camera_propertyWatcherCallback(_ L: UnsafeMutablePointer<lua_State>
 /// Returns:
 ///  * The `hs.camera` object
 private func camera_startPropertyWatcher(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let camera: HSCamera = lua_tovalue(L, at: 1) as! HSCamera
@@ -625,7 +612,6 @@ private func camera_startPropertyWatcher(_ L: UnsafeMutablePointer<lua_State>!) 
 /// Returns:
 ///  * The `hs.camera` object
 private func camera_stopPropertyWatcher(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let camera: HSCamera = lua_tovalue(L, at: 1) as! HSCamera
@@ -645,7 +631,6 @@ private func camera_stopPropertyWatcher(_ L: UnsafeMutablePointer<lua_State>!) -
 /// Returns:
 ///  * A boolean, True if the property watcher is running, otherwise False
 private func camera_isPropertyWatcherRunning(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let camera: HSCamera = lua_tovalue(L, at: 1) as! HSCamera
@@ -680,7 +665,6 @@ private func toHSCameraFromLua(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int
 // MARK: - Core Lua metamethods
 
 private func hsCamera_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     let camera: HSCamera = lua_tovalue(L, at: 1) as! HSCamera
     lua_pushany(L, "\(USERDATA_TAG): (\(camera.uid ?? "nil"):\(camera.name ?? "nil"))" as NSString)
     return 1
@@ -704,7 +688,6 @@ private func hsCamera_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 }
 
 private func module_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
 
     if let watcher = deviceWatcher {
         _ = stopWatcher(nil)

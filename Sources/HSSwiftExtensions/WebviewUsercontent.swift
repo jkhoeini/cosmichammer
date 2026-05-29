@@ -1,7 +1,7 @@
 import Foundation
+import LuaSkin
 import Cocoa
 import WebKit
-import LuaSkin
 import os.log
 
 private let USERDATA_UCC_TAG = "hs.webview.usercontent"
@@ -25,8 +25,7 @@ private class HSUserContentController: WKUserContentController, WKScriptMessageH
     func userContentController(_ userContentController: WKUserContentController,
                                didReceive message: WKScriptMessage) {
         if message.name == name && userContentCallback != LUA_NOREF {
-            let skin = LuaSkin.skin(with: nil)
-            let L = LuaSkin.skin(with: nil).l!
+            let L = lua_getCurrentState()!
             lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(userContentCallback))
             lua_pushany(L, message)
             if lua_pcall(L, 1, 0, 0) != LUA_OK { lua_pop(L, 1) }
@@ -226,7 +225,6 @@ private func WKScriptMessage_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj:
 }
 
 private func table_toWKUserScript(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> Any! {
-    let skin = LuaSkin.skin(with: L)
 
     if lua_type(L, idx) == LUA_TTABLE {
         var mainFrame: Bool = true

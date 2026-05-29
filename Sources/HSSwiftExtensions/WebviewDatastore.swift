@@ -3,9 +3,9 @@
 /// Provides methods to list and purge the various types of data used by websites visited with `hs.webview`.
 
 import Foundation
+import LuaSkin
 import Cocoa
 import WebKit
-import LuaSkin
 import os.log
 
 private let USERDATA_DS_TAG = "hs.webview.datastore"
@@ -97,7 +97,6 @@ private func datastore_fromWebview(_ L: UnsafeMutablePointer<lua_State>!) -> Int
 /// Returns:
 ///  * the datastore object
 private func datastore_fetchRecords(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
 
     let dataStore = lua_tovalue(L, at: 1) as! WKWebsiteDataStore
     var dataTypes: [String] = Array(WKWebsiteDataStore.allWebsiteDataTypes())
@@ -125,11 +124,10 @@ private func datastore_fetchRecords(_ L: UnsafeMutablePointer<lua_State>!) -> In
     dataStore.fetchDataRecords(ofTypes: typeSet) { records in
         DispatchQueue.main.async {
             if backgroundCallbacks.contains(NSNumber(value: fnRef)) {
-                let _skin = LuaSkin.skin(with: nil)
                 lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(fnRef))
                 lua_pushany(L, records as NSArray)
                 if lua_pcall(L, 1, 0, 0) != LUA_OK { lua_pop(L, 1) }
-                luaL_unref(LuaSkin.skin(with: nil).l!, LUA_REGISTRYINDEX_VALUE, fnRef)
+                luaL_unref(lua_getCurrentState()!, LUA_REGISTRYINDEX_VALUE, fnRef)
                 backgroundCallbacks.remove(NSNumber(value: fnRef))
             }
         }
@@ -151,7 +149,6 @@ private func datastore_fetchRecords(_ L: UnsafeMutablePointer<lua_State>!) -> In
 /// Returns:
 ///  * the datastore object
 private func datastore_removeRecords(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     let dataStore = lua_tovalue(L, at: 1) as! WKWebsiteDataStore
 
     var recordNames: [String]
@@ -192,10 +189,9 @@ private func datastore_removeRecords(_ L: UnsafeMutablePointer<lua_State>!) -> I
         dataStore.removeData(ofTypes: typeSet, for: targets) {
             DispatchQueue.main.async {
                 if fnRef != LUA_NOREF && backgroundCallbacks.contains(NSNumber(value: fnRef)) {
-                    let _skin = LuaSkin.skin(with: nil)
                     lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(fnRef))
                     if lua_pcall(L, 0, 0, 0) != LUA_OK { lua_pop(L, 1) }
-                    luaL_unref(LuaSkin.skin(with: nil).l!, LUA_REGISTRYINDEX_VALUE, fnRef)
+                    luaL_unref(lua_getCurrentState()!, LUA_REGISTRYINDEX_VALUE, fnRef)
                     backgroundCallbacks.remove(NSNumber(value: fnRef))
                 }
             }
@@ -218,7 +214,6 @@ private func datastore_removeRecords(_ L: UnsafeMutablePointer<lua_State>!) -> I
 /// Returns:
 ///  * the datastore object
 private func datastore_removeDataFrom(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     let dataStore = lua_tovalue(L, at: 1) as! WKWebsiteDataStore
 
     var theDate: Date
@@ -262,10 +257,9 @@ private func datastore_removeDataFrom(_ L: UnsafeMutablePointer<lua_State>!) -> 
     dataStore.removeData(ofTypes: typeSet, modifiedSince: theDate) {
         DispatchQueue.main.async {
             if fnRef != LUA_NOREF && backgroundCallbacks.contains(NSNumber(value: fnRef)) {
-                let _skin = LuaSkin.skin(with: nil)
                 lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(fnRef))
                 if lua_pcall(L, 0, 0, 0) != LUA_OK { lua_pop(L, 1) }
-                luaL_unref(LuaSkin.skin(with: nil).l!, LUA_REGISTRYINDEX_VALUE, fnRef)
+                luaL_unref(lua_getCurrentState()!, LUA_REGISTRYINDEX_VALUE, fnRef)
                 backgroundCallbacks.remove(NSNumber(value: fnRef))
             }
         }

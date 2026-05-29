@@ -1,6 +1,6 @@
 import Cocoa
-import Carbon
 import LuaSkin
+import Carbon
 import os.log
 
 // MARK: - Constants and Types
@@ -275,7 +275,7 @@ private func hotkey_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 // MARK: - Carbon Event Callback
 
 private func trigger_hotkey_callback(_ eventUID: Int32, eventKind: Int32, isRepeat: Bool) -> OSStatus {
-    let L = LuaSkin.skin(with: nil).l!
+    let L = lua_getCurrentState()!
 
     guard let hkValue = hotkeys?.object(forKey: NSNumber(value: UInt32(eventUID))) as? NSValue else {
         os_log(.info, "hs.hotkey system callback for an eventUID we don't know about: %d", eventUID)

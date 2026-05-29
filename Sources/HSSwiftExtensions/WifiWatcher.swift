@@ -3,9 +3,9 @@
 /// Watch for changes to the associated wifi network
 
 import Foundation
+import LuaSkin
 import Cocoa
 import CoreWLAN
-import LuaSkin
 import os.log
 
 private let USERDATA_TAG = "hs.wifi.watcher"
@@ -76,7 +76,7 @@ private class HSWifiWatcherManager: NSObject {
             guard let watchingFor = aWatcher.watchingFor, watchingFor.contains(message) else { return }
             DispatchQueue.main.async {
                 if aWatcher.callbackRef != LUA_NOREF {
-                    let L = LuaSkin.skin(with: nil).l!
+                    let L = lua_getCurrentState()!
                     lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(aWatcher.callbackRef))
                     pushHSWifiWatcher(L, aWatcher)
                     lua_pushstring(L, message)

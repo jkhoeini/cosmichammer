@@ -41,7 +41,7 @@ private let doReachabilityCallback: SCNetworkReachabilityCallBack = { target, fl
     let theRef = info.assumingMemoryBound(to: ReachabilityData.self)
     DispatchQueue.main.async {
         if theRef.pointee.callbackRef != LUA_NOREF && theRef.pointee.selfRef != LUA_NOREF {
-            let L = LuaSkin.skin(with: nil).l!
+            let L = lua_getCurrentState()!
             guard lua_isStateGenerationValid(theRef.pointee.generation) else { return }
             lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(theRef.pointee.callbackRef))
             lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(theRef.pointee.selfRef))

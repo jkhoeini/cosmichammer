@@ -26,7 +26,7 @@ private class AppWatcher: NSObject {
         guard let app = dict["NSWorkspaceApplicationKey" as NSString] as? NSRunningApplication else { return }
         guard running else { return }
 
-        let L = LuaSkin.skin(with: nil).l!
+        let L = lua_getCurrentState()!
 
         // Depending on the event the name of the NSRunningApplication may not be available anymore.
         // Fallback to the application name provided directly in the notification dict.

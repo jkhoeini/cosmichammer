@@ -676,6 +676,8 @@ func MJLuaInit() {
     let skin = LuaSkin.shared(with: nil) as! LuaSkin
     let L = skin.l!
 
+    lua_setCurrentState(L)
+
     refTable = skin.registerLibrary("core", functions: &corelib, metaFunctions: nil)
     push_hammerAppInfo(L)
     lua_setfield(L, -2, "processInfo")

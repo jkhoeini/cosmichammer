@@ -1,7 +1,7 @@
 import Cocoa
+import LuaSkin
 import Carbon
 import IOKit.graphics
-import LuaSkin
 
 // MARK: - Private framework function lookups via dlsym
 

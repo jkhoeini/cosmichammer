@@ -55,7 +55,7 @@ class HSModuleNotificationManager: NSObject, NSUserNotificationCenterDelegate {
     func userNotificationCenter(_ center: NSUserNotificationCenter, didActivate notification: NSUserNotification) {
         // if it's ours, we've copied the necessary info into the userInfo dictionary...
         guard let gus = notification.userInfo?[KEY_ID] as? String else {
-            LuaSkin.skin(with: nil).logError("\(nt_USERDATA_TAG) passing off to original handler")
+            os_log(.error, "%{public}s","\(nt_USERDATA_TAG) passing off to original handler")
             if let delegate = nt_old_delegate, delegate.responds(to: #selector(NSUserNotificationCenterDelegate.userNotificationCenter(_:didActivate:))) {
                 delegate.userNotificationCenter?(center, didActivate: notification)
             }
@@ -69,8 +69,7 @@ class HSModuleNotificationManager: NSObject, NSUserNotificationCenterDelegate {
         let userInfo = nt_specifics[gus] as! NSMutableDictionary
         userInfo[KEY_DELIVERED] = true // just in case its a holdover from before a reload/relaunch
 
-        let skin = LuaSkin.skin(with: nil)
-        let L = LuaSkin.skin(with: nil).l!
+        let L = lua_getCurrentState()!
         if !(lua_getglobal(L, "require") == LUA_OK && { lua_pushstring(L, nt_USERDATA_TAG); return lua_pcall(L, 1, 1, 0) == LUA_OK }()) {
             os_log(.error, "%{public}s", "\(nt_USERDATA_TAG):_didActivateNotification - unable to load tag handler: \(String(cString: lua_tostring(L, -1)!))")
             lua_pop(L, 1) // remove error message

@@ -55,8 +55,7 @@ func purgeWatchers(element: AXUIElement, notifications: NSMutableArray, observer
 }
 
 func cleanupAXObserver(_ observer: AXObserver, _ details: NSMutableDictionary) {
-    let skin = LuaSkin.skin(with: nil)
-    let L = LuaSkin.skin(with: nil).l!
+    let L = lua_getCurrentState()!
 
     var callbackRef = (details[keyCallbackRef as String] as? NSNumber)?.int32Value ?? LUA_NOREF
     luaL_unref(L, LUA_REGISTRYINDEX_VALUE, callbackRef)
@@ -86,8 +85,7 @@ func cleanupAXObserver(_ observer: AXObserver, _ details: NSMutableDictionary) {
 }
 
 let observerCallbackPtr: AXObserverCallbackWithInfo = { (observer, element, notification, info, refcon) in
-    let skin = LuaSkin.skin(with: nil)
-    let L = LuaSkin.skin(with: nil).l!
+    let L = lua_getCurrentState()!
 
     let observerKey = observer as AnyObject
     guard let details = observerDetails?[observerKey] as? NSMutableDictionary else {

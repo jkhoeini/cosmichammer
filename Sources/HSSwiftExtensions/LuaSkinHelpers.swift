@@ -116,6 +116,114 @@ extension LuaSkin {
     }
 }
 
+// MARK: - Free-standing wrappers (keeps LuaSkin out of extension files)
+
+/// Validate Lua argument types at the top of a module function.
+func lsCheckArgs(_ L: UnsafeMutablePointer<lua_State>!, _ specs: Any...) {
+    let skin = LuaSkin.skin(with: L)
+    // Forward to the variadic-style checkArgs implemented above.
+    // We replicate the logic here because Swift cannot splat an array into
+    // a variadic parameter.
+    let specArray = specs
+    var idx: Int32 = 1
+    var i = 0
+    while i < specArray.count {
+        if let tag = specArray[i] as? String {
+            i += 1
+            continue
+        }
+        guard let spec = specArray[i] as? Int32 else { i += 1; continue }
+        if spec & LS_TBREAK != 0 {
+            if spec & LS_TVARARG == 0 {
+                let numArgs = lua_gettop(L)
+                if numArgs > idx - 1 {
+                    lua_pushstring(L, "ERROR: incorrect number of arguments. Expected \(idx - 1), got \(numArgs)")
+                    lua_error(L)
+                }
+            }
+            break
+        }
+        let luaType = lua_type(L, idx)
+        if spec & LS_TANY != 0 && luaType != LUA_TNONE {
+            idx += 1; i += 1
+            if spec & LS_TUSERDATA != 0, i < specArray.count, specArray[i] is String { i += 1 }
+            continue
+        }
+        var lsType: Int32 = 0
+        switch luaType {
+        case LUA_TNONE:
+            if spec & LS_TOPTIONAL != 0 {
+                idx += 1; i += 1
+                if spec & LS_TUSERDATA != 0, i < specArray.count, specArray[i] is String { i += 1 }
+                continue
+            }
+            lsType = LS_TNIL
+        case LUA_TNIL:          lsType = LS_TNIL
+        case LUA_TBOOLEAN:      lsType = LS_TBOOLEAN
+        case LUA_TNUMBER:       lsType = LS_TNUMBER
+        case LUA_TSTRING:       lsType = LS_TSTRING
+        case LUA_TTABLE:        lsType = LS_TTABLE
+        case LUA_TFUNCTION:     lsType = LS_TFUNCTION
+        case LUA_TUSERDATA:     lsType = LS_TUSERDATA
+        case LUA_TLIGHTUSERDATA: lsType = LS_TUSERDATA
+        default:                lsType = 0
+        }
+        if spec & lsType == 0 && spec & LS_TOPTIONAL == 0 {
+            let typeName = String(cString: lua_typename(L, luaType))
+            lua_pushstring(L, "ERROR: incorrect type '\(typeName)' for argument \(idx)")
+            lua_error(L)
+        }
+        if spec & LS_TUSERDATA != 0, i + 1 < specArray.count, let tag = specArray[i + 1] as? String {
+            if luaType == LUA_TUSERDATA {
+                tag.withCString { cstr in
+                    if luaL_testudata(L, idx, cstr) == nil && spec & LS_TOPTIONAL == 0 {
+                        lua_pushstring(L, "ERROR: incorrect userdata type for argument \(idx)")
+                        lua_error(L)
+                    }
+                }
+            }
+            i += 1
+        }
+        idx += 1; i += 1
+    }
+}
+
+/// Push an NSObject onto the Lua stack via LuaSkin's ObjC bridge.
+func lsPushNSObject(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any?) {
+    LuaSkin.skin(with: L).pushNSObject(obj)
+}
+
+/// Convert a Lua value at the given stack index to an NSObject via LuaSkin.
+func lsToNSObject(_ L: UnsafeMutablePointer<lua_State>!, atIndex idx: Int32) -> Any? {
+    LuaSkin.skin(with: L).toNSObject(atIndex: idx)
+}
+
+/// Convert a Lua value at the given stack index to an NSObject with options.
+func lsToNSObject(_ L: UnsafeMutablePointer<lua_State>!, atIndex idx: Int32, withOptions options: LS_NSConversionOptions) -> Any? {
+    LuaSkin.skin(with: L).toNSObject(atIndex: idx, withOptions: options)
+}
+
+/// Convert a Lua userdata at the given stack index to an NSObject of the given class.
+func lsLuaObjectAtIndex(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32, toClass cls: String) -> Any? {
+    LuaSkin.skin(with: L).luaObject(at: idx, toClass: cls)
+}
+
+/// Push a Lua reference onto the stack.
+func lsPushLuaRef(_ L: UnsafeMutablePointer<lua_State>!, _ refTable: Int32, ref: Int32) {
+    LuaSkin.skin(with: L).pushLuaRef(refTable, ref: ref)
+}
+
+/// Release a Lua reference.  Returns LUA_NOREF.
+@discardableResult
+func lsLuaUnref(_ L: UnsafeMutablePointer<lua_State>!, _ refTable: Int32, ref: Int32) -> Int32 {
+    LuaSkin.skin(with: L).luaUnref(refTable, ref: ref)
+}
+
+/// Log a warning through the LuaSkin logging delegate.
+func lsLogWarn(_ L: UnsafeMutablePointer<lua_State>!, _ message: String) {
+    LuaSkin.skin(with: L).logWarn(message)
+}
+
 // MARK: - Lua C Macros (not importable to Swift)
 
 func lua_tonumber(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> lua_Number {

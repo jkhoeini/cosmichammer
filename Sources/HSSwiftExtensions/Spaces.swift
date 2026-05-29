@@ -1,5 +1,6 @@
 import Cocoa
 import LuaSkin
+import os.log
 
 // MARK: - SkyLight Private Framework Declarations
 
@@ -291,7 +292,7 @@ public func luaopen_hs_libspaces(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
         )
     } catch {
         regEx_UUID = nil
-        LuaSkin.skin(with: nil).logError("\(USERDATA_TAG).luaopen - unable to create UUID regular expression: \(error.localizedDescription)")
+        os_log(.error, "%{public}s","\(USERDATA_TAG).luaopen - unable to create UUID regular expression: \(error.localizedDescription)")
     }
 
     return 1

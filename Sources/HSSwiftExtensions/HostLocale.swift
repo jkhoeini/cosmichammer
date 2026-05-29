@@ -25,7 +25,7 @@ extension NSLocale {
     @objc func localeChanged(_ notification: Notification) {
         DispatchQueue.main.async {
             if callbackRef != LUA_NOREF {
-                let L = LuaSkin.skin(with: nil).l!
+                let L = lua_getCurrentState()!
                 lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(callbackRef))
                 if lua_pcall(L, 0, 0, 0) != LUA_OK {
                     lua_pop(L, 1)

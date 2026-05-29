@@ -131,7 +131,6 @@ private func matrix_rotate(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * the new matrix
 private func matrix_scale(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     var transform = NSAffineTransform()
     var argsAt: Int32 = 2
     if lua_type(L, 1) == LUA_TNUMBER {
@@ -157,7 +156,6 @@ private func matrix_scale(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * the new matrix
 private func matrix_shear(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     var transform = NSAffineTransform()
     var argsAt: Int32 = 2
     if lua_type(L, 1) == LUA_TNUMBER {
@@ -189,7 +187,6 @@ private func matrix_shear(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * the new matrix
 private func matrix_translate(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     var transform = NSAffineTransform()
     var argsAt: Int32 = 2
     if lua_type(L, 1) == LUA_TNUMBER {

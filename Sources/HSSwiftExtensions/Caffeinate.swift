@@ -1,7 +1,7 @@
 import Cocoa
+import LuaSkin
 import Carbon
 import IOKit.pwr_mgt
-import LuaSkin
 import os.log
 
 // MARK: - Apple Private API items

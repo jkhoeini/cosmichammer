@@ -58,11 +58,11 @@ func docSortFunction(_ a: NSString, _ b: NSString, _ context: UnsafeMutableRawPo
                 if aNumericParts.count > bNumericParts.count { return NSInteger(ComparisonResult.orderedDescending.rawValue) }
                 return NSInteger(ComparisonResult.orderedSame.rawValue)
             } else {
-                (LuaSkin.shared() as! LuaSkin).logError("\(USERDATA_TAG).docSortFunction - error initializing 2nd regex: \(error?.localizedDescription ?? "unknown")")
+                os_log(.error, "%{public}s","\(USERDATA_TAG).docSortFunction - error initializing 2nd regex: \(error?.localizedDescription ?? "unknown")")
             }
         }
     } else {
-        (LuaSkin.shared() as! LuaSkin).logError("\(USERDATA_TAG).docSortFunction - error initializing regex: \(error?.localizedDescription ?? "unknown")")
+        os_log(.error, "%{public}s","\(USERDATA_TAG).docSortFunction - error initializing regex: \(error?.localizedDescription ?? "unknown")")
     }
     return NSInteger(a.caseInsensitiveCompare(b as String).rawValue)
 }
@@ -225,7 +225,7 @@ func getPosInTreeFor(_ target: NSString) -> NSMutableDictionary? {
             }
         }
     } else {
-        (LuaSkin.shared() as! LuaSkin).logError("\(USERDATA_TAG).getPosInTreeFor - error initializing regex: \(error?.localizedDescription ?? "unknown")")
+        os_log(.error, "%{public}s","\(USERDATA_TAG).getPosInTreeFor - error initializing regex: \(error?.localizedDescription ?? "unknown")")
     }
 
     return pos

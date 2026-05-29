@@ -1,7 +1,7 @@
 import Foundation
+import LuaSkin
 import Cocoa
 import WebKit
-import LuaSkin
 import os.log
 
 // MARK: - HSWebViewView
@@ -64,7 +64,7 @@ class HSWebViewView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                 if let destinationURL = nsError.userInfo[NSURLErrorFailingURLErrorKey] as? URL {
                     if NSWorkspace.shared.open(destinationURL) { return }
                 } else {
-                    LuaSkin.skin(with: nil).logWarn("\(wv_USERDATA_TAG):didFailProvisionalNavigation missing NSURLErrorFailingURLErrorKey")
+                    os_log(.default, "%{public}s","\(wv_USERDATA_TAG):didFailProvisionalNavigation missing NSURLErrorFailingURLErrorKey")
                 }
             }
             handleNavigationFailure(nsError, forView: webView)
@@ -83,8 +83,7 @@ class HSWebViewView: WKWebView, WKNavigationDelegate, WKUIDelegate {
             let previousCredential = challenge.proposedCredential
 
             if self.policyCallback != LUA_NOREF && challenge.previousFailureCount < 3 {
-                let skin = LuaSkin.skin(with: nil)
-                let L = LuaSkin.skin(with: nil).l!
+                let L = lua_getCurrentState()!
                 lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(self.policyCallback))
                 lua_pushstring(L, "authenticationChallenge")
                 lua_pushany(L, webView.window as? HSWebViewWindow)
@@ -156,7 +155,7 @@ class HSWebViewView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                     }
                 }
             } else {
-                LuaSkin.skin(with: nil).logWarn("\(wv_USERDATA_TAG):didReceiveAuthenticationChallenge no target window")
+                os_log(.default, "%{public}s","\(wv_USERDATA_TAG):didReceiveAuthenticationChallenge no target window")
                 completionHandler(.performDefaultHandling, nil)
             }
 
@@ -166,8 +165,7 @@ class HSWebViewView: WKWebView, WKNavigationDelegate, WKUIDelegate {
             SecTrustEvaluate(serverTrust, &status)
 
             if status == .recoverableTrustFailure && self.sslCallback != LUA_NOREF {
-                let skin = LuaSkin.skin(with: nil)
-                let L = LuaSkin.skin(with: nil).l!
+                let L = lua_getCurrentState()!
                 lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(self.sslCallback))
                 lua_pushany(L, webView.window as? HSWebViewWindow)
                 lua_pushany(L, challenge.protectionSpace)
@@ -190,7 +188,7 @@ class HSWebViewView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                 completionHandler(.performDefaultHandling, nil)
             }
         } else {
-            LuaSkin.skin(with: nil).logWarn("\(wv_USERDATA_TAG):didReceiveAuthenticationChallenge unhandled challenge type:\(challenge.protectionSpace.authenticationMethod)")
+            os_log(.default, "%{public}s","\(wv_USERDATA_TAG):didReceiveAuthenticationChallenge unhandled challenge type:\(challenge.protectionSpace.authenticationMethod)")
             completionHandler(.performDefaultHandling, nil)
         }
     }
@@ -198,8 +196,7 @@ class HSWebViewView: WKWebView, WKNavigationDelegate, WKUIDelegate {
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
                  decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
         if self.policyCallback != LUA_NOREF {
-            let skin = LuaSkin.skin(with: nil)
-            let L = LuaSkin.skin(with: nil).l!
+            let L = lua_getCurrentState()!
             lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(self.policyCallback))
             lua_pushstring(L, "navigationAction")
             lua_pushany(L, webView.window as? HSWebViewWindow)
@@ -221,8 +218,7 @@ class HSWebViewView: WKWebView, WKNavigationDelegate, WKUIDelegate {
     func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse,
                  decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
         if self.policyCallback != LUA_NOREF {
-            let skin = LuaSkin.skin(with: nil)
-            let L = LuaSkin.skin(with: nil).l!
+            let L = lua_getCurrentState()!
             lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(self.policyCallback))
             lua_pushstring(L, "navigationResponse")
             lua_pushany(L, webView.window as? HSWebViewWindow)
@@ -247,8 +243,7 @@ class HSWebViewView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                  for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
         guard (webView as? HSWebViewView)?.allowNewWindows == true else { return nil }
 
-        let skin = LuaSkin.skin(with: nil)
-        let L = LuaSkin.skin(with: nil).l!
+        let L = lua_getCurrentState()!
 
         let parent = webView.window as! HSWebViewWindow
         var theRect = parent.contentRect(forFrameRect: parent.frame)
@@ -330,7 +325,7 @@ class HSWebViewView: WKWebView, WKNavigationDelegate, WKUIDelegate {
         if let targetWindow = webView.window {
             alertPanel.beginSheetModal(for: targetWindow) { _ in completionHandler() }
         } else {
-            LuaSkin.skin(with: nil).logWarn("\(wv_USERDATA_TAG):runJavaScriptAlertPanelWithMessage no target window")
+            os_log(.default, "%{public}s","\(wv_USERDATA_TAG):runJavaScriptAlertPanelWithMessage no target window")
         }
     }
 
@@ -347,7 +342,7 @@ class HSWebViewView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                 completionHandler(returnCode == .alertFirstButtonReturn)
             }
         } else {
-            LuaSkin.skin(with: nil).logWarn("\(wv_USERDATA_TAG):runJavaScriptConfirmPanelWithMessage no target window")
+            os_log(.default, "%{public}s","\(wv_USERDATA_TAG):runJavaScriptConfirmPanelWithMessage no target window")
         }
     }
 
@@ -369,7 +364,7 @@ class HSWebViewView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                 completionHandler(returnCode == .alertFirstButtonReturn ? input.stringValue : nil)
             }
         } else {
-            LuaSkin.skin(with: nil).logWarn("\(wv_USERDATA_TAG):runJavaScriptTextInputPanelWithPrompt no target window")
+            os_log(.default, "%{public}s","\(wv_USERDATA_TAG):runJavaScriptTextInputPanelWithPrompt no target window")
         }
     }
 
@@ -393,8 +388,7 @@ class HSWebViewView: WKWebView, WKNavigationDelegate, WKUIDelegate {
         var actionRequiredAfterReturn = true
 
         if self.navigationCallback != LUA_NOREF {
-            let skin = LuaSkin.skin(with: nil)
-            let L = LuaSkin.skin(with: nil).l!
+            let L = lua_getCurrentState()!
             var numberOfArguments: Int32 = 3
             lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(self.navigationCallback))
             lua_pushstring(L, action)

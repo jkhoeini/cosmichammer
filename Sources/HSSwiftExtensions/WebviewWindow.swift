@@ -1,7 +1,7 @@
 import Foundation
+import LuaSkin
 import Cocoa
 import WebKit
-import LuaSkin
 import os.log
 
 // MARK: - HSWebViewWindow
@@ -57,7 +57,7 @@ class HSWebViewWindow: NSPanel, NSWindowDelegate {
     }
 
     func windowWillClose(_ notification: Notification) {
-        let L = LuaSkin.skin(with: nil).l!
+        let L = lua_getCurrentState()!
 
         if !lua_isStateGenerationValid(lsCanary) { return }
 
@@ -81,8 +81,7 @@ class HSWebViewWindow: NSPanel, NSWindowDelegate {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
             if self.windowCallback != LUA_NOREF {
-                let skin = LuaSkin.skin(with: nil)
-                let L = LuaSkin.skin(with: nil).l!
+                let L = lua_getCurrentState()!
                 lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(self.windowCallback))
                 lua_pushany(L, "focusChange" as NSString)
                 lua_pushany(L, self)
@@ -96,8 +95,7 @@ class HSWebViewWindow: NSPanel, NSWindowDelegate {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
             if self.windowCallback != LUA_NOREF {
-                let skin = LuaSkin.skin(with: nil)
-                let L = LuaSkin.skin(with: nil).l!
+                let L = lua_getCurrentState()!
                 lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(self.windowCallback))
                 lua_pushany(L, "focusChange" as NSString)
                 lua_pushany(L, self)
@@ -111,8 +109,7 @@ class HSWebViewWindow: NSPanel, NSWindowDelegate {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
             if self.windowCallback != LUA_NOREF {
-                let skin = LuaSkin.skin(with: nil)
-                let L = LuaSkin.skin(with: nil).l!
+                let L = lua_getCurrentState()!
                 lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(self.windowCallback))
                 lua_pushany(L, "frameChange" as NSString)
                 lua_pushany(L, self)
@@ -126,8 +123,7 @@ class HSWebViewWindow: NSPanel, NSWindowDelegate {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
             if self.windowCallback != LUA_NOREF {
-                let skin = LuaSkin.skin(with: nil)
-                let L = LuaSkin.skin(with: nil).l!
+                let L = lua_getCurrentState()!
                 lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(self.windowCallback))
                 lua_pushany(L, "frameChange" as NSString)
                 lua_pushany(L, self)
@@ -157,8 +153,7 @@ class HSWebViewWindow: NSPanel, NSWindowDelegate {
         let lsCanary = lua_currentStateGeneration()
         NSAnimationContext.current.duration = fadeTime
         NSAnimationContext.current.completionHandler = {
-            let skin = LuaSkin.skin(with: nil)
-            let L = LuaSkin.skin(with: nil).l!
+            let L = lua_getCurrentState()!
             if !lua_isStateGenerationValid(lsCanary) { return }
             if let mySelf = bself {
                 if deleteWindow {

@@ -1,6 +1,6 @@
 import Cocoa
-import Carbon
 import LuaSkin
+import Carbon
 import os.log
 
 private let USERDATA_TAG = "hs.window"
@@ -32,7 +32,6 @@ private let kCGSDebugOptionNormal: Int32 = 0
 private let kCGSDebugOptionNoShadows: Int32 = 16384
 
 private func getWindow(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> HSwindowProtocol? {
-    let skin = LuaSkin.skin(with: L)
     return lua_tovalue(L, at: idx) as? HSwindowProtocol
 }
 
@@ -81,12 +80,12 @@ private func window_timeout(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let value = Float(lua_tonumber(L, 1))
     let result = AXUIElementSetMessagingTimeout(systemWideElement, value)
     if result == .illegalArgument {
-        LuaSkin.skin(with: nil).logError("hs.window.timeout() - One or more of the arguments is an illegal value (timeout values must be positive).")
+        os_log(.error, "%{public}s","hs.window.timeout() - One or more of the arguments is an illegal value (timeout values must be positive).")
         lua_pushboolean(L, 0)
         return 1
     }
     if result == .invalidUIElement {
-        LuaSkin.skin(with: nil).logError("hs.window.timeout() - The AXUIElementRef is invalid.")
+        os_log(.error, "%{public}s","hs.window.timeout() - The AXUIElementRef is invalid.")
         lua_pushboolean(L, 0)
         return 1
     }
@@ -508,7 +507,6 @@ private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 private func userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     var isEqual = false
     if luaL_testudata(L, 1, USERDATA_TAG) != nil && luaL_testudata(L, 2, USERDATA_TAG) != nil {
-        let skin = LuaSkin.skin(with: L)
         if let w1 = lua_tovalue(L, at: 1) as? HSwindowProtocol,
            let w2 = lua_tovalue(L, at: 2) as? HSwindowProtocol {
             isEqual = CFEqual(w1.elementRef, w2.elementRef)

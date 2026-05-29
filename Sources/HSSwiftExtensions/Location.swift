@@ -46,8 +46,7 @@ private class HSLocation: NSObject, CLLocationManagerDelegate {
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         DispatchQueue.main.async {
             if callbackRef != LUA_NOREF {
-                let skin = LuaSkin.skin(with: nil)
-                let L = LuaSkin.skin(with: nil).l!
+                let L = lua_getCurrentState()!
                 lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(callbackRef))
                 lua_pushany(L, "didUpdateLocations" as NSString)
                 lua_pushany(L, locations as NSArray)
@@ -59,8 +58,7 @@ private class HSLocation: NSObject, CLLocationManagerDelegate {
     func locationManager(_ manager: CLLocationManager, didEnterRegion region: CLRegion) {
         DispatchQueue.main.async {
             if callbackRef != LUA_NOREF {
-                let skin = LuaSkin.skin(with: nil)
-                let L = LuaSkin.skin(with: nil).l!
+                let L = lua_getCurrentState()!
                 lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(callbackRef))
                 lua_pushany(L, "didEnterRegion" as NSString)
                 lua_pushany(L, region)
@@ -72,8 +70,7 @@ private class HSLocation: NSObject, CLLocationManagerDelegate {
     func locationManager(_ manager: CLLocationManager, didExitRegion region: CLRegion) {
         DispatchQueue.main.async {
             if callbackRef != LUA_NOREF {
-                let skin = LuaSkin.skin(with: nil)
-                let L = LuaSkin.skin(with: nil).l!
+                let L = lua_getCurrentState()!
                 lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(callbackRef))
                 lua_pushany(L, "didExitRegion" as NSString)
                 lua_pushany(L, region)
@@ -85,8 +82,7 @@ private class HSLocation: NSObject, CLLocationManagerDelegate {
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
         DispatchQueue.main.async {
             if callbackRef != LUA_NOREF {
-                let skin = LuaSkin.skin(with: nil)
-                let L = LuaSkin.skin(with: nil).l!
+                let L = lua_getCurrentState()!
                 lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(callbackRef))
                 lua_pushany(L, "didFailWithError" as NSString)
                 lua_pushany(L, error.localizedDescription as NSString)
@@ -99,8 +95,7 @@ private class HSLocation: NSObject, CLLocationManagerDelegate {
                          withError error: Error) {
         DispatchQueue.main.async {
             if callbackRef != LUA_NOREF {
-                let skin = LuaSkin.skin(with: nil)
-                let L = LuaSkin.skin(with: nil).l!
+                let L = lua_getCurrentState()!
                 lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(callbackRef))
                 lua_pushany(L, "monitoringDidFailForRegion" as NSString)
                 lua_pushany(L, region)
@@ -113,8 +108,7 @@ private class HSLocation: NSObject, CLLocationManagerDelegate {
     func locationManager(_ manager: CLLocationManager, didChangeAuthorization status: CLAuthorizationStatus) {
         DispatchQueue.main.async {
             if callbackRef != LUA_NOREF {
-                let skin = LuaSkin.skin(with: nil)
-                let L = LuaSkin.skin(with: nil).l!
+                let L = lua_getCurrentState()!
                 lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(callbackRef))
                 lua_pushany(L, "didChangeAuthorizationStatus" as NSString)
 
@@ -136,8 +130,7 @@ private class HSLocation: NSObject, CLLocationManagerDelegate {
     func locationManager(_ manager: CLLocationManager, didStartMonitoringFor region: CLRegion) {
         DispatchQueue.main.async {
             if callbackRef != LUA_NOREF {
-                let skin = LuaSkin.skin(with: nil)
-                let L = LuaSkin.skin(with: nil).l!
+                let L = lua_getCurrentState()!
                 lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(callbackRef))
                 lua_pushany(L, "didStartMonitoringForRegion" as NSString)
                 lua_pushany(L, region)
@@ -179,7 +172,7 @@ private func location_registerCallback(_ L: UnsafeMutablePointer<lua_State>!) ->
 /// Returns:
 ///  * True if Location Services are enabled, otherwise false
 private func location_locationServicesEnabled(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    LuaSkin.skin(with: L).checkArgs(LS_TBREAK)
+    lsCheckArgs(L,LS_TBREAK)
     lua_pushboolean(L, CLLocationManager.locationServicesEnabled() ? 1 : 0)
     return 1
 }
@@ -238,7 +231,7 @@ private func location_distanceBetween(_ L: UnsafeMutablePointer<lua_State>!) -> 
 
 // internally used function
 private func location_startWatching(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    LuaSkin.skin(with: L).checkArgs(LS_TBREAK)
+    lsCheckArgs(L,LS_TBREAK)
     lua_pushboolean(L, checkLocationManager() ? 1 : 0)
     if lua_toboolean(L, -1) != 0 { location?.manager.startUpdatingLocation() }
     return 1
@@ -246,7 +239,7 @@ private func location_startWatching(_ L: UnsafeMutablePointer<lua_State>!) -> In
 
 // internally used function
 private func location_stopWatching(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    LuaSkin.skin(with: L).checkArgs(LS_TBREAK)
+    lsCheckArgs(L,LS_TBREAK)
     location?.manager.stopUpdatingLocation()
     return 0
 }
@@ -325,7 +318,6 @@ private func location_addMonitoredRegion(_ L: UnsafeMutablePointer<lua_State>!) 
 
 // internally used function
 private func location_removeMonitoredRegion(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     luaL_checktype(L, 1, LUA_TSTRING)
     let identifier = lua_tovalue(L, at: 1) as! String
 
@@ -351,7 +343,6 @@ private func location_removeMonitoredRegion(_ L: UnsafeMutablePointer<lua_State>
 
 // internally used function, may document for testing purposes
 private func location_fakeLocationChange(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     let message = lua_tovalue(L, at: 1) as! String
 
     guard let loc = location else {
@@ -411,7 +402,6 @@ private func location_fakeLocationChange(_ L: UnsafeMutablePointer<lua_State>!) 
 // MARK: - Sunrise/Sunset Functions
 
 private func sunturns(_ L: UnsafeMutablePointer<lua_State>!) -> EDSunriseSet {
-    let skin = LuaSkin.skin(with: L)
 
     var date: Date
     var tz: TimeZone
@@ -519,7 +509,6 @@ private func location_sunset(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * This constructor requires internet access and the callback will be invoked with an error message if the internet is not currently accessible.
 ///  * This constructor does not require Location Services to be enabled for Cosmic Hammer.
 private func clgeocoder_lookupLocation(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     let theLocation = lua_tovalue(L, at: 1) as! CLLocation
     lua_pushvalue(L, 2)
     let fnRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
@@ -528,8 +517,7 @@ private func clgeocoder_lookupLocation(_ L: UnsafeMutablePointer<lua_State>!) ->
     let geoItem = CLGeocoder()
     geoItem.reverseGeocodeLocation(theLocation) { placemark, error in
         if backgroundCallbacks.contains(NSNumber(value: fnRef)) {
-            let _skin = LuaSkin.skin(with: nil)
-            let _L = LuaSkin.skin(with: nil).l!
+            let _L = lua_getCurrentState()!
             lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(fnRef))
             lua_pushboolean(_L, error == nil ? 1 : 0)
             if let error = error {
@@ -538,7 +526,7 @@ private func clgeocoder_lookupLocation(_ L: UnsafeMutablePointer<lua_State>!) ->
                 lua_pushany(L, placemark as NSArray?)
             }
             if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
-            luaL_unref(LuaSkin.skin(with: nil).l!, LUA_REGISTRYINDEX_VALUE, fnRef)
+            luaL_unref(lua_getCurrentState()!, LUA_REGISTRYINDEX_VALUE, fnRef)
             backgroundCallbacks.remove(NSNumber(value: fnRef))
         }
     }
@@ -563,7 +551,6 @@ private func clgeocoder_lookupLocation(_ L: UnsafeMutablePointer<lua_State>!) ->
 ///  * This constructor requires internet access and the callback will be invoked with an error message if the internet is not currently accessible.
 ///  * This constructor does not require Location Services to be enabled for Cosmic Hammer.
 private func clgeocoder_lookupAddress(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     let searchString = lua_tovalue(L, at: 1) as! String
     lua_pushvalue(L, 2)
     let fnRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
@@ -572,8 +559,7 @@ private func clgeocoder_lookupAddress(_ L: UnsafeMutablePointer<lua_State>!) -> 
     let geoItem = CLGeocoder()
     geoItem.geocodeAddressString(searchString) { placemark, error in
         if backgroundCallbacks.contains(NSNumber(value: fnRef)) {
-            let _skin = LuaSkin.skin(with: nil)
-            let _L = LuaSkin.skin(with: nil).l!
+            let _L = lua_getCurrentState()!
             lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(fnRef))
             lua_pushboolean(_L, error == nil ? 1 : 0)
             if let error = error {
@@ -582,7 +568,7 @@ private func clgeocoder_lookupAddress(_ L: UnsafeMutablePointer<lua_State>!) -> 
                 lua_pushany(L, placemark as NSArray?)
             }
             if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
-            luaL_unref(LuaSkin.skin(with: nil).l!, LUA_REGISTRYINDEX_VALUE, fnRef)
+            luaL_unref(lua_getCurrentState()!, LUA_REGISTRYINDEX_VALUE, fnRef)
             backgroundCallbacks.remove(NSNumber(value: fnRef))
         }
     }
@@ -609,7 +595,6 @@ private func clgeocoder_lookupAddress(_ L: UnsafeMutablePointer<lua_State>!) -> 
 ///  * This constructor does not require Location Services to be enabled for Cosmic Hammer.
 ///  * While a partial address can be given, the more information you provide, the more likely the results will be useful.  The `regionTable` only determines sort order if multiple entries are returned, it does not constrain the search.
 private func clgeocoder_lookupAddressNear(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     let searchString = lua_tovalue(L, at: 1) as! String
     var theRegion: CLCircularRegion? = nil
 
@@ -625,8 +610,7 @@ private func clgeocoder_lookupAddressNear(_ L: UnsafeMutablePointer<lua_State>!)
     let geoItem = CLGeocoder()
     geoItem.geocodeAddressString(searchString, in: theRegion) { placemark, error in
         if backgroundCallbacks.contains(NSNumber(value: fnRef)) {
-            let _skin = LuaSkin.skin(with: nil)
-            let _L = LuaSkin.skin(with: nil).l!
+            let _L = lua_getCurrentState()!
             lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(fnRef))
             lua_pushboolean(_L, error == nil ? 1 : 0)
             if let error = error {
@@ -635,7 +619,7 @@ private func clgeocoder_lookupAddressNear(_ L: UnsafeMutablePointer<lua_State>!)
                 lua_pushany(L, placemark as NSArray?)
             }
             if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
-            luaL_unref(LuaSkin.skin(with: nil).l!, LUA_REGISTRYINDEX_VALUE, fnRef)
+            luaL_unref(lua_getCurrentState()!, LUA_REGISTRYINDEX_VALUE, fnRef)
             backgroundCallbacks.remove(NSNumber(value: fnRef))
         }
     }
@@ -655,7 +639,6 @@ private func clgeocoder_lookupAddressNear(_ L: UnsafeMutablePointer<lua_State>!)
 /// Returns:
 ///  * a boolean indicating if the geocoding process is still active.  If false, then the callback function either has already been called or will be as soon as the main thread of Cosmic Hammer becomes idle again.
 private func clgeocoder_isGeocoding(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     luaL_checkudata(L, 1, GEOCODE_UD_TAG)
     let geoItem: CLGeocoder = lua_tovalue(L, at: 1) as! CLGeocoder
     lua_pushboolean(L, geoItem.isGeocoding ? 1 : 0)
@@ -675,7 +658,6 @@ private func clgeocoder_isGeocoding(_ L: UnsafeMutablePointer<lua_State>!) -> In
 /// Notes:
 ///  * This method has no effect if the geocoding process has already completed.
 private func clgeocoder_cancelGeocoding(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     luaL_checkudata(L, 1, GEOCODE_UD_TAG)
     let geoItem: CLGeocoder = lua_tovalue(L, at: 1) as! CLGeocoder
     geoItem.cancelGeocode()
@@ -768,7 +750,6 @@ private func CLLocationFromLua(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int
 }
 
 private func CLCircularRegionFromLua(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> Any! {
-    let skin = LuaSkin.skin(with: L)
 
     guard lua_type(L, idx) == LUA_TTABLE else {
         os_log(.error, "%{public}s", "\(USERDATA_TAG):CLCircularRegionFromLua expected table, found \(String(cString: lua_typename(L, lua_type(L, idx))))")

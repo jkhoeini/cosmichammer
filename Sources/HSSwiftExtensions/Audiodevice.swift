@@ -1,10 +1,10 @@
 import Cocoa
+import LuaSkin
 import Carbon
 import CoreAudio
 import AudioToolbox
 import Foundation
 import os.log
-import LuaSkin
 
 // MARK: - Library defines
 
@@ -85,8 +85,7 @@ private func audiodevice_callback(
     DispatchQueue.main.async {
         guard let clientData = clientData else { return }
         let userData = clientData.assumingMemoryBound(to: AudioDeviceUserData.self)
-        let skin = LuaSkin.skin(with: nil)
-        let L = LuaSkin.skin(with: nil).l!
+        let L = lua_getCurrentState()!
         if !lua_isStateGenerationValid(userData.pointee.lsCanary) {
             return
         }
@@ -1639,7 +1638,6 @@ private func audiodevice_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 }
 
 private func audiodevice_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let skin = LuaSkin.skin(with: L)
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let audioDevice = userdataToAudioDevice(L, 1)

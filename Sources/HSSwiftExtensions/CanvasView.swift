@@ -190,8 +190,7 @@ import os.log
 
     func doMouseCallback(_ message: String, for elementIdentifier: Any, at location: NSPoint) {
         guard mouseCallbackRef != LUA_NOREF else { return }
-        let skin = LuaSkin.skin(with: nil)
-        let L = LuaSkin.skin(with: nil).l!
+        let L = lua_getCurrentState()!
         lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(mouseCallbackRef))
         lua_pushany(L, self)
         lua_pushany(L, message as NSString)
@@ -203,8 +202,7 @@ import os.log
 
     func subviewCallback(_ sender: Any) {
         guard mouseCallbackRef != LUA_NOREF else { return }
-        let skin = LuaSkin.skin(with: nil)
-        let L = LuaSkin.skin(with: nil).l!
+        let L = lua_getCurrentState()!
         lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(mouseCallbackRef))
         lua_pushany(L, self)
         lua_pushany(L, "_subview_" as NSString)
@@ -302,7 +300,7 @@ import os.log
             }
         }
         if !viewFound {
-            LuaSkin.skin(with: nil).logError("view removed from canvas superview does not belong to any known canvas element")
+            os_log(.error, "%{public}s","view removed from canvas superview does not belong to any known canvas element")
         }
     }
 
@@ -436,7 +434,6 @@ import os.log
     // MARK: - massageKeyValue / getDefaultValue / setDefault / getElementValue / setElementValue
 
     @objc func massageKeyValue(_ oldValue: Any!, forKey keyName: String, withState L: UnsafeMutablePointer<lua_State>!) -> Any! {
-        let skin = LuaSkin.skin(with: L)
         var newValue: Any! = oldValue
 
         // fix "...Color" tables
@@ -469,13 +466,13 @@ import os.log
                     if let color = item as? NSColor, color.usingColorSpace(.genericRGB) != nil {
                         result.add(color)
                     } else {
-                        LuaSkin.skin(with: nil).logWarn("\(canvas_USERDATA_TAG):not a proper color at index \(idx + 1) of fillGradientColor; using Black")
+                        os_log(.default, "%{public}s","\(canvas_USERDATA_TAG):not a proper color at index \(idx + 1) of fillGradientColor; using Black")
                         result.add(NSColor.black)
                     }
                 }
             }
             if result.count < 2 {
-                LuaSkin.skin(with: nil).logWarn("\(canvas_USERDATA_TAG):fillGradientColor requires at least 2 colors; using default")
+                os_log(.default, "%{public}s","\(canvas_USERDATA_TAG):fillGradientColor requires at least 2 colors; using default")
                 newValue = getDefaultValue(for: keyName, onlyIfSet: false)
             } else {
                 newValue = result
@@ -665,14 +662,14 @@ import os.log
             // Percentage string validation for radius/center/frame/coordinates
             if keyName == "radius", let strVal = massaged as? String {
                 if canvas_convertPercentageStringToNumber(strVal) == nil {
-                    LuaSkin.skin(with: nil).logError("\(canvas_USERDATA_TAG):invalid percentage string specified for \(keyName) for element \(index + 1)")
+                    os_log(.error, "%{public}s","\(canvas_USERDATA_TAG):invalid percentage string specified for \(keyName) for element \(index + 1)")
                     validityStatus = .invalid
                     break
                 }
             } else if keyName == "center", let dict = massaged as? NSDictionary {
                 for field in ["x", "y"] {
                     if let str = dict[field] as? String, canvas_convertPercentageStringToNumber(str) == nil {
-                        LuaSkin.skin(with: nil).logError("\(canvas_USERDATA_TAG):invalid percentage string specified for field \(field) of \(keyName) for element \(index + 1)")
+                        os_log(.error, "%{public}s","\(canvas_USERDATA_TAG):invalid percentage string specified for field \(field) of \(keyName) for element \(index + 1)")
                         validityStatus = .invalid
                         break
                     }
@@ -681,7 +678,7 @@ import os.log
             } else if keyName == "frame", let dict = massaged as? NSDictionary {
                 for field in ["x", "y", "w", "h"] {
                     if let str = dict[field] as? String, canvas_convertPercentageStringToNumber(str) == nil {
-                        LuaSkin.skin(with: nil).logError("\(canvas_USERDATA_TAG):invalid percentage string specified for field \(field) of \(keyName) for element \(index + 1)")
+                        os_log(.error, "%{public}s","\(canvas_USERDATA_TAG):invalid percentage string specified for field \(field) of \(keyName) for element \(index + 1)")
                         validityStatus = .invalid
                         break
                     }
@@ -696,7 +693,7 @@ import os.log
                             if subDict[field] != nil {
                                 seenFields.insert(field)
                                 if let str = subDict[field] as? String, canvas_convertPercentageStringToNumber(str) == nil {
-                                    LuaSkin.skin(with: nil).logError("\(canvas_USERDATA_TAG):invalid percentage string specified for field \(field) at index \(idx + 1) of \(keyName) for element \(index + 1)")
+                                    os_log(.error, "%{public}s","\(canvas_USERDATA_TAG):invalid percentage string specified for field \(field) at index \(idx + 1) of \(keyName) for element \(index + 1)")
                                     validityStatus = .invalid
                                     stop.pointee = true
                                     earlyBreak = true
@@ -708,10 +705,10 @@ import os.log
                         let goodForCurve = goodForPoint && seenFields.contains("c1x") && seenFields.contains("c1y") && seenFields.contains("c2x") && seenFields.contains("c2y")
                         let partialCurve = (seenFields.contains("c1x") || seenFields.contains("c1y") || seenFields.contains("c2x") || seenFields.contains("c2y")) && !goodForCurve
                         if !goodForPoint {
-                            LuaSkin.skin(with: nil).logError("\(canvas_USERDATA_TAG):index \(idx + 1) of \(keyName) for element \(index + 1) does not specify a valid point or curve with control points")
+                            os_log(.error, "%{public}s","\(canvas_USERDATA_TAG):index \(idx + 1) of \(keyName) for element \(index + 1) does not specify a valid point or curve with control points")
                             validityStatus = .invalid
                         } else if goodForPoint && partialCurve {
-                            LuaSkin.skin(with: nil).logWarn("\(canvas_USERDATA_TAG):index \(idx + 1) of \(keyName) for element \(index + 1) does not contain complete curve control points; treating as a singular point")
+                            os_log(.default, "%{public}s","\(canvas_USERDATA_TAG):index \(idx + 1) of \(keyName) for element \(index + 1) does not contain complete curve control points; treating as a singular point")
                         }
                     }
                 }
@@ -724,7 +721,7 @@ import os.log
                             oldView?.removeFromSuperview()
                             self.addSubview(newView)
                         } else {
-                            LuaSkin.skin(with: nil).logWarn("\(canvas_USERDATA_TAG):view for element \(index + 1) is already in use")
+                            os_log(.default, "%{public}s","\(canvas_USERDATA_TAG):view for element \(index + 1) is already in use")
                             validityStatus = .invalid
                             break
                         }
@@ -732,7 +729,7 @@ import os.log
                 }
             } else if keyName == "imageAnimationFrame" {
                 if (getElementValue(for: "imageAnimates", atIndex: index) as? NSNumber)?.boolValue == true {
-                    LuaSkin.skin(with: nil).logWarn("\(canvas_USERDATA_TAG):\(keyName) cannot be changed when element \(index + 1) is animating")
+                    os_log(.default, "%{public}s","\(canvas_USERDATA_TAG):\(keyName) cannot be changed when element \(index + 1) is animating")
                     validityStatus = .invalid
                     break
                 } else {
@@ -803,7 +800,7 @@ import os.log
                 }
             } else if keyName == "imageAnimationFrame" {
                 if (getElementValue(for: "imageAnimates", atIndex: index) as? NSNumber)?.boolValue == true {
-                    LuaSkin.skin(with: nil).logWarn("\(canvas_USERDATA_TAG):\(keyName) cannot be changed when element \(index + 1) is animating")
+                    os_log(.default, "%{public}s","\(canvas_USERDATA_TAG):\(keyName) cannot be changed when element \(index + 1) is animating")
                     validityStatus = .invalid
                     break
                 } else {
@@ -1001,10 +998,10 @@ import os.log
                             gc.restoreGraphicsState()
                             clippingModified = false
                         } else {
-                            LuaSkin.skin(with: nil).logWarn("\(canvas_USERDATA_TAG):drawRect - un-nested resetClip at index \(idx + 1)")
+                            os_log(.default, "%{public}s","\(canvas_USERDATA_TAG):drawRect - un-nested resetClip at index \(idx + 1)")
                         }
                     } else {
-                        LuaSkin.skin(with: nil).logWarn("\(canvas_USERDATA_TAG):drawRect - unrecognized type \(elementType) at index \(idx + 1)")
+                        os_log(.default, "%{public}s","\(canvas_USERDATA_TAG):drawRect - unrecognized type \(elementType) at index \(idx + 1)")
                     }
                 }
 
@@ -1107,7 +1104,7 @@ import os.log
                         renderPath = nil
 
                     } else if action != "build" {
-                        LuaSkin.skin(with: nil).logWarn("\(canvas_USERDATA_TAG):drawRect - unrecognized action \(action) at index \(idx + 1)")
+                        os_log(.default, "%{public}s","\(canvas_USERDATA_TAG):drawRect - unrecognized action \(action) at index \(idx + 1)")
                     }
                 }
 
@@ -1155,7 +1152,7 @@ import os.log
         NSAnimationContext.current.duration = fadeTime
         NSAnimationContext.current.completionHandler = {
             guard let mySelf = bself else { return }
-            let bL = LuaSkin.skin(with: nil).l!
+            let bL = lua_getCurrentState()!
             luaL_unref(bL, LUA_REGISTRYINDEX_VALUE, mySelf.selfRef)
             mySelf.selfRef = LUA_NOREF
 
@@ -1176,8 +1173,7 @@ import os.log
         var isAllGood = false
         guard draggingCallbackRef != LUA_NOREF else { return isAllGood }
 
-        let skin = LuaSkin.skin(with: nil)
-        let L = LuaSkin.skin(with: nil).l!
+        let L = lua_getCurrentState()!
         var argCount: Int32 = 2
         lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(draggingCallbackRef))
         lua_pushany(L, self)

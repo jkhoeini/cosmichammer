@@ -54,8 +54,7 @@ private func netServiceErrorToString(_ error: [String: Any]) -> String {
 
     func performCallback(with argument: Any?) {
         if callbackRef != Int32(LUA_NOREF) {
-            let skin = LuaSkin.skin(with: nil)
-            let L = LuaSkin.skin(with: nil).l!
+            let L = lua_getCurrentState()!
             var argCount: Int32 = 1
             lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(callbackRef))
             lua_pushany(L, self)

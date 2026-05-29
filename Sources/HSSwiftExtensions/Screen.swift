@@ -1,7 +1,7 @@
 import Cocoa
+import LuaSkin
 import Carbon
 import IOKit.graphics
-import LuaSkin
 import os.log
 
 private let USERDATA_TAG = "hs.screen"
@@ -431,7 +431,7 @@ func storeInitialScreenGamma(_ display: CGDirectDisplayID) {
         let gammas: NSDictionary = ["red": red, "green": green, "blue": blue]
         originalGammas[NSNumber(value: display)] = gammas
     } else {
-        LuaSkin.skin(with: nil).logBreadcrumb("storeInitialScreenGamma: ERROR \(result.rawValue) on display \(display)")
+        os_log(.default, "%{public}s","storeInitialScreenGamma: ERROR \(result.rawValue) on display \(display)")
     }
 }
 
@@ -474,7 +474,7 @@ func screen_gammaReapply(_ display: CGDirectDisplayID) {
 
     let result = CGSetDisplayTransferByTable(display, UInt32(count), redTable, greenTable, blueTable)
     if result != .success {
-        LuaSkin.skin(with: nil).logBreadcrumb("screen_gammaReapply: ERROR: \(result.rawValue) on display: \(display)")
+        os_log(.default, "%{public}s","screen_gammaReapply: ERROR: \(result.rawValue) on display: \(display)")
     }
 }
 

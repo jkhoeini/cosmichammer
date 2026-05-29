@@ -58,7 +58,7 @@ class HSPasteboardTimer: NSObject {
         changeCount = currentChangeCount
 
         // Trigger Lua Callback Function:
-        let L = LuaSkin.skin(with: nil).l!
+        let L = lua_getCurrentState()!
 
         lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(fnRef))
 

@@ -130,7 +130,7 @@ private let handleCallback: CFHostClientCallBack = { theHost, typeInfo, error, i
     }
 
     DispatchQueue.main.async {
-        let L = LuaSkin.skin(with: nil).l!
+        let L = lua_getCurrentState()!
         if theRef.pointee.callbackRef != LUA_NOREF {
             guard lua_isStateGenerationValid(theRef.pointee.generation) else { return }
             var argCount: Int32

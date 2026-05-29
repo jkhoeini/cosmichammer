@@ -1,6 +1,6 @@
 import Cocoa
-import Carbon
 import LuaSkin
+import Carbon
 
 private let USERDATA_TAG = "hs.keycodes.callback"
 private var refTable: Int32 = LUA_NOREF
@@ -209,8 +209,7 @@ class MJKeycodesObserver: NSObject {
     @objc func inputSourceChanged(_ note: Notification) {
         DispatchQueue.main.async { [weak self] in
             guard let self = self, self.ref != LUA_NOREF else { return }
-            let skin = LuaSkin.skin(with: nil)
-            let L = LuaSkin.skin(with: nil).l!
+            let L = lua_getCurrentState()!
             guard lua_isStateGenerationValid(self.lsCanary) else { return }
             lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(self.ref))
             if lua_pcall(L, 0, 0, 0) != LUA_OK { lua_pop(L, 1) }

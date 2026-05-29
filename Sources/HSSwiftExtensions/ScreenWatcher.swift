@@ -1,6 +1,6 @@
 import Foundation
-import Cocoa
 import LuaSkin
+import Cocoa
 
 /// === hs.screen.watcher ===
 ///
@@ -26,7 +26,7 @@ private class MJScreenWatcher: NSObject {
     @objc func screensChanged(_ note: Notification) {
         guard fn != LUA_NOREF else { return }
 
-        let L = LuaSkin.skin(with: nil).l!
+        let L = lua_getCurrentState()!
 
         let argCount: Int32 = includeActive ? 1 : 0
 
