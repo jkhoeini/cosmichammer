@@ -185,7 +185,9 @@ private func sound_soundUnfilteredTypes(_ L: UnsafeMutablePointer<lua_State>!) -
 ///  * This function is unlikely to be tremendously useful, as filename extensions are essentially meaningless. The data returned by `hs.sound.soundTypes()` is far more valuable
 private func sound_soundUnfilteredFileTypes(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     if NSSound.responds(to: Selector(("soundUnfilteredFileTypes"))) {
-        if let types = NSSound.perform(Selector(("soundUnfilteredFileTypes")))?.takeUnretainedValue() as? NSArray {
+        if let types = catchingObjCException({
+            NSSound.perform(Selector(("soundUnfilteredFileTypes")))?.takeUnretainedValue() as? NSArray
+        }) {
             lua_pushany(L, types)
         } else {
             lua_pushstring(L, "Deprecated selector soundUnfilteredFileTypes not supported in this OS X version.  Please use `hs.sound.soundTypes` instead.")

@@ -88,7 +88,9 @@ private class HSmouse {
     }
 
     private func getIOHIDParameters(from service: io_service_t) -> NSDictionary? {
-        return IORegistryEntryCreateCFProperty(service, kIOHIDParametersKey as CFString, kCFAllocatorDefault, 0)?.takeRetainedValue() as? NSDictionary
+        return catchingObjCException {
+            IORegistryEntryCreateCFProperty(service, kIOHIDParametersKey as CFString, kCFAllocatorDefault, 0)?.takeRetainedValue() as? NSDictionary
+        }
     }
 
     private func getIOHIDParameters() -> NSDictionary? {

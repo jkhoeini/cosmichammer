@@ -37,7 +37,9 @@ private func getWindowControllerFromUserdata(_ L: UnsafeMutablePointer<lua_State
 
 private func consoleWindow() -> NSWindow? {
     guard let cls = NSClassFromString("MJConsoleWindowController") as? NSObject.Type else { return nil }
-    let singleton = (cls as AnyObject).perform(Selector(("singleton")))?.takeUnretainedValue() as? NSWindowController
+    let singleton = catchingObjCException {
+        (cls as AnyObject).perform(Selector(("singleton")))?.takeUnretainedValue() as? NSWindowController
+    }
     return singleton?.window
 }
 

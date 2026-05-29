@@ -49,7 +49,7 @@ public func pushAXObserver(_ L: UnsafeMutablePointer<lua_State>!, _ observer: AX
 func purgeWatchers(element: AXUIElement, notifications: NSMutableArray, observer: AXObserver) {
     for notification in notifications {
         guard let what = notification as? String else { continue }
-        AXObserverRemoveNotification(observer, element, what as CFString)
+        _ = catchingObjCException { AXObserverRemoveNotification(observer, element, what as CFString) }
     }
     notifications.removeAllObjects()
 }
@@ -217,7 +217,12 @@ private func axobserver_addWatchedElement(_ L: UnsafeMutablePointer<lua_State>!)
         watching[elementKey] = notifications
     }
     if !exists {
-        let err = AXObserverAddNotification(observer, element, what as CFString, nil)
+        var err: AXError = .success
+        if let exMsg = catchingObjCException({
+            err = AXObserverAddNotification(observer, element, what as CFString, nil)
+        }) {
+            return luaL_error(L, "ObjC exception in AXObserverAddNotification: \(exMsg)")
+        }
         if err != .success { return luaL_error(L, String(cString: AXErrorAsString(err))) }
         notifications!.add(what)
     }
@@ -238,7 +243,12 @@ private func axobserver_removeWatchedElement(_ L: UnsafeMutablePointer<lua_State
     let notifications = watching[elementKey] as? NSMutableArray
 
     if let notifications = notifications, let idx = notifications.index(of: what) as? Int, idx != NSNotFound {
-        let err = AXObserverRemoveNotification(observer, element, what as CFString)
+        var err: AXError = .success
+        if let exMsg = catchingObjCException({
+            err = AXObserverRemoveNotification(observer, element, what as CFString)
+        }) {
+            return luaL_error(L, "ObjC exception in AXObserverRemoveNotification: \(exMsg)")
+        }
         notifications.removeObject(at: idx)
         if err != .success { return luaL_error(L, String(cString: AXErrorAsString(err))) }
     }

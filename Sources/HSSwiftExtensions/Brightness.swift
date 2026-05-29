@@ -2,6 +2,7 @@ import Cocoa
 import CLua
 import Carbon
 import IOKit.graphics
+import os.log
 
 // MARK: - Private framework function lookups via dlsym
 
@@ -70,7 +71,9 @@ private func brightness_ambient(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
             let sel = NSSelectorFromString("copyPropertyForKey:")
             if ourDSC.responds(to: sel) {
                 let key: NSString = "AggregatedLux"
-                if let result = ourDSC.perform(sel, with: key)?.takeRetainedValue() as? NSNumber {
+                if let result = catchingObjCException({
+                    ourDSC.perform(sel, with: key)?.takeRetainedValue() as? NSNumber
+                }) {
                     lua_pushnumber(L, result.doubleValue)
                     return 1
                 }
@@ -82,7 +85,15 @@ private func brightness_ambient(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
     }
 
     var dataPort: io_connect_t = 0
-    var result = IOServiceOpen(serviceObject, mach_task_self_, 0, &dataPort)
+    var result = KERN_SUCCESS
+    if let error: String = catchingObjCException({
+        result = IOServiceOpen(serviceObject, mach_task_self_, 0, &dataPort)
+    }) {
+        os_log(.error, "caught ObjC exception in IOServiceOpen: \(error, privacy: .public)")
+        IOObjectRelease(serviceObject)
+        lua_pushinteger(L, -1)
+        return 1
+    }
     IOObjectRelease(serviceObject)
 
     guard result == KERN_SUCCESS else {
@@ -92,10 +103,17 @@ private func brightness_ambient(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 
     var outputs: UInt32 = 2
     var values: (UInt64, UInt64) = (0, 0)
-    result = withUnsafeMutablePointer(to: &values) { ptr in
-        ptr.withMemoryRebound(to: UInt64.self, capacity: 2) { valuesPtr in
-            IOConnectCallMethod(dataPort, 0, nil, 0, nil, 0, valuesPtr, &outputs, nil, nil)
+    if let error: String = catchingObjCException({
+        result = withUnsafeMutablePointer(to: &values) { ptr in
+            ptr.withMemoryRebound(to: UInt64.self, capacity: 2) { valuesPtr in
+                IOConnectCallMethod(dataPort, 0, nil, 0, nil, 0, valuesPtr, &outputs, nil, nil)
+            }
         }
+    }) {
+        os_log(.error, "caught ObjC exception in IOConnectCallMethod: \(error, privacy: .public)")
+        IOServiceClose(dataPort)
+        lua_pushinteger(L, -1)
+        return 1
     }
     IOServiceClose(dataPort)
 

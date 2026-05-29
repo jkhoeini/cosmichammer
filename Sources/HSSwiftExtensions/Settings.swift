@@ -255,8 +255,10 @@ private func target_watchKey(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
     if watcherManager.watchedKeys[keyPath] == nil {
         watcherManager.watchedKeys[keyPath] = NSMutableDictionary()
-        UserDefaults.standard.addObserver(watcherManager, forKeyPath: keyPath as String,
-                                          options: .new, context: &myKVOContext)
+        _ = catchingObjCException {
+            UserDefaults.standard.addObserver(watcherManager, forKeyPath: keyPath as String,
+                                              options: .new, context: &myKVOContext)
+        }
     }
 
     let keyWatchers = watcherManager.watchedKeys[keyPath] as! NSMutableDictionary
@@ -290,7 +292,9 @@ private func output_watchers(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 private func meta_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     watcherManager.watchedKeys.enumerateKeysAndObjects { keyPath, watchers, _ in
-        UserDefaults.standard.removeObserver(watcherManager!, forKeyPath: keyPath as! String, context: &myKVOContext)
+        _ = catchingObjCException {
+            UserDefaults.standard.removeObserver(watcherManager!, forKeyPath: keyPath as! String, context: &myKVOContext)
+        }
         (watchers as! NSMutableDictionary).enumerateKeysAndObjects { _, refN, _ in
             luaL_unref(L, LUA_REGISTRYINDEX_VALUE, (refN as! NSNumber).int32Value)
         }

@@ -21,7 +21,9 @@ private func uielement_focusedElement(_ L: UnsafeMutablePointer<lua_State>!) -> 
         lua_pushnil(L)
         return 1
     }
-    let element = (cls as AnyObject).perform(Selector(("focusedElement")))?.takeUnretainedValue()
+    let element = catchingObjCException {
+        (cls as AnyObject).perform(Selector(("focusedElement")))?.takeUnretainedValue()
+    }
     lua_pushany(L, element)
     return 1
 }

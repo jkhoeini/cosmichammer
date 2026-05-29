@@ -133,7 +133,9 @@ private func sharing_servicesForItems(_ L: UnsafeMutablePointer<lua_State>!) -> 
         var label: String?
         // The internal "name" property can be used with sharingServiceNamed: but Apple hid it
         if aService.responds(to: NSSelectorFromString("name")) {
-            label = aService.perform(NSSelectorFromString("name"))?.takeUnretainedValue() as? String
+            label = catchingObjCException {
+                aService.perform(NSSelectorFromString("name"))?.takeUnretainedValue() as? String
+            }
         }
         if label == nil { label = aService.title }
         lua_pushany(L, (label ?? "") as NSString)
@@ -211,8 +213,14 @@ private func sharing_performWith(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
     }
 
     if wrapper.sharingService?.canPerform(withItems:items) ?? false {
-        wrapper.sharingService?.perform(withItems: items)
-        lua_pushvalue(L, 1)
+        if let error: String = catchingObjCException({
+            wrapper.sharingService?.perform(withItems: items)
+        }) {
+            os_log(.error, "caught ObjC exception in NSSharingService.perform: \(error, privacy: .public)")
+            lua_pushnil(L)
+        } else {
+            lua_pushvalue(L, 1)
+        }
     } else {
         lua_pushnil(L)
     }

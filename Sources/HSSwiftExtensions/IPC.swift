@@ -241,15 +241,20 @@ private func ipc_sendMessage(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     guard CFMessagePortIsValid(port.messagePort) else {
         return luaL_error(L, "ipc port is no longer valid (late)")
     }
-    let code = CFMessagePortSendRequest(
-        port.messagePort,
-        Int32(msgID),
-        data as CFData?,
-        waitTimeout,
-        oneWay ? 0.0 : waitTimeout,
-        oneWay ? nil : CFRunLoopMode.defaultMode.rawValue,
-        &returnedData
-    )
+    var code: Int32 = -1
+    if let error = catchingObjCException({
+        code = CFMessagePortSendRequest(
+            port.messagePort,
+            Int32(msgID),
+            data as CFData?,
+            waitTimeout,
+            oneWay ? 0.0 : waitTimeout,
+            oneWay ? nil : CFRunLoopMode.defaultMode.rawValue,
+            &returnedData
+        )
+    }) {
+        return luaL_error(L, "ObjC exception in CFMessagePortSendRequest: \(error)")
+    }
     let status = (code == kCFMessagePortSuccess)
 
     var response: Data?

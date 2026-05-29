@@ -24,10 +24,12 @@ private func getApp(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> HSa
 
 private func appClassMethod(_ sel: String, with arg1: Any? = nil) -> Any? {
     guard let appClass = HSuicore.applicationClass else { return nil }
-    if let arg1 = arg1 {
-        return (appClass as AnyObject).perform(Selector((sel)), with: arg1)?.takeUnretainedValue()
-    } else {
-        return (appClass as AnyObject).perform(Selector((sel)))?.takeUnretainedValue()
+    return catchingObjCException {
+        if let arg1 = arg1 {
+            return (appClass as AnyObject).perform(Selector((sel)), with: arg1)?.takeUnretainedValue()
+        } else {
+            return (appClass as AnyObject).perform(Selector((sel)))?.takeUnretainedValue()
+        }
     }
 }
 
@@ -855,9 +857,16 @@ private func application_selectmenuitem(_ L: UnsafeMutablePointer<lua_State>!) -
         return 1
     }
 
-    let error = AXUIElementPerformAction(foundItem, kAXPressAction as CFString)
-    if error != .success {
-        os_log(.debug, "%{public}s", "hs.application:selectMenuItem(): AXPress error: \(error.rawValue)")
+    var axError: AXError = .success
+    if let exMsg = catchingObjCException({
+        axError = AXUIElementPerformAction(foundItem, kAXPressAction as CFString)
+    }) {
+        os_log(.error, "caught ObjC exception in AXUIElementPerformAction: %{public}s", exMsg)
+        lua_pushnil(L)
+        return 1
+    }
+    if axError != .success {
+        os_log(.debug, "%{public}s", "hs.application:selectMenuItem(): AXPress error: \(axError.rawValue)")
         lua_pushnil(L)
         return 1
     }
@@ -1055,7 +1064,9 @@ private func application_launchorfocus(_ L: UnsafeMutablePointer<lua_State>!) ->
     luaL_checktype(L, 1, LUA_TSTRING)
     guard let appClass = HSuicore.applicationClass else { lua_pushboolean(L, 0); return 1 }
     let name = lua_tovalue(L, at: 1) as! NSString
-    let result = (appClass as AnyObject).perform(Selector(("launchByName:")), with: name)
+    let result = catchingObjCException {
+        (appClass as AnyObject).perform(Selector(("launchByName:")), with: name)
+    }
     lua_pushboolean(L, result != nil ? 1 : 0)
     return 1
 }
@@ -1076,7 +1087,9 @@ private func application_launchorfocusbybundleID(_ L: UnsafeMutablePointer<lua_S
     luaL_checktype(L, 1, LUA_TSTRING)
     guard let appClass = HSuicore.applicationClass else { lua_pushboolean(L, 0); return 1 }
     let bundleID = lua_tovalue(L, at: 1) as! NSString
-    let result = (appClass as AnyObject).perform(Selector(("launchByBundleID:")), with: bundleID)
+    let result = catchingObjCException {
+        (appClass as AnyObject).perform(Selector(("launchByBundleID:")), with: bundleID)
+    }
     lua_pushboolean(L, result != nil ? 1 : 0)
     return 1
 }

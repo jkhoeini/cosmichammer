@@ -2,6 +2,7 @@ import Cocoa
 import CLua
 import IOKit
 import IOKit.hid
+import os
 
 private let CAPSLOCK_OFF:    Int32 = 0
 private let CAPSLOCK_ON:     Int32 = 1
@@ -82,7 +83,14 @@ private func accessCapslock(_ op: Int32) -> Int32 {
     }
 
     var ioc: io_connect_t = 0
-    var kr = IOServiceOpen(ios, mach_task_self_, UInt32(kIOHIDParamConnectType), &ioc)
+    var kr = KERN_SUCCESS
+    if let error: String = catchingObjCException({
+        kr = IOServiceOpen(ios, mach_task_self_, UInt32(kIOHIDParamConnectType), &ioc)
+    }) {
+        os_log(.error, "caught ObjC exception in IOServiceOpen: \(error, privacy: .public)")
+        IOObjectRelease(ios)
+        return -1
+    }
     IOObjectRelease(ios)
     guard kr == KERN_SUCCESS else {
         return Int32(kr)

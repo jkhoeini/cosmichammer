@@ -525,8 +525,12 @@ let notification_setIdImage: lua_CFunction = { L in
             let hasBorder = lua_toboolean(L, 3)
 
             if notification.responds(to: Selector(("set_identityImage:"))) && notification.responds(to: Selector(("_identityImageHasBorder"))) {
-                notification.perform(Selector(("set_identityImage:")), with: idImage)
-                notification.setValue(hasBorder, forKey: "_identityImageHasBorder")
+                if let error: String = catchingObjCException({
+                    notification.perform(Selector(("set_identityImage:")), with: idImage)
+                    notification.setValue(hasBorder, forKey: "_identityImageHasBorder")
+                }) {
+                    os_log(.error, "caught ObjC exception: \(error, privacy: .public)")
+                }
             } else {
                 os_log(.info, "%{public}s", "\(nt_USERDATA_TAG):setIdImage() is not supported on this machine or macOS version. Please file an issue")
             }

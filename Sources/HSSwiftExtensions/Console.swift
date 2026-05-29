@@ -385,11 +385,15 @@ private func console_setConsole(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
     let outputView = consoleOutputView()
 
     if lua_gettop(L) == 0 {
-        outputView.textStorage?.performSelector(
-            onMainThread: #selector(NSMutableAttributedString.setAttributedString(_:)),
-            with: NSMutableAttributedString(),
-            waitUntilDone: true
-        )
+        if let error: String = catchingObjCException({
+            outputView.textStorage?.performSelector(
+                onMainThread: #selector(NSMutableAttributedString.setAttributedString(_:)),
+                with: NSMutableAttributedString(),
+                waitUntilDone: true
+            )
+        }) {
+            os_log(.error, "caught ObjC exception: \(error, privacy: .public)")
+        }
     } else {
         let theStr: NSAttributedString
         if lua_type(L, 1) == LUA_TUSERDATA && luaL_testudata(L, 1, "hs.styledtext") != nil {
@@ -406,11 +410,15 @@ private func console_setConsole(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
             )
             lua_pop(L, 1)
         }
-        outputView.textStorage?.performSelector(
-            onMainThread: #selector(NSMutableAttributedString.setAttributedString(_:)),
-            with: theStr,
-            waitUntilDone: true
-        )
+        if let error: String = catchingObjCException({
+            outputView.textStorage?.performSelector(
+                onMainThread: #selector(NSMutableAttributedString.setAttributedString(_:)),
+                with: theStr,
+                waitUntilDone: true
+            )
+        }) {
+            os_log(.error, "caught ObjC exception: \(error, privacy: .public)")
+        }
     }
     outputView.scrollToEndOfDocument(ctrl)
     return 0
@@ -510,11 +518,15 @@ private func console_printStyledText(_ L: UnsafeMutablePointer<lua_State>!) -> I
     }
     theStr.append(NSAttributedString(string: "\n", attributes: consoleAttrs))
 
-    outputView.textStorage?.performSelector(
-        onMainThread: #selector(NSMutableAttributedString.append(_:)),
-        with: theStr,
-        waitUntilDone: true
-    )
+    if let error: String = catchingObjCException({
+        outputView.textStorage?.performSelector(
+            onMainThread: #selector(NSMutableAttributedString.append(_:)),
+            with: theStr,
+            waitUntilDone: true
+        )
+    }) {
+        os_log(.error, "caught ObjC exception: \(error, privacy: .public)")
+    }
     outputView.scrollToEndOfDocument(ctrl)
     return 0
 }

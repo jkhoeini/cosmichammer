@@ -497,7 +497,14 @@ private func axuielement_performAction(_ L: UnsafeMutablePointer<lua_State>!) ->
     luaL_checktype(L, 2, LUA_TSTRING)
     let theRef = get_axuielementref(L, 1, USERDATA_TAG)
     let action = lua_tovalue(L, at: 2) as! NSString
-    let errorState = AXUIElementPerformAction(theRef, action as CFString)
+    var errorState: AXError = .success
+    if let exMsg = catchingObjCException({
+        errorState = AXUIElementPerformAction(theRef, action as CFString)
+    }) {
+        os_log(.error, "caught ObjC exception in AXUIElementPerformAction: %{public}s", exMsg)
+        lua_pushnil(L)
+        return 1
+    }
     var returnCount: Int32 = 1
     if errorState == .success {
         lua_pushvalue(L, 1)

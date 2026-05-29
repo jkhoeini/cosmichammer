@@ -851,8 +851,9 @@ private func pushNSTouch(_ L: UnsafeMutablePointer<lua_State>!, _ touch: NSTouch
         lua_setfield(L, -2, "normalizedPosition")
         // Private API: previousNormalizedPosition
         if touch.responds(to: Selector(("previousNormalizedPosition"))) {
-            let prevPos = touch.perform(Selector(("previousNormalizedPosition")))!.takeUnretainedValue()
-            // NSPoint is a struct, so use value(of:) for the point
+            let prevPos = catchingObjCException {
+                touch.perform(Selector(("previousNormalizedPosition")))?.takeUnretainedValue()
+            }
             if let point = prevPos as? NSValue {
                 lua_pushNSPoint(L, point.pointValue)
             } else {
@@ -869,7 +870,9 @@ private func pushNSTouch(_ L: UnsafeMutablePointer<lua_State>!, _ touch: NSTouch
 
     // Private API: timestamp
     if touch.responds(to: Selector(("timestamp"))) {
-        let ts = touch.perform(Selector(("timestamp")))
+        let ts = catchingObjCException {
+            touch.perform(Selector(("timestamp")))
+        }
         lua_pushnumber(L, lua_Number(bitPattern: UInt64(Int(bitPattern: ts?.toOpaque()))))
     } else {
         lua_pushnumber(L, 0)
@@ -878,7 +881,9 @@ private func pushNSTouch(_ L: UnsafeMutablePointer<lua_State>!, _ touch: NSTouch
 
     // Private API: _force
     if touch.responds(to: Selector(("_force"))) {
-        let f = touch.perform(Selector(("_force")))
+        let f = catchingObjCException {
+            touch.perform(Selector(("_force")))
+        }
         lua_pushnumber(L, lua_Number(bitPattern: UInt64(Int(bitPattern: f?.toOpaque()))))
     } else {
         lua_pushnumber(L, 0)

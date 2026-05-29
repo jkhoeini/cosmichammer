@@ -98,7 +98,9 @@ private func window_timeout(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns the window that has keyboard/mouse focus
 private func window_focusedwindow(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     if let windowClass = HSuicore.windowClass {
-        let result = (windowClass as AnyObject).perform(Selector(("focusedWindow")))?.takeUnretainedValue()
+        let result = catchingObjCException {
+            (windowClass as AnyObject).perform(Selector(("focusedWindow")))?.takeUnretainedValue()
+        }
         lua_pushany(L, result)
     } else {
         lua_pushnil(L)
@@ -123,11 +125,13 @@ private func window_snapshotForID(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
     let windowID = CGWindowID(lua_tointeger(L, 1))
     let keepTransparency = lua_toboolean(L, 2) != 0
     if let windowClass = HSuicore.windowClass {
-        let result = (windowClass as AnyObject).perform(
-            Selector(("snapshotForID:keepTransparency:")),
-            with: NSNumber(value: windowID),
-            with: NSNumber(value: keepTransparency)
-        )?.takeUnretainedValue()
+        let result = catchingObjCException {
+            (windowClass as AnyObject).perform(
+                Selector(("snapshotForID:keepTransparency:")),
+                with: NSNumber(value: windowID),
+                with: NSNumber(value: keepTransparency)
+            )?.takeUnretainedValue()
+        }
         lua_pushany(L, result)
     } else {
         lua_pushnil(L)
@@ -137,7 +141,9 @@ private func window_snapshotForID(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
 
 private func window__orderedwinids(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     if let windowClass = HSuicore.windowClass {
-        let result = (windowClass as AnyObject).perform(Selector(("orderedWindowIDs")))?.takeUnretainedValue()
+        let result = catchingObjCException {
+            (windowClass as AnyObject).perform(Selector(("orderedWindowIDs")))?.takeUnretainedValue()
+        }
         lua_pushany(L, result)
     } else {
         lua_pushnil(L)
