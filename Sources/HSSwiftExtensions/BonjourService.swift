@@ -603,7 +603,7 @@ private func pushNSNetService(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any?
 
     if let valueRef = valueRef {
         lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(valueRef.int32Value))
-        value = lua_tovalue(L, at: -1) as? HSNetServiceWrapper
+        value = lua_toAnyObject(L, at: -1) as? HSNetServiceWrapper
         lua_pop(L, 1)
     } else {
         value = HSNetServiceWrapper(service: netService)

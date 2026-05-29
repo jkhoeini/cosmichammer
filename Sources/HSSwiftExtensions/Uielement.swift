@@ -33,7 +33,7 @@ private func uielement_focusedElement(_ L: UnsafeMutablePointer<lua_State>!) -> 
 /// Returns whether the UI element represents a window.
 private func uielement_iswindow(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     luaL_checkudata(L, 1, USERDATA_TAG)
-    guard let element = lua_tovalue(L, at: 1) as? HSuielementProtocol else {
+    guard let element = lua_toAnyObject(L, at: 1) as? HSuielementProtocol else {
         lua_pushboolean(L, 0)
         return 1
     }
@@ -46,7 +46,7 @@ private func uielement_iswindow(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 /// Returns the role of the element.
 private func uielement_role(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     luaL_checkudata(L, 1, USERDATA_TAG)
-    guard let element = lua_tovalue(L, at: 1) as? HSuielementProtocol else {
+    guard let element = lua_toAnyObject(L, at: 1) as? HSuielementProtocol else {
         lua_pushnil(L)
         return 1
     }
@@ -59,7 +59,7 @@ private func uielement_role(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns the selected text in the element
 private func uielement_selectedText(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     luaL_checkudata(L, 1, USERDATA_TAG)
-    guard let element = lua_tovalue(L, at: 1) as? HSuielementProtocol else {
+    guard let element = lua_toAnyObject(L, at: 1) as? HSuielementProtocol else {
         lua_pushnil(L)
         return 1
     }
@@ -72,7 +72,7 @@ private func uielement_selectedText(_ L: UnsafeMutablePointer<lua_State>!) -> In
 /// Creates a new watcher
 private func uielement_newWatcher(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
-    guard let uiElement = lua_tovalue(L, at: 1) as? HSuielementProtocol else {
+    guard let uiElement = lua_toAnyObject(L, at: 1) as? HSuielementProtocol else {
         lua_pushnil(L)
         return 1
     }
@@ -111,8 +111,8 @@ private func toHSuielementFromLua(_ L: UnsafeMutablePointer<lua_State>!, _ idx: 
 private func uielement_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     var isEqual = false
     if luaL_testudata(L, 1, USERDATA_TAG) != nil && luaL_testudata(L, 2, USERDATA_TAG) != nil {
-        if let e1 = lua_tovalue(L, at: 1) as? HSuielementProtocol,
-           let e2 = lua_tovalue(L, at: 2) as? HSuielementProtocol {
+        if let e1 = lua_toAnyObject(L, at: 1) as? HSuielementProtocol,
+           let e2 = lua_toAnyObject(L, at: 2) as? HSuielementProtocol {
             isEqual = CFEqual(e1.elementRef, e2.elementRef)
         }
     }

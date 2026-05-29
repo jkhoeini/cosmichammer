@@ -17,7 +17,7 @@ private func watcher_start(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     luaL_checktype(L, 2, LUA_TTABLE)
-    guard let watcher = lua_tovalue(L, at: 1) as? HSuielementWatcherProtocol else { return 0 }
+    guard let watcher = lua_toAnyObject(L, at: 1) as? HSuielementWatcherProtocol else { return 0 }
     lua_pushvalue(L, 1)
 
     watcher.watcherRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
@@ -30,7 +30,7 @@ private func watcher_start(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 private func watcher_stop(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     luaL_checkudata(L, 1, USERDATA_TAG)
-    guard let watcher = lua_tovalue(L, at: 1) as? HSuielementWatcherProtocol else { return 0 }
+    guard let watcher = lua_toAnyObject(L, at: 1) as? HSuielementWatcherProtocol else { return 0 }
     watcher.stop()
     luaL_unref(L, LUA_REGISTRYINDEX_VALUE, watcher.watcherRef)
 
@@ -44,7 +44,7 @@ private func watcher_stop(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns the PID of the element being watched
 private func watcher_pid(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     luaL_checkudata(L, 1, USERDATA_TAG)
-    guard let watcher = lua_tovalue(L, at: 1) as? HSuielementWatcherProtocol else { return 0 }
+    guard let watcher = lua_toAnyObject(L, at: 1) as? HSuielementWatcherProtocol else { return 0 }
     lua_pushnumber(L, lua_Number(watcher.pid))
     return 1
 }
@@ -54,7 +54,7 @@ private func watcher_pid(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns the element the watcher is watching.
 private func watcher_element(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     luaL_checkudata(L, 1, USERDATA_TAG)
-    guard let watcher = lua_tovalue(L, at: 1) as? HSuielementWatcherProtocol else { return 0 }
+    guard let watcher = lua_toAnyObject(L, at: 1) as? HSuielementWatcherProtocol else { return 0 }
 
     let element = HSuielement(withElement: watcher.elementRef)
 
@@ -75,7 +75,7 @@ private func watcher_element(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 private func watcher_watchDestroyed(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     luaL_checkudata(L, 1, USERDATA_TAG)
-    guard let watcher = lua_tovalue(L, at: 1) as? HSuielementWatcherProtocol else { return 0 }
+    guard let watcher = lua_toAnyObject(L, at: 1) as? HSuielementWatcherProtocol else { return 0 }
 
     if lua_type(L, 2) == LUA_TBOOLEAN {
         watcher.watchDestroyed = lua_toboolean(L, 2) != 0

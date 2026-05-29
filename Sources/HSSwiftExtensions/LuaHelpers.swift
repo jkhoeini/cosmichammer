@@ -319,7 +319,7 @@ private func lua_tovalue_recursive(_ L: UnsafeMutablePointer<lua_State>!, at ind
         return lua_tableToValue(L, at: idx, depth: depth)
 
     case LUA_TUSERDATA:
-        return lua_toAnyObject(L, at: idx)
+        return nil
 
     default:
         return nil

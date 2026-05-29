@@ -108,7 +108,7 @@ private func eventtap_keyStrokes(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
     var targetPid: pid_t = 0
 
     if lua_type(L, 2) == LUA_TUSERDATA && luaL_checkudata(L, 2, "hs.application") != nil {
-        if let app = lua_tovalue(L, at: 2) as? HSapplicationProtocol {
+        if let app = lua_toAnyObject(L, at: 2) as? HSapplicationProtocol {
             targetPid = app.pid
         }
     }

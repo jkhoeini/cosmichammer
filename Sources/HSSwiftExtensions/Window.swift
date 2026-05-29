@@ -32,7 +32,7 @@ private let kCGSDebugOptionNormal: Int32 = 0
 private let kCGSDebugOptionNoShadows: Int32 = 16384
 
 private func getWindow(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> HSwindowProtocol? {
-    return lua_tovalue(L, at: idx) as? HSwindowProtocol
+    return lua_toAnyObject(L, at: idx) as? HSwindowProtocol
 }
 
 // MARK: - Helpers
@@ -513,8 +513,8 @@ private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 private func userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     var isEqual = false
     if luaL_testudata(L, 1, USERDATA_TAG) != nil && luaL_testudata(L, 2, USERDATA_TAG) != nil {
-        if let w1 = lua_tovalue(L, at: 1) as? HSwindowProtocol,
-           let w2 = lua_tovalue(L, at: 2) as? HSwindowProtocol {
+        if let w1 = lua_toAnyObject(L, at: 1) as? HSwindowProtocol,
+           let w2 = lua_toAnyObject(L, at: 2) as? HSwindowProtocol {
             isEqual = CFEqual(w1.elementRef, w2.elementRef)
         }
     }

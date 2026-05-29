@@ -328,7 +328,7 @@ private func eventtap_event_post(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
     let event = getEvent(L, 1)
 
     if luaL_testudata(L, 2, APPLICATION_USERDATA_TAG) != nil {
-        if let app = lua_tovalue(L, at: 2) as? HSapplicationProtocol {
+        if let app = lua_toAnyObject(L, at: 2) as? HSapplicationProtocol {
             event.postToPid(app.pid)
         }
     } else {

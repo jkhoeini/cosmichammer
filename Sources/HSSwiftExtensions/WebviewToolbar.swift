@@ -744,7 +744,7 @@ private func toolbar_attachToolbar(_ L: UnsafeMutablePointer<lua_State>!) -> Int
         newToolbar = nil
     } else if top == 1 && lua_type(L, 1) == LUA_TUSERDATA && luaL_testudata(L, 1, USERDATA_TB_TAG) != nil {
         theWindow = consoleWindow()
-        newToolbar = lua_tovalue(L, at: 1) as? HSToolbar
+        newToolbar = lua_toAnyObject(L, at: 1) as? HSToolbar
     } else if top == 1 && lua_type(L, 1) == LUA_TUSERDATA && luaL_testudata(L, 1, "hs.webview") != nil {
         theWindow = getWindowFromUserdata(L, 1, "hs.webview")
         setToolbar = false
@@ -752,7 +752,7 @@ private func toolbar_attachToolbar(_ L: UnsafeMutablePointer<lua_State>!) -> Int
         theWindow = getWindowFromUserdata(L, 1, "hs.webview")
     } else if top == 2 && lua_type(L, 1) == LUA_TUSERDATA && luaL_testudata(L, 1, "hs.webview") != nil && lua_type(L, 2) == LUA_TUSERDATA && luaL_testudata(L, 2, USERDATA_TB_TAG) != nil {
         theWindow = getWindowFromUserdata(L, 1, "hs.webview")
-        newToolbar = lua_tovalue(L, at: 2) as? HSToolbar
+        newToolbar = lua_toAnyObject(L, at: 2) as? HSToolbar
     } else if top == 1 && lua_type(L, 1) == LUA_TUSERDATA && luaL_testudata(L, 1, "hs.chooser") != nil {
         let controller = getWindowControllerFromUserdata(L, 1, "hs.chooser")
         theWindow = controller?.window
@@ -765,7 +765,7 @@ private func toolbar_attachToolbar(_ L: UnsafeMutablePointer<lua_State>!) -> Int
     } else if top == 2 && lua_type(L, 1) == LUA_TUSERDATA && luaL_testudata(L, 1, "hs.chooser") != nil && lua_type(L, 2) == LUA_TUSERDATA && luaL_testudata(L, 2, USERDATA_TB_TAG) != nil {
         let controller = getWindowControllerFromUserdata(L, 1, "hs.chooser")
         theWindow = controller?.window
-        newToolbar = lua_tovalue(L, at: 2) as? HSToolbar
+        newToolbar = lua_toAnyObject(L, at: 2) as? HSToolbar
         isChooser = true
     } else {
         return luaL_error(L, "\(USERDATA_TB_TAG):attachToolbar requires an optional window target object and an \(USERDATA_TB_TAG) object or nil")

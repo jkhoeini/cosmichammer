@@ -19,7 +19,7 @@ private var backgroundCallbacks = NSMutableSet()
 // MARK: - Helper
 
 private func getApp(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> HSapplicationProtocol? {
-    return lua_tovalue(L, at: idx) as? HSapplicationProtocol
+    return lua_toAnyObject(L, at: idx) as? HSapplicationProtocol
 }
 
 private func appClassMethod(_ sel: String, with arg1: Any? = nil) -> Any? {
@@ -1189,8 +1189,8 @@ private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 private func userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     var isEqual = false
     if luaL_testudata(L, 1, USERDATA_TAG) != nil && luaL_testudata(L, 2, USERDATA_TAG) != nil {
-        if let app1 = lua_tovalue(L, at: 1) as? HSapplicationProtocol,
-           let app2 = lua_tovalue(L, at: 2) as? HSapplicationProtocol {
+        if let app1 = lua_toAnyObject(L, at: 1) as? HSapplicationProtocol,
+           let app2 = lua_toAnyObject(L, at: 2) as? HSapplicationProtocol {
             isEqual = app1.runningApp.isEqual(app2.runningApp)
         }
     }

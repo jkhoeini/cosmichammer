@@ -342,8 +342,12 @@ private func hmacAppend(_ context: UnsafeMutableRawPointer, _ data: Data) {
 private func hmacInit(algorithm: CCHmacAlgorithm, key: Data?) -> UnsafeMutableRawPointer {
     let ctx = UnsafeMutablePointer<CCHmacContext>.allocate(capacity: 1)
     let k = key ?? Data()
-    k.withUnsafeBytes { bufPtr in
-        CCHmacInit(ctx, algorithm, bufPtr.baseAddress!, k.count)
+    if k.isEmpty {
+        CCHmacInit(ctx, algorithm, nil, 0)
+    } else {
+        k.withUnsafeBytes { bufPtr in
+            CCHmacInit(ctx, algorithm, bufPtr.baseAddress!, k.count)
+        }
     }
     return UnsafeMutableRawPointer(ctx)
 }
