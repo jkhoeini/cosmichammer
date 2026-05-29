@@ -553,11 +553,12 @@ private func core_logmessage(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
         str = String(data: Data(bytes: s, count: len), encoding: .utf8)
     }
     if str == nil {
-        core_cleanUTF8(L)
+        _ = core_cleanUTF8(L)
         let s2 = lua_tolstring(L, -1, &len)
         if let s2 = s2 {
             str = String(data: Data(bytes: s2, count: len), encoding: .utf8)
         }
+        lua_pop(L, 1)
     }
     loghandler?(NSString(string: str ?? ""))
     return 0

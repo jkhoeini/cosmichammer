@@ -128,7 +128,10 @@ private func milight_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 private func milight_del(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let bridge = luaL_checkudata(L, 1, USERDATA_TAG)!.assumingMemoryBound(to: BridgeData.self)
 
-    close(bridge.pointee.socket)
+    if bridge.pointee.socket >= 0 {
+        close(bridge.pointee.socket)
+        bridge.pointee.socket = -1
+    }
     if let ip = bridge.pointee.ip {
         free(ip)
         bridge.pointee.ip = nil
@@ -189,7 +192,7 @@ private func milight_metagc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let bridge = luaL_checkudata(L, 1, USERDATA_TAG)!.assumingMemoryBound(to: BridgeData.self)
     let ptr = lua_topointer(L, 1)
-    let ip = String(cString: bridge.pointee.ip!)
+    let ip = bridge.pointee.ip.map { String(cString: $0) } ?? "(deleted)"
     let str = "\(USERDATA_TAG): \(ip):\(bridge.pointee.port) (\(String(describing: ptr)))" as NSString
     lua_pushstring(L, str.utf8String)
     return 1

@@ -319,8 +319,7 @@ private func lua_tovalue_recursive(_ L: UnsafeMutablePointer<lua_State>!, at ind
         return lua_tableToValue(L, at: idx, depth: depth)
 
     case LUA_TUSERDATA:
-        let ptr = lua_touserdata(L, idx)!
-        return Unmanaged<AnyObject>.fromOpaque(ptr.load(as: UnsafeRawPointer.self)).takeUnretainedValue()
+        return lua_toAnyObject(L, at: idx)
 
     default:
         return nil
@@ -446,6 +445,15 @@ func lua_tableToRect(_ L: UnsafeMutablePointer<lua_State>!, at index: Int32) -> 
 func toNSImage(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> NSImage? {
     guard let ptr = luaL_testudata(L, idx, "hs.image") else { return nil }
     return Unmanaged<NSImage>.fromOpaque(ptr.load(as: UnsafeRawPointer.self)).takeUnretainedValue()
+}
+
+/// Extract any class-pointer userdata as AnyObject. Only safe for userdata
+/// that stores an Unmanaged<T>.toOpaque() pointer (the standard pattern for
+/// class-based extensions). NOT safe for struct-based userdata (e.g., Milight).
+func lua_toAnyObject(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> AnyObject? {
+    guard lua_type(L, idx) == LUA_TUSERDATA else { return nil }
+    guard let ptr = lua_touserdata(L, idx) else { return nil }
+    return Unmanaged<AnyObject>.fromOpaque(ptr.load(as: UnsafeRawPointer.self)).takeUnretainedValue()
 }
 
 /// Extract an NSAttributedString from hs.styledtext userdata at the given stack index.

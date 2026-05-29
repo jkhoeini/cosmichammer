@@ -210,6 +210,7 @@ private func crc32Init(_ key: Data?) -> UnsafeMutableRawPointer {
 }
 
 private func crc32Append(_ context: UnsafeMutableRawPointer, _ data: Data) {
+    guard !data.isEmpty else { return }
     let ctx = context.assumingMemoryBound(to: UInt.self)
     data.withUnsafeBytes { bufPtr in
         let ptr = bufPtr.baseAddress!.assumingMemoryBound(to: UInt8.self)
@@ -239,6 +240,7 @@ private func md5Init(_ key: Data?) -> UnsafeMutableRawPointer {
 }
 
 private func md5Append(_ context: UnsafeMutableRawPointer, _ data: Data) {
+    guard !data.isEmpty else { return }
     let ctx = context.assumingMemoryBound(to: CC_MD5_CTX.self)
     _ = data.withUnsafeBytes { bufPtr in
         CC_MD5_Update(ctx, bufPtr.baseAddress!, CC_LONG(data.count))
@@ -262,6 +264,7 @@ private func sha1Init(_ key: Data?) -> UnsafeMutableRawPointer {
 }
 
 private func sha1Append(_ context: UnsafeMutableRawPointer, _ data: Data) {
+    guard !data.isEmpty else { return }
     let ctx = context.assumingMemoryBound(to: CC_SHA1_CTX.self)
     _ = data.withUnsafeBytes { bufPtr in
         CC_SHA1_Update(ctx, bufPtr.baseAddress!, CC_LONG(data.count))
@@ -285,6 +288,7 @@ private func sha256Init(_ key: Data?) -> UnsafeMutableRawPointer {
 }
 
 private func sha256Append(_ context: UnsafeMutableRawPointer, _ data: Data) {
+    guard !data.isEmpty else { return }
     let ctx = context.assumingMemoryBound(to: CC_SHA256_CTX.self)
     _ = data.withUnsafeBytes { bufPtr in
         CC_SHA256_Update(ctx, bufPtr.baseAddress!, CC_LONG(data.count))
@@ -308,6 +312,7 @@ private func sha512Init(_ key: Data?) -> UnsafeMutableRawPointer {
 }
 
 private func sha512Append(_ context: UnsafeMutableRawPointer, _ data: Data) {
+    guard !data.isEmpty else { return }
     let ctx = context.assumingMemoryBound(to: CC_SHA512_CTX.self)
     _ = data.withUnsafeBytes { bufPtr in
         CC_SHA512_Update(ctx, bufPtr.baseAddress!, CC_LONG(data.count))
@@ -325,6 +330,7 @@ private func sha512Finish(_ context: UnsafeMutableRawPointer) -> Data {
 // HMAC common append
 
 private func hmacAppend(_ context: UnsafeMutableRawPointer, _ data: Data) {
+    guard !data.isEmpty else { return }
     let ctx = context.assumingMemoryBound(to: CCHmacContext.self)
     data.withUnsafeBytes { bufPtr in
         CCHmacUpdate(ctx, bufPtr.baseAddress!, data.count)
@@ -386,6 +392,7 @@ private func sha3_512_Init(_ key: Data?) -> UnsafeMutableRawPointer {
 }
 
 private func sha3Append(_ context: UnsafeMutableRawPointer, _ data: Data) {
+    guard !data.isEmpty else { return }
     let box = Unmanaged<SHA3ContextBox>.fromOpaque(context).takeUnretainedValue()
     data.withUnsafeBytes { bufPtr in
         let ptr = bufPtr.baseAddress!.assumingMemoryBound(to: UInt8.self)
