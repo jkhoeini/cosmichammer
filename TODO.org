@@ -79,6 +79,296 @@ LuaSkin → LuaSwift).
     ~__attribute__((used))~ registration arrays. May no longer be
     required now that LuaSkin is removed — needs investigation.
 
+* TODO — Tech debt review (2026-06-01)
+
+*** TODO Fix generated HSExtensions glue checks and jj/CI enforcement
+    Issue:
+    ~scripts/check-generated-files.sh~ is stale after the ObjC-to-Swift
+    static-linking migration. It still expects removed ObjC outputs
+    (~Sources/HSExtensions/HSExtensions.m~ and
+    ~Sources/HSExtensions/CosmicHammer/HSExtensionsRegistry.m~), while the
+    current generator writes:
+    - ~Sources/HSExtensions/include/HSExtensions/HSExtensions+Preload.h~
+    - ~Sources/HSSwiftExtensions/HSExtensionsGenerated.swift~
+
+    Running ~scripts/check-generated-files.sh --quiet~ currently exits with:
+    ~error: output not found: Sources/HSExtensions/HSExtensions.m~.
+
+    There is also generator/header drift: the committed preload header includes
+    ~<CLua.h>~, while the generator template still documents/emits the older
+    LuaSkin-era include. The pre-commit hook is Git-oriented and explicitly says
+    jj users are not protected.
+
+    Files:
+    - ~scripts/check-generated-files.sh~
+    - ~scripts/generate-hsextensions.sh~
+    - ~scripts/hooks/pre-commit~
+    - ~Sources/HSExtensions/include/HSExtensions/HSExtensions+Preload.h~
+    - ~Sources/HSSwiftExtensions/HSExtensionsGenerated.swift~
+
+    What to do:
+    - Update ~check-generated-files.sh~ to regenerate and compare the two
+      current outputs, including ~HSExtensionsGenerated.swift~.
+    - Make the generator emit the same include/import text as committed files.
+    - Add a ~just~ recipe, e.g. ~just check-generated~, and include it in the
+      normal verification path used by agents and CI.
+    - Decide whether the hook should be removed, replaced, or documented as a
+      Git-only convenience now that this repo uses jj.
+    - Add a small regression test/check that fails when
+      ~extensions.manifest~ and generated preload registration diverge.
+
+    Acceptance criteria:
+    - ~scripts/check-generated-files.sh --quiet~ exits 0 on a clean tree.
+    - Touching ~extensions.manifest~ without regenerating causes the check to
+      fail with a useful diff.
+    - The check validates both generated files that actually exist today.
+
+*** TODO Deepen the build module instead of keeping one giant ~just build~
+    Issue:
+    The ~build~ recipe is a shallow module with a very large interface. It owns
+    version calculation, docs compilation, hs CLI compilation, SPM build,
+    bundle assembly, resource copying, Lua file copying, codesign, and release
+    configuration in one script body. Tests also depend on a prior app bundle
+    build because ~LuaTestSetup.swift~ looks under
+    ~build/Cosmic Hammer.app/Contents/Resources~ and fatals if resources are
+    missing.
+
+    Files:
+    - ~justfile~
+    - ~Package.swift~
+    - ~Tests/CosmicHammerTests/LuaTestSetup.swift~
+    - ~CosmicHammer/CosmicHammer-Info.plist~
+
+    What to do:
+    - Split the build into explicit modules/recipes with clear outputs:
+      version metadata, docs JSON, hs CLI, SPM binary, app bundle resources,
+      signing.
+    - Make test resources buildable without requiring a full signed app bundle.
+    - Remove duplicated deployment/version policy where possible
+      (~Package.swift~, Info.plist template, justfile sed substitutions).
+    - Audit remaining direct Git usage in build/release recipes and convert the
+      workflow to jj-compatible commands where practical, keeping Git interop
+      only where it is truly required.
+    - Add smoke checks for resource-copy completeness and app bundle layout.
+
+    Acceptance criteria:
+    - A clean test workflow can prepare Lua resources without a full
+      ~just build~ app assembly.
+    - Bundle assembly has a small, testable interface and deterministic outputs.
+    - Version/build-number semantics are documented and consistent between
+      Info.plist and ~VersionUtils.swift~.
+
+*** TODO Make Lua boot a typed, testable lifecycle module
+    Issue:
+    Lua startup is coupled through an implicit positional contract:
+    ~LuaRuntime.swift~ pushes 7 arguments into ~setup.lua~, ~setup.lua~ forwards
+    them unchanged, and ~extensions/_coresetup/_coresetup.lua~ must return
+    exactly two functions. Failure handling is also fragile: missing or invalid
+    setup can show alerts but still leave stack/ref logic close to continuing.
+    Tests mostly bypass real boot by constructing a stub ~hs~ table and scraping
+    preload aliases from ~setup.lua~ with a regex.
+
+    Files:
+    - ~Sources/HSSwiftExtensions/LuaRuntime.swift~
+    - ~CosmicHammer/setup.lua~
+    - ~extensions/_coresetup/_coresetup.lua~
+    - ~Tests/CosmicHammerTests/LuaTestSetup.swift~
+    - ~Tests/CosmicHammerTests/CoresetupTests.swift~
+
+    What to do:
+    - Introduce a single boot context module/table instead of positional args.
+    - Make setup failure modes explicit and terminal where continuing is unsafe.
+    - Move preload alias data out of regex-parsed Lua source and into a shared
+      manifest-derived interface.
+    - Add tests for successful boot, missing setup, wrong setup return shape,
+      ~HSAutoLoadExtensions=false~, shutdown/reload, and config-dir edge cases.
+    - Align test bootstrap with the real boot path instead of duplicating core
+      setup behavior.
+
+    Acceptance criteria:
+    - Boot tests exercise the same setup contract as the app.
+    - Invalid setup return values cannot be silently ~luaL_ref~'d.
+    - Adding a new boot parameter does not require updating three files in lockstep.
+
+*** TODO Finish the LuaSkin-to-LuaSwift bridge migration
+    Issue:
+    LuaSkin is removed, but the replacement bridge is still shallow. The helper
+    module pushes primitives/collections and falls back to strings for unknown
+    objects. ~lua_tovalue~ returns nil for userdata and reads Lua strings with
+    ~String(cString:)~, ignoring Lua's byte length. Many extensions still
+    assume LuaSkin-like object/data conversion and force-cast values pulled from
+    Lua.
+
+    Files:
+    - ~Sources/HSSwiftExtensions/LuaHelpers.swift~
+    - ~Sources/HSSwiftExtensions/LuaSkinCompatibility.swift~
+    - High-risk callers: ~Socket.swift~, ~SocketUdp.swift~, ~Serial.swift~,
+      ~Pasteboard.swift~, ~EventtapEvent.swift~, ~Image.swift~,
+      ~Styledtext.swift~, ~StreamDeck.swift~, ~Razer.swift~
+
+    What to do:
+    - Make string conversion binary-safe using ~lua_tolstring~ length.
+    - Define typed userdata conversion helpers instead of broad
+      ~lua_tovalue(...) as! Type~ casts.
+    - Replace fallback stringification for unsupported native objects with
+      explicit conversion errors or registered adapters.
+    - Centralize retain/release/ref-table ownership helpers so each extension
+      does not hand-roll lifetime rules.
+    - Add focused bridge tests for binary strings, userdata, Foundation objects,
+      nested tables, nil/holes, and invalid casts.
+
+    Acceptance criteria:
+    - Binary Lua strings round-trip through Swift without truncation at NUL.
+    - Unsafe force-casts in high-risk extensions are reduced or guarded.
+    - Userdata conversion has one documented seam and focused tests.
+
+*** TODO Teach BuildDocs about Swift docs and add docs-tool tests
+    Issue:
+    Generated docs miss Swift-native API comments. ~just build~ and
+    ~just docs-lint~ pass only ~extensions~ to BuildDocs, and BuildDocs scans
+    only ~.m~ and ~.lua~ files. Meanwhile ~Sources/HSSwiftExtensions~ contains
+    many ~/// hs.*~ docs for APIs implemented in Swift. The docs tool also has
+    no test target, intentionally drops EOF docstring chunks, and has a
+    hand-written template/Markdown fallback without regression coverage. HTML
+    search expects ~docs_index.json~ beside ~index.html~, but HTML output only
+    copies CSS and JS.
+
+    Files:
+    - ~justfile~
+    - ~scripts/docs/Package.swift~
+    - ~scripts/docs/Sources/DocParser.swift~
+    - ~scripts/docs/Sources/DocProcessor.swift~
+    - ~scripts/docs/Sources/OutputTemplated.swift~
+    - ~scripts/docs/Sources/MarkdownRenderer.swift~
+    - ~scripts/docs/templates/index.j2.html~
+    - ~Sources/HSSwiftExtensions/*.swift~
+
+    What to do:
+    - Extend BuildDocs to scan Swift files and parse ~///~ docstrings from
+      ~Sources/HSSwiftExtensions~.
+    - Update ~just build~, ~just docs~, and ~just docs-lint~ inputs accordingly.
+    - Add a docs test target with parser fixtures for Lua, Swift, EOF chunks,
+      sections, duplicate names, module assignment, templates, and Markdown.
+    - Ensure HTML docs output includes or can locate ~docs_index.json~.
+    - Update stale docs-tool README instructions that still mention old Python
+      or make-based workflows.
+
+    Acceptance criteria:
+    - A known Swift-only API appears in generated ~docs.json~ and HTML docs.
+    - ~swift test --package-path scripts/docs~ exists and covers parser basics.
+    - HTML search works from the generated output directory.
+
+*** TODO Make module loading metadata the single source of truth
+    Issue:
+    Extension loading has too many overlapping sources of truth:
+    ~extensions.manifest~, generated native ~hs.lib*~ preload entries, manual
+    ~package.preload~ aliases in ~setup.lua~, flattened copied Lua basenames,
+    lazy loading rules in ~_coresetup.lua~, and test bootstrap regex scraping.
+    Because Lua files are copied to ~extensions/hs/<basename>.lua~, nested files
+    and underscore modules require manual aliases and future duplicate basenames
+    can collide.
+
+    Files:
+    - ~extensions.manifest~
+    - ~scripts/copy-extension-lua-files.sh~
+    - ~scripts/generate-hsextensions.sh~
+    - ~CosmicHammer/setup.lua~
+    - ~extensions/_coresetup/_coresetup.lua~
+    - ~Tests/CosmicHammerTests/LuaTestSetup.swift~
+
+    What to do:
+    - Extend manifest metadata to describe public Lua module names, source
+      files, copied bundle paths, native preload keys, and aliases.
+    - Generate setup/preload alias tables from the manifest instead of
+      hand-maintaining them in ~setup.lua~.
+    - Preserve directory structure or otherwise detect duplicate destination
+      basenames before copying.
+    - Make tests consume the same generated metadata instead of scraping Lua.
+    - Add a manifest validation check for missing files, duplicate destinations,
+      missing aliases, and native symbols not present in generated preload code.
+
+    Acceptance criteria:
+    - Adding an extension or submodule requires editing one manifest entry and
+      regenerating derived files.
+    - Duplicate Lua destination filenames fail the check before build output is
+      overwritten.
+    - Test bootstrap and app bootstrap agree on the same loader metadata.
+
+*** TODO Replace broad smoke tests with deeper subsystem coverage
+    Issue:
+    The repo has broad load/registration smoke coverage but thin behavioral
+    coverage for many high-risk modules. Current counts from the review:
+    91 extension directories, 142 Lua files, 31 ~test_*.lua~ files,
+    136 Swift extension files, and 50 Swift test files. Many native surfaces
+    either have no focused tests or depend on a shared global Lua state and
+    full app bundle resources. Some tests hit external services or fixed ports.
+
+    Files:
+    - ~Tests/CosmicHammerTests/*~
+    - ~Tests/CosmicHammerTests/LuaTestSetup.swift~
+    - ~Tests/CosmicHammerTests/HSTestHelpers.swift~
+    - ~extensions/**/test_*.lua~
+    - ~extensions/http/test_http.lua~
+    - ~extensions/socket/test_socket.lua~
+    - ~extensions/websocket/test_websocket.lua~
+
+    What to do:
+    - Generate or table-drive module registration tests from
+      ~extensions.manifest~ instead of manually listing a small subset.
+    - Create fresh Lua state fixtures for tests that should not share global
+      state.
+    - Split tests into pure Lua, native headless, hosted AppKit, hardware, and
+      permission-gated categories.
+    - Replace external network dependencies such as ~google.com~ with local
+      deterministic servers.
+    - Use dynamic ports/temp paths for socket/websocket tests.
+    - Add focused tests for risky currently thin areas: ~notify~,
+      ~styledtext~, ~pasteboard.watcher~, ~webview.datastore~, ~razer~,
+      ~streamdeck~, and loader aliases.
+
+    Acceptance criteria:
+    - Manifest-listed native entry points are covered by an automated
+      registration/preload test.
+    - Tests can run deterministically without internet access.
+    - Shared global Lua state is used only where explicitly required.
+
+*** TODO Concentrate core app state and make UI lifecycle idempotent
+    Issue:
+    Core app state is spread through globals and ordering assumptions. Config
+    is a mutable process global. AppDelegate reads config/defaults, creates
+    directories, sets up menu/dock/console, then boots Lua in a fixed order.
+    Directory creation failures are ignored in multiple places. Menu icon
+    reflection creates a new status item each time visibility is set true,
+    which can leak duplicate menu bar items. Several callbacks force-unwrap the
+    active Lua state while others guard it.
+
+    Files:
+    - ~Sources/HSSwiftExtensions/ConfigUtils.swift~
+    - ~Sources/HSSwiftExtensions/AppDelegate.swift~
+    - ~Sources/HSSwiftExtensions/FileUtils.swift~
+    - ~Sources/HSSwiftExtensions/MenuIcon.swift~
+    - ~Sources/HSSwiftExtensions/DockIcon.swift~
+    - ~Sources/HSSwiftExtensions/ConsoleWindowController.swift~
+    - ~Sources/HSSwiftExtensions/LuaRuntime.swift~
+    - ~Sources/HSSwiftExtensions/MenubarHelpers.swift~
+
+    What to do:
+    - Introduce a small app lifecycle/state module that owns config path,
+      defaults registration, config directory creation, UI setup, and Lua
+      lifecycle ordering.
+    - Make status-item setup idempotent: setting visible true twice should reuse
+      the existing item.
+    - Surface directory creation errors instead of silently returning false.
+    - Standardize callback behavior when Lua state is missing or stale.
+    - Add tests or lightweight assertions for config path derivation, directory
+      failure handling, menu icon idempotency, and callbacks before/after Lua
+      reload.
+
+    Acceptance criteria:
+    - Repeated ~hs.menuIcon(true)~ does not create duplicate status items.
+    - Startup/reload callbacks cannot crash only because Lua state is nil/stale.
+    - Config/defaults ordering is documented and covered by tests.
+
 * Investigated — not worth doing
 
 ** SKIP Make generators Xcode build-time phases
