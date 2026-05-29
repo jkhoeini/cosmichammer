@@ -8,8 +8,8 @@ extension CosmicHammerTests {
 
         @Test func testThrowTheWorld() {
             let result = runLua("testThrowTheWorld()")
-            #expect(result?.contains("objc_exception_throw") == true,
-                    "hs.crash.throwException() didn't throw an exception")
+            #expect(result?.contains("ObjC exception") == true,
+                    "hs.crash.throwObjCException() didn't produce an ObjC exception error")
         }
     }
 }

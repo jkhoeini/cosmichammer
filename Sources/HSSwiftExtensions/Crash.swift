@@ -49,7 +49,12 @@ private func throwTheWorld(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
     let name = String(cString: lua_tostring(L, 1)!)
     let message = String(cString: lua_tostring(L, 2)!)
-    NSException(name: NSExceptionName(rawValue: name), reason: message, userInfo: nil).raise()
+
+    if let error = catchingObjCException({
+        NSException(name: NSExceptionName(rawValue: name), reason: message, userInfo: nil).raise()
+    }) {
+        return luaL_error(L, "ObjC exception: \(error)")
+    }
 
     return 0
 }

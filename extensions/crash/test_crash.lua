@@ -7,5 +7,9 @@ return success()
 end
 
 function testThrowTheWorld()
-hs.crash.throwObjCException("foo", "bar")
+local ok, err = pcall(hs.crash.throwObjCException, "foo", "bar")
+if ok then
+  error("expected throwObjCException to raise an error")
+end
+return tostring(err)
 end

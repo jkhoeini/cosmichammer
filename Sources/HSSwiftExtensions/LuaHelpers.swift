@@ -8,12 +8,8 @@ import CLua
 /// losing the __NSCFBoolean singleton identity. We use a type comparison
 /// against the known CFBoolean type to detect booleans reliably.
 private func isCFBoolean(_ obj: Any) -> Bool {
-    // Detect __NSCFBoolean by comparing the ObjC class name.
-    // Swift pattern matching and type bridging can re-box values, so
-    // identity comparison (=== kCFBooleanTrue) is unreliable. Checking
-    // the class name via ObjC runtime is the most robust approach.
-    guard let nsObj = obj as? NSNumber else { return false }
-    return NSStringFromClass(type(of: nsObj as NSNumber)) == "__NSCFBoolean"
+    guard let nsNum = obj as? NSNumber else { return false }
+    return nsNum === kCFBooleanTrue || nsNum === kCFBooleanFalse
 }
 
 /// Get the boolean value from any value that `isCFBoolean` returns true for.
@@ -70,11 +66,7 @@ private func lua_pushvalue_recursive(_ L: UnsafeMutablePointer<lua_State>!, _ va
     case is NSNull:
         lua_pushnil(L)
 
-    // Bool (Swift native) - must come before numeric checks
-    case let b as Bool:
-        lua_pushboolean(L, b ? 1 : 0)
-
-    // NSNumber (non-boolean, since we checked CFBoolean above)
+    // NSNumber — must come before Bool because NSNumber(value: 1) bridges to Bool in Swift
     case let n as NSNumber:
         if lua_pushNSNumber(L, n) {
             // pushed by helper
@@ -523,4 +515,26 @@ func lua_currentStateGeneration() -> UInt64 {
 
 func lua_isStateGenerationValid(_ generation: UInt64) -> Bool {
     return generation == _luaStateGeneration
+}
+
+// MARK: - ObjC Exception Safety
+
+@_silgen_name("objc_tryCatch")
+private func _objc_tryCatch(_ block: @convention(block) () -> Void, _ outError: UnsafeMutablePointer<NSString?>?) -> Bool
+
+/// Run a closure that may trigger an NSException. Returns the error
+/// description if an exception was caught, or nil on success.
+func catchingObjCException(_ block: () -> Void) -> String? {
+    var error: NSString?
+    let ok = _objc_tryCatch(block, &error)
+    return ok ? nil : (error as String? ?? "unknown ObjC exception")
+}
+
+/// Run a closure that may trigger an NSException, returning a value.
+/// Returns nil if an exception was caught.
+func catchingObjCException<T>(_ block: () -> T?) -> T? {
+    var result: T?
+    var error: NSString?
+    let ok = _objc_tryCatch({ result = block() }, &error)
+    return ok ? result : nil
 }
