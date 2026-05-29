@@ -174,12 +174,13 @@ private func hotkey_systemAssigned(_ L: UnsafeMutablePointer<lua_State>!) -> Int
     var registeredHotKeys: Unmanaged<CFArray>?
     let status = CopySymbolicHotKeys(&registeredHotKeys)
     if status == noErr, let hotKeyArray = registeredHotKeys?.takeRetainedValue() {
-        let count = CFArrayGetCount(hotKeyArray)
-        for i in 0..<count {
-            let hotKeyInfo = unsafeBitCast(CFArrayGetValueAtIndex(hotKeyArray, i), to: CFDictionary.self)
-            let hotKeyCode = unsafeBitCast(CFDictionaryGetValue(hotKeyInfo, unsafeBitCast(kHISymbolicHotKeyCode, to: UnsafeRawPointer.self)), to: NSNumber.self)
-            let hotKeyModifiers = unsafeBitCast(CFDictionaryGetValue(hotKeyInfo, unsafeBitCast(kHISymbolicHotKeyModifiers, to: UnsafeRawPointer.self)), to: NSNumber.self)
-            let hotKeyEnabled = unsafeBitCast(CFDictionaryGetValue(hotKeyInfo, unsafeBitCast(kHISymbolicHotKeyEnabled, to: UnsafeRawPointer.self)), to: NSNumber.self)
+        for item in hotKeyArray as NSArray {
+            guard let hotKeyInfo = item as? NSDictionary,
+                  let hotKeyCode = hotKeyInfo[kHISymbolicHotKeyCode] as? NSNumber,
+                  let hotKeyModifiers = hotKeyInfo[kHISymbolicHotKeyModifiers] as? NSNumber,
+                  let hotKeyEnabled = hotKeyInfo[kHISymbolicHotKeyEnabled] as? NSNumber else {
+                continue
+            }
 
             // Remove Fn key bit (1 << 17) if present
             let modifierFlags = hotKeyModifiers.uint32Value & ~(1 << 17)

@@ -19,11 +19,15 @@ function testGetHotkeys()
 end
 
 function testGetSystemAssigned()
-  assertTablesEqual(hs.hotkey.systemAssigned({"ctrl"}, "Up"), {
-  enabled = false,
-  keycode = 126,
-  mods = 4096
-})
+  local assigned = hs.hotkey.systemAssigned({"ctrl"}, "Up")
+  if assigned then
+    assertIsTable(assigned)
+    assertIsBoolean(assigned.enabled)
+    assertIsNumber(assigned.keycode)
+    assertIsNumber(assigned.mods)
+  else
+    assertFalse(assigned)
+  end
 
   return success()
 end

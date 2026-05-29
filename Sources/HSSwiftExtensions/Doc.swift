@@ -322,8 +322,7 @@ private func doc_help(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Notes:
 ///  * this function just registers the documentation file; it won't actually be loaded and parsed until [hs.doc.help](#help) is invoked.
 private func doc_registerJSONFile(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    luaL_checktype(L, 1, LUA_TSTRING)
-    var path = lua_tovalue(L, at: 1) as! NSString
+    var path = String(cString: luaL_checkstring(L, 1)) as NSString
     let isSpoon = lua_gettop(L) > 1 ? lua_toboolean(L, 2) != 0 : false
 
     // some tricks used to figure out if the docs.json file exists duplicate final "/" before "docs.json"
@@ -359,8 +358,7 @@ private func doc_registerJSONFile(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
 /// Notes:
 ///  * This function requires the rebuilding of the entire documentation tree for all remaining registered files, so the next time help is queried with [hs.doc.help](#help), there may be a slight one-time delay.
 private func doc_unregisterJSONFile(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    luaL_checktype(L, 1, LUA_TSTRING)
-    let path = lua_tovalue(L, at: 1) as! NSString
+    let path = String(cString: luaL_checkstring(L, 1)) as NSString
 
     if registeredFiles[path] == nil {
         lua_pushboolean(L, 0)

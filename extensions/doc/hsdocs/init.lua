@@ -31,113 +31,18 @@ local documentRoot = package.searchpath("hs.hsdocs", package.path):match("^(/.*/
 
 local osVersion = host.operatingSystemVersion()
 
+local function systemImage(name)
+    return image.imageFromName(image.systemImageNames[name])
+end
+
 local toolbarImages = {
-    prevArrow = image.imageFromASCII(".......\n" ..
-                                     "..3....\n" ..
-                                     ".......\n" ..
-                                     "41....1\n" ..
-                                     ".......\n" ..
-                                     "..5....\n" ..
-                                     ".......",
-    {
-        { strokeColor = { white = .5 } },
-        { strokeColor = { white = .5 }, fillColor = { alpha = 0.0 }, shouldClose = false },
-        {},
-    }),
-    nextArrow = image.imageFromASCII(".......\n" ..
-                                     "....3..\n" ..
-                                     ".......\n" ..
-                                     "1....14\n" ..
-                                     ".......\n" ..
-                                     "....5..\n" ..
-                                     ".......",
-    {
-        { strokeColor = { white = .5 } },
-        { strokeColor = { white = .5 }, fillColor = { alpha = 0.0 }, shouldClose = false },
-        {}
-    }),
-    lightMode = image.imageFromASCII("1.........2\n" ..
-                                     "...........\n" ..
-                                     "...........\n" ..
-                                     ".....b.....\n" ..
-                                     "...........\n" ..
-                                     "...........\n" ..
-                                     "....e.f....\n" ..
-                                     "...........\n" ..
-                                     "...a...c...\n" ..
-                                     "...........\n" ..
-                                     "4.........3",
-    {
-        { strokeColor = { white = .5 }, fillColor = { alpha = 0.0 } },
-        { strokeColor = { white = .5 }, fillColor = { alpha = 0.0 }, shouldClose = false },
-        { strokeColor = { white = .5 } },
-        {}
-    }),
-    darkMode = image.imageFromASCII("1.........2\n" ..
-                                    "...........\n" ..
-                                    "...........\n" ..
-                                    ".....b.....\n" ..
-                                    "...........\n" ..
-                                    "...........\n" ..
-                                    "....e.f....\n" ..
-                                    "...........\n" ..
-                                    "...a...c...\n" ..
-                                    "...........\n" ..
-                                    "4.........3",
-    {
-        { strokeColor = { white = .75 }, fillColor = { alpha = 0.5 } },
-        { strokeColor = { white = .75 }, fillColor = { alpha = 0.0 }, shouldClose = false },
-        { strokeColor = { white = .75 } },
-        {}
-    }),
-    followMode = image.imageFromASCII("2.........3\n" ..
-                                      "...........\n" ..
-                                      ".....g.....\n" ..
-                                      "...........\n" ..
-                                      "1...f.h...4\n" ..
-                                      "6...b.c...9\n" ..
-                                      "...........\n" ..
-                                      "...a...d...\n" ..
-                                      "...........\n" ..
-                                      "7.........8",
-    {
-        { strokeColor = { white = .5 }, fillColor = { alpha = 0.0 }, shouldClose = false },
-        { strokeColor = { white = .75 }, fillColor = { alpha = 0.5 }, shouldClose = false },
-        { strokeColor = { white = .75 }, fillColor = { alpha = 0.0 }, shouldClose = false },
-        { strokeColor = { white = .5 }, fillColor = { alpha = 0.0 }, shouldClose = true },
-        {}
-    }),
-    noTrackWindow = image.imageFromASCII("1.........2\n" ..
-                                         "4.........3\n" ..
-                                         "6.........7\n" ..
-                                         "...........\n" ..
-                                         "...........\n" ..
-                                         "...........\n" ..
-                                         "...........\n" ..
-                                         "...........\n" ..
-                                         "...........\n" ..
-                                         "9.........8",
-    {
-        { strokeColor = { white = .5 }, fillColor = { alpha = 0.25 }, shouldClose = false },
-        { strokeColor = { white = .5 }, fillColor = { alpha = 0.0 }},
-        {}
-    }),
-    trackWindow = image.imageFromASCII("1.......2..\n" ..
-                                       "4.......3..\n" ..
-                                       "6.......7.c\n" ..
-                                       "...........\n" ..
-                                       "...........\n" ..
-                                       "...........\n" ..
-                                       "...........\n" ..
-                                       "9.......8..\n" ..
-                                       "...........\n" ..
-                                       "..a.......b",
-    {
-        { strokeColor = { white = .5 }, fillColor = { alpha = 0.25 }, shouldClose = false },
-        { strokeColor = { white = .5 }, fillColor = { alpha = 0.0 }},
-        { strokeColor = { white = .6 }, fillColor = { alpha = 0.0 }, shouldClose = false},
-        {}
-    }),
+    prevArrow = systemImage("GoLeftTemplate"),
+    nextArrow = systemImage("GoRightTemplate"),
+    lightMode = systemImage("StatusAvailable"),
+    darkMode = systemImage("StatusNone"),
+    followMode = systemImage("QuickLookTemplate"),
+    noTrackWindow = systemImage("StopProgressTemplate"),
+    trackWindow = systemImage("RevealFreestandingTemplate"),
     index = image.imageFromName("statusicon"),
     help = image.imageFromName(image.systemImageNames.RevealFreestandingTemplate),
 }

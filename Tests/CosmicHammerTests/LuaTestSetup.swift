@@ -98,6 +98,7 @@ func bootstrapLuaForTesting() {
     let docsPath = appResources.appendingPathComponent("docs.json").path
     let testResources = repoRoot.appendingPathComponent("Tests/CosmicHammerTests").path
     let testConfigDir = repoRoot.appendingPathComponent(".build/test-config").path
+    let setupLua = repoRoot.appendingPathComponent("CosmicHammer/setup.lua").path
 
     guard FileManager.default.fileExists(atPath: extensionsPath) else {
         fatalError("Built extensions not found at \(extensionsPath) — run `just build` first")
@@ -128,6 +129,7 @@ func bootstrapLuaForTesting() {
     let docsEsc = docsPath.replacingOccurrences(of: "'", with: "\\'")
     let srcExtEsc = srcExtensions.replacingOccurrences(of: "'", with: "\\'")
     let testEsc = testResources.replacingOccurrences(of: "'", with: "\\'")
+    let setupEsc = setupLua.replacingOccurrences(of: "'", with: "\\'")
     let rootEsc = repoRoot.path.replacingOccurrences(of: "'", with: "\\'")
     let resourceEsc = appResources.path.replacingOccurrences(of: "'", with: "\\'")
     let configEsc = testConfigDir.replacingOccurrences(of: "'", with: "\\'")
@@ -141,39 +143,10 @@ func bootstrapLuaForTesting() {
                    package.path
 
     local preload = function(m) return function() return require(m) end end
-    package.preload['hs.application.watcher']   = preload 'hs.libapplicationwatcher'
-    package.preload['hs.audiodevice.watcher']   = preload 'hs.libaudiodevicewatcher'
-    package.preload['hs.battery.watcher']       = preload 'hs.libbatterywatcher'
-    package.preload['hs.bonjour.service']       = preload 'hs.libbonjourservice'
-    package.preload['hs.caffeinate.watcher']    = preload 'hs.libcaffeinatewatcher'
-    package.preload['hs.canvas.matrix']         = preload 'hs.canvas_matrix'
-    package.preload['hs.drawing.color']         = preload 'hs.drawing_color'
-    package.preload['hs.doc.hsdocs']            = preload 'hs.hsdocs'
-    package.preload['hs.doc.markdown']          = preload 'hs.libmarkdown'
-    package.preload['hs.doc.builder']           = preload 'hs.doc_builder'
-    package.preload['hs.fs.volume']             = preload 'hs.libfsvolume'
-    package.preload['hs.fs.xattr']              = preload 'hs.libfsxattr'
-    package.preload['hs.host.locale']           = preload 'hs.host_locale'
-    package.preload['hs.httpserver.hsminweb']   = preload 'hs.httpserver_hsminweb'
-    package.preload['hs.location.geocoder']     = preload 'hs.location_geocoder'
-    package.preload['hs.network.configuration'] = preload 'hs.network_configuration'
-    package.preload['hs.network.host']          = preload 'hs.network_host'
-    package.preload['hs.network.ping']          = preload 'hs.network_ping'
-    package.preload['hs.pasteboard.watcher']    = preload 'hs.libpasteboardwatcher'
-    package.preload['hs.screen.watcher']        = preload 'hs.libscreenwatcher'
-    package.preload['hs.socket.udp']            = preload 'hs.libsocketudp'
-    package.preload['hs.spaces.watcher']        = preload 'hs.libspaces_watcher'
-    package.preload['hs.uielement.watcher']     = preload 'hs.libuielementwatcher'
-    package.preload['hs.usb.watcher']           = preload 'hs.libusbwatcher'
-    package.preload['hs.webview.datastore']     = preload 'hs.libwebviewdatastore'
-    package.preload['hs.webview.usercontent']   = preload 'hs.libwebviewusercontent'
-    package.preload['hs.webview.toolbar']       = preload 'hs.webview_toolbar'
-    package.preload['hs.wifi.watcher']          = preload 'hs.libwifiwatcher'
-    package.preload['hs.window.filter']         = preload 'hs.window_filter'
-    package.preload['hs.window.highlight']      = preload 'hs.window_highlight'
-    package.preload['hs.window.layout']         = preload 'hs.window_layout'
-    package.preload['hs.window.switcher']       = preload 'hs.window_switcher'
-    package.preload['hs.window.tiling']         = preload 'hs.window_tiling'
+    for line in io.lines('\(setupEsc)') do
+        local public, target = line:match([=[^%s*package%.preload%[['"]([^'"]+)['"]%]%s*=%s*preload%s*['"]([^'"]+)['"]]=])
+        if public and target then package.preload[public] = preload(target) end
+    end
 
     -- Add each source extension subdirectory so test_*.lua files can be found
     local lfs = require('hs.fs')
@@ -190,6 +163,8 @@ func bootstrapLuaForTesting() {
     local noop = function() end
     hs.luaSkinLog = {
         level = 1,
+        setLogLevel = noop,
+        getLogLevel = function() return 'info' end,
         e = noop, ef = noop,
         w = noop, wf = noop,
         i = noop, ["if"] = noop,
@@ -237,25 +212,27 @@ func bootstrapLuaForTesting() {
         if type(hs.shutdownCallback) == 'function' then hs.shutdownCallback() end
     end
 
-    hs = setmetatable(hs or {}, {
-        __index = function(self, key)
-            if key:sub(1,1) == '_' then return nil end
-            local ok, mod = pcall(require, 'hs.' .. key)
-            if ok then rawset(self, key, mod) return mod end
-            return nil
-        end
-    })
-
     hs._extensions = {}
     local hsDir = '\(extEsc)/hs'
     for entry in lfs.dir(hsDir) do
         if entry ~= '.' and entry ~= '..' then
             local name = entry:match('^(.+)%.lua$') or entry
-            if name:sub(1,1) ~= '_' then
+            if not name:find('_') then
                 hs._extensions[name] = true
             end
         end
     end
+
+    hs = setmetatable(hs or {}, {
+        __index = function(self, key)
+            if hs._extensions[key] ~= nil then
+                local mod = require('hs.' .. key)
+                rawset(self, key, mod)
+                return mod
+            end
+            return nil
+        end
+    })
 
     require('lsunit')
     """
