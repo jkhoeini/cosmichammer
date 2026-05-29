@@ -1,5 +1,5 @@
 import Cocoa
-import LuaSkin
+import CLua
 import os.log
 import Darwin.POSIX.netinet
 import Darwin.POSIX.netdb

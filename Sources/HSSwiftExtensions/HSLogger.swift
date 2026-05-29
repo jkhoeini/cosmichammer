@@ -8,8 +8,16 @@
 
 import Foundation
 import AppKit
-import LuaSkin
+import CLua
 import os.log
+
+// Log level constants (formerly from LuaSkin's Skin.h)
+private let LS_LOG_ERROR: Int32      = 1
+private let LS_LOG_WARN: Int32       = 2
+private let LS_LOG_INFO: Int32       = 3
+private let LS_LOG_DEBUG: Int32      = 4
+private let LS_LOG_VERBOSE: Int32    = 5
+private let LS_LOG_BREADCRUMB: Int32 = 6
 
 @objc(HSLogger)
 class HSLogger: NSObject {

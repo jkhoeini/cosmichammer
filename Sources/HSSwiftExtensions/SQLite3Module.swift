@@ -3,7 +3,7 @@
 // using Swift's system sqlite3 module directly.
 
 import SQLite3
-import LuaSkin
+import CLua
 
 // MARK: - Metatable names (must match what Lua code expects)
 

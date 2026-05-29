@@ -1,5 +1,5 @@
 import Cocoa
-import LuaSkin
+import CLua
 import os.log
 import CoreLocation
 
@@ -172,7 +172,7 @@ private func location_registerCallback(_ L: UnsafeMutablePointer<lua_State>!) ->
 /// Returns:
 ///  * True if Location Services are enabled, otherwise false
 private func location_locationServicesEnabled(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    lsCheckArgs(L,LS_TBREAK)
+    // no args to validate
     lua_pushboolean(L, CLLocationManager.locationServicesEnabled() ? 1 : 0)
     return 1
 }
@@ -231,7 +231,7 @@ private func location_distanceBetween(_ L: UnsafeMutablePointer<lua_State>!) -> 
 
 // internally used function
 private func location_startWatching(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    lsCheckArgs(L,LS_TBREAK)
+    // no args to validate
     lua_pushboolean(L, checkLocationManager() ? 1 : 0)
     if lua_toboolean(L, -1) != 0 { location?.manager.startUpdatingLocation() }
     return 1
@@ -239,7 +239,7 @@ private func location_startWatching(_ L: UnsafeMutablePointer<lua_State>!) -> In
 
 // internally used function
 private func location_stopWatching(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    lsCheckArgs(L,LS_TBREAK)
+    // no args to validate
     location?.manager.stopUpdatingLocation()
     return 0
 }

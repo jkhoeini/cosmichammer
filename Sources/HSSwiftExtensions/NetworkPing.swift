@@ -17,7 +17,7 @@
 /// In cases where the callback receives a "receivedUnexpectedPacket" message because the packet is corrupted or truncated, this table may only contain the `_raw` field.
 
 import Cocoa
-import LuaSkin
+import CLua
 import os.log
 import Darwin.POSIX
 
@@ -592,7 +592,7 @@ private func pushPingableObject(_ L: UnsafeMutablePointer<lua_State>!, _ obj: An
     let value = obj as! PingableObject
 
     if value.selfRef != LUA_NOREF {
-        lsPushLuaRef(L,refTable, ref: value.selfRef)
+        lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(value.selfRef))
     } else {
         let valuePtr = lua_newuserdata(L, MemoryLayout<UnsafeMutableRawPointer>.size)!
             .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)

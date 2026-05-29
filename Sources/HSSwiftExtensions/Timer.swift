@@ -1,5 +1,5 @@
 import Cocoa
-import LuaSkin
+import CLua
 import Darwin.POSIX.sys.time
 import os.log
 

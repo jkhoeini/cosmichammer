@@ -1,5 +1,5 @@
 import Cocoa
-import LuaSkin
+import CLua
 import os.log
 
 // NSUserNotification and its relations are deprecated but we're not ready to switch quite yet...

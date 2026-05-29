@@ -1,5 +1,5 @@
 import Cocoa
-import LuaSkin
+import CLua
 
 // MARK: axtextmarker.m — AXTextMarker / AXTextMarkerRange
 // MARK: ============================================================

@@ -1,5 +1,0 @@
-module LuaSkin {
-    umbrella header "LuaSkin/LuaSkin.h"
-    export *
-    module * { export * }
-}

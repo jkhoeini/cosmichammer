@@ -5,7 +5,7 @@
 import Foundation
 import AppKit
 import ApplicationServices
-import LuaSkin
+import CLua
 import CoreGraphics
 import Darwin
 import os.log

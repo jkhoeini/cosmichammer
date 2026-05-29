@@ -7,7 +7,6 @@
 # Special entries (non-extension files) use a full path prefixed with "@".
 # For @-lines the lua-files column is a full repo-relative path.
 
-@LuaSkin	-	Sources/LuaSkin/Resources/luaskin.lua
 _coresetup	-	_coresetup.lua
 alert	-	alert.lua
 appfinder	-	appfinder.lua

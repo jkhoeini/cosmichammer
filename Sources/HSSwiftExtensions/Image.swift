@@ -1,5 +1,5 @@
 import Cocoa
-import LuaSkin
+import CLua
 import os.log
 import AVFoundation
 
@@ -534,7 +534,7 @@ private func imageWithContextFromASCII(_ L: UnsafeMutablePointer<lua_State>!) ->
 private func imageFromName(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let imageName = String(cString: luaL_checkstring(L, 1))
     if let newImage = NSImage(named: NSImage.Name(imageName)) {
-        lsPushNSObject(L,newImage)
+        lua_pushany(L, newImage)
     } else {
         lua_pushnil(L)
     }
@@ -1245,7 +1245,7 @@ private func HSImage_toNSImage(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int
 // MARK: - Cosmic Hammer/Lua Infrastructure
 
 private func image_userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let testImage = lsLuaObjectAtIndex(L, 1, toClass: "NSImage") as! NSImage
+    let testImage = lua_tovalue(L, at: 1) as! NSImage
     let theName = testImage.name() ?? ""
     lua_pushstring(L, "\(USERDATA_TAG): \(theName) (\(String(describing: lua_topointer(L, 1))))")
     return 1

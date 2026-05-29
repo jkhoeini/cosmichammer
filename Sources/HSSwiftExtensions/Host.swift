@@ -1,5 +1,5 @@
 import Cocoa
-import LuaSkin
+import CLua
 import Darwin.sys.sysctl
 import Darwin.POSIX.sys.types
 import Darwin.Mach

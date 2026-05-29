@@ -1,5 +1,5 @@
 import Cocoa
-import LuaSkin
+import CLua
 
 private func transformDataWithFunction(
     _ inputData: NSData,

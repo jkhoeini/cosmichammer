@@ -7,7 +7,7 @@
 /// The Lua wrapper portion is licensed under the MIT license by the Cosmic Hammer development team.
 
 import Foundation
-import LuaSkin
+import CLua
 import Markdown
 
 // MARK: - Mode Enum

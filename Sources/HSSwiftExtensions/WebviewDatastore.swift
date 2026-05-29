@@ -3,7 +3,7 @@
 /// Provides methods to list and purge the various types of data used by websites visited with `hs.webview`.
 
 import Foundation
-import LuaSkin
+import CLua
 import Cocoa
 import WebKit
 import os.log

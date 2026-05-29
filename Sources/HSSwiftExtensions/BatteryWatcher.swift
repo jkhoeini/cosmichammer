@@ -1,5 +1,5 @@
 import Cocoa
-import LuaSkin
+import CLua
 import IOKit.ps
 
 /// === hs.battery.watcher ===

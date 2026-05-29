@@ -7,7 +7,7 @@
 //
 
 import Cocoa
-import LuaSkin
+import CLua
 import AVFoundation
 import os.log
 
@@ -165,7 +165,7 @@ private func core_closeconsole(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * A boolean, true if the file was opened successfully, otherwise false
 private func core_open(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    lsCheckArgs(L, LS_TSTRING, LS_TBREAK)
+    luaL_checktype(L, 1, LUA_TSTRING)
 
     guard let cStr = lua_tostring(L, 1) else {
         lua_pushboolean(L, 0)
@@ -423,8 +423,6 @@ private func core_cameraState(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * A boolean, true if dark mode is enabled otherwise false.
 private func preferencesDarkMode(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    lsCheckArgs(L, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
-
     if lua_isboolean(L, 1) {
         PreferencesDarkModeSetEnabled(lua_toboolean(L, 1) != 0)
         MJPreferencesWindowController.singleton().reflectDefaults()
@@ -459,8 +457,6 @@ private func preferencesDarkMode(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 ///      execute lua code "hs.alert([[Hello from AppleScript]])"
 ///    end tell```
 private func core_appleScript(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    lsCheckArgs(L, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
-
     if lua_isboolean(L, 1) {
         HSAppleScriptSetEnabled(lua_toboolean(L, 1) != 0)
     }
@@ -482,8 +478,6 @@ private func core_appleScript(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Notes:
 ///  * This only refers to dock icon clicks while Cosmic Hammer is already running. The console window is not opened by launching the app
 private func core_openConsoleOnDockClick(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    lsCheckArgs(L, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
-
     if lua_isboolean(L, 1) {
         HSOpenConsoleOnDockClickSetEnabled(lua_toboolean(L, 1) != 0)
     }
@@ -516,7 +510,7 @@ private func core_focus(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * The extension's object metatable, or nil if an error occurred
 private func core_getObjectMetatable(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    lsCheckArgs(L, LS_TSTRING, LS_TBREAK)
+    luaL_checktype(L, 1, LUA_TSTRING)
     luaL_getmetatable(L, lua_tostring(L, 1))
     return 1
 }
@@ -536,7 +530,7 @@ private func core_getObjectMetatable(_ L: UnsafeMutablePointer<lua_State>!) -> I
 ///  * This function does not modify the original string - to actually replace it, assign the result of this function to the original string.
 ///  * This function is a more specifically targeted version of the `hs.utf8.fixUTF8(...)` function.
 private func core_cleanUTF8(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    lsCheckArgs(L, LS_TANY, LS_TBREAK)
+    luaL_checkany(L, 1)
     // luaL_tolstring coerces any value to a string representation
     var len: Int = 0
     let src = luaL_tolstring(L, 1, &len)

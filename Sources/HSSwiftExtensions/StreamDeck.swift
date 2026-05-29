@@ -8,7 +8,7 @@
 //
 
 import Cocoa
-import LuaSkin
+import CLua
 import IOKit
 import IOKit.hid
 import os.log

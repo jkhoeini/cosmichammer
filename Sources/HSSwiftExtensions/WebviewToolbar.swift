@@ -1,5 +1,5 @@
 import Cocoa
-import LuaSkin
+import CLua
 import os.log
 
 private let USERDATA_TB_TAG = "hs.webview.toolbar"
@@ -1332,7 +1332,7 @@ private func toolbar_autosaves(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 // MARK: - Constants
 
 private func toolbar_systemItems(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    lsPushNSObject(L,automaticallyIncluded)
+    lua_pushany(L, automaticallyIncluded)
     return 1
 }
 

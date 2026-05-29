@@ -1,5 +1,5 @@
 import Foundation
-import LuaSkin
+import CLua
 import Cocoa
 import IOKit
 import IOKit.usb

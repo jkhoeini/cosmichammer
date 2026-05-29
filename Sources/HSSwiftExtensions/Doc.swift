@@ -1,5 +1,5 @@
 import Cocoa
-import LuaSkin
+import CLua
 import os.log
 
 private let USERDATA_TAG = "hs.doc" // we're using it as a module tag for console messages

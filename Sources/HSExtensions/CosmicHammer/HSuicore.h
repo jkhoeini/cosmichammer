@@ -1,5 +1,9 @@
 @import Foundation;
-@import LuaSkin;
+#import <CLua.h>
+
+// Lightweight typedefs formerly provided by LuaSkin.
+typedef int LSRefTable;
+typedef struct LSGCCanary { int token; } LSGCCanary;
 
 #pragma mark - HSuielement declarations
 

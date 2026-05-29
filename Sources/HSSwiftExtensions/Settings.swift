@@ -1,5 +1,5 @@
 import Cocoa
-import LuaSkin
+import CLua
 
 // Establish a unique context for identifying our observers
 private var myKVOContext: Int = 0 // See http://nshipster.com/key-value-observing/

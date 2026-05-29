@@ -1,5 +1,5 @@
 import Cocoa
-import LuaSkin
+import CLua
 import os.log
 import Network
 
@@ -1293,7 +1293,7 @@ private func get_socket_connections(_ asyncSocket: HSAsyncTcpSocket) -> Int {
 ///  * If the socket is bound for listening, this method returns `true` if there is at least one connection.
 ///
 private func socket_connected(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    lsCheckArgs(L,LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     let asyncSocket = getUserData(L, 1)
 
     lua_pushboolean(L, get_socket_connections(asyncSocket) != 0 ? 1 : 0)
@@ -1314,7 +1314,7 @@ private func socket_connected(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * This method returns at most 1 for default (non-listening) sockets.
 ///
 private func socket_connections(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    lsCheckArgs(L,LS_TUSERDATA, USERDATA_TAG, LS_TBREAK)
+    luaL_checkudata(L, 1, USERDATA_TAG)
     let asyncSocket = getUserData(L, 1)
 
     lua_pushinteger(L, lua_Integer(get_socket_connections(asyncSocket)))

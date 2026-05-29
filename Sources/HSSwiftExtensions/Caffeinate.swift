@@ -1,5 +1,5 @@
 import Cocoa
-import LuaSkin
+import CLua
 import Carbon
 import IOKit.pwr_mgt
 import os.log

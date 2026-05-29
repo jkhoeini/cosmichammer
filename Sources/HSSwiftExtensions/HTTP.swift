@@ -1,5 +1,5 @@
 import Foundation
-import LuaSkin
+import CLua
 import Cocoa
 import Carbon
 import os.log
@@ -114,7 +114,11 @@ private func getBodyFromStack(_ L: UnsafeMutablePointer<lua_State>!, _ index: In
     if !lua_isnoneornil(L, index) {
         var postData: Data?
         if lua_type(L, index) == LUA_TSTRING {
-            postData = lsToNSObject(L, atIndex: index, withOptions: .nsLuaStringAsDataOnly) as? Data
+            // Get the raw bytes from the Lua string (preserving binary data)
+            var len: Int = 0
+            if let ptr = lua_tolstring(L, index, &len) {
+                postData = Data(bytes: ptr, count: len)
+            }
         } else {
             if let cstr = lua_tostring(L, index),
                let body = String(cString: cstr, encoding: .ascii) {
@@ -567,11 +571,6 @@ private let http_doAsyncRequest_C: @convention(c) (UnsafeMutablePointer<lua_Stat
 private let http_urlParts_C: @convention(c) (UnsafeMutablePointer<lua_State>?) -> Int32 = { L in http_urlParts(L) }
 private let http_encodeForQuery_C: @convention(c) (UnsafeMutablePointer<lua_State>?) -> Int32 = { L in http_encodeForQuery(L) }
 private let http_gc_C: @convention(c) (UnsafeMutablePointer<lua_State>?) -> Int32 = { L in http_gc(L) }
-
-// Push/convert helper blocks for LuaSkin registration
-private let NSURLRequest_toLua_block: pushNSHelperFunction = { L, obj in NSURLRequest_toLua(L!, obj!) }
-private let NSURLResponse_toLua_block: pushNSHelperFunction = { L, obj in NSURLResponse_toLua(L!, obj!) }
-private let table_toNSURLRequest_block: luaObjectHelperFunction = { L, idx in table_toNSURLRequest(L!, idx) as AnyObject? }
 
 // MARK: - Module Registration
 

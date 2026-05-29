@@ -1,5 +1,5 @@
 import Cocoa
-import LuaSkin
+import CLua
 import os.log
 
 // MARK: - SkyLight Private Framework Declarations

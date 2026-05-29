@@ -6,7 +6,7 @@
 // Every entry point is imported via @_silgen_name so the Swift function name
 // is decoupled from the C symbol name (handles both @_cdecl Swift funcs and
 // C-implemented funcs like lsqlite3).
-import LuaSkin
+import CLua
 
 // MARK: - Forward declarations (C symbol imports)
 

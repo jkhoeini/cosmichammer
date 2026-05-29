@@ -1,4 +1,5 @@
-import LuaSkin
+import CLua
+@testable import HSSwiftExtensions
 
 nonisolated(unsafe) private var testFlag = false
 
@@ -14,9 +15,10 @@ enum HScoresetupHelper {
                 .assumingMemoryBound(to: CChar.self), func: verifyShutdown),
             luaL_Reg(name: nil, func: nil),
         ]
-        let skin = LuaSkin.shared(with: nil) as! LuaSkin
-        skin.registerLibrary("shutdownLib", functions: &shutdownLib, metaFunctions: nil)
-        lua_setglobal(skin.l, "shutdownLib")
+        let L = lua_getCurrentState()!
+        lua_createtable(L, 0, Int32(shutdownLib.count - 1))
+        luaL_setfuncs(L, &shutdownLib, 0)
+        lua_setglobal(L, "shutdownLib")
     }
 
     static func shutdownFired() -> Bool { testFlag }

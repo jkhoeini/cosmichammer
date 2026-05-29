@@ -1,5 +1,5 @@
 import Foundation
-import LuaSkin
+import CLua
 import Cocoa
 
 private let USERDATA_TAG = "hs.midi"

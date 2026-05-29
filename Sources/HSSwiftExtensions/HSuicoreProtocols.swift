@@ -1,6 +1,6 @@
-import Foundation
+import Cocoa
 import ApplicationServices
-import LuaSkin
+import CLua
 
 // @objc protocols mirroring HSuicore.h types from the HSExtensions ObjC target.
 // Swift files in HSSwiftExtensions cannot import ObjC types directly; instead they

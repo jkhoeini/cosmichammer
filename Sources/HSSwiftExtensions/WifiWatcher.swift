@@ -3,7 +3,7 @@
 /// Watch for changes to the associated wifi network
 
 import Foundation
-import LuaSkin
+import CLua
 import Cocoa
 import CoreWLAN
 import os.log

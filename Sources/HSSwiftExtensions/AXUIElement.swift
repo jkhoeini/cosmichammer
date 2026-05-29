@@ -6,7 +6,7 @@
 // AXTextMarker/AXTextMarkerRange wrappers (axtextmarker).
 
 import Cocoa
-import LuaSkin
+import CLua
 import os.log
 
 // MARK: - Tag Constants

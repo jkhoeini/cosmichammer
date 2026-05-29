@@ -1,5 +1,6 @@
 import Foundation
-import LuaSkin
+import CLua
+@testable import HSSwiftExtensions
 
 @_silgen_name("MJLuaAlloc")
 func MJLuaAlloc()
@@ -14,6 +15,13 @@ private let repoRoot: URL = {
         .deletingLastPathComponent()  // repo root
 }()
 
+/// Minimal getObjectMetatable for the test environment.
+private let test_getObjectMetatable: lua_CFunction = { L in
+    luaL_checktype(L, 1, LUA_TSTRING)
+    luaL_getmetatable(L, lua_tostring(L, 1))
+    return 1
+}
+
 @MainActor private var luaBootstrapped = false
 
 private func doLuaString(_ L: UnsafeMutablePointer<lua_State>, _ s: String) -> Int32 {
@@ -25,8 +33,7 @@ private func doLuaString(_ L: UnsafeMutablePointer<lua_State>, _ s: String) -> I
 @MainActor
 func luaRunString(_ code: String) -> String? {
     bootstrapLuaForTesting()
-    let skin = LuaSkin.shared(with: nil) as! LuaSkin
-    let L = skin.l!
+    let L = lua_getCurrentState()!
     let top = lua_gettop(L)
 
     let firstResult = top + 1
@@ -83,14 +90,17 @@ func bootstrapLuaForTesting() {
         fatalError("Built extensions not found at \(extensionsPath) — run `just build` first")
     }
 
-    LuaSkin.resourceSearchPath = appResources.path
     MJLuaAlloc()
 
-    let skin = LuaSkin.shared(with: nil) as! LuaSkin
-    let L = skin.l!
+    let L = lua_getCurrentState()!
 
-    var corelib: [luaL_Reg] = [luaL_Reg(name: nil, func: nil)]
-    skin.registerLibrary("core", functions: &corelib, metaFunctions: nil)
+    // Create the "hs" global table with essential core functions
+    var corelib: [luaL_Reg] = [
+        luaL_Reg(name: strdup("getObjectMetatable"), func: test_getObjectMetatable),
+        luaL_Reg(name: nil, func: nil),
+    ]
+    lua_createtable(L, 0, Int32(corelib.count - 1))
+    luaL_setfuncs(L, &corelib, 0)
     lua_setglobal(L, "hs")
 
     HSExtensionsRegisterAll(L)

@@ -1,5 +1,5 @@
 import Cocoa
-import LuaSkin
+import CLua
 import CFNetwork
 import SystemConfiguration
 
@@ -197,7 +197,7 @@ private func commonConstructor(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 private func commonForHostName(_ L: UnsafeMutablePointer<lua_State>!, _ resolveType: CFHostInfoType) -> Int32 {
     let hostName = String(cString: luaL_checkstring(L, 1)!)
-    let synchronous = lua_isnoneornil(L, 2)
+    let synchronous: Bool = lua_isnoneornil(L, 2)
 
     let theHost = CFHostCreateWithName(kCFAllocatorDefault, hostName as CFString).takeRetainedValue()
 
@@ -213,7 +213,7 @@ private func commonForHostName(_ L: UnsafeMutablePointer<lua_State>!, _ resolveT
 }
 
 private func commonForAddress(_ L: UnsafeMutablePointer<lua_State>!, _ resolveType: CFHostInfoType) -> Int32 {
-    let synchronous = lua_isnoneornil(L, 2)
+    let synchronous: Bool = lua_isnoneornil(L, 2)
 
     _ = luaL_checkstring(L, 1) // force number to be a string
     var results: UnsafeMutablePointer<addrinfo>?

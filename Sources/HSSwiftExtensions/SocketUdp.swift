@@ -1,5 +1,5 @@
 import Cocoa
-import LuaSkin
+import CLua
 import os.log
 import Network
 
@@ -268,7 +268,8 @@ private class HSAsyncUdpSocket {
                 self._isConnected = false
                 os_log(.error, "%{public}s", "UDP socket did not connect: \(err)")
                 mainThreadDispatch {
-                    self.connectCallbackRef = lsLuaUnref(nil,refTable, ref: self.connectCallbackRef)
+                    luaL_unref(nil, LUA_REGISTRYINDEX_VALUE, self.connectCallbackRef)
+                    self.connectCallbackRef = LUA_NOREF
                 }
             case .cancelled:
                 self._isConnected = false
@@ -484,7 +485,8 @@ private class HSAsyncUdpSocket {
             if let error = error {
                 os_log(.error, "%{public}s", "Data not sent on UDP socket: \(error)")
                 mainThreadDispatch {
-                    self.writeCallbackRef = lsLuaUnref(nil,refTable, ref: self.writeCallbackRef)
+                    luaL_unref(nil, LUA_REGISTRYINDEX_VALUE, self.writeCallbackRef)
+                    self.writeCallbackRef = LUA_NOREF
                 }
             } else {
                 os_log(.debug,"Data written to UDP socket")
@@ -535,7 +537,8 @@ private class HSAsyncUdpSocket {
             } else {
                 os_log(.error, "%{public}s", "Data not sent on UDP socket: could not resolve or send to \(host):\(port)")
                 mainThreadDispatch {
-                    self.writeCallbackRef = lsLuaUnref(nil,refTable, ref: self.writeCallbackRef)
+                    luaL_unref(nil, LUA_REGISTRYINDEX_VALUE, self.writeCallbackRef)
+                    self.writeCallbackRef = LUA_NOREF
                 }
             }
         }

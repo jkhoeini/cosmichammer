@@ -5,7 +5,6 @@ import PackageDescription
 //
 // All source lives under Sources/<TargetName>/:
 //
-//   LuaSkin            – Lua 5.4 runtime + Objective-C bridge
 //   HSExtensions       – ObjC/C/C++ extension code + core app headers
 //   HSSwiftExtensions  – Swift extension code + core app Swift sources
 //   HSApp              – thin executable wrapper (main.swift)
@@ -32,32 +31,12 @@ let package = Package(
     ],
     targets: [
         // ---------------------------------------------------------------
-        // LuaSkin — Objective-C bridge (uses LuaSwift's CLua for Lua runtime)
-        // ---------------------------------------------------------------
-        .target(
-            name: "LuaSkin",
-            dependencies: [.product(name: "Lua", package: "LuaSwift")],
-            path: "Sources/LuaSkin",
-            exclude: ["Resources/luaskin.lua"],
-            publicHeadersPath: "include",
-            cSettings: [
-                .define("LUA_USE_MACOSX"),
-                .define("LUA_USE_APICHECK"),
-                .define("LUA_COMPAT_5_3"),
-                .headerSearchPath("include/LuaSkin"),
-            ],
-            linkerSettings: [
-                .linkedFramework("Foundation"),
-                .linkedFramework("AppKit"),
-            ]
-        ),
-        // ---------------------------------------------------------------
         // HSExtensions — ObjC/C/C++ extension sources + core app headers
         // ---------------------------------------------------------------
         .target(
             name: "HSExtensions",
             dependencies: [
-                "LuaSkin",
+                .product(name: "Lua", package: "LuaSwift"),
                 "HSSwiftExtensions",
                 .product(name: "ORSSerial", package: "ORSSerialPort"),
             ],
@@ -123,7 +102,7 @@ let package = Package(
         .target(
             name: "HSSwiftExtensions",
             dependencies: [
-                "LuaSkin",
+                .product(name: "Lua", package: "LuaSwift"),
                 .product(name: "ORSSerial", package: "ORSSerialPort"),
                 .product(name: "Markdown", package: "swift-markdown"),
             ],
@@ -169,7 +148,7 @@ let package = Package(
         // ---------------------------------------------------------------
         .testTarget(
             name: "CosmicHammerTests",
-            dependencies: ["HSExtensions", "HSSwiftExtensions", "LuaSkin"],
+            dependencies: ["HSExtensions", "HSSwiftExtensions"],
             path: "Tests/CosmicHammerTests",
             exclude: ["lsunit.lua", "testinit.lua"],
             swiftSettings: [

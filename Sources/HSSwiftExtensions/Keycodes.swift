@@ -1,5 +1,5 @@
 import Cocoa
-import LuaSkin
+import CLua
 import Carbon
 
 private let USERDATA_TAG = "hs.keycodes.callback"

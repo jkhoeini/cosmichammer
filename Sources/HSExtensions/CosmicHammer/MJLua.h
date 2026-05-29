@@ -1,4 +1,4 @@
-#import <LuaSkin/LuaSkin.h>
+#import <CLua.h>
 
 void MJLuaAlloc(void);
 void MJLuaInit(void);

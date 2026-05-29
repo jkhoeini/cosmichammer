@@ -1,5 +1,5 @@
 import Foundation
-import LuaSkin
+import CLua
 import Cocoa
 
 /// === hs.caffeinate.watcher ===

@@ -21,7 +21,7 @@
  */
 
 import Cocoa
-import LuaSkin
+import CLua
 import os.log
 
 // MARK: - Constants
@@ -50,7 +50,7 @@ func path_to_nsurl(_ path: NSString) -> NSURL {
 }
 
 func path_at_index(_ L: UnsafeMutablePointer<lua_State>!, _ i: Int32) -> UnsafePointer<CChar>? {
-    let path = lsToNSObject(L, atIndex: i) as! NSString
+    let path = lua_tovalue(L, at: i) as! NSString
     return (path_to_nsurl(path).path as NSString?)?.utf8String
 }
 
@@ -60,7 +60,7 @@ func tags_from_lua_stack(_ L: UnsafeMutablePointer<lua_State>!) -> NSArray {
     lua_pushnil(L)
     while lua_next(L, 2) != 0 {
         if lua_type(L, -1) == LUA_TSTRING {
-            let tag = lsToNSObject(L, atIndex: -1) as! NSString
+            let tag = lua_tovalue(L, at: -1) as! NSString
             tags.add(tag)
         }
         lua_pop(L, 1)
@@ -116,7 +116,7 @@ private func pusherror(_ L: UnsafeMutablePointer<lua_State>!, _ info: UnsafePoin
 /// Returns:
 ///  * If successful, returns true, otherwise returns nil and an error string
 private func change_dir(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    lsCheckArgs(L,LS_TSTRING, LS_TBREAK)
+    luaL_checktype(L, 1, LUA_TSTRING)
     let path = path_at_index(L, 1)
 
     if chdir(path) != 0 {
@@ -320,7 +320,8 @@ private func file_unlock(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * True if the link was created, otherwise nil and an error string
 private func make_link(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    lsCheckArgs(L,LS_TSTRING, LS_TSTRING, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK)
+    luaL_checktype(L, 1, LUA_TSTRING)
+    luaL_checktype(L, 2, LUA_TSTRING)
     let oldpath = path_at_index(L, 1)
     let newpath = path_at_index(L, 2)
     var hasError: Bool
@@ -352,7 +353,7 @@ private func make_link(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * True if the directory was created, otherwise nil and an error string
 private func make_dir(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    lsCheckArgs(L,LS_TSTRING, LS_TBREAK)
+    luaL_checktype(L, 1, LUA_TSTRING)
     let path = path_at_index(L, 1)
 
     let fail = mkdir(path, S_IRUSR | S_IWUSR | S_IXUSR | S_IRGRP |
@@ -376,7 +377,7 @@ private func make_dir(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * True if the directory was removed, otherwise nil and an error string
 private func remove_dir(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    lsCheckArgs(L,LS_TSTRING, LS_TBREAK)
+    luaL_checktype(L, 1, LUA_TSTRING)
     let path = path_at_index(L, 1)
 
     let fail = rmdir(path)
@@ -455,7 +456,7 @@ private func dir_close(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///       dirObj:close() -- necessary to make sure that the directory stream is closed
 ///    ```
 private func dir_iter_factory(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    lsCheckArgs(L,LS_TSTRING, LS_TBREAK)
+    luaL_checktype(L, 1, LUA_TSTRING)
     let path = path_at_index(L, 1)
     lua_pushcfunction(L, dir_iter)
     let d = lua_newuserdata(L, MemoryLayout<dir_data>.size)!.assumingMemoryBound(to: dir_data.self)
@@ -544,7 +545,7 @@ private func makeCString(_ s: StaticString) -> UnsafePointer<CChar> {
 /// Returns:
 ///  * True if the operation was successful, otherwise nil and an error string
 private func file_utime(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    lsCheckArgs(L,LS_TSTRING, LS_TNUMBER | LS_TOPTIONAL, LS_TNUMBER | LS_TOPTIONAL, LS_TBREAK)
+    luaL_checktype(L, 1, LUA_TSTRING)
     let file = path_at_index(L, 1)
 
     if lua_gettop(L) == 1 {
@@ -694,7 +695,7 @@ private let members: [StatMember] = [
 /// Notes:
 ///  * This function uses `stat()` internally thus if the given filepath is a symbolic link, it is followed (if it points to another link the chain is followed recursively) and the information is about the file it refers to. To obtain information about the link itself, see function `hs.fs.symlinkAttributes()`
 private func _file_info_(_ L: UnsafeMutablePointer<lua_State>!, _ st: @convention(c) (UnsafePointer<CChar>?, UnsafeMutablePointer<stat>?) -> Int32) -> Int32 {
-    lsCheckArgs(L,LS_TSTRING, LS_TSTRING | LS_TOPTIONAL, LS_TBREAK)
+    luaL_checktype(L, 1, LUA_TSTRING)
     let file = path_at_index(L, 1)
     var info = stat()
 
@@ -1255,7 +1256,7 @@ private func fs_filesInPath(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
                             filePathStr = (resolvedVals.allValues[.pathKey] as? NSString) ?? (fileURL.path as NSString)
                         }
                     } else {
-                        lsLogWarn(L,"\(USERDATA_TAG).pathList - error resolving symbolic link \(newPath)")
+                        os_log(.info, "%{public}s", "\(USERDATA_TAG).pathList - error resolving symbolic link \(newPath)")
                         continue
                     }
                 } else {

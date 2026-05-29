@@ -7,7 +7,7 @@
 //
 
 import Foundation
-import LuaSkin
+import CLua
 import os.log
 
 // MARK: - UserDefaults key

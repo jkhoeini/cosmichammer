@@ -3,7 +3,7 @@
 
 @import Cocoa ;
 @import Carbon ;
-@import LuaSkin ;
+#import <CLua.h>
 
 #define EVENT_USERDATA_TAG          "hs.eventtap.event"
 #define APPLICATION_USERDATA_TAG    "hs.application"
