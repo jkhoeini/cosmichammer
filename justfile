@@ -18,8 +18,13 @@ build config="Debug":
     set -euo pipefail
     mkdir -p {{ build_dir }}
 
-    # --- Pre-build: version numbers from git ---
+    # --- Pre-build: version numbers from the current jj/git revision ---
     git_bin=$(sh /etc/profile; which git)
+    git_rev=HEAD
+    if command -v jj >/dev/null 2>&1 && jj root >/dev/null 2>&1; then
+        jj git export >/dev/null 2>&1 || true
+        git_rev="$(jj log -r "${JJ_VERSION_REV:-@}" --no-graph -T commit_id)"
+    fi
     # In a jj workspace the .git dir may live outside the working copy.
     # Resolve it via the jj store pointer when .git is absent locally.
     if [ ! -d .git ] && [ -f .jj/repo ] || [ -d .jj/repo/store ]; then
@@ -34,8 +39,8 @@ build config="Debug":
             *)  export GIT_DIR="${_repo_dir}/store/${_git_target}" ;;
         esac
     fi
-    version=$("$git_bin" describe --tags --always --abbrev=0 | sed -e 's/^v//' -e 's/g//')
-    build_num=$("$git_bin" rev-list $("$git_bin" describe --tags --always) --count)
+    version=$("$git_bin" describe --tags --always --abbrev=0 "$git_rev" | sed -e 's/^v//' -e 's/g//')
+    build_num=$("$git_bin" rev-list "$("$git_bin" describe --tags --always "$git_rev")" --count)
     unset GIT_DIR  # avoid leaking into SPM
     echo "Version: ${version} (${build_num})"
 
@@ -198,7 +203,7 @@ release version:
 
     # ── Build Release ─────────────────────────────────────────────────────
     echo "===> Building Cosmic Hammer {{ version }} (Release)"
-    just build Release
+    JJ_VERSION_REV=dev just build Release
 
     # ── Package DMG ───────────────────────────────────────────────────────
     echo "===> Creating $DMG_NAME"
