@@ -40,12 +40,10 @@ build config="Debug":
     echo "Version: ${version} (${build_num})"
 
     # --- Pre-build: compile docs.json ---
-    if [ -f ./scripts/docs/.build/release/BuildDocs ]; then
-        ./scripts/docs/.build/release/BuildDocs -o ./build/ --json extensions
-    else
-        echo "warning: BuildDocs not built, skipping docs.json. Run: swift build -c release --package-path scripts/docs"
-        touch ./build/docs.json
+    if [ ! -f ./scripts/docs/.build/release/BuildDocs ]; then
+        swift build -c release --package-path scripts/docs
     fi
+    ./scripts/docs/.build/release/BuildDocs -o ./build/ --json extensions
 
     # --- Pre-build: build hs CLI ---
     swift build -c release --product hs

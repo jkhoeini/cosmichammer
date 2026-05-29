@@ -74,5 +74,15 @@ extension CosmicHammerTests {
                 }
             }
         }
+
+        @Test func testDocRegisterJSONFileRejectsNilWithoutCrashing() {
+            let result = runLua("""
+                local doc = require('hs.libdoc')
+                local ok, err = pcall(doc.registerJSONFile, nil)
+                if ok then return 'accepted nil' end
+                return type(err)
+            """)
+            #expect(result == "string")
+        }
     }
 }

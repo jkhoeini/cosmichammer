@@ -511,7 +511,18 @@ private func core_focus(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * The extension's object metatable, or nil if an error occurred
 private func core_getObjectMetatable(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     luaL_checktype(L, 1, LUA_TSTRING)
-    luaL_getmetatable(L, lua_tostring(L, 1))
+    let name = lua_tostring(L, 1)
+    luaL_getmetatable(L, name)
+    if lua_istable(L, -1) != 0 {
+        lua_getfield(L, -1, "__type")
+        if lua_isnil(L, -1) != 0, let name = name {
+            lua_pop(L, 1)
+            lua_pushstring(L, name)
+            lua_setfield(L, -2, "__type")
+        } else {
+            lua_pop(L, 1)
+        }
+    }
     return 1
 }
 
@@ -719,6 +730,8 @@ func MJLuaInit() {
     lua_setfield(L, -2, "processInfo")
 
     lua_setglobal(L, "hs")
+
+    installLuaSkinCompatibilityGlobals(L)
 
     // Register every bundled hs.lib<name> entry point into package.preload before setup.lua runs.
     hsExtensionsRegisterAll(L)

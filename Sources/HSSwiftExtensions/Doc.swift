@@ -322,6 +322,7 @@ private func doc_help(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Notes:
 ///  * this function just registers the documentation file; it won't actually be loaded and parsed until [hs.doc.help](#help) is invoked.
 private func doc_registerJSONFile(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    luaL_checktype(L, 1, LUA_TSTRING)
     var path = lua_tovalue(L, at: 1) as! NSString
     let isSpoon = lua_gettop(L) > 1 ? lua_toboolean(L, 2) != 0 : false
 

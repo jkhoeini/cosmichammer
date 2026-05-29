@@ -8,6 +8,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Stage all development on the `dev` bookmark and push there. Do not push to `master` and do not create new feature bookmarks unless the user asks — the workflow here is "advance `dev`, push `dev`."
 - The remote is `origin`. Only push when explicitly told to. Use `jj git push --bookmark dev`.
 
+## Shell and tools
+
+- Run commands through `zsh -ic '<cmd>'` so the user's shell setup, PATH, and `mise` shims are loaded.
+- If `just` is not already on PATH, use `mise exec -- just <recipe>`.
+- In a new jj workspace, if `mise` reports that `mise.toml` is not trusted, run `mise trust` once in that workspace before using `mise exec`.
+
 ## Common commands
 
 The project uses `just` as a task runner. `mise` installs `just` (`mise.toml`). There is no Xcode project — the app is built entirely via `swift build` + justfile bundle assembly.
