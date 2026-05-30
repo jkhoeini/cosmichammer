@@ -73,5 +73,51 @@ extension CosmicHammerTests {
 
             #expect(result == "string")
         }
+
+        @Test func testApplicationLoadsWhenSpotlightNameSearchesAreEnabled() {
+            let result = runLua("""
+            (function()
+                local settings = require("hs.settings")
+                settings.set("HSenableSpotlightForNameSearches", true)
+                package.loaded["hs.application"] = nil
+                rawset(hs, "application", nil)
+
+                local ok, app = pcall(require, "hs.application")
+                if ok then app.enableSpotlightForNameSearches(false) end
+                settings.set("HSenableSpotlightForNameSearches", false)
+                if not ok then return tostring(app) end
+                return "ok"
+            end)()
+            """)
+
+            #expect(result == "ok")
+        }
+
+        @Test func testSpotlightNewReturnsUsableUserdata() {
+            let result = runLua("""
+            (function()
+                local spotlight = require("hs.spotlight")
+                local watcher = spotlight.new()
+
+                if type(watcher) ~= "userdata" then
+                    return "new returned " .. type(watcher)
+                end
+                if type(watcher.queryString) ~= "function" then
+                    return "queryString is " .. type(watcher.queryString)
+                end
+
+                local ok, err = pcall(function()
+                    watcher:queryString([[kMDItemContentType = "com.apple.application-bundle"]])
+                           :callbackMessages("didUpdate", "inProgress")
+                           :setCallback(function() end)
+                           :stop()
+                end)
+                if not ok then return tostring(err) end
+                return "ok"
+            end)()
+            """)
+
+            #expect(result == "ok")
+        }
     }
 }

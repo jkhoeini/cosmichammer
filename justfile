@@ -181,7 +181,7 @@ release version:
     set -euo pipefail
 
     TAG="v{{ version }}"
-    DMG_NAME="CosmicHammer-{{ version }}-macos-arm64.dmg"
+    DMG_NAME="Cosmic-Hammer-{{ version }}.dmg"
     OUTPUT_DIR="release"
 
     # ── Preflight ─────────────────────────────────────────────────────────
