@@ -1797,6 +1797,8 @@ private var audiodevice_metalib: [luaL_Reg] = [
     luaL_Reg(name: strdup("setInputMuted"),           func: audiodevice_setInputMuted),
     luaL_Reg(name: strdup("setOutputMuted"),          func: audiodevice_setOutputMuted),
     luaL_Reg(name: strdup("inUse"),                   func: audiodevice_inUse),
+    luaL_Reg(name: strdup("isOutputDevice"),          func: audiodevice_isOutputDevice),
+    luaL_Reg(name: strdup("isInputDevice"),           func: audiodevice_isInputDevice),
     luaL_Reg(name: strdup("transportType"),           func: audiodevice_transportType),
     luaL_Reg(name: strdup("jackConnected"),           func: audiodevice_jackConnected),
     luaL_Reg(name: strdup("supportsInputDataSources"),func: audiodevice_supportsInputDataSources),
@@ -1841,6 +1843,8 @@ public func luaopen_hs_libaudiodevice(_ L: UnsafeMutablePointer<lua_State>!) -> 
     luaL_newmetatable(L, USERDATA_TAG)
     lua_pushvalue(L, -1)
     lua_setfield(L, -2, "__index")
+    lua_pushstring(L, USERDATA_TAG)
+    lua_setfield(L, -2, "__type")
     luaL_setfuncs(L, &audiodevice_metalib, 0)
     lua_pop(L, 1)
 
@@ -1848,6 +1852,8 @@ public func luaopen_hs_libaudiodevice(_ L: UnsafeMutablePointer<lua_State>!) -> 
     luaL_newmetatable(L, USERDATA_DATASOURCE_TAG)
     lua_pushvalue(L, -1)
     lua_setfield(L, -2, "__index")
+    lua_pushstring(L, USERDATA_DATASOURCE_TAG)
+    lua_setfield(L, -2, "__type")
     luaL_setfuncs(L, &dataSourceLib, 0)
     lua_pop(L, 1)
 

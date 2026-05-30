@@ -36,6 +36,14 @@ private func netServiceErrorToString(_ error: [String: Any]) -> String {
     return message
 }
 
+private func pushBonjourCallbackArgument(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any) {
+    if let service = obj as? NetService {
+        pushNSNetService(L, service)
+    } else {
+        lua_pushany(L, obj)
+    }
+}
+
 @objc private class HSNetServiceBrowser: NetServiceBrowser, NetServiceBrowserDelegate {
     var callbackRef: Int32 = Int32(LUA_NOREF)
     var selfRefCount: Int = 0
@@ -57,15 +65,15 @@ private func netServiceErrorToString(_ error: [String: Any]) -> String {
             let L = lua_getCurrentState()!
             var argCount: Int32 = 1
             lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(callbackRef))
-            lua_pushany(L, self)
+            pushHSNetServiceBrowser(L, self)
             if let argument = argument {
                 if let args = argument as? [Any] {
                     for obj in args {
-                        lua_pushany(L, obj as? NSObject)
+                        pushBonjourCallbackArgument(L, obj)
                     }
                     argCount += Int32(args.count)
                 } else {
-                    lua_pushany(L, argument as? NSObject)
+                    pushBonjourCallbackArgument(L, argument)
                     argCount += 1
                 }
             }
@@ -121,7 +129,7 @@ private func netServiceErrorToString(_ error: [String: Any]) -> String {
 ///  * a new browserObject or nil if an error occurs
 private func browser_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let browser = HSNetServiceBrowser()
-    lua_pushany(L, browser)
+    pushHSNetServiceBrowser(L, browser)
     return 1
 }
 
@@ -141,7 +149,7 @@ private func browser_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * This property must be set before initiating a search to have an effect.
 private func browser_includesPeerToPeer(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     luaL_checkudata(L, 1, USERDATA_TAG.utf8Start)
-    let browser: HSNetServiceBrowser = lua_tovalue(L, at: 1) as! HSNetServiceBrowser
+    let browser: HSNetServiceBrowser = toHSNetServiceBrowserFromLua(L, 1) as! HSNetServiceBrowser
     if lua_gettop(L) == 1 {
         lua_pushboolean(L, browser.includesPeerToPeer ? 1 : 0)
     } else {
@@ -180,7 +188,7 @@ private func browser_searchForBrowsableDomains(_ L: UnsafeMutablePointer<lua_Sta
     luaL_checkudata(L, 1, USERDATA_TAG.utf8Start)
 
     luaL_checktype(L, 2, LUA_TFUNCTION)
-    let browser: HSNetServiceBrowser = lua_tovalue(L, at: 1) as! HSNetServiceBrowser
+    let browser: HSNetServiceBrowser = toHSNetServiceBrowserFromLua(L, 1) as! HSNetServiceBrowser
     if browser.callbackRef != Int32(LUA_NOREF) { browser.stop(withState: L) }
     lua_pushvalue(L, 2)
     browser.callbackRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
@@ -218,7 +226,7 @@ private func browser_searchForRegistrationDomains(_ L: UnsafeMutablePointer<lua_
     luaL_checkudata(L, 1, USERDATA_TAG.utf8Start)
 
     luaL_checktype(L, 2, LUA_TFUNCTION)
-    let browser: HSNetServiceBrowser = lua_tovalue(L, at: 1) as! HSNetServiceBrowser
+    let browser: HSNetServiceBrowser = toHSNetServiceBrowserFromLua(L, 1) as! HSNetServiceBrowser
     if browser.callbackRef != Int32(LUA_NOREF) { browser.stop(withState: L) }
     lua_pushvalue(L, 2)
     browser.callbackRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
@@ -230,7 +238,7 @@ private func browser_searchForRegistrationDomains(_ L: UnsafeMutablePointer<lua_
 // hs.bonjour:findServices is documented with its wrapper in init.lua
 private func browser_searchForServices(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     luaL_checkudata(L, 1, USERDATA_TAG.utf8Start)
-    let browser: HSNetServiceBrowser = lua_tovalue(L, at: 1) as! HSNetServiceBrowser
+    let browser: HSNetServiceBrowser = toHSNetServiceBrowserFromLua(L, 1) as! HSNetServiceBrowser
     var service = "_services._dns-sd._udp."
     var domain = ""
     switch lua_gettop(L) {
@@ -269,7 +277,7 @@ private func browser_searchForServices(_ L: UnsafeMutablePointer<lua_State>!) ->
 ///  * In general, when your callback function for [hs.bonjour:findBrowsableDomains](#findBrowsableDomains), [hs.bonjour:findRegistrationDomains](#findRegistrationDomains), or [hs.bonjour:findServices](#findServices) receives false for the `moreExpected` parameter, you should invoke this method on the browserObject unless there are specific reasons not to. Possible reasons you might want to extend the life of the browserObject are documented within each method.
 private func browser_stop(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     luaL_checkudata(L, 1, USERDATA_TAG.utf8Start)
-    let browser: HSNetServiceBrowser = lua_tovalue(L, at: 1) as! HSNetServiceBrowser
+    let browser: HSNetServiceBrowser = toHSNetServiceBrowserFromLua(L, 1) as! HSNetServiceBrowser
     browser.stop(withState: L)
     lua_pushvalue(L, 1)
     return 1
@@ -279,6 +287,7 @@ private func browser_stop(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 // These must not throw a lua error to ensure LuaSkin can safely be used from Objective-C
 // delegates and blocks.
 
+@discardableResult
 private func pushHSNetServiceBrowser(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any?) -> Int32 {
     guard let value = obj as? HSNetServiceBrowser else { return 0 }
     value.selfRefCount += 1
@@ -312,8 +321,8 @@ private func userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     // can't get here if at least one of us isn't a userdata type, and we only care if both types are ours,
     // so use luaL_testudata before the macro causes a lua error
     if luaL_testudata(L, 1, USERDATA_TAG_STR) != nil && luaL_testudata(L, 2, USERDATA_TAG_STR) != nil {
-        let obj1 = lua_tovalue(L, at: 1) as! HSNetServiceBrowser
-        let obj2 = lua_tovalue(L, at: 2) as! HSNetServiceBrowser
+        let obj1 = toHSNetServiceBrowserFromLua(L, 1) as! HSNetServiceBrowser
+        let obj2 = toHSNetServiceBrowserFromLua(L, 2) as! HSNetServiceBrowser
         lua_pushboolean(L, obj1.isEqual(to: obj2) ? 1 : 0)
     } else {
         lua_pushboolean(L, 0)

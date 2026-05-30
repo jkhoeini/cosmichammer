@@ -29,7 +29,7 @@ private let ipc_callback: CFMessagePortCallBack = { (local, msgid, data, info) -
     if port.callbackRef != LUA_NOREF {
         let L = lua_getCurrentState()!
         lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(port.callbackRef))
-        lua_pushany(L, port)
+        pushHSIPCMessagePort(L, port)
         lua_pushinteger(L, lua_Integer(msgid))
         if let data = data {
             lua_pushany(L, data as NSData)
@@ -109,7 +109,7 @@ private func ipc_localPort(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     }
     CFRunLoopAddSource(CFRunLoopGetMain(), runLoopSource, .commonModes)
 
-    lua_pushany(L, port)
+    pushHSIPCMessagePort(L, port)
     return 1
 }
 
@@ -134,7 +134,7 @@ private func ipc_remotePort(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     guard port.messagePort != nil else {
         return luaL_error(L, "failed to create new remote port")
     }
-    lua_pushany(L, port)
+    pushHSIPCMessagePort(L, port)
     return 1
 }
 
@@ -151,7 +151,7 @@ private func ipc_remotePort(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * the port name as a string
 private func ipc_name(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     luaL_checkudata(L, 1, USERDATA_TAG)
-    let port = lua_tovalue(L, at: 1) as! HSIPCMessagePort
+    let port = toHSIPCMessagePortFromLua(L, 1) as! HSIPCMessagePort
 
     let name = CFMessagePortGetName(port.messagePort) as String?
     lua_pushany(L, name as NSString?)
@@ -172,7 +172,7 @@ private func ipc_name(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * a remote port can send messages at any time to a local port; a local port can only respond to messages from a remote port
 private func ipc_isRemote(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     luaL_checkudata(L, 1, USERDATA_TAG)
-    let port = lua_tovalue(L, at: 1) as! HSIPCMessagePort
+    let port = toHSIPCMessagePortFromLua(L, 1) as! HSIPCMessagePort
 
     lua_pushboolean(L, CFMessagePortIsRemote(port.messagePort) ? 1 : 0)
     return 1
@@ -189,7 +189,7 @@ private func ipc_isRemote(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * true if the object is a valid port, otherwise false
 private func ipc_isValid(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     luaL_checkudata(L, 1, USERDATA_TAG)
-    let port = lua_tovalue(L, at: 1) as! HSIPCMessagePort
+    let port = toHSIPCMessagePortFromLua(L, 1) as! HSIPCMessagePort
 
     lua_pushboolean(L, CFMessagePortIsValid(port.messagePort) ? 1 : 0)
     return 1
@@ -209,7 +209,7 @@ private func ipc_isValid(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * status   - a boolean indicating whether or not the local port responded before the timeout (true) or if an error or timeout occurred waiting for the response (false)
 ///  * response - the response from the local port, usually a string, but may be nil if there was no response returned.  If status is false, will contain an error message describing the error.
 private func ipc_sendMessage(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let port = lua_tovalue(L, at: 1) as! HSIPCMessagePort
+    let port = toHSIPCMessagePortFromLua(L, 1) as! HSIPCMessagePort
     guard CFMessagePortIsValid(port.messagePort) else {
         return luaL_error(L, "ipc port is no longer valid (early)")
     }
@@ -282,6 +282,7 @@ private func ipc_sendMessage(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 // MARK: - Lua<->NSObject Conversion Functions
 
+@discardableResult
 private func pushHSIPCMessagePort(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
     let value = obj as! HSIPCMessagePort
     value.selfRef += 1
@@ -304,7 +305,7 @@ private func toHSIPCMessagePortFromLua(_ L: UnsafeMutablePointer<lua_State>!, _ 
 // MARK: - Cosmic Hammer/Lua Infrastructure
 
 private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let obj = lua_tovalue(L, at: 1) as! HSIPCMessagePort
+    let obj = toHSIPCMessagePortFromLua(L, 1) as! HSIPCMessagePort
     let portName = obj.messagePort.flatMap { CFMessagePortGetName($0) as String? } ?? "unknown"
     let locality = obj.messagePort.flatMap { CFMessagePortIsRemote($0) ? "remote" : "local" } ?? "unknown"
     let title = "\(portName), \(locality)"
@@ -314,8 +315,8 @@ private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 private func userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     if luaL_testudata(L, 1, USERDATA_TAG) != nil && luaL_testudata(L, 2, USERDATA_TAG) != nil {
-        let obj1 = lua_tovalue(L, at: 1) as! HSIPCMessagePort
-        let obj2 = lua_tovalue(L, at: 2) as! HSIPCMessagePort
+        let obj1 = toHSIPCMessagePortFromLua(L, 1) as! HSIPCMessagePort
+        let obj2 = toHSIPCMessagePortFromLua(L, 2) as! HSIPCMessagePort
         lua_pushboolean(L, obj1.isEqual(obj2) ? 1 : 0)
     } else {
         lua_pushboolean(L, 0)

@@ -593,7 +593,7 @@ import os.log
             os_log(.error, "%{public}s", "hs.chooser.globalCallback is expected to be a function, but is a \(String(cString: lua_typename(L, lua_type(L, -1))))")
             lua_remove(L, -1)
         } else {
-            lua_pushany(L, self)
+            _ = pushHSChooser(L, self)
             lua_pushstring(L, "willOpen")
             if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
         }
@@ -641,7 +641,7 @@ import os.log
             os_log(.error, "%{public}s", "hs.chooser.globalCallback is expected to be a function, but is a \(String(cString: lua_typename(L, lua_type(L, -1))))")
             lua_remove(L, -1)
         } else {
-            lua_pushany(L, self)
+            _ = pushHSChooser(L, self)
             lua_pushstring(L, "didClose")
             if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
         }
@@ -924,12 +924,12 @@ import os.log
             if let valid = choice["valid"], !(valid as AnyObject).boolValue,
                invalidCallbackRef != LUA_NOREF && invalidCallbackRef != LUA_REFNIL {
                 lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(invalidCallbackRef))
-                lua_pushany(L, choice)
+                pushChooserChoice(L, choice)
                 if lua_pcall(L, 1, 0, 0) != LUA_OK { lua_pop(L, 1) }
             } else if completionCallbackRef != LUA_NOREF && completionCallbackRef != LUA_REFNIL {
                 hide()
                 lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(completionCallbackRef))
-                lua_pushany(L, choice)
+                pushChooserChoice(L, choice)
                 if lua_pcall(L, 1, 0, 0) != LUA_OK { lua_pop(L, 1) }
             }
         } else if enableDefaultForQuery && completionCallbackRef != LUA_NOREF && completionCallbackRef != LUA_REFNIL {
@@ -939,7 +939,7 @@ import os.log
             let choice: NSDictionary = ["text": queryField.stringValue]
             hide()
             lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(completionCallbackRef))
-            lua_pushany(L, choice)
+            pushChooserChoice(L, choice)
             if lua_pcall(L, 1, 0, 0) != LUA_OK { lua_pop(L, 1) }
         }
     }
@@ -1102,7 +1102,7 @@ import os.log
                 let L = lua_getCurrentState()!
                 lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(choicesCallbackRef))
                 if lua_pcall(L, 0, 1, 0) == LUA_OK {
-                    currentCallbackChoices = lua_tovalue(L, at: -1) as? NSArray
+                    currentCallbackChoices = lua_toChooserChoices(L, at: -1)
 
                     var callbackChoicesTypeCheckPass = false
                     if let arr = currentCallbackChoices {

@@ -116,7 +116,7 @@ private class PingableObject: SimplePing, SimplePingDelegate {
         if callbackRef != LUA_NOREF {
             let L = lua_getCurrentState()!
             lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(callbackRef))
-            lua_pushany(L, pinger as! PingableObject)
+            pushPingableObject(L, pinger as! PingableObject)
             lua_pushany(L, "didStart" as NSString)
             _ = pushParsedAddress(L, address)
             if lua_pcall(L, 3, 0, 0) != LUA_OK { lua_pop(L, 1) }
@@ -129,7 +129,7 @@ private class PingableObject: SimplePing, SimplePingDelegate {
         os_log(.debug, "%{public}s", "\(USERDATA_TAG):didFailWithError:\(errorReason) - ping stopped.")
         if callbackRef != LUA_NOREF {
             lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(callbackRef))
-            lua_pushany(L, pinger as! PingableObject)
+            pushPingableObject(L, pinger as! PingableObject)
             lua_pushany(L, "didFail" as NSString)
             lua_pushany(L, errorReason as NSString)
             if lua_pcall(L, 3, 0, 0) != LUA_OK { lua_pop(L, 1) }
@@ -143,7 +143,7 @@ private class PingableObject: SimplePing, SimplePingDelegate {
         if callbackRef != LUA_NOREF {
             let L = lua_getCurrentState()!
             lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(callbackRef))
-            lua_pushany(L, pinger as! PingableObject)
+            pushPingableObject(L, pinger as! PingableObject)
             lua_pushany(L, "sendPacket" as NSString)
             _ = pushParsedICMPPayload(L, packet)
             lua_pushinteger(L, lua_Integer(sequenceNumber))
@@ -155,7 +155,7 @@ private class PingableObject: SimplePing, SimplePingDelegate {
         if callbackRef != LUA_NOREF {
             let L = lua_getCurrentState()!
             lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(callbackRef))
-            lua_pushany(L, pinger as! PingableObject)
+            pushPingableObject(L, pinger as! PingableObject)
             lua_pushany(L, "sendPacketFailed" as NSString)
             _ = pushParsedICMPPayload(L, packet)
             lua_pushinteger(L, lua_Integer(sequenceNumber))
@@ -168,7 +168,7 @@ private class PingableObject: SimplePing, SimplePingDelegate {
         if callbackRef != LUA_NOREF {
             let L = lua_getCurrentState()!
             lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(callbackRef))
-            lua_pushany(L, pinger as! PingableObject)
+            pushPingableObject(L, pinger as! PingableObject)
             lua_pushany(L, "receivedPacket" as NSString)
             _ = pushParsedICMPPayload(L, packet)
             lua_pushinteger(L, lua_Integer(sequenceNumber))
@@ -194,7 +194,7 @@ private class PingableObject: SimplePing, SimplePingDelegate {
         if notifyCallback && callbackRef != LUA_NOREF {
             let L = lua_getCurrentState()!
             lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(callbackRef))
-            lua_pushany(L, pinger as! PingableObject)
+            pushPingableObject(L, pinger as! PingableObject)
             lua_pushany(L, "receivedUnexpectedPacket" as NSString)
             _ = pushParsedICMPPayload(L, packet)
             if lua_pcall(L, 3, 0, 0) != LUA_OK { lua_pop(L, 1) }
@@ -221,7 +221,7 @@ private class PingableObject: SimplePing, SimplePingDelegate {
 private let echoRequest_new: lua_CFunction = { L in
     luaL_checktype(L, 1, LUA_TSTRING)
     let pinger = PingableObject(hostName: lua_tovalue(L, at: 1) as! String)
-    lua_pushany(L, pinger)
+    pushPingableObject(L, pinger)
     return 1
 }
 
@@ -286,7 +286,7 @@ private let echoRequest_new: lua_CFunction = { L in
 ///      * In general, it is reasonably safe to ignore these messages, unless you are having problems receiving anything else, in which case it could indicate problems on your network that need addressing.
 private let echoRequest_setCallback: lua_CFunction = { L in
     luaL_checkudata(L, 1, USERDATA_TAG)
-    let pinger = lua_tovalue(L, at: 1) as! PingableObject
+    let pinger = toPingableObjectFromLua(L, 1) as! PingableObject
 
     luaL_unref(L, LUA_REGISTRYINDEX_VALUE, pinger.callbackRef)
 
@@ -311,7 +311,7 @@ private let echoRequest_setCallback: lua_CFunction = { L in
 ///  * a string containing the hostname as specified when the object was created.
 private let echoRequest_hostName: lua_CFunction = { L in
     luaL_checkudata(L, 1, USERDATA_TAG)
-    let pinger = lua_tovalue(L, at: 1) as! PingableObject
+    let pinger = toPingableObjectFromLua(L, 1) as! PingableObject
     lua_pushany(L, pinger.hostName as NSString)
     return 1
 }
@@ -330,7 +330,7 @@ private let echoRequest_hostName: lua_CFunction = { L in
 ///  * ICMP Echo Replies which include this identifier will generate a "receivedPacket" message to the object callback, while replies which include a different identifier will generate a "receivedUnexpectedPacket" message.
 private let echoRequest_identifier: lua_CFunction = { L in
     luaL_checkudata(L, 1, USERDATA_TAG)
-    let pinger = lua_tovalue(L, at: 1) as! PingableObject
+    let pinger = toPingableObjectFromLua(L, 1) as! PingableObject
     lua_pushinteger(L, lua_Integer(pinger.identifier))
     return 1
 }
@@ -351,7 +351,7 @@ private let echoRequest_identifier: lua_CFunction = { L in
 ///    * Per the comments in Apple's SimplePing.m file: Why 120?  Well, if we send one ping per second, 120 is 2 minutes, which is the standard "max time a packet can bounce around the Internet" value.
 private let echoRequest_nextSequenceNumber: lua_CFunction = { L in
     luaL_checkudata(L, 1, USERDATA_TAG)
-    let pinger = lua_tovalue(L, at: 1) as! PingableObject
+    let pinger = toPingableObjectFromLua(L, 1) as! PingableObject
     lua_pushinteger(L, lua_Integer(pinger.nextSequenceNumber))
     return 1
 }
@@ -373,7 +373,7 @@ private let echoRequest_nextSequenceNumber: lua_CFunction = { L in
 ///  * Setting a value with this method will have no immediate effect on an echoRequestObject which has already been started with [hs.network.ping.echoRequest:start](#start). You must first stop and then restart the object for any change to have an effect.
 private let echoRequest_addressStyle: lua_CFunction = { L in
     luaL_checkudata(L, 1, USERDATA_TAG)
-    let pinger = lua_tovalue(L, at: 1) as! PingableObject
+    let pinger = toPingableObjectFromLua(L, 1) as! PingableObject
 
     if lua_gettop(L) == 1 {
         let answer = ADDRESS_STYLES.first(where: { $0.value == pinger.addressStyle.rawValue })?.key
@@ -407,7 +407,7 @@ private let echoRequest_addressStyle: lua_CFunction = { L in
 ///  * the echoRequestObject
 private let echoRequest_start: lua_CFunction = { L in
     luaL_checkudata(L, 1, USERDATA_TAG)
-    let pinger = lua_tovalue(L, at: 1) as! PingableObject
+    let pinger = toPingableObjectFromLua(L, 1) as! PingableObject
 
     if pinger.selfRef == LUA_NOREF {
         pinger.start()
@@ -429,7 +429,7 @@ private let echoRequest_start: lua_CFunction = { L in
 ///  * the echoRequestObject
 private let echoRequest_stop: lua_CFunction = { L in
     luaL_checkudata(L, 1, USERDATA_TAG)
-    let pinger = lua_tovalue(L, at: 1) as! PingableObject
+    let pinger = toPingableObjectFromLua(L, 1) as! PingableObject
 
     if pinger.selfRef != LUA_NOREF {
         pinger.stop()
@@ -452,7 +452,7 @@ private let echoRequest_stop: lua_CFunction = { L in
 ///  * true if the object is currently listening for ICMP Echo Replies, or false if it is not.
 private let echoRequest_isRunning: lua_CFunction = { L in
     luaL_checkudata(L, 1, USERDATA_TAG)
-    let pinger = lua_tovalue(L, at: 1) as! PingableObject
+    let pinger = toPingableObjectFromLua(L, 1) as! PingableObject
     lua_pushboolean(L, (pinger.selfRef != LUA_NOREF) ? 1 : 0)
     return 1
 }
@@ -470,7 +470,7 @@ private let echoRequest_isRunning: lua_CFunction = { L in
 ///  * If the object has not been started, returns nil.
 private let echoRequest_hostAddress: lua_CFunction = { L in
     luaL_checkudata(L, 1, USERDATA_TAG)
-    let pinger = lua_tovalue(L, at: 1) as! PingableObject
+    let pinger = toPingableObjectFromLua(L, 1) as! PingableObject
     if let hostAddress = pinger.hostAddress {
         _ = pushParsedAddress(L, hostAddress)
     } else {
@@ -499,7 +499,7 @@ private let echoRequest_hostAddress: lua_CFunction = { L in
 ///  * By convention, unless you are trying to test for specific network fragmentation or congestion problems, ICMP Echo Requests are generally 64 bytes in length (this includes the 8 byte header, giving 56 bytes of payload data).  If you do not specify a payload, a default payload which will result in a packet size of 64 bytes is constructed.
 private let echoRequest_sendPayload: lua_CFunction = { L in
     luaL_checkudata(L, 1, USERDATA_TAG)
-    let pinger = lua_tovalue(L, at: 1) as! PingableObject
+    let pinger = toPingableObjectFromLua(L, 1) as! PingableObject
     var payload: Data? = nil
     if lua_gettop(L) == 2 {
         var len: Int = 0
@@ -542,7 +542,7 @@ private let echoRequest_sendPayload: lua_CFunction = { L in
 ///    * "unresolved" - indicates that the echoRequestObject has not been started or that address resolution is still in progress.
 private let echoRequest_addressFamily: lua_CFunction = { L in
     luaL_checkudata(L, 1, USERDATA_TAG)
-    let pinger = lua_tovalue(L, at: 1) as! PingableObject
+    let pinger = toPingableObjectFromLua(L, 1) as! PingableObject
 
     switch pinger.hostAddressFamily {
     case sa_family_t(AF_INET):
@@ -575,7 +575,7 @@ private let echoRequest_addressFamily: lua_CFunction = { L in
 ///  * If you wish to examine ICMPv6 router advertisement and neighbor discovery packets, you should set this property to true. Note that this module does not provide the necessary tools to decode these packets at present, so you will have to decode them yourself if you wish to examine their contents.
 private let echoRequest_seeAllUnexpectedPackets: lua_CFunction = { L in
     luaL_checkudata(L, 1, USERDATA_TAG)
-    let pinger = lua_tovalue(L, at: 1) as! PingableObject
+    let pinger = toPingableObjectFromLua(L, 1) as! PingableObject
 
     if lua_gettop(L) == 1 {
         lua_pushboolean(L, pinger.passAllUnexpected ? 1 : 0)
@@ -588,6 +588,7 @@ private let echoRequest_seeAllUnexpectedPackets: lua_CFunction = { L in
 
 // MARK: - Lua<->NSObject Conversion Functions
 
+@discardableResult
 private func pushPingableObject(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any) -> Int32 {
     let value = obj as! PingableObject
 
@@ -617,7 +618,7 @@ private func toPingableObjectFromLua(_ L: UnsafeMutablePointer<lua_State>!, _ id
 // MARK: - Cosmic Hammer/Lua Infrastructure
 
 private let userdata_tostring: lua_CFunction = { L in
-    let obj = lua_tovalue(L, at: 1) as! PingableObject
+    let obj = toPingableObjectFromLua(L, 1) as! PingableObject
     let title = obj.hostName
     let ptr = lua_topointer(L, 1)
     lua_pushany(L, "\(USERDATA_TAG): \(title) (\(String(describing: ptr)))" as NSString)
@@ -626,8 +627,8 @@ private let userdata_tostring: lua_CFunction = { L in
 
 private let userdata_eq: lua_CFunction = { L in
     if luaL_testudata(L, 1, USERDATA_TAG) != nil && luaL_testudata(L, 2, USERDATA_TAG) != nil {
-        let obj1 = lua_tovalue(L, at: 1) as! PingableObject
-        let obj2 = lua_tovalue(L, at: 2) as! PingableObject
+        let obj1 = toPingableObjectFromLua(L, 1) as! PingableObject
+        let obj2 = toPingableObjectFromLua(L, 2) as! PingableObject
         lua_pushboolean(L, (obj1 === obj2) ? 1 : 0)
     } else {
         lua_pushboolean(L, 0)

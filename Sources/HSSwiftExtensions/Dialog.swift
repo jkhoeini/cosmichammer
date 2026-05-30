@@ -35,7 +35,7 @@ private class HSColorPanel: NSObject {
                 let L = lua_getCurrentState()!
                 let cp = NSColorPanel.shared
                 lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(self.callbackRef))
-                lua_pushany(L, cp.color)
+                NSColor_tolua(L, cp.color)
                 lua_pushboolean(L, 1)
                 if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
             }
@@ -49,7 +49,7 @@ private class HSColorPanel: NSObject {
                 guard let self = self, self.callbackRef != LUA_NOREF else { return }
                 let L = lua_getCurrentState()!
                 lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(self.callbackRef))
-                lua_pushany(L, colorPanel.color)
+                NSColor_tolua(L, colorPanel.color)
                 lua_pushboolean(L, 0)
                 if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
             }
@@ -157,10 +157,10 @@ private func colorPanelShowsAlpha(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
 private func colorPanelColor(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let cp = NSColorPanel.shared
     if lua_gettop(L) == 1 {
-        let theColor = lua_tovalue(L, at: 1) as! NSColor
+        let theColor = table_toNSColor(L, 1) as! NSColor
         cp.color = theColor
     }
-    lua_pushany(L, cp.color)
+    NSColor_tolua(L, cp.color)
     return 1
 }
 
@@ -366,6 +366,11 @@ private func chooseFileOrFolder(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 
 // MARK: - Webview Alert
 
+func dialog_webviewWindowFromLua(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> NSWindow? {
+    guard luaL_testudata(L, idx, wv_USERDATA_TAG) != nil else { return nil }
+    return wv_getWindowFromUD(L, idx)
+}
+
 /// hs.dialog.webviewAlert(webview, callbackFn, message, [informativeText], [buttonOne], [buttonTwo], [style]) -> string
 /// Function
 /// Displays a simple dialog box using `NSAlert` in a `hs.webview`.
@@ -399,7 +404,9 @@ private func webviewAlert(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
     //                            webview,      callbackFn,   message,    [informativeText],         [buttonOne],               [buttonTwo],                         [style]
 
-    let webview = lua_tovalue(L, at: 1) as! NSWindow
+    guard let webview = dialog_webviewWindowFromLua(L, at: 1) else {
+        return luaL_argerror(L, 1, "expected hs.webview object")
+    }
 
     lua_pushvalue(L, 2) // Copy the callback function to the top of the stack
     var callbackRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE) // Store what's at the top of the stack in the registry

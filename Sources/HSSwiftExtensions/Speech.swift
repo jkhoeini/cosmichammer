@@ -74,7 +74,7 @@ private class HSSpeechSynthesizer: NSSpeechSynthesizer, NSSpeechSynthesizerDeleg
         let charMap = luaByteToObjCharMap(text)
 
         lua_rawgeti(_L, LUA_REGISTRYINDEX_VALUE, lua_Integer(synth.callbackRef))
-        lua_pushany(_L, synth)
+        pushHSSpeechSynthesizer(_L, obj: synth)
         lua_pushstring(_L, "willSpeakWord")
 
         let luaStart = charMap.allKeys(for: NSNumber(value: wordToSpeak.location))
@@ -93,7 +93,7 @@ private class HSSpeechSynthesizer: NSSpeechSynthesizer, NSSpeechSynthesizerDeleg
         let _L = lua_getCurrentState()!
 
         lua_rawgeti(_L, LUA_REGISTRYINDEX_VALUE, lua_Integer(synth.callbackRef))
-        lua_pushany(_L, synth)
+        pushHSSpeechSynthesizer(_L, obj: synth)
         lua_pushstring(_L, "willSpeakPhoneme")
         lua_pushinteger(_L, lua_Integer(phonemeOpcode))
         if lua_pcall(_L, 3, 0, 0) != LUA_OK { lua_pop(_L, 1) }
@@ -106,7 +106,7 @@ private class HSSpeechSynthesizer: NSSpeechSynthesizer, NSSpeechSynthesizerDeleg
         let charMap = luaByteToObjCharMap(text)
 
         lua_rawgeti(_L, LUA_REGISTRYINDEX_VALUE, lua_Integer(synth.callbackRef))
-        lua_pushany(_L, synth)
+        pushHSSpeechSynthesizer(_L, obj: synth)
         lua_pushstring(_L, "didEncounterError")
 
         let index = charMap.allKeys(for: NSNumber(value: characterIndex))
@@ -122,7 +122,7 @@ private class HSSpeechSynthesizer: NSSpeechSynthesizer, NSSpeechSynthesizerDeleg
         guard let synth = sender as? HSSpeechSynthesizer, synth.callbackRef != LUA_NOREF else { return }
         let _L = lua_getCurrentState()!
         lua_rawgeti(_L, LUA_REGISTRYINDEX_VALUE, lua_Integer(synth.callbackRef))
-        lua_pushany(_L, synth)
+        pushHSSpeechSynthesizer(_L, obj: synth)
         lua_pushstring(_L, "didEncounterSync")
         // "errorMessage" as a string seems to be broken or at least odd since at least as far back as 10.5:
         //      see https://openradar.appspot.com/6524554
@@ -143,7 +143,7 @@ private class HSSpeechSynthesizer: NSSpeechSynthesizer, NSSpeechSynthesizerDeleg
 
         if synth.callbackRef != LUA_NOREF {
             lua_rawgeti(_L, LUA_REGISTRYINDEX_VALUE, lua_Integer(synth.callbackRef))
-            lua_pushany(_L, synth)
+            pushHSSpeechSynthesizer(_L, obj: synth)
             lua_pushstring(_L, "didFinish")
             lua_pushboolean(_L, success ? 1 : 0)
             if lua_pcall(_L, 3, 0, 0) != LUA_OK { lua_pop(_L, 1) }
@@ -291,7 +291,7 @@ private func newSpeechSynthesizer(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
     }
 
     if let synth = HSSpeechSynthesizer(voice: voiceName) {
-        lua_pushany(L, synth)
+        pushHSSpeechSynthesizer(L, obj: synth)
     } else {
         os_log(.debug, "%{public}s", "unable to create synthesizer, returning nil")
         lua_pushnil(L)
@@ -680,6 +680,7 @@ private func reset(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 // MARK: - Lua<->NSObject Conversion Functions
 
+@discardableResult
 private func pushHSSpeechSynthesizer(_ L: UnsafeMutablePointer<lua_State>!, obj: Any!) -> Int32 {
     let synth = obj as! HSSpeechSynthesizer
     synth.udReferenceCount += 1

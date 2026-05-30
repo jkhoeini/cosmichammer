@@ -32,7 +32,7 @@ private let kCGSDebugOptionNormal: Int32 = 0
 private let kCGSDebugOptionNoShadows: Int32 = 16384
 
 private func getWindow(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> HSwindowProtocol? {
-    return lua_toAnyObject(L, at: idx) as? HSwindowProtocol
+    return toHSwindowFromLua(L, idx) as? HSwindowProtocol
 }
 
 // MARK: - Helpers
@@ -101,7 +101,7 @@ private func window_focusedwindow(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
         let result = catchingObjCException {
             (windowClass as AnyObject).perform(Selector(("focusedWindow")))?.takeUnretainedValue()
         }
-        lua_pushany(L, result)
+        pushHSwindowOrNil(L, result)
     } else {
         lua_pushnil(L)
     }
@@ -330,7 +330,7 @@ private func window_application(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
     lua_settop(L, 0)
 
     if let app = HSapplication(pid: win.pid, withState: L) {
-        lua_pushany(L, app)
+        pushHSapplication(L, app)
     } else {
         lua_pushnil(L)
     }
@@ -471,13 +471,14 @@ private func window_uielement_newWatcher(_ L: UnsafeMutablePointer<lua_State>!) 
     guard let win = getWindow(L, at: 1) else { lua_pushnil(L); return 1 }
     let element = HSuielement(withElement: win.elementRef)
     let watcher = element.newWatcher(atIndex: 2, withUserdataAtIndex: 3, withLuaState: L)
-    lua_pushany(L, watcher)
+    pushHSuielementWatcherOrNil(L, watcher)
     return 1
 }
 
 // MARK: - Lua<->NSObject Conversion Functions
 
-private func pushHSwindow(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
+@discardableResult
+func pushHSwindow(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any?) -> Int32 {
     guard let value = obj as? NSObject & HSwindowProtocol else { return 0 }
     value.selfRefCount += 1
     let valuePtr = lua_newuserdata(L, MemoryLayout<UnsafeMutableRawPointer>.size)!
@@ -486,6 +487,28 @@ private func pushHSwindow(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) ->
     luaL_getmetatable(L, USERDATA_TAG)
     lua_setmetatable(L, -2)
     return 1
+}
+
+func pushHSwindowOrNil(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any?) {
+    if pushHSwindow(L, obj) == 0 {
+        lua_pushnil(L)
+    }
+}
+
+func pushHSwindows(_ L: UnsafeMutablePointer<lua_State>!, _ windows: [Any]?) {
+    guard let windows = windows else {
+        lua_pushnil(L)
+        return
+    }
+
+    lua_createtable(L, Int32(windows.count), 0)
+    var index: lua_Integer = 1
+    for window in windows {
+        if pushHSwindow(L, window) != 0 {
+            lua_rawseti(L, -2, index)
+            index += 1
+        }
+    }
 }
 
 private func toHSwindowFromLua(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> Any! {
@@ -513,8 +536,8 @@ private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 private func userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     var isEqual = false
     if luaL_testudata(L, 1, USERDATA_TAG) != nil && luaL_testudata(L, 2, USERDATA_TAG) != nil {
-        if let w1 = lua_toAnyObject(L, at: 1) as? HSwindowProtocol,
-           let w2 = lua_toAnyObject(L, at: 2) as? HSwindowProtocol {
+        if let w1 = toHSwindowFromLua(L, 1) as? HSwindowProtocol,
+           let w2 = toHSwindowFromLua(L, 2) as? HSwindowProtocol {
             isEqual = CFEqual(w1.elementRef, w2.elementRef)
         }
     }

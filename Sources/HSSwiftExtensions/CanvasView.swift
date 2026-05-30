@@ -192,9 +192,9 @@ import os.log
         guard mouseCallbackRef != LUA_NOREF else { return }
         let L = lua_getCurrentState()!
         lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(mouseCallbackRef))
-        lua_pushany(L, self)
-        lua_pushany(L, message as NSString)
-        lua_pushany(L, elementIdentifier as AnyObject)
+        canvas_pushValue(L, self)
+        canvas_pushValue(L, message as NSString)
+        canvas_pushValue(L, elementIdentifier)
         lua_pushnumber(L, lua_Number(location.x))
         lua_pushnumber(L, lua_Number(location.y))
         if lua_pcall(L, 5, 0, 0) != LUA_OK { lua_pop(L, 1) }
@@ -204,9 +204,9 @@ import os.log
         guard mouseCallbackRef != LUA_NOREF else { return }
         let L = lua_getCurrentState()!
         lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(mouseCallbackRef))
-        lua_pushany(L, self)
-        lua_pushany(L, "_subview_" as NSString)
-        lua_pushany(L, sender as AnyObject)
+        canvas_pushValue(L, self)
+        canvas_pushValue(L, "_subview_" as NSString)
+        canvas_pushValue(L, sender as AnyObject)
         if lua_pcall(L, 3, 0, 0) != LUA_OK { lua_pop(L, 1) }
     }
 
@@ -437,32 +437,17 @@ import os.log
         var newValue: Any! = oldValue
 
         // fix "...Color" tables
-        if keyName.hasSuffix("Color"), let dict = oldValue as? NSDictionary {
-            lua_pushany(L, dict)
-            lua_pushstring(L, "NSColor")
-            lua_setfield(L, -2, "__luaSkinType")
-            newValue = lua_tovalue(L, at: -1)
-            lua_pop(L, 1)
-        } else if keyName.hasSuffix("Color"), let arr = oldValue as? NSArray {
-            lua_pushany(L, arr)
-            lua_pushstring(L, "NSColor")
-            lua_setfield(L, -2, "__luaSkinType")
-            newValue = lua_tovalue(L, at: -1)
-            lua_pop(L, 1)
+        if keyName.hasSuffix("Color") {
+            if let color = canvas_colorFromValue(oldValue) {
+                newValue = color
+            }
 
         // fillGradientColors is an array of colors
         } else if keyName == "fillGradientColors" {
             let result = NSMutableArray()
-            if let oldArray = oldValue as? NSMutableArray {
+            if let oldArray = canvas_gradientColorsFromValue(oldValue) {
                 oldArray.enumerateObjects { (anItem, idx, _) in
-                    var item = anItem
-                    if let dict = item as? NSDictionary {
-                        lua_pushany(L, dict)
-                        lua_pushstring(L, "NSColor")
-                        lua_setfield(L, -2, "__luaSkinType")
-                        item = lua_tovalue(L, at: -1) as Any
-                        lua_pop(L, 1)
-                    }
+                    let item = anItem
                     if let color = item as? NSColor, color.usingColorSpace(.genericRGB) != nil {
                         result.add(color)
                     } else {
@@ -479,28 +464,22 @@ import os.log
             }
 
         // fix NSAffineTransform table
-        } else if keyName == "transformation", (oldValue is NSDictionary || oldValue is NSArray) {
-            lua_pushany(L, oldValue as AnyObject)
-            lua_pushstring(L, "NSAffineTransform")
-            lua_setfield(L, -2, "__luaSkinType")
-            newValue = lua_tovalue(L, at: -1)
-            lua_pop(L, 1)
+        } else if keyName == "transformation" {
+            if let transform = canvas_transformFromValue(oldValue) {
+                newValue = transform
+            }
 
         // fix NSShadow table
-        } else if keyName == "shadow", (oldValue is NSDictionary || oldValue is NSArray) {
-            lua_pushany(L, oldValue as AnyObject)
-            lua_pushstring(L, "NSShadow")
-            lua_setfield(L, -2, "__luaSkinType")
-            newValue = lua_tovalue(L, at: -1)
-            lua_pop(L, 1)
+        } else if keyName == "shadow" {
+            if let shadow = canvas_shadowFromValue(oldValue) {
+                newValue = shadow
+            }
 
         // fix hs.styledText as Table
-        } else if keyName == "text", (oldValue is NSDictionary || oldValue is NSArray) {
-            lua_pushany(L, oldValue as AnyObject)
-            lua_pushstring(L, "NSAttributedString")
-            lua_setfield(L, -2, "__luaSkinType")
-            newValue = lua_tovalue(L, at: -1)
-            lua_pop(L, 1)
+        } else if keyName == "text", oldValue is NSArray {
+            if let text = canvas_styledTextFromValue(oldValue) {
+                newValue = text
+            }
 
         // recurse into fields which have subfields
         } else if let dict = oldValue as? NSDictionary {
@@ -1143,7 +1122,7 @@ import os.log
 
     func fadeOut(_ fadeTime: TimeInterval, andDelete deleteView: Bool, withState L: UnsafeMutablePointer<lua_State>!) {
         if selfRef != LUA_NOREF { return } // already in a fade
-        lua_pushany(L, self)
+        canvas_pushValue(L, self)
         selfRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
 
         let alphaSetting = self.alphaValue
@@ -1176,13 +1155,13 @@ import os.log
         let L = lua_getCurrentState()!
         var argCount: Int32 = 2
         lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(draggingCallbackRef))
-        lua_pushany(L, self)
-        lua_pushany(L, message as NSString)
+        canvas_pushValue(L, self)
+        canvas_pushValue(L, message as NSString)
 
         if let sender = sender {
             lua_newtable(L)
             let pasteboard = sender.draggingPasteboard
-            lua_pushany(L, pasteboard.name.rawValue as NSString)
+            canvas_pushValue(L, pasteboard.name.rawValue as NSString)
             lua_setfield(L, -2, "pasteboard")
 
             lua_pushinteger(L, lua_Integer(sender.draggingSequenceNumber))
@@ -1343,4 +1322,3 @@ import os.log
         }
     }
 }
-

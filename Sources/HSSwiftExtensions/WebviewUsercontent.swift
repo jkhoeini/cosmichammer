@@ -27,7 +27,7 @@ private class HSUserContentController: WKUserContentController, WKScriptMessageH
         if message.name == name && userContentCallback != LUA_NOREF {
             let L = lua_getCurrentState()!
             lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(userContentCallback))
-            lua_pushany(L, message)
+            wv_pushAny(L, message)
             if lua_pcall(L, 1, 0, 0) != LUA_OK { lua_pop(L, 1) }
         }
     }
@@ -53,7 +53,7 @@ private func ucc_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
     let theName = lua_tovalue(L, at: 1) as! String
     let newUCC = HSUserContentController(name: theName)
-    lua_pushany(L, newUCC)
+    HSUserContentController_toLua(L, newUCC)
     return 1
 }
 
@@ -77,7 +77,7 @@ private func ucc_inject(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
         .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
     let ucc = Unmanaged<HSUserContentController>.fromOpaque(ptr.pointee!).takeUnretainedValue()
 
-    let userScript = lua_tovalue(L, at: 2) as? WKUserScript
+    let userScript = table_toWKUserScript(L, 2) as? WKUserScript
     if let userScript = userScript {
         ucc.addUserScript(userScript)
         lua_pushvalue(L, 1)
@@ -108,7 +108,11 @@ private func ucc_userScripts(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
         .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
     let ucc = Unmanaged<HSUserContentController>.fromOpaque(ptr.pointee!).takeUnretainedValue()
 
-    lua_pushany(L, ucc.userScripts as NSArray)
+    lua_createtable(L, Int32(ucc.userScripts.count), 0)
+    for script in ucc.userScripts {
+        wv_pushAny(L, script)
+        lua_rawseti(L, -2, luaL_len(L, -2) + 1)
+    }
     return 1
 }
 
@@ -192,7 +196,7 @@ private func HSUserContentController_toLua(_ L: UnsafeMutablePointer<lua_State>!
     return 1
 }
 
-private func WKUserScript_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
+func wv_WKUserScript_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
     let script = obj as! WKUserScript
 
     lua_newtable(L)
@@ -209,17 +213,17 @@ private func WKUserScript_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: An
     return 1
 }
 
-private func WKScriptMessage_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
+func wv_WKScriptMessage_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
     let message = obj as! WKScriptMessage
 
     lua_newtable(L)
-    lua_pushany(L, message.body as? NSObject)
+    wv_pushAny(L, message.body)
     lua_setfield(L, -2, "body")
-    lua_pushany(L, message.frameInfo)
+    wv_pushAny(L, message.frameInfo)
     lua_setfield(L, -2, "frameInfo")
     lua_pushany(L, message.name as NSString)
     lua_setfield(L, -2, "name")
-    lua_pushany(L, message.webView?.window as? NSObject)
+    wv_pushAny(L, message.webView?.window as? HSWebViewWindow)
     lua_setfield(L, -2, "webView")
     return 1
 }

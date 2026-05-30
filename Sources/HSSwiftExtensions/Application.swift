@@ -19,7 +19,7 @@ private var backgroundCallbacks = NSMutableSet()
 // MARK: - Helper
 
 private func getApp(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> HSapplicationProtocol? {
-    return lua_toAnyObject(L, at: idx) as? HSapplicationProtocol
+    return toHSapplicationFromLua(L, idx) as? HSapplicationProtocol
 }
 
 private func appClassMethod(_ sel: String, with arg1: Any? = nil) -> Any? {
@@ -56,7 +56,7 @@ private func application_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * An hs.application object
 private func application_frontmostapplication(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let result = HSapplication.frontmostApplication(withState: L)
-    lua_pushany(L, result)
+    pushHSapplicationOrNil(L, result)
     return 1
 }
 
@@ -71,7 +71,7 @@ private func application_frontmostapplication(_ L: UnsafeMutablePointer<lua_Stat
 ///  * A table containing zero or more hs.application objects currently running on the system
 private func application_runningapplications(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let result = HSapplication.runningApplications(withState: L)
-    lua_pushany(L, result)
+    pushHSapplications(L, result)
     return 1
 }
 
@@ -88,7 +88,7 @@ private func application_applicationforpid(_ L: UnsafeMutablePointer<lua_State>!
     luaL_checktype(L, 1, LUA_TNUMBER)
     let pid = pid_t(lua_tointegerx(L, 1, nil))
     let result = HSapplication.application(forPID: pid, withState: L)
-    lua_pushany(L, result)
+    pushHSapplicationOrNil(L, result)
     return 1
 }
 
@@ -105,7 +105,7 @@ private func application_applicationsForBundleID(_ L: UnsafeMutablePointer<lua_S
     luaL_checktype(L, 1, LUA_TSTRING)
     let bundleID = lua_tovalue(L, at: 1) as! String
     let result = HSapplication.applications(forBundleID: bundleID, withState: L)
-    lua_pushany(L, result)
+    pushHSapplications(L, result)
     return 1
 }
 
@@ -295,7 +295,7 @@ private func application_bundleForUTI(_ L: UnsafeMutablePointer<lua_State>!) -> 
 private func application_allWindows(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     luaL_checkudata(L, 1, USERDATA_TAG)
     guard let app = getApp(L, at: 1) else { lua_pushnil(L); return 1 }
-    lua_pushany(L, app.allWindows())
+    pushHSwindows(L, app.allWindows())
     return 1
 }
 
@@ -311,7 +311,7 @@ private func application_allWindows(_ L: UnsafeMutablePointer<lua_State>!) -> In
 private func application_mainWindow(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     luaL_checkudata(L, 1, USERDATA_TAG)
     guard let app = getApp(L, at: 1) else { lua_pushnil(L); return 1 }
-    lua_pushany(L, app.mainWindow())
+    pushHSwindowOrNil(L, app.mainWindow())
     return 1
 }
 
@@ -327,7 +327,7 @@ private func application_mainWindow(_ L: UnsafeMutablePointer<lua_State>!) -> In
 private func application_focusedWindow(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     luaL_checkudata(L, 1, USERDATA_TAG)
     guard let app = getApp(L, at: 1) else { lua_pushnil(L); return 1 }
-    lua_pushany(L, app.focusedWindow())
+    pushHSwindowOrNil(L, app.focusedWindow())
     return 1
 }
 
@@ -1144,7 +1144,7 @@ private func application_uielement_newWatcher(_ L: UnsafeMutablePointer<lua_Stat
     guard let app = getApp(L, at: 1) else { lua_pushnil(L); return 1 }
     if let uiElement = app.uiElement as? HSuielementProtocol {
         let watcher = uiElement.newWatcher(atIndex: 2, withUserdataAtIndex: 3, withLuaState: L)
-        lua_pushany(L, watcher)
+        pushHSuielementWatcherOrNil(L, watcher)
     } else {
         lua_pushnil(L)
     }
@@ -1153,7 +1153,8 @@ private func application_uielement_newWatcher(_ L: UnsafeMutablePointer<lua_Stat
 
 // MARK: - Lua<->NSObject Conversion Functions
 
-private func pushHSapplication(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
+@discardableResult
+func pushHSapplication(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any?) -> Int32 {
     guard let value = obj as? (NSObject & HSapplicationProtocol) else { return 0 }
     value.selfRefCount += 1
     let valuePtr = lua_newuserdata(L, MemoryLayout<UnsafeMutableRawPointer>.size)!
@@ -1162,6 +1163,28 @@ private func pushHSapplication(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any
     luaL_getmetatable(L, USERDATA_TAG)
     lua_setmetatable(L, -2)
     return 1
+}
+
+func pushHSapplicationOrNil(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any?) {
+    if pushHSapplication(L, obj) == 0 {
+        lua_pushnil(L)
+    }
+}
+
+private func pushHSapplications(_ L: UnsafeMutablePointer<lua_State>!, _ apps: [HSapplication]?) {
+    guard let apps = apps else {
+        lua_pushnil(L)
+        return
+    }
+
+    lua_createtable(L, Int32(apps.count), 0)
+    var index: lua_Integer = 1
+    for app in apps {
+        if pushHSapplication(L, app) != 0 {
+            lua_rawseti(L, -2, index)
+            index += 1
+        }
+    }
 }
 
 private func toHSapplicationFromLua(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> Any! {
@@ -1189,8 +1212,8 @@ private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 private func userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     var isEqual = false
     if luaL_testudata(L, 1, USERDATA_TAG) != nil && luaL_testudata(L, 2, USERDATA_TAG) != nil {
-        if let app1 = lua_toAnyObject(L, at: 1) as? HSapplicationProtocol,
-           let app2 = lua_toAnyObject(L, at: 2) as? HSapplicationProtocol {
+        if let app1 = toHSapplicationFromLua(L, 1) as? HSapplicationProtocol,
+           let app2 = toHSapplicationFromLua(L, 2) as? HSapplicationProtocol {
             isEqual = app1.runningApp.isEqual(app2.runningApp)
         }
     }

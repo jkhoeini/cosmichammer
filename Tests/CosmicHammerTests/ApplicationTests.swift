@@ -11,6 +11,7 @@ extension CosmicHammerTests {
         @Test func testBasicAttributes() { runLuaTest() }
         @Test(.skipInHeadless) func testFrontmostApplication() { runLuaTest() }
         @Test func testRunningApplications() { runLuaTest() }
+        @Test func testObjectConversions() { runLuaTest() }
         @Test func testMenus() { runLuaTest() }
         @Test func testUTI() { runLuaTest() }
         @Test func testLocalizationFunctions() { runLuaTest() }

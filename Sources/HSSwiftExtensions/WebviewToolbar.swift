@@ -237,15 +237,9 @@ private func isBoolNumber(_ value: Any?) -> Bool {
                 guard fnRef != LUA_NOREF else { return }
                 let L = lua_getCurrentState()!
                 lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(fnRef))
-                lua_pushany(L, capturedSelf)
-                if let ourWindow = self?.windowUsingToolbar {
-                    if ourWindow == consoleWindow() {
-                        lua_pushstring(L, "console")
-                    } else if ourWindow.windowController != nil {
-                        lua_pushany(L, ourWindow.windowController)
-                    } else {
-                        lua_pushany(L, ourWindow)
-                    }
+                wv_pushAny(L, capturedSelf)
+                if let self = self {
+                    self.pushWindowContext(L)
                 } else {
                     lua_pushstring(L, "** no window attached")
                 }
@@ -656,17 +650,7 @@ private func isBoolNumber(_ value: Any?) -> Bool {
     }
 
     private func pushWindowContext(_ L: UnsafeMutablePointer<lua_State>) {
-        if let ourWindow = windowUsingToolbar {
-            if ourWindow == consoleWindow() {
-                lua_pushstring(L, "console")
-            } else if ourWindow.windowController != nil {
-                lua_pushany(L, ourWindow.windowController)
-            } else {
-                lua_pushany(L, ourWindow)
-            }
-        } else {
-            lua_pushstring(L, "** no window attached")
-        }
+        toolbar_pushWindowContext(L, window: windowUsingToolbar)
     }
 
     func toolbarWillAddItem(_ notification: Notification) {
@@ -676,7 +660,7 @@ private func isBoolNumber(_ value: Any?) -> Bool {
             guard let self = self, self.callbackRef != LUA_NOREF else { return }
             let L = lua_getCurrentState()!
             lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(self.callbackRef))
-            lua_pushany(L, capturedSelf)
+            wv_pushAny(L, capturedSelf)
             self.pushWindowContext(L)
             let itemId = (notification.userInfo?["item"] as? NSToolbarItem)?.itemIdentifier.rawValue ?? ""
             lua_pushany(L, itemId)
@@ -692,7 +676,7 @@ private func isBoolNumber(_ value: Any?) -> Bool {
             guard let self = self, self.callbackRef != LUA_NOREF else { return }
             let L = lua_getCurrentState()!
             lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(self.callbackRef))
-            lua_pushany(L, capturedSelf)
+            wv_pushAny(L, capturedSelf)
             self.pushWindowContext(L)
             let itemId = (notification.userInfo?["item"] as? NSToolbarItem)?.itemIdentifier.rawValue ?? ""
             lua_pushany(L, itemId)
@@ -714,7 +698,7 @@ private func toolbar_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     }
 
     if let toolbar = HSToolbar(identifier: identifier, itemTableIndex: idx, state: L) {
-        lua_pushany(L, toolbar)
+        wv_pushAny(L, toolbar)
     } else {
         lua_pushnil(L)
     }
@@ -744,7 +728,7 @@ private func toolbar_attachToolbar(_ L: UnsafeMutablePointer<lua_State>!) -> Int
         newToolbar = nil
     } else if top == 1 && lua_type(L, 1) == LUA_TUSERDATA && luaL_testudata(L, 1, USERDATA_TB_TAG) != nil {
         theWindow = consoleWindow()
-        newToolbar = lua_toAnyObject(L, at: 1) as? HSToolbar
+        newToolbar = getToolbar(L, 1)
     } else if top == 1 && lua_type(L, 1) == LUA_TUSERDATA && luaL_testudata(L, 1, "hs.webview") != nil {
         theWindow = getWindowFromUserdata(L, 1, "hs.webview")
         setToolbar = false
@@ -752,7 +736,7 @@ private func toolbar_attachToolbar(_ L: UnsafeMutablePointer<lua_State>!) -> Int
         theWindow = getWindowFromUserdata(L, 1, "hs.webview")
     } else if top == 2 && lua_type(L, 1) == LUA_TUSERDATA && luaL_testudata(L, 1, "hs.webview") != nil && lua_type(L, 2) == LUA_TUSERDATA && luaL_testudata(L, 2, USERDATA_TB_TAG) != nil {
         theWindow = getWindowFromUserdata(L, 1, "hs.webview")
-        newToolbar = lua_toAnyObject(L, at: 2) as? HSToolbar
+        newToolbar = getToolbar(L, 2)
     } else if top == 1 && lua_type(L, 1) == LUA_TUSERDATA && luaL_testudata(L, 1, "hs.chooser") != nil {
         let controller = getWindowControllerFromUserdata(L, 1, "hs.chooser")
         theWindow = controller?.window
@@ -765,7 +749,7 @@ private func toolbar_attachToolbar(_ L: UnsafeMutablePointer<lua_State>!) -> Int
     } else if top == 2 && lua_type(L, 1) == LUA_TUSERDATA && luaL_testudata(L, 1, "hs.chooser") != nil && lua_type(L, 2) == LUA_TUSERDATA && luaL_testudata(L, 2, USERDATA_TB_TAG) != nil {
         let controller = getWindowControllerFromUserdata(L, 1, "hs.chooser")
         theWindow = controller?.window
-        newToolbar = lua_toAnyObject(L, at: 2) as? HSToolbar
+        newToolbar = getToolbar(L, 2)
         isChooser = true
     } else {
         return luaL_error(L, "\(USERDATA_TB_TAG):attachToolbar requires an optional window target object and an \(USERDATA_TB_TAG) object or nil")
@@ -798,7 +782,7 @@ private func toolbar_attachToolbar(_ L: UnsafeMutablePointer<lua_State>!) -> Int
         lua_pushvalue(L, 1)
     } else {
         if let old = oldToolbar {
-            lua_pushany(L, old)
+            wv_pushAny(L, old)
         } else {
             lua_pushnil(L)
         }
@@ -810,7 +794,7 @@ private func toolbar_attachToolbar(_ L: UnsafeMutablePointer<lua_State>!) -> Int
 
 private func toolbar_inTitleBar(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     luaL_checkudata(L, 1, USERDATA_TB_TAG)
-    let toolbar = lua_tovalue(L, at: 1) as! HSToolbar
+    let toolbar = getToolbar(L, 1)
     let theWindow = toolbar.windowUsingToolbar
     if lua_gettop(L) == 1 {
         lua_pushboolean(L, theWindow?.titleVisibility == .hidden ? 1 : 0)
@@ -827,16 +811,16 @@ private func toolbar_inTitleBar(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 
 private func toolbar_isAttached(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     luaL_checkudata(L, 1, USERDATA_TB_TAG)
-    let toolbar = lua_tovalue(L, at: 1) as! HSToolbar
+    let toolbar = getToolbar(L, 1)
     lua_pushboolean(L, toolbar.isAttached ? 1 : 0)
     return 1
 }
 
 private func toolbar_copy(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     luaL_checkudata(L, 1, USERDATA_TB_TAG)
-    let oldToolbar = lua_tovalue(L, at: 1) as! HSToolbar
+    let oldToolbar = getToolbar(L, 1)
     if let newToolbar = HSToolbar(copy: oldToolbar, state: L) {
-        lua_pushany(L, newToolbar)
+        wv_pushAny(L, newToolbar)
     } else {
         lua_pushnil(L)
     }
@@ -845,7 +829,7 @@ private func toolbar_copy(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 private func toolbar_setCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     luaL_checkudata(L, 1, USERDATA_TB_TAG)
-    let toolbar = lua_tovalue(L, at: 1) as! HSToolbar
+    let toolbar = getToolbar(L, 1)
     luaL_unref(L, LUA_REGISTRYINDEX_VALUE, toolbar.callbackRef)
 
     toolbar.callbackRef = LUA_NOREF
@@ -859,14 +843,14 @@ private func toolbar_setCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 
 private func toolbar_savedSettings(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     luaL_checkudata(L, 1, USERDATA_TB_TAG)
-    let toolbar = lua_tovalue(L, at: 1) as! HSToolbar
+    let toolbar = getToolbar(L, 1)
     lua_pushany(L, toolbar.configuration)
     return 1
 }
 
 private func toolbar_separator(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     luaL_checkudata(L, 1, USERDATA_TB_TAG)
-    let toolbar = lua_tovalue(L, at: 1) as! HSToolbar
+    let toolbar = getToolbar(L, 1)
     if lua_gettop(L) != 1 {
         toolbar.showsBaselineSeparator = lua_toboolean(L, 2) != 0
         lua_pushvalue(L, 1)
@@ -878,7 +862,7 @@ private func toolbar_separator(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 private func toolbar_visible(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     luaL_checkudata(L, 1, USERDATA_TB_TAG)
-    let toolbar = lua_tovalue(L, at: 1) as! HSToolbar
+    let toolbar = getToolbar(L, 1)
     if lua_gettop(L) != 1 {
         toolbar.isVisible = lua_toboolean(L, 2) != 0
         lua_pushvalue(L, 1)
@@ -890,7 +874,7 @@ private func toolbar_visible(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 private func toolbar_notifyOnChange(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     luaL_checkudata(L, 1, USERDATA_TB_TAG)
-    let toolbar = lua_tovalue(L, at: 1) as! HSToolbar
+    let toolbar = getToolbar(L, 1)
     if lua_gettop(L) != 1 {
         toolbar.notifyToolbarChanges = lua_toboolean(L, 2) != 0
         lua_pushvalue(L, 1)
@@ -901,7 +885,7 @@ private func toolbar_notifyOnChange(_ L: UnsafeMutablePointer<lua_State>!) -> In
 }
 
 private func toolbar_insertItem(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let toolbar = lua_tovalue(L, at: 1) as! HSToolbar
+    let toolbar = getToolbar(L, 1)
     let identifier = lua_tovalue(L, at: 2) as! String
     var index = lua_tointeger(L, 3)
 
@@ -932,7 +916,7 @@ private func toolbar_removeItem(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
     luaL_checkudata(L, 1, USERDATA_TB_TAG)
 
     luaL_checktype(L, 2, LUA_TNUMBER)
-    let toolbar = lua_tovalue(L, at: 1) as! HSToolbar
+    let toolbar = getToolbar(L, 1)
     let index = luaL_checkinteger(L, 2)
     guard index >= 1 && index <= Int64(toolbar.items.count + 1) else {
         return luaL_error(L, "index out of bounds")
@@ -944,7 +928,7 @@ private func toolbar_removeItem(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 
 private func toolbar_sizeMode(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     luaL_checkudata(L, 1, USERDATA_TB_TAG)
-    let toolbar = lua_tovalue(L, at: 1) as! HSToolbar
+    let toolbar = getToolbar(L, 1)
     if lua_gettop(L) == 2 {
         let size = lua_tovalue(L, at: 2) as! String
         switch size {
@@ -967,7 +951,7 @@ private func toolbar_sizeMode(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 private func toolbar_displayMode(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     luaL_checkudata(L, 1, USERDATA_TB_TAG)
-    let toolbar = lua_tovalue(L, at: 1) as! HSToolbar
+    let toolbar = getToolbar(L, 1)
     if lua_gettop(L) == 2 {
         let mode = lua_tovalue(L, at: 2) as! String
         switch mode {
@@ -992,7 +976,7 @@ private func toolbar_displayMode(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 
 private func toolbar_toolbarStyle(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     luaL_checkudata(L, 1, USERDATA_TB_TAG)
-    let toolbar = lua_tovalue(L, at: 1) as! HSToolbar
+    let toolbar = getToolbar(L, 1)
     if lua_gettop(L) == 2 {
         let style = lua_tovalue(L, at: 2) as! String
         switch style {
@@ -1025,7 +1009,7 @@ private func toolbar_modifyItem(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
     luaL_checkudata(L, 1, USERDATA_TB_TAG)
 
     luaL_checktype(L, 2, LUA_TTABLE)
-    let toolbar = lua_tovalue(L, at: 1) as! HSToolbar
+    let toolbar = getToolbar(L, 1)
 
     guard lua_getfield(L, 2, "id") == LUA_TSTRING else {
         lua_pop(L, 1)
@@ -1127,7 +1111,7 @@ private func toolbar_addItems(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     luaL_checkudata(L, 1, USERDATA_TB_TAG)
 
     luaL_checktype(L, 2, LUA_TTABLE)
-    let toolbar = lua_tovalue(L, at: 1) as! HSToolbar
+    let toolbar = getToolbar(L, 1)
 
     let count = luaL_len(L, 2)
     var index: lua_Integer = 0
@@ -1155,7 +1139,7 @@ private func toolbar_deleteItem(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
     luaL_checkudata(L, 1, USERDATA_TB_TAG)
 
     luaL_checktype(L, 2, LUA_TSTRING)
-    let toolbar = lua_tovalue(L, at: 1) as! HSToolbar
+    let toolbar = getToolbar(L, 1)
     let identifier = lua_tovalue(L, at: 2) as! String
 
     guard toolbar.itemDefDictionary[identifier] != nil else {
@@ -1179,7 +1163,7 @@ private func toolbar_itemDetails(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
     luaL_checkudata(L, 1, USERDATA_TB_TAG)
 
     luaL_checktype(L, 2, LUA_TSTRING)
-    let toolbar = lua_tovalue(L, at: 1) as! HSToolbar
+    let toolbar = getToolbar(L, 1)
     let identifier = lua_tovalue(L, at: 2) as! String
 
     guard toolbar.itemDefDictionary[identifier] != nil else {
@@ -1200,7 +1184,7 @@ private func toolbar_itemDetails(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
         }
     }
     if ourItem == nil { ourItem = toolbar.itemDefDictionary[identifier] as? NSToolbarItem }
-    lua_pushany(L, ourItem)
+    wv_pushAny(L, ourItem)
 
     lua_pushboolean(L, toolbar.selectableIdentifiers_.contains(identifier) ? 1 : 0)
     lua_setfield(L, -2, "selectable")
@@ -1225,27 +1209,27 @@ private func toolbar_itemDetails(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 
 private func toolbar_allowedItems(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     luaL_checkudata(L, 1, USERDATA_TB_TAG)
-    let toolbar = lua_tovalue(L, at: 1) as! HSToolbar
+    let toolbar = getToolbar(L, 1)
     lua_pushany(L, toolbar.allowedIdentifiers_.array)
     return 1
 }
 
 private func toolbar_items(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     luaL_checkudata(L, 1, USERDATA_TB_TAG)
-    let toolbar = lua_tovalue(L, at: 1) as! HSToolbar
+    let toolbar = getToolbar(L, 1)
     lua_pushany(L, toolbar.items.map { $0.itemIdentifier.rawValue })
     return 1
 }
 
 private func toolbar_visibleItems(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     luaL_checkudata(L, 1, USERDATA_TB_TAG)
-    let toolbar = lua_tovalue(L, at: 1) as! HSToolbar
+    let toolbar = getToolbar(L, 1)
     lua_pushany(L, toolbar.visibleItems?.map { $0.itemIdentifier.rawValue })
     return 1
 }
 
 private func toolbar_selectedItem(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let toolbar = lua_tovalue(L, at: 1) as! HSToolbar
+    let toolbar = getToolbar(L, 1)
     if lua_gettop(L) == 2 {
         if lua_type(L, 2) == LUA_TSTRING {
             let identifier = lua_tovalue(L, at: 2) as! String
@@ -1265,7 +1249,7 @@ private func toolbar_selectedItem(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
 
 private func toolbar_selectSearchField(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     luaL_checkudata(L, 1, USERDATA_TB_TAG)
-    let toolbar = lua_tovalue(L, at: 1) as! HSToolbar
+    let toolbar = getToolbar(L, 1)
     let targetID = (lua_gettop(L) == 2) ? (lua_tovalue(L, at: 2) as? String) : nil
 
     var targetItem: NSToolbarItem?
@@ -1287,14 +1271,14 @@ private func toolbar_selectSearchField(_ L: UnsafeMutablePointer<lua_State>!) ->
 
 private func toolbar_identifier(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     luaL_checkudata(L, 1, USERDATA_TB_TAG)
-    let toolbar = lua_tovalue(L, at: 1) as! HSToolbar
+    let toolbar = getToolbar(L, 1)
     lua_pushany(L, toolbar.identifier)
     return 1
 }
 
 private func toolbar_customizePanel(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     luaL_checkudata(L, 1, USERDATA_TB_TAG)
-    let toolbar = lua_tovalue(L, at: 1) as! HSToolbar
+    let toolbar = getToolbar(L, 1)
     toolbar.runCustomizationPalette(toolbar)
     lua_pushvalue(L, 1)
     return 1
@@ -1302,14 +1286,14 @@ private func toolbar_customizePanel(_ L: UnsafeMutablePointer<lua_State>!) -> In
 
 private func toolbar_isCustomizing(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     luaL_checkudata(L, 1, USERDATA_TB_TAG)
-    let toolbar = lua_tovalue(L, at: 1) as! HSToolbar
+    let toolbar = getToolbar(L, 1)
     lua_pushboolean(L, toolbar.customizationPaletteIsRunning ? 1 : 0)
     return 1
 }
 
 private func toolbar_canCustomize(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     luaL_checkudata(L, 1, USERDATA_TB_TAG)
-    let toolbar = lua_tovalue(L, at: 1) as! HSToolbar
+    let toolbar = getToolbar(L, 1)
     if lua_gettop(L) == 1 {
         lua_pushboolean(L, toolbar.allowsUserCustomization ? 1 : 0)
     } else {
@@ -1321,7 +1305,7 @@ private func toolbar_canCustomize(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
 
 private func toolbar_autosaves(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     luaL_checkudata(L, 1, USERDATA_TB_TAG)
-    let toolbar = lua_tovalue(L, at: 1) as! HSToolbar
+    let toolbar = getToolbar(L, 1)
     if lua_gettop(L) == 1 {
         lua_pushboolean(L, toolbar.autosavesConfiguration ? 1 : 0)
     } else {
@@ -1353,7 +1337,24 @@ private func toolbar_itemPriorities(_ L: UnsafeMutablePointer<lua_State>!) -> In
 
 // MARK: - Push/To helpers
 
-private func pushHSToolbar(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
+func toolbar_pushWindowContext(_ L: UnsafeMutablePointer<lua_State>!, window: NSWindow?) {
+    guard let window else {
+        lua_pushstring(L, "** no window attached")
+        return
+    }
+
+    if window == consoleWindow() {
+        lua_pushstring(L, "console")
+    } else if let webview = window as? HSWebViewWindow {
+        _ = wv_HSWebViewWindow_toLua(L, webview)
+    } else if let chooser = window.windowController as? HSChooser {
+        _ = pushHSChooser(L, chooser)
+    } else {
+        lua_pushany(L, window)
+    }
+}
+
+func toolbar_pushHSToolbar(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
     guard let toolbar = obj as? HSToolbar else { lua_pushnil(L); return 1 }
     if toolbar.selfRef == LUA_NOREF {
         let ptr = lua_newuserdata(L, MemoryLayout<UnsafeMutableRawPointer>.size)!
@@ -1366,6 +1367,10 @@ private func pushHSToolbar(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -
     }
     lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(toolbar.selfRef))
     return 1
+}
+
+func wv_HSToolbar_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
+    toolbar_pushHSToolbar(L, obj)
 }
 
 private func toHSToolbar(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> Any! {
@@ -1381,7 +1386,7 @@ private func toHSToolbar(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) ->
 private func pushNSToolbarItem(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
     guard let item = obj as? NSToolbarItem else { lua_pushnil(L); return 1 }
     lua_newtable(L)
-    lua_pushany(L, item.itemIdentifier); lua_setfield(L, -2, "id")
+    lua_pushany(L, item.itemIdentifier.rawValue); lua_setfield(L, -2, "id")
     lua_pushany(L, item.label); lua_setfield(L, -2, "label")
     lua_pushany(L, item.toolTip); lua_setfield(L, -2, "tooltip")
     lua_pushany(L, item.image); lua_setfield(L, -2, "image")
@@ -1390,11 +1395,16 @@ private func pushNSToolbarItem(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any
     lua_pushinteger(L, lua_Integer(item.tag)); lua_setfield(L, -2, "tag")
 
     if let group = item as? NSToolbarItemGroup {
-        lua_pushany(L, group.subitems); lua_setfield(L, -2, "subitems")
+        lua_createtable(L, Int32(group.subitems.count), 0)
+        for subitem in group.subitems {
+            wv_pushAny(L, subitem)
+            lua_rawseti(L, -2, luaL_len(L, -2) + 1)
+        }
+        lua_setfield(L, -2, "subitems")
     }
 
     if let toolbar = item.toolbar as? HSToolbar {
-        lua_pushany(L, toolbar); lua_setfield(L, -2, "toolbar")
+        wv_pushAny(L, toolbar); lua_setfield(L, -2, "toolbar")
         if let sf = item.view as? HSToolbarSearchField {
             lua_pushnumber(L, lua_Number(item.maxSize.width)); lua_setfield(L, -2, "searchWidth")
             lua_pushany(L, sf.stringValue); lua_setfield(L, -2, "searchText")
@@ -1407,10 +1417,14 @@ private func pushNSToolbarItem(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any
     return 1
 }
 
+func wv_NSToolbarItem_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
+    pushNSToolbarItem(L, obj)
+}
+
 // MARK: - Infrastructure
 
 private func toolbar_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let toolbar = lua_tovalue(L, at: 1) as! HSToolbar
+    let toolbar = getToolbar(L, 1)
     let desc = "\(USERDATA_TB_TAG): \(toolbar.identifier) (\(String(describing: lua_topointer(L, 1)!)))"
     lua_pushstring(L, desc)
     return 1
@@ -1418,8 +1432,8 @@ private func toolbar_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 private func toolbar_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     if luaL_testudata(L, 1, USERDATA_TB_TAG) != nil && luaL_testudata(L, 2, USERDATA_TB_TAG) != nil {
-        let obj1 = lua_tovalue(L, at: 1) as! HSToolbar
-        let obj2 = lua_tovalue(L, at: 2) as! HSToolbar
+        let obj1 = getToolbar(L, 1)
+        let obj2 = getToolbar(L, 2)
         lua_pushboolean(L, obj1.isEqual(to: obj2) ? 1 : 0)
     } else {
         lua_pushboolean(L, 0)

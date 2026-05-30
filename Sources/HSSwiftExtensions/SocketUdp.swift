@@ -23,6 +23,27 @@ private let CLIENT: NSString = "CLIENT"
 private var refTable: Int32 = LUA_NOREF
 private let USERDATA_TAG = "hs.socket.udp"
 
+private func luaDataAt(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> Data {
+    luaL_checktype(L, idx, LUA_TSTRING)
+    var length = 0
+    guard let bytes = lua_tolstring(L, idx, &length) else { return Data() }
+    return Data(bytes: bytes, count: length)
+}
+
+private func luaStringAt(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> String {
+    String(data: luaDataAt(L, idx), encoding: .utf8) ?? ""
+}
+
+private func luaPushData(_ L: UnsafeMutablePointer<lua_State>!, _ data: Data) {
+    data.withUnsafeBytes { buffer in
+        if let base = buffer.baseAddress {
+            _ = lua_pushlstring(L, base.assumingMemoryBound(to: CChar.self), data.count)
+        } else {
+            _ = lua_pushlstring(L, "", 0)
+        }
+    }
+}
+
 // Helper to extract the HSAsyncUdpSocket from userdata
 private func getUserData(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> HSAsyncUdpSocket {
     let ud = lua_touserdata(L, idx)!.assumingMemoryBound(to: AsyncSocketUserData.self)
@@ -49,7 +70,7 @@ private func udpWriteCallback(_ asyncUdpSocket: HSAsyncUdpSocket, tag: Int) {
         if asyncUdpSocket.writeCallbackRef != LUA_NOREF {
             let L = lua_getCurrentState()!
             lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(asyncUdpSocket.writeCallbackRef))
-            lua_pushany(L, NSNumber(value: tag))
+            lua_pushinteger(L, lua_Integer(tag))
             luaL_unref(L, LUA_REGISTRYINDEX_VALUE, asyncUdpSocket.writeCallbackRef)
 
             asyncUdpSocket.writeCallbackRef = LUA_NOREF
@@ -63,8 +84,8 @@ private func udpReadCallback(_ asyncUdpSocket: HSAsyncUdpSocket, data: Data, add
         if asyncUdpSocket.readCallbackRef != LUA_NOREF {
             let L = lua_getCurrentState()!
             lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(asyncUdpSocket.readCallbackRef))
-            lua_pushany(L, String(data: data, encoding: .utf8) as NSString?)
-            lua_pushany(L, address as NSData)
+            luaPushData(L, data)
+            luaPushData(L, address)
             if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
         }
     }
@@ -850,8 +871,8 @@ private func socketudp_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 private func socketudp_connect(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let asyncUdpSocket = getUserData(L, 1)
-    let theHost = lua_tovalue(L, at: 2) as! String
-    let thePort = (lua_tovalue(L, at: 3) as! NSNumber).uint16Value
+    let theHost = luaStringAt(L, 2)
+    let thePort = UInt16(clamping: luaL_checkinteger(L, 3))
 
     if lua_type(L, 4) == LUA_TFUNCTION {
         lua_pushvalue(L, 4)
@@ -885,7 +906,7 @@ private func socketudp_connect(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 private func socketudp_listen(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let asyncUdpSocket = getUserData(L, 1)
-    let thePort = (lua_tovalue(L, at: 2) as! NSNumber).uint16Value
+    let thePort = UInt16(clamping: luaL_checkinteger(L, 2))
 
     do {
         try asyncUdpSocket.bind(toPort: thePort)
@@ -1061,7 +1082,7 @@ private func socketudp_receiveOne(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
 private func socketudp_send(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let asyncUdpSocket = getUserData(L, 1)
 
-    let sendData = lua_tovalue(L, at: 2) as! Data
+    let sendData = luaDataAt(L, 2)
 
     if asyncUdpSocket.isConnected() {
         let tag: Int = lua_type(L, 3) == LUA_TNUMBER ? Int(lua_tointeger(L, 3)) : -1
@@ -1076,8 +1097,8 @@ private func socketudp_send(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
         asyncUdpSocket.send(sendData, withTimeout: asyncUdpSocket.socketTimeout, tag: tag)
     } else {
-        let theHost = lua_tovalue(L, at: 3) as! String
-        let thePort = (lua_tovalue(L, at: 4) as! NSNumber).uint16Value
+        let theHost = luaStringAt(L, 3)
+        let thePort = UInt16(clamping: luaL_checkinteger(L, 4))
         let tag: Int = lua_type(L, 5) == LUA_TNUMBER ? Int(lua_tointeger(L, 5)) : -1
         if lua_type(L, 5) == LUA_TFUNCTION {
             lua_pushvalue(L, 5)

@@ -213,22 +213,19 @@ private let watcherCallback: AXObserverCallback = { _, element, notificationName
 
     // Determine what kind of object to push as parameter 1
     let elementObj = HSuielement(withElement: element)
-    let pushObj: NSObject
     if elementObj.isWindow {
-        pushObj = HSwindow(axuiElementRef: element)
+        pushHSwindow(L, HSwindow(axuiElementRef: element))
     } else if elementObj.isApplication {
         var pid: pid_t = 0
         AXUIElementGetPid(element, &pid)
         if let app = HSapplication(pid: pid, withState: L) {
-            pushObj = app
+            pushHSapplication(L, app)
         } else {
-            pushObj = elementObj
+            pushHSuielement(L, elementObj)
         }
     } else {
-        pushObj = elementObj
+        pushHSuielement(L, elementObj)
     }
-
-    lua_pushany(L, pushObj)
 
     // Parameter 2: event name
     if let cstr = CFStringGetCStringPtr(notificationName, CFStringBuiltInEncodings.ASCII.rawValue) {

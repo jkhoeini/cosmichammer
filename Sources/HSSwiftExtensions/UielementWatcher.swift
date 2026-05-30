@@ -17,7 +17,7 @@ private func watcher_start(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     luaL_checktype(L, 2, LUA_TTABLE)
-    guard let watcher = lua_toAnyObject(L, at: 1) as? HSuielementWatcherProtocol else { return 0 }
+    guard let watcher = getWatcher(L, at: 1) else { return 0 }
     lua_pushvalue(L, 1)
 
     watcher.watcherRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
@@ -30,7 +30,7 @@ private func watcher_start(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 private func watcher_stop(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     luaL_checkudata(L, 1, USERDATA_TAG)
-    guard let watcher = lua_toAnyObject(L, at: 1) as? HSuielementWatcherProtocol else { return 0 }
+    guard let watcher = getWatcher(L, at: 1) else { return 0 }
     watcher.stop()
     luaL_unref(L, LUA_REGISTRYINDEX_VALUE, watcher.watcherRef)
 
@@ -44,7 +44,7 @@ private func watcher_stop(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns the PID of the element being watched
 private func watcher_pid(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     luaL_checkudata(L, 1, USERDATA_TAG)
-    guard let watcher = lua_toAnyObject(L, at: 1) as? HSuielementWatcherProtocol else { return 0 }
+    guard let watcher = getWatcher(L, at: 1) else { return 0 }
     lua_pushnumber(L, lua_Number(watcher.pid))
     return 1
 }
@@ -54,28 +54,26 @@ private func watcher_pid(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns the element the watcher is watching.
 private func watcher_element(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     luaL_checkudata(L, 1, USERDATA_TAG)
-    guard let watcher = lua_toAnyObject(L, at: 1) as? HSuielementWatcherProtocol else { return 0 }
+    guard let watcher = getWatcher(L, at: 1) else { return 0 }
 
     let element = HSuielement(withElement: watcher.elementRef)
 
     if element.isWindow {
         let window = HSwindow(axuiElementRef: watcher.elementRef)
-        lua_pushany(L, window)
+        pushHSwindow(L, window)
         return 1
     } else if element.isApplication {
         let app = HSapplication(pid: watcher.pid, withState: L)
-        lua_pushany(L, app)
+        pushHSapplicationOrNil(L, app)
         return 1
     }
-    lua_pushany(L, element)
-    return 1
-    lua_pushnil(L)
+    pushHSuielement(L, element)
     return 1
 }
 
 private func watcher_watchDestroyed(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     luaL_checkudata(L, 1, USERDATA_TAG)
-    guard let watcher = lua_toAnyObject(L, at: 1) as? HSuielementWatcherProtocol else { return 0 }
+    guard let watcher = getWatcher(L, at: 1) else { return 0 }
 
     if lua_type(L, 2) == LUA_TBOOLEAN {
         watcher.watchDestroyed = lua_toboolean(L, 2) != 0
@@ -88,7 +86,8 @@ private func watcher_watchDestroyed(_ L: UnsafeMutablePointer<lua_State>!) -> In
 
 // MARK: - Lua<->NSObject Conversion Functions
 
-private func pushHSuielementWatcher(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
+@discardableResult
+func pushHSuielementWatcher(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any?) -> Int32 {
     guard let value = obj as? NSObject & HSuielementWatcherProtocol else { return 0 }
     value.selfRefCount += 1
     let valuePtr = lua_newuserdata(L, MemoryLayout<UnsafeMutableRawPointer>.size)!
@@ -97,6 +96,12 @@ private func pushHSuielementWatcher(_ L: UnsafeMutablePointer<lua_State>!, _ obj
     luaL_getmetatable(L, USERDATA_TAG)
     lua_setmetatable(L, -2)
     return 1
+}
+
+func pushHSuielementWatcherOrNil(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any?) {
+    if pushHSuielementWatcher(L, obj) == 0 {
+        lua_pushnil(L)
+    }
 }
 
 private func toHSuielementWatcherFromLua(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> Any! {
@@ -123,8 +128,8 @@ private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 private func userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     var isEqual = false
     if luaL_testudata(L, 1, USERDATA_TAG) != nil && luaL_testudata(L, 2, USERDATA_TAG) != nil {
-        if let w1 = lua_tovalue(L, at: 1) as? NSObject,
-           let w2 = lua_tovalue(L, at: 2) as? NSObject {
+        if let w1 = toHSuielementWatcherFromLua(L, 1) as? NSObject,
+           let w2 = toHSuielementWatcherFromLua(L, 2) as? NSObject {
             isEqual = w1.isEqual(w2)
         }
     }

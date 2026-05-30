@@ -24,7 +24,7 @@ private func getColorLists(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
     lua_newtable(L)
     for colorList in NSColorList.availableColorLists {
-        lua_pushany(L, colorList)
+        NSColorList_tolua(L, colorList)
         lua_setfield(L, -2, colorList.name!.utf8CString.withUnsafeBufferPointer { $0.baseAddress! })
     }
     return 1
@@ -44,7 +44,7 @@ private func getColorLists(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * See also `hs.drawing.color.asHSB`
 private func colorAsRGB(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     luaL_checktype(L, 1, LUA_TTABLE)
-    let theColor = lua_tovalue(L, at: 1) as! NSColor
+    let theColor = table_toNSColor(L, 1) as! NSColor
 
     let safeColor = theColor.usingColorSpace(NSColorSpace.genericRGB)
 
@@ -75,7 +75,7 @@ private func colorAsRGB(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * See also `hs.drawing.color.asRGB`
 private func colorAsHSB(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     luaL_checktype(L, 1, LUA_TTABLE)
-    let theColor = lua_tovalue(L, at: 1) as! NSColor
+    let theColor = table_toNSColor(L, 1) as! NSColor
 
     let safeColor = theColor.usingColorSpace(NSColorSpace.genericRGB)
 
@@ -95,7 +95,8 @@ private func colorAsHSB(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 // [skin pushNSObject:NSColor]
 // C-API
 // Pushes the provided NSColor onto the Lua Stack as an array meeting the color table description provided in `hs.drawing.color`
-private func NSColor_tolua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
+@discardableResult
+func NSColor_tolua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
     let theColor = obj as! NSColor
     let safeColor = theColor.usingColorSpace(NSColorSpace.genericRGB)
 
@@ -115,7 +116,7 @@ private func NSColor_tolua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -
         lua_pushstring(L, "NSColor") ; lua_setfield(L, -2, "__luaSkinType")
     } else if theColor.colorSpaceName == .pattern {
         lua_newtable(L)
-        lua_pushany(L, theColor.patternImage)
+        NSImage_tolua(L, theColor.patternImage)
         lua_setfield(L, -2, "image")
         lua_pushstring(L, "NSColor") ; lua_setfield(L, -2, "__luaSkinType")
     } else {
@@ -128,12 +129,17 @@ private func NSColor_tolua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -
 // [skin pushNSObject:NSColorList]
 // C-API
 // Pushes the provided NSColorList onto the Lua Stack as a table of color tables meeting the color table description provided in `hs.drawing.color`
+@discardableResult
 private func NSColorList_tolua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
     let colorList = obj as! NSColorList
 
     lua_newtable(L)
     for key in colorList.allKeys {
-        lua_pushany(L, colorList.color(withKey: key))
+        if let color = colorList.color(withKey: key) {
+            NSColor_tolua(L, color)
+        } else {
+            lua_pushnil(L)
+        }
         lua_setfield(L, -2, key.utf8CString.withUnsafeBufferPointer { $0.baseAddress! })
     }
 
@@ -238,7 +244,7 @@ private func table_toNSColorHelper(_ L: UnsafeMutablePointer<lua_State>!, _ idx:
             lua_pop(L, 1)
 
             if lua_getfield(L, idx, "image") == LUA_TUSERDATA && luaL_testudata(L, -1, "hs.image") != nil {
-                image = lua_tovalue(L, at: -1) as? NSImage
+                image = toNSImage(L, at: -1)
             }
             lua_pop(L, 1)
 
@@ -283,7 +289,7 @@ private func table_toNSColorHelper(_ L: UnsafeMutablePointer<lua_State>!, _ idx:
 // [skin luaObjectAtIndex:idx toClass:"NSColor"]
 // C-API
 // Converts the table at the specified index on the Lua Stack into an NSColor and returns the NSColor.
-private func table_toNSColor(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> Any! {
+func table_toNSColor(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> Any! {
     return table_toNSColorHelper(L, idx, 0)
 }
 

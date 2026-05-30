@@ -121,13 +121,11 @@ public func getElementRefPropertyFromClassObject(_ object: NSObject) -> AXUIElem
 public func new_application(_ L: UnsafeMutablePointer<lua_State>!, _ pid: pid_t) -> Bool {
     let obj = HSapplication(pid: pid, withState: L)
 
-    if let obj = obj {
-        lua_pushany(L, obj)
+    if let obj = obj, pushHSapplication(L, obj) != 0 {
         return true
-    } else {
-        lua_pushnil(L)
-        return false
     }
+    lua_pushnil(L)
+    return false
 }
 
 @_cdecl("new_window")
@@ -143,10 +141,9 @@ public func new_window(_ L: UnsafeMutablePointer<lua_State>!, _ win: AXUIElement
         with: win
     )?.takeUnretainedValue() as? NSObject
 
-    if let obj = obj {
+    if let obj = obj, pushHSwindow(L, obj) != 0 {
         // the HSapplication initializer retains its elementRef; the HSwindow one doesn't
         // ARC manages CF object lifetimes in Swift — no manual retain needed
-        lua_pushany(L, obj)
         return true
     } else {
         lua_pushnil(L)

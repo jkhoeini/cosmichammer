@@ -36,7 +36,7 @@ private let chooserNew: lua_CFunction = { L in
 
     // Create the HSChooser object with our arguments
     let chooser = HSChooser(refTable: refTable, completionCallbackRef: completionCallbackRef)
-    lua_pushany(L, chooser)
+    _ = pushHSChooser(L, chooser)
 
     return 1
 }
@@ -54,7 +54,7 @@ private let chooserNew: lua_CFunction = { L in
 ///  * The hs.chooser object
 private let chooserShow: lua_CFunction = { L in
 
-    let chooser: HSChooser = lua_tovalue(L, at: 1) as! HSChooser
+    let chooser: HSChooser = toHSChooserFromLua(L, 1) as! HSChooser
 
     if lua_type(L, 2) == LUA_TTABLE {
         let userTopLeft = lua_tableToPoint(L, at: 2)
@@ -81,7 +81,7 @@ private let chooserShow: lua_CFunction = { L in
 private let chooserHide: lua_CFunction = { L in
     luaL_checkudata(L, 1, USERDATA_TAG)
 
-    let chooser: HSChooser = lua_tovalue(L, at: 1) as! HSChooser
+    let chooser: HSChooser = toHSChooserFromLua(L, 1) as! HSChooser
     chooser.hide()
 
     lua_pushvalue(L, 1)
@@ -100,7 +100,7 @@ private let chooserHide: lua_CFunction = { L in
 private let chooserIsVisible: lua_CFunction = { L in
     luaL_checkudata(L, 1, USERDATA_TAG)
 
-    let chooser: HSChooser = lua_tovalue(L, at: 1) as! HSChooser
+    let chooser: HSChooser = toHSChooserFromLua(L, 1) as! HSChooser
     lua_pushboolean(L, chooser.isVisible ? 1 : 0)
     return 1
 }
@@ -127,7 +127,7 @@ private let chooserIsVisible: lua_CFunction = { L in
 ///  * If you're using a hs.styledtext object for text or subText choices, make sure you specify a color, otherwise your text could appear transparent depending on the bgDark setting.
 private let chooserSetChoices: lua_CFunction = { L in
 
-    let chooser: HSChooser = lua_tovalue(L, at: 1) as! HSChooser
+    let chooser: HSChooser = toHSChooserFromLua(L, 1) as! HSChooser
 
     luaL_unref(L, LUA_REGISTRYINDEX_VALUE, chooser.choicesCallbackRef)
 
@@ -148,7 +148,7 @@ private let chooserSetChoices: lua_CFunction = { L in
         luaL_unref(L, LUA_REGISTRYINDEX_VALUE, chooser.choicesCallbackRef)
 
         chooser.choicesCallbackRef = LUA_NOREF
-        chooser.currentStaticChoices = lua_tovalue(L, at: 2) as? NSArray
+        chooser.currentStaticChoices = lua_toChooserChoices(L, at: 2)
 
         var staticChoicesTypeCheckPass = false
         if let arr = chooser.currentStaticChoices as? [Any] {
@@ -191,7 +191,7 @@ private let chooserSetChoices: lua_CFunction = { L in
 ///  * This callback is called *after* hs.chooser.globalCallback.
 private let chooserHideCallback: lua_CFunction = { L in
 
-    let chooser: HSChooser = lua_tovalue(L, at: 1) as! HSChooser
+    let chooser: HSChooser = toHSChooserFromLua(L, 1) as! HSChooser
 
     luaL_unref(L, LUA_REGISTRYINDEX_VALUE, chooser.hideCallbackRef)
 
@@ -222,7 +222,7 @@ private let chooserHideCallback: lua_CFunction = { L in
 ///  * This callback is called *after* the chooser is shown. To execute code just before it's shown (and/or after it's removed) see `hs.chooser.globalCallback`
 private let chooserShowCallback: lua_CFunction = { L in
 
-    let chooser: HSChooser = lua_tovalue(L, at: 1) as! HSChooser
+    let chooser: HSChooser = toHSChooserFromLua(L, 1) as! HSChooser
 
     luaL_unref(L, LUA_REGISTRYINDEX_VALUE, chooser.showCallbackRef)
 
@@ -254,7 +254,7 @@ private let chooserShowCallback: lua_CFunction = { L in
 private let chooserRefreshChoicesCallback: lua_CFunction = { L in
     luaL_checkudata(L, 1, USERDATA_TAG)
 
-    let chooser: HSChooser = lua_tovalue(L, at: 1) as! HSChooser
+    let chooser: HSChooser = toHSChooserFromLua(L, 1) as! HSChooser
 
     let reload = lua_toboolean(L, 2) != 0
 
@@ -285,7 +285,7 @@ private let chooserRefreshChoicesCallback: lua_CFunction = { L in
 ///  * You can provide an explicit nil or empty string to clear the current query string.
 private let chooserSetQuery: lua_CFunction = { L in
 
-    let chooser: HSChooser = lua_tovalue(L, at: 1) as! HSChooser
+    let chooser: HSChooser = toHSChooserFromLua(L, 1) as! HSChooser
 
     if lua_gettop(L) == 1 {
         lua_pushany(L, chooser.queryField.stringValue as NSString)
@@ -318,7 +318,7 @@ private let chooserSetQuery: lua_CFunction = { L in
 ///  * The hs.chooser object, or the existing placeholder text
 private let chooserPlaceholder: lua_CFunction = { L in
 
-    let chooser: HSChooser = lua_tovalue(L, at: 1) as! HSChooser
+    let chooser: HSChooser = toHSChooserFromLua(L, 1) as! HSChooser
 
     if lua_gettop(L) == 1 {
         let placeholderString = chooser.queryField.placeholderString as NSString?
@@ -346,7 +346,7 @@ private let chooserPlaceholder: lua_CFunction = { L in
 ///   * A string containing the new search query
 private let chooserQueryCallback: lua_CFunction = { L in
 
-    let chooser: HSChooser = lua_tovalue(L, at: 1) as! HSChooser
+    let chooser: HSChooser = toHSChooserFromLua(L, 1) as! HSChooser
 
     luaL_unref(L, LUA_REGISTRYINDEX_VALUE, chooser.queryChangedCallbackRef)
 
@@ -378,7 +378,7 @@ private let chooserQueryCallback: lua_CFunction = { L in
 ///   * To display a context menu, see `hs.menubar`, specifically the `:popupMenu()` method
 private let chooserRightClickCallback: lua_CFunction = { L in
 
-    let chooser: HSChooser = lua_tovalue(L, at: 1) as! HSChooser
+    let chooser: HSChooser = toHSChooserFromLua(L, 1) as! HSChooser
 
     luaL_unref(L, LUA_REGISTRYINDEX_VALUE, chooser.rightClickCallbackRef)
 
@@ -410,7 +410,7 @@ private let chooserRightClickCallback: lua_CFunction = { L in
 ///   * To display a context menu, see `hs.menubar`, specifically the `:popupMenu()` method
 private let chooserInvalidCallback: lua_CFunction = { L in
 
-    let chooser: HSChooser = lua_tovalue(L, at: 1) as! HSChooser
+    let chooser: HSChooser = toHSChooserFromLua(L, 1) as! HSChooser
 
     luaL_unref(L, LUA_REGISTRYINDEX_VALUE, chooser.invalidCallbackRef)
 
@@ -454,11 +454,11 @@ private let chooserDelete: lua_CFunction = { L in
 ///  * The `hs.chooser` object or a color table
 private let chooserSetFgColor: lua_CFunction = { L in
 
-    let chooser: HSChooser = lua_tovalue(L, at: 1) as! HSChooser
+    let chooser: HSChooser = toHSChooserFromLua(L, 1) as! HSChooser
 
     switch lua_type(L, 2) {
     case LUA_TTABLE:
-        chooser.fgColor = lua_tovalue(L, at: 2) as? NSColor
+        chooser.fgColor = tableToNSColor(L, at: 2)
         lua_pushvalue(L, 1)
 
     case LUA_TNIL:
@@ -466,7 +466,7 @@ private let chooserSetFgColor: lua_CFunction = { L in
         lua_pushvalue(L, 1)
 
     case LUA_TNONE:
-        lua_pushany(L, chooser.fgColor)
+        lua_pushNSColor(L, chooser.fgColor)
 
     default:
         os_log(.error, "ERROR: Unknown type in hs.chooser:fgColor(). This should not be possible")
@@ -487,11 +487,11 @@ private let chooserSetFgColor: lua_CFunction = { L in
 ///  * The `hs.chooser` object or a color table
 private let chooserSetSubTextColor: lua_CFunction = { L in
 
-    let chooser: HSChooser = lua_tovalue(L, at: 1) as! HSChooser
+    let chooser: HSChooser = toHSChooserFromLua(L, 1) as! HSChooser
 
     switch lua_type(L, 2) {
     case LUA_TTABLE:
-        chooser.subTextColor = lua_tovalue(L, at: 2) as? NSColor
+        chooser.subTextColor = tableToNSColor(L, at: 2)
         lua_pushvalue(L, 1)
 
     case LUA_TNIL:
@@ -499,7 +499,7 @@ private let chooserSetSubTextColor: lua_CFunction = { L in
         lua_pushvalue(L, 1)
 
     case LUA_TNONE:
-        lua_pushany(L, chooser.subTextColor)
+        lua_pushNSColor(L, chooser.subTextColor)
 
     default:
         os_log(.error, "ERROR: Unknown type in hs.chooser:subTextColor(). This should not be possible")
@@ -523,7 +523,7 @@ private let chooserSetSubTextColor: lua_CFunction = { L in
 ///  * The text colors will not automatically change when you toggle the darkness of the chooser window, you should also set appropriate colors with `hs.chooser:fgColor()` and `hs.chooser:subTextColor()`
 private let chooserSetBgDark: lua_CFunction = { L in
 
-    let chooser: HSChooser = lua_tovalue(L, at: 1) as! HSChooser
+    let chooser: HSChooser = toHSChooserFromLua(L, 1) as! HSChooser
 
     switch lua_type(L, 2) {
     case LUA_TNIL:
@@ -561,7 +561,7 @@ private let chooserSetBgDark: lua_CFunction = { L in
 private let chooserSetEnableDefaultForQuery: lua_CFunction = { L in
     luaL_checkudata(L, 1, USERDATA_TAG)
 
-    let chooser: HSChooser = lua_tovalue(L, at: 1) as! HSChooser
+    let chooser: HSChooser = toHSChooserFromLua(L, 1) as! HSChooser
 
     switch lua_type(L, 2) {
     case LUA_TBOOLEAN:
@@ -595,7 +595,7 @@ private let chooserSetEnableDefaultForQuery: lua_CFunction = { L in
 private let chooserSetSearchSubText: lua_CFunction = { L in
     luaL_checkudata(L, 1, USERDATA_TAG)
 
-    let chooser: HSChooser = lua_tovalue(L, at: 1) as! HSChooser
+    let chooser: HSChooser = toHSChooserFromLua(L, 1) as! HSChooser
 
     switch lua_type(L, 2) {
     case LUA_TBOOLEAN:
@@ -629,7 +629,7 @@ private let chooserSetSearchSubText: lua_CFunction = { L in
 private let chooserSetWidth: lua_CFunction = { L in
     luaL_checkudata(L, 1, USERDATA_TAG)
 
-    let chooser: HSChooser = lua_tovalue(L, at: 1) as! HSChooser
+    let chooser: HSChooser = toHSChooserFromLua(L, 1) as! HSChooser
 
     switch lua_type(L, 2) {
     case LUA_TNUMBER:
@@ -659,7 +659,7 @@ private let chooserSetWidth: lua_CFunction = { L in
 private let chooserSetNumRows: lua_CFunction = { L in
     luaL_checkudata(L, 1, USERDATA_TAG)
 
-    let chooser: HSChooser = lua_tovalue(L, at: 1) as! HSChooser
+    let chooser: HSChooser = toHSChooserFromLua(L, 1) as! HSChooser
 
     switch lua_type(L, 2) {
     case LUA_TNUMBER:
@@ -688,7 +688,7 @@ private let chooserSetNumRows: lua_CFunction = { L in
 ///  * If an argument is provided, returns the hs.chooser object; otherwise returns a number containing the row currently selected (i.e. the one highlighted in the UI)
 private let chooserSelectedRow: lua_CFunction = { L in
 
-    let chooser: HSChooser = lua_tovalue(L, at: 1) as! HSChooser
+    let chooser: HSChooser = toHSChooserFromLua(L, 1) as! HSChooser
 
     if lua_gettop(L) == 1 {
         let selectedRow = chooser.choicesTableView.selectedRow
@@ -715,11 +715,11 @@ private let chooserSelectedRow: lua_CFunction = { L in
 ///  * a table containing whatever information was supplied for the row currently selected or an empty table if no row is selected or the specified row does not exist.
 private let chooserSelectedRowContents: lua_CFunction = { L in
     luaL_checkudata(L, 1, USERDATA_TAG)
-    let chooser: HSChooser = lua_tovalue(L, at: 1) as! HSChooser
+    let chooser: HSChooser = toHSChooserFromLua(L, 1) as! HSChooser
 
     let selectedRow = (lua_gettop(L) == 1) ? chooser.choicesTableView.selectedRow : Int(lua_tointeger(L, 2) - 1)
     if selectedRow >= 0 && selectedRow < chooser.choicesTableView.numberOfRows {
-        lua_pushany(L, chooser.getChoices()?[selectedRow])
+        pushChooserChoice(L, chooser.getChoices()?[selectedRow])
     } else {
         lua_newtable(L)
     }
@@ -738,7 +738,7 @@ private let chooserSelectedRowContents: lua_CFunction = { L in
 private let chooserSelect: lua_CFunction = { L in
     luaL_checkudata(L, 1, USERDATA_TAG)
 
-    let chooser: HSChooser = lua_tovalue(L, at: 1) as! HSChooser
+    let chooser: HSChooser = toHSChooserFromLua(L, 1) as! HSChooser
 
     _ = chooserSelectedRow(L!)
     lua_pop(L, 1)
@@ -760,7 +760,7 @@ private let chooserSelect: lua_CFunction = { L in
 ///  * The `hs.chooser` object
 private let chooserCancel: lua_CFunction = { L in
     luaL_checkudata(L, 1, USERDATA_TAG)
-    let chooser: HSChooser = lua_tovalue(L, at: 1) as! HSChooser
+    let chooser: HSChooser = toHSChooserFromLua(L, 1) as! HSChooser
 
     chooser.cancel(nil)
 
@@ -772,7 +772,7 @@ private let chooserCancel: lua_CFunction = { L in
 // These must not throw a lua error to ensure LuaSkin can safely be used from Objective-C
 // delegates and blocks.
 
-private let pushHSChooser: @convention(c) (UnsafeMutablePointer<lua_State>?, Any?) -> Int32 = { L, obj in
+let pushHSChooser: @convention(c) (UnsafeMutablePointer<lua_State>?, Any?) -> Int32 = { L, obj in
     guard let chooser = obj as? HSChooser else { return 0 }
     chooser.selfRefCount += 1
     let valuePtr = lua_newuserdata(L, MemoryLayout<UnsafeRawPointer>.size)!
@@ -782,7 +782,7 @@ private let pushHSChooser: @convention(c) (UnsafeMutablePointer<lua_State>?, Any
     return 1
 }
 
-private let toHSChooserFromLua: @convention(c) (UnsafeMutablePointer<lua_State>?, Int32) -> Any? = { L, idx in
+let toHSChooserFromLua: @convention(c) (UnsafeMutablePointer<lua_State>?, Int32) -> Any? = { L, idx in
     if luaL_testudata(L, idx, USERDATA_TAG) != nil {
         return get_objectFromUserdata(HSChooser.self, L, idx, USERDATA_TAG)
     } else {
@@ -792,10 +792,82 @@ private let toHSChooserFromLua: @convention(c) (UnsafeMutablePointer<lua_State>?
     return nil
 }
 
+func lua_toChooserChoiceValue(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> Any? {
+    if lua_type(L, idx) == LUA_TUSERDATA {
+        if let image = toNSImage(L, at: idx) { return image }
+        if let styledText = toNSAttributedString(L, at: idx) { return styledText }
+        return nil
+    }
+    return lua_tovalue(L, at: idx)
+}
+
+func lua_toChooserChoice(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> NSDictionary? {
+    let absIdx = lua_absindex(L, idx)
+    guard lua_type(L, absIdx) == LUA_TTABLE else { return nil }
+
+    let choice = NSMutableDictionary()
+    lua_pushnil(L)
+    while lua_next(L, absIdx) != 0 {
+        guard let key = lua_tovalue(L, at: -2) as? NSCopying,
+              let value = lua_toChooserChoiceValue(L, at: -1) else {
+            lua_pop(L, 1)
+            return nil
+        }
+        choice.setObject(value, forKey: key)
+        lua_pop(L, 1)
+    }
+    return choice
+}
+
+func lua_toChooserChoices(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> NSArray? {
+    let absIdx = lua_absindex(L, idx)
+    guard lua_type(L, absIdx) == LUA_TTABLE else { return nil }
+
+    let choices = NSMutableArray()
+    let count = Int(luaL_len(L, absIdx))
+    if count == 0 { return choices }
+
+    for i in 1...count {
+        lua_rawgeti(L, absIdx, lua_Integer(i))
+        guard let choice = lua_toChooserChoice(L, at: -1) else {
+            lua_pop(L, 1)
+            return nil
+        }
+        choices.add(choice)
+        lua_pop(L, 1)
+    }
+    return choices
+}
+
+func pushChooserChoiceValue(_ L: UnsafeMutablePointer<lua_State>!, _ value: Any?) {
+    switch value {
+    case let image as NSImage:
+        lua_pushNSImage(L, image)
+    case let styledText as NSAttributedString:
+        lua_pushNSAttributedString(L, styledText)
+    default:
+        lua_pushany(L, value)
+    }
+}
+
+func pushChooserChoice(_ L: UnsafeMutablePointer<lua_State>!, _ choice: Any?) {
+    guard let choice = choice as? NSDictionary else {
+        lua_pushany(L, choice)
+        return
+    }
+
+    lua_newtable(L)
+    for (key, value) in choice {
+        lua_pushany(L, key)
+        pushChooserChoiceValue(L, value)
+        lua_settable(L, -3)
+    }
+}
+
 // MARK: - Cosmic Hammer Infrastructure
 
 private let userdata_tostring: lua_CFunction = { L in
-    let chooser: HSChooser = lua_tovalue(L, at: 1) as! HSChooser
+    let chooser: HSChooser = toHSChooserFromLua(L, 1) as! HSChooser
     lua_pushany(L, String(format: "%@: (%@)", USERDATA_TAG, chooser) as NSString)
     return 1
 }
@@ -804,8 +876,8 @@ private let userdata_eq: lua_CFunction = { L in
     // can't get here if at least one of us isn't a userdata type, and we only care if both types are ours,
     // so use luaL_testudata before the macro causes a lua error
     if luaL_testudata(L, 1, USERDATA_TAG) != nil && luaL_testudata(L, 2, USERDATA_TAG) != nil {
-        let obj1 = lua_tovalue(L, at: 1) as! HSChooser
-        let obj2 = lua_tovalue(L, at: 2) as! HSChooser
+        let obj1 = toHSChooserFromLua(L, 1) as! HSChooser
+        let obj2 = toHSChooserFromLua(L, 2) as! HSChooser
         lua_pushboolean(L, obj1.isEqual(to: obj2) ? 1 : 0)
     } else {
         lua_pushboolean(L, 0)

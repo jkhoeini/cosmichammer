@@ -84,7 +84,10 @@ private func errorWrapper(_ L: UnsafeMutablePointer<lua_State>!, _ where_: NSStr
 private func axuielement_getWindowElement(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     // vararg here to mimic original behavior and allow constructs to use `hs.window(...)` as arg as this may
     // return more than one result
-    let object = lua_tovalue(L, at: 1) as! NSObject
+    guard let object = lua_toAnyObject(L, at: 1) as? NSObject else {
+        lua_pushnil(L)
+        return 1
+    }
     if let ref = getElementRefPropertyFromClassObject(object) {
         pushAXUIElement(L, ref)
     } else {
@@ -108,7 +111,10 @@ private func axuielement_getWindowElement(_ L: UnsafeMutablePointer<lua_State>!)
 private func axuielement_getApplicationElement(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     // vararg here to mimic original behavior and allow constructs to use `hs.application(...)` as arg as this may
     // return more than one result
-    let object = lua_tovalue(L, at: 1) as! NSObject
+    guard let object = lua_toAnyObject(L, at: 1) as? NSObject else {
+        lua_pushnil(L)
+        return 1
+    }
     if let ref = getElementRefPropertyFromClassObject(object) {
         pushAXUIElement(L, ref)
     } else {
@@ -644,7 +650,7 @@ private func axuielement_toHSApplication(_ L: UnsafeMutablePointer<lua_State>!) 
         var thePid: pid_t = 0
         let errorState2 = AXUIElementGetPid(theRef, &thePid)
         if errorState2 == .success {
-            new_application(L, thePid)
+            pushHSapplicationOrNil(L, HSapplication(pid: thePid, withState: L))
         } else {
             lua_pushnil(L)
         }
@@ -675,7 +681,7 @@ private func axuielement_toHSWindow(_ L: UnsafeMutablePointer<lua_State>!) -> In
        let value = value,
        CFGetTypeID(value) == CFStringGetTypeID(),
        (value as! String) == (kAXWindowRole as String) {
-        new_window(L, theRef)
+        pushHSwindow(L, HSwindow(axuiElementRef: theRef))
     } else {
         lua_pushnil(L)
     }

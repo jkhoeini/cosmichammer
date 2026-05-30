@@ -677,7 +677,7 @@ private func pushSpotlightValue(_ L: UnsafeMutablePointer<lua_State>!, _ value: 
     } else if let descriptor = value as? NSSortDescriptor {
         pushNSSortDescriptor(L, obj: descriptor)
     } else if let tuple = value as? NSMetadataQueryAttributeValueTuple {
-        pushNSMetadataQueryAttributeValueTuple(L, obj: tuple)
+        pushNSMetadataQueryAttributeValueTuple(L, obj: tuple, depth: depth + 1)
     } else if let array = value as? NSArray {
         lua_createtable(L, Int32(array.count), 0)
         for item in array {
@@ -799,14 +799,26 @@ private func toNSSortDescriptorFromLua(_ L: UnsafeMutablePointer<lua_State>!, id
 }
 
 @discardableResult
-private func pushNSMetadataQueryAttributeValueTuple(_ L: UnsafeMutablePointer<lua_State>!, obj: Any!) -> Int32 {
+private func pushNSMetadataQueryAttributeValueTuple(_ L: UnsafeMutablePointer<lua_State>!, obj: Any!, depth: Int = 0) -> Int32 {
     let tuple = obj as! NSMetadataQueryAttributeValueTuple
+    return pushSpotlightAttributeValueTupleFields(L, attribute: tuple.attribute, count: tuple.count, value: tuple.value, depth: depth)
+}
+
+@discardableResult
+private func pushSpotlightAttributeValueTupleFields(_ L: UnsafeMutablePointer<lua_State>!, attribute: String, count: Int, value: Any?, depth: Int = 0) -> Int32 {
     lua_newtable(L)
-    lua_pushany(L, tuple.attribute as NSString); lua_setfield(L, -2, "attribute")
-    lua_pushinteger(L, lua_Integer(tuple.count)); lua_setfield(L, -2, "count")
-    lua_pushany(L, tuple.value as? NSObject); lua_setfield(L, -2, "value")
+    lua_pushany(L, attribute as NSString); lua_setfield(L, -2, "attribute")
+    lua_pushinteger(L, lua_Integer(count)); lua_setfield(L, -2, "count")
+    pushSpotlightValue(L, value, depth: depth); lua_setfield(L, -2, "value")
     return 1
 }
+
+#if DEBUG
+@discardableResult
+func pushSpotlightAttributeValueTupleFieldsForTesting(_ L: UnsafeMutablePointer<lua_State>!, attribute: String, count: Int, value: Any?) -> Int32 {
+    pushSpotlightAttributeValueTupleFields(L, attribute: attribute, count: count, value: value)
+}
+#endif
 
 // MARK: - Cosmic Hammer/Lua Infrastructure
 

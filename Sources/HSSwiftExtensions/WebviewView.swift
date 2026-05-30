@@ -86,8 +86,8 @@ class HSWebViewView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                 let L = lua_getCurrentState()!
                 lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(self.policyCallback))
                 lua_pushstring(L, "authenticationChallenge")
-                lua_pushany(L, webView.window as? HSWebViewWindow)
-                lua_pushany(L, challenge)
+                wv_pushAny(L, webView.window as? HSWebViewWindow)
+                wv_pushAny(L, challenge)
 
                 if lua_pcall(L, 3, 1, 0) != LUA_OK {
                     let errorMsg = lua_tostring(L, -1).map({ String(cString: $0) }) ?? "unknown error"
@@ -167,8 +167,8 @@ class HSWebViewView: WKWebView, WKNavigationDelegate, WKUIDelegate {
             if status == .recoverableTrustFailure && self.sslCallback != LUA_NOREF {
                 let L = lua_getCurrentState()!
                 lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(self.sslCallback))
-                lua_pushany(L, webView.window as? HSWebViewWindow)
-                lua_pushany(L, challenge.protectionSpace)
+                wv_pushAny(L, webView.window as? HSWebViewWindow)
+                wv_pushAny(L, challenge.protectionSpace)
 
                 if lua_pcall(L, 2, 1, 0) != LUA_OK {
                     let errorMsg = lua_tostring(L, -1).map({ String(cString: $0) }) ?? "unknown error"
@@ -199,8 +199,8 @@ class HSWebViewView: WKWebView, WKNavigationDelegate, WKUIDelegate {
             let L = lua_getCurrentState()!
             lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(self.policyCallback))
             lua_pushstring(L, "navigationAction")
-            lua_pushany(L, webView.window as? HSWebViewWindow)
-            lua_pushany(L, navigationAction)
+            wv_pushAny(L, webView.window as? HSWebViewWindow)
+            wv_pushAny(L, navigationAction)
 
             if lua_pcall(L, 3, 1, 0) != LUA_OK {
                 let errorMsg = lua_tostring(L, -1).map({ String(cString: $0) }) ?? "unknown error"
@@ -221,8 +221,8 @@ class HSWebViewView: WKWebView, WKNavigationDelegate, WKUIDelegate {
             let L = lua_getCurrentState()!
             lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(self.policyCallback))
             lua_pushstring(L, "navigationResponse")
-            lua_pushany(L, webView.window as? HSWebViewWindow)
-            lua_pushany(L, navigationResponse)
+            wv_pushAny(L, webView.window as? HSWebViewWindow)
+            wv_pushAny(L, navigationResponse)
 
             if lua_pcall(L, 3, 1, 0) != LUA_OK {
                 let errorMsg = lua_tostring(L, -1).map({ String(cString: $0) }) ?? "unknown error"
@@ -285,9 +285,9 @@ class HSWebViewView: WKWebView, WKNavigationDelegate, WKUIDelegate {
         if self.policyCallback != LUA_NOREF {
             lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(self.policyCallback))
             lua_pushstring(L, "newWindow")
-            lua_pushany(L, newWindow)
-            lua_pushany(L, navigationAction)
-            lua_pushany(L, windowFeatures)
+            wv_pushAny(L, newWindow)
+            wv_pushAny(L, navigationAction)
+            wv_pushAny(L, windowFeatures)
 
             if lua_pcall(L, 4, 1, 0) != LUA_OK {
                 let errorMsg = lua_tostring(L, -1).map({ String(cString: $0) }) ?? "unknown error"
@@ -295,14 +295,14 @@ class HSWebViewView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                 os_log(.error, "%{public}s", "hs.webview:policyCallback() newWindow callback error: \(errorMsg)")
 
                 lua_pushcfunction(L, wv_userdata_gc)
-                lua_pushany(L, newWindow)
+                wv_pushAny(L, newWindow)
                 if lua_pcall(L, 1, 0, 0) != LUA_OK { lua_pop(L, 1) }
                 return nil
             } else {
                 if lua_toboolean(L, -1) == 0 {
                     lua_pop(L, 1)
                     lua_pushcfunction(L, wv_userdata_gc)
-                    lua_pushany(L, newWindow)
+                    wv_pushAny(L, newWindow)
                     if lua_pcall(L, 1, 0, 0) != LUA_OK { lua_pop(L, 1) }
                     return nil
                 }
@@ -392,7 +392,7 @@ class HSWebViewView: WKWebView, WKNavigationDelegate, WKUIDelegate {
             var numberOfArguments: Int32 = 3
             lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(self.navigationCallback))
             lua_pushstring(L, action)
-            lua_pushany(L, theView.window as? HSWebViewWindow)
+            wv_pushAny(L, theView.window as? HSWebViewWindow)
             let navStr = String(describing: Unmanaged.passUnretained(navigation as AnyObject).toOpaque())
             lua_pushstring(L, navStr)
 
@@ -423,4 +423,3 @@ class HSWebViewView: WKWebView, WKNavigationDelegate, WKUIDelegate {
         return actionRequiredAfterReturn
     }
 }
-

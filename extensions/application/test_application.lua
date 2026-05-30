@@ -124,6 +124,33 @@ function testRunningApplications()
   local apps = hs.application.runningApplications()
   assertIsEqual("table", type(apps))
   assertGreaterThan(1, #apps)
+  assertIsUserdataOfType("hs.application", apps[1])
+
+  return success()
+end
+
+function testObjectConversions()
+  local sourceApp = nil
+  for _, candidate in ipairs(hs.application.runningApplications()) do
+    if candidate:bundleID() ~= nil then
+      sourceApp = candidate
+      break
+    end
+  end
+  assertIsUserdataOfType("hs.application", sourceApp)
+
+  local app = hs.application.applicationForPID(sourceApp:pid())
+  assertIsUserdataOfType("hs.application", app)
+
+  local bundleApps = hs.application.applicationsForBundleID(app:bundleID())
+  assertIsTable(bundleApps)
+  assertIsUserdataOfType("hs.application", bundleApps[1])
+
+  local ax = require("hs.axuielement")
+  local appElement = ax.applicationElement(app)
+  assertIsUserdataOfType("hs.axuielement", appElement)
+  local asApp = appElement:asHSApplication()
+  assertIsUserdataOfType("hs.application", asApp)
 
   return success()
 end

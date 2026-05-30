@@ -60,6 +60,14 @@ function testUdpNoCallbacks()
   return success()
 end
 
+function testUdpSendAcceptsBinaryString()
+  local payload = "Hi"..string.char(0).."from client"
+
+  assertIsUserdataOfType("hs.socket.udp", hs.socket.udp.new():send(payload, "localhost", port))
+
+  return success()
+end
+
 -- reusing client and server sockets
 function testUdpDisconnectAndReuseValues()
   if (type(serverLocalPort) == "number" and serverLocalPort == port and

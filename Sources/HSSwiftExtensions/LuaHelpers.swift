@@ -144,6 +144,19 @@ private func lua_pushvalue_recursive(_ L: UnsafeMutablePointer<lua_State>!, _ va
     case let url as URL:
         lua_pushstring(L, url.absoluteString)
 
+    // AppKit / extension bridge values
+    case let image as NSImage:
+        lua_pushNSImage(L, image)
+
+    case let color as NSColor:
+        lua_pushNSColor(L, color)
+
+    case let font as NSFont:
+        lua_pushNSFont(L, font)
+
+    case let attributedString as NSAttributedString:
+        lua_pushNSAttributedString(L, attributedString)
+
     // NSArray / Array
     // Use luaL_len+1 for indexing (matching LuaSkin behavior): when a nil
     // is pushed, the next element takes its position, collapsing holes.
@@ -182,6 +195,20 @@ private func lua_pushvalue_recursive(_ L: UnsafeMutablePointer<lua_State>!, _ va
     // NSValue containing geometry types
     case let val as NSValue:
         lua_pushNSValue(L, val)
+
+    // Typed userdata objects that used to be handled by LuaSkin's object
+    // conversion registry.
+    case let webview as HSWebViewWindow:
+        _ = wv_HSWebViewWindow_toLua(L, webview)
+
+    case let canvas as HSCanvasView:
+        _ = canvas_pushHSCanvasView(L, obj: canvas)
+
+    case let toolbar as HSToolbar:
+        _ = toolbar_pushHSToolbar(L, toolbar)
+
+    case let chooser as HSChooser:
+        _ = pushHSChooser(L, chooser)
 
     // Fallback: push the debugDescription
     default:
@@ -447,6 +474,21 @@ func toNSImage(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> NSImage?
     return Unmanaged<NSImage>.fromOpaque(ptr.load(as: UnsafeRawPointer.self)).takeUnretainedValue()
 }
 
+/// Push an NSImage as hs.image userdata.
+func lua_pushNSImage(_ L: UnsafeMutablePointer<lua_State>!, _ image: NSImage?) {
+    guard let image = image else {
+        lua_pushnil(L)
+        return
+    }
+
+    image.cacheMode = .never
+    let imagePtr = lua_newuserdata(L, MemoryLayout<UnsafeMutableRawPointer>.size)!
+        .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
+    imagePtr.pointee = Unmanaged.passRetained(image).toOpaque()
+    luaL_getmetatable(L, "hs.image")
+    lua_setmetatable(L, -2)
+}
+
 /// Extract any class-pointer userdata as AnyObject. Only safe for userdata
 /// that stores an Unmanaged<T>.toOpaque() pointer (the standard pattern for
 /// class-based extensions). NOT safe for struct-based userdata (e.g., Milight).
@@ -462,20 +504,69 @@ func toNSAttributedString(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) 
     return Unmanaged<NSAttributedString>.fromOpaque(ptr.load(as: UnsafeRawPointer.self)).takeUnretainedValue()
 }
 
-/// Convert a Lua color table `{red=, green=, blue=, alpha=}` to NSColor.
+/// Push an NSAttributedString as hs.styledtext userdata.
+func lua_pushNSAttributedString(_ L: UnsafeMutablePointer<lua_State>!, _ string: NSAttributedString?) {
+    guard let string = string else {
+        lua_pushnil(L)
+        return
+    }
+
+    let stringPtr = lua_newuserdata(L, MemoryLayout<UnsafeRawPointer>.size)!
+    stringPtr.storeBytes(of: Unmanaged.passRetained(string).toOpaque(), as: UnsafeRawPointer.self)
+    luaL_getmetatable(L, "hs.styledtext")
+    lua_setmetatable(L, -2)
+}
+
+/// Convert an hs.drawing.color-compatible Lua table to NSColor.
 func tableToNSColor(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> NSColor? {
     guard lua_type(L, idx) == LUA_TTABLE else { return nil }
-    let absIdx = lua_absindex(L, idx)
-    lua_getfield(L, absIdx, "red")
-    let r = lua_isnumber(L, -1) != 0 ? CGFloat(lua_tonumber(L, -1)) : 0
-    lua_getfield(L, absIdx, "green")
-    let g = lua_isnumber(L, -1) != 0 ? CGFloat(lua_tonumber(L, -1)) : 0
-    lua_getfield(L, absIdx, "blue")
-    let b = lua_isnumber(L, -1) != 0 ? CGFloat(lua_tonumber(L, -1)) : 0
-    lua_getfield(L, absIdx, "alpha")
-    let a = lua_isnumber(L, -1) != 0 ? CGFloat(lua_tonumber(L, -1)) : 1.0
-    lua_pop(L, 4)
-    return NSColor(red: r, green: g, blue: b, alpha: a)
+    return table_toNSColor(L, idx) as? NSColor
+}
+
+/// Push an NSColor as an hs.drawing.color-compatible table.
+func lua_pushNSColor(_ L: UnsafeMutablePointer<lua_State>!, _ color: NSColor?) {
+    guard let color = color else {
+        lua_pushnil(L)
+        return
+    }
+
+    if let safeColor = color.usingColorSpace(.genericRGB) {
+        lua_newtable(L)
+        lua_pushnumber(L, lua_Number(safeColor.redComponent));   lua_setfield(L, -2, "red")
+        lua_pushnumber(L, lua_Number(safeColor.greenComponent)); lua_setfield(L, -2, "green")
+        lua_pushnumber(L, lua_Number(safeColor.blueComponent));  lua_setfield(L, -2, "blue")
+        lua_pushnumber(L, lua_Number(safeColor.alphaComponent)); lua_setfield(L, -2, "alpha")
+        lua_pushstring(L, "NSColor");                            lua_setfield(L, -2, "__luaSkinType")
+    } else if color.colorSpaceName == .named {
+        lua_newtable(L)
+        lua_pushany(L, color.catalogNameComponent as NSString?)
+        lua_setfield(L, -2, "list")
+        lua_pushany(L, color.colorNameComponent as NSString?)
+        lua_setfield(L, -2, "name")
+        lua_pushstring(L, "NSColor")
+        lua_setfield(L, -2, "__luaSkinType")
+    } else if color.colorSpaceName == .pattern {
+        lua_newtable(L)
+        lua_pushNSImage(L, color.patternImage)
+        lua_setfield(L, -2, "image")
+        lua_pushstring(L, "NSColor")
+        lua_setfield(L, -2, "__luaSkinType")
+    } else {
+        lua_pushstring(L, "unable to convert colorspace from \(color.colorSpace.description) to NSCalibratedRGBColorSpace")
+    }
+}
+
+/// Push an NSFont as an hs.styledtext-compatible font table.
+func lua_pushNSFont(_ L: UnsafeMutablePointer<lua_State>!, _ font: NSFont?) {
+    guard let font = font else {
+        lua_pushnil(L)
+        return
+    }
+
+    lua_newtable(L)
+    lua_pushany(L, font.fontName as NSString); lua_setfield(L, -2, "name")
+    lua_pushnumber(L, lua_Number(font.pointSize)); lua_setfield(L, -2, "size")
+    lua_pushstring(L, "NSFont"); lua_setfield(L, -2, "__luaSkinType")
 }
 
 /// Convert a Lua font table `{name=, size=}` or font name string to NSFont.

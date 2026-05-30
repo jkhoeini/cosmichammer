@@ -69,6 +69,10 @@ private func consoleMaxOutputHistory() -> NSNumber {
     consoleController().value(forKey: "maxConsoleOutputHistory") as! NSNumber
 }
 
+private func consoleColor(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> NSColor? {
+    tableToNSColor(L, at: idx)
+}
+
 // MARK: - Lua Functions
 
 /// hs.console.darkMode([state]) -> bool
@@ -119,10 +123,10 @@ private func console_consolePrintColor(_ L: UnsafeMutablePointer<lua_State>!) ->
 
     if lua_type(L, 1) != LUA_TNONE {
         luaL_checktype(L, 1, LUA_TTABLE)
-        ctrl.setValue(
-            lua_tovalue(L, at: 1) as! NSColor,
-            forKey: "MJColorForStdout"
-        )
+        guard let color = consoleColor(L, at: 1) else {
+            return luaL_argerror(L, 1, "expected color table")
+        }
+        ctrl.setValue(color, forKey: "MJColorForStdout")
     }
 
     lua_pushany(L, consoleColorForStdout())
@@ -169,7 +173,7 @@ private func console_maxOutputHistory(_ L: UnsafeMutablePointer<lua_State>!) -> 
 private func console_consoleFont(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
     if lua_type(L, 1) != LUA_TNONE {
-        if let newFont = lua_tovalue(L, at: 1) as? NSFont {
+        if let newFont = tableToNSFont(L, at: 1) {
             consoleController().setValue(newFont, forKey: "consoleFont")
         }
     }
@@ -196,10 +200,10 @@ private func console_consoleCommandColor(_ L: UnsafeMutablePointer<lua_State>!) 
 
     if lua_type(L, 1) != LUA_TNONE {
         luaL_checktype(L, 1, LUA_TTABLE)
-        ctrl.setValue(
-            lua_tovalue(L, at: 1) as! NSColor,
-            forKey: "MJColorForCommand"
-        )
+        guard let color = consoleColor(L, at: 1) else {
+            return luaL_argerror(L, 1, "expected color table")
+        }
+        ctrl.setValue(color, forKey: "MJColorForCommand")
     }
 
     lua_pushany(L, consoleColorForCommand())
@@ -224,10 +228,10 @@ private func console_consoleResultColor(_ L: UnsafeMutablePointer<lua_State>!) -
 
     if lua_type(L, 1) != LUA_TNONE {
         luaL_checktype(L, 1, LUA_TTABLE)
-        ctrl.setValue(
-            lua_tovalue(L, at: 1) as! NSColor,
-            forKey: "MJColorForResult"
-        )
+        guard let color = consoleColor(L, at: 1) else {
+            return luaL_argerror(L, 1, "expected color table")
+        }
+        ctrl.setValue(color, forKey: "MJColorForResult")
     }
 
     lua_pushany(L, consoleColorForResult())
@@ -275,7 +279,10 @@ private func console_backgroundColor(_ L: UnsafeMutablePointer<lua_State>!) -> I
 
     if lua_type(L, 1) != LUA_TNONE {
         luaL_checktype(L, 1, LUA_TTABLE)
-        console.backgroundColor = lua_tovalue(L, at: 1) as! NSColor
+        guard let color = consoleColor(L, at: 1) else {
+            return luaL_argerror(L, 1, "expected color table")
+        }
+        console.backgroundColor = color
     }
 
     lua_pushany(L, console.backgroundColor)
@@ -299,7 +306,10 @@ private func console_outputBackgroundColor(_ L: UnsafeMutablePointer<lua_State>!
 
     if lua_type(L, 1) != LUA_TNONE {
         luaL_checktype(L, 1, LUA_TTABLE)
-        output.backgroundColor = lua_tovalue(L, at: 1) as! NSColor
+        guard let color = consoleColor(L, at: 1) else {
+            return luaL_argerror(L, 1, "expected color table")
+        }
+        output.backgroundColor = color
     }
 
     lua_pushany(L, output.backgroundColor)
@@ -323,7 +333,10 @@ private func console_inputBackgroundColor(_ L: UnsafeMutablePointer<lua_State>!)
 
     if lua_type(L, 1) != LUA_TNONE {
         luaL_checktype(L, 1, LUA_TTABLE)
-        input.backgroundColor = lua_tovalue(L, at: 1) as! NSColor
+        guard let color = consoleColor(L, at: 1) else {
+            return luaL_argerror(L, 1, "expected color table")
+        }
+        input.backgroundColor = color
     }
 
     lua_pushany(L, input.backgroundColor)
@@ -397,7 +410,7 @@ private func console_setConsole(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
     } else {
         let theStr: NSAttributedString
         if lua_type(L, 1) == LUA_TUSERDATA && luaL_testudata(L, 1, "hs.styledtext") != nil {
-            theStr = lua_tovalue(L, at: 1) as! NSAttributedString
+            theStr = toNSAttributedString(L, at: 1)!
         } else {
             let consoleAttrs: [NSAttributedString.Key: Any] = [
                 .font: consoleFont(),
@@ -465,7 +478,7 @@ private func console_setHistory(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
     luaL_checktype(L, 1, LUA_TTABLE)
     let ctrl = consoleController()
 
-    let newHistory = lua_tovalue(L, at: 1) as! NSMutableArray
+    let newHistory = NSMutableArray(array: (lua_tovalue(L, at: 1) as? [Any]) ?? [])
     ctrl.setValue(newHistory, forKey: "history")
     ctrl.setValue(newHistory.count, forKey: "historyIndex")
     lua_pushnil(L)
@@ -506,7 +519,7 @@ private func console_printStyledText(_ L: UnsafeMutablePointer<lua_State>!) -> I
             theStr.append(NSAttributedString(string: "\t", attributes: consoleAttrs))
         }
         if lua_type(L, i) == LUA_TUSERDATA && luaL_testudata(L, i, "hs.styledtext") != nil {
-            theStr.append(lua_tovalue(L, at: i) as! NSAttributedString)
+            theStr.append(toNSAttributedString(L, at: i)!)
         } else {
             luaL_tolstring(L, i, nil)
             theStr.append(NSAttributedString(

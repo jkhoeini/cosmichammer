@@ -59,7 +59,9 @@ private class HSWifiScan: NSObject {
                 os_log(.info, "%{public}s", error.localizedDescription)
                 lua_pushany(L, error.localizedDescription as NSString)
             } else if let networks = object as? Set<CWNetwork> {
-                lua_pushany(L, networks as NSSet)
+                pushWifiValue(L, networks)
+            } else if let networks = object as? NSSet {
+                pushWifiValue(L, networks)
             } else {
                 lua_pushnil(L)
             }
@@ -176,7 +178,7 @@ private func associate(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 private func wifi_interfaces(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let sharedClient = CWWiFiClient.shared()
     if let names = sharedClient.interfaceNames() {
-        lua_pushany(L, NSSet(array: names))
+        pushWifiValue(L, NSSet(array: names))
     } else {
         lua_pushnil(L)
     }
@@ -294,7 +296,7 @@ private func interfaceDetails(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
     let interface = get_wifi_interface(theName)
     if let iface = interface {
-        lua_pushany(L, iface)
+        _ = pushCWInterface(L, iface)
     } else {
         lua_pushnil(L)
     }
@@ -324,17 +326,105 @@ private func backgroundScanIsDone(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
 
 // MARK: - Lua<->NSObject Conversion Functions
 
+private let wifiMaxPushDepth = 50
+
+private func pushWifiValue(_ L: UnsafeMutablePointer<lua_State>!, _ value: Any?) {
+    pushWifiValue(L, value, depth: 0)
+}
+
+private func pushWifiValue(_ L: UnsafeMutablePointer<lua_State>!, _ value: Any?, depth: Int) {
+    guard depth < wifiMaxPushDepth else {
+        lua_pushnil(L)
+        return
+    }
+
+    guard let value = value else {
+        lua_pushnil(L)
+        return
+    }
+
+    switch value {
+    case let interface as CWInterface:
+        _ = pushCWInterface(L, interface)
+    case let network as CWNetwork:
+        _ = pushCWNetwork(L, network)
+    case let channel as CWChannel:
+        _ = pushCWChannel(L, channel)
+    case let configuration as CWConfiguration:
+        _ = pushCWConfiguration(L, configuration)
+    case let profile as CWNetworkProfile:
+        _ = pushCWNetworkProfile(L, profile)
+    case let networks as Set<CWNetwork>:
+        pushWifiSequence(L, networks, depth: depth)
+    case let channels as Set<CWChannel>:
+        pushWifiSequence(L, channels, depth: depth)
+    case let profiles as Set<CWNetworkProfile>:
+        pushWifiSequence(L, profiles, depth: depth)
+    case let set as NSSet:
+        pushWifiSequence(L, set, depth: depth)
+    case let array as NSArray:
+        pushWifiSequence(L, array, depth: depth)
+    case let array as [Any]:
+        pushWifiSequence(L, array, depth: depth)
+    case let dict as NSDictionary:
+        pushWifiDictionary(L, dict, depth: depth)
+    case let dict as [String: Any]:
+        pushWifiDictionary(L, dict, depth: depth)
+    default:
+        lua_pushany(L, value)
+    }
+}
+
+private func pushWifiSequence<S: Sequence>(
+    _ L: UnsafeMutablePointer<lua_State>!,
+    _ sequence: S,
+    depth: Int
+) {
+    let values = Array(sequence)
+    lua_createtable(L, Int32(values.count), 0)
+    for value in values {
+        pushWifiValue(L, value, depth: depth + 1)
+        lua_rawseti(L, -2, luaL_len(L, -2) + 1)
+    }
+}
+
+private func pushWifiDictionary(
+    _ L: UnsafeMutablePointer<lua_State>!,
+    _ dict: NSDictionary,
+    depth: Int
+) {
+    lua_createtable(L, 0, Int32(dict.count))
+    for (key, value) in dict {
+        lua_pushany(L, key)
+        pushWifiValue(L, value, depth: depth + 1)
+        lua_settable(L, -3)
+    }
+}
+
+private func pushWifiDictionary(
+    _ L: UnsafeMutablePointer<lua_State>!,
+    _ dict: [String: Any],
+    depth: Int
+) {
+    lua_createtable(L, 0, Int32(dict.count))
+    for (key, value) in dict {
+        lua_pushstring(L, key)
+        pushWifiValue(L, value, depth: depth + 1)
+        lua_settable(L, -3)
+    }
+}
+
 private func pushCWInterface(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
     let theInterface = obj as! CWInterface
     lua_newtable(L)
 
-    lua_pushany(L, theInterface.wlanChannel())
+    pushWifiValue(L, theInterface.wlanChannel())
     lua_setfield(L, -2, "wlanChannel")
     lua_pushnumber(L, lua_Number(theInterface.transmitRate()))
     lua_setfield(L, -2, "transmitRate")
     lua_pushinteger(L, lua_Integer(theInterface.transmitPower()))
     lua_setfield(L, -2, "transmitPower")
-    lua_pushany(L, theInterface.supportedWLANChannels() as NSSet?)
+    pushWifiValue(L, theInterface.supportedWLANChannels() as NSSet?)
     lua_setfield(L, -2, "supportedChannels")
     lua_pushany(L, theInterface.ssidData() as NSData?)
     lua_setfield(L, -2, "ssidData")
@@ -391,9 +481,9 @@ private func pushCWInterface(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!)
     lua_setfield(L, -2, "hardwareAddress")
     lua_pushany(L, theInterface.countryCode() as NSString?)
     lua_setfield(L, -2, "countryCode")
-    lua_pushany(L, theInterface.configuration())
+    pushWifiValue(L, theInterface.configuration())
     lua_setfield(L, -2, "configuration")
-    lua_pushany(L, theInterface.cachedScanResults() as NSSet?)
+    pushWifiValue(L, theInterface.cachedScanResults() as NSSet?)
     lua_setfield(L, -2, "cachedScanResults")
     lua_pushany(L, theInterface.bssid() as NSString?)
     lua_setfield(L, -2, "bssid")
@@ -460,7 +550,7 @@ private func pushCWConfiguration(_ L: UnsafeMutablePointer<lua_State>!, _ obj: A
     lua_setfield(L, -2, "requireAdministratorForAssociation")
     lua_pushboolean(L, theConfig.rememberJoinedNetworks ? 1 : 0)
     lua_setfield(L, -2, "rememberJoinedNetworks")
-    lua_pushany(L, theConfig.networkProfiles.array as NSArray)
+    pushWifiValue(L, theConfig.networkProfiles.array as NSArray)
     lua_setfield(L, -2, "networkProfiles")
 
     return 1
@@ -470,7 +560,7 @@ private func pushCWNetwork(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -
     let theNetwork = obj as! CWNetwork
     lua_newtable(L)
 
-    lua_pushany(L, theNetwork.wlanChannel)
+    pushWifiValue(L, theNetwork.wlanChannel)
     lua_setfield(L, -2, "wlanChannel")
     lua_pushany(L, theNetwork.ssidData as NSData?)
     lua_setfield(L, -2, "ssidData")

@@ -7,10 +7,67 @@ import os.log
 private func lua_to_pasteboard(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> NSPasteboard {
     if !lua_isnoneornil(L, idx) {
         _ = luaL_checkstring(L, idx) // force number to string
-        let name = lua_tovalue(L, at: idx) as! NSPasteboard.Name
-        return NSPasteboard(name: name)
+        let name = lua_tovalue(L, at: idx) as! String
+        return NSPasteboard(name: NSPasteboard.Name(rawValue: name))
     } else {
         return NSPasteboard.general
+    }
+}
+
+private func lua_toData(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> Data? {
+    var len: Int = 0
+    guard let ptr = lua_tolstring(L, idx, &len) else { return nil }
+    return Data(bytes: ptr, count: len)
+}
+
+private func lua_tableHasAnyField(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32, _ fields: [String]) -> Bool {
+    let absIdx = lua_absindex(L, idx)
+    for field in fields {
+        let hasField = lua_getfield(L, absIdx, field) != LUA_TNIL
+        lua_pop(L, 1)
+        if hasField { return true }
+    }
+    return false
+}
+
+private func lua_toArchivableObject(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> Any? {
+    if let image = toNSImage(L, at: idx) { return image }
+    if let styledText = toNSAttributedString(L, at: idx) { return styledText }
+    if lua_type(L, idx) == LUA_TTABLE &&
+        lua_tableHasAnyField(L, idx, ["red", "green", "blue", "hue", "saturation", "brightness", "white", "alpha", "hex", "list", "name", "image"]) {
+        return table_toNSColor(L, idx)
+    }
+    return lua_tovalue(L, at: idx)
+}
+
+private func pushPasteboardValue(_ L: UnsafeMutablePointer<lua_State>!, _ value: Any?) {
+    guard let value = value else {
+        lua_pushnil(L)
+        return
+    }
+
+    switch value {
+    case let image as NSImage:
+        NSImage_tolua(L, image)
+    case let color as NSColor:
+        NSColor_tolua(L, color)
+    case let styledText as NSAttributedString:
+        NSAttributedString_toLua(L, obj: styledText)
+    case let array as NSArray:
+        lua_createtable(L, Int32(array.count), 0)
+        for item in array {
+            pushPasteboardValue(L, item)
+            lua_rawseti(L, -2, luaL_len(L, -2) + 1)
+        }
+    case let dict as NSDictionary:
+        lua_createtable(L, 0, Int32(dict.count))
+        for (key, val) in dict {
+            lua_pushany(L, key)
+            pushPasteboardValue(L, val)
+            lua_settable(L, -3)
+        }
+    default:
+        lua_pushany(L, value)
     }
 }
 
@@ -361,11 +418,7 @@ private func readArchivedDataForType(_ L: UnsafeMutablePointer<lua_State>!) -> I
             ofClasses: allowedClasses,
             from: holding
         )
-        if let obj = realItem as? NSObject {
-            lua_pushany(L, obj)
-        } else {
-            lua_pushnil(L)
-        }
+        pushPasteboardValue(L, realItem)
     } catch {
         return Int32(luaL_error(L, error.localizedDescription))
     }
@@ -406,11 +459,11 @@ private func writeArchivedDataForType(_ L: UnsafeMutablePointer<lua_State>!) -> 
     if lua_gettop(L) == 2 {
         pb = NSPasteboard.general
         type = lua_tovalue(L, at: 1) as! String
-        data = lua_tovalue(L, at: 2)
+        data = lua_toArchivableObject(L, at: 2)
     } else {
         pb = lua_to_pasteboard(L, 1)
         type = lua_tovalue(L, at: 2) as! String
-        data = lua_tovalue(L, at: 3)
+        data = lua_toArchivableObject(L, at: 3)
     }
     guard let data = data else {
         return Int32(luaL_error(L, "unable to evaluate data string"))
@@ -460,11 +513,11 @@ private func writeItemForType(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     if lua_gettop(L) == 2 {
         pb = NSPasteboard.general
         type = lua_tovalue(L, at: 1) as! String
-        data = lua_tovalue(L, at: 2) as? Data
+        data = lua_toData(L, at: 2)
     } else {
         pb = lua_to_pasteboard(L, 1)
         type = lua_tovalue(L, at: 2) as! String
-        data = lua_tovalue(L, at: 3) as? Data
+        data = lua_toData(L, at: 3)
     }
     guard let data = data else {
         return Int32(luaL_error(L, "unable to evaluate data string"))
@@ -561,9 +614,9 @@ private func readAttributedStringObjects(_ L: UnsafeMutablePointer<lua_State>!) 
     let results = pb.readObjects(forClasses: [NSAttributedString.self], options: [:])
     if let results = results, !results.isEmpty {
         if getAll {
-            lua_pushany(L, results as NSArray)
+            pushPasteboardValue(L, results as NSArray)
         } else {
-            lua_pushany(L, results.first as? NSObject)
+            pushPasteboardValue(L, results.first)
         }
     } else {
         lua_pushnil(L)
@@ -643,9 +696,9 @@ private func readImageObjects(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let results = pb.readObjects(forClasses: [NSImage.self], options: [:])
     if let results = results, !results.isEmpty {
         if getAll {
-            lua_pushany(L, results as NSArray)
+            pushPasteboardValue(L, results as NSArray)
         } else {
-            lua_pushany(L, results.first as? NSObject)
+            pushPasteboardValue(L, results.first)
         }
     } else {
         lua_pushnil(L)
@@ -725,9 +778,9 @@ private func readColorObjects(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let results = pb.readObjects(forClasses: [NSColor.self], options: [:])
     if let results = results, !results.isEmpty {
         if getAll {
-            lua_pushany(L, results as NSArray)
+            pushPasteboardValue(L, results as NSArray)
         } else {
-            lua_pushany(L, results.first as? NSObject)
+            pushPasteboardValue(L, results.first)
         }
     } else {
         lua_pushnil(L)
@@ -736,14 +789,15 @@ private func readColorObjects(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 }
 
 private func convertToPasteboardWritableObject(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> NSPasteboardWriting? {
+    let absIdx = lua_absindex(L, idx)
     let luaType = lua_type(L, idx)
     if luaType == LUA_TSTRING || luaType == LUA_TNUMBER {
         luaL_tolstring(L, idx, nil) // force number to be a string, but don't change value in stack
-        let object = lua_tovalue(L, at: -1) as? NSPasteboardWriting
+        let string = lua_tovalue(L, at: -1) as? String
         lua_pop(L, 1)
-        return object
+        return string.map { $0 as NSString }
     } else if luaType == LUA_TTABLE {
-        if lua_getfield(L, idx, "url") != Int32(LUA_TNIL) {
+        if lua_getfield(L, absIdx, "url") != Int32(LUA_TNIL) {
             if lua_type(L, -1) == LUA_TSTRING {
                 let urlStr = lua_tovalue(L, at: -1) as! String
                 lua_pop(L, 1)
@@ -754,13 +808,15 @@ private func convertToPasteboardWritableObject(_ L: UnsafeMutablePointer<lua_Sta
                 return nil
             }
         } else {
-            let color = lua_tovalue(L, at: idx) as? NSColor
+            let color = table_toNSColor(L, absIdx) as? NSColor
             lua_pop(L, 1) // the value from the url key check above
             return color
         }
-    } else if luaL_testudata(L, idx, "hs.image") != nil ||
-              luaL_testudata(L, idx, "hs.sound") != nil ||
-              luaL_testudata(L, idx, "hs.styledtext") != nil {
+    } else if let image = toNSImage(L, at: idx) {
+        return image
+    } else if let styledText = toNSAttributedString(L, at: idx) {
+        return styledText
+    } else if luaL_testudata(L, idx, "hs.sound") != nil {
         return lua_tovalue(L, at: idx) as? NSPasteboardWriting
     } else {
         os_log(.error, "%{public}s", "expected string, number, hs.image, hs.sound, hs.styledtext, color table or url table")

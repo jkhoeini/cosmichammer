@@ -32,7 +32,7 @@ private class HSSpeechRecognizer: NSSpeechRecognizer, NSSpeechRecognizerDelegate
         let L = lua_getCurrentState()!
 
         lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(recognizer.callbackRef))
-        lua_pushany(L, recognizer)
+        pushHSSpeechRecognizer(L, obj: recognizer)
         lua_pushany(L, command as NSString)
         if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
     }
@@ -79,7 +79,7 @@ private func newSpeechRecognizer(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
     if let title = theTitle {
         recognizer.displayedCommandsTitle = title
     }
-    lua_pushany(L, recognizer)
+    pushHSSpeechRecognizer(L, obj: recognizer)
     return 1
 }
 
@@ -217,6 +217,7 @@ private func setCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 // MARK: - Lua<->NSObject Conversion Functions
 
+@discardableResult
 private func pushHSSpeechRecognizer(_ L: UnsafeMutablePointer<lua_State>!, obj: Any!) -> Int32 {
     let recognizer = obj as! HSSpeechRecognizer
 

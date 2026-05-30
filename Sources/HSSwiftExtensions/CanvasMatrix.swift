@@ -26,8 +26,7 @@ private var refTable: Int32 = LUA_NOREF
 /// [ 0,  0,  1 ]
 /// ~~~
 private func matrix_identity(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    lua_pushany(L, NSAffineTransform())
-    return 1
+    return pushNSAffineTransform(L, obj: NSAffineTransform())
 }
 
 // MARK: - Module Methods
@@ -46,10 +45,9 @@ private func matrix_identity(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * Inverting a matrix which represents a series of transformations has the effect of reversing or undoing the original transformations.
 ///  * This is useful when used with [hs.canvas.matrix.append](#append) to undo a previously applied transformation without actually replacing all of the transformations which may have been applied to a canvas element.
 private func matrix_invert(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let transform = lua_tovalue(L, at: 1) as! NSAffineTransform
+    let transform = toNSAffineTransformFromLua(L, idx: 1)
     transform.invert()
-    lua_pushany(L, transform)
-    return 1
+    return pushNSAffineTransform(L, obj: transform)
 }
 
 /// hs.canvas.matrix:append(matrix) -> matrixObject
@@ -66,11 +64,10 @@ private func matrix_invert(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * Mathematically this method multiples the original matrix by the new one and returns the result of the multiplication.
 ///  * You can use this method to "stack" additional transformations on top of existing transformations, without having to know what the existing transformations in effect for the canvas element are.
 private func matrix_append(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let transform1 = lua_tovalue(L, at: 1) as! NSAffineTransform
-    let transform2 = lua_tovalue(L, at: 2) as! NSAffineTransform
+    let transform1 = toNSAffineTransformFromLua(L, idx: 1)
+    let transform2 = toNSAffineTransformFromLua(L, idx: 2)
     transform1.append(transform2 as AffineTransform)
-    lua_pushany(L, transform1)
-    return 1
+    return pushNSAffineTransform(L, obj: transform1)
 }
 
 /// hs.canvas.matrix:prepend(matrix) -> matrixObject
@@ -87,11 +84,10 @@ private func matrix_append(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * Mathematically this method multiples the new matrix by the original one and returns the result of the multiplication.
 ///  * You can use this method to apply a transformation *before* the currently applied transformations, without having to know what the existing transformations in effect for the canvas element are.
 private func matrix_prepend(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let transform1 = lua_tovalue(L, at: 1) as! NSAffineTransform
-    let transform2 = lua_tovalue(L, at: 2) as! NSAffineTransform
+    let transform1 = toNSAffineTransformFromLua(L, idx: 1)
+    let transform2 = toNSAffineTransformFromLua(L, idx: 2)
     transform1.prepend(transform2 as AffineTransform)
-    lua_pushany(L, transform1)
-    return 1
+    return pushNSAffineTransform(L, obj: transform1)
 }
 
 /// hs.canvas.matrix:rotate(angle) -> matrixObject
@@ -113,11 +109,10 @@ private func matrix_rotate(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     if lua_type(L, 1) == LUA_TNUMBER {
         argsAt = 1
     } else {
-        transform = lua_tovalue(L, at: 1) as! NSAffineTransform
+        transform = toNSAffineTransformFromLua(L, idx: 1)
     }
     transform.rotate(byDegrees: CGFloat(lua_tonumber(L, argsAt)))
-    lua_pushany(L, transform)
-    return 1
+    return pushNSAffineTransform(L, obj: transform)
 }
 
 /// hs.canvas.matrix:scale(xFactor, [yFactor]) -> matrixObject
@@ -136,13 +131,12 @@ private func matrix_scale(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     if lua_type(L, 1) == LUA_TNUMBER {
         argsAt = 1
     } else {
-        transform = lua_tovalue(L, at: 1) as! NSAffineTransform
+        transform = toNSAffineTransformFromLua(L, idx: 1)
     }
     let scaleX = CGFloat(lua_tonumber(L, argsAt))
     let scaleY = (lua_gettop(L) == (argsAt + 1)) ? CGFloat(lua_tonumber(L, argsAt + 1)) : scaleX
     transform.scaleX(by: scaleX, yBy: scaleY)
-    lua_pushany(L, transform)
-    return 1
+    return pushNSAffineTransform(L, obj: transform)
 }
 
 /// hs.canvas.matrix:shear(xFactor, [yFactor]) -> matrixObject
@@ -161,7 +155,7 @@ private func matrix_shear(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     if lua_type(L, 1) == LUA_TNUMBER {
         argsAt = 1
     } else {
-        transform = lua_tovalue(L, at: 1) as! NSAffineTransform
+        transform = toNSAffineTransformFromLua(L, idx: 1)
     }
     let shearX = CGFloat(lua_tonumber(L, argsAt))
     let shearY = (lua_gettop(L) == (argsAt + 1)) ? CGFloat(lua_tonumber(L, argsAt + 1)) : shearX
@@ -172,8 +166,7 @@ private func matrix_shear(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     opStruct.m21 = shearY
     operation.transformStruct = opStruct
     transform.append(operation as AffineTransform)
-    lua_pushany(L, transform)
-    return 1
+    return pushNSAffineTransform(L, obj: transform)
 }
 
 /// hs.canvas.matrix:translate(x, y) -> matrixObject
@@ -192,13 +185,12 @@ private func matrix_translate(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     if lua_type(L, 1) == LUA_TNUMBER {
         argsAt = 1
     } else {
-        transform = lua_tovalue(L, at: 1) as! NSAffineTransform
+        transform = toNSAffineTransformFromLua(L, idx: 1)
     }
     let translateX = CGFloat(lua_tonumber(L, argsAt))
     let translateY = (lua_gettop(L) == (argsAt + 1)) ? CGFloat(lua_tonumber(L, argsAt + 1)) : translateX
     transform.translateX(by: translateX, yBy: translateY)
-    lua_pushany(L, transform)
-    return 1
+    return pushNSAffineTransform(L, obj: transform)
 }
 
 // MARK: - Lua<->NSObject Conversion Functions
@@ -226,7 +218,7 @@ private func pushNSAffineTransform(_ L: UnsafeMutablePointer<lua_State>!, obj: A
     return 1
 }
 
-private func toNSAffineTransformFromLua(_ L: UnsafeMutablePointer<lua_State>!, idx: Int32) -> Any! {
+private func toNSAffineTransformFromLua(_ L: UnsafeMutablePointer<lua_State>!, idx: Int32) -> NSAffineTransform {
     let value = NSAffineTransform()
     var structure = value.transformStruct
 
@@ -291,11 +283,30 @@ private var moduleLib: [luaL_Reg] = [
     luaL_Reg(name: nil, func: nil),
 ]
 
+private var userdataMetaLib: [luaL_Reg] = [
+    luaL_Reg(name: strdup("rotate"),    func: matrix_rotate),
+    luaL_Reg(name: strdup("translate"), func: matrix_translate),
+    luaL_Reg(name: strdup("scale"),     func: matrix_scale),
+    luaL_Reg(name: strdup("shear"),     func: matrix_shear),
+    luaL_Reg(name: strdup("append"),    func: matrix_append),
+    luaL_Reg(name: strdup("prepend"),   func: matrix_prepend),
+    luaL_Reg(name: strdup("invert"),    func: matrix_invert),
+    luaL_Reg(name: nil, func: nil),
+]
+
 @_cdecl("luaopen_hs_libcanvasmatrix")
 public func luaopen_hs_libcanvasmatrix(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     // Create ref table in registry
     lua_newtable(L)
     refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+
+    luaL_newmetatable(L, USERDATA_TAG)
+    lua_pushvalue(L, -1)
+    lua_setfield(L, -2, "__index")
+    lua_pushstring(L, USERDATA_TAG)
+    lua_setfield(L, -2, "__type")
+    luaL_setfuncs(L, &userdataMetaLib, 0)
+    lua_pop(L, 1)
 
     // Create module table
     lua_createtable(L, 0, Int32(moduleLib.count - 1))

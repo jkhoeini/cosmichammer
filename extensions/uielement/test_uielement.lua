@@ -23,13 +23,19 @@ function testCosmicHammerElements()
   local consoleElem = getConsole()
   local consoleElem2 = getConsole()
 
+  assertIsUserdataOfType("hs.uielement", consoleElem)
   assertIsEqual(consoleElem, consoleElem2)
 
   assertFalse(consoleElem:isApplication())
   assertFalse(consoleElem:isWindow())
   assertIsEqual("AXTextField", consoleElem:role())
 
+  local consoleWatcher = consoleElem:newWatcher(function() end)
+  assertIsUserdataOfType("hs.uielement.watcher", consoleWatcher)
+  assertIsEqual(consoleElem, consoleWatcher:element())
+
   local prefsElem = getPrefs()
+  assertIsUserdataOfType("hs.uielement", prefsElem)
   assertFalse(prefsElem:isApplication())
   assertTrue(prefsElem:isWindow())
   assertIsEqual("AXWindow", prefsElem:role())

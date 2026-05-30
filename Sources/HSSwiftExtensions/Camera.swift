@@ -106,7 +106,7 @@ private class HSCamera: NSObject {
                 } else {
                     for event in events {
                         lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(strongSelf.propertyWatcherCallback))
-                        lua_pushany(L, strongSelf)
+                        pushHSCamera(L, strongSelf)
                         lua_pushany(L, event["mSelector"] as? NSString)
                         lua_pushany(L, event["mScope"] as? NSString)
                         lua_pushany(L, event["mElement"] as? NSNumber)
@@ -286,7 +286,11 @@ private var cameraManagerInstance = HSCameraManager()
 ///  * A table containing all of the known cameras
 private func allCameras(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
-    lua_pushany(L, cameraManagerInstance.getCameras() as NSArray)
+    lua_newtable(L)
+    for (idx, camera) in cameraManagerInstance.getCameras().enumerated() {
+        pushHSCamera(L, camera)
+        lua_rawseti(L, -2, lua_Integer(idx + 1))
+    }
     return 1
 }
 
@@ -313,7 +317,7 @@ private func deviceWatcherDoCallback(_ deviceId: CMIODeviceID, _ event: String) 
     }
 
     lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(watcher.pointee.callback))
-    lua_pushany(L, cameraManagerInstance.cameraForDeviceID(deviceId))
+    pushHSCamera(L, cameraManagerInstance.cameraForDeviceID(deviceId))
     lua_pushany(L, event as NSString)
     if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
 
@@ -484,7 +488,7 @@ private func setWatcherCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 private func camera_uid(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
-    let camera: HSCamera = lua_tovalue(L, at: 1) as! HSCamera
+    let camera: HSCamera = toHSCameraFromLua(L, 1) as! HSCamera
     lua_pushany(L, camera.uid as NSString?)
     return 1
 }
@@ -501,7 +505,7 @@ private func camera_uid(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 private func camera_cID(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
-    let camera: HSCamera = lua_tovalue(L, at: 1) as! HSCamera
+    let camera: HSCamera = toHSCameraFromLua(L, 1) as! HSCamera
     lua_pushinteger(L, lua_Integer(camera.deviceId))
     return 1
 }
@@ -518,7 +522,7 @@ private func camera_cID(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 private func camera_name(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
-    let camera: HSCamera = lua_tovalue(L, at: 1) as! HSCamera
+    let camera: HSCamera = toHSCameraFromLua(L, 1) as! HSCamera
     lua_pushany(L, camera.name as NSString?)
     return 1
 }
@@ -535,7 +539,7 @@ private func camera_name(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 private func camera_isinuse(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
-    let camera: HSCamera = lua_tovalue(L, at: 1) as! HSCamera
+    let camera: HSCamera = toHSCameraFromLua(L, 1) as! HSCamera
     lua_pushboolean(L, camera.isInUse ? 1 : 0)
     return 1
 }
@@ -557,7 +561,7 @@ private func camera_isinuse(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 private func camera_propertyWatcherCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
-    let camera: HSCamera = lua_tovalue(L, at: 1) as! HSCamera
+    let camera: HSCamera = toHSCameraFromLua(L, 1) as! HSCamera
     luaL_unref(L, LUA_REGISTRYINDEX_VALUE, camera.propertyWatcherCallback)
 
     camera.propertyWatcherCallback = LUA_NOREF
@@ -588,7 +592,7 @@ private func camera_propertyWatcherCallback(_ L: UnsafeMutablePointer<lua_State>
 private func camera_startPropertyWatcher(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
-    let camera: HSCamera = lua_tovalue(L, at: 1) as! HSCamera
+    let camera: HSCamera = toHSCameraFromLua(L, 1) as! HSCamera
 
     if camera.propertyWatcherCallback == LUA_NOREF {
         os_log(.error, "%{public}s", "You must call hs.camera:setPropertyWatcherCallback() before hs.camera:startPropertyWatcher()")
@@ -614,7 +618,7 @@ private func camera_startPropertyWatcher(_ L: UnsafeMutablePointer<lua_State>!) 
 private func camera_stopPropertyWatcher(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
-    let camera: HSCamera = lua_tovalue(L, at: 1) as! HSCamera
+    let camera: HSCamera = toHSCameraFromLua(L, 1) as! HSCamera
     camera.stopPropertyWatcher()
 
     lua_pushvalue(L, 1)
@@ -633,13 +637,14 @@ private func camera_stopPropertyWatcher(_ L: UnsafeMutablePointer<lua_State>!) -
 private func camera_isPropertyWatcherRunning(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
-    let camera: HSCamera = lua_tovalue(L, at: 1) as! HSCamera
+    let camera: HSCamera = toHSCameraFromLua(L, 1) as! HSCamera
     lua_pushboolean(L, camera.propertyWatcherRunning ? 1 : 0)
     return 1
 }
 
 // MARK: - Lua<->NSObject Conversion Functions
 
+@discardableResult
 private func pushHSCamera(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
     guard let value = obj as? HSCamera else { return 0 }
     let valuePtr = lua_newuserdata(L, MemoryLayout<UnsafeMutableRawPointer>.size)!
@@ -665,15 +670,15 @@ private func toHSCameraFromLua(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int
 // MARK: - Core Lua metamethods
 
 private func hsCamera_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let camera: HSCamera = lua_tovalue(L, at: 1) as! HSCamera
+    let camera: HSCamera = toHSCameraFromLua(L, 1) as! HSCamera
     lua_pushany(L, "\(USERDATA_TAG): (\(camera.uid ?? "nil"):\(camera.name ?? "nil"))" as NSString)
     return 1
 }
 
 private func hsCamera_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     if luaL_testudata(L, 1, USERDATA_TAG) != nil && luaL_testudata(L, 2, USERDATA_TAG) != nil {
-        let obj1: HSCamera = lua_tovalue(L, at: 1) as! HSCamera
-        let obj2: HSCamera = lua_tovalue(L, at: 2) as! HSCamera
+        let obj1: HSCamera = toHSCameraFromLua(L, 1) as! HSCamera
+        let obj2: HSCamera = toHSCameraFromLua(L, 2) as! HSCamera
         lua_pushboolean(L, obj1.isEqual(to: obj2) ? 1 : 0)
     } else {
         lua_pushboolean(L, 0)

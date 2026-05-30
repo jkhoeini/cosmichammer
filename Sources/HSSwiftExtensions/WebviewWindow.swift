@@ -64,12 +64,12 @@ class HSWebViewWindow: NSPanel, NSWindowDelegate {
         if windowCallback != LUA_NOREF {
             lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(windowCallback))
             lua_pushany(L, "closing" as NSString)
-            lua_pushany(L, self)
+            wv_pushAny(L, self)
             if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
         }
         if deleteOnClose {
             lua_pushcfunction(L, wv_userdata_gc)
-            lua_pushany(L, self)
+            wv_pushAny(L, self)
             if lua_pcall(L, 1, 0, 0) != LUA_OK {
                 os_log(.error, "%{public}s", String(format: "%s:error invoking _gc for deleteOnClose:%s", wv_USERDATA_TAG, lua_tostring(L, -1)!))
                 lua_pop(L, 1)
@@ -84,7 +84,7 @@ class HSWebViewWindow: NSPanel, NSWindowDelegate {
                 let L = lua_getCurrentState()!
                 lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(self.windowCallback))
                 lua_pushany(L, "focusChange" as NSString)
-                lua_pushany(L, self)
+                wv_pushAny(L, self)
                 lua_pushboolean(L, 1)
                 if lua_pcall(L, 3, 0, 0) != LUA_OK { lua_pop(L, 1) }
             }
@@ -98,7 +98,7 @@ class HSWebViewWindow: NSPanel, NSWindowDelegate {
                 let L = lua_getCurrentState()!
                 lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(self.windowCallback))
                 lua_pushany(L, "focusChange" as NSString)
-                lua_pushany(L, self)
+                wv_pushAny(L, self)
                 lua_pushboolean(L, 0)
                 if lua_pcall(L, 3, 0, 0) != LUA_OK { lua_pop(L, 1) }
             }
@@ -112,7 +112,7 @@ class HSWebViewWindow: NSPanel, NSWindowDelegate {
                 let L = lua_getCurrentState()!
                 lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(self.windowCallback))
                 lua_pushany(L, "frameChange" as NSString)
-                lua_pushany(L, self)
+                wv_pushAny(L, self)
                 lua_pushNSRect(L, wv_RectWithFlippedYCoordinate(self.frame))
                 if lua_pcall(L, 3, 0, 0) != LUA_OK { lua_pop(L, 1) }
             }
@@ -126,7 +126,7 @@ class HSWebViewWindow: NSPanel, NSWindowDelegate {
                 let L = lua_getCurrentState()!
                 lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(self.windowCallback))
                 lua_pushany(L, "frameChange" as NSString)
-                lua_pushany(L, self)
+                wv_pushAny(L, self)
                 lua_pushNSRect(L, wv_RectWithFlippedYCoordinate(self.frame))
                 if lua_pcall(L, 3, 0, 0) != LUA_OK { lua_pop(L, 1) }
             }
@@ -174,4 +174,3 @@ class HSWebViewWindow: NSPanel, NSWindowDelegate {
         NSAnimationContext.endGrouping()
     }
 }
-

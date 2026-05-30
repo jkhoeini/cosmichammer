@@ -119,5 +119,32 @@ extension CosmicHammerTests {
 
             #expect(result == "ok")
         }
+
+        @Test func testSpeechConstructorsReturnUserdata() {
+            let result = runLua("""
+            (function()
+                local speech = require("hs.speech")
+                local synth = speech.new()
+                if type(synth) ~= "userdata" then
+                    return "speech.new returned " .. type(synth)
+                end
+
+                local listener = speech.listener
+                if type(listener.new) ~= "function" then
+                    return "listener.new is " .. type(listener.new)
+                end
+                local recognizer = listener.new()
+                if recognizer ~= nil and type(recognizer) ~= "userdata" then
+                    return "listener.new returned " .. type(recognizer)
+                end
+                if recognizer ~= nil then
+                    recognizer:delete()
+                end
+                return "ok"
+            end)()
+            """)
+
+            #expect(result == "ok")
+        }
     }
 }

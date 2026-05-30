@@ -162,7 +162,7 @@ func menubarSetTitle(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
         _ = luaL_checkstring(L, 2)
         titleText = lua_tovalue(L, at: 2) as? String
     } else if luaL_testudata(L, 2, "hs.styledtext") != nil || argType == LUA_TTABLE {
-        titleAText = lua_tovalue(L, at: 2) as? NSAttributedString
+        titleAText = lua_toNSAttributedString(L, at: 2) as? NSAttributedString
     } else if !lua_isnoneornil(L, 2) {
         return luaL_error(L, "expected string, styled-text object, or nil")
     }
@@ -198,7 +198,7 @@ func menubarSetIcon(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     if lua_isnoneornil(L, 2) {
         iconImage = nil
     } else {
-        iconImage = lua_tovalue(L, at: 2) as? NSImage
+        iconImage = toNSImage(L, at: 2)
 
         guard let image = iconImage else {
             lua_pushnil(L)
@@ -549,7 +549,11 @@ func menubarGetTitle(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let statusItem = Unmanaged<NSStatusItem>.fromOpaque(menuBarItem.pointee.menuBarItemObject!).takeUnretainedValue()
 
     if lua_gettop(L) == 2 && lua_toboolean(L, 2) != 0 {
-        lua_pushany(L, statusItem.button?.attributedTitle)
+        if let title = statusItem.button?.attributedTitle {
+            NSAttributedString_toLua(L, obj: title)
+        } else {
+            lua_pushnil(L)
+        }
     } else {
         lua_pushany(L, statusItem.button?.title as NSString?)
     }
@@ -570,7 +574,7 @@ func menubarGetIcon(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let statusItem = Unmanaged<NSStatusItem>.fromOpaque(menuBarItem.pointee.menuBarItemObject!).takeUnretainedValue()
 
     if let theImage = statusItem.button?.image {
-        lua_pushany(L, theImage)
+        NSImage_tolua(L, theImage)
     } else {
         lua_pushnil(L)
     }

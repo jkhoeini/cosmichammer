@@ -556,3 +556,11 @@ function testTcpParseBadAddress()
 
   return success()
 end
+
+function testTcpWriteAcceptsBinaryString()
+  local payload = "Hi"..string.char(0).."from client"
+
+  assertIsUserdataOfType("hs.socket", hs.socket.new():write(payload))
+
+  return success()
+end

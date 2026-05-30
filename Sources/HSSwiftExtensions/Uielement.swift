@@ -7,10 +7,7 @@ private let USERDATA_TAG = "hs.uielement"
 private var refTable: Int32 = LUA_NOREF
 
 private func getObject(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> (NSObject & HSuielementProtocol)? {
-    let ptr = luaL_checkudata(L, idx, USERDATA_TAG)!
-        .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
-    guard let rawPtr = ptr.pointee else { return nil }
-    return Unmanaged<NSObject>.fromOpaque(rawPtr).takeUnretainedValue() as? NSObject & HSuielementProtocol
+    return toHSuielementFromLua(L, idx) as? NSObject & HSuielementProtocol
 }
 
 /// hs.uielement.focusedElement() -> element or nil
@@ -24,7 +21,7 @@ private func uielement_focusedElement(_ L: UnsafeMutablePointer<lua_State>!) -> 
     let element = catchingObjCException {
         (cls as AnyObject).perform(Selector(("focusedElement")))?.takeUnretainedValue()
     }
-    lua_pushany(L, element)
+    pushHSuielementOrNil(L, element)
     return 1
 }
 
@@ -33,7 +30,7 @@ private func uielement_focusedElement(_ L: UnsafeMutablePointer<lua_State>!) -> 
 /// Returns whether the UI element represents a window.
 private func uielement_iswindow(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     luaL_checkudata(L, 1, USERDATA_TAG)
-    guard let element = lua_toAnyObject(L, at: 1) as? HSuielementProtocol else {
+    guard let element = getObject(L, at: 1) else {
         lua_pushboolean(L, 0)
         return 1
     }
@@ -46,7 +43,7 @@ private func uielement_iswindow(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 /// Returns the role of the element.
 private func uielement_role(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     luaL_checkudata(L, 1, USERDATA_TAG)
-    guard let element = lua_toAnyObject(L, at: 1) as? HSuielementProtocol else {
+    guard let element = getObject(L, at: 1) else {
         lua_pushnil(L)
         return 1
     }
@@ -59,7 +56,7 @@ private func uielement_role(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns the selected text in the element
 private func uielement_selectedText(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     luaL_checkudata(L, 1, USERDATA_TAG)
-    guard let element = lua_toAnyObject(L, at: 1) as? HSuielementProtocol else {
+    guard let element = getObject(L, at: 1) else {
         lua_pushnil(L)
         return 1
     }
@@ -72,18 +69,19 @@ private func uielement_selectedText(_ L: UnsafeMutablePointer<lua_State>!) -> In
 /// Creates a new watcher
 private func uielement_newWatcher(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
-    guard let uiElement = lua_toAnyObject(L, at: 1) as? HSuielementProtocol else {
+    guard let uiElement = getObject(L, at: 1) else {
         lua_pushnil(L)
         return 1
     }
     let watcher = uiElement.newWatcher(atIndex: 2, withUserdataAtIndex: 3, withLuaState: L)
-    lua_pushany(L, watcher)
+    pushHSuielementWatcherOrNil(L, watcher)
     return 1
 }
 
 // MARK: - Lua<->NSObject Conversion Functions
 
-private func pushHSuielement(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
+@discardableResult
+func pushHSuielement(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any?) -> Int32 {
     guard let value = obj as? NSObject & HSuielementProtocol else { return 0 }
     value.selfRefCount += 1
     let valuePtr = lua_newuserdata(L, MemoryLayout<UnsafeMutableRawPointer>.size)!
@@ -92,6 +90,12 @@ private func pushHSuielement(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!)
     luaL_getmetatable(L, USERDATA_TAG)
     lua_setmetatable(L, -2)
     return 1
+}
+
+func pushHSuielementOrNil(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any?) {
+    if pushHSuielement(L, obj) == 0 {
+        lua_pushnil(L)
+    }
 }
 
 private func toHSuielementFromLua(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> Any! {
@@ -111,8 +115,8 @@ private func toHSuielementFromLua(_ L: UnsafeMutablePointer<lua_State>!, _ idx: 
 private func uielement_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     var isEqual = false
     if luaL_testudata(L, 1, USERDATA_TAG) != nil && luaL_testudata(L, 2, USERDATA_TAG) != nil {
-        if let e1 = lua_toAnyObject(L, at: 1) as? HSuielementProtocol,
-           let e2 = lua_toAnyObject(L, at: 2) as? HSuielementProtocol {
+        if let e1 = toHSuielementFromLua(L, 1) as? HSuielementProtocol,
+           let e2 = toHSuielementFromLua(L, 2) as? HSuielementProtocol {
             isEqual = CFEqual(e1.elementRef, e2.elementRef)
         }
     }

@@ -205,7 +205,7 @@ private func get_objectFromUserdata<T: AnyObject>(_ type: T.Type, _ L: UnsafeMut
             let idx = Int(button)
             if buttonStateCache[idx] != newButtonStates[idx] {
                 lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(buttonCallbackRef))
-                lua_pushany(L, self)
+                pushHSStreamDeckDevice(L, self)
                 lua_pushinteger(L, lua_Integer(button))
                 lua_pushboolean(L, newButtonStates[idx].boolValue ? 1 : 0)
                 if lua_pcall(L, 3, 0, 0) != LUA_OK { lua_pop(L, 1) }
@@ -232,7 +232,7 @@ private func get_objectFromUserdata<T: AnyObject>(_ type: T.Type, _ L: UnsafeMut
             let idx = Int(button)
             if encoderButtonStateCache[idx] != newPressEncoderStates[idx] {
                 lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(encoderCallbackRef))
-                lua_pushany(L, self)
+                pushHSStreamDeckDevice(L, self)
                 lua_pushinteger(L, lua_Integer(button))
                 lua_pushboolean(L, newPressEncoderStates[idx].boolValue ? 1 : 0)
                 lua_pushboolean(L, 0)
@@ -258,7 +258,7 @@ private func get_objectFromUserdata<T: AnyObject>(_ type: T.Type, _ L: UnsafeMut
         }
 
         lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(encoderCallbackRef))
-        lua_pushany(L, self)
+        pushHSStreamDeckDevice(L, self)
         lua_pushinteger(L, lua_Integer(button))
         lua_pushboolean(L, 0)
         lua_pushboolean(L, turningLeft ? 1 : 0)
@@ -281,7 +281,7 @@ private func get_objectFromUserdata<T: AnyObject>(_ type: T.Type, _ L: UnsafeMut
         }
 
         lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(screenCallbackRef))
-        lua_pushany(L, self)
+        pushHSStreamDeckDevice(L, self)
         lua_pushany(L, eventType as NSString)
         lua_pushinteger(L, lua_Integer(startX))
         lua_pushinteger(L, lua_Integer(startY))
@@ -1048,7 +1048,7 @@ class HSStreamDeckDevicePedal: HSStreamDeckDevice {
 
         lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(discoveryCallbackRef))
         lua_pushboolean(L, 1)
-        lua_pushany(L, deck)
+        pushHSStreamDeckDevice(L, deck)
         if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
         return deck
     }
@@ -1069,7 +1069,7 @@ class HSStreamDeckDevicePedal: HSStreamDeckDevice {
                 } else {
                     lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(discoveryCallbackRef))
                     lua_pushboolean(L, 0)
-                    lua_pushany(L, deckDevice)
+                    pushHSStreamDeckDevice(L, deckDevice)
                     if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
                 }
 
@@ -1285,7 +1285,7 @@ private func streamdeck_getDevice(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
 
     let index = Int(lua_tointeger(L, 1)) - 1
     if let manager = deckManager, index >= 0, index < manager.devices.count {
-        lua_pushany(L, manager.devices[index])
+        pushHSStreamDeckDevice(L, manager.devices[index])
     } else {
         lua_pushnil(L)
     }
@@ -1306,7 +1306,7 @@ private func streamdeck_getDevice(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
 ///  * The hs.streamdeck device
 private func streamdeck_buttonCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
-    let device: HSStreamDeckDevice = lua_tovalue(L, at: 1) as! HSStreamDeckDevice
+    let device: HSStreamDeckDevice = toHSStreamDeckDeviceFromLua(L, 1) as! HSStreamDeckDevice
     luaL_unref(L, LUA_REGISTRYINDEX_VALUE, device.buttonCallbackRef)
 
     device.buttonCallbackRef = LUA_NOREF
@@ -1337,7 +1337,7 @@ private func streamdeck_buttonCallback(_ L: UnsafeMutablePointer<lua_State>!) ->
 ///  * The hs.streamdeck device
 private func streamdeck_encoderCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
-    let device: HSStreamDeckDevice = lua_tovalue(L, at: 1) as! HSStreamDeckDevice
+    let device: HSStreamDeckDevice = toHSStreamDeckDeviceFromLua(L, 1) as! HSStreamDeckDevice
     luaL_unref(L, LUA_REGISTRYINDEX_VALUE, device.encoderCallbackRef)
 
     device.encoderCallbackRef = LUA_NOREF
@@ -1369,7 +1369,7 @@ private func streamdeck_encoderCallback(_ L: UnsafeMutablePointer<lua_State>!) -
 ///  * The hs.streamdeck device
 private func streamdeck_screenCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
-    let device: HSStreamDeckDevice = lua_tovalue(L, at: 1) as! HSStreamDeckDevice
+    let device: HSStreamDeckDevice = toHSStreamDeckDeviceFromLua(L, 1) as! HSStreamDeckDevice
     luaL_unref(L, LUA_REGISTRYINDEX_VALUE, device.screenCallbackRef)
 
     device.screenCallbackRef = LUA_NOREF
@@ -1398,7 +1398,7 @@ private func streamdeck_setBrightness(_ L: UnsafeMutablePointer<lua_State>!) -> 
 
     luaL_checktype(L, 2, LUA_TNUMBER)
 
-    let device: HSStreamDeckDevice = lua_tovalue(L, at: 1) as! HSStreamDeckDevice
+    let device: HSStreamDeckDevice = toHSStreamDeckDeviceFromLua(L, 1) as! HSStreamDeckDevice
     device.setBrightness(Int32(lua_tointeger(L, 2)))
 
     lua_pushvalue(L, 1)
@@ -1417,7 +1417,7 @@ private func streamdeck_setBrightness(_ L: UnsafeMutablePointer<lua_State>!) -> 
 private func streamdeck_reset(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
-    let device: HSStreamDeckDevice = lua_tovalue(L, at: 1) as! HSStreamDeckDevice
+    let device: HSStreamDeckDevice = toHSStreamDeckDeviceFromLua(L, 1) as! HSStreamDeckDevice
     device.reset()
 
     lua_pushvalue(L, 1)
@@ -1436,7 +1436,7 @@ private func streamdeck_reset(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 private func streamdeck_serialNumber(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
-    let device: HSStreamDeckDevice = lua_tovalue(L, at: 1) as! HSStreamDeckDevice
+    let device: HSStreamDeckDevice = toHSStreamDeckDeviceFromLua(L, 1) as! HSStreamDeckDevice
     lua_pushany(L, device.serialNumber as NSString?)
     return 1
 }
@@ -1453,7 +1453,7 @@ private func streamdeck_serialNumber(_ L: UnsafeMutablePointer<lua_State>!) -> I
 private func streamdeck_firmwareVersion(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
-    let device: HSStreamDeckDevice = lua_tovalue(L, at: 1) as! HSStreamDeckDevice
+    let device: HSStreamDeckDevice = toHSStreamDeckDeviceFromLua(L, 1) as! HSStreamDeckDevice
     lua_pushany(L, device.firmwareVersion() as NSString?)
     return 1
 }
@@ -1471,7 +1471,7 @@ private func streamdeck_firmwareVersion(_ L: UnsafeMutablePointer<lua_State>!) -
 private func streamdeck_buttonLayout(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
-    let device: HSStreamDeckDevice = lua_tovalue(L, at: 1) as! HSStreamDeckDevice
+    let device: HSStreamDeckDevice = toHSStreamDeckDeviceFromLua(L, 1) as! HSStreamDeckDevice
     lua_pushinteger(L, lua_Integer(device.keyColumns))
     lua_pushinteger(L, lua_Integer(device.keyRows))
     return 2
@@ -1489,7 +1489,7 @@ private func streamdeck_buttonLayout(_ L: UnsafeMutablePointer<lua_State>!) -> I
 private func streamdeck_imageSize(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
-    let device: HSStreamDeckDevice = lua_tovalue(L, at: 1) as! HSStreamDeckDevice
+    let device: HSStreamDeckDevice = toHSStreamDeckDeviceFromLua(L, 1) as! HSStreamDeckDevice
     let size = NSSize(width: CGFloat(device.imageWidth), height: CGFloat(device.imageHeight))
     lua_pushNSSize(L, size)
     return 1
@@ -1507,8 +1507,10 @@ private func streamdeck_imageSize(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
 ///  * The hs.streamdeck object
 private func streamdeck_setButtonImage(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
-    let device: HSStreamDeckDevice = lua_tovalue(L, at: 1) as! HSStreamDeckDevice
-    let image: NSImage = lua_tovalue(L, at: 3) as! NSImage
+    let device: HSStreamDeckDevice = toHSStreamDeckDeviceFromLua(L, 1) as! HSStreamDeckDevice
+    guard let image = toNSImage(L, at: 3) else {
+        return luaL_argerror(L, 3, "expected hs.image userdata")
+    }
     device.setImage(image, forButton: Int32(lua_tointeger(L, 2)))
 
     lua_pushvalue(L, 1)
@@ -1527,8 +1529,10 @@ private func streamdeck_setButtonImage(_ L: UnsafeMutablePointer<lua_State>!) ->
 ///  * The hs.streamdeck object
 private func streamdeck_setScreenImage(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
-    let device: HSStreamDeckDevice = lua_tovalue(L, at: 1) as! HSStreamDeckDevice
-    let image: NSImage = lua_tovalue(L, at: 3) as! NSImage
+    let device: HSStreamDeckDevice = toHSStreamDeckDeviceFromLua(L, 1) as! HSStreamDeckDevice
+    guard let image = toNSImage(L, at: 3) else {
+        return luaL_argerror(L, 3, "expected hs.image userdata")
+    }
     device.setLCDImage(image, forEncoder: Int32(lua_tointeger(L, 2)))
 
     lua_pushvalue(L, 1)
@@ -1547,8 +1551,10 @@ private func streamdeck_setScreenImage(_ L: UnsafeMutablePointer<lua_State>!) ->
 ///  * The hs.streamdeck object
 private func streamdeck_setButtonColor(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
-    let device: HSStreamDeckDevice = lua_tovalue(L, at: 1) as! HSStreamDeckDevice
-    let color: NSColor = lua_tovalue(L, at: 3) as! NSColor
+    let device: HSStreamDeckDevice = toHSStreamDeckDeviceFromLua(L, 1) as! HSStreamDeckDevice
+    guard let color = tableToNSColor(L, at: 3) else {
+        return luaL_argerror(L, 3, "expected color table")
+    }
     device.setColor(color, forButton: Int32(lua_tointeger(L, 2)))
 
     lua_pushvalue(L, 1)
@@ -1557,6 +1563,7 @@ private func streamdeck_setButtonColor(_ L: UnsafeMutablePointer<lua_State>!) ->
 
 // MARK: - Lua<->NSObject Conversion Functions
 
+@discardableResult
 private func pushHSStreamDeckDevice(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
     guard let value = obj as? HSStreamDeckDevice else { return 0 }
     value.selfRefCount += 1
@@ -1579,7 +1586,7 @@ private func toHSStreamDeckDeviceFromLua(_ L: UnsafeMutablePointer<lua_State>!, 
 // MARK: - Cosmic Hammer/Lua Infrastructure
 
 private func streamdeck_object_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let obj: HSStreamDeckDevice = lua_tovalue(L, at: 1) as! HSStreamDeckDevice
+    let obj: HSStreamDeckDevice = toHSStreamDeckDeviceFromLua(L, 1) as! HSStreamDeckDevice
     let title = "\(obj.deckType), serial: \(obj.serialNumber ?? "unknown")"
     let ptr = lua_topointer(L, 1)
     let ptrStr = ptr.map { String(format: "%p", Int(bitPattern: $0)) } ?? "0x0"
@@ -1589,8 +1596,8 @@ private func streamdeck_object_tostring(_ L: UnsafeMutablePointer<lua_State>!) -
 
 private func streamdeck_object_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     if luaL_testudata(L, 1, USERDATA_TAG) != nil && luaL_testudata(L, 2, USERDATA_TAG) != nil {
-        let obj1: HSStreamDeckDevice = lua_tovalue(L, at: 1) as! HSStreamDeckDevice
-        let obj2: HSStreamDeckDevice = lua_tovalue(L, at: 2) as! HSStreamDeckDevice
+        let obj1: HSStreamDeckDevice = toHSStreamDeckDeviceFromLua(L, 1) as! HSStreamDeckDevice
+        let obj2: HSStreamDeckDevice = toHSStreamDeckDeviceFromLua(L, 2) as! HSStreamDeckDevice
         lua_pushboolean(L, obj1.isEqual(to: obj2) ? 1 : 0)
     } else {
         lua_pushboolean(L, 0)

@@ -6,8 +6,7 @@ function testAllWindows()
   local allWindows = hs.window.allWindows()
   assertIsEqual("table", type(allWindows))
   assertGreaterThan(1, #allWindows)
-  -- Enable this when hs.window objects have a proper __type metatable entry
-  -- assertIsUserdataOfType(allWindows[1], "hs.window")
+  assertIsUserdataOfType("hs.window", allWindows[1])
 
   hs.closePreferences()
   hs.closeConsole()

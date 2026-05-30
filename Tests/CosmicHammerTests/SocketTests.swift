@@ -20,6 +20,8 @@ extension CosmicHammerTests {
         @Test func testUdpListenerSocketCreation() { runLuaTest() }
         @Test func testUdpListenerSocketCreationWithCallback() { runLuaTest() }
         @Test func testUdpListenerSocketAttributes() { runLuaTest() }
+        @Test func testTcpWriteAcceptsBinaryString() { runLuaTest() }
+        @Test func testUdpSendAcceptsBinaryString() { runLuaTest() }
 
         @Test func testTcpDisconnectAndReuse() { runTwoPartLuaTest(timeout: 2) }
         @Test func testTcpConnected() { runTwoPartLuaTest(timeout: 2) }

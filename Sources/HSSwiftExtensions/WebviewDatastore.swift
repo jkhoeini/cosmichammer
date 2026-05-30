@@ -25,7 +25,7 @@ private var backgroundCallbacks = NSMutableSet()
 /// Returns:
 ///  * a list of strings where each string is a specific data type stored in a datastore.
 private func datastore_allWebsiteDataTypes(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    lua_pushany(L, WKWebsiteDataStore.allWebsiteDataTypes() as NSSet)
+    lua_pushany(L, Array(WKWebsiteDataStore.allWebsiteDataTypes()) as NSArray)
     return 1
 }
 
@@ -42,7 +42,7 @@ private func datastore_allWebsiteDataTypes(_ L: UnsafeMutablePointer<lua_State>!
 /// Notes:
 ///  * this is the datastore used unless otherwise specified when creating an `hs.webview` instance.
 private func datastore_newDefaultDataStore(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    lua_pushany(L, WKWebsiteDataStore.default())
+    wv_pushAny(L, WKWebsiteDataStore.default())
     return 1
 }
 
@@ -59,7 +59,7 @@ private func datastore_newDefaultDataStore(_ L: UnsafeMutablePointer<lua_State>!
 /// Notes:
 ///  * The datastore represented by this object will be initially empty.  You can use this function to create a non-persistent datastore that you wish to share among multiple `hs.webview` instances.
 private func datastore_newPrivateDataStore(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    lua_pushany(L, WKWebsiteDataStore.nonPersistent())
+    wv_pushAny(L, WKWebsiteDataStore.nonPersistent())
     return 1
 }
 
@@ -78,7 +78,7 @@ private func datastore_fromWebview(_ L: UnsafeMutablePointer<lua_State>!) -> Int
     let theWindow = Unmanaged<NSWindow>.fromOpaque(ptr.pointee!).takeUnretainedValue()
     let theView = theWindow.contentView as! WKWebView
     let theConfiguration = theView.configuration
-    lua_pushany(L, theConfiguration.websiteDataStore)
+    wv_pushAny(L, theConfiguration.websiteDataStore)
     return 1
 }
 
@@ -98,7 +98,7 @@ private func datastore_fromWebview(_ L: UnsafeMutablePointer<lua_State>!) -> Int
 ///  * the datastore object
 private func datastore_fetchRecords(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
-    let dataStore = lua_tovalue(L, at: 1) as! WKWebsiteDataStore
+    let dataStore = wv_toWKWebsiteDataStore(L, 1)!
     var dataTypes: [String] = Array(WKWebsiteDataStore.allWebsiteDataTypes())
 
     lua_pushvalue(L, lua_gettop(L))
@@ -125,7 +125,11 @@ private func datastore_fetchRecords(_ L: UnsafeMutablePointer<lua_State>!) -> In
         DispatchQueue.main.async {
             if backgroundCallbacks.contains(NSNumber(value: fnRef)) {
                 lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(fnRef))
-                lua_pushany(L, records as NSArray)
+                lua_createtable(L, Int32(records.count), 0)
+                for record in records {
+                    wv_pushAny(L, record)
+                    lua_rawseti(L, -2, luaL_len(L, -2) + 1)
+                }
                 if lua_pcall(L, 1, 0, 0) != LUA_OK { lua_pop(L, 1) }
                 luaL_unref(lua_getCurrentState()!, LUA_REGISTRYINDEX_VALUE, fnRef)
                 backgroundCallbacks.remove(NSNumber(value: fnRef))
@@ -149,7 +153,7 @@ private func datastore_fetchRecords(_ L: UnsafeMutablePointer<lua_State>!) -> In
 /// Returns:
 ///  * the datastore object
 private func datastore_removeRecords(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let dataStore = lua_tovalue(L, at: 1) as! WKWebsiteDataStore
+    let dataStore = wv_toWKWebsiteDataStore(L, 1)!
 
     var recordNames: [String]
     var recordTypes: [String]
@@ -214,7 +218,7 @@ private func datastore_removeRecords(_ L: UnsafeMutablePointer<lua_State>!) -> I
 /// Returns:
 ///  * the datastore object
 private func datastore_removeDataFrom(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let dataStore = lua_tovalue(L, at: 1) as! WKWebsiteDataStore
+    let dataStore = wv_toWKWebsiteDataStore(L, 1)!
 
     var theDate: Date
     var recordTypes: [String]
@@ -283,7 +287,7 @@ private func datastore_removeDataFrom(_ L: UnsafeMutablePointer<lua_State>!) -> 
 ///  * Note that this value is the inverse of `hs.webview:privateBrowsing()`, since private browsing uses a non-persistent datastore.
 private func datastore_persistent(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     luaL_checkudata(L, 1, USERDATA_DS_TAG)
-    let dataStore = lua_tovalue(L, at: 1) as! WKWebsiteDataStore
+    let dataStore = wv_toWKWebsiteDataStore(L, 1)!
     lua_pushboolean(L, dataStore.isPersistent ? 1 : 0)
     return 1
 }
@@ -306,7 +310,7 @@ private func pushWKWebsiteDataRecord(_ L: UnsafeMutablePointer<lua_State>!, _ ob
     lua_newtable(L)
     lua_pushany(L, value.displayName as NSString)
     lua_setfield(L, -2, "displayName")
-    lua_pushany(L, value.dataTypes as NSSet)
+    lua_pushany(L, Array(value.dataTypes) as NSArray)
     lua_setfield(L, -2, "dataTypes")
     return 1
 }
@@ -323,10 +327,22 @@ private func toWKWebsiteDataStoreFromLua(_ L: UnsafeMutablePointer<lua_State>!, 
     return nil
 }
 
+func wv_WKWebsiteDataStore_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
+    pushWKWebsiteDataStore(L, obj)
+}
+
+func wv_WKWebsiteDataRecord_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
+    pushWKWebsiteDataRecord(L, obj)
+}
+
+func wv_toWKWebsiteDataStore(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> WKWebsiteDataStore? {
+    toWKWebsiteDataStoreFromLua(L, idx) as? WKWebsiteDataStore
+}
+
 // MARK: - Cosmic Hammer/Lua Infrastructure
 
 private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let obj = lua_tovalue(L, at: 1) as? WKWebsiteDataStore
+    let obj = wv_toWKWebsiteDataStore(L, 1)
     let title: String = (obj?.isPersistent ?? false) ? "persistent" : "non-persistent"
     let ptr = lua_topointer(L, 1)
     let ptrStr = ptr.map { String(describing: $0) } ?? "nil"
@@ -336,8 +352,8 @@ private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 private func userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     if luaL_testudata(L, 1, USERDATA_DS_TAG) != nil && luaL_testudata(L, 2, USERDATA_DS_TAG) != nil {
-        let obj1 = lua_tovalue(L, at: 1) as? WKWebsiteDataStore
-        let obj2 = lua_tovalue(L, at: 2) as? WKWebsiteDataStore
+        let obj1 = wv_toWKWebsiteDataStore(L, 1)
+        let obj2 = wv_toWKWebsiteDataStore(L, 2)
         lua_pushboolean(L, (obj1 != nil && obj2 != nil && obj1!.isEqual(obj2!)) ? 1 : 0)
     } else {
         lua_pushboolean(L, 0)
