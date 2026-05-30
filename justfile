@@ -197,8 +197,11 @@ release version:
 
     # ── Tag ───────────────────────────────────────────────────────────────
     echo "===> Tagging $TAG"
-    jj tag set "$TAG" -r dev 2>/dev/null \
-        || git tag "$TAG" $(jj log -r dev --no-graph -T commit_id --limit 1)
+    if jj tag set "$TAG" -r dev 2>/dev/null; then
+        jj git export >/dev/null
+    else
+        git tag "$TAG" $(jj log -r dev --no-graph -T commit_id --limit 1)
+    fi
     git push origin "$TAG"
 
     # ── Build Release ─────────────────────────────────────────────────────
