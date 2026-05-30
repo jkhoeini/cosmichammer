@@ -9,10 +9,10 @@
       system = "aarch64-darwin";
       pkgs = nixpkgs.legacyPackages.${system};
 
-      version = "0.5.1";
+      version = "0.5.2";
       src = pkgs.fetchurl {
         url = "https://github.com/jkhoeini/cosmichammer/releases/download/v${version}/Cosmic-Hammer-${version}.dmg";
-        hash = "sha256-XmJsri8swymx5BUWg2MBM9im5AytetuUOhLTsaEI44s=";
+        hash = "sha256-d+f7r/LiemexGdOmTy6JHe4nUpyCPI+nYWleHCzdoo0=";
       };
 
       cosmic-hammer = pkgs.stdenvNoCC.mkDerivation {
