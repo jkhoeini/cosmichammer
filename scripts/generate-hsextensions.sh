@@ -67,7 +67,7 @@ echo "Generating glue for ${count} symbols..."
 // HSExtensions static library exposes.  Needed so C/ObjC compilation units
 // can reference these symbols.
 #pragma once
-#include <LuaSkin/lua.h>
+#include <CLua.h>
 
 #ifdef __cplusplus
 extern "C" {

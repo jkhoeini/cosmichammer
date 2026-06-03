@@ -81,47 +81,35 @@ LuaSkin → LuaSwift).
 
 * TODO — Tech debt review (2026-06-01)
 
-*** TODO Fix generated HSExtensions glue checks and jj/CI enforcement
-    Issue:
-    ~scripts/check-generated-files.sh~ is stale after the ObjC-to-Swift
-    static-linking migration. It still expects removed ObjC outputs
+*** DONE Fix generated HSExtensions glue checks and jj/CI enforcement
+    Completed 2026-06-04.
+
+    Fixed ~scripts/check-generated-files.sh~ after the ObjC-to-Swift
+    static-linking migration. It now regenerates and validates the two current
+    outputs:
+    - ~Sources/HSExtensions/include/HSExtensions/HSExtensions+Preload.h~
+    - ~Sources/HSSwiftExtensions/HSExtensionsGenerated.swift~
+
+    The checker no longer references removed ObjC outputs
     (~Sources/HSExtensions/HSExtensions.m~ and
-    ~Sources/HSExtensions/CosmicHammer/HSExtensionsRegistry.m~), while the
-    current generator writes:
-    - ~Sources/HSExtensions/include/HSExtensions/HSExtensions+Preload.h~
-    - ~Sources/HSSwiftExtensions/HSExtensionsGenerated.swift~
+    ~Sources/HSExtensions/CosmicHammer/HSExtensionsRegistry.m~). It also checks
+    manifest/header/Swift registration consistency, duplicate native manifest
+    symbols, and preload key drift.
 
-    Running ~scripts/check-generated-files.sh --quiet~ currently exits with:
-    ~error: output not found: Sources/HSExtensions/HSExtensions.m~.
+    The generator now emits the CLua-era preload header include (~<CLua.h>~).
+    Added ~just check-generated~ and ~just verify~, and documented the Git
+    hook as a convenience only; jj users and CI should use the ~just~ recipes.
 
-    There is also generator/header drift: the committed preload header includes
-    ~<CLua.h>~, while the generator template still documents/emits the older
-    LuaSkin-era include. The pre-commit hook is Git-oriented and explicitly says
-    jj users are not protected.
+    Verified:
+    - ~scripts/check-generated-files.sh --quiet~ exits 0.
+    - ~just check-generated~ exits 0.
+    - Deliberately changing ~extensions.manifest~ without regenerating fails
+      with a useful diff.
+    - Deliberately editing generated Swift fails with a useful diff.
+    - ~docs-lint~ and ~build~ pass.
 
-    Files:
-    - ~scripts/check-generated-files.sh~
-    - ~scripts/generate-hsextensions.sh~
-    - ~scripts/hooks/pre-commit~
-    - ~Sources/HSExtensions/include/HSExtensions/HSExtensions+Preload.h~
-    - ~Sources/HSSwiftExtensions/HSExtensionsGenerated.swift~
-
-    What to do:
-    - Update ~check-generated-files.sh~ to regenerate and compare the two
-      current outputs, including ~HSExtensionsGenerated.swift~.
-    - Make the generator emit the same include/import text as committed files.
-    - Add a ~just~ recipe, e.g. ~just check-generated~, and include it in the
-      normal verification path used by agents and CI.
-    - Decide whether the hook should be removed, replaced, or documented as a
-      Git-only convenience now that this repo uses jj.
-    - Add a small regression test/check that fails when
-      ~extensions.manifest~ and generated preload registration diverge.
-
-    Acceptance criteria:
-    - ~scripts/check-generated-files.sh --quiet~ exits 0 on a clean tree.
-    - Touching ~extensions.manifest~ without regenerating causes the check to
-      fail with a useful diff.
-    - The check validates both generated files that actually exist today.
+    Note: ~just test~ still fails/hangs in unrelated macOS runtime suites; that
+    remaining work is tracked by the "Fix remaining 79 failing tests" item.
 
 *** TODO Deepen the build module instead of keeping one giant ~just build~
     Issue:

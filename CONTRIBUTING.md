@@ -75,6 +75,7 @@ To create such an extension:
 * For ObjC/C files, create `Sources/HSExtensions/<name>/` and place `.m`/`.h`/`.c` files there
 * Add a line to `extensions.manifest`: `<name><TAB><luaopen_hs_lib symbols><TAB><name>.lua`
 * Run `scripts/generate-hsextensions.sh`
+* Run `just check-generated`
 * Run `just build` and test your extension
 * Push your changes up to a fork on GitHub
 * Propose a Pull Request on GitHub

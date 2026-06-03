@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
 # Pre-commit hook: verifies generated files are in sync with manifests.
 #
-# Fires on `git commit` in the colocated repo. jj does not invoke git
-# hooks, so jj users should run `scripts/check-generated-files.sh`
-# manually (or via CI). The hook is still useful for anyone who
-# occasionally uses raw git in this repo.
+# Fires on `git commit` in the colocated repo. jj does not invoke git hooks, so
+# jj users and CI should run `just check-generated` or `just verify`. This hook
+# is only a Git convenience for anyone who occasionally uses raw git here.
 #
 # Installation (from repo root):
 #   ln -sf ../../scripts/hooks/pre-commit .git/hooks/pre-commit

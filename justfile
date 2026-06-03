@@ -146,6 +146,10 @@ test:
         -Xlinker -F -Xlinker "${SDK_PATH}/System/Library/PrivateFrameworks" \
         2>&1 | tee {{ build_dir }}/test.log
 
+# Check generated files against their source manifests
+check-generated:
+    ./scripts/check-generated-files.sh
+
 # Build all documentation
 docs:
     #!/usr/bin/env bash
@@ -174,6 +178,9 @@ docs-lint:
 
 # Full rebuild: clean + build
 rebuild: clean build
+
+# Full local/CI verification path
+verify: check-generated docs-lint build test
 
 # Create a GitHub release with DMG
 release version:

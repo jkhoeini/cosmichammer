@@ -22,6 +22,8 @@ The project uses `just` as a task runner. `mise` installs `just` (`mise.toml`). 
 - `just rebuild` — `clean` + `build`.
 - `just test` — Runs the SPM test suite via `swift test` (requires a prior `just build` for Lua resources). Tests live in `Tests/CosmicHammerTests/` as a Swift Testing `.testTarget`.
 - `just docs` / `just docs-lint` — Builds/lints the API docs via the Swift tool under `scripts/docs/` (auto-builds the `BuildDocs` binary the first time).
+- `just check-generated` — Verifies generated HSExtensions glue matches `extensions.manifest`.
+- `just verify` — Runs `check-generated`, `docs-lint`, `build`, and `test` in the normal local/CI order.
 - `scripts/generate-hsextensions.sh` — Regenerates the HSExtensions glue (`HSExtensions+Preload.h`, `HSExtensionsGenerated.swift`) from `extensions.manifest`. Re-run this whenever an extension entry-point is added or removed. The script is idempotent.
 
 To run a single test suite, use `swift test --filter <SuiteName>` (with the private framework linker flag — see `justfile`). To run all tests: `just test`.
@@ -71,7 +73,8 @@ Key pieces of this model — preserve them when adding extensions:
 2. If Swift: copy the `.swift` file to `Sources/HSSwiftExtensions/`. If ObjC/C: create `Sources/HSExtensions/<name>/` and place `.m`/`.h`/`.c` files there.
 3. Add a line to `extensions.manifest`: `<name><TAB><luaopen_hs_lib symbols or "-"><TAB><lua filenames>`.
 4. Run `scripts/generate-hsextensions.sh`.
-5. `just build`.
+5. Run `just check-generated`.
+6. `just build`.
 
 Unit tests live in `Tests/CosmicHammerTests/` (a `.testTarget` in `Package.swift`). The `hs` CLI is built as a product in the root `Package.swift` and copied into `Cosmic Hammer.app/Contents/Frameworks/hs/hs` by `just build` (post-build step).
 
