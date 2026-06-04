@@ -91,7 +91,7 @@ private func serializeJSONString(_ str: String) -> String {
 }
 
 /// Write docs.json
-func writeJSON(to path: String, data: [[String: Any]]) {
+public func writeJSON(to path: String, data: [[String: Any]]) {
     let jsonString = serializeJSON(data as [Any])
 
     let url = URL(fileURLWithPath: path)
@@ -108,7 +108,7 @@ func writeJSON(to path: String, data: [[String: Any]]) {
 }
 
 /// Write docs_index.json
-func writeJSONIndex(to path: String, data: [[String: Any]]) {
+public func writeJSONIndex(to path: String, data: [[String: Any]]) {
     var index: [[String: Any]] = []
 
     for item in data {

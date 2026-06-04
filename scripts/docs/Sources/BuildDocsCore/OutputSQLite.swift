@@ -2,7 +2,7 @@ import Foundation
 import SQLite3
 
 /// Write a Dash-compatible SQLite database
-func writeSQLite(to path: String, data: [[String: Any]]) {
+public func writeSQLite(to path: String, data: [[String: Any]]) {
     let url = URL(fileURLWithPath: path)
     try? FileManager.default.createDirectory(
         at: url.deletingLastPathComponent(),

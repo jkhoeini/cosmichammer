@@ -1,0 +1,2 @@
+--- === hs.scan ===
+--- Scan fixture.

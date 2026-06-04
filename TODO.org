@@ -252,8 +252,31 @@ LuaSkin → LuaSwift).
     - Unsafe force-casts in high-risk extensions are reduced or guarded.
     - Userdata conversion has one documented seam and focused tests.
 
-*** TODO Teach BuildDocs about Swift docs and add docs-tool tests
-    Issue:
+*** DONE Teach BuildDocs about Swift docs and add docs-tool tests
+    Completed 2026-06-05.
+
+    Split the docs tool into a ~BuildDocsCore~ library plus CLI target and added
+    a ~BuildDocsTests~ target. The parser now scans ~.swift~ files alongside
+    Lua and Objective-C, keeps EOF chunks, handles indented Swift ~///~ API docs,
+    and filters non-API Swift comments while preserving Objective-C/Lua column-0
+    behavior.
+
+    Updated docs recipes to scan both ~extensions/~ and
+    ~Sources/HSSwiftExtensions~. HTML output now writes ~docs_index.json~ beside
+    ~index.html~, matching the search fetch path. Refreshed the docs-tool README
+    to use the Swift/just workflow.
+
+    Verified:
+    - ~swift test --package-path scripts/docs~ passes 8 tests.
+    - ~swift build -c release --package-path scripts/docs~ passes.
+    - ~just docs-lint~ exits 0.
+    - ~just docs~ exits 0.
+    - ~scripts/build/docs-json.sh build/docs~ exits 0.
+    - ~hs.shortcuts.list()~ appears in generated ~docs.json~ and HTML.
+    - ~build/html/docs_index.json~ exists beside ~index.html~ and parses as JSON.
+    - Claude re-review converged with no remaining problematic issues.
+
+    Original issue:
     Generated docs miss Swift-native API comments. ~just build~ and
     ~just docs-lint~ pass only ~extensions~ to BuildDocs, and BuildDocs scans
     only ~.m~ and ~.lua~ files. Meanwhile ~Sources/HSSwiftExtensions~ contains

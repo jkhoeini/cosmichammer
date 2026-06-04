@@ -46,14 +46,14 @@ let CHUNK_DESC = 4
 
 // MARK: - Data Model
 
-struct LintError {
+public struct LintError {
     let file: String
     let line: Int
     let title: String
     let message: String
     let annotationLevel: String
 
-    func toDictionary() -> [String: Any] {
+    public func toDictionary() -> [String: Any] {
         return [
             "annotation_level": annotationLevel,
             "file": file,
@@ -107,7 +107,7 @@ struct DocItem {
     }
 }
 
-struct DocModule {
+public struct DocModule {
     var name: String
     var type: String = "Module"
     var desc: String
@@ -136,7 +136,7 @@ struct DocModule {
         itemsByType[typeName]?.sort { $0.name.lowercased() < $1.name.lowercased() }
     }
 
-    func toDictionary() -> [String: Any] {
+    public func toDictionary() -> [String: Any] {
         var dict: [String: Any] = [
             "name": name,
             "type": type,

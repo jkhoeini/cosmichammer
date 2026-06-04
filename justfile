@@ -88,7 +88,7 @@ docs:
     mkdir -p {{ build_dir }}
     for fmt in json markdown html sql; do
         echo "Building docs $fmt..."
-        "$DOCSTOOL" -o {{ build_dir }} --$fmt extensions/
+        "$DOCSTOOL" -o {{ build_dir }} --$fmt extensions/ Sources/HSSwiftExtensions
     done
 
 # Lint documentation without building
@@ -100,7 +100,7 @@ docs-lint:
         echo "Building docs tool..."
         swift build -c release --package-path scripts/docs
     fi
-    "$DOCSTOOL" --lint extensions/
+    "$DOCSTOOL" --lint extensions/ Sources/HSSwiftExtensions
 
 # Full rebuild: clean + build
 rebuild: clean build

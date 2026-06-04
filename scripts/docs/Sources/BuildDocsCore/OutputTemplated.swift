@@ -2,7 +2,7 @@ import Foundation
 
 // MARK: - HTML Output
 
-func writeHTML(outputDir: String, templateDir: String, title: String, sourceUrlBase: String, data: [[String: Any]]) {
+public func writeHTML(outputDir: String, templateDir: String, title: String, sourceUrlBase: String, data: [[String: Any]]) {
     writeTemplatedOutput(
         outputDir: outputDir,
         templateDir: templateDir,
@@ -15,7 +15,7 @@ func writeHTML(outputDir: String, templateDir: String, title: String, sourceUrlB
 
 // MARK: - Markdown Output
 
-func writeMarkdown(outputDir: String, templateDir: String, title: String, sourceUrlBase: String, data: [[String: Any]]) {
+public func writeMarkdown(outputDir: String, templateDir: String, title: String, sourceUrlBase: String, data: [[String: Any]]) {
     writeTemplatedOutput(
         outputDir: outputDir,
         templateDir: templateDir,
@@ -59,6 +59,7 @@ private func writeTemplatedOutput(outputDir: String, templateDir: String, title:
         processedData = processMarkdownFields(processedData)
         // Write debug file
         writeJSON(to: outputDir + "/templated_docs.json", data: processedData)
+        writeJSONIndex(to: outputDir + "/docs_index.json", data: data)
     }
 
     // Render and write index

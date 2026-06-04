@@ -25,7 +25,7 @@ fi
 
 mkdir -p "$dest_dir"
 dest_dir="$(cd "$dest_dir" && pwd)"
-"$docs_tool" -o "$dest_dir" --json extensions
+"$docs_tool" -o "$dest_dir" --json extensions Sources/HSSwiftExtensions
 
 [[ -f "${dest_dir}/docs.json" ]] || fail "docs tool did not write ${dest_dir}/docs.json"
 [[ -f "${dest_dir}/docs_index.json" ]] || fail "docs tool did not write ${dest_dir}/docs_index.json"
