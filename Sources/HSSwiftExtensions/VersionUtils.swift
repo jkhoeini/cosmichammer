@@ -2,16 +2,13 @@ import Foundation
 
 // MARK: - C-visible API (preserves the symbols declared in MJVersionUtils.h)
 
-/// Returns the integer-encoded version of the running app (cached after first call).
+/// Returns the integer-encoded marketing version of the running app (cached after first call).
 /// Format: major * 10000 + minor * 100 + bugfix
 @_cdecl("MJVersionFromThisApp")
 func MJVersionFromThisApp() -> Int32 {
     struct Once {
         static let value: Int32 = {
-            guard let version = Bundle.main.infoDictionary?["CFBundleVersion"] as? String else {
-                return 0
-            }
-            return versionFromString(version)
+            return MJVersionFromInfoDictionary(Bundle.main.infoDictionary ?? [:])
         }()
     }
     return Once.value
@@ -24,6 +21,13 @@ func MJVersionFromString(_ str: NSString) -> Int32 {
 }
 
 // MARK: - Internal
+
+func MJVersionFromInfoDictionary(_ infoDictionary: [String: Any]) -> Int32 {
+    guard let version = infoDictionary["CFBundleShortVersionString"] as? String else {
+        return 0
+    }
+    return versionFromString(version)
+}
 
 private func versionFromString(_ str: String) -> Int32 {
     let scanner = Scanner(string: str)

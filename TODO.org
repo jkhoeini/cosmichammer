@@ -111,40 +111,37 @@ LuaSkin → LuaSwift).
     Note: ~just test~ still fails/hangs in unrelated macOS runtime suites; that
     remaining work is tracked by the "Fix remaining 79 failing tests" item.
 
-*** TODO Deepen the build module instead of keeping one giant ~just build~
-    Issue:
-    The ~build~ recipe is a shallow module with a very large interface. It owns
-    version calculation, docs compilation, hs CLI compilation, SPM build,
-    bundle assembly, resource copying, Lua file copying, codesign, and release
-    configuration in one script body. Tests also depend on a prior app bundle
-    build because ~LuaTestSetup.swift~ looks under
-    ~build/Cosmic Hammer.app/Contents/Resources~ and fatals if resources are
-    missing.
+*** DONE Deepen the build module instead of keeping one giant ~just build~
+    Completed 2026-06-04.
 
-    Files:
-    - ~justfile~
-    - ~Package.swift~
-    - ~Tests/CosmicHammerTests/LuaTestSetup.swift~
-    - ~CosmicHammer/CosmicHammer-Info.plist~
+    Split the monolithic ~just build~ body into explicit build modules and
+    recipes for version metadata, docs JSON, hs CLI, SPM binary, resource
+    copying, app bundle assembly, signing, and bundle/resource smoke checks.
 
-    What to do:
-    - Split the build into explicit modules/recipes with clear outputs:
-      version metadata, docs JSON, hs CLI, SPM binary, app bundle resources,
-      signing.
-    - Make test resources buildable without requiring a full signed app bundle.
-    - Remove duplicated deployment/version policy where possible
-      (~Package.swift~, Info.plist template, justfile sed substitutions).
-    - Audit remaining direct Git usage in build/release recipes and convert the
-      workflow to jj-compatible commands where practical, keeping Git interop
-      only where it is truly required.
-    - Add smoke checks for resource-copy completeness and app bundle layout.
+    Added ~just test-resources~ so Lua tests can prepare an unsigned
+    app-shaped resource tree without requiring a full signed app bundle. The
+    test bootstrap now consumes ~COSMIC_HAMMER_TEST_RESOURCES~ or the default
+    test resource tree before falling back to the legacy built app resources.
 
-    Acceptance criteria:
-    - A clean test workflow can prepare Lua resources without a full
-      ~just build~ app assembly.
-    - Bundle assembly has a small, testable interface and deterministic outputs.
-    - Version/build-number semantics are documented and consistent between
-      Info.plist and ~VersionUtils.swift~.
+    Version metadata is generated once into ~build/version.env~ and
+    ~build/version.json~. ~Info.plist~ rendering uses ~plutil~, and
+    ~MJVersionFromThisApp~ now reads ~CFBundleShortVersionString~, matching the
+    semantic-version parser and ~LuaRuntime~ process info semantics.
+
+    Verified:
+    - ~bash -n scripts/build/*.sh~ exits 0.
+    - ~just check-generated~ exits 0.
+    - ~just docs-lint~ exits 0.
+    - ~just test-resources~ builds the docs JSON, hs CLI, Lua resources, and
+      app-shaped test resource tree.
+    - ~swift test --filter VersionUtils~ passes.
+    - ~swift test --filter Coresetup~ passes with
+      ~COSMIC_HAMMER_TEST_RESOURCES~ pointing at the test app resources.
+    - ~just app-bundle Debug~ and ~just sign-app Debug~ pass.
+
+    Note: the full ~just test~ suite still fails in unrelated runtime,
+    hardware, and AppKit-heavy suites; that remaining work is tracked by the
+    "Fix remaining 79 failing tests" item.
 
 *** TODO Make Lua boot a typed, testable lifecycle module
     Issue:

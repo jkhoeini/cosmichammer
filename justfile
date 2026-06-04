@@ -14,134 +14,60 @@ clean:
 
 # Build Cosmic Hammer.app (config: Debug or Release)
 build config="Debug":
-    #!/usr/bin/env bash
-    set -euo pipefail
-    mkdir -p {{ build_dir }}
+    just build-version
+    just docs-json
+    just hs-cli
+    just spm-binary {{ config }}
+    just app-bundle {{ config }}
+    just sign-app {{ config }}
+    just bundle-smoke
 
-    # --- Pre-build: version numbers from the current jj/git revision ---
-    git_bin=$(sh /etc/profile; which git)
-    git_rev=HEAD
-    if command -v jj >/dev/null 2>&1 && jj root >/dev/null 2>&1; then
-        jj git export >/dev/null 2>&1 || true
-        git_rev="$(jj log -r "${JJ_VERSION_REV:-@}" --no-graph -T commit_id)"
-    fi
-    # In a jj workspace the .git dir may live outside the working copy.
-    # Resolve it via the jj store pointer when .git is absent locally.
-    if [ ! -d .git ] && [ -f .jj/repo ] || [ -d .jj/repo/store ]; then
-        if [ -f .jj/repo ]; then
-            _repo_dir="$(cd "$(dirname .jj/repo)/$(cat .jj/repo)" && pwd)"
-        else
-            _repo_dir="$(pwd)/.jj/repo"
-        fi
-        _git_target="$(cat "${_repo_dir}/store/git_target")"
-        case "$_git_target" in
-            /*) export GIT_DIR="$_git_target" ;;
-            *)  export GIT_DIR="${_repo_dir}/store/${_git_target}" ;;
-        esac
-    fi
-    version=$("$git_bin" describe --tags --always --abbrev=0 "$git_rev" | sed -e 's/^v//' -e 's/g//')
-    build_num=$("$git_bin" rev-list "$("$git_bin" describe --tags --always "$git_rev")" --count)
-    unset GIT_DIR  # avoid leaking into SPM
-    echo "Version: ${version} (${build_num})"
+# Write build/version.env and build/version.json
+build-version:
+    ./scripts/build/version-metadata.sh {{ build_dir }}
 
-    # --- Pre-build: compile docs.json ---
-    if [ ! -f ./scripts/docs/.build/release/BuildDocs ]; then
-        swift build -c release --package-path scripts/docs
-    fi
-    ./scripts/docs/.build/release/BuildDocs -o ./build/ --json extensions
+# Build docs JSON artifacts under build/docs
+docs-json:
+    ./scripts/build/docs-json.sh {{ build_dir }}/docs
 
-    # --- Pre-build: build hs CLI ---
+# Build the release hs CLI product
+hs-cli:
     swift build -c release --product hs
 
-    # --- Main build: compile Cosmic Hammer executable via SPM ---
-    # Map config names to SPM -c values.
-    if [ "{{ config }}" = "Release" ]; then
-        spm_config="release"
-    else
-        spm_config="debug"
-    fi
+# Build the CosmicHammer SPM executable (config: Debug or Release)
+spm-binary config="Debug":
+    ./scripts/build/spm-binary.sh {{ config }} {{ build_dir }}
 
-    SDK_PATH="$(xcrun --show-sdk-path)"
-    swift build \
-        --product CosmicHammer \
-        -c "${spm_config}" \
-        -Xlinker -F -Xlinker "${SDK_PATH}/System/Library/PrivateFrameworks" \
-        2>&1 | tee {{ build_dir }}/{{ config }}-build.log
+# Copy runtime/test resources into a resource root
+resources dest docs_json="{{ build_dir }}/docs/docs.json":
+    ./scripts/build/copy-resources.sh "{{ dest }}" "{{ docs_json }}"
 
-    # --- Assemble .app bundle ---
-    APP_DIR="{{ build_dir }}/Cosmic Hammer.app"
-    CONTENTS="${APP_DIR}/Contents"
-    MACOS="${CONTENTS}/MacOS"
-    RESOURCES="${CONTENTS}/Resources"
+# Prepare Lua resources for swift test without assembling or signing the app
+test-resources: docs-json hs-cli
+    rm -rf "{{ build_dir }}/test"
+    ./scripts/build/copy-resources.sh "{{ build_dir }}/test/Cosmic Hammer.app/Contents/Resources" "{{ build_dir }}/docs/docs.json"
+    mkdir -p "{{ build_dir }}/test/Cosmic Hammer.app/Contents/Frameworks/hs"
+    /usr/bin/ditto .build/release/hs "{{ build_dir }}/test/Cosmic Hammer.app/Contents/Frameworks/hs/hs"
 
-    rm -rf "${APP_DIR}"
-    mkdir -p "${MACOS}" "${RESOURCES}" "${CONTENTS}/Frameworks/hs"
+# Assemble build/Cosmic Hammer.app without signing it
+app-bundle config="Debug":
+    ./scripts/build/app-bundle.sh {{ config }} {{ build_dir }}
 
-    # Copy executable
-    cp ".build/${spm_config}/CosmicHammer" "${MACOS}/CosmicHammer"
+# Sign the assembled app bundle (Release enables hardened runtime)
+sign-app config="Debug":
+    ./scripts/build/sign-app.sh {{ config }} {{ build_dir }}
 
-    # Generate Info.plist from template
-    sed -e 's/${EXECUTABLE_NAME}/CosmicHammer/g' \
-        -e 's/$(PRODUCT_BUNDLE_IDENTIFIER)/org.cosmic-hammer.CosmicHammer/g' \
-        -e 's/${PRODUCT_NAME}/Cosmic Hammer/g' \
-        -e "s/\$(MARKETING_VERSION)/${version}/g" \
-        -e "s/\$(CURRENT_PROJECT_VERSION)/${build_num}/g" \
-        -e 's/${MACOSX_DEPLOYMENT_TARGET}/26.0/g' \
-        CosmicHammer/CosmicHammer-Info.plist > "${CONTENTS}/Info.plist"
+# Verify the app bundle and resource layout
+bundle-smoke:
+    ./scripts/build/smoke-resources.sh "{{ build_dir }}/Cosmic Hammer.app/Contents/Resources" "{{ build_dir }}/Cosmic Hammer.app"
 
-    # PkgInfo
-    printf 'APPL????' > "${CONTENTS}/PkgInfo"
-
-    # Copy app resources
-    cp CosmicHammer/CosmicHammer.icns "${RESOURCES}/"
-    cp CosmicHammer/Spoon.icns        "${RESOURCES}/"
-    cp CosmicHammer/Credits.rtf       "${RESOURCES}/"
-    cp CosmicHammer/CosmicHammer.sdef "${RESOURCES}/"
-    cp CosmicHammer/setup.lua         "${RESOURCES}/"
-    cp CosmicHammer/statusicon.pdf    "${RESOURCES}/"
-
-    # Extension resources
-    cp extensions/doc/lua.json         "${RESOURCES}/"
-    cp extensions/httpserver/timeout3   "${RESOURCES}/"
-    cp {{ build_dir }}/docs.json       "${RESOURCES}/" 2>/dev/null || true
-
-    # hs manpage
-    mkdir -p "${RESOURCES}/man"
-    cp Sources/hs/hs.man "${RESOURCES}/man/"
-
-    # hsdocs
-    mkdir -p "${RESOURCES}/extensions/hs/hsdocs"
-    cp -R extensions/doc/hsdocs/* "${RESOURCES}/extensions/hs/hsdocs/" 2>/dev/null || true
-    cp scripts/docs/templates/docs.css "${RESOURCES}/extensions/hs/hsdocs/"
-
-    # Copy hs CLI
-    cp .build/release/hs "${CONTENTS}/Frameworks/hs/hs"
-    /usr/bin/codesign --force --sign - "${CONTENTS}/Frameworks/hs/hs"
-
-    # Copy extension Lua files
-    SRCROOT="$(pwd)" \
-    BUILT_PRODUCTS_DIR="{{ build_dir }}" \
-    UNLOCALIZED_RESOURCES_FOLDER_PATH="Cosmic Hammer.app/Contents/Resources" \
-    ./scripts/copy-extension-lua-files.sh
-
-    # Codesign with entitlements
-    if [ "{{ config }}" = "Release" ]; then
-        ENTITLEMENTS="CosmicHammer/CosmicHammer.entitlements"
-    else
-        ENTITLEMENTS="CosmicHammer/CosmicHammer-dev.entitlements"
-    fi
-    if [ "{{ config }}" = "Release" ]; then
-        /usr/bin/codesign --force --sign - --deep --options runtime --entitlements "${ENTITLEMENTS}" "${APP_DIR}"
-    else
-        /usr/bin/codesign --force --sign - --deep --entitlements "${ENTITLEMENTS}" "${APP_DIR}"
-    fi
-
-# Run tests (SPM test target; requires `just build` first for Lua resources)
-test:
+# Run tests (prepares Lua resources without requiring a full app bundle)
+test: test-resources
     #!/usr/bin/env bash
     set -euo pipefail
     mkdir -p {{ build_dir }}
     SDK_PATH="$(xcrun --show-sdk-path)"
+    export COSMIC_HAMMER_TEST_RESOURCES="$(pwd)/{{ build_dir }}/test/Cosmic Hammer.app/Contents/Resources"
     swift test \
         -Xlinker -F -Xlinker "${SDK_PATH}/System/Library/PrivateFrameworks" \
         2>&1 | tee {{ build_dir }}/test.log
@@ -203,13 +129,7 @@ release version:
     fi
 
     # ── Tag ───────────────────────────────────────────────────────────────
-    echo "===> Tagging $TAG"
-    if jj tag set "$TAG" -r dev 2>/dev/null; then
-        jj git export >/dev/null
-    else
-        git tag "$TAG" $(jj log -r dev --no-graph -T commit_id --limit 1)
-    fi
-    git push origin "$TAG"
+    ./scripts/build/publish-release-tag.sh "$TAG" dev
 
     # ── Build Release ─────────────────────────────────────────────────────
     echo "===> Building Cosmic Hammer {{ version }} (Release)"

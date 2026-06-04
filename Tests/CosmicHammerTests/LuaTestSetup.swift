@@ -35,6 +35,14 @@ private let test_getObjectMetatable: lua_CFunction = { L in
 
 @MainActor private var luaBootstrapped = false
 
+private func appBundleURL(forResourceRoot resourceRoot: URL) -> URL? {
+    guard resourceRoot.lastPathComponent == "Resources" else { return nil }
+    let contents = resourceRoot.deletingLastPathComponent()
+    guard contents.lastPathComponent == "Contents" else { return nil }
+    let bundle = contents.deletingLastPathComponent()
+    return bundle.pathExtension == "app" ? bundle : nil
+}
+
 private func doLuaString(_ L: UnsafeMutablePointer<lua_State>, _ s: String) -> Int32 {
     let load = luaL_loadstring(L, s)
     if load != 0 { return load }
@@ -93,15 +101,40 @@ func bootstrapLuaForTesting() {
     guard !luaBootstrapped else { return }
     luaBootstrapped = true
 
-    let appResources = repoRoot.appendingPathComponent("build/Cosmic Hammer.app/Contents/Resources")
+    let defaultTestResources = repoRoot.appendingPathComponent("build/test/Cosmic Hammer.app/Contents/Resources")
+    let legacyAppResources = repoRoot.appendingPathComponent("build/Cosmic Hammer.app/Contents/Resources")
+    let envResources = ProcessInfo.processInfo.environment["COSMIC_HAMMER_TEST_RESOURCES"].map {
+        URL(fileURLWithPath: $0)
+    }
+    let resourceCandidates = [envResources, defaultTestResources, legacyAppResources].compactMap { $0 }
+    guard let appResources = resourceCandidates.first(where: {
+        FileManager.default.fileExists(atPath: $0.appendingPathComponent("extensions").path)
+    }) else {
+        let paths = resourceCandidates.map(\.path).joined(separator: ", ")
+        fatalError("Lua test resources not found; checked \(paths). Run `just test-resources` or `just test` first.")
+    }
+
     let extensionsPath = appResources.appendingPathComponent("extensions").path
     let docsPath = appResources.appendingPathComponent("docs.json").path
     let testResources = repoRoot.appendingPathComponent("Tests/CosmicHammerTests").path
     let testConfigDir = repoRoot.appendingPathComponent(".build/test-config").path
     let setupLua = repoRoot.appendingPathComponent("CosmicHammer/setup.lua").path
+    let appBundle = appBundleURL(forResourceRoot: appResources)
+        ?? repoRoot.appendingPathComponent("build/test/Cosmic Hammer.app")
+    let frameworksPath = appBundle.appendingPathComponent("Contents/Frameworks").path
+    let executablePath = repoRoot.appendingPathComponent(".build/debug/CosmicHammer").path
 
-    guard FileManager.default.fileExists(atPath: extensionsPath) else {
-        fatalError("Built extensions not found at \(extensionsPath) — run `just build` first")
+    for requiredPath in [
+        docsPath,
+        appResources.appendingPathComponent("setup.lua").path,
+        appResources.appendingPathComponent("lua.json").path,
+        appResources.appendingPathComponent("timeout3").path,
+        appResources.appendingPathComponent("extensions/hs/_coresetup.lua").path,
+        appResources.appendingPathComponent("extensions/hs/hsdocs/init.lua").path,
+    ] {
+        guard FileManager.default.fileExists(atPath: requiredPath) else {
+            fatalError("Lua test resource missing at \(requiredPath). Run `just test-resources` or `just test` first.")
+        }
     }
     try? FileManager.default.createDirectory(
         atPath: testConfigDir,
@@ -130,8 +163,10 @@ func bootstrapLuaForTesting() {
     let srcExtEsc = srcExtensions.replacingOccurrences(of: "'", with: "\\'")
     let testEsc = testResources.replacingOccurrences(of: "'", with: "\\'")
     let setupEsc = setupLua.replacingOccurrences(of: "'", with: "\\'")
-    let rootEsc = repoRoot.path.replacingOccurrences(of: "'", with: "\\'")
     let resourceEsc = appResources.path.replacingOccurrences(of: "'", with: "\\'")
+    let bundleEsc = appBundle.path.replacingOccurrences(of: "'", with: "\\'")
+    let executableEsc = executablePath.replacingOccurrences(of: "'", with: "\\'")
+    let frameworksEsc = frameworksPath.replacingOccurrences(of: "'", with: "\\'")
     let configEsc = testConfigDir.replacingOccurrences(of: "'", with: "\\'")
     let processID = ProcessInfo.processInfo.processIdentifier
     let luaSetup = """
@@ -177,9 +212,9 @@ func bootstrapLuaForTesting() {
     hs.docstrings_json_file = '\(docsEsc)'
     hs.processInfo = {
         bundleID = 'org.hammerspoon.Hammerspoon',
-        bundlePath = '\(rootEsc)/build/Cosmic Hammer.app',
-        executablePath = '\(rootEsc)/.build/debug/Cosmic Hammer',
-        frameworksPath = '\(rootEsc)/build/Cosmic Hammer.app/Contents/Frameworks',
+        bundlePath = '\(bundleEsc)',
+        executablePath = '\(executableEsc)',
+        frameworksPath = '\(frameworksEsc)',
         processID = \(processID),
         resourcePath = '\(resourceEsc)',
         version = 'test',
