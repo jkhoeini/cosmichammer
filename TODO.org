@@ -143,8 +143,31 @@ LuaSkin → LuaSwift).
     hardware, and AppKit-heavy suites; that remaining work is tracked by the
     "Fix remaining 79 failing tests" item.
 
-*** TODO Make Lua boot a typed, testable lifecycle module
-    Issue:
+*** DONE Make Lua boot a typed, testable lifecycle module
+    Completed 2026-06-04.
+
+    Replaced the positional ~setup.lua~ argument contract with a named Swift
+    ~LuaBoot.Context~ table and made ~setup.lua~ return one lifecycle table with
+    named ~runString~ and ~completionsForInputString~ functions. Invalid setup
+    loads, runtime errors, and bad lifecycle shapes now restore the Lua stack and
+    terminate boot before creating registry refs.
+
+    Moved preload alias metadata into shared ~hs._boot~ Lua data and made both
+    app setup and test bootstrap consume the same boot path instead of scraping
+    aliases from ~setup.lua~ with a regex. Added focused boot lifecycle tests for
+    named context values, missing setup, old/wrong return shapes,
+    ~HSAutoLoadExtensions=false~, shutdown/reload, config-dir path handling, and
+    alias target resolution.
+
+    Verified:
+    - ~just test-resources~ exits 0 and copies 110 Lua files.
+    - ~just check-generated~ exits 0.
+    - ~swift test --filter LuaBootLifecycle~ passes 8 tests.
+    - ~swift test --filter Coresetup~ passes 12 tests.
+    - ~swift test --filter ModuleLoadRegression/testNestedSetupAliasesLoadInTestBootstrap~ passes.
+    - Claude re-review converged with no remaining problematic issues.
+
+    Original issue:
     Lua startup is coupled through an implicit positional contract:
     ~LuaRuntime.swift~ pushes 7 arguments into ~setup.lua~, ~setup.lua~ forwards
     them unchanged, and ~extensions/_coresetup/_coresetup.lua~ must return

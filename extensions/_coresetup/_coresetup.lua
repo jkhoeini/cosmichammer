@@ -2,8 +2,17 @@
 ---
 --- Core Cosmic Hammer functionality
 
-return {setup=function(...)
-  local modpath, prettypath, fullpath, configdir, docstringspath, hasinitfile, autoload_extensions = ...
+return {setup=function(context)
+  local boot = require("hs._boot")
+  context = boot.validateContext(context)
+
+  local modpath = context.extensionsPath
+  local prettypath = context.configFileDisplayPath
+  local fullpath = context.configFilePath
+  local configdir = context.configDir
+  local docstringspath = context.docsJSONPath
+  local hasinitfile = context.hasInitFile
+  local autoload_extensions = context.autoloadExtensions
   local tostring,pack,tconcat,sformat,tsort=tostring,table.pack,table.concat,string.format,table.sort
   local traceback = debug.traceback
 
@@ -530,6 +539,13 @@ coroutine.applicationYield = hs.coroutineApplicationYield
     return str
   end
 
+  local function lifecycle()
+    return {
+      runString = runstring,
+      completionsForInputString = hs.completionsForInputString,
+    }
+  end
+
   local function tableSet(t)
     local hash = {}
     local res = {}
@@ -646,7 +662,7 @@ coroutine.applicationYield = hs.coroutineApplicationYield
     notify.register("__noinitfile", function() os.execute("open https://www.cosmichammer.org/go/") end)
     notify.show("Cosmic Hammer", "No config file found", "Click here for the Getting Started Guide", "__noinitfile")
     printf("-- Can't find %s; create it and reload your config.", prettypath)
-    return hs.completionsForInputString, runstring
+    return lifecycle()
   end
 
   local hscrash = require("hs.crash")
@@ -718,12 +734,12 @@ coroutine.applicationYield = hs.coroutineApplicationYield
 
   print("-- Loading " .. prettypath)
   local fn, err = loadfile(fullpath)
-  if not fn then hs.showError(err) return hs.completionsForInputString, runstring end
+  if not fn then hs.showError(err) return lifecycle() end
 
   local ok, errorMessage = xpcall(fn, traceback)
-  if not ok then hs.showError(errorMessage) return hs.completionsForInputString, runstring end
+  if not ok then hs.showError(errorMessage) return lifecycle() end
 
   print "-- Done."
 
-  return hs.completionsForInputString, runstring
+  return lifecycle()
 end}

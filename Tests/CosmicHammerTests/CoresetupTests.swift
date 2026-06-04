@@ -16,7 +16,7 @@ extension CosmicHammerTests {
         @Test func testGetObjectMetatable() { runLuaTest() }
         @Test func testMenuIcon() { runLuaTest() }
 
-        @Test(.disabled("hs.reload() calls MJLuaInit which requires the app bundle")) func testShutdownCallback() {
+        @Test func testShutdownCallback() {
             HScoresetupHelper.resetShutdownFlag()
             HScoresetupHelper.registerShutdownLib()
             runLuaTest()

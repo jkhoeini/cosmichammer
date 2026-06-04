@@ -118,7 +118,6 @@ func bootstrapLuaForTesting() {
     let docsPath = appResources.appendingPathComponent("docs.json").path
     let testResources = repoRoot.appendingPathComponent("Tests/CosmicHammerTests").path
     let testConfigDir = repoRoot.appendingPathComponent(".build/test-config").path
-    let setupLua = repoRoot.appendingPathComponent("CosmicHammer/setup.lua").path
     let appBundle = appBundleURL(forResourceRoot: appResources)
         ?? repoRoot.appendingPathComponent("build/test/Cosmic Hammer.app")
     let frameworksPath = appBundle.appendingPathComponent("Contents/Frameworks").path
@@ -129,6 +128,7 @@ func bootstrapLuaForTesting() {
         appResources.appendingPathComponent("setup.lua").path,
         appResources.appendingPathComponent("lua.json").path,
         appResources.appendingPathComponent("timeout3").path,
+        appResources.appendingPathComponent("extensions/hs/_boot.lua").path,
         appResources.appendingPathComponent("extensions/hs/_coresetup.lua").path,
         appResources.appendingPathComponent("extensions/hs/hsdocs/init.lua").path,
     ] {
@@ -157,59 +157,18 @@ func bootstrapLuaForTesting() {
     installLuaSkinCompatibilityGlobals(L)
     HSExtensionsRegisterAll(L)
 
+    let setupPath = appResources.appendingPathComponent("setup.lua").path
     let srcExtensions = repoRoot.appendingPathComponent("extensions").path
-    let extEsc = extensionsPath.replacingOccurrences(of: "'", with: "\\'")
-    let docsEsc = docsPath.replacingOccurrences(of: "'", with: "\\'")
     let srcExtEsc = srcExtensions.replacingOccurrences(of: "'", with: "\\'")
     let testEsc = testResources.replacingOccurrences(of: "'", with: "\\'")
-    let setupEsc = setupLua.replacingOccurrences(of: "'", with: "\\'")
     let resourceEsc = appResources.path.replacingOccurrences(of: "'", with: "\\'")
     let bundleEsc = appBundle.path.replacingOccurrences(of: "'", with: "\\'")
     let executableEsc = executablePath.replacingOccurrences(of: "'", with: "\\'")
     let frameworksEsc = frameworksPath.replacingOccurrences(of: "'", with: "\\'")
-    let configEsc = testConfigDir.replacingOccurrences(of: "'", with: "\\'")
     let processID = ProcessInfo.processInfo.processIdentifier
-    let luaSetup = """
-    package.path = '\(testEsc)/?.lua;' ..
-                   '\(extEsc)/?.lua;' ..
-                   '\(extEsc)/?/init.lua;' ..
-                   '\(extEsc)/hs/?/init.lua;' ..
-                   '\(extEsc)/hs/?.lua;' ..
-                   package.path
-
-    local preload = function(m) return function() return require(m) end end
-    for line in io.lines('\(setupEsc)') do
-        local public, target = line:match([=[^%s*package%.preload%[['"]([^'"]+)['"]%]%s*=%s*preload%s*['"]([^'"]+)['"]]=])
-        if public and target then package.preload[public] = preload(target) end
-    end
-
-    -- Add each source extension subdirectory so test_*.lua files can be found
-    local lfs = require('hs.fs')
-    for entry in lfs.dir('\(srcExtEsc)') do
-        if entry ~= '.' and entry ~= '..' then
-            local path = '\(srcExtEsc)/' .. entry
-            local attr = lfs.attributes(path)
-            if attr and attr.mode == 'directory' then
-                package.path = path .. '/?.lua;' .. package.path
-            end
-        end
-    end
-
+    let preBootLua = """
     local noop = function() end
-    hs.luaSkinLog = {
-        level = 1,
-        setLogLevel = noop,
-        getLogLevel = function() return 'info' end,
-        e = noop, ef = noop,
-        w = noop, wf = noop,
-        i = noop, ["if"] = noop,
-        d = noop, df = noop,
-        v = noop, vf = noop,
-    }
-    hs.handleLogMessage = noop
-
-    hs.configdir = '\(configEsc)'
-    hs.docstrings_json_file = '\(docsEsc)'
+    hs._logmessage = noop
     hs.processInfo = {
         bundleID = 'org.hammerspoon.Hammerspoon',
         bundlePath = '\(bundleEsc)',
@@ -247,35 +206,58 @@ func bootstrapLuaForTesting() {
         if type(hs.shutdownCallback) == 'function' then hs.shutdownCallback() end
     end
 
-    hs._extensions = {}
-    local hsDir = '\(extEsc)/hs'
-    for entry in lfs.dir(hsDir) do
+    package.preload['hs.notify'] = function()
+        return { register = noop, show = noop }
+    end
+    """
+    let preBootResult = doLuaString(L, preBootLua)
+    if preBootResult != LUA_OK {
+        var len: Int = 0
+        let err = lua_tolstring(L, -1, &len).flatMap { String(cString: $0) } ?? "unknown"
+        fatalError("Lua pre-boot test setup error: \(err)")
+    }
+    lua_settop(L, 0)
+
+    do {
+        _ = try LuaBoot.runSetup(
+            L,
+            setupPath: setupPath,
+            context: LuaBoot.Context(
+                extensionsPath: extensionsPath,
+                configFileDisplayPath: testConfigDir + "/init.lua",
+                configFilePath: testConfigDir + "/init.lua",
+                configDir: testConfigDir,
+                docsJSONPath: docsPath,
+                hasInitFile: false,
+                autoloadExtensions: true
+            )
+        )
+    } catch {
+        fatalError("Lua boot test setup error: \(error)")
+    }
+    lua_settop(L, 0)
+
+    let postBootLua = """
+    package.path = '\(testEsc)/?.lua;' .. package.path
+
+    local lfs = require('hs.fs')
+    for entry in lfs.dir('\(srcExtEsc)') do
         if entry ~= '.' and entry ~= '..' then
-            local name = entry:match('^(.+)%.lua$') or entry
-            if not name:find('_') then
-                hs._extensions[name] = true
+            local path = '\(srcExtEsc)/' .. entry
+            local attr = lfs.attributes(path)
+            if attr and attr.mode == 'directory' then
+                package.path = path .. '/?.lua;' .. package.path
             end
         end
     end
 
-    hs = setmetatable(hs or {}, {
-        __index = function(self, key)
-            if hs._extensions[key] ~= nil then
-                local mod = require('hs.' .. key)
-                rawset(self, key, mod)
-                return mod
-            end
-            return nil
-        end
-    })
-
     require('lsunit')
     """
-    let result = doLuaString(L, luaSetup)
+    let result = doLuaString(L, postBootLua)
     if result != LUA_OK {
         var len: Int = 0
         let err = lua_tolstring(L, -1, &len).flatMap { String(cString: $0) } ?? "unknown"
-        NSLog("Lua test setup error: %@", err)
+        NSLog("Lua post-boot test setup error: %@", err)
         lua_settop(L, lua_gettop(L) - 1)
     }
     lua_settop(L, 0)

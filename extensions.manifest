@@ -7,7 +7,7 @@
 # Special entries (non-extension files) use a full path prefixed with "@".
 # For @-lines the lua-files column is a full repo-relative path.
 
-_coresetup	-	_coresetup.lua
+_coresetup	-	_coresetup.lua,_boot.lua
 alert	-	alert.lua
 appfinder	-	appfinder.lua
 applescript	-	applescript.lua
@@ -99,4 +99,3 @@ websocket	luaopen_hs_libwebsocket	websocket.lua
 webview	luaopen_hs_libwebview,luaopen_hs_libwebviewdatastore,luaopen_hs_libwebviewtoolbar,luaopen_hs_libwebviewusercontent	webview.lua,webview_toolbar.lua
 wifi	luaopen_hs_libwifi,luaopen_hs_libwifiwatcher	wifi.lua
 window	luaopen_hs_libwindow	window.lua,window_filter.lua,window_highlight.lua,window_layout.lua,window_switcher.lua,window_tiling.lua
-
