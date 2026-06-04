@@ -1,9 +1,30 @@
--- hs.http = require("hs.http")
--- hs = require("hs")
+local http = require("hs.http")
 
 _G["respCode"] = 0
 _G["respBody"] = ""
 _G["respHeaders"] = {}
+
+local REQUEST_HEADERS = {
+  ["accept-language"] = "en",
+  ["user-agent"] = "CosmicHammerTests/1",
+  Accept = "*/*",
+}
+
+local RESPONSE_BODY = "local deterministic response\n"
+local httpBaseURL = os.getenv("COSMIC_HAMMER_TEST_HTTP_BASE_URL")
+
+local function resetResponse()
+  _G["respCode"] = 0
+  _G["respBody"] = ""
+  _G["respHeaders"] = {}
+end
+
+local function startHttpTestServer()
+  if type(httpBaseURL) ~= "string" or httpBaseURL == "" then
+    error("COSMIC_HAMMER_TEST_HTTP_BASE_URL is required", 2)
+  end
+  return httpBaseURL
+end
 
 _G["callback"] = function(code, body, headers)
   _G["respCode"] = code
@@ -25,14 +46,12 @@ end
 -- check request should be redirected if [enableRedirect|cachePolicy] param is given as cachePolicy
 --  check point: response code == 200
 function testHttpDoAsyncRequestWithCachePolicyParam()
-  _G["respCode"] = 0
-  _G["respBody"] = ""
-  _G["respHeaders"] = {}
-  hs.http.doAsyncRequest(
-    'http://google.com',
+  resetResponse()
+  http.doAsyncRequest(
+    startHttpTestServer() .. "/redirect",
     'GET',
     nil,
-    { ['accept-language'] = 'en', ['user-agent'] = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.4896.88 Safari/537.36', Accept = '*/*' },
+    REQUEST_HEADERS,
     _G["callback"],
     'protocolCachePolicy'
   )
@@ -54,14 +73,12 @@ end
 -- check request should be redirected if [enableRedirect|cachePolicy] param is not given.
 --  check point: response code == 200
 function testHttpDoAsyncRequestWithoutEnableRedirectAndCachePolicyParam()
-  _G["respCode"] = 0
-  _G["respBody"] = ""
-  _G["respHeaders"] = {}
-  hs.http.doAsyncRequest(
-    'http://google.com',
+  resetResponse()
+  http.doAsyncRequest(
+    startHttpTestServer() .. "/redirect",
     'GET',
     nil,
-    { ['accept-language'] = 'en', ['user-agent'] = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.4896.88 Safari/537.36', Accept = '*/*' },
+    REQUEST_HEADERS,
     _G["callback"]
   )
 
@@ -82,14 +99,12 @@ end
 -- check request should be redirected if [enableRedirect|cachePolicy] param is set to true as enableRedirect
 --  check point: response code == 200
 function testHttpDoAsyncRequestWithRedirection()
-  _G["respCode"] = 0
-  _G["respBody"] = ""
-  _G["respHeaders"] = {}
-  hs.http.doAsyncRequest(
-    'http://google.com',
+  resetResponse()
+  http.doAsyncRequest(
+    startHttpTestServer() .. "/redirect",
     'GET',
     nil,
-    { ['accept-language'] = 'en', ['user-agent'] = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.4896.88 Safari/537.36', Accept = '*/*' },
+    REQUEST_HEADERS,
     _G["callback"],
     true
   )
@@ -110,14 +125,12 @@ end
 -- check request should not be redirected if [enableRedirect|cachePolicy] param is set to false as enableRedirect
 --  check point: response code == 301
 function testHttpDoAsyncRequestWithoutRedirection()
-  _G["respCode"] = 0
-  _G["respBody"] = ""
-  _G["respHeaders"] = {}
-  hs.http.doAsyncRequest(
-    'http://google.com',
+  resetResponse()
+  http.doAsyncRequest(
+    startHttpTestServer() .. "/redirect",
     'GET',
     nil,
-    { ['accept-language'] = 'en', ['user-agent'] = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.4896.88 Safari/537.36', Accept = '*/*' },
+    REQUEST_HEADERS,
     _G["callback"],
     false
   )

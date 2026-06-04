@@ -3,7 +3,10 @@ import Foundation
 
 extension CosmicHammerTests {
     @Suite(.serialized) @MainActor final class Http {
-        init() throws { try loadLuaModule("test_http") }
+        init() throws {
+            try configureHttpTestEnvironment()
+            try loadLuaModule("test_http")
+        }
 
         @Test func testHttpDoAsyncRequestWithCachePolicyParam() {
             runTwoPartLuaTest(timeout: 5)

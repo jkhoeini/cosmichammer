@@ -22,13 +22,21 @@ private class HSWebSocketDelegate: NSObject, URLSessionWebSocketDelegate {
     var fn: Int32 = LUA_NOREF
     var webSocket: URLSessionWebSocketTask?
     var session: URLSession?
+    // Lua state and websocket lifecycle flags are owned by the main run loop.
+    // URLSession delegate callbacks must use performLuaWork before touching them.
     var isOpen: Bool = false
+    var isExplicitlyClosing: Bool = false
     var stateGeneration: UInt64 = 0
+    private let delegateQueue: OperationQueue = {
+        let queue = OperationQueue()
+        queue.maxConcurrentOperationCount = 1
+        return queue
+    }()
 
     init(url: URL) {
         super.init()
         let config = URLSessionConfiguration.default
-        session = URLSession(configuration: config, delegate: self, delegateQueue: .main)
+        session = URLSession(configuration: config, delegate: self, delegateQueue: delegateQueue)
         webSocket = session?.webSocketTask(with: url)
         isOpen = false
     }
@@ -39,73 +47,95 @@ private class HSWebSocketDelegate: NSObject, URLSessionWebSocketDelegate {
     }
 
     func listenForMessages() {
-        weak let weakSelf = self
-        webSocket?.receive { [weak weakSelf] result in
-            guard let strongSelf = weakSelf else { return }
-            if strongSelf.fn == LUA_NOREF { return }
-            guard lua_isStateGenerationValid(strongSelf.stateGeneration) else { return }
-
-            let L = lua_getCurrentState()!
+        webSocket?.receive { [weak self] result in
+            guard let strongSelf = self else { return }
 
             switch result {
             case .failure(let error):
-                if strongSelf.isOpen { return }
-                lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(refTable))
-                lua_rawgeti(L, -1, lua_Integer(strongSelf.fn))
-                lua_remove(L, -2)
-                lua_pushstring(L, "fail")
-                lua_pushstring(L, error.localizedDescription)
-                if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
+                strongSelf.performLuaWork { [weak strongSelf] in
+                    guard let strongSelf, !strongSelf.isOpen, !strongSelf.isExplicitlyClosing else { return }
+                    strongSelf.invokeLuaCallback { L in
+                        lua_pushstring(L, "fail")
+                        lua_pushstring(L, error.localizedDescription)
+                        return 2
+                    }
+                }
 
             case .success(let message):
-                lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(refTable))
-                lua_rawgeti(L, -1, lua_Integer(strongSelf.fn))
-                lua_remove(L, -2)
-                lua_pushstring(L, "received")
-                switch message {
-                case .string(let text):
-                    lua_pushstring(L, text)
-                case .data(let data):
-                    data.withUnsafeBytes { rawBuf in
-                        lua_pushlstring(L, rawBuf.baseAddress?.assumingMemoryBound(to: CChar.self), rawBuf.count)
+                strongSelf.performLuaWork { [weak strongSelf] in
+                    guard let strongSelf, !strongSelf.isExplicitlyClosing else { return }
+                    strongSelf.invokeLuaCallback { L in
+                        lua_pushstring(L, "received")
+                        switch message {
+                        case .string(let text):
+                            lua_pushstring(L, text)
+                        case .data(let data):
+                            data.withUnsafeBytes { rawBuf in
+                                _ = lua_pushlstring(L, rawBuf.baseAddress?.assumingMemoryBound(to: CChar.self), rawBuf.count)
+                            }
+                        @unknown default:
+                            lua_pushnil(L)
+                        }
+                        return 2
                     }
-                @unknown default:
-                    lua_pushnil(L)
+                    strongSelf.listenForMessages()
                 }
-                if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
+            }
+        }
+    }
 
-                strongSelf.listenForMessages()
+    private func performLuaWork(_ work: @escaping () -> Void) {
+        if Thread.isMainThread {
+            work()
+        } else {
+            // The Lua host pumps the main run loop; DispatchQueue.main.async is
+            // not reliably drained by the Swift test harness polling loop.
+            RunLoop.main.perform(work)
+        }
+    }
+
+    private func invokeLuaCallback(pushArguments: (UnsafeMutablePointer<lua_State>) -> Int32) {
+        guard fn != LUA_NOREF else { return }
+        guard lua_isStateGenerationValid(stateGeneration) else { return }
+        guard let L = lua_getCurrentState() else { return }
+        lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(refTable))
+        lua_rawgeti(L, -1, lua_Integer(fn))
+        lua_remove(L, -2)
+        let argumentCount = pushArguments(L)
+        if lua_pcall(L, argumentCount, 0, 0) != LUA_OK { lua_pop(L, 1) }
+    }
+
+    func urlSession(_ session: URLSession,
+                    webSocketTask: URLSessionWebSocketTask,
+                    didOpenWithProtocol protocol: String?) {
+        performLuaWork { [weak self] in
+            guard let self else { return }
+            guard !isExplicitlyClosing else { return }
+            isOpen = true
+            invokeLuaCallback { L in
+                lua_pushstring(L, "open")
+                return 1
             }
         }
     }
 
     func urlSession(_ session: URLSession,
                     webSocketTask: URLSessionWebSocketTask,
-                    didOpenWithProtocol protocol: String?) {
-        isOpen = true
-        if fn == LUA_NOREF { return }
-        guard lua_isStateGenerationValid(self.stateGeneration) else { return }
-        let L = lua_getCurrentState()!
-        lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(refTable))
-        lua_rawgeti(L, -1, lua_Integer(fn))
-        lua_remove(L, -2)
-        lua_pushstring(L, "open")
-        if lua_pcall(L, 1, 0, 0) != LUA_OK { lua_pop(L, 1) }
-    }
-
-    func urlSession(_ session: URLSession,
-                    webSocketTask: URLSessionWebSocketTask,
                     didCloseWith closeCode: URLSessionWebSocketTask.CloseCode,
                     reason: Data?) {
-        isOpen = false
-        if fn == LUA_NOREF { return }
-        guard lua_isStateGenerationValid(self.stateGeneration) else { return }
-        let L = lua_getCurrentState()!
-        lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(refTable))
-        lua_rawgeti(L, -1, lua_Integer(fn))
-        lua_remove(L, -2)
-        lua_pushstring(L, "closed")
-        if lua_pcall(L, 1, 0, 0) != LUA_OK { lua_pop(L, 1) }
+        performLuaWork { [weak self] in
+            guard let self else { return }
+            isOpen = false
+            invokeLuaCallback { L in
+                lua_pushstring(L, "closed")
+                return 1
+            }
+        }
+    }
+
+    func close() {
+        isExplicitlyClosing = true
+        webSocket?.cancel(with: .normalClosure, reason: nil)
     }
 }
 
@@ -237,7 +267,7 @@ private func websocket_status(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 private func websocket_close(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let ws = getWsUserData(L, 1)
 
-    ws.webSocket?.cancel(with: .normalClosure, reason: nil)
+    ws.close()
 
     lua_pushvalue(L, 1)
     return 1
@@ -248,7 +278,7 @@ private func websocket_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let ws = Unmanaged<HSWebSocketDelegate>.fromOpaque(userData.pointee.ws!).takeRetainedValue()
     userData.pointee.ws = nil
 
-    ws.webSocket?.cancel(with: .normalClosure, reason: nil)
+    ws.close()
     ws.webSocket = nil
     ws.session?.invalidateAndCancel()
     ws.session = nil
@@ -295,6 +325,8 @@ public func luaopen_hs_libwebsocket(_ L: UnsafeMutablePointer<lua_State>!) -> In
     luaL_newmetatable(L, WS_USERDATA_TAG)
     lua_pushvalue(L, -1)
     lua_setfield(L, -2, "__index")  // mt.__index = mt
+    lua_pushstring(L, WS_USERDATA_TAG)
+    lua_setfield(L, -2, "__type")
     luaL_setfuncs(L, &wsMetalib, 0)
     lua_pop(L, 1)
 

@@ -3,7 +3,7 @@ hs.timer = require("hs.timer")
 hs.fnutils = require("hs.fnutils")
 
 -- globals for async UDP tests
-port = 9001
+port = tonumber(os.getenv("COSMIC_HAMMER_TEST_SOCKET_PORT")) or port or 9001
 
 -- constructors
 function testUdpSocketInstanceCreation()

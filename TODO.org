@@ -373,7 +373,43 @@ LuaSkin → LuaSwift).
       overwritten.
     - Test bootstrap and app bootstrap agree on the same loader metadata.
 
-*** TODO Replace broad smoke tests with deeper subsystem coverage
+*** DONE Replace broad smoke tests with deeper subsystem coverage
+    Completed 2026-06-05.
+
+    Added an automated manifest/preload regression test that walks
+    ~hs._loader_metadata.nativeModuleList~, checks indexed metadata consistency,
+    duplicate preload names, native symbols, and each manifest-listed native
+    module's ~package.preload~ registration.
+
+    Replaced internet and fixed-port coverage in the HTTP, socket, and websocket
+    tests with deterministic local fixtures. HTTP redirect tests now use a local
+    redirect server. Websocket tests use a local Network.framework websocket echo
+    server and validate client-side open/close plus binary, text, and legacy echo
+    paths. Socket tests use dynamic ports/temp Unix socket paths, gate TLS tests
+    behind ~EXTERNAL_NETWORK_TESTS=1~, and cover deterministic TCP connect/write
+    against a local server.
+
+    Fixed ~hs.websocket~ callback delivery uncovered by the deeper tests:
+    URLSession callbacks now run on a private delegate queue and marshal Lua
+    callback work onto the main run loop, which keeps test and app callback
+    delivery aligned with the Lua run-loop model.
+
+    Verified:
+    - ~just test-resources~ exits 0 and copies 112 Lua files.
+    - ~swift test --filter Websocket -Xlinker -F -Xlinker "$SDK_PATH/System/Library/PrivateFrameworks"~ passes 8 tests.
+    - ~swift test --filter ModuleLoadRegression -Xlinker -F -Xlinker "$SDK_PATH/System/Library/PrivateFrameworks"~ passes 7 tests.
+    - ~swift test --filter Http -Xlinker -F -Xlinker "$SDK_PATH/System/Library/PrivateFrameworks"~ passes 4 tests.
+    - ~swift test --filter Socket.testTcpConnectAndWriteUsesLocalServer -Xlinker -F -Xlinker "$SDK_PATH/System/Library/PrivateFrameworks"~ passes 1 test.
+    - ~swift test --filter Socket.testTcpTagging -Xlinker -F -Xlinker "$SDK_PATH/System/Library/PrivateFrameworks"~ reports the read-tag placeholder skipped.
+    - Claude review slices for production websocket code, Swift fixtures/tests,
+      and Lua fixtures/TODO each reported ~NO_MATERIAL_ISSUES~.
+
+    Note: real TCP read/read-tag coverage remains intentionally skipped because
+    the current ~hs.socket~ TCP read callback behavior does not deliver that
+    path reliably; the deterministic connect/write test prevents the old
+    internet dependency from returning as disguised tag coverage.
+
+    Original issue:
     Issue:
     The repo has broad load/registration smoke coverage but thin behavioral
     coverage for many high-risk modules. Current counts from the review:

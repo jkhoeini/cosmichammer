@@ -7,8 +7,10 @@ local doAfter           = timer.doAfter
 -- Variables:
 --
 local TEST_STRING       = "ABC123"
-local ECHO_URL          = "ws://localhost:8067/"
-local FAKE_URL          = "wss://fake.com/"
+local ECHO_PORT         = tonumber(os.getenv("COSMIC_HAMMER_TEST_WEBSOCKET_PORT")) or 8067
+local ECHO_URL          = os.getenv("COSMIC_HAMMER_TEST_WEBSOCKET_URL") or ("ws://localhost:" .. tostring(ECHO_PORT) .. "/")
+local FAKE_URL          = "ws://127.0.0.1:1/"
+local WSS_FAKE_URL      = "wss://127.0.0.1:1/"
 
 local webserver = nil
 local requestTimer = nil
@@ -19,9 +21,11 @@ local log = require("hs.crash").crashLog
 -- Helper functions:
 --
 function startEchoServer()
+    if os.getenv("COSMIC_HAMMER_TEST_WEBSOCKET_URL") then return success() end
+    if webserver then return success() end
     log("Starting Echo Server")
     webserver = hs.httpserver.new(false, false)
-    webserver:setPort(8067)
+    webserver:setPort(ECHO_PORT)
     webserver:websocket("/", function(msg)
         log("Echo Server received: " .. msg)
         return msg
@@ -34,6 +38,8 @@ function startEchoServer()
 end
 
 function stopEchoServer()
+    if os.getenv("COSMIC_HAMMER_TEST_WEBSOCKET_URL") then return success() end
+    if not webserver then return success() end
     log("Stopping Echo Server")
     webserver:stop()
     webserver = nil
@@ -44,6 +50,14 @@ end
 --
 function testNew()
   local websocketObject = websocket.new(ECHO_URL, function() end)
+  assertIsUserdataOfType("hs.websocket", websocketObject)
+  assertTrue(#tostring(websocketObject) > 0)
+  websocketObject:close()
+  return success()
+end
+
+function testNewWss()
+  local websocketObject = websocket.new(WSS_FAKE_URL, function() end)
   assertIsUserdataOfType("hs.websocket", websocketObject)
   assertTrue(#tostring(websocketObject) > 0)
   websocketObject:close()
@@ -65,13 +79,13 @@ function testEchoData()
   requestTimer = doAfter(2, function()
     log("testEcho() sending test string")
     echoTestObj:send(TEST_STRING, true)
-    echoTestObj:close()
   end)
   return success()
 end
 
 function testEchoDataValues()
   if type(event) == "string" and event == "received" and type(message) == "string" and message == TEST_STRING then
+    echoTestObj:close()
     echoTestObj = nil
     event = ""
     message = ""
@@ -79,6 +93,14 @@ function testEchoDataValues()
   else
     return "Waiting for echo...'"..echoTestObj:status().."', "
   end
+end
+
+function testEchoDataCleanup()
+  if echoTestObj then echoTestObj:close() end
+  echoTestObj = nil
+  event = ""
+  message = ""
+  return success()
 end
 
 --
@@ -92,13 +114,13 @@ function testEchoText()
   requestTimer = doAfter(2, function()
     log("testEcho() sending test string")
     echoTestObj:send(TEST_STRING, false)
-    echoTestObj:close()
   end)
   return success()
 end
 
 function testEchoTextValues()
   if type(event) == "string" and event == "received" and type(message) == "string" and message == TEST_STRING then
+    echoTestObj:close()
     echoTestObj = nil
     event = ""
     message = ""
@@ -106,6 +128,14 @@ function testEchoTextValues()
   else
     return "Waiting for echo...'"..echoTestObj:status().."', "
   end
+end
+
+function testEchoTextCleanup()
+  if echoTestObj then echoTestObj:close() end
+  echoTestObj = nil
+  event = ""
+  message = ""
+  return success()
 end
 
 --
@@ -119,30 +149,32 @@ function testOpenStatus()
 end
 
 function testOpenStatusValues()
-  if openStatusTestObj:status() == "open" then
+  local status = openStatusTestObj:status()
+  if status == "open" then
     openStatusTestObj:close()
     return success()
   else
-    return "Waiting for websocket to open...'"..openStatusTestObj:status().."', "
+    return "Waiting for websocket to open...'"..status.."', "
   end
 end
 
 --
--- Test the status of an closing websocket:
+-- Test that closing a websocket leaves it closing or closed by the next poll:
 --
-local closingStatusTestObj = nil
+local closeStatusAfterCloseTestObj = nil
 
-function testClosingStatus()
-  closingStatusTestObj = websocket.new(FAKE_URL, function() end)
-  closingStatusTestObj:close()
+function testCloseStatusAfterClose()
+  closeStatusAfterCloseTestObj = websocket.new(ECHO_URL, function() end)
+  closeStatusAfterCloseTestObj:close()
   return success()
 end
 
-function testClosingStatusValues()
-  if closingStatusTestObj:status() == "closing" then
+function testCloseStatusAfterCloseValues()
+  local status = closeStatusAfterCloseTestObj:status()
+  if status == "closing" or status == "closed" then
     return success()
   else
-    return "Waiting for websocket to start closing..."..closingStatusTestObj:status()
+    return "Waiting for websocket to start closing..."..status
   end
 end
 
@@ -191,4 +223,11 @@ function testLegacyValues()
   else
     return "Waiting for echo...'"..wrapperTestObj:status().."', "
   end
+end
+
+function testLegacyCleanup()
+  if wrapperTestObj then wrapperTestObj:close() end
+  wrapperTestObj = nil
+  wrapperMessage = ""
+  return success()
 end

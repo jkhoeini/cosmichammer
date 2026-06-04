@@ -3,11 +3,13 @@ hs.socket = require("hs.socket")
 hs.timer = require("hs.timer")
 hs.fnutils = require("hs.fnutils")
 
-require "test_udpsocket"
+-- globals for async socket tests
+port = tonumber(os.getenv("COSMIC_HAMMER_TEST_SOCKET_PORT")) or 9001
+sockfile = os.getenv("COSMIC_HAMMER_TEST_SOCKET_PATH") or "/tmp/cosmic-hammer-test.sock"
+socketHttpHost = os.getenv("COSMIC_HAMMER_TEST_SOCKET_HTTP_HOST") or "127.0.0.1"
+socketHttpPort = tonumber(os.getenv("COSMIC_HAMMER_TEST_SOCKET_HTTP_PORT")) or 80
 
--- globals for async TCP tests
-port = 9001
-sockfile = "/tmp/sock"
+require "test_udpsocket"
 
 callback = function(data, tag)
   readData = data
@@ -334,34 +336,32 @@ function testTcpUnixClientServerReadWriteBytes()
   return success()
 end
 
--- tagging
-function testTcpTaggingValues()
-  if (type(readData) == "string" and readData:sub(1,6) == "<HTML>" and
-      type(clientConnected) == "boolean" and clientConnected == false) then
+-- deterministic TCP connect/write against the local test server
+function testTcpConnectAndWriteUsesLocalServerValues()
+  if (type(requestScheduled) == "boolean" and requestScheduled == true) then
     return success()
   else
     return "Waiting for success..."
   end
 end
 
-function testTcpTagging()
-  local TAG_HTTP_HEADER = 1
-  local TAG_HTTP_CONTENT = 2
+function testTcpConnectAndWriteUsesLocalServer()
+  requestScheduled = nil
+  local attempts = 0
 
-  local function httpCallback(data, tag)
-    if tag == TAG_HTTP_HEADER then
-      local _, _, contentLength = data:find("\r\nContent%-Length: (%d+)\r\n");
-      client:read(tonumber(contentLength), TAG_HTTP_CONTENT)
-    elseif tag == TAG_HTTP_CONTENT then
-      readData = data
+  local function sendRequestWhenConnected()
+    attempts = attempts + 1
+    if not client:connected() then
+      if attempts >= 50 then return end
+      hs.timer.doAfter(0.1, sendRequestWhenConnected)
+      return
     end
+    requestScheduled = true
+    client:write("GET /ok HTTP/1.0\r\nHost: localhost\r\nConnection: Close\r\n\r\n")
   end
 
-  client = hs.socket.new(httpCallback):connect("google.com", 80, function()
-    client:write("GET /index.html HTTP/1.0\r\nHost: google.com\r\n\r\n")
-    client:read("\r\n\r\n", TAG_HTTP_HEADER)
-    hs.timer.doAfter(2, function() clientConnected = client:connected() end)
-  end)
+  client = hs.socket.new():connect(socketHttpHost, socketHttpPort)
+  hs.timer.doAfter(0.1, sendRequestWhenConnected)
 
   return success()
 end

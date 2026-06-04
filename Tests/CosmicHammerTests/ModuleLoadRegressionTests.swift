@@ -42,6 +42,47 @@ extension CosmicHammerTests {
             #expect(result == "ok")
         }
 
+        @Test func testManifestNativePreloadsAreRegistered() {
+            let result = runLua("""
+            (function()
+                local metadata = require("hs._loader_metadata")
+                if type(metadata.nativeModuleList) ~= "table" then return "missing native module list" end
+
+                local seen = {}
+                local checked = 0
+                for _, entry in ipairs(metadata.nativeModuleList) do
+                    local name = entry.name
+                    if type(name) ~= "string" or name == "" then
+                        return "invalid native preload name"
+                    end
+                    if type(entry.symbol) ~= "string" or entry.symbol == "" then
+                        return name .. " missing symbol"
+                    end
+                    if seen[name] then return "duplicate native preload " .. name end
+                    seen[name] = true
+
+                    local indexed = metadata.nativeModules[name]
+                    if type(indexed) ~= "table" then return name .. " missing indexed metadata" end
+                    if indexed.symbol ~= entry.symbol then return name .. " symbol mismatch" end
+                    if type(package.preload[name]) ~= "function" then
+                        return name .. " missing package.preload registration"
+                    end
+                    checked = checked + 1
+                end
+
+                local indexedCount = 0
+                for _ in pairs(metadata.nativeModules) do indexedCount = indexedCount + 1 end
+                if checked == 0 then return "no native preloads checked" end
+                if indexedCount ~= checked then
+                    return "native preload list/index mismatch: " .. tostring(checked) .. "/" .. tostring(indexedCount)
+                end
+                return "ok"
+            end)()
+            """)
+
+            #expect(result == "ok")
+        }
+
         @Test func testConstantsTableWrappersLoadReadOnlyTables() {
             let result = runLua("""
             (function()
