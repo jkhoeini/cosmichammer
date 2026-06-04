@@ -26,6 +26,22 @@ extension CosmicHammerTests {
             #expect(result == "ok")
         }
 
+        @Test func testLoaderMetadataIsAvailableInTestBootstrap() {
+            let result = runLua("""
+            (function()
+                local metadata = require("hs._loader_metadata")
+                if metadata.aliasTargets["hs.doc.hsdocs"] ~= "hs.hsdocs" then return "missing hsdocs alias" end
+                if metadata.luaModules["hs.hsdocs"].bundlePath ~= "hs/hsdocs/init.lua" then return "missing hsdocs copy path" end
+                if metadata.nativeModules["hs.libwebviewdatastore"].symbol ~= "luaopen_hs_libwebviewdatastore" then return "missing webview datastore native key" end
+                if metadata.lazyExtensions.alert ~= true then return "missing alert lazy extension" end
+                if metadata.lazyExtensions.drawing_color ~= nil then return "compat module should not be lazy" end
+                return "ok"
+            end)()
+            """)
+
+            #expect(result == "ok")
+        }
+
         @Test func testConstantsTableWrappersLoadReadOnlyTables() {
             let result = runLua("""
             (function()

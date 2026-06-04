@@ -446,16 +446,10 @@ coroutine.applicationYield = hs.coroutineApplicationYield
     print("-- Lazy extension loading enabled")
     hs._extensions = {}
 
-    -- Discover extensions in our .app bundle
-    local fs = require("hs.fs")
-    local iter, dir_obj = fs.dir(modpath.."/hs")
-    local extension = iter(dir_obj)
-    while extension do
-      if (extension ~= ".") and (extension ~= "..") and (not extension:find("_")) then
-        --print("  Lazy loading enabled for: "..extension:gsub("%.lua", ""))
-        hs._extensions[extension:gsub("%.lua", "")] = true
+    for extension, enabled in pairs(boot.loaderMetadata.lazyExtensions) do
+      if enabled then
+        hs._extensions[extension] = true
       end
-      extension = iter(dir_obj)
     end
 
     -- Inject a lazy extension loader into the main HS table

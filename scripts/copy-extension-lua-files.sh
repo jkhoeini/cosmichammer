@@ -1,23 +1,13 @@
 #!/usr/bin/env bash
-# Copies every Lua file listed in extensions.manifest into the built
-# Cosmic Hammer.app bundle under Contents/Resources/extensions/hs/<basename>.lua.
-#
-# This is the build-time replacement for the legacy "Copy Extension Lua files"
-# PBXCopyFilesBuildPhase. Driven by the unified manifest so adding a new
-# extension's Lua file only requires editing extensions.manifest — no pbxproj
-# edit needed.
-#
-# Invoked as an Xcode Run Script build phase. The phase declares the manifest
-# and every source path as inputs and every destination as outputs (via
-# xcfilelists generated from the same manifest) so Xcode's incremental build
-# graph stays correct.
+# Copies Lua files listed in the generated loader copy map into the built
+# Cosmic Hammer.app bundle under Contents/Resources/extensions/.
 set -euo pipefail
 
 # When invoked by Xcode, SRCROOT / BUILT_PRODUCTS_DIR /
-# UNLOCALIZED_RESOURCES_FOLDER_PATH are set. When run standalone (e.g. for
-# ad-hoc smoke-testing), fall back to the repo root and a sentinel destination.
+# UNLOCALIZED_RESOURCES_FOLDER_PATH are set. When run standalone, fail with
+# a clear message because the destination is build-environment dependent.
 SRCROOT="${SRCROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
-MANIFEST="${SRCROOT}/extensions.manifest"
+COPY_MAP="${SRCROOT}/extensions/_coresetup/_loader_copy_map.tsv"
 
 if [[ -z "${BUILT_PRODUCTS_DIR:-}" || -z "${UNLOCALIZED_RESOURCES_FOLDER_PATH:-}" ]]; then
     echo "error: BUILT_PRODUCTS_DIR / UNLOCALIZED_RESOURCES_FOLDER_PATH not set." >&2
@@ -25,53 +15,89 @@ if [[ -z "${BUILT_PRODUCTS_DIR:-}" || -z "${UNLOCALIZED_RESOURCES_FOLDER_PATH:-}
     exit 1
 fi
 
-# UNLOCALIZED_RESOURCES_FOLDER_PATH for an .app expands to
-# "Cosmic Hammer.app/Contents/Resources" — the destination the legacy
-# PBXCopyFilesBuildPhase used (dstSubfolderSpec 7 = Resources).
-DEST_DIR="${BUILT_PRODUCTS_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/extensions/hs"
+DEST_ROOT="${BUILT_PRODUCTS_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/extensions"
 
-if [[ ! -f "$MANIFEST" ]]; then
-    echo "error: manifest not found: $MANIFEST" >&2
+if [[ ! -f "$COPY_MAP" ]]; then
+    echo "error: generated copy map not found: $COPY_MAP" >&2
+    echo "       Run scripts/generate-hsextensions.sh first." >&2
     exit 1
 fi
 
-mkdir -p "$DEST_DIR"
+trim() {
+    local value="$1"
+    value="${value#"${value%%[![:space:]]*}"}"
+    value="${value%"${value##*[![:space:]]}"}"
+    printf '%s' "$value"
+}
 
-# Collect all lua file paths (repo-relative) from the manifest.
-lua_paths=()
-while IFS=$'\t' read -r dir _entry_points lua_files; do
-    # strip comments and whitespace from dir
-    dir="${dir%%#*}"
-    dir="${dir#"${dir%%[![:space:]]*}"}"
-    dir="${dir%"${dir##*[![:space:]]}"}"
-    [[ -z "$dir" ]] && continue
-    [[ "$lua_files" == "-" ]] && continue
+is_safe_relative_path() {
+    local path="$1"
+    local component
+    [[ -n "$path" && "$path" != /* ]] || return 1
 
-    IFS=',' read -ra files <<< "$lua_files"
-    for f in "${files[@]}"; do
-        f="${f#"${f%%[![:space:]]*}"}"
-        f="${f%"${f##*[![:space:]]}"}"
-        [[ -z "$f" ]] && continue
-        if [[ "$dir" == @* ]]; then
-            lua_paths+=("$f")
-        else
-            lua_paths+=("extensions/${dir}/${f}")
+    local IFS='/'
+    for component in $path; do
+        [[ -n "$component" && "$component" != "." && "$component" != ".." ]] || return 1
+    done
+}
+
+sources=()
+destinations=()
+modules=()
+seen_destinations=()
+
+line_no=0
+while IFS=$'\t' read -r source bundle_path module extra || [[ -n "${source:-}" ]]; do
+    line_no=$((line_no + 1))
+    source="$(trim "${source:-}")"
+    [[ -z "$source" ]] && continue
+    [[ "$source" == \#* ]] && continue
+    [[ -z "${extra:-}" ]] || {
+        echo "error: $COPY_MAP:$line_no: expected source, bundle path, and module columns" >&2
+        exit 1
+    }
+    bundle_path="$(trim "${bundle_path:-}")"
+    module="$(trim "${module:-}")"
+    [[ -n "$bundle_path" && -n "$module" ]] || {
+        echo "error: $COPY_MAP:$line_no: missing bundle path or module" >&2
+        exit 1
+    }
+    is_safe_relative_path "$source" || {
+        echo "error: $COPY_MAP:$line_no: unsafe source path: $source" >&2
+        exit 1
+    }
+    is_safe_relative_path "$bundle_path" || {
+        echo "error: $COPY_MAP:$line_no: unsafe bundle path: $bundle_path" >&2
+        exit 1
+    }
+
+    for seen in "${seen_destinations[@]}"; do
+        if [[ "$seen" == "$bundle_path" ]]; then
+            echo "error: duplicate Lua bundle destination before copy: extensions/${bundle_path}" >&2
+            echo "       Regenerate metadata after fixing extensions.manifest." >&2
+            exit 1
         fi
     done
-done < "$MANIFEST"
+    seen_destinations+=("$bundle_path")
+    sources+=("$source")
+    destinations+=("$bundle_path")
+    modules+=("$module")
+done < "$COPY_MAP"
+
+mkdir -p "$DEST_ROOT"
 
 copied=0
-for line in "${lua_paths[@]}"; do
-    src="${SRCROOT}/${line}"
+for i in "${!sources[@]}"; do
+    src="${SRCROOT}/${sources[$i]}"
+    dst="${DEST_ROOT}/${destinations[$i]}"
     if [[ ! -f "$src" ]]; then
-        echo "error: missing source: $src" >&2
+        echo "error: missing source for ${modules[$i]}: $src" >&2
         exit 1
     fi
 
-    dst="${DEST_DIR}/$(basename "$line")"
-    # ditto preserves attrs and is happier than cp for build-output writes
+    mkdir -p "$(dirname "$dst")"
     /usr/bin/ditto "$src" "$dst"
     copied=$((copied + 1))
 done
 
-echo "Copied ${copied} Lua files to ${DEST_DIR}"
+echo "Copied ${copied} Lua files to ${DEST_ROOT}"

@@ -288,7 +288,7 @@ private func _import_luaopen_hs_libwindow(_ L: UnsafeMutablePointer<lua_State>!)
 
 // MARK: - Registration
 
-/// Registers every bundled hs.lib<name> entry point with package.preload.
+/// Registers every bundled native entry point with package.preload.
 /// Call after lua_State creation and before setup.lua runs.
 @_cdecl("HSExtensionsRegisterAll")
 func hsExtensionsRegisterAll(_ L: UnsafeMutablePointer<lua_State>!) {

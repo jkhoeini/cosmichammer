@@ -130,6 +130,7 @@ func bootstrapLuaForTesting() {
         appResources.appendingPathComponent("timeout3").path,
         appResources.appendingPathComponent("extensions/hs/_boot.lua").path,
         appResources.appendingPathComponent("extensions/hs/_coresetup.lua").path,
+        appResources.appendingPathComponent("extensions/hs/_loader_metadata.lua").path,
         appResources.appendingPathComponent("extensions/hs/hsdocs/init.lua").path,
     ] {
         guard FileManager.default.fileExists(atPath: requiredPath) else {

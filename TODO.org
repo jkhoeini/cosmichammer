@@ -311,8 +311,34 @@ LuaSkin → LuaSwift).
     - ~swift test --package-path scripts/docs~ exists and covers parser basics.
     - HTML search works from the generated output directory.
 
-*** TODO Make module loading metadata the single source of truth
-    Issue:
+*** DONE Make module loading metadata the single source of truth
+    Completed 2026-06-05.
+
+    Extended ~extensions.manifest~ to describe native preload keys, Lua module
+    source files, bundle copy paths, and preload aliases in one place. The
+    generator now emits native preload glue plus ~hs._loader_metadata~ and a Lua
+    copy map; ~hs._boot~, ~_coresetup.lua~, tests, and resource copying consume
+    those generated files instead of hardcoded alias tables, bundle scans, or
+    regex scraping.
+
+    Added manifest validation for missing source files, unsafe paths, sources
+    resolving outside the repo, duplicate native symbols/keys, duplicate Lua
+    modules, duplicate bundle destinations, preload-key/module/alias collisions,
+    and unknown alias targets. Resource smoke checks now require
+    ~extensions/hs/_loader_metadata.lua~.
+
+    Verified:
+    - ~bash -n scripts/generate-hsextensions.sh scripts/copy-extension-lua-files.sh scripts/check-generated-files.sh~ exits 0.
+    - ~scripts/generate-hsextensions.sh~ exits 0 and writes all generated files.
+    - ~just check-generated~ exits 0.
+    - ~just test-resources~ exits 0 and copies 112 Lua files.
+    - ~swift test --filter LuaBootLifecycle~ passes 10 tests.
+    - ~swift test --filter ModuleLoadRegression~ passes 6 tests.
+    - ~swift test --filter Coresetup~ passes 12 tests.
+    - ~just build~ exits 0.
+    - Claude re-review converged with no remaining problematic issues.
+
+    Original issue:
     Extension loading has too many overlapping sources of truth:
     ~extensions.manifest~, generated native ~hs.lib*~ preload entries, manual
     ~package.preload~ aliases in ~setup.lua~, flattened copied Lua basenames,

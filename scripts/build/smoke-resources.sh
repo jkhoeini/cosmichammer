@@ -16,6 +16,7 @@ required_files=(
     "lua.json"
     "timeout3"
     "man/hs.man"
+    "extensions/hs/_loader_metadata.lua"
     "extensions/hs/_coresetup.lua"
     "extensions/hs/application.lua"
     "extensions/hs/doc.lua"

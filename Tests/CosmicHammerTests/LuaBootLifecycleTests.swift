@@ -123,6 +123,40 @@ extension CosmicHammerTests {
             }
         }
 
+        @Test func coresetupInstallsLazyExtensionsFromLoaderMetadata() throws {
+            try withMinimalCoresetupBoot(autoloadExtensions: true) { L, _ in
+                #expect(luaEvalBool(L, "return hs._extensions.alert == true") == true)
+                #expect(luaEvalBool(L, "return hs._extensions.drawing_color == nil") == true)
+            }
+        }
+
+        @Test func loaderMetadataIsBootAliasSource() throws {
+            try withLuaState { L in
+                let resourceRoot = try writeMinimalBootResources()
+                defer { try? FileManager.default.removeItem(at: resourceRoot) }
+
+                let extensionsPath = resourceRoot.appendingPathComponent("extensions").path
+                let extensionsEsc = extensionsPath.replacingOccurrences(of: "'", with: "\\'")
+                let script = """
+                package.path = '\(extensionsEsc)/?.lua;' ..
+                               '\(extensionsEsc)/?/init.lua;' ..
+                               package.path
+
+                local boot = require('hs._boot')
+                local metadata = require('hs._loader_metadata')
+
+                assert(boot.preloadAliases == metadata.preloadAliases, 'boot aliases must be generated metadata')
+                assert(metadata.aliasTargets['hs.doc.markdown'] == 'hs.libmarkdown')
+                assert(metadata.luaModules['hs.hsdocs'].bundlePath == 'hs/hsdocs/init.lua')
+                assert(metadata.nativeModules['hs.libmarkdown'].symbol == 'luaopen_hs_libmarkdown')
+                assert(metadata.lazyExtensions.alert == true)
+                assert(metadata.lazyExtensions.drawing_color == nil)
+                """
+
+                #expect(luaEval(L, script) == true)
+            }
+        }
+
         @Test func bootPreloadAliasesResolveToConfiguredTargets() throws {
             try withLuaState { L in
                 let resourceRoot = try writeMinimalBootResources()
@@ -230,6 +264,10 @@ private func writeMinimalBootResources() throws -> URL {
             to: hsDir.appendingPathComponent(file)
         )
     }
+    try FileManager.default.copyItem(
+        at: bootTestRepoRoot.appendingPathComponent("extensions/_coresetup/_loader_metadata.lua"),
+        to: hsDir.appendingPathComponent("_loader_metadata.lua")
+    )
 
     try "{}".write(
         to: root.appendingPathComponent("docs.json"),
