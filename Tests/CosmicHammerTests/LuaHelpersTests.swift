@@ -1,4 +1,5 @@
 import Testing
+import AppKit
 import Foundation
 import AppKit
 import CLua
@@ -143,6 +144,38 @@ extension CosmicHammerTests {
                 #expect(len == 5)
                 let s = String(cString: ptr)
                 #expect(s == "Hello")
+            }
+        }
+
+        @Test func testPushDataWithNulBytes() {
+            withLuaState { L in
+                let data = Data([0x61, 0x00, 0x62, 0xff])
+                lua_pushany(L, data)
+                #expect(lua_type(L, -1) == LUA_TSTRING)
+                #expect(lua_todata(L, at: -1) == data)
+            }
+        }
+
+        @Test func testPushNSColorAsTable() {
+            withLuaState { L in
+                lua_pushany(L, NSColor(red: 0.25, green: 0.5, blue: 0.75, alpha: 0.8))
+                #expect(lua_type(L, -1) == LUA_TTABLE)
+
+                lua_getfield(L, -1, "red")
+                #expect(abs(lua_tonumber(L, -1) - 0.25) < 0.001)
+                lua_pop(L, 1)
+
+                lua_getfield(L, -1, "__luaSkinType")
+                #expect(lua_tostringValue(L, at: -1) == "NSColor")
+                lua_pop(L, 1)
+            }
+        }
+
+        @Test func testPushNonRGBNSColorFallsBackToString() {
+            withLuaState { L in
+                let image = NSImage(size: NSSize(width: 1, height: 1))
+                lua_pushany(L, NSColor(patternImage: image))
+                #expect(lua_type(L, -1) == LUA_TSTRING)
             }
         }
 
@@ -308,6 +341,29 @@ extension CosmicHammerTests {
             }
         }
 
+        @Test func testToValueStringWithNulByte() {
+            withLuaState { L in
+                let data = Data([0x61, 0x00, 0x62])
+                lua_pushdata(L, data)
+                let val = lua_tovalue(L, at: -1)
+                let str = val as? String
+                #expect(str != nil)
+                #expect(str.map { Array($0.utf8) } ?? [] == Array(data))
+            }
+        }
+
+        @Test func testRawDataPreservesInvalidUTF8() {
+            withLuaState { L in
+                let data = Data([0xff, 0x00, 0x61])
+                lua_pushdata(L, data)
+                #expect(lua_todata(L, at: -1) == data)
+
+                let str = lua_tovalue(L, at: -1) as? String
+                #expect(str != nil)
+                #expect((str.map { Array($0.utf8) } ?? []).contains(0x00))
+            }
+        }
+
         @Test func testToValueNumber() {
             withLuaState { L in
                 lua_pushnumber(L, 3.14)
@@ -369,6 +425,29 @@ extension CosmicHammerTests {
                 #expect(arr?[0] as? Int == 1)
                 #expect(arr?[1] as? Int == 2)
                 #expect(arr?[2] as? Int == 3)
+            }
+        }
+
+        @Test func testToValueNestedTable() {
+            withLuaState { L in
+                lua_createtable(L, 0, 2)
+
+                lua_createtable(L, 2, 0)
+                lua_pushinteger(L, 10); lua_rawseti(L, -2, 1)
+                lua_pushinteger(L, 20); lua_rawseti(L, -2, 2)
+                lua_setfield(L, -2, "items")
+
+                lua_createtable(L, 0, 1)
+                lua_pushstring(L, "value"); lua_setfield(L, -2, "key")
+                lua_setfield(L, -2, "dict")
+
+                let val = lua_tovalue(L, at: -1)
+                let dict = val as? [String: Any]
+                let items = dict?["items"] as? [Any]
+                let nested = dict?["dict"] as? [String: Any]
+                #expect(items?[0] as? Int == 10)
+                #expect(items?[1] as? Int == 20)
+                #expect(nested?["key"] as? String == "value")
             }
         }
 
@@ -468,6 +547,56 @@ extension CosmicHammerTests {
                 // Key 0 means not sequential 1..n, so should come back as dictionary
                 let dict = val as? [String: Any]
                 #expect(dict != nil)
+            }
+        }
+
+        @Test func testSparseArrayBecomesDictionary() {
+            withLuaState { L in
+                lua_createtable(L, 0, 2)
+                lua_pushstring(L, "one"); lua_rawseti(L, -2, 1)
+                lua_pushstring(L, "three"); lua_rawseti(L, -2, 3)
+
+                let val = lua_tovalue(L, at: -1)
+                let dict = val as? [String: Any]
+                #expect(dict?["1"] as? String == "one")
+                #expect(dict?["3"] as? String == "three")
+                #expect(dict?["2"] == nil)
+            }
+        }
+
+        @Test func testRetainedUserdataObjectHelpers() {
+            withLuaState { L in
+                luaL_newmetatable(L, "test.object")
+                lua_pop(L, 1)
+
+                let object = NSObject()
+                #expect(lua_pushretainedUserdata(L, object, metatableName: "test.object"))
+
+                let pulled = lua_testUserdataObject(NSObject.self, L, at: -1, metatableName: "test.object")
+                #expect(pulled === object)
+                #expect(lua_testUserdataObject(NSString.self, L, at: -1, metatableName: "test.object") == nil)
+                #expect(lua_testUserdataObject(NSObject.self, L, at: -1, metatableName: "wrong.tag") == nil)
+
+                let released = lua_takeRetainedUserdataObject(NSObject.self, L, at: -1, metatableName: "test.object")
+                #expect(released === object)
+                #expect(lua_takeRetainedUserdataObjectIfPresent(NSObject.self, L, at: -1, metatableName: "test.object") == nil)
+            }
+        }
+
+        @Test func testRegistryRefHelpers() {
+            withLuaState { L in
+                var ref = Int32(LUA_NOREF)
+                lua_pushcfunction(L, { _ in 0 })
+                lua_replaceRegistryFunctionRef(L, &ref, at: -1)
+                lua_pop(L, 1)
+
+                #expect(ref != LUA_NOREF)
+                lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(ref))
+                #expect(lua_type(L, -1) == LUA_TFUNCTION)
+                lua_pop(L, 1)
+
+                lua_unrefRegistryRef(L, &ref)
+                #expect(ref == LUA_NOREF)
             }
         }
 

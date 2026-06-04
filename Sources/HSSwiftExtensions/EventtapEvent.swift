@@ -114,9 +114,7 @@ private func eventtap_event_newEvent(_ L: UnsafeMutablePointer<lua_State>!) -> I
 
 private func eventtap_event_newEventFromData(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     luaL_checktype(L, 1, LUA_TSTRING)
-    guard let data = lua_tovalue(L, at: 1) as? Data else {
-        lua_pushnil(L); return 1
-    }
+    let data = lua_checkdata(L, at: 1)
     if let event = CGEvent(withDataAllocator: nil, data: data as CFData) {
         newEventtapEvent(L, event)
     } else {

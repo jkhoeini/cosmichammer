@@ -1,6 +1,19 @@
 import Cocoa
 import CLua
 
+// MARK: - Lua userdata conversion seam
+
+/// Objects that can be pushed by `lua_pushany` as retained userdata.
+///
+/// Extension modules still own their metatable names and any side bookkeeping
+/// such as self-reference counts. This protocol keeps the retained pointer
+/// storage and metatable installation in one place without making `lua_tovalue`
+/// guess at arbitrary userdata.
+protocol LuaUserdataConvertible: AnyObject {
+    var luaUserdataMetatableName: String { get }
+    func luaUserdataWillRetain()
+}
+
 // MARK: - Boolean detection
 
 /// Detect whether a value is a CFBoolean (__NSCFBoolean).
@@ -120,13 +133,7 @@ private func lua_pushvalue_recursive(_ L: UnsafeMutablePointer<lua_State>!, _ va
 
     // Data (Swift) -> raw bytes string
     case let data as Data:
-        data.withUnsafeBytes { ptr in
-            if let base = ptr.baseAddress {
-                lua_pushlstring(L, base.assumingMemoryBound(to: CChar.self), data.count)
-            } else {
-                lua_pushlstring(L, "", 0)
-            }
-        }
+        lua_pushdata(L, data)
 
     // NSDate -> epoch seconds (integer)
     case let date as NSDate:
@@ -143,19 +150,6 @@ private func lua_pushvalue_recursive(_ L: UnsafeMutablePointer<lua_State>!, _ va
     // URL (Swift)
     case let url as URL:
         lua_pushstring(L, url.absoluteString)
-
-    // AppKit / extension bridge values
-    case let image as NSImage:
-        lua_pushNSImage(L, image)
-
-    case let color as NSColor:
-        lua_pushNSColor(L, color)
-
-    case let font as NSFont:
-        lua_pushNSFont(L, font)
-
-    case let attributedString as NSAttributedString:
-        lua_pushNSAttributedString(L, attributedString)
 
     // NSArray / Array
     // Use luaL_len+1 for indexing (matching LuaSkin behavior): when a nil
@@ -196,19 +190,36 @@ private func lua_pushvalue_recursive(_ L: UnsafeMutablePointer<lua_State>!, _ va
     case let val as NSValue:
         lua_pushNSValue(L, val)
 
-    // Typed userdata objects that used to be handled by LuaSkin's object
-    // conversion registry.
-    case let webview as HSWebViewWindow:
-        _ = wv_HSWebViewWindow_toLua(L, webview)
+    case let color as NSColor:
+        if lua_pushNSColor(L, color) {
+            return
+        }
+        lua_pushstring(L, String(describing: obj))
 
-    case let canvas as HSCanvasView:
-        _ = canvas_pushHSCanvasView(L, obj: canvas)
+    // Known retained-pointer userdata adapters.
+    case let image as NSImage:
+        image.cacheMode = .never
+        if lua_pushretainedUserdata(L, image, metatableName: "hs.image") {
+            return
+        }
+        lua_pushstring(L, String(describing: obj))
 
-    case let toolbar as HSToolbar:
-        _ = toolbar_pushHSToolbar(L, toolbar)
+    case let attributedString as NSAttributedString:
+        if lua_pushretainedUserdata(L, attributedString, metatableName: "hs.styledtext") {
+            return
+        }
+        lua_pushstring(L, String(describing: obj))
 
-    case let chooser as HSChooser:
-        _ = pushHSChooser(L, chooser)
+    case let convertible as LuaUserdataConvertible:
+        if lua_pushretainedUserdata(
+            L,
+            convertible,
+            metatableName: convertible.luaUserdataMetatableName,
+            beforeRetain: { convertible.luaUserdataWillRetain() }
+        ) {
+            return
+        }
+        lua_pushstring(L, String(describing: obj))
 
     // Fallback: push the debugDescription
     default:
@@ -306,6 +317,180 @@ func lua_pushNSRect(_ L: UnsafeMutablePointer<lua_State>!, _ rect: NSRect) {
     lua_pushstring(L, "NSRect");                     lua_setfield(L, -2, "__luaSkinType")
 }
 
+/// Push an RGB-convertible NSColor as a Lua table `{red=n, green=n, blue=n, alpha=n}`.
+@discardableResult
+func lua_pushNSColor(_ L: UnsafeMutablePointer<lua_State>!, _ color: NSColor) -> Bool {
+    guard let converted = color.usingColorSpace(.sRGB) ?? color.usingColorSpace(.deviceRGB) else {
+        return false
+    }
+    lua_createtable(L, 0, 5)
+    lua_pushnumber(L, lua_Number(converted.redComponent));   lua_setfield(L, -2, "red")
+    lua_pushnumber(L, lua_Number(converted.greenComponent)); lua_setfield(L, -2, "green")
+    lua_pushnumber(L, lua_Number(converted.blueComponent));  lua_setfield(L, -2, "blue")
+    lua_pushnumber(L, lua_Number(converted.alphaComponent)); lua_setfield(L, -2, "alpha")
+    lua_pushstring(L, "NSColor");                           lua_setfield(L, -2, "__luaSkinType")
+    return true
+}
+
+// MARK: - Raw bytes and retained userdata helpers
+
+/// Push raw bytes as a Lua string. Lua strings are byte buffers and may contain NULs.
+func lua_pushdata(_ L: UnsafeMutablePointer<lua_State>!, _ data: Data) {
+    _ = data.withUnsafeBytes { ptr in
+        if let base = ptr.baseAddress {
+            lua_pushlstring(L, base.assumingMemoryBound(to: CChar.self), data.count)
+        } else {
+            lua_pushlstring(L, "", 0)
+        }
+    }
+}
+
+/// Pull a Lua string as raw bytes without UTF-8 decoding or NUL truncation.
+func lua_todata(_ L: UnsafeMutablePointer<lua_State>!, at index: Int32) -> Data? {
+    let idx = lua_absindex(L, index)
+    guard lua_type(L, idx) == LUA_TSTRING else { return nil }
+
+    var len: Int = 0
+    guard let ptr = lua_tolstring(L, idx, &len) else { return nil }
+    return Data(bytes: ptr, count: len)
+}
+
+/// Checked raw-byte pull for APIs that accept binary Lua strings.
+func lua_checkdata(_ L: UnsafeMutablePointer<lua_State>!, at index: Int32) -> Data {
+    luaL_checktype(L, index, LUA_TSTRING)
+    guard let data = lua_todata(L, at: index) else {
+        _ = luaL_argerror(L, index, "string expected")
+        fatalError("luaL_argerror returned")
+    }
+    return data
+}
+
+/// Pull a Lua string as Swift text while respecting Lua's byte length.
+func lua_tostringValue(_ L: UnsafeMutablePointer<lua_State>!, at index: Int32) -> String? {
+    guard let data = lua_todata(L, at: index) else { return nil }
+    return String(decoding: data, as: UTF8.self)
+}
+
+/// Store a retained Swift/Objective-C object pointer in userdata and attach a metatable.
+@discardableResult
+func lua_pushretainedUserdata(
+    _ L: UnsafeMutablePointer<lua_State>!,
+    _ object: AnyObject,
+    metatableName: String,
+    beforeRetain: (() -> Void)? = nil
+) -> Bool {
+    luaL_getmetatable(L, metatableName)
+    guard lua_type(L, -1) != LUA_TNIL else {
+        lua_pop(L, 1)
+        return false
+    }
+
+    beforeRetain?()
+    let ptr = lua_newuserdata(L, MemoryLayout<UnsafeMutableRawPointer?>.size)!
+    ptr.assumingMemoryBound(to: UnsafeMutableRawPointer?.self).pointee = Unmanaged.passRetained(object).toOpaque()
+    lua_pushvalue(L, -2)
+    lua_setmetatable(L, -2)
+    lua_remove(L, -2)
+    return true
+}
+
+/// Pull a retained-pointer userdata object if the metatable and runtime type both match.
+func lua_testUserdataObject<T: AnyObject>(
+    _ type: T.Type,
+    _ L: UnsafeMutablePointer<lua_State>!,
+    at index: Int32,
+    metatableName: String
+) -> T? {
+    guard let ptr = luaL_testudata(L, index, metatableName) else { return nil }
+    guard let opaque = ptr.assumingMemoryBound(to: UnsafeMutableRawPointer?.self).pointee else { return nil }
+    let object = Unmanaged<AnyObject>.fromOpaque(UnsafeRawPointer(opaque)).takeUnretainedValue()
+    return object as? T
+}
+
+/// Checked retained-pointer userdata pull with Lua argument errors for invalid casts.
+func lua_checkUserdataObject<T: AnyObject>(
+    _ type: T.Type,
+    _ L: UnsafeMutablePointer<lua_State>!,
+    at index: Int32,
+    metatableName: String
+) -> T {
+    guard let object = lua_testUserdataObject(type, L, at: index, metatableName: metatableName) else {
+        _ = luaL_argerror(L, index, "\(metatableName) userdata expected")
+        fatalError("luaL_argerror returned")
+    }
+    return object
+}
+
+/// Transfer the retained object out of userdata if it has not already been cleared.
+func lua_takeRetainedUserdataObjectIfPresent<T: AnyObject>(
+    _ type: T.Type,
+    _ L: UnsafeMutablePointer<lua_State>!,
+    at index: Int32,
+    metatableName: String
+) -> T? {
+    let ptr = luaL_checkudata(L, index, metatableName)!
+        .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
+    guard let opaque = ptr.pointee else {
+        return nil
+    }
+    ptr.pointee = nil
+    let object = Unmanaged<AnyObject>.fromOpaque(UnsafeRawPointer(opaque)).takeRetainedValue()
+    guard let typed = object as? T else {
+        _ = luaL_argerror(L, index, "\(metatableName) userdata type mismatch")
+        fatalError("luaL_argerror returned")
+    }
+    return typed
+}
+
+/// Transfer the retained object out of userdata, for use outside tolerant `__gc` paths.
+func lua_takeRetainedUserdataObject<T: AnyObject>(
+    _ type: T.Type,
+    _ L: UnsafeMutablePointer<lua_State>!,
+    at index: Int32,
+    metatableName: String
+) -> T {
+    guard let object = lua_takeRetainedUserdataObjectIfPresent(type, L, at: index, metatableName: metatableName) else {
+        _ = luaL_argerror(L, index, "\(metatableName) userdata pointer missing")
+        fatalError("luaL_argerror returned")
+    }
+    return object
+}
+
+/// Pull struct-backed userdata as a typed pointer after checking its metatable.
+func lua_checkUserdataPointer<T>(
+    _ type: T.Type,
+    _ L: UnsafeMutablePointer<lua_State>!,
+    at index: Int32,
+    metatableName: String
+) -> UnsafeMutablePointer<T> {
+    guard let ptr = luaL_testudata(L, index, metatableName) else {
+        _ = luaL_argerror(L, index, "\(metatableName) userdata expected")
+        fatalError("luaL_argerror returned")
+    }
+    return ptr.assumingMemoryBound(to: T.self)
+}
+
+func lua_unrefRegistryRef(_ L: UnsafeMutablePointer<lua_State>!, _ ref: inout Int32) {
+    if ref != LUA_NOREF && ref != LUA_REFNIL {
+        luaL_unref(L, LUA_REGISTRYINDEX_VALUE, ref)
+        ref = LUA_NOREF
+    }
+}
+
+func lua_replaceRegistryFunctionRef(_ L: UnsafeMutablePointer<lua_State>!, _ ref: inout Int32, at index: Int32) {
+    lua_unrefRegistryRef(L, &ref)
+    let valueType = lua_type(L, index)
+    if valueType == LUA_TNONE || valueType == LUA_TNIL {
+        return
+    }
+    guard valueType == LUA_TFUNCTION else {
+        _ = luaL_argerror(L, index, "function or nil expected")
+        fatalError("luaL_argerror returned")
+    }
+    lua_pushvalue(L, index)
+    ref = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+}
+
 // MARK: - Pull helpers: Lua stack -> Swift values
 
 /// Pull a value from the Lua stack as a Swift `Any?`.
@@ -336,11 +521,7 @@ private func lua_tovalue_recursive(_ L: UnsafeMutablePointer<lua_State>!, at ind
         }
 
     case LUA_TSTRING:
-        var len: Int = 0
-        if let ptr = lua_tolstring(L, idx, &len) {
-            return String(cString: ptr)
-        }
-        return nil
+        return lua_tostringValue(L, at: idx)
 
     case LUA_TTABLE:
         return lua_tableToValue(L, at: idx, depth: depth)
@@ -403,11 +584,7 @@ private func lua_tableToValue(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int
             let keyStr: String?
             switch lua_type(L, -1) {
             case LUA_TSTRING:
-                if let cstr = lua_tostring(L, -1) {
-                    keyStr = String(cString: cstr)
-                } else {
-                    keyStr = nil
-                }
+                keyStr = lua_tostringValue(L, at: -1)
             case LUA_TNUMBER:
                 if lua_isinteger(L, -1) != 0 {
                     keyStr = String(lua_tointeger(L, -1))
@@ -470,23 +647,7 @@ func lua_tableToRect(_ L: UnsafeMutablePointer<lua_State>!, at index: Int32) -> 
 
 /// Extract an NSImage from hs.image userdata at the given stack index.
 func toNSImage(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> NSImage? {
-    guard let ptr = luaL_testudata(L, idx, "hs.image") else { return nil }
-    return Unmanaged<NSImage>.fromOpaque(ptr.load(as: UnsafeRawPointer.self)).takeUnretainedValue()
-}
-
-/// Push an NSImage as hs.image userdata.
-func lua_pushNSImage(_ L: UnsafeMutablePointer<lua_State>!, _ image: NSImage?) {
-    guard let image = image else {
-        lua_pushnil(L)
-        return
-    }
-
-    image.cacheMode = .never
-    let imagePtr = lua_newuserdata(L, MemoryLayout<UnsafeMutableRawPointer>.size)!
-        .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
-    imagePtr.pointee = Unmanaged.passRetained(image).toOpaque()
-    luaL_getmetatable(L, "hs.image")
-    lua_setmetatable(L, -2)
+    lua_testUserdataObject(NSImage.self, L, at: idx, metatableName: "hs.image")
 }
 
 /// Extract any class-pointer userdata as AnyObject. Only safe for userdata
@@ -495,78 +656,29 @@ func lua_pushNSImage(_ L: UnsafeMutablePointer<lua_State>!, _ image: NSImage?) {
 func lua_toAnyObject(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> AnyObject? {
     guard lua_type(L, idx) == LUA_TUSERDATA else { return nil }
     guard let ptr = lua_touserdata(L, idx) else { return nil }
-    return Unmanaged<AnyObject>.fromOpaque(ptr.load(as: UnsafeRawPointer.self)).takeUnretainedValue()
+    guard let opaque = ptr.assumingMemoryBound(to: UnsafeMutableRawPointer?.self).pointee else { return nil }
+    return Unmanaged<AnyObject>.fromOpaque(UnsafeRawPointer(opaque)).takeUnretainedValue()
 }
 
 /// Extract an NSAttributedString from hs.styledtext userdata at the given stack index.
 func toNSAttributedString(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> NSAttributedString? {
-    guard let ptr = luaL_testudata(L, idx, "hs.styledtext") else { return nil }
-    return Unmanaged<NSAttributedString>.fromOpaque(ptr.load(as: UnsafeRawPointer.self)).takeUnretainedValue()
+    lua_testUserdataObject(NSAttributedString.self, L, at: idx, metatableName: "hs.styledtext")
 }
 
-/// Push an NSAttributedString as hs.styledtext userdata.
-func lua_pushNSAttributedString(_ L: UnsafeMutablePointer<lua_State>!, _ string: NSAttributedString?) {
-    guard let string = string else {
-        lua_pushnil(L)
-        return
-    }
-
-    let stringPtr = lua_newuserdata(L, MemoryLayout<UnsafeRawPointer>.size)!
-    stringPtr.storeBytes(of: Unmanaged.passRetained(string).toOpaque(), as: UnsafeRawPointer.self)
-    luaL_getmetatable(L, "hs.styledtext")
-    lua_setmetatable(L, -2)
-}
-
-/// Convert an hs.drawing.color-compatible Lua table to NSColor.
+/// Convert a Lua color table `{red=, green=, blue=, alpha=}` to NSColor.
 func tableToNSColor(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> NSColor? {
     guard lua_type(L, idx) == LUA_TTABLE else { return nil }
-    return table_toNSColor(L, idx) as? NSColor
-}
-
-/// Push an NSColor as an hs.drawing.color-compatible table.
-func lua_pushNSColor(_ L: UnsafeMutablePointer<lua_State>!, _ color: NSColor?) {
-    guard let color = color else {
-        lua_pushnil(L)
-        return
-    }
-
-    if let safeColor = color.usingColorSpace(.genericRGB) {
-        lua_newtable(L)
-        lua_pushnumber(L, lua_Number(safeColor.redComponent));   lua_setfield(L, -2, "red")
-        lua_pushnumber(L, lua_Number(safeColor.greenComponent)); lua_setfield(L, -2, "green")
-        lua_pushnumber(L, lua_Number(safeColor.blueComponent));  lua_setfield(L, -2, "blue")
-        lua_pushnumber(L, lua_Number(safeColor.alphaComponent)); lua_setfield(L, -2, "alpha")
-        lua_pushstring(L, "NSColor");                            lua_setfield(L, -2, "__luaSkinType")
-    } else if color.colorSpaceName == .named {
-        lua_newtable(L)
-        lua_pushany(L, color.catalogNameComponent as NSString?)
-        lua_setfield(L, -2, "list")
-        lua_pushany(L, color.colorNameComponent as NSString?)
-        lua_setfield(L, -2, "name")
-        lua_pushstring(L, "NSColor")
-        lua_setfield(L, -2, "__luaSkinType")
-    } else if color.colorSpaceName == .pattern {
-        lua_newtable(L)
-        lua_pushNSImage(L, color.patternImage)
-        lua_setfield(L, -2, "image")
-        lua_pushstring(L, "NSColor")
-        lua_setfield(L, -2, "__luaSkinType")
-    } else {
-        lua_pushstring(L, "unable to convert colorspace from \(color.colorSpace.description) to NSCalibratedRGBColorSpace")
-    }
-}
-
-/// Push an NSFont as an hs.styledtext-compatible font table.
-func lua_pushNSFont(_ L: UnsafeMutablePointer<lua_State>!, _ font: NSFont?) {
-    guard let font = font else {
-        lua_pushnil(L)
-        return
-    }
-
-    lua_newtable(L)
-    lua_pushany(L, font.fontName as NSString); lua_setfield(L, -2, "name")
-    lua_pushnumber(L, lua_Number(font.pointSize)); lua_setfield(L, -2, "size")
-    lua_pushstring(L, "NSFont"); lua_setfield(L, -2, "__luaSkinType")
+    let absIdx = lua_absindex(L, idx)
+    lua_getfield(L, absIdx, "red")
+    let r = lua_isnumber(L, -1) != 0 ? CGFloat(lua_tonumber(L, -1)) : 0
+    lua_getfield(L, absIdx, "green")
+    let g = lua_isnumber(L, -1) != 0 ? CGFloat(lua_tonumber(L, -1)) : 0
+    lua_getfield(L, absIdx, "blue")
+    let b = lua_isnumber(L, -1) != 0 ? CGFloat(lua_tonumber(L, -1)) : 0
+    lua_getfield(L, absIdx, "alpha")
+    let a = lua_isnumber(L, -1) != 0 ? CGFloat(lua_tonumber(L, -1)) : 1.0
+    lua_pop(L, 4)
+    return NSColor(red: r, green: g, blue: b, alpha: a)
 }
 
 /// Convert a Lua font table `{name=, size=}` or font name string to NSFont.
@@ -575,10 +687,10 @@ func tableToNSFont(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> NSFo
     var theSize = NSFont.systemFontSize
 
     if lua_type(L, idx) == LUA_TSTRING {
-        theName = String(cString: lua_tostring(L, idx)!)
+        theName = lua_tostringValue(L, at: idx) ?? theName
     } else if lua_type(L, idx) == LUA_TTABLE {
         if lua_getfield(L, idx, "name") == LUA_TSTRING {
-            theName = String(cString: lua_tostring(L, -1)!)
+            theName = lua_tostringValue(L, at: -1) ?? theName
         }
         lua_pop(L, 1)
         if lua_getfield(L, idx, "size") == LUA_TNUMBER {

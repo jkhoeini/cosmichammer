@@ -198,8 +198,30 @@ LuaSkin → LuaSwift).
     - Invalid setup return values cannot be silently ~luaL_ref~'d.
     - Adding a new boot parameter does not require updating three files in lockstep.
 
-*** TODO Finish the LuaSkin-to-LuaSwift bridge migration
-    Issue:
+*** DONE Finish the LuaSkin-to-LuaSwift bridge migration
+    Completed 2026-06-05.
+
+    Added a documented retained-userdata conversion seam in ~LuaHelpers.swift~
+    with checked object pulls, tolerant GC transfer, raw byte string helpers, and
+    centralized registry-ref replacement/unref helpers. Binary Lua strings now
+    round-trip through Swift without NUL truncation via ~lua_tolstring~ length.
+
+    Migrated high-risk byte/object paths in socket, UDP socket, serial,
+    pasteboard, eventtap events, image, styledtext, streamdeck, and razer away
+    from broad ~lua_tovalue(...) as!~ casts. Added focused bridge tests for raw
+    data with NUL/invalid bytes, nested/sparse tables, retained userdata helper
+    behavior, registry refs, RGB color conversion, and non-RGB color fallback.
+
+    Verified:
+    - ~just test-resources~ exits 0.
+    - ~swift test --filter LuaHelpersTests~ passes 47 tests.
+    - ~swift test --filter Coresetup~ passes 12 tests.
+    - Claude re-review converged with no remaining problematic issues.
+
+    Note: hardware-only Serial/StreamDeck/Razer behavior and broader LuaSwift
+    Swift API adoption remain deferred to separate items.
+
+    Original issue:
     LuaSkin is removed, but the replacement bridge is still shallow. The helper
     module pushes primitives/collections and falls back to strings for unknown
     objects. ~lua_tovalue~ returns nil for userdata and reads Lua strings with
