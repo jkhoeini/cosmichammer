@@ -247,10 +247,86 @@ LuaSkin → LuaSwift).
     - Add focused bridge tests for binary strings, userdata, Foundation objects,
       nested tables, nil/holes, and invalid casts.
 
-    Acceptance criteria:
-    - Binary Lua strings round-trip through Swift without truncation at NUL.
-    - Unsafe force-casts in high-risk extensions are reduced or guarded.
-    - Userdata conversion has one documented seam and focused tests.
+	Acceptance criteria:
+	- Binary Lua strings round-trip through Swift without truncation at NUL.
+	- Unsafe force-casts in high-risk extensions are reduced or guarded.
+	- Userdata conversion has one documented seam and focused tests.
+
+*** TODO Integrate remaining Spotlight tuple conversion fix from stale heads
+    Replace generic tuple value pushes in ~Spotlight.swift~ with Spotlight-specific
+    recursive conversion and add the regression test.
+
+*** TODO Capture stale-head preflight snapshot before integration
+    Record the non-current head list and intended disposition so the final
+    abandon pass can verify every branch head deliberately.
+
+*** TODO Integrate remaining CoreLocation conversion fixes from stale heads
+    Convert locations, regions, placemarks, and geocoders explicitly instead of
+    relying on generic ~lua_pushany~/~lua_tovalue~ behavior.
+
+*** TODO Integrate remaining Canvas value conversion fixes from stale heads
+    Restore Canvas-specific Lua table/userdata conversion for colors, images,
+    styled text, shadows, transforms, and Canvas callbacks.
+
+*** TODO Integrate remaining app/window/uielement object conversion fixes
+    Push application, window, uielement, image, styledtext, pasteboard, and color
+    values through typed helpers so Lua sees stable userdata/tables.
+
+*** TODO Run full verification after broad app/window conversion fixes
+    Run the full local verification gate after the widest conversion batch before
+    continuing to system-extension integrations.
+
+*** TODO Verify AppFinder stale head is covered by app/window integration
+    Compare the AppFinder branch diff against the broad app/window conversion
+    result before deciding that head is redundant.
+
+*** TODO Inspect generic typed-userdata helper dependencies early
+    Check whether WebView, Canvas, Toolbar, or Chooser helper declarations from
+    the generic helper stale head should land before dependent integrations.
+
+*** TODO Integrate remaining Wi-Fi CoreWLAN conversion fixes
+    Convert CoreWLAN interfaces, channels, configurations, profiles, and sets to
+    Lua tables without generic object fallback.
+
+*** TODO Integrate remaining device/network object conversion fixes
+    Finish explicit userdata/value conversion for Bonjour, camera, chooser, IPC,
+    network ping, notify, Razer, serial, sharing, sound, and streamdeck paths.
+
+*** TODO Integrate remaining WebView conversion fixes
+    Add WebView-specific push/pull helpers for windows, toolbars, datastores,
+    navigation objects, user content, URL requests, and URL responses.
+
+*** TODO Integrate remaining audiodevice metatable registration fixes
+    Register existing input/output device methods and add userdata ~__type~
+    metadata for audio devices and data sources.
+
+*** TODO Integrate remaining socket binary string conversion fixes
+    Use length-aware Lua string reads/writes in TCP and UDP socket paths and add
+    binary payload regression tests.
+
+*** TODO Check socket conversion against typed-userdata helper overlap
+    Inspect both stale diffs for overlapping userdata registration files before
+    committing the socket conversion.
+
+*** TODO Integrate remaining Canvas matrix typed conversion fixes
+    Make matrix constructors and methods use explicit ~NSAffineTransform~ table
+    conversion so returned matrix tables stay chainable.
+
+*** TODO Integrate remaining generic typed-userdata helper fixes
+    Preserve WebView, Canvas, Toolbar, and Chooser userdata through generic push
+    and dialog/toolbar bridge paths.
+
+*** TODO Integrate remaining console and speech conversion fixes
+    Use explicit AppKit color/font/styledtext conversions in console APIs and
+    typed speech synthesizer/listener pushes.
+
+*** TODO Account for release-only stale head in abandonment audit
+    Confirm the release metadata branch only changes stale release bookkeeping
+    before abandoning it.
+
+*** TODO Verify and abandon stale branch heads after integration
+    Re-check every non-current head against the linear current history, keep only
+    changes that are not represented, and abandon heads only once they are stale.
 
 *** DONE Teach BuildDocs about Swift docs and add docs-tool tests
     Completed 2026-06-05.
