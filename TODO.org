@@ -595,9 +595,23 @@ LuaSkin → LuaSwift).
       final pass used Erdos's independent audit, local review, build, and
       focused tests.
 
-*** TODO Integrate remaining audiodevice metatable registration fixes
-    Register existing input/output device methods and add userdata ~__type~
-    metadata for audio devices and data sources.
+*** DONE Integrate remaining audiodevice metatable registration fixes
+    Completed 2026-06-05.
+    Registered existing ~isOutputDevice~ and ~isInputDevice~ methods on
+    ~hs.audiodevice~ userdata and added stable ~__type~ metadata for both
+    ~hs.audiodevice~ and ~hs.audiodevice.datasource~ metatables.
+
+    The stale default-device regression test was not replayed because it was
+    duplicative of existing method/default-device coverage and did not cover the
+    datasource metatable. Added a hardware-tolerant datasource ~__type~
+    regression instead.
+
+    Verification:
+    - ~mise exec -- just build~ passes.
+    - ~SDK_PATH="$(xcrun --show-sdk-path)" COSMIC_HAMMER_TEST_RESOURCES="$(pwd)/build/test/Cosmic Hammer.app/Contents/Resources" swift test -Xlinker -F -Xlinker "${SDK_PATH}/System/Library/PrivateFrameworks" --filter "Audiodevice.testIsOutputDevice|Audiodevice.testIsInputDevice|Audiodevice.testGetDefaultOutput|Audiodevice.testDataSourceTypeMetadata"~ passes 4 tests.
+    - Full ~Audiodevice~ filter still fails existing watcher and hardware/name
+      dependent datasource tests; the new datasource metadata test passes.
+    - Claude implementation review reported ~NO ACTIONABLE ISSUES~.
 
 *** TODO Integrate remaining socket binary string conversion fixes
     Use length-aware Lua string reads/writes in TCP and UDP socket paths and add

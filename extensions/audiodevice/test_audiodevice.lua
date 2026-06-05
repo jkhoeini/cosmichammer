@@ -16,25 +16,6 @@ function testGetDefaultInput()
   return success()
 end
 
-function testDefaultDeviceMethods()
-  local device = hs.audiodevice.defaultOutputDevice()
-  local mt = getmetatable(device)
-  assertIsTable(mt)
-  if type(mt.name) ~= "function" then
-    local keys = {}
-    for k in pairs(mt) do keys[#keys + 1] = tostring(k) end
-    table.sort(keys)
-    failure("expected metatable.name to be a function; keys: " .. table.concat(keys, ","))
-  end
-  assertIsEqual(mt, mt.__index)
-  for _, method in ipairs({ "name", "uid", "isOutputDevice", "isInputDevice", "watcherCallback" }) do
-    if type(device[method]) ~= "function" then
-      failure("expected device." .. method .. " to be a function, got " .. type(device[method]))
-    end
-  end
-  return success()
-end
-
 function testGetCurrentOutput()
   local current = hs.audiodevice.current()
   assertIsTable(current)
@@ -433,6 +414,24 @@ function testDataSourceSetDefault()
   assertIsUserdataOfType("hs.audiodevice.datasource", inputDataSourceBefore:setDefault())
   local inputDataSourceAfter = inputDevice:currentInputDataSource()
   assertIsEqual(inputDataSourceBefore, inputDataSourceAfter)
+
+  return success()
+end
+
+function testDataSourceTypeMetadata()
+  for _, device in ipairs(hs.audiodevice.allDevices()) do
+    local sources = {}
+    if device:supportsOutputDataSources() then
+      sources = device:allOutputDataSources() or {}
+    end
+    if #sources == 0 and device:supportsInputDataSources() then
+      sources = device:allInputDataSources() or {}
+    end
+    if #sources > 0 then
+      assertIsUserdataOfType("hs.audiodevice.datasource", sources[1])
+      return success()
+    end
+  end
 
   return success()
 end
