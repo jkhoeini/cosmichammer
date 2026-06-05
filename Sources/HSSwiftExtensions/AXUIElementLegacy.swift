@@ -5,6 +5,11 @@ import os.log
 private let USERDATA_TAG = axuielement_USERDATA_TAG
 private var refTable: Int32 = LUA_NOREF
 
+private func luaNSObject(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32, metatableName: String) -> NSObject? {
+    guard luaL_testudata(L, idx, metatableName) != nil else { return nil }
+    return lua_toAnyObject(L, at: idx) as? NSObject
+}
+
 // MARK: - Support Functions
 
 @_cdecl("pushAXUIElement")
@@ -84,11 +89,8 @@ private func errorWrapper(_ L: UnsafeMutablePointer<lua_State>!, _ where_: NSStr
 private func axuielement_getWindowElement(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     // vararg here to mimic original behavior and allow constructs to use `hs.window(...)` as arg as this may
     // return more than one result
-    guard let object = lua_toAnyObject(L, at: 1) as? NSObject else {
-        lua_pushnil(L)
-        return 1
-    }
-    if let ref = getElementRefPropertyFromClassObject(object) {
+    if let object = luaNSObject(L, at: 1, metatableName: "hs.window"),
+       let ref = getElementRefPropertyFromClassObject(object) {
         pushAXUIElement(L, ref)
     } else {
         lua_pushnil(L)
@@ -111,11 +113,8 @@ private func axuielement_getWindowElement(_ L: UnsafeMutablePointer<lua_State>!)
 private func axuielement_getApplicationElement(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     // vararg here to mimic original behavior and allow constructs to use `hs.application(...)` as arg as this may
     // return more than one result
-    guard let object = lua_toAnyObject(L, at: 1) as? NSObject else {
-        lua_pushnil(L)
-        return 1
-    }
-    if let ref = getElementRefPropertyFromClassObject(object) {
+    if let object = luaNSObject(L, at: 1, metatableName: "hs.application"),
+       let ref = getElementRefPropertyFromClassObject(object) {
         pushAXUIElement(L, ref)
     } else {
         lua_pushnil(L)
@@ -681,7 +680,7 @@ private func axuielement_toHSWindow(_ L: UnsafeMutablePointer<lua_State>!) -> In
        let value = value,
        CFGetTypeID(value) == CFStringGetTypeID(),
        (value as! String) == (kAXWindowRole as String) {
-        pushHSwindow(L, HSwindow(axuiElementRef: theRef))
+        pushHSwindowOrNil(L, HSwindow(axuiElementRef: theRef))
     } else {
         lua_pushnil(L)
     }

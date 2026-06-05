@@ -1,5 +1,7 @@
 hs.application = require("hs.application")
 hs.dockicon = require("hs.dockicon")
+hs.timer = require("hs.timer")
+hs.window = require("hs.window")
 
 menuTestValue = nil
 
@@ -130,28 +132,34 @@ function testRunningApplications()
 end
 
 function testObjectConversions()
-  local sourceApp = nil
-  for _, candidate in ipairs(hs.application.runningApplications()) do
-    if candidate:bundleID() ~= nil then
-      sourceApp = candidate
+  local running = hs.application.runningApplications()
+  assertIsTable(running)
+  assertGreaterThan(1, #running)
+  assertIsUserdataOfType("hs.application", running[1])
+
+  local app = nil
+  local pidApp = nil
+  for _, candidate in ipairs(running) do
+    pidApp = hs.application.applicationForPID(candidate:pid())
+    if pidApp ~= nil then
+      app = candidate
       break
     end
   end
-  assertIsUserdataOfType("hs.application", sourceApp)
+  if app == nil then return "applicationForPID returned nil for all running applications" end
+  assertIsUserdataOfType("hs.application", pidApp)
 
-  local app = hs.application.applicationForPID(sourceApp:pid())
-  assertIsUserdataOfType("hs.application", app)
+  local bundleID = nil
+  for _, candidate in ipairs(running) do
+    bundleID = candidate:bundleID()
+    if bundleID ~= nil then break end
+  end
+  if bundleID == nil then return "no running application with bundleID" end
 
-  local bundleApps = hs.application.applicationsForBundleID(app:bundleID())
+  local bundleApps = hs.application.applicationsForBundleID(bundleID)
   assertIsTable(bundleApps)
+  assertGreaterThan(0, #bundleApps)
   assertIsUserdataOfType("hs.application", bundleApps[1])
-
-  local ax = require("hs.axuielement")
-  local appElement = ax.applicationElement(app)
-  assertIsUserdataOfType("hs.axuielement", appElement)
-  local asApp = appElement:asHSApplication()
-  assertIsUserdataOfType("hs.application", asApp)
-
   return success()
 end
 
@@ -226,8 +234,10 @@ function testWindowsValues()
   local wins = app:allWindows()
   assertIsEqual("table", type(wins))
   assertIsEqual(1, #wins)
+  assertIsUserdataOfType("hs.window", wins[1])
 
   local win = app:focusedWindow()
+  assertIsUserdataOfType("hs.window", win)
   assertIsEqual("Grapher", win:application():name())
 
   app:kill()

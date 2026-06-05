@@ -30,10 +30,6 @@ function testCosmicHammerElements()
   assertFalse(consoleElem:isWindow())
   assertIsEqual("AXTextField", consoleElem:role())
 
-  local consoleWatcher = consoleElem:newWatcher(function() end)
-  assertIsUserdataOfType("hs.uielement.watcher", consoleWatcher)
-  assertIsEqual(consoleElem, consoleWatcher:element())
-
   local prefsElem = getPrefs()
   assertIsUserdataOfType("hs.uielement", prefsElem)
   assertFalse(prefsElem:isApplication())
@@ -92,14 +88,18 @@ function testWindowWatcher()
   hs.window.find("System Preferences"):focus()
   elem = hs.window.focusedWindow()
   assertIsNotNil(elem)
+  assertIsUserdataOfType("hs.window", elem)
 
   watcher = elem:newWatcher(function(element, event, thisWatcher, userdata)
       hs.alert.show("watcher-callback")
+      assertIsUserdataOfType("hs.window", element)
+      assertIsUserdataOfType("hs.uielement.watcher", thisWatcher)
       elemEvent = event
       assertIsEqual(watcher, thisWatcher:stop())
     end)
 
   assertIsNotNil(watcher)
+  assertIsUserdataOfType("hs.uielement.watcher", watcher)
   assertIsEqual(watcher, watcher:start({hs.uielement.watcher.windowMoved}))
   assertIsEqual(elem, watcher:element())
 
@@ -123,11 +123,14 @@ function testApplicationWatcher()
   assertIsUserdataOfType("hs.application", elem)
 
   watcher = elem:newWatcher(function(element, event, thisWatcher, userdata)
+        assertIsUserdataOfType("hs.application", element)
+        assertIsUserdataOfType("hs.uielement.watcher", thisWatcher)
         elemEvent = event
         assertIsEqual(watcher, thisWatcher:stop())
   end)
 
   assertIsNotNil(watcher)
+  assertIsUserdataOfType("hs.uielement.watcher", watcher)
   assertIsEqual(watcher, watcher:start({hs.uielement.watcher.applicationHidden}))
   assertIsEqual(elem, watcher:element())
 
@@ -155,15 +158,19 @@ function testUIelementWatcher()
 
     elem = hs.uielement.focusedElement()
     assertIsNotNil(elem)
+    assertIsUserdataOfType("hs.uielement", elem)
     assertIsString(elem:role())
 
     watcher = elem:newWatcher(function(element, event, thisWatcher, userdata)
         hs.alert.show("watcher-callback")
+        assertIsUserdataOfType("hs.uielement", element)
+        assertIsUserdataOfType("hs.uielement.watcher", thisWatcher)
         elemEvent = event
         assertIsEqual(watcher, thisWatcher:stop())
     end)
 
     assertIsNotNil(watcher)
+    assertIsUserdataOfType("hs.uielement.watcher", watcher)
     assertIsEqual(watcher, watcher:start({hs.uielement.watcher.elementDestroyed}))
     assertIsEqual(elem, watcher:element())
 

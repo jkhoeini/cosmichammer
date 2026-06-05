@@ -305,11 +305,32 @@ LuaSkin → LuaSwift).
 	    - Claude review chunks converged with no remaining blocking issues after
 	      the ~CanvasWindow.fadeOut~ stack fix.
 
-	*** TODO Integrate remaining app/window/uielement object conversion fixes
-    Push application, window, uielement, image, styledtext, pasteboard, and color
-    values through typed helpers so Lua sees stable userdata/tables.
+	*** DONE Integrate remaining app/window/uielement object conversion fixes
+	    Push application, window, uielement, and uielement watcher values through
+	    typed helpers so Lua sees stable userdata instead of generic fallback values.
 
-*** TODO Run full verification after broad app/window conversion fixes
+	    Implemented scoped app/window/uielement/watcher typed push/get helpers and
+	    bridge call-site updates. Kept image/color/styledtext/pasteboard changes
+	    split into their own TODO. Claude review found two valid direct-push stack
+	    fallback issues in ~window:application()~ and ~axuielement:asHSWindow()~;
+	    both now use ~pushHS*OrNil~ helpers and Claude re-review converged with no
+	    remaining blocking comments.
+
+	    Verification:
+	    - ~SDK_PATH="$(xcrun --show-sdk-path)" COSMIC_HAMMER_TEST_RESOURCES="$(pwd)/build/test/Cosmic Hammer.app/Contents/Resources" swift test -Xlinker -F -Xlinker "${SDK_PATH}/System/Library/PrivateFrameworks" --filter "Application.testObjectConversions|Application.testRunningApplications|CanvasValueConversionTests|LocationConversionTests|SpotlightConversionTests"~
+	    - Additional attempted UI-state filters exposed existing harness issues:
+	      ~Window.testFocusedWindow~ can see nil focus, ~Window.testAllWindows~
+	      fails before the new assertion when ~hs.openPreferences~ is nil, and
+	      ~Uielement.testCosmicHammerElements~ currently sees ~AXTextArea~ instead
+	      of its pre-existing ~AXTextField~ expectation.
+
+	*** TODO Integrate remaining image/color/styledtext/pasteboard conversion fixes
+	    Push image, styledtext, pasteboard, and color values through typed helpers so
+	    Lua sees stable userdata/tables. Split from the broad ~pklzrzypmpkw~ stale
+	    head after plan review flagged the original scope as too large for one safe
+	    commit.
+
+	*** TODO Run full verification after broad app/window conversion fixes
     Run the full local verification gate after the widest conversion batch before
     continuing to system-extension integrations.
 

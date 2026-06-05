@@ -330,7 +330,7 @@ private func window_application(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
     lua_settop(L, 0)
 
     if let app = HSapplication(pid: win.pid, withState: L) {
-        pushHSapplication(L, app)
+        pushHSapplicationOrNil(L, app)
     } else {
         lua_pushnil(L)
     }
