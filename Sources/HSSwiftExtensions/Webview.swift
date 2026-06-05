@@ -1217,15 +1217,15 @@ func wv_URLRequest_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> 
     }
 
     lua_newtable(L)
-    lua_pushany(L, request.mainDocumentURL as NSURL?);            lua_setfield(L, -2, "mainDocumentURL")
-    lua_pushany(L, request.url as NSURL?);                        lua_setfield(L, -2, "URL")
-    lua_pushany(L, request.allHTTPHeaderFields as NSDictionary?); lua_setfield(L, -2, "HTTPHeaderFields")
-    lua_pushany(L, request.httpBody as NSData?);                  lua_setfield(L, -2, "HTTPBody")
-    lua_pushany(L, request.httpMethod as NSString?);              lua_setfield(L, -2, "HTTPMethod")
+    lua_pushany(L, request.mainDocumentURL as NSURL?);              lua_setfield(L, -2, "mainDocumentURL")
+    lua_pushany(L, request.url as NSURL?);                          lua_setfield(L, -2, "URL")
+    lua_pushany(L, request.allHTTPHeaderFields as NSDictionary?);   lua_setfield(L, -2, "HTTPHeaderFields")
+    lua_pushany(L, request.httpBody as NSData?);                    lua_setfield(L, -2, "HTTPBody")
+    lua_pushany(L, request.httpMethod as NSString?);                lua_setfield(L, -2, "HTTPMethod")
 
-    lua_pushnumber(L, lua_Number(request.timeoutInterval));      lua_setfield(L, -2, "timeoutInterval")
-    lua_pushboolean(L, request.httpShouldHandleCookies ? 1 : 0); lua_setfield(L, -2, "HTTPShouldHandleCookies")
-    lua_pushboolean(L, request.httpShouldUsePipelining ? 1 : 0); lua_setfield(L, -2, "HTTPShouldUsePipelining")
+    lua_pushnumber(L, lua_Number(request.timeoutInterval));       lua_setfield(L, -2, "timeoutInterval")
+    lua_pushboolean(L, request.httpShouldHandleCookies ? 1 : 0);  lua_setfield(L, -2, "HTTPShouldHandleCookies")
+    lua_pushboolean(L, request.httpShouldUsePipelining ? 1 : 0);  lua_setfield(L, -2, "HTTPShouldUsePipelining")
 
     let cachePolicyStr: String
     switch request.cachePolicy {
@@ -1278,14 +1278,6 @@ func wv_toURLRequest(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> URL
     let absIdx = lua_absindex(L, idx)
 
     switch lua_type(L, absIdx) {
-    case LUA_TSTRING:
-        guard let urlString = lua_tovalue(L, at: absIdx) as? String,
-              let url = URL(string: urlString) else {
-            os_log(.error, "%{public}s", "invalid URL string passed as NSURLRequest")
-            return nil
-        }
-        return URLRequest(url: url)
-
     case LUA_TTABLE:
         guard lua_getfield(L, absIdx, "URL") == LUA_TSTRING,
               let urlString = lua_tovalue(L, at: -1) as? String,
@@ -1358,25 +1350,39 @@ func wv_toURLRequest(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> URL
         lua_pop(L, 1)
 
         if lua_getfield(L, absIdx, "HTTPHeaderFields") == LUA_TTABLE,
-           let fields = lua_tovalue(L, at: -1) as? [String: Any] {
-            var headers = [String: String]()
-            let reservedHeaders = ["Authorization", "Connection", "Host", "WWW-Authenticate", "Content-Length"]
+           var fields = lua_tovalue(L, at: -1) as? [String: Any] {
+            var toRemove: [String] = []
 
             for (key, value) in fields {
-                if reservedHeaders.contains(where: { key.caseInsensitiveCompare($0) == .orderedSame }) {
+                if let numberValue = value as? NSNumber {
+                    fields[key] = numberValue.stringValue
+                }
+
+                guard fields[key] is String else {
+                    toRemove.append(key)
                     continue
                 }
-                if let stringValue = value as? String {
-                    headers[key] = stringValue
-                } else if let numberValue = value as? NSNumber {
-                    headers[key] = numberValue.stringValue
+
+                let reservedHeaders = ["Authorization", "Connection", "Host", "WWW-Authenticate", "Content-Length"]
+                if reservedHeaders.contains(where: { key.caseInsensitiveCompare($0) == .orderedSame }) {
+                    toRemove.append(key)
                 }
             }
-            request.allHTTPHeaderFields = headers
+
+            for item in toRemove { fields.removeValue(forKey: item) }
+            request.allHTTPHeaderFields = fields as? [String: String]
         }
         lua_pop(L, 1)
 
         return request
+
+    case LUA_TSTRING:
+        guard let urlString = lua_tovalue(L, at: absIdx) as? String,
+              let url = URL(string: urlString) else {
+            os_log(.error, "%{public}s", "invalid URL string passed as NSURLRequest")
+            return nil
+        }
+        return URLRequest(url: url)
 
     default:
         os_log(.error, "%{public}s", "Unexpected type passed as a NSURLRequest: \(String(cString: lua_typename(L, lua_type(L, absIdx))))")

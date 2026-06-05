@@ -578,9 +578,22 @@ LuaSkin → LuaSwift).
        regression test was narrowed to the changed push-helper behavior; Claude
        implementation review agreed and found no actionable issues.
 
-*** TODO Integrate remaining WebView conversion fixes
-    Add WebView-specific push/pull helpers for windows, toolbars, datastores,
-    navigation objects, user content, URL requests, and URL responses.
+*** DONE Integrate remaining WebView conversion fixes
+    Completed 2026-06-05.
+    Added a WebView-local typed dispatcher for WebView, toolbar, datastore,
+    usercontent, navigation, challenge, request, and response values. WebView
+    URL setters now parse URL strings and request tables explicitly, datastore
+    and usercontent paths now use typed helpers, and toolbar item details now
+    preserve nested toolbar userdata and item tables.
+
+    Verification:
+    - ~mise exec -- just build~ passes.
+    - ~SDK_PATH="$(xcrun --show-sdk-path)" COSMIC_HAMMER_TEST_RESOURCES="$(pwd)/build/test/Cosmic Hammer.app/Contents/Resources" swift test -Xlinker -F -Xlinker "${SDK_PATH}/System/Library/PrivateFrameworks" --filter WebviewConversionTests~ passes 4 tests.
+    - Claude initial plan review found valid plan issues; the plan was updated
+      before implementation. A second plan review and two implementation review
+      attempts produced no output after long waits and were terminated, so the
+      final pass used Erdos's independent audit, local review, build, and
+      focused tests.
 
 *** TODO Integrate remaining audiodevice metatable registration fixes
     Register existing input/output device methods and add userdata ~__type~

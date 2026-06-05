@@ -328,15 +328,15 @@ private func toWKWebsiteDataStoreFromLua(_ L: UnsafeMutablePointer<lua_State>!, 
 }
 
 func wv_WKWebsiteDataStore_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
-    pushWKWebsiteDataStore(L, obj)
+    return pushWKWebsiteDataStore(L, obj)
 }
 
 func wv_WKWebsiteDataRecord_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
-    pushWKWebsiteDataRecord(L, obj)
+    return pushWKWebsiteDataRecord(L, obj)
 }
 
 func wv_toWKWebsiteDataStore(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> WKWebsiteDataStore? {
-    toWKWebsiteDataStoreFromLua(L, idx) as? WKWebsiteDataStore
+    return toWKWebsiteDataStoreFromLua(L, idx) as? WKWebsiteDataStore
 }
 
 // MARK: - Cosmic Hammer/Lua Infrastructure

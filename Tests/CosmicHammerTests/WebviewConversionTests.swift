@@ -4,7 +4,6 @@ extension CosmicHammerTests {
     @Suite(.serialized) @MainActor final class WebviewConversionTests {
         @Test func testWebviewSupportConstructorsReturnUserdata() {
             let result = runLua("""
-            (function()
                 local webview = require("hs.webview")
                 local suffix = tostring({}):gsub("%W", "")
 
@@ -26,7 +25,6 @@ extension CosmicHammerTests {
                 end
 
                 return "ok"
-            end)()
             """)
 
             #expect(result == "ok")
@@ -34,7 +32,6 @@ extension CosmicHammerTests {
 
         @Test(.skipInHeadless) func testWebviewNewAcceptsDatastoreAndUserContent() {
             let result = runLua("""
-            (function()
                 local webview = require("hs.webview")
                 local suffix = tostring({}):gsub("%W", "")
                 local datastore = webview.datastore.newPrivate()
@@ -57,7 +54,6 @@ extension CosmicHammerTests {
 
                 view:delete()
                 return "ok"
-            end)()
             """)
 
             #expect(result == "ok")
@@ -65,7 +61,6 @@ extension CosmicHammerTests {
 
         @Test func testUserContentScriptsRoundTripAsTables() {
             let result = runLua("""
-            (function()
                 local webview = require("hs.webview")
                 local suffix = tostring({}):gsub("%W", "")
                 local usercontent = webview.usercontent.new("port" .. suffix)
@@ -93,7 +88,6 @@ extension CosmicHammerTests {
                 end
 
                 return "ok"
-            end)()
             """)
 
             #expect(result == "ok")
@@ -101,7 +95,6 @@ extension CosmicHammerTests {
 
         @Test func testToolbarItemDetailsReturnNestedTablesAndUserdata() {
             let result = runLua("""
-            (function()
                 local webview = require("hs.webview")
                 local suffix = tostring({}):gsub("%W", "")
                 local toolbar = webview.toolbar.new("conversionDetails" .. suffix, {
@@ -124,7 +117,6 @@ extension CosmicHammerTests {
                 end
 
                 return "ok"
-            end)()
             """)
 
             #expect(result == "ok")
