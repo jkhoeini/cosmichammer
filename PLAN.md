@@ -1,103 +1,100 @@
-# Plan: generic typed-userdata helper prerequisites
+# Plan: Wi-Fi CoreWLAN conversion fixes
 
 ## Scope
 
-Integrate the useful prerequisite subset from stale change `zstzuukktylm` without
-reverting to its old raw helper shape.
+Integrate the useful parts of stale change `ztmsoytoyrsn` (`wip: wifi
+conversion`) without applying it blindly.
 
 This slice covers:
 
-- `Sources/HSSwiftExtensions/ChooserLegacy.swift`
-- `Sources/HSSwiftExtensions/Dialog.swift`
-- `Sources/HSSwiftExtensions/WebviewToolbar.swift`
-- `Tests/CosmicHammerTests/TypedUserdataConversionTests.swift`
+- `Sources/HSSwiftExtensions/Wifi.swift`
+- `Tests/CosmicHammerTests/WifiTests.swift`
 - `TODO.org`
 
-Do not blindly apply the stale `LuaHelpers.swift` hunk. Current head already has
-`LuaUserdataConvertible` plus `lua_pushretainedUserdata`, which is the preferred
-shared userdata seam.
+Do not touch `WifiWatcher.swift` unless review finds raw CoreWLAN objects
+escaping there; the current watcher paths push strings/event names.
 
 ## Audit Summary
 
-Stale change `zstzuukktylm` changes four files and adds one test file:
+Current head still routes several CoreWLAN objects through generic `lua_pushany`,
+which turns unknown objects into debug strings. The stale head is still useful
+because it introduces Wi-Fi-local conversion for `CWInterface`, `CWNetwork`,
+`CWChannel`, `CWConfiguration`, `CWNetworkProfile`, and CoreWLAN collections.
 
-- `ChooserLegacy.swift`: still useful as a visibility/API dependency for
-  toolbar window-context pushes.
-- `Dialog.swift`: still useful because `webviewAlert` currently force-casts
-  `lua_tovalue(... as! NSWindow)`, but webview userdata is not converted by
-  `lua_tovalue`.
-- `LuaHelpers.swift`: concept is useful, implementation shape is obsolete.
-  Prefer current retained-userdata APIs and specific module helpers instead of
-  adding old direct branches for every object type.
-- `WebviewToolbar.swift`: still useful because toolbar callbacks and methods use
-  generic `lua_pushany` and `lua_tovalue(... as! HSToolbar)` on toolbar userdata.
-- `TypedUserdataConversionTests.swift`: useful, but should be adjusted to current
-  helper names and retained-userdata behavior.
+The stale head needs tightening before landing:
+
+- `wifi.interfaces()` should preserve `CWWiFiClient.interfaceNames()` ordering
+  instead of wrapping names in an `NSSet`.
+- Ordered arrays should use stable numeric indexes rather than `luaL_len + 1`.
+- `NSNull` should map to Lua `nil`.
+- Background scan callback conversion should be covered, not only
+  `interfaceDetails`.
+- `CWNetwork` security/PHY mode tables should include newer WPA3/OWE and 11ax/be
+  values where current CoreWLAN APIs expose them.
 
 ## Implementation
 
-1. Fix the broken toolbar userdata reads first:
-   - Replace every `lua_tovalue(L, at: 1) as! HSToolbar` and toolbar
-     metamethod equivalent with `getToolbar`.
-   - Keep argument validation in place with `luaL_checkudata` where methods
-     already have it.
-   - Use `toolbar_pushHSToolbar` for places returning toolbar objects, including
-     copied toolbars and detached old toolbars.
+1. Add Wi-Fi-local conversion helpers in `Wifi.swift`:
+   - `pushWifiValue(L, value, depth:)` with a recursion cap.
+   - Explicit branches for `CWInterface`, `CWNetwork`, `CWChannel`,
+     `CWConfiguration`, `CWNetworkProfile`, `Set<CWNetwork>`,
+     `Set<CWChannel>`, `Set<CWNetworkProfile>`, `NSSet`, `NSArray`, `[Any]`,
+     `NSDictionary`, `[String: Any]`, and `NSNull`.
+   - Sequence helpers should push dense arrays using an explicit `lua_Integer`
+     counter, not `luaL_len + 1`.
+   - Dictionary helpers should push keys through generic `lua_pushany` and values
+     through `pushWifiValue`.
 
-2. Expose narrowly scoped helpers:
-   - Widen `pushHSChooser` enough for toolbar code to push chooser window
-     context as `hs.chooser` userdata.
-   - Add `dialog_webviewWindowFromLua(L:at:)` using `luaL_testudata` and
-     `wv_getWindowFromUD` so `hs.dialog.webviewAlert` can extract webview
-     userdata safely.
-   - Widen toolbar helpers as needed: `getToolbar`, `toolbar_pushHSToolbar`, and
-     `toolbar_pushWindowContext`.
+2. Replace only Wi-Fi CoreWLAN/object collection call sites:
+   - Background scan callback: `Set<CWNetwork>` and `NSSet` results go through
+     `pushWifiValue`; errors still push strings.
+   - `wifi_interfaces`: remove the existing `NSSet(array: names)` wrapper and
+     push the `names` collection directly so the helper preserves API order.
+   - `interfaceDetails`: push `CWInterface` through `pushCWInterface`.
+   - Nested interface fields: `wlanChannel`, `supportedChannels`,
+     `configuration`, `cachedScanResults`.
+   - Configuration `networkProfiles`.
+   - Network `wlanChannel`.
+   - `pushCWNetwork` inline array builders for `security`, `PHYModes`, and
+     `informationElementData` should use explicit counters rather than
+     `luaL_len + 1`.
+   - Update `pushCWNetwork` security and PHY mode arrays to include newer
+     WPA3/OWE and 11ax/11be cases where available, matching the coverage already
+     present in `pushCWInterface` and `pushCWNetworkProfile`.
 
-3. Replace unsafe toolbar callback/window-context pushes:
-   - Toolbar callbacks should push `capturedSelf` with `toolbar_pushHSToolbar`.
-   - Toolbar window context should return `"console"`, `hs.webview` userdata,
-     `hs.chooser` userdata, or a fallback value in a single helper.
-   - The fallback value is only for unknown window/controller types; known
-     webview and chooser contexts must not go through generic `lua_pushany`.
+3. Keep scalar/Foundation leaves unchanged:
+   - Strings, numbers, booleans, `NSData`, and simple arrays/dictionaries may use
+     existing generic helpers when they are not CoreWLAN objects.
+   - Do not broaden `LuaHelpers.swift` for CoreWLAN types in this slice.
 
-4. Keep `LuaHelpers.swift` mostly unchanged for this slice:
-   - Do not add stale direct branches for `HSWebViewWindow`, `HSCanvasView`,
-     `HSToolbar`, and `HSChooser` until each type has a current, tested retained
-     userdata strategy.
-   - If `HSToolbar` can conform cleanly to `LuaUserdataConvertible` without
-     changing self-ref semantics, do that; otherwise use explicit toolbar
-     helpers only.
+4. Add tests in `WifiTests.swift`:
+   - `wifi.interfaces()` returns nil or a Lua table.
+   - `wifi.interfaceDetails()` returns nil or a table whose CoreWLAN nested
+     fields are tables, not strings/userdata.
+   - Add a direct Swift unit test for the background-scan callback conversion
+     helper path if it can be made deterministic without real asynchronous
+     scanning. Otherwise defer the asynchronous `wifi.backgroundScan()` Lua
+     callback test and record that it is hardware/timing dependent.
+   - Mark tests with `.skipInHeadless` because they depend on Wi-Fi hardware and
+     macOS CoreWLAN behavior.
 
-5. Add focused tests:
-   - `dialog_webviewWindowFromLua` extracts the same `HSWebViewWindow` pushed by
-     `wv_HSWebViewWindow_toLua`.
-   - `toolbar_pushHSToolbar` produces `hs.webview.toolbar` userdata and
-     `lua_toAnyObject` returns the original toolbar.
-   - `toolbar_pushWindowContext` preserves `hs.webview` userdata for webview
-     windows.
-   - Add a Lua-level toolbar method smoke test that constructs a toolbar and
-     calls simple methods such as `identifier`, `isAttached`, `visible`, and
-     `copy` without crashing or returning fallback strings.
-
-6. Update `TODO.org`:
-   - Mark `Inspect generic typed-userdata helper dependencies early` done with
-     the file-by-file audit.
-   - If this implementation lands, also record that the prerequisite subset of
-     `Integrate remaining generic typed-userdata helper fixes` has been handled,
-     while leaving broader generic-helper cleanup for later stale heads if still
-     useful.
+5. Update `TODO.org`:
+   - Mark `Integrate remaining Wi-Fi CoreWLAN conversion fixes` done.
+   - Record the file-by-file stale-head audit, Claude plan/code review notes,
+     verification commands, and any hardware-gated skips/failures.
 
 ## Risks And Checks
 
-- `wv_getWindowFromUD` assumes the userdata tag is correct; keep the
-  `luaL_testudata` guard before calling it.
-- `pushHSChooser` and `pushHSToolbar` have different lifetime patterns from the
-  newer retained-userdata helper; do not mix lifecycles unless tests prove it is
-  safe.
-- Toolbar callback stack shape is externally visible. Preserve callback argument
-  count and order exactly.
-- Do not treat every `lua_pushany` in toolbar as a bug; many push plain strings,
-  arrays, dictionaries, item definitions, or images.
+- CoreWLAN collections are unordered sets in some APIs; tests should validate
+  shape, not ordering, except `interfaceNames()` where the API returns names.
+- Some machines have no Wi-Fi interface. Tests must accept `nil` from
+  `interfaceDetails` and `interfaces`.
+- Background scans can fail or be unavailable; callback tests should accept an
+  error string but must verify successful network entries are tables. Do not add
+  a synchronous Lua `backgroundScan` test unless it explicitly spins the run loop
+  and has a reliable timeout.
+- Keep the helper local to Wi-Fi. A generic CoreWLAN branch in `LuaHelpers.swift`
+  would widen behavior outside this module.
 
 ## Verification
 
@@ -105,10 +102,11 @@ Run:
 
 ```sh
 zsh -ic 'mise exec -- just test-resources'
-SDK_PATH="$(xcrun --show-sdk-path)" COSMIC_HAMMER_TEST_RESOURCES="$(pwd)/build/test/Cosmic Hammer.app/Contents/Resources" swift test -Xlinker -F -Xlinker "${SDK_PATH}/System/Library/PrivateFrameworks" --filter TypedUserdataConversion
+SDK_PATH="$(xcrun --show-sdk-path)" COSMIC_HAMMER_TEST_RESOURCES="$(pwd)/build/test/Cosmic Hammer.app/Contents/Resources" swift test -Xlinker -F -Xlinker "${SDK_PATH}/System/Library/PrivateFrameworks" --filter WifiTests
 zsh -ic 'mise exec -- just build'
 ```
 
-Also run a focused toolbar/webview/dialog filter if existing test suites expose
-one. Record any broad-suite baseline failures in `TODO.org` rather than hiding
-them.
+If `WifiTests` skip in the local environment, record the skip and rely on build
+plus Claude review for the hardware-gated portion. Do not run full `just verify`
+as the deciding signal for this item because the current full-suite baseline is
+already recorded as failing in unrelated UI/hardware/socket/task suites.

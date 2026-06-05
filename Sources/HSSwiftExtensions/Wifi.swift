@@ -178,7 +178,7 @@ private func associate(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 private func wifi_interfaces(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let sharedClient = CWWiFiClient.shared()
     if let names = sharedClient.interfaceNames() {
-        pushWifiValue(L, NSSet(array: names))
+        pushWifiValue(L, names)
     } else {
         lua_pushnil(L)
     }
@@ -338,12 +338,14 @@ private func pushWifiValue(_ L: UnsafeMutablePointer<lua_State>!, _ value: Any?,
         return
     }
 
-    guard let value = value else {
+    guard let value else {
         lua_pushnil(L)
         return
     }
 
     switch value {
+    case is NSNull:
+        lua_pushnil(L)
     case let interface as CWInterface:
         _ = pushCWInterface(L, interface)
     case let network as CWNetwork:
@@ -382,9 +384,11 @@ private func pushWifiSequence<S: Sequence>(
 ) {
     let values = Array(sequence)
     lua_createtable(L, Int32(values.count), 0)
+    var index: lua_Integer = 1
     for value in values {
         pushWifiValue(L, value, depth: depth + 1)
-        lua_rawseti(L, -2, luaL_len(L, -2) + 1)
+        lua_rawseti(L, -2, index)
+        index += 1
     }
 }
 
@@ -587,11 +591,16 @@ private func pushCWNetwork(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -
         (.personal, "Personal"), (.dynamicWEP, "Dynamic WEP"),
         (.wpaEnterprise, "WPA Enterprise"), (.wpaEnterpriseMixed, "WPA Enterprise Mixed"),
         (.wpa2Enterprise, "WPA2 Enterprise"), (.enterprise, "Enterprise"),
+        (.wpa3Personal, "WPA3 Personal"), (.wpa3Enterprise, "WPA3 Enterprise"),
+        (.wpa3Transition, "WPA3 Transition"), (.OWE, "OWE"),
+        (.oweTransition, "OWE Transition"),
     ]
+    var securityIndex: lua_Integer = 1
     for (secType, name) in secTypes {
         if theNetwork.supportsSecurity(secType) {
             lua_pushstring(L, name)
-            lua_rawseti(L, -2, luaL_len(L, -2) + 1)
+            lua_rawseti(L, -2, securityIndex)
+            securityIndex += 1
         }
     }
     lua_setfield(L, -2, "security")
@@ -601,11 +610,14 @@ private func pushCWNetwork(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -
     let phyModes: [(CWPHYMode, String)] = [
         (.modeNone, "None"), (.mode11a, "A"), (.mode11b, "B"),
         (.mode11g, "G"), (.mode11n, "N"), (.mode11ac, "AC"),
+        (.mode11ax, "AX"), (.mode11be, "BE"),
     ]
+    var phyIndex: lua_Integer = 1
     for (mode, name) in phyModes {
         if theNetwork.supportsPHYMode(mode) {
             lua_pushstring(L, name)
-            lua_rawseti(L, -2, luaL_len(L, -2) + 1)
+            lua_rawseti(L, -2, phyIndex)
+            phyIndex += 1
         }
     }
     lua_setfield(L, -2, "PHYModes")
@@ -614,9 +626,11 @@ private func pushCWNetwork(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -
     lua_newtable(L)
     if let ied = theNetwork.informationElementData {
         let bytes = [UInt8](ied)
+        var byteIndex: lua_Integer = 1
         for byte in bytes {
             lua_pushinteger(L, lua_Integer(byte))
-            lua_rawseti(L, -2, luaL_len(L, -2) + 1)
+            lua_rawseti(L, -2, byteIndex)
+            byteIndex += 1
         }
     }
     lua_setfield(L, -2, "informationElementData")

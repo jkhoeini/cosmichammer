@@ -412,9 +412,32 @@ LuaSkin → LuaSwift).
 	      ~luaRunString~ bootstraps before execution; no actionable comments
 	      remain.
 
-*** TODO Integrate remaining Wi-Fi CoreWLAN conversion fixes
-    Convert CoreWLAN interfaces, channels, configurations, profiles, and sets to
-    Lua tables without generic object fallback.
+	*** DONE Integrate remaining Wi-Fi CoreWLAN conversion fixes
+	    Completed 2026-06-05.
+	    Integrated the useful parts of stale head ~ztmsoytoyrsn~ (~wip: wifi
+	    conversion~) after plan review tightened the stale patch.
+
+	    Implemented Wi-Fi-local CoreWLAN conversion for interfaces, networks,
+	    channels, configurations, network profiles, sets, arrays, dictionaries,
+	    and background scan network results. Preserved ~wifi.interfaces()~ as an
+	    ordered list instead of replaying the stale ~NSSet~ wrapper, added stable
+	    numeric indexes for inline arrays, and covered newer WPA3/OWE and AX/BE
+	    enum values in ~pushCWNetwork~.
+
+	    The asynchronous Lua ~wifi.backgroundScan()~ callback test was not added:
+	    the conversion path now routes callback network sets through
+	    ~pushWifiValue~, but a reliable Lua-level test needs run-loop timing and
+	    Wi-Fi hardware. The focused hardware-gated tests cover the synchronous
+	    public shapes.
+
+	    Verification:
+	    - ~mise exec -- just test-resources~ passes.
+	    - ~SDK_PATH="$(xcrun --show-sdk-path)" COSMIC_HAMMER_TEST_RESOURCES="$(pwd)/build/test/Cosmic Hammer.app/Contents/Resources" swift test -Xlinker -F -Xlinker "${SDK_PATH}/System/Library/PrivateFrameworks" --filter WifiTests~ passes 2 tests.
+	    - ~mise exec -- just build~ passes.
+	    - Claude reviewed the plan, found valid gaps in inline array counters,
+	      enum coverage, interface ordering, and async background-scan test design;
+	      the plan was revised and re-reviewed cleanly. Claude then reviewed the
+	      source and tests with no actionable issues remaining.
 
 *** TODO Integrate remaining device/network object conversion fixes
     Finish explicit userdata/value conversion for Bonjour, camera, chooser, IPC,
