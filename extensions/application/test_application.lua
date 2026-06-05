@@ -160,6 +160,12 @@ function testObjectConversions()
   assertIsTable(bundleApps)
   assertGreaterThan(0, #bundleApps)
   assertIsUserdataOfType("hs.application", bundleApps[1])
+
+  local ax = require("hs.axuielement")
+  local appElement = ax.applicationElement(app)
+  assertIsUserdataOfType("hs.axuielement", appElement)
+  assertIsUserdataOfType("hs.application", appElement:asHSApplication())
+
   return success()
 end
 

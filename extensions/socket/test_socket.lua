@@ -508,6 +508,26 @@ function testTcpNoCallbackRead()
   return success()
 end
 
+function testTcpWriteAcceptsBinaryString()
+  local payload = "Hi"..string.char(0, 0xff, 0xfe).."from client"
+
+  assertIsUserdataOfType("hs.socket", hs.socket.new():write(payload))
+
+  return success()
+end
+
+function testSocketRejectsInvalidNumericArguments()
+  assertFalse(pcall(function() hs.socket.new():connect("localhost", -1) end))
+  assertFalse(pcall(function() hs.socket.new():listen(65536) end))
+  assertFalse(pcall(function() hs.socket.udp.new():connect("localhost", 70000) end))
+  assertFalse(pcall(function() hs.socket.udp.new():listen(-1) end))
+
+  local socketWithCallback = hs.socket.new(function() end)
+  assertFalse(pcall(function() socketWithCallback:read(-1) end))
+
+  return success()
+end
+
 -- address parsing
 function testTcpParseAddress()
   -- sockaddr structure:
@@ -553,14 +573,6 @@ end
 
 function testTcpParseBadAddress()
   assertIsNil(hs.socket.parseAddress("nonsense"))
-
-  return success()
-end
-
-function testTcpWriteAcceptsBinaryString()
-  local payload = "Hi"..string.char(0).."from client"
-
-  assertIsUserdataOfType("hs.socket", hs.socket.new():write(payload))
 
   return success()
 end

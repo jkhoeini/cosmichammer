@@ -23,6 +23,12 @@ private let CLIENT: NSString = "CLIENT"
 private var refTable: Int32 = LUA_NOREF
 private let USERDATA_TAG = "hs.socket.udp"
 
+private func socketUdpCheckPort(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> UInt16 {
+    let port = luaL_checkinteger(L, idx)
+    luaL_argcheck(L, port >= 0 && port <= 65_535, idx, "port must be between 0 and 65535")
+    return UInt16(port)
+}
+
 // Helper to extract the HSAsyncUdpSocket from userdata
 private func getUserData(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> HSAsyncUdpSocket {
     let ud = lua_checkUserdataPointer(AsyncSocketUserData.self, L, at: idx, metatableName: USERDATA_TAG)
@@ -846,7 +852,7 @@ private func socketudp_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 private func socketudp_connect(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let asyncUdpSocket = getUserData(L, 1)
     let theHost = lua_tovalue(L, at: 2) as! String
-    let thePort = (lua_tovalue(L, at: 3) as! NSNumber).uint16Value
+    let thePort = socketUdpCheckPort(L, at: 3)
 
     if lua_type(L, 4) == LUA_TFUNCTION {
         lua_replaceRegistryFunctionRef(L, &asyncUdpSocket.connectCallbackRef, at: 4)
@@ -877,7 +883,7 @@ private func socketudp_connect(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 private func socketudp_listen(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let asyncUdpSocket = getUserData(L, 1)
-    let thePort = (lua_tovalue(L, at: 2) as! NSNumber).uint16Value
+    let thePort = socketUdpCheckPort(L, at: 2)
 
     do {
         try asyncUdpSocket.bind(toPort: thePort)
@@ -1066,7 +1072,7 @@ private func socketudp_send(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
             _ = luaL_argerror(L, 3, "string expected")
             return 0
         }
-        let thePort = UInt16(clamping: luaL_checkinteger(L, 4))
+        let thePort = socketUdpCheckPort(L, at: 4)
         let tag: Int = lua_type(L, 5) == LUA_TNUMBER ? Int(lua_tointeger(L, 5)) : -1
         if lua_type(L, 5) == LUA_TFUNCTION {
             lua_replaceRegistryFunctionRef(L, &asyncUdpSocket.writeCallbackRef, at: 5)

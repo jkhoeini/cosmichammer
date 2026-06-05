@@ -26,6 +26,18 @@ private enum SocketRole: String {
 private var refTable: Int32 = LUA_NOREF
 private let USERDATA_TAG = "hs.socket"
 
+private func socketCheckPort(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> UInt16 {
+    let port = luaL_checkinteger(L, idx)
+    luaL_argcheck(L, port >= 0 && port <= 65_535, idx, "port must be between 0 and 65535")
+    return UInt16(port)
+}
+
+private func socketCheckByteCount(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> UInt {
+    let count = luaL_checkinteger(L, idx)
+    luaL_argcheck(L, count >= 0, idx, "byte count must be non-negative")
+    return UInt(count)
+}
+
 // Helper to extract the HSAsyncTcpSocket from userdata
 private func getUserData(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> HSAsyncTcpSocket {
     let ud = lua_checkUserdataPointer(AsyncSocketUserData.self, L, at: idx, metatableName: USERDATA_TAG)
@@ -985,7 +997,7 @@ private func socket_connect(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
     if lua_type(L, 3) == LUA_TNUMBER {
         let theHost = lua_tovalue(L, at: 2) as! String
-        let thePort = (lua_tovalue(L, at: 3) as! NSNumber).uint16Value
+        let thePort = socketCheckPort(L, at: 3)
         if lua_type(L, 4) == LUA_TFUNCTION {
             lua_replaceRegistryFunctionRef(L, &asyncSocket.connectCallbackRef, at: 4)
         }
@@ -1035,7 +1047,7 @@ private func socket_listen(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let asyncSocket = getUserData(L, 1)
 
     if lua_type(L, 2) == LUA_TNUMBER {
-        let thePort = (lua_tovalue(L, at: 2) as! NSNumber).uint16Value
+        let thePort = socketCheckPort(L, at: 2)
         do {
             try asyncSocket.accept(onPort: thePort)
         } catch {
@@ -1111,7 +1123,7 @@ private func socket_read(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
     switch lua_type(L, 2) {
     case LUA_TNUMBER:
-        let bytes = (lua_tovalue(L, at: 2) as! NSNumber).uintValue
+        let bytes = socketCheckByteCount(L, at: 2)
         asyncSocket.readData(toLength: bytes, withTimeout: asyncSocket.socketTimeout, tag: tag)
         if asyncSocket.role == .server {
             asyncSocket.readDataFromClients(toLength: bytes, withTimeout: asyncSocket.socketTimeout, tag: tag)

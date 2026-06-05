@@ -8,6 +8,7 @@ extension CosmicHammerTests {
         @Test func testGetDefaultEffect() { runLuaTest() }
         @Test func testGetDefaultOutput() { runLuaTest() }
         @Test func testGetDefaultInput() { runLuaTest() }
+        @Test func testDefaultDeviceMethods() { runLuaTest() }
         @Test func testDataSourceTypeMetadata() { runLuaTest() }
         @Test func testGetCurrentOutput() { runLuaTest() }
         @Test func testGetCurrentInput() { runLuaTest() }

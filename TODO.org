@@ -734,6 +734,71 @@ LuaSkin → LuaSwift).
     Re-check every non-current head against the linear current history, keep only
     changes that are not represented, and abandon heads only once they are stale.
 
+**** DONE Restore application AXUIElement round-trip regression coverage
+     Completed 2026-06-05.
+     Final stale-head audit found one useful test assertion from
+     ~pklzrzypmpkw~ / ~wtwynzxomtyy~ missing from current head:
+     ~hs.axuielement.applicationElement(app)~ should return
+     ~hs.axuielement~ userdata and ~appElement:asHSApplication()~ should return
+     ~hs.application~ userdata.
+
+     Added the assertion back to ~testObjectConversions~ in
+     ~extensions/application/test_application.lua~.
+
+**** DONE Restore audiodevice default-device metatable method regression coverage
+     Completed 2026-06-05.
+     Final stale-head audit found the production audiodevice metatable fix is
+     present, but the stale ~testDefaultDeviceMethods~ regression was replaced
+     rather than kept. Add it back alongside the datasource metadata test.
+
+     Restored ~testDefaultDeviceMethods~ and the Swift test entry. It directly
+     checks the userdata metatable ~__index~ and method table shape.
+
+**** DONE Restore TCP binary write regression coverage
+     Completed 2026-06-05.
+     Final stale-head audit found UDP binary send coverage is present and
+     stronger, but the stale TCP ~hs.socket.new():write(binaryString)~ smoke
+     test is missing.
+
+     Restored the deterministic TCP binary write smoke test and included invalid
+     UTF-8 bytes in the payload.
+
+**** DONE Harden socket numeric arguments left over from stale socket head
+     Completed 2026-06-05.
+     Final stale-head audit found current socket byte conversion supersedes the
+     stale helpers, but TCP/UDP port and TCP read-length conversions still use
+     generic numeric casts in several paths. Use checked Lua integer reads,
+     reject out-of-range ports, and reject negative TCP read lengths.
+
+     Added a focused invalid-argument regression for TCP/UDP ports and negative
+     TCP read lengths. Claude plan review specifically corrected the plan from
+     clamping to rejection.
+
+     Verification for the four leftovers:
+     - ~mise exec -- just test-resources~ passes.
+     - Focused Swift filter passes 6 tests:
+       ~Application.testObjectConversions~,
+       ~Audiodevice.testDefaultDeviceMethods~,
+       ~Socket.testTcpWriteAcceptsBinaryString~,
+       ~Socket.testUdpSendAcceptsBinaryString~,
+       ~Socket.testTcpParseAddress~, and
+       ~Socket.testSocketRejectsInvalidNumericArguments~.
+     - ~mise exec -- just build~ passes.
+     - ~mise exec -- just verify~ was attempted. Generated checks, docs/resource
+       prep, and build passed; the full test run still fails in known baseline
+       AppFinder/Application, hardware/async Audiodevice, Brightness,
+       Distributednotifications, FS temp-state, Hotkey, and then exits in the
+       broad suite before completion. The new focused tests passed in the broad
+       run before unrelated failures.
+     - Full ~Socket~ filter was attempted separately. It still fails existing
+       async/listener baseline cases, but the new TCP/UDP binary and invalid
+       numeric argument tests pass.
+     - Claude implementation review retry reported ~NO ACTIONABLE ISSUES~.
+
+**** TODO Abandon verified stale branch heads
+     Once the leftover items above are implemented and reviewed, abandon the
+     stale heads whose useful changes are represented in current linear history.
+
 *** DONE Teach BuildDocs about Swift docs and add docs-tool tests
     Completed 2026-06-05.
 

@@ -1,64 +1,108 @@
-# Plan: Release-only stale head integration
+# Plan: Final stale-head cleanup
 
-## Scope
+## Goal
 
-Resolve the TODO for stale head `zmqntpmzskkp`:
+Make current `dev` contain every useful change from the remaining stale jj heads,
+then abandon only heads whose changes are fully represented in current linear
+history.
 
-- `flake.nix`
-- `TODO.org`
-- `PLAN.md`
+## Ordered Audit
 
-## Audit
+Oldest to newest stale heads checked with `jj diff -s --no-pager -r <id>` and
+per-file `jj diff --git --no-pager -r <id> -- <file>`:
 
-`jj diff -s --no-pager -r zmqntpmzskkp` changes only `flake.nix`.
+1. `lqmwtrnyzxkm` Spotlight tuple conversion: covered by current
+   `Spotlight.swift` and `SpotlightConversionTests`.
+2. `puunumwuvrsq` CoreLocation conversion: covered by current
+   `Location.swift` and `LocationConversionTests`.
+3. `wkwoqqzwvnmu` Canvas value conversion: covered by current
+   `CanvasLuaMethods.swift`, `CanvasView.swift`, and
+   `CanvasValueConversionTests`.
+4. `pklzrzypmpkw` app/window/uielement/image/color/styledtext/pasteboard:
+   production changes are covered, but one Lua application/AXUIElement test
+   assertion is still useful.
+5. `ztmsoytoyrsn` Wi-Fi/CoreWLAN conversion: covered by current `Wifi.swift`
+   and `WifiTests`.
+6. `onltpntqosrs` device/network object conversion: covered by current
+   Bonjour, camera, chooser, IPC, ping, notify, Razer, serial, sharing, sound,
+   and StreamDeck code/tests.
+7. `lmplzsxrmkwx` WebView conversion: covered by current `Webview*.swift`,
+   `WebviewConversionTests`, and `TypedUserdataConversionTests`.
+8. `wtwynzxomtyy` app/window subset: production changes are covered, and it
+   reinforces the same missing application/AXUIElement test assertion.
+9. `uyrsyrpwzkxz` audiodevice metatable registration: production changes are
+   covered, but the stale default-device metatable method regression test is
+   still useful.
+10. `wqrzzyrnnyyy` socket binary conversion: current byte-safe helpers cover
+    binary payload behavior and UDP binary send coverage, but the stale TCP
+    binary write smoke test and numeric argument hardening are still useful.
+11. `uvokrvxsuqsq` Canvas matrix conversion: covered by current
+    `CanvasMatrix.swift` and broader `CanvasMatrixTests`.
+12. `zstzuukktylm` generic typed userdata helpers: useful dialog/toolbar/chooser
+    pieces are covered. Do not replay broad `LuaHelpers.swift` branches for
+    `HSCanvasView`, `HSWebViewWindow`, `HSToolbar`, or `HSChooser`; current code
+    uses explicit module-local pushers/dispatchers, and no live generic
+    `lua_pushany` call path for those objects was found.
+13. `mtvxytwuwnzw` console/speech conversion: covered by current
+    console/speech helpers and tests.
+14. `zmqntpmzskkp` release `flake.nix`: covered by current `v0.5.3` flake
+    commit and Nix build verification.
 
-The stale diff:
+## Actionable Items
 
-- bumps `version = "0.5.2"` to `version = "0.5.3"`;
-- updates the release DMG hash from
-  `sha256-d+f7r/LiemexGdOmTy6JHe4nUpyCPI+nYWleHCzdoo0=` to
-  `sha256-IDWcQpqoUKCIS1r+REWMV2BE9uESMGNfeZ6i+x36kPU=`.
+1. Add the missing application/AXUIElement Lua regression assertions to
+   `extensions/application/test_application.lua`; `Application.testObjectConversions`
+   already runs that Lua function.
+2. Add back `testDefaultDeviceMethods` in
+   `extensions/audiodevice/test_audiodevice.lua` and expose it in
+   `Tests/CosmicHammerTests/AudiodeviceTests.swift`.
+3. Add `testTcpWriteAcceptsBinaryString` in `extensions/socket/test_socket.lua`
+   and expose it in `Tests/CosmicHammerTests/SocketTests.swift`.
+4. Harden socket numeric arguments:
+   - TCP `connect(host, port)` and `listen(port)`.
+   - TCP `read(byteCount)`.
+   - UDP `connect(host, port)` and `listen(port)`.
+   - Keep existing checked UDP `send(message, host, port)` behavior.
+   - Reject out-of-range ports instead of clamping; silently connecting to a
+     different endpoint is worse than an argument error.
+   - Reject negative TCP read lengths.
 
-Current head still has `flake.nix` at `0.5.2`, so this change is not already
-represented. GitHub shows release `v0.5.3` exists and is marked latest. Local
-jj tags also include `v0.5.3` at `ac54e34a7c37`.
+## Non-Actions
 
-Nix verification:
+- Do not reintroduce stale local socket byte helpers; current `LuaHelpers.swift`
+  already provides `lua_checkdata`, `lua_todata`, `lua_pushdata`, and
+  `lua_tostringValue`.
+- Do not reintroduce broad `lua_pushany` branches for canvas/webview/toolbar/
+  chooser unless review finds a concrete live call path. Explicit module-local
+  conversion is safer and already tested.
+- Claude challenged this on possible old LuaSkin `pushNSObject:` container
+  conversion. Current source no longer has `pushNSObject:`; the remaining
+  `lua_pushany` collection call sites were checked for these module object
+  types and no live generic path was found.
 
-- `nix store prefetch-file --json https://github.com/jkhoeini/cosmichammer/releases/download/v0.5.3/Cosmic-Hammer-0.5.3.dmg`
-  returned `sha256-IDWcQpqoUKCIS1r+REWMV2BE9uESMGNfeZ6i+x36kPU=`.
-- The same command for `0.5.2` returned the current `flake.nix` hash, proving
-  the prefetch path is checking the same release artifact shape.
+## Verification
 
-## Decision
-
-Integrate the stale `flake.nix` bump. It is useful because the Nix package is
-currently one release behind a real, verified `v0.5.3` DMG.
-
-This does not make `zmqntpmzskkp` worth keeping as a branch head after
-integration: once the two-line flake change is in current linear history, that
-head contains no remaining useful change.
-
-## Implementation
-
-1. Update `flake.nix` to `0.5.3` and the verified hash.
-2. Mark the TODO done with the audit and verification notes.
-3. Run:
+Run focused gates after implementation:
 
 ```sh
-zsh -ic 'nix build ".#cosmic-hammer" --no-link'
+zsh -ic 'mise exec -- just test-resources'
+zsh -ic 'SDK_PATH="$(xcrun --show-sdk-path)" COSMIC_HAMMER_TEST_RESOURCES="$(pwd)/build/test/Cosmic Hammer.app/Contents/Resources" swift test -Xlinker -F -Xlinker "${SDK_PATH}/System/Library/PrivateFrameworks" --filter "Application.testObjectConversions|Audiodevice.testDefaultDeviceMethods|Socket.testTcpWriteAcceptsBinaryString|Socket.testUdpSendAcceptsBinaryString|Socket.testTcpParseAddress|Socket.testSocketRejectsInvalidNumericArguments"'
+zsh -ic 'mise exec -- just build'
+zsh -ic 'mise exec -- just verify'
 ```
 
-Claude plan review recommended `nix build ".#cosmic-hammer" --no-link` as the
-single useful gate because it proves the derivation evaluates and the prefetched
-hash is accepted.
+`just verify` is expected to expose the known broad runtime-suite baseline if it
+still fails; record whether any failure is related to these changes. Then run
+Claude implementation review on the final diff. If no actionable issues remain,
+mark the final TODOs done, commit, move `dev`, abandon the stale heads, and
+verify `jj log --no-pager -r "heads(all()) ~ ::@"` is empty.
 
-## Review Questions
+## Claude Review Focus
 
-- Is it acceptable for current development history to point the Nix package at
-  the latest released DMG even though current source now contains additional
-  unreleased commits? I think yes: this flake packages upstream release assets,
-  not the working tree source.
-- Should this be skipped as release bookkeeping? I think no: users of the Nix
-  package would otherwise install `0.5.2` even though `0.5.3` is the current
-  release.
+Ask Claude to be adversarial on:
+
+- Whether the rejected generic `lua_pushany` branches hide any real missing call
+  path.
+- Whether socket numeric hardening should reject out-of-range ports instead of
+  clamping.
+- Whether the restored tests are valuable or duplicate existing coverage.
