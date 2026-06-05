@@ -643,9 +643,23 @@ LuaSkin → LuaSwift).
     WebView toolbar, and typed-userdata tests; it has no socket file overlap.
     The remaining generic-helper work stays in its own TODO.
 
-*** TODO Integrate remaining Canvas matrix typed conversion fixes
-    Make matrix constructors and methods use explicit ~NSAffineTransform~ table
-    conversion so returned matrix tables stay chainable.
+*** DONE Integrate remaining Canvas matrix typed conversion fixes
+    Completed 2026-06-05.
+    Matrix constructors and methods now use Canvas-local ~NSAffineTransform~
+    table push/pull helpers instead of generic ~lua_pushany~ and
+    ~lua_tovalue(... as! NSAffineTransform)~. Returned matrix tables keep the
+    ~hs.canvas.matrix~ metatable, so chained constructors/methods remain
+    callable. Plain six-field tables are accepted for append/prepend, and
+    missing fields keep identity defaults.
+
+    Verification:
+    - ~mise exec -- just test-resources~ passes.
+    - ~SDK_PATH="$(xcrun --show-sdk-path)" COSMIC_HAMMER_TEST_RESOURCES="$(pwd)/build/test/Cosmic Hammer.app/Contents/Resources" swift test -Xlinker -F -Xlinker "${SDK_PATH}/System/Library/PrivateFrameworks" --filter CanvasMatrixTests~ passes 3 tests.
+    - ~SDK_PATH="$(xcrun --show-sdk-path)" COSMIC_HAMMER_TEST_RESOURCES="$(pwd)/build/test/Cosmic Hammer.app/Contents/Resources" swift test -Xlinker -F -Xlinker "${SDK_PATH}/System/Library/PrivateFrameworks" --filter CanvasValueConversionTests~ passes 6 tests.
+    - ~mise exec -- just build~ passes.
+    - Hegel's independent audit added the plain-table and partial-field test
+      cases. Claude plan review stalled and was killed; Claude implementation
+      review reported ~NO ACTIONABLE ISSUES~.
 
 	*** TODO Integrate remaining generic typed-userdata helper fixes
 	    Preserve WebView, Canvas, Toolbar, and Chooser userdata through generic push
