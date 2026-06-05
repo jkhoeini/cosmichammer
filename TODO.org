@@ -278,9 +278,17 @@ LuaSkin → LuaSwift).
     - ~mtvxytwuwnzw~ console/speech conversion.
     - ~zmqntpmzskkp~ release metadata only, verify stale before abandon.
 
-*** TODO Integrate remaining CoreLocation conversion fixes from stale heads
-    Convert locations, regions, placemarks, and geocoders explicitly instead of
+*** DONE Integrate remaining CoreLocation conversion fixes from stale heads
+    Completed 2026-06-05.
+    Converted locations, regions, placemarks, and geocoders explicitly instead of
     relying on generic ~lua_pushany~/~lua_tovalue~ behavior.
+
+    Verification:
+    - ~mise exec -- just test-resources && SDK_PATH="$(xcrun --show-sdk-path)" COSMIC_HAMMER_TEST_RESOURCES="$(pwd)/build/test/Cosmic Hammer.app/Contents/Resources" swift test -Xlinker -F -Xlinker "${SDK_PATH}/System/Library/PrivateFrameworks" --filter LocationConversionTests~
+    - ~mise exec -- just test~ was attempted; unrelated suites still fail in
+      app/window userdata, audiodevice registration, hardware-dependent
+      brightness, distributednotifications timing, and leftover filesystem temp
+      state. The focused CoreLocation tests passed.
 
 *** TODO Integrate remaining Canvas value conversion fixes from stale heads
     Restore Canvas-specific Lua table/userdata conversion for colors, images,

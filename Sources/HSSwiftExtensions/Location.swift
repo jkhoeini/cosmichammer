@@ -415,7 +415,7 @@ private func location_fakeLocationChange(_ L: UnsafeMutablePointer<lua_State>!) 
 
 // MARK: - Sunrise/Sunset Functions
 
-private func sunturns(_ L: UnsafeMutablePointer<lua_State>!) -> EDSunriseSet {
+private func sunturns(_ L: UnsafeMutablePointer<lua_State>!) -> EDSunriseSet? {
 
     var date: Date
     var tz: TimeZone
@@ -426,12 +426,12 @@ private func sunturns(_ L: UnsafeMutablePointer<lua_State>!) -> EDSunriseSet {
     // This is unconventional, but is the easiest way to cope with the older Lua implementation's API
     var idx: Int32 = 2
     if lua_type(L, 1) == LUA_TTABLE {
-        if let loc = toCLLocation(L, at: 1) {
-            latitude = loc.coordinate.latitude
-            longitude = loc.coordinate.longitude
-        } else {
+        guard let loc = toCLLocation(L, at: 1) else {
             _ = luaL_argerror(L, 1, "expected locationTable")
+            return nil
         }
+        latitude = loc.coordinate.latitude
+        longitude = loc.coordinate.longitude
     } else {
         latitude = lua_tonumber(L, 1)
         longitude = lua_tonumber(L, 2)
@@ -480,7 +480,7 @@ private func sunturns(_ L: UnsafeMutablePointer<lua_State>!) -> EDSunriseSet {
 ///  * You can turn the return value into a more useful structure, with ```os.date("*t", returnvalue)```
 ///  * For compatibility with the locationTable object returned by [hs.location.get](#get), this function can also be invoked as `hs.location.sunrise(locationTable, offset[, date])`.
 private func location_sunrise(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let suntimes = sunturns(L)
+    guard let suntimes = sunturns(L) else { return 0 }
     lua_pushinteger(L, lua_Integer(suntimes.sunrise.timeIntervalSince1970))
     return 1
 }
@@ -502,7 +502,7 @@ private func location_sunrise(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * You can turn the return value into a more useful structure, with ```os.date("*t", returnvalue)```
 ///  * For compatibility with the locationTable object returned by [hs.location.get](#get), this function can also be invoked as `hs.location.sunset(locationTable, offset[, date])`.
 private func location_sunset(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let suntimes = sunturns(L)
+    guard let suntimes = sunturns(L) else { return 0 }
     lua_pushinteger(L, lua_Integer(suntimes.sunset.timeIntervalSince1970))
     return 1
 }
@@ -752,7 +752,7 @@ private func pushCLCircularRegion(_ L: UnsafeMutablePointer<lua_State>!, _ theRe
     }
 
     lua_newtable(L)
-    lua_pushstring(L, theRegion.identifier);             lua_setfield(L, -2, "identifier")
+    lua_pushany(L, theRegion.identifier as NSString);    lua_setfield(L, -2, "identifier")
     lua_pushnumber(L, theRegion.center.latitude);        lua_setfield(L, -2, "latitude")
     lua_pushnumber(L, theRegion.center.longitude);       lua_setfield(L, -2, "longitude")
     lua_pushnumber(L, theRegion.radius);                 lua_setfield(L, -2, "radius")
@@ -773,9 +773,9 @@ private func pushCLRegion(_ L: UnsafeMutablePointer<lua_State>!, _ region: CLReg
     }
 
     lua_newtable(L)
-    lua_pushstring(L, region.identifier);             lua_setfield(L, -2, "identifier")
-    lua_pushboolean(L, region.notifyOnEntry ? 1 : 0); lua_setfield(L, -2, "notifyOnEntry")
-    lua_pushboolean(L, region.notifyOnExit ? 1 : 0);  lua_setfield(L, -2, "notifyOnExit")
+    lua_pushany(L, region.identifier as NSString);        lua_setfield(L, -2, "identifier")
+    lua_pushboolean(L, region.notifyOnEntry ? 1 : 0);     lua_setfield(L, -2, "notifyOnEntry")
+    lua_pushboolean(L, region.notifyOnExit ? 1 : 0);      lua_setfield(L, -2, "notifyOnExit")
     return 1
 }
 
@@ -805,8 +805,10 @@ private func toCLLocation(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) 
     var speed: CLLocationSpeed = -1.0
     var timestamp = Date()
 
-    if lua_getfield(L, absIdx, "latitude") == LUA_TNUMBER           { loc.latitude = lua_tonumber(L, -1) }
-    if lua_getfield(L, absIdx, "longitude") == LUA_TNUMBER          { loc.longitude = lua_tonumber(L, -1) }
+    let hasLatitude = lua_getfield(L, absIdx, "latitude") == LUA_TNUMBER
+    if hasLatitude { loc.latitude = lua_tonumber(L, -1) }
+    let hasLongitude = lua_getfield(L, absIdx, "longitude") == LUA_TNUMBER
+    if hasLongitude { loc.longitude = lua_tonumber(L, -1) }
     if lua_getfield(L, absIdx, "altitude") == LUA_TNUMBER           { altitude = lua_tonumber(L, -1) }
     if lua_getfield(L, absIdx, "horizontalAccuracy") == LUA_TNUMBER { hAccuracy = lua_tonumber(L, -1) }
     if lua_getfield(L, absIdx, "verticalAccuracy") == LUA_TNUMBER   { vAccuracy = lua_tonumber(L, -1) }
@@ -816,6 +818,11 @@ private func toCLLocation(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) 
         timestamp = Date(timeIntervalSince1970: lua_tonumber(L, -1))
     }
     lua_pop(L, 8)
+
+    guard hasLatitude, hasLongitude else {
+        os_log(.error, "%{public}s", "\(USERDATA_TAG):toCLLocation expected numeric latitude and longitude fields")
+        return nil
+    }
 
     return CLLocation(coordinate: loc,
                       altitude: altitude,
@@ -841,8 +848,8 @@ private func toCLCircularRegion(_ L: UnsafeMutablePointer<lua_State>!, at idx: I
     if lua_getfield(L, absIdx, "longitude") == LUA_TNUMBER { theCenter.longitude = lua_tonumber(L, -1) }
     if lua_getfield(L, absIdx, "latitude") == LUA_TNUMBER  { theCenter.latitude = lua_tonumber(L, -1) }
     if lua_getfield(L, absIdx, "radius") == LUA_TNUMBER    { theRadius = lua_tonumber(L, -1) }
-    if lua_getfield(L, absIdx, "identifier") == LUA_TSTRING, let identifier = lua_tostring(L, -1) {
-        theIdentifier = String(cString: identifier)
+    if lua_getfield(L, absIdx, "identifier") == LUA_TSTRING, let identifier = lua_tostringValue(L, at: -1) {
+        theIdentifier = identifier
     }
     lua_pop(L, 4)
 
