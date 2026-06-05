@@ -52,7 +52,7 @@ private func tcpWriteCallback(_ asyncSocket: HSAsyncTcpSocket, tag: Int) {
         if asyncSocket.writeCallbackRef != LUA_NOREF {
             let L = lua_getCurrentState()!
             lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(asyncSocket.writeCallbackRef))
-            lua_pushany(L, NSNumber(value: tag))
+            lua_pushinteger(L, lua_Integer(tag))
             lua_unrefRegistryRef(L, &asyncSocket.writeCallbackRef)
             if lua_pcall(L, 1, 0, 0) != LUA_OK { lua_pop(L, 1) }
         }
@@ -64,8 +64,8 @@ private func tcpReadCallback(_ asyncSocket: HSAsyncTcpSocket, data: Data, tag: I
         if asyncSocket.readCallbackRef != LUA_NOREF {
             let L = lua_getCurrentState()!
             lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(asyncSocket.readCallbackRef))
-            lua_pushany(L, data as NSData)
-            lua_pushany(L, NSNumber(value: tag))
+            lua_pushdata(L, data)
+            lua_pushinteger(L, lua_Integer(tag))
             if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
         }
     }
@@ -904,10 +904,7 @@ private func socket_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// AF_INET6 | 30 | IPv6
 ///
 private func socket_parseAddress(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    luaL_checktype(L, 1, LUA_TSTRING)
-    let addressData = lua_tostring(L, 1)!
-    let addressDataLength: Int = lua_rawlen(L, 1)
-    let address = Data(bytes: addressData, count: addressDataLength)
+    let address = lua_checkdata(L, at: 1)
 
     // Parse the sockaddr structure directly
     guard address.count >= MemoryLayout<sockaddr>.size else {
@@ -1120,8 +1117,7 @@ private func socket_read(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
             asyncSocket.readDataFromClients(toLength: bytes, withTimeout: asyncSocket.socketTimeout, tag: tag)
         }
     case LUA_TSTRING:
-        let separatorString = lua_tovalue(L, at: 2) as! String
-        let separator = separatorString.data(using: .utf8)!
+        let separator = lua_checkdata(L, at: 2)
         asyncSocket.readData(to: separator, withTimeout: asyncSocket.socketTimeout, tag: tag)
         if asyncSocket.role == .server {
             asyncSocket.readDataFromClients(to: separator, withTimeout: asyncSocket.socketTimeout, tag: tag)

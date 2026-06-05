@@ -1,73 +1,103 @@
-# Plan: Audiodevice metatable registration fixes
+# Plan: Socket binary string conversion fixes
 
 ## Scope
 
-Implement the useful parts of stale head `uyrsyrpwzkxz`
-(`wip: audiodevice registration`).
+Implement the still-useful socket slice from stale head `wqrzzyrnnyyy`
+(`wip: socket conversion`), while checking the overlap note from
+`zstzuukktylm`.
 
 This slice covers:
 
-- `Sources/HSSwiftExtensions/Audiodevice.swift`
-- `Tests/CosmicHammerTests/AudiodeviceTests.swift`
-- `extensions/audiodevice/test_audiodevice.lua`
+- `Sources/HSSwiftExtensions/Socket.swift`
+- `Sources/HSSwiftExtensions/SocketUdp.swift`
+- `Tests/CosmicHammerTests/SocketTests.swift`
+- `extensions/socket/test_udpsocket.lua`
 - `TODO.org`
 
-Do not touch WebView, socket, Canvas, console, speech, generic Lua helpers, or
-unrelated audio behavior in this commit.
+Do not touch WebView, Canvas, console, speech, or generic `LuaHelpers.swift` in
+this commit.
 
 ## Audit Summary
 
-The stale diff is narrow and still useful:
+The stale socket diff is partly useful, but its local helper functions are stale
+because current head already has shared, length-aware helpers:
 
-- `audiodevice_isOutputDevice` and `audiodevice_isInputDevice` already exist,
-  and Lua tests already exercise `device:isOutputDevice()` /
-  `device:isInputDevice()`, but current `audiodevice_metalib` does not register
-  those methods on device userdata.
-- Both audiodevice userdata metatables are created without `__type`, while
-  other migrated modules expose stable userdata type metadata.
-- The stale default-device Lua regression is weak because existing tests already
-  cover `isInputDevice`, `isOutputDevice`, and default-device `__type`
-  behavior. It also misses datasource `__type`.
-- Add one focused datasource metadata test instead. It must be hardware-tolerant
-  because datasource support varies by host.
+- `lua_pushdata`
+- `lua_todata`
+- `lua_checkdata`
+- `lua_tostringValue`
+- registry-ref helpers
 
-No broader audio API refactor is needed.
+Still-useful changes:
+
+- Push TCP/UDP callback tags with `lua_pushinteger` instead of generic
+  `lua_pushany`.
+- Push TCP read callback payloads with `lua_pushdata` instead of generic
+  `NSData` dispatch.
+- Push UDP read callback payload and sockaddr bytes with `lua_pushdata`.
+  Current UDP payload conversion decodes `Data` as UTF-8 and pushes nil for
+  invalid byte sequences.
+- Read TCP parse-address bytes and TCP read delimiters with `lua_checkdata`.
+  Current delimiter conversion round-trips through Swift `String`, so invalid
+  UTF-8 delimiters are corrupted before matching.
+- Read unconnected UDP `send` host/port arguments with checked APIs. The
+  invalid-byte UDP payload regression exposed a current crash in the stale
+  `lua_tovalue(... as! String)` host extraction path.
+
+Not useful to replay:
+
+- Do not add stale local `luaDataAt`, `luaStringAt`, or `luaPushData` helpers in
+  socket files. Use the shared helpers already in `LuaHelpers.swift`.
+- Do not rewrite socket host/path/peer-name/port extraction in this slice.
+  Current `lua_tovalue` string conversion is already length-aware through
+  `lua_tostringValue`, and those arguments are not binary socket payloads.
+  The exception is unconnected UDP `send`, where the binary payload regression
+  exposed a real crash.
+- Do not treat `zstzuukktylm` as a socket dependency. Its changed files are
+  chooser, dialog, generic Lua helpers, WebView toolbar, and typed-userdata
+  tests; it does not change socket files.
+- Do not add TCP or UDP async receive regressions in this slice. Current socket
+  receive tests already have baseline callback-delivery failures in this
+  harness; the attempted binary delivery tests were flaky for the same reason.
 
 ## Implementation
 
-1. In `Audiodevice.swift`:
-   - Add `isOutputDevice` and `isInputDevice` entries to
-     `audiodevice_metalib`, next to the existing device query methods.
-   - Set `__type` to `USERDATA_TAG` after assigning `__index` on the
-     `hs.audiodevice` metatable.
-   - Set `__type` to `USERDATA_DATASOURCE_TAG` after assigning `__index` on the
-     `hs.audiodevice.datasource` metatable.
+1. In `Socket.swift`:
+   - Change `tcpWriteCallback` tag push to `lua_pushinteger`.
+   - Change `tcpReadCallback` data/tag pushes to `lua_pushdata` and
+     `lua_pushinteger`.
+   - Change `socket_parseAddress` to use `lua_checkdata(L, at: 1)`.
+   - Change only the string-delimiter branch of `socket_read` to use
+     `lua_checkdata(L, at: 2)`.
 
-2. In `extensions/audiodevice/test_audiodevice.lua`:
-   - Add `testDataSourceTypeMetadata`.
-   - Iterate available devices and inspect the first input or output datasource
-     table that exists.
-   - Assert a found datasource is userdata of type
-     `hs.audiodevice.datasource`.
-   - Return success when no datasource-capable device is present.
+2. In `SocketUdp.swift`:
+   - Change `udpWriteCallback` tag push to `lua_pushinteger`.
+   - Change `udpReadCallback` data/address pushes to `lua_pushdata`.
+   - Change unconnected `socketudp_send` host/port extraction to
+     `lua_tostringValue` and `luaL_checkinteger`.
 
-3. In `AudiodeviceTests.swift`:
-   - Add a Swift Testing wrapper for `testDataSourceTypeMetadata`.
+3. In Lua socket tests:
+   - Add a deterministic UDP `send` regression with NUL and invalid UTF-8
+     payload bytes. This catches the current unconnected-send crash without
+     depending on async receive delivery.
 
-4. Update `TODO.org` after build, focused audiodevice tests, and review.
+4. In `SocketTests.swift`:
+   - Add a wrapper for the UDP binary send regression using the existing
+     synchronous socket Lua test harness.
+
+5. Update `TODO.org` after plan review, implementation review, build, and
+   focused socket tests.
 
 ## Verification
 
-Run:
+Run focused tests first:
+
+```sh
+SDK_PATH="$(xcrun --show-sdk-path)" COSMIC_HAMMER_TEST_RESOURCES="$(pwd)/build/test/Cosmic Hammer.app/Contents/Resources" swift test -Xlinker -F -Xlinker "${SDK_PATH}/System/Library/PrivateFrameworks" --filter "Socket.testUdpSendAcceptsBinaryString|Socket.testTcpParseAddress"
+```
+
+Then run:
 
 ```sh
 mise exec -- just build
 ```
-
-Then focused tests:
-
-```sh
-SDK_PATH="$(xcrun --show-sdk-path)" COSMIC_HAMMER_TEST_RESOURCES="$(pwd)/build/test/Cosmic Hammer.app/Contents/Resources" swift test -Xlinker -F -Xlinker "${SDK_PATH}/System/Library/PrivateFrameworks" --filter "Audiodevice.testIsOutputDevice|Audiodevice.testIsInputDevice|Audiodevice.testGetDefaultOutput|Audiodevice.testDataSourceTypeMetadata"
-```
-
-If useful, run the full audiodevice test filter after the focused test passes.

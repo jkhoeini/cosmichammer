@@ -613,13 +613,35 @@ LuaSkin → LuaSwift).
       dependent datasource tests; the new datasource metadata test passes.
     - Claude implementation review reported ~NO ACTIONABLE ISSUES~.
 
-*** TODO Integrate remaining socket binary string conversion fixes
-    Use length-aware Lua string reads/writes in TCP and UDP socket paths and add
-    binary payload regression tests.
+*** DONE Integrate remaining socket binary string conversion fixes
+    Completed 2026-06-05.
+    Replaced remaining socket callback payload/tag pushes and TCP delimiter /
+    parse-address reads with explicit byte-safe Lua APIs. UDP read callbacks now
+    push raw payload and sockaddr bytes, and unconnected UDP ~send~ validates
+    host/port with checked APIs after the invalid-byte payload regression exposed
+    a force-cast crash.
 
-*** TODO Check socket conversion against typed-userdata helper overlap
-    Inspect both stale diffs for overlapping userdata registration files before
-    committing the socket conversion.
+    The stale local byte-helper functions were not replayed because current
+    ~LuaHelpers.swift~ already provides ~lua_pushdata~, ~lua_todata~,
+    ~lua_checkdata~, and ~lua_tostringValue~. TCP/UDP async binary receive
+    regressions were not kept because existing socket receive tests already time
+    out in this harness; the final regression is the deterministic UDP binary
+    send crash case.
+
+    Verification:
+    - ~mise exec -- just test-resources~ passes.
+    - ~SDK_PATH="$(xcrun --show-sdk-path)" COSMIC_HAMMER_TEST_RESOURCES="$(pwd)/build/test/Cosmic Hammer.app/Contents/Resources" swift test -Xlinker -F -Xlinker "${SDK_PATH}/System/Library/PrivateFrameworks" --filter "Socket.testUdpSendAcceptsBinaryString|Socket.testTcpParseAddress"~ passes 2 tests.
+    - ~mise exec -- just build~ passes.
+    - Claude plan review stalled twice and was killed; Mendel's independent
+      audit shaped the plan. Claude implementation review then reported
+      ~NO ACTIONABLE ISSUES~.
+
+*** DONE Check socket conversion against typed-userdata helper overlap
+    Completed 2026-06-05.
+    Compared stale head ~wqrzzyrnnyyy~ with ~zstzuukktylm~ before committing the
+    socket slice. ~zstzuukktylm~ changes chooser, dialog, generic Lua helpers,
+    WebView toolbar, and typed-userdata tests; it has no socket file overlap.
+    The remaining generic-helper work stays in its own TODO.
 
 *** TODO Integrate remaining Canvas matrix typed conversion fixes
     Make matrix constructors and methods use explicit ~NSAffineTransform~ table

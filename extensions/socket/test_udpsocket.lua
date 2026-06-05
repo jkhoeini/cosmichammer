@@ -61,9 +61,9 @@ function testUdpNoCallbacks()
 end
 
 function testUdpSendAcceptsBinaryString()
-  local payload = "Hi"..string.char(0).."from client"
+  local payload = "Hi"..string.char(0, 0xff, 0xfe).."from client"
 
-  assertIsUserdataOfType("hs.socket.udp", hs.socket.udp.new():send(payload, "localhost", port))
+  assertIsUserdataOfType("hs.socket.udp", hs.socket.udp.new():send(payload, "127.0.0.1", port))
 
   return success()
 end
