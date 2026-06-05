@@ -632,5 +632,125 @@ extension CosmicHammerTests {
                 #expect(choice["image"] is NSImage)
             }
         }
+
+        @Test func testSharingURLAndShareTypesAcceptTypedItems() {
+            let result = runLua("""
+                local sharing = require('hs.sharing')
+                local image = require('hs.image')
+                local styledtext = require('hs.styledtext')
+
+                local url = sharing.URL('https://example.com/path')
+                local fileURL = sharing.URL('/tmp/cosmic-hammer-sharing.txt', true)
+                local items = {
+                    url,
+                    image.imageFromName('NSApplicationIcon'),
+                    styledtext.new('share'),
+                    'plain text',
+                }
+                local ok, services = pcall(function()
+                    return sharing.shareTypesFor(items)
+                end)
+
+                return table.concat({
+                    type(url),
+                    tostring(url.__luaSkinType),
+                    tostring(url.url),
+                    type(fileURL),
+                    tostring(fileURL.__luaSkinType),
+                    type(fileURL.filePath),
+                    tostring(ok),
+                    type(services),
+                }, ':')
+                """)
+            #expect(result == [
+                "table",
+                "NSURL",
+                "https://example.com/path",
+                "table",
+                "NSURL",
+                "string",
+                "true",
+                "table",
+            ].joined(separator: ":"))
+        }
+
+        @Test func testSharingServiceMethodsUseUserdataAndNilAlternateImage() {
+            let result = runLua("""
+                local sharing = require('hs.sharing')
+                local service = sharing.newShare(sharing.builtinSharingServices.composeEmail)
+                if service == nil then return 'missing' end
+
+                local sameSubject = service:subject('Cosmic Hammer')
+                local sameRecipients = service:recipients({ 'test@example.com' })
+                local sameCallback = service:callback(function() end)
+                local sameClear = service:callback(nil)
+                local canShare = service:canShareItems({ sharing.URL('https://example.com/') })
+                local image = service:image()
+                local alternate = service:alternateImage()
+
+                return table.concat({
+                    type(service),
+                    type(sameSubject),
+                    tostring(sameSubject == service),
+                    tostring(sameRecipients == service),
+                    tostring(sameCallback == service),
+                    tostring(sameClear == service),
+                    type(canShare),
+                    type(image),
+                    type(alternate),
+                    type(service:serviceName()),
+                    tostring(service == service),
+                    tostring(service):match('^hs.sharing') and 'tostring' or 'bad',
+                }, ':')
+                """)
+            if result == "missing" {
+                #expect(result == "missing")
+            } else {
+                #expect(result == [
+                    "userdata",
+                    "userdata",
+                    "true",
+                    "true",
+                    "true",
+                    "true",
+                    "boolean",
+                    "userdata",
+                    "nil",
+                    "string",
+                    "true",
+                    "tostring",
+                ].joined(separator: ":"))
+            }
+        }
+
+        @Test func testSharingItemPushPreservesTypedValues() throws {
+            try withBootstrappedLua(requiring: ["hs.image", "hs.styledtext", "hs.sharing"]) { L in
+                let url = try #require(NSURL(string: "https://example.com/share"))
+                let image = NSImage(size: NSSize(width: 16, height: 16))
+                let styledText = NSAttributedString(string: "styled share")
+
+                pushSharingItems(L, [url, image, styledText, "plain"])
+                #expect(lua_type(L, -1) == LUA_TTABLE)
+                #expect(lua_rawlen(L, -1) == 4)
+
+                lua_rawgeti(L, -1, 1)
+                #expect(lua_type(L, -1) == LUA_TTABLE)
+                #expect(lua_getfield(L, -1, "__luaSkinType") == LUA_TSTRING)
+                #expect(String(cString: lua_tostring(L, -1)!) == "NSURL")
+                lua_pop(L, 2)
+
+                lua_rawgeti(L, -1, 2)
+                #expect(toNSImage(L, at: -1) != nil)
+                lua_pop(L, 1)
+
+                lua_rawgeti(L, -1, 3)
+                #expect(toNSAttributedString(L, at: -1)?.string == "styled share")
+                lua_pop(L, 1)
+
+                lua_rawgeti(L, -1, 4)
+                #expect(lua_tostringValue(L, at: -1) == "plain")
+                lua_pop(L, 1)
+            }
+        }
     }
 }

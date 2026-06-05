@@ -511,7 +511,7 @@ LuaSkin → LuaSwift).
        read-only consult, direct prompt, and tiny prompt formats, so the final
        implementation pass used focused tests plus local review.
 
-**** TODO Audit camera, chooser, and sharing conversion fixes
+**** DONE Audit camera, chooser, and sharing conversion fixes
      Compare the stale ~onltpntqosrs~ hunks for camera, chooser, chooser legacy,
      and sharing against current head. Integrate any still-useful typed userdata
      conversion paths and record redundant hunks before abandoning the stale head.
@@ -545,9 +545,22 @@ LuaSkin → LuaSwift).
         with no output. The final pass used the stale-diff audit, local review,
         and focused regression tests.
 
-***** TODO Integrate sharing userdata and typed-item conversion fixes
-      Preserve sharing-service userdata plus URL, image, and styledtext item
-      conversions without replaying stale helper names that no longer exist.
+***** DONE Integrate sharing userdata and typed-item conversion fixes
+      Completed 2026-06-05.
+      Sharing service constructors, delegate callbacks, methods, and
+      metamethods now use typed ~hs.sharing~ push/extract helpers. Sharing item
+      arrays now preserve ~hs.image~, ~hs.styledtext~, and URL-table values for
+      ~shareTypesFor~, ~shareItems~, ~canShareItems~, and delegate callbacks.
+      URL and image result paths now push sharing URL tables and nil-safe
+      ~hs.image~ userdata explicitly.
+
+      Verification:
+      - ~SDK_PATH="$(xcrun --show-sdk-path)" COSMIC_HAMMER_TEST_RESOURCES="$(pwd)/build/test/Cosmic Hammer.app/Contents/Resources" swift test -Xlinker -F -Xlinker "${SDK_PATH}/System/Library/PrivateFrameworks" --filter ObjectConversionRegressionTests~ passes 23 tests.
+      - ~mise exec -- just build~ passes.
+      - Claude plan review found valid item-array image stack, styledtext audit,
+        and nil-image coverage issues; those were fixed in the plan and
+        implementation. Claude implementation review timed out after 120s with
+        no output, so the final pass used focused tests plus local review.
 
 **** TODO Audit Razer, serial, and StreamDeck stale conversion leftovers
      Compare the stale ~onltpntqosrs~ hunks for hardware-oriented extensions

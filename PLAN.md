@@ -1,76 +1,74 @@
-# Plan: Chooser userdata and typed-choice conversion fixes
+# Plan: Sharing userdata and typed-item conversion fixes
 
 ## Scope
 
-Implement the chooser slice from stale head `onltpntqosrs`
+Implement the sharing slice from stale head `onltpntqosrs`
 (`wip: device network object conversion audit`).
 
 This slice covers:
 
-- `Sources/HSSwiftExtensions/Chooser.swift`
-- `Sources/HSSwiftExtensions/ChooserLegacy.swift`
+- `Sources/HSSwiftExtensions/Sharing.swift`
 - `Tests/CosmicHammerTests/ObjectConversionRegressionTests.swift`
 - `TODO.org`
 
-Do not touch sharing, Razer, serial, StreamDeck, WebView, or generic
-`LuaHelpers.swift` in this commit.
+Do not touch Razer, serial, StreamDeck, WebView, or generic `LuaHelpers.swift`
+in this commit.
 
 ## Audit Summary
 
-The stale chooser changes are still useful, but must be adapted before replay:
+The stale sharing changes are useful, but need current-helper adaptation:
 
-- Chooser constructors, callbacks, methods, and metamethods still rely on
-  generic `lua_pushany` / `lua_tovalue(... as! HSChooser)` in several paths.
-  Those are broken for retained Swift userdata after the LuaSkin migration.
-- Static and callback choices can contain `hs.image` and `hs.styledtext`
-  userdata. Generic table conversion loses those values; chooser needs
-  explicit per-choice conversion.
+- Sharing service constructors, delegate callbacks, methods, and metamethods
+  still rely on generic `lua_pushany` / `lua_tovalue(... as! HSSharingService)`
+  for service userdata.
+- Sharing item arrays can contain `hs.image`, `hs.styledtext`, and
+  `hs.sharing.URL(...)` tables. Generic table conversion loses the typed native
+  values that `NSSharingService` expects.
+- Generic `lua_pushany` turns `NSURL` into a plain string. The sharing module
+  promises URL tables, so sharing URL results need a module-local URL pusher.
 - The stale helper names `lua_pushNSImage` and `lua_pushNSAttributedString` do
   not exist in current head. Use `NSImage_tolua` and
   `NSAttributedString_toLua`.
-- The stale table conversion leaked the key on the Lua stack if a choice value
-  was unsupported. The current implementation must pop both key and value on
-  failure before returning nil.
-- `pushHSChooser` is already available to toolbar code in current head. Keep
-  `toHSChooserFromLua` private unless a current caller outside
-  `ChooserLegacy.swift` actually needs it.
+- `NSImage_tolua` returns `0` without pushing if the image is nil or invalid.
+  Image result paths and sharing item-array image pushes must push nil
+  explicitly in that case.
+- `NSAttributedString_toLua` was audited: it always pushes either styledtext
+  userdata or nil and returns `1`, so it does not need the same return-0 guard.
 
 ## Implementation
 
-1. In `Chooser.swift`:
-   - Push `self` through `pushHSChooser` in global `willOpen` and `didClose`
-     callbacks.
-   - Push clicked, invalid, completion, and default query choices through
-     `pushChooserChoice`.
-   - Convert dynamic choices callback results through `lua_toChooserChoices`.
+1. In `Sharing.swift`:
+   - Add `sharingItemFromLua` / `sharingItemsFromLua` helpers that preserve:
+     - `hs.image` userdata via `toNSImage`;
+     - `hs.styledtext` userdata via `toNSAttributedString`;
+     - URL tables via `toNSURLFromLua`;
+     - existing primitive/table behavior via `lua_tovalue`.
+   - Add push helpers for sharing items, item arrays, URL arrays, and optional
+     images using `NSImage_tolua`, `NSAttributedString_toLua`, and `pushNSURL`.
+     The image item case must check `NSImage_tolua`'s return value before
+     `lua_rawseti`.
+   - Push sharing service userdata through `pushHSSharingService` in
+     constructors and delegate callbacks.
+   - Pull method/metamethod receivers through `toHSSharingServiceFromLua`.
+   - Convert `shareTypesFor`, `shareItems`, and `canShareItems` item tables
+     through `sharingItemsFromLua`.
+   - Return sharing URLs, attachment URLs, and permanent links as sharing URL
+     tables.
+   - Return sharing images as `hs.image` userdata or nil.
 
-2. In `ChooserLegacy.swift`:
-   - Push `chooser.new(...)` results through `pushHSChooser`.
-   - Pull chooser method/metamethod receivers through `toHSChooserFromLua`.
-   - Convert static choices through `lua_toChooserChoices`.
-   - Add chooser-choice helpers that:
-     - preserve `hs.image` via `toNSImage` / `NSImage_tolua`;
-     - preserve `hs.styledtext` via `toNSAttributedString` /
-       `NSAttributedString_toLua`;
-     - preserve primitive/table values through the existing generic helpers;
-     - keep stack cleanup balanced on failed table conversion.
-   - Convert `fgColor` and `subTextColor` setter tables through
-     `tableToNSColor`, and getter values through `lua_pushNSColor` with nil
-     fallback.
-   - Push `selectedRowContents` through `pushChooserChoice`.
+2. Extend `ObjectConversionRegressionTests`:
+   - Add a Lua-level test for `hs.sharing.URL()` returning URL tables and
+     `shareTypesFor()` accepting URL/image/styledtext items without conversion
+     errors.
+   - Add a Lua-level test that creates an available sharing service and verifies
+     fluent methods return `hs.sharing` userdata.
+   - Add a nil-image result test via `:alternateImage()` on an available service,
+     because current host services expose nil alternate images.
+   - Add a direct Swift-side helper test that pushes a mixed sharing item array
+     and verifies URL tables, image userdata, and styledtext userdata.
 
-3. Extend `ObjectConversionRegressionTests`:
-   - Add a Lua-level chooser test that verifies constructors and setter methods
-     return `hs.chooser` userdata and route static `choices()` through the new
-     conversion path.
-   - Add a Lua-level dynamic choices callback test that exercises the
-     `lua_toChooserChoices` path without showing the chooser window.
-   - Add a direct Swift-side conversion test for choice dictionaries containing
-     `NSImage` and `NSAttributedString`, because `selectedRowContents()` depends
-     on visible table-view row state.
-
-4. Update `TODO.org`:
-   - Mark the chooser subitem done only after focused tests and build pass.
+3. Update `TODO.org`:
+   - Mark the sharing subitem done only after focused tests and build pass.
 
 ## Verification
 

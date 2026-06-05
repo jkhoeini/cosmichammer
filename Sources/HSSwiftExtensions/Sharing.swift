@@ -31,15 +31,13 @@ private func toNSURLFromLua(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32)
     return nil
 }
 
-private func sharingItemFromLua(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> Any? {
+func sharingItemFromLua(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> Any? {
     let absIdx = lua_absindex(L, idx)
 
-    if lua_type(L, absIdx) == LUA_TUSERDATA, let image = toNSImage(L, at: absIdx) {
-        return image
-    }
-
-    if lua_type(L, absIdx) == LUA_TUSERDATA, let styledText = toNSAttributedString(L, at: absIdx) {
-        return styledText
+    if lua_type(L, absIdx) == LUA_TUSERDATA {
+        if let image = toNSImage(L, at: absIdx) { return image }
+        if let styledText = toNSAttributedString(L, at: absIdx) { return styledText }
+        return nil
     }
 
     if lua_type(L, absIdx) == LUA_TTABLE {
@@ -56,38 +54,47 @@ private func sharingItemFromLua(_ L: UnsafeMutablePointer<lua_State>!, _ idx: In
             lua_pop(L, 1)
         }
 
-        if isURL { return toNSURLFromLua(L, absIdx) }
+        if isURL {
+            return toNSURLFromLua(L, absIdx)
+        }
     }
 
     return lua_tovalue(L, at: absIdx)
 }
 
-private func sharingItemsFromLua(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> [Any]? {
+func sharingItemsFromLua(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> [Any]? {
     let absIdx = lua_absindex(L, idx)
     guard lua_type(L, absIdx) == LUA_TTABLE else { return nil }
 
     var items: [Any] = []
     let count = Int(luaL_len(L, absIdx))
     if count == 0 { return items }
+
     for i in 1...count {
         lua_rawgeti(L, absIdx, lua_Integer(i))
-        if let item = sharingItemFromLua(L, -1) {
-            items.append(item)
-        } else {
+        guard let item = sharingItemFromLua(L, -1) else {
             lua_pop(L, 1)
             return nil
         }
+        items.append(item)
         lua_pop(L, 1)
     }
     return items
 }
 
-private func pushSharingItem(_ L: UnsafeMutablePointer<lua_State>!, _ item: Any?) {
+func pushSharingImageOrNil(_ L: UnsafeMutablePointer<lua_State>!, _ image: NSImage?) {
+    guard let image, NSImage_tolua(L, image) == 1 else {
+        lua_pushnil(L)
+        return
+    }
+}
+
+func pushSharingItem(_ L: UnsafeMutablePointer<lua_State>!, _ item: Any?) {
     switch item {
     case let image as NSImage:
-        lua_pushNSImage(L, image)
+        pushSharingImageOrNil(L, image)
     case let styledText as NSAttributedString:
-        lua_pushNSAttributedString(L, styledText)
+        _ = NSAttributedString_toLua(L, obj: styledText)
     case let url as NSURL:
         pushNSURL(L, obj: url)
     case let url as URL:
@@ -97,7 +104,7 @@ private func pushSharingItem(_ L: UnsafeMutablePointer<lua_State>!, _ item: Any?
     }
 }
 
-private func pushSharingItems(_ L: UnsafeMutablePointer<lua_State>!, _ items: [Any]) {
+func pushSharingItems(_ L: UnsafeMutablePointer<lua_State>!, _ items: [Any]) {
     lua_newtable(L)
     for (idx, item) in items.enumerated() {
         pushSharingItem(L, item)
@@ -105,8 +112,8 @@ private func pushSharingItems(_ L: UnsafeMutablePointer<lua_State>!, _ items: [A
     }
 }
 
-private func pushSharingURLs(_ L: UnsafeMutablePointer<lua_State>!, _ urls: [URL]?) {
-    guard let urls = urls else {
+func pushSharingURLs(_ L: UnsafeMutablePointer<lua_State>!, _ urls: [URL]?) {
+    guard let urls else {
         lua_pushnil(L)
         return
     }
@@ -595,7 +602,7 @@ private func sharing_permanentLink(_ L: UnsafeMutablePointer<lua_State>!) -> Int
 private func sharing_alternateImage(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let wrapper: HSSharingService = toHSSharingServiceFromLua(L, idx: 1) as! HSSharingService
-    lua_pushNSImage(L, wrapper.sharingService?.alternateImage)
+    pushSharingImageOrNil(L, wrapper.sharingService?.alternateImage)
     return 1
 }
 
@@ -611,7 +618,7 @@ private func sharing_alternateImage(_ L: UnsafeMutablePointer<lua_State>!) -> In
 private func sharing_image(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let wrapper: HSSharingService = toHSSharingServiceFromLua(L, idx: 1) as! HSSharingService
-    lua_pushNSImage(L, wrapper.sharingService?.image)
+    pushSharingImageOrNil(L, wrapper.sharingService?.image)
     return 1
 }
 
