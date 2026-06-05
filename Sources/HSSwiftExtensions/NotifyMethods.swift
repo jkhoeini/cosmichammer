@@ -4,6 +4,16 @@ import os.log
 
 // MARK: - Module Methods
 
+private func nt_pushNSImageOrNil(_ L: UnsafeMutablePointer<lua_State>!, _ image: NSImage?) {
+    guard let image = image else {
+        lua_pushnil(L)
+        return
+    }
+    if NSImage_tolua(L, image) == 0 {
+        lua_pushnil(L)
+    }
+}
+
 /// hs.notify:send() -> notificationObject
 /// Method
 /// Delivers the notification immediately to the users Notification Center.
@@ -497,7 +507,7 @@ let notification_contentImage: lua_CFunction = { L in
     let isLocked = (userInfo?[KEY_LOCKED] as? NSNumber)?.boolValue ?? false
 
     if lua_isnone(L, 2) {
-        lua_pushNSImage(L, notification.contentImage)
+        nt_pushNSImageOrNil(L, notification.contentImage)
     } else if let _ = gus {
         if !isLocked {
             notification.contentImage = lua_isnil(L, 2) ? nil : toNSImage(L, at: 2)

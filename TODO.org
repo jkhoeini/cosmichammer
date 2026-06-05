@@ -487,6 +487,40 @@ LuaSkin → LuaSwift).
        lazy service-module initialization risk. Claude reviewed ~Bonjour.swift~,
        ~BonjourService.swift~, and the tests with no actionable issues.
 
+**** DONE Integrate notify and sound userdata conversion fixes
+     Completed 2026-06-05.
+     Integrated the notify/sound slice from stale head ~onltpntqosrs~.
+     Notifications now use typed userdata pushes in constructors, activation
+     callbacks, delivered/scheduled notification arrays, and metamethods.
+     Notification methods pull through ~nt_getNotification~, content images use
+     explicit ~hs.image~ conversion, and notification userdata/module GC is
+     robust to refcount and finalizer-order edge cases.
+
+     Sound constructors and delegate callbacks now push typed ~hs.sound~ userdata,
+     and methods/metamethods pull through sound-specific helpers instead of
+     generic userdata conversion. Added deterministic notify and sound regression
+     tests without delivering notifications or playing audio.
+
+     Verification:
+     - ~mise exec -- just test-resources~ passes.
+     - ~SDK_PATH="$(xcrun --show-sdk-path)" COSMIC_HAMMER_TEST_RESOURCES="$(pwd)/build/test/Cosmic Hammer.app/Contents/Resources" swift test -Xlinker -F -Xlinker "${SDK_PATH}/System/Library/PrivateFrameworks" --filter ObjectConversionRegressionTests~ passes 16 tests.
+     - ~mise exec -- just build~ passes.
+     - Claude plan review found valid helper-name, nil-handling, and array-path
+       test coverage concerns; those were fixed before implementation. Multiple
+       Claude implementation-review invocations stalled even with file, snippet,
+       read-only consult, direct prompt, and tiny prompt formats, so the final
+       implementation pass used focused tests plus local review.
+
+**** TODO Audit camera, chooser, and sharing conversion fixes
+     Compare the stale ~onltpntqosrs~ hunks for camera, chooser, chooser legacy,
+     and sharing against current head. Integrate any still-useful typed userdata
+     conversion paths and record redundant hunks before abandoning the stale head.
+
+**** TODO Audit Razer, serial, and StreamDeck stale conversion leftovers
+     Compare the stale ~onltpntqosrs~ hunks for hardware-oriented extensions
+     against the current bridge migration. Integrate only useful conversion
+     changes that are not already represented by current typed helpers.
+
 *** TODO Integrate remaining WebView conversion fixes
     Add WebView-specific push/pull helpers for windows, toolbars, datastores,
     navigation objects, user content, URL requests, and URL responses.

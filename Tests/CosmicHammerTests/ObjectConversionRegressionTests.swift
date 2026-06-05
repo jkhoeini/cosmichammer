@@ -1,3 +1,4 @@
+import AVFoundation
 import Foundation
 import CLua
 import Testing
@@ -5,6 +6,44 @@ import Testing
 
 extension CosmicHammerTests {
     @Suite(.serialized) @MainActor final class ObjectConversionRegressionTests {
+        private func luaStringLiteral(_ value: String) -> String {
+            "'" + value
+                .replacingOccurrences(of: "\\", with: "\\\\")
+                .replacingOccurrences(of: "'", with: "\\'")
+                .replacingOccurrences(of: "\n", with: "\\n") + "'"
+        }
+
+        private func makeSilentSoundFile() throws -> URL {
+            let url = FileManager.default.temporaryDirectory
+                .appendingPathComponent("cosmic-hammer-sound-\(UUID().uuidString)")
+                .appendingPathExtension("caf")
+            let settings: [String: Any] = [
+                AVFormatIDKey: kAudioFormatLinearPCM,
+                AVSampleRateKey: 8_000.0,
+                AVNumberOfChannelsKey: 1,
+                AVLinearPCMBitDepthKey: 16,
+                AVLinearPCMIsFloatKey: false,
+                AVLinearPCMIsBigEndianKey: false,
+            ]
+            let file = try AVAudioFile(forWriting: url, settings: settings)
+            let buffer = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: 800)!
+            buffer.frameLength = 800
+            try file.write(from: buffer)
+            return url
+        }
+
+        private func withLibNotifyState(_ body: (UnsafeMutablePointer<lua_State>) throws -> Void) rethrows {
+            try withLuaState { L in
+                let top = lua_gettop(L)
+                #expect(luaopen_hs_libnotify(L) == 1)
+                lua_settop(L, top)
+                defer {
+                    nt_debugCleanupModule(L)
+                }
+                try body(L)
+            }
+        }
+
         @Test func testImageConstructorsReturnUserdata() {
             let result = runLua("""
                 local image = require('hs.image')
@@ -264,6 +303,162 @@ extension CosmicHammerTests {
             #expect(pushNSNetService(L, service) == 1)
             #expect(luaL_testudata(L, -1, "hs.bonjour.service") != nil)
             #expect(lua_topointer(L, -1) == firstPointer)
+        }
+
+        @Test func testNotifyConstructorsAndImageMethodsUseUserdata() {
+            let result = runLua("""
+                local notify = require('hs.libnotify')
+                local image = require('hs.image')
+                local n = notify._new('notify-test')
+                local sameTitle = n:title('Title')
+                local sameSubtitle = n:subTitle('Subtitle')
+                local sameText = n:informativeText('Body')
+                local sameNilImage = n:_contentImage(nil)
+                local img = image.imageFromName('NSApplicationIcon')
+                local sameImage = n:_contentImage(img)
+                local gotImage = n:_contentImage()
+                local scheduled = notify.scheduledNotifications()
+                local delivered = notify.deliveredNotifications()
+                return table.concat({
+                    type(n),
+                    type(sameTitle),
+                    tostring(sameTitle == n),
+                    tostring(sameSubtitle == n),
+                    tostring(sameText == n),
+                    n:title(),
+                    n:subTitle(),
+                    n:informativeText(),
+                    tostring(sameNilImage == n),
+                    tostring(sameImage == n),
+                    type(gotImage),
+                    type(scheduled),
+                    type(delivered),
+                    tostring(n == n),
+                    tostring(n):match('^hs.notify') and 'tostring' or 'bad',
+                }, ':')
+                """)
+            #expect(result == [
+                "userdata",
+                "userdata",
+                "true",
+                "true",
+                "true",
+                "Title",
+                "Subtitle",
+                "Body",
+                "true",
+                "true",
+                "userdata",
+                "table",
+                "table",
+                "true",
+                "tostring",
+            ].joined(separator: ":"))
+        }
+
+        @Test func testNotifyArrayPushesUserdataElements() {
+            withLibNotifyState { L in
+                let first = NSUserNotification()
+                first.title = "first"
+                let second = NSUserNotification()
+                second.title = "second"
+
+                nt_pushNotificationArray(L, [first, second])
+                #expect(lua_istable(L, -1) != 0)
+                #expect(lua_rawlen(L, -1) == 2)
+
+                lua_rawgeti(L, -1, 1)
+                #expect(luaL_testudata(L, -1, nt_USERDATA_TAG) != nil)
+                #expect(nt_getNotification(L, -1).title == "first")
+                lua_pop(L, 1)
+
+                lua_rawgeti(L, -1, 2)
+                #expect(luaL_testudata(L, -1, nt_USERDATA_TAG) != nil)
+                #expect(nt_getNotification(L, -1).title == "second")
+                lua_pop(L, 1)
+            }
+        }
+
+        @Test func testNotifyUserdataGcRemovesSelfRefRecord() {
+            withLibNotifyState { L in
+                let gus = "notify-gc-test-\(UUID().uuidString)"
+                let userInfo = NSMutableDictionary(dictionary: [
+                    KEY_ID: gus,
+                    KEY_SELFREFCOUNT: 0,
+                ])
+                nt_debugSetSpecificsRecord(gus, userInfo)
+
+                let notification = NSUserNotification()
+                notification.userInfo = [KEY_ID: gus]
+
+                #expect(nt_pushNSUserNotification(L, notification) == 1)
+                #expect(nt_debugSelfRefCount(gus) == 1)
+                #expect(nt_pushNSUserNotification(L, notification) == 1)
+                #expect(nt_debugSelfRefCount(gus) == 2)
+
+                #expect(nt_userdata_gc(L) == 0)
+                #expect(nt_debugSelfRefCount(gus) == 1)
+                lua_remove(L, 1)
+
+                #expect(nt_userdata_gc(L) == 0)
+                #expect(!nt_debugHasSpecificsRecord(gus))
+            }
+        }
+
+        @Test func testSoundFileConstructorAndMethodsUseUserdata() throws {
+            let soundURL = try makeSilentSoundFile()
+            defer { try? FileManager.default.removeItem(at: soundURL) }
+
+            let soundPath = luaStringLiteral(soundURL.path)
+            let soundName = luaStringLiteral("cosmic-hammer-sound-\(UUID().uuidString)")
+            let result = runLua("""
+                local sound = require('hs.sound')
+                local s = sound.getByFile(\(soundPath))
+                if s == nil then return 'nil' end
+                local sameVolume = s:volume(0.25)
+                local sameLoop = s:loopSound(true)
+                local sameTime = s:currentTime(0)
+                local sameName = s:name(\(soundName))
+                local currentName = s:name()
+                local sameDevice = s:device(nil)
+                local sameCallback = s:setCallback(function() end)
+                local sameNilCallback = s:setCallback(nil)
+                local sameClearName = s:name(nil)
+                return table.concat({
+                    type(s),
+                    type(sameVolume),
+                    tostring(sameVolume == s),
+                    tostring(sameLoop == s),
+                    tostring(sameTime == s),
+                    tostring(sameName == s),
+                    type(currentName),
+                    tostring(sameDevice == s),
+                    tostring(sameCallback == s),
+                    tostring(sameNilCallback == s),
+                    tostring(sameClearName == s),
+                    type(s:duration()),
+                    type(s:isPlaying()),
+                    tostring(s == s),
+                    tostring(s):match('^hs.sound') and 'tostring' or 'bad',
+                }, ':')
+                """)
+            #expect(result == [
+                "userdata",
+                "userdata",
+                "true",
+                "true",
+                "true",
+                "true",
+                "string",
+                "true",
+                "true",
+                "true",
+                "true",
+                "number",
+                "boolean",
+                "true",
+                "tostring",
+            ].joined(separator: ":"))
         }
     }
 }

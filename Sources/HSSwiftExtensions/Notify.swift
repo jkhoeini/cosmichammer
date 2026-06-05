@@ -372,11 +372,13 @@ let nt_userdata_gc: lua_CFunction = { L in
 
         if let userInfoDict = obj.userInfo {
             if let gus = userInfoDict[KEY_ID] as? String { // it's ours
-                if let userInfo = nt_specifics[gus] as? NSMutableDictionary { // and we have a record for it
+                if let specifics = nt_specifics,
+                   let userInfo = specifics[gus] as? NSMutableDictionary { // and we have a record for it
                     let selfRefCount = (userInfo[KEY_SELFREFCOUNT] as? NSNumber)?.intValue ?? 0
-                    userInfo[KEY_SELFREFCOUNT] = NSNumber(value: selfRefCount - 1)
-                    if selfRefCount == 0 {
-                        nt_specifics[gus] = nil
+                    let newSelfRefCount = selfRefCount - 1
+                    userInfo[KEY_SELFREFCOUNT] = NSNumber(value: newSelfRefCount)
+                    if newSelfRefCount <= 0 {
+                        specifics[gus] = nil
                     }
                 }
             }
@@ -393,10 +395,40 @@ let nt_userdata_gc: lua_CFunction = { L in
 // Metamethods for the module
 let nt_meta_gc: lua_CFunction = { _ in
     NSUserNotificationCenter.default.delegate = nt_old_delegate
-    nt_specifics.removeAllObjects()
-    nt_specifics = nil
+    if nt_specifics != nil {
+        nt_specifics.removeAllObjects()
+        nt_specifics = nil
+    }
     return 0
 }
+
+#if DEBUG
+@MainActor
+func nt_debugSetSpecificsRecord(_ gus: String, _ userInfo: NSMutableDictionary) {
+    guard let specifics = nt_specifics else { return }
+    specifics[gus] = userInfo
+}
+
+@MainActor
+func nt_debugSelfRefCount(_ gus: String) -> Int? {
+    guard let specifics = nt_specifics,
+          let userInfo = specifics[gus] as? NSMutableDictionary else { return nil }
+    return (userInfo[KEY_SELFREFCOUNT] as? NSNumber)?.intValue
+}
+
+@MainActor
+func nt_debugHasSpecificsRecord(_ gus: String) -> Bool {
+    guard let specifics = nt_specifics else { return false }
+    return specifics[gus] != nil
+}
+
+@MainActor
+func nt_debugCleanupModule(_ L: UnsafeMutablePointer<lua_State>!) {
+    if nt_specifics != nil {
+        _ = nt_meta_gc(L)
+    }
+}
+#endif
 
 // Metatable for userdata objects
 private var userdata_metaLib: [luaL_Reg] = {

@@ -1,82 +1,102 @@
-# Plan: Bonjour object conversion fixes
+# Plan: Notify and sound object conversion fixes
 
 ## Scope
 
-Implement the Bonjour slice from stale head `onltpntqosrs` (`wip: device
+Implement the notify/sound slice from stale head `onltpntqosrs` (`wip: device
 network object conversion audit`).
 
 This slice covers:
 
-- `Sources/HSSwiftExtensions/Bonjour.swift`
-- `Sources/HSSwiftExtensions/BonjourService.swift`
+- `Sources/HSSwiftExtensions/Notify.swift`
+- `Sources/HSSwiftExtensions/NotifyMethods.swift`
+- `Sources/HSSwiftExtensions/Sound.swift`
 - `Tests/CosmicHammerTests/ObjectConversionRegressionTests.swift`
 - `TODO.org`
 
-Do not touch notify, sound, sharing, camera, chooser, Razer, serial,
-streamdeck, or stale `LuaHelpers.swift` in this commit.
+Do not touch camera, chooser, sharing, Razer, serial, streamdeck, WebView, or
+generic `LuaHelpers.swift` in this commit.
 
 ## Audit Summary
 
-The stale Bonjour changes are useful, but should be landed as a narrow typed
-userdata conversion slice:
+The stale notify/sound changes are still useful, but should be landed as a
+bounded typed conversion slice:
 
-- `Bonjour.swift` still pushes `HSNetServiceBrowser` through generic
-  `lua_pushany` in constructors and callbacks, and reads it through generic
-  `lua_tovalue` in methods and equality.
-- Browser callbacks can pass `NetService` instances in `"service"` callback
-  payloads. Those need `pushNSNetService` from `BonjourService.swift`, not
-  generic object conversion.
-- `BonjourService.swift` still pushes `HSNetServiceWrapper` through generic
-  conversion in constructors, callbacks, and `pushNSNetService`, and reads it
-  through generic conversion in most methods and metamethods.
-- The stale hunk that makes `pushNSNetService` non-private is justified because
-  `Bonjour.swift` needs to push callback `NetService` values as
-  `hs.bonjour.service` userdata.
-- `hs.bonjour` loads `hs.libbonjourservice`, but direct `hs.libbonjour` use can
-  invoke browser callbacks before the service module has initialized
-  `serviceUDRecords` or the `hs.bonjour.service` metatable. The implementation
-  must guard or lazily initialize the service module before pushing a
-  `NetService`.
-- Stale generic `LuaHelpers.swift` changes remain out of scope; current head has
-  explicit typed helpers and retained-userdata plumbing.
+- `Notify.swift` still pushes `NSUserNotification` through generic
+  `lua_pushany` in constructors, delivered/scheduled notification arrays, and
+  activation callbacks. It also reads notification userdata through generic
+  `lua_tovalue` in metamethods.
+- `NotifyMethods.swift` still reads `NSUserNotification` userdata through
+  generic `lua_tovalue` in nearly every method. The existing `nt_getNotification`
+  helper is the right local typed pull seam because it uses `luaL_checkudata`.
+- `notification_contentImage` and `notification_setIdImage` still need explicit
+  `hs.image` conversion for `NSImage` values instead of generic object casts.
+- `nt_userdata_gc` currently decrements `KEY_SELFREFCOUNT` but checks the old
+  count when deciding whether to remove `nt_specifics[gus]`; adding array pushes
+  increases the chance of leaked bookkeeping unless this is corrected.
+- `Sound.swift` still pushes `NSSound`/`HSSoundObject` through generic
+  `lua_pushany` in constructors and callbacks, and reads sound userdata through
+  generic `lua_tovalue` in methods and metamethods.
+- Scalar notify getters/setters may continue using existing primitive/date/table
+  conversion where they do not cross a retained native userdata boundary.
+- The broader `NSUserNotification` to `UNUserNotificationCenter` rewrite remains
+  a separate modernization TODO. This slice only restores the current deprecated
+  extension's object conversion behavior.
 
 ## Implementation
 
-1. In `BonjourService.swift`:
-   - Add a callback argument pusher that converts `NetService` with
-     `pushNSNetService` and leaves scalar/table values on existing conversion.
-   - Use `pushHSNetServiceWrapper` for wrapper self pushes and constructors.
-   - Use `toHSNetServiceWrapperFromLua` for methods/metamethod object reads.
-   - Add missing `luaL_checkudata` guards before typed pulls in
-     `service_TXTRecordData` and `service_startMonitoring`.
-   - Make `pushNSNetService` internal to the file module and mark typed push
-     helpers `@discardableResult`.
-   - Add a small initialization helper so `pushNSNetService` safely initializes
-     the service registry/metatable if called from `Bonjour.swift` before
-     `hs.libbonjourservice` has been explicitly required.
-   - Preserve `serviceUDRecords`, `selfRef`, and callback argument ordering.
+1. In `Notify.swift`:
+   - Use `nt_pushNSUserNotification` in activation callbacks and
+     `notification_new`.
+   - Add `nt_pushNotificationArray` to push delivered/scheduled notification
+     lists as Lua arrays of `hs.notify` userdata.
+   - Use `nt_getNotification` in `__tostring` and `__eq`.
+   - Fix `nt_userdata_gc` to remove `nt_specifics[gus]` when the decremented
+     self-ref count reaches zero or below.
+   - Mark `nt_pushNSUserNotification` as `@discardableResult` because many call
+     sites only care about the stack effect.
 
-2. In `Bonjour.swift`:
-   - Add a callback argument pusher that converts `NetService` via
-     `pushNSNetService`.
-   - Use `pushHSNetServiceBrowser` for constructor and callback self pushes.
-   - Use `toHSNetServiceBrowserFromLua` for methods and equality.
-   - Preserve callback event names, argument order, and browser stop behavior.
+2. In `NotifyMethods.swift`:
+   - Replace method-level `lua_tovalue(... as! NSUserNotification)` pulls with
+     `nt_getNotification(L, 1)`.
+   - Keep existing locked/dispatched behavior and userInfo bookkeeping intact.
+   - Push `notification.contentImage` through a notify-local helper that calls
+     `NSImage_tolua` and pushes nil for nil or failed image pushes. Do not use
+     the stale `lua_pushNSImage` name because it is not present in current head.
+   - Set `notification.contentImage` with `toNSImage`, allowing `nil` to clear
+     the image by checking `lua_isnil` before calling `toNSImage`.
+   - In `notification_setIdImage`, validate argument 2 as `hs.image` userdata
+     and use `luaL_argerror` for invalid values.
 
-3. Extend `ObjectConversionRegressionTests`:
-   - Assert `hs.libbonjour.new()` returns userdata and setter methods return the
-     same browser userdata.
-   - Assert `hs.libbonjourservice.new(...)` and `.remote(...)` return userdata
-     and common getter/setter methods operate through typed service userdata.
-   - Add a Swift-side Lua-state test for `pushNSNetService(NetService(...))`
-     before requiring `hs.libbonjourservice`; it should push service userdata and
-     repeated pushes of the same `NetService` should compare equal.
-   - Avoid network-dependent browse/resolve/publish timing in this slice; the
-     tests should verify constructor/method conversion deterministically.
+3. In `Sound.swift`:
+   - Use `pushNSSound` for `sound_byname` and `sound_byfile`.
+   - Use `pushHSSoundObject` for delegate callbacks.
+   - Use `toHSSoundObjectFromLua` for wrapper-level methods and metamethods.
+   - Use `toNSSoundFromLua` for methods operating on the underlying `NSSound`.
+   - Make `pushNSSound` delegate to `pushHSSoundObject` instead of generic
+     `lua_pushany`.
+   - Mark sound push helpers as `@discardableResult`.
 
-4. Update `TODO.org`:
-   - Add a completed subitem under the broad device/network TODO after
-     verification and Claude review.
+4. Extend `ObjectConversionRegressionTests`:
+   - Add deterministic `hs.notify` Lua tests for constructor userdata, setter
+     identity, getter round trip, `tostring`, equality, content image
+     setter/getter using `hs.image`, and delivered/scheduled notification list
+     return types without sending or scheduling notifications.
+   - Add a direct Swift-side Lua-state test for `nt_pushNotificationArray` using
+     fabricated `NSUserNotification` objects so the array element conversion path
+     is covered without delivering real notifications.
+   - Add a direct Swift-side Lua-state test for `nt_pushNSUserNotification` and
+     `__gc` self-ref bookkeeping so the refcount cleanup fix is covered.
+   - Add deterministic `hs.sound` tests that generate a temporary silent audio
+     file, construct sound userdata through `getByFile`, and exercise non-playing
+     methods such as `volume`, `loopSound`, `currentTime`, `duration`,
+     `isPlaying`, `name`, `device(nil)`, `setCallback(nil/function)`, `tostring`,
+     and equality.
+   - Do not call `send`, `schedule`, `play`, `pause`, `resume`, or `stop` in
+     tests for this slice.
+
+5. Update `TODO.org`:
+   - Mark the notify/sound subitem done only after focused tests, build, and
+     Claude review converge.
 
 ## Verification
 
