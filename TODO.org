@@ -364,9 +364,22 @@ LuaSkin → LuaSwift).
 		      this checkpoint records the broader suite baseline rather than a new
 		      conversion regression.
 
-*** TODO Verify AppFinder stale head is covered by app/window integration
-    Compare the AppFinder branch diff against the broad app/window conversion
-    result before deciding that head is redundant.
+	*** DONE Verify AppFinder stale head is covered by app/window integration
+	    Completed 2026-06-05.
+	    Compared stale head ~wtwynzxomtyy~ (~wip: appfinder conversion helpers~)
+	    against current head.
+
+	    Audit:
+	    - ~jj diff -s --no-pager -r wtwynzxomtyy~ changes only
+	      ~Sources/HSSwiftExtensions/Application.swift~ and
+	      ~Sources/HSSwiftExtensions/Window.swift~.
+	    - Every stale hunk is already represented in current head: application and
+	      window return paths use typed push helpers, application/window arrays use
+	      typed table helpers, and ~window:application()~ uses typed application
+	      push/nil fallback.
+	    - The current full-suite AppFinder failures are window-title/UI-state
+	      harness failures through ~hs.window.get/find~, not missing conversion
+	      hunks from this stale head.
 
 *** TODO Inspect generic typed-userdata helper dependencies early
     Check whether WebView, Canvas, Toolbar, or Chooser helper declarations from
