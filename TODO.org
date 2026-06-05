@@ -709,9 +709,26 @@ LuaSkin → LuaSwift).
 	      Full-diff Claude implementation review attempts stalled, but a final
 	      reduced implementation-review checkpoint returned ~NO ACTIONABLE ISSUES~.
 
-*** TODO Account for release-only stale head in abandonment audit
-    Confirm the release metadata branch only changes stale release bookkeeping
-    before abandoning it.
+	*** DONE Account for release-only stale head in abandonment audit
+	    Completed 2026-06-05.
+	    Audited stale head ~zmqntpmzskkp~ (~chore: release v0.5.3~). It changes
+	    only ~flake.nix~, bumping the packaged release DMG from ~0.5.2~ to
+	    ~0.5.3~ and updating the hash.
+
+	    This was not stale: current head still packaged ~0.5.2~, GitHub release
+	    ~v0.5.3~ exists and is marked latest, local jj tags include ~v0.5.3~ at
+	    ~ac54e34a7c37~, and Nix prefetch verified the stale hash:
+	    ~sha256-IDWcQpqoUKCIS1r+REWMV2BE9uESMGNfeZ6i+x36kPU=~.
+
+	    Integrated the flake bump into current head. After this commit, the stale
+	    ~zmqntpmzskkp~ branch contains no remaining useful change beyond the
+	    now-linearized release metadata.
+
+	    Verification:
+	    - ~nix store prefetch-file --json https://github.com/jkhoeini/cosmichammer/releases/download/v0.5.3/Cosmic-Hammer-0.5.3.dmg~ returns the integrated hash.
+	    - ~nix build ".#cosmic-hammer" --no-link~ builds the ~cosmic-hammer-0.5.3~ derivation.
+	    - Claude plan review approved integration and recommended the Nix build as
+	      the release metadata gate.
 
 *** TODO Verify and abandon stale branch heads after integration
     Re-check every non-current head against the linear current history, keep only
