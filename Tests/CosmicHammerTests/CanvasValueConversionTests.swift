@@ -3,13 +3,20 @@ import Testing
 import CLua
 @testable import HSSwiftExtensions
 
+@_silgen_name("luaopen_hs_libcanvas")
+private func luaopen_hs_libcanvas(_ L: UnsafeMutablePointer<lua_State>?) -> Int32
+
+@_silgen_name("luaopen_hs_libimage")
+private func luaopen_hs_libimage(_ L: UnsafeMutablePointer<lua_State>?) -> Int32
+
+@_silgen_name("luaopen_hs_libstyledtext")
+private func luaopen_hs_libstyledtext(_ L: UnsafeMutablePointer<lua_State>?) -> Int32
+
 extension CosmicHammerTests {
-
     @Suite(.serialized) @MainActor final class CanvasValueConversionTests {
-
         @Test func testCanvasViewMassagesColorTablesWithoutLuaSkinTypeMutation() throws {
             try withLuaState { L in
-                ensureCanvasLanguageDictionary(L)
+                loadCanvasModule(L)
                 let view = HSCanvasView(frame: NSRect(x: 0, y: 0, width: 100, height: 100))
                 view.elementList.add(NSMutableDictionary())
 
@@ -27,16 +34,16 @@ extension CosmicHammerTests {
             }
         }
 
-        @Test func testCanvasViewMassagesGradientTransformAndShadowTables() throws {
+        @Test func testCanvasViewMassagesGradientTransformShadowAndStyledTextTables() throws {
             try withLuaState { L in
-                ensureCanvasLanguageDictionary(L)
+                loadCanvasModule(L)
                 let view = HSCanvasView(frame: NSRect(x: 0, y: 0, width: 100, height: 100))
                 view.elementList.add(NSMutableDictionary())
 
-                let gradient: NSMutableArray = [
-                    ["red": 1.0, "green": 0.0, "blue": 0.0],
-                    ["red": 0.0, "green": 0.0, "blue": 1.0],
-                ]
+                let gradient = NSMutableArray(array: [
+                    ["red": 1.0, "green": 0.0, "blue": 0.0] as NSDictionary,
+                    ["red": 0.0, "green": 0.0, "blue": 1.0] as NSDictionary,
+                ])
                 #expect(AttributeValidity(rawValue: view.setElementValue(for: "fillGradientColors", atIndex: 0, to: gradient, withState: L)) == .valid)
                 let colors = try #require(view.getElementValue(for: "fillGradientColors", atIndex: 0) as? NSArray)
                 #expect(colors.count == 2)
@@ -60,22 +67,27 @@ extension CosmicHammerTests {
                 #expect(shadow.shadowOffset.height == -3.0)
                 #expect(shadow.shadowBlurRadius == 4.0)
                 #expect(shadow.shadowColor != nil)
+
+                let styled: NSArray = ["plain", ["starts": 1, "ends": 5, "attributes": ["color": ["red": 1.0, "green": 0.0, "blue": 0.0]]]]
+                #expect(AttributeValidity(rawValue: view.setElementValue(for: "text", atIndex: 0, to: styled, withState: L)) == .valid)
+                let text = try #require(view.getElementValue(for: "text", atIndex: 0) as? NSAttributedString)
+                #expect(text.string == "plain")
+                #expect(text.attribute(.foregroundColor, at: 0, effectiveRange: nil) is NSColor)
             }
         }
 
         @Test func testCanvasLuaValueConversionHandlesTypedUserdata() throws {
             try withLuaState { L in
-                ensureCanvasLanguageDictionary(L)
-                registerObjectMetatable(L, tag: "hs.image")
-                registerObjectMetatable(L, tag: "hs.styledtext")
+                loadImageModule(L)
+                loadStyledTextModule(L)
 
                 let image = NSImage(size: NSSize(width: 16, height: 16))
-                pushObjectUserdata(L, image, tag: "hs.image")
+                #expect(lua_pushretainedUserdata(L, image, metatableName: "hs.image"))
                 #expect(canvas_valueFromLua(L, at: -1, forKey: "image") as? NSImage === image)
                 lua_pop(L, 1)
 
                 let string = NSAttributedString(string: "canvas")
-                pushObjectUserdata(L, string, tag: "hs.styledtext")
+                #expect(lua_pushretainedUserdata(L, string, metatableName: "hs.styledtext"))
                 let converted = try #require(canvas_valueFromLua(L, at: -1, forKey: "text") as? NSAttributedString)
                 #expect(converted.string == "canvas")
                 lua_pop(L, 1)
@@ -90,15 +102,37 @@ extension CosmicHammerTests {
             }
         }
 
+        @Test func testCanvasStyledTextTableUsesLuaByteOffsets() throws {
+            try withLuaState { L in
+                #expect(luaL_dostring(L, """
+                return {
+                    "éa",
+                    {
+                        starts = 3,
+                        ends = 3,
+                        attributes = { color = { red = 1, green = 0, blue = 0, alpha = 1 } },
+                    },
+                }
+                """) == LUA_OK)
+
+                let converted = try #require(canvas_valueFromLua(L, at: -1, forKey: "text") as? NSAttributedString)
+                #expect(converted.string == "éa")
+                #expect(converted.attribute(.foregroundColor, at: 0, effectiveRange: nil) == nil)
+                #expect(converted.attribute(.foregroundColor, at: 1, effectiveRange: nil) is NSColor)
+                lua_pop(L, 1)
+            }
+        }
+
         @Test func testCanvasPushValuePreservesTypedValues() {
             withLuaState { L in
-                registerObjectMetatable(L, tag: "hs.image")
-                registerObjectMetatable(L, tag: "hs.styledtext")
+                loadCanvasModule(L)
+                loadImageModule(L)
+                loadStyledTextModule(L)
 
                 canvas_pushValue(L, NSColor(calibratedRed: 0.1, green: 0.2, blue: 0.3, alpha: 0.4))
                 #expect(lua_type(L, -1) == LUA_TTABLE)
                 #expect(lua_getfield(L, -1, "__luaSkinType") == LUA_TSTRING)
-                #expect(String(cString: lua_tostring(L, -1)) == "NSColor")
+                #expect(lua_tostringValue(L, at: -1) == "NSColor")
                 lua_pop(L, 2)
 
                 let transform = NSAffineTransform()
@@ -121,21 +155,19 @@ extension CosmicHammerTests {
             }
         }
 
-        private func ensureCanvasLanguageDictionary(_ L: UnsafeMutablePointer<lua_State>) {
+        private func loadCanvasModule(_ L: UnsafeMutablePointer<lua_State>) {
             _ = luaopen_hs_libcanvas(L)
             lua_pop(L, 1)
         }
 
-        private func registerObjectMetatable(_ L: UnsafeMutablePointer<lua_State>, tag: String) {
-            luaL_newmetatable(L, tag)
+        private func loadImageModule(_ L: UnsafeMutablePointer<lua_State>) {
+            _ = luaopen_hs_libimage(L)
             lua_pop(L, 1)
         }
 
-        private func pushObjectUserdata(_ L: UnsafeMutablePointer<lua_State>, _ object: AnyObject, tag: String) {
-            let ptr = lua_newuserdata(L, MemoryLayout<UnsafeRawPointer>.size)!
-            ptr.storeBytes(of: Unmanaged.passUnretained(object).toOpaque(), as: UnsafeRawPointer.self)
-            luaL_getmetatable(L, tag)
-            lua_setmetatable(L, -2)
+        private func loadStyledTextModule(_ L: UnsafeMutablePointer<lua_State>) {
+            _ = luaopen_hs_libstyledtext(L)
+            lua_pop(L, 1)
         }
     }
 }

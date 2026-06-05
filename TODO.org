@@ -290,11 +290,22 @@ LuaSkin → LuaSwift).
       brightness, distributednotifications timing, and leftover filesystem temp
       state. The focused CoreLocation tests passed.
 
-*** TODO Integrate remaining Canvas value conversion fixes from stale heads
-    Restore Canvas-specific Lua table/userdata conversion for colors, images,
-    styled text, shadows, transforms, and Canvas callbacks.
+	*** DONE Integrate remaining Canvas value conversion fixes from stale heads
+	    Completed 2026-06-05.
+	    Restore Canvas-specific Lua table/userdata conversion for colors, images,
+	    styled text, shadows, transforms, and Canvas callbacks.
 
-*** TODO Integrate remaining app/window/uielement object conversion fixes
+	    Implemented Canvas-local value conversion instead of relying on generic
+	    ~lua_pushany~/~lua_tovalue~ at Canvas element/default boundaries. Also fixed
+	    a stale ~CanvasWindow.fadeOut~ Lua stack leak found during Claude review by
+	    removing an unused registry-table push before ~luaL_ref~.
+
+	    Verification:
+	    - ~SDK_PATH="$(xcrun --show-sdk-path)" COSMIC_HAMMER_TEST_RESOURCES="$(pwd)/build/test/Cosmic Hammer.app/Contents/Resources" swift test -Xlinker -F -Xlinker "${SDK_PATH}/System/Library/PrivateFrameworks" --filter CanvasValueConversionTests~
+	    - Claude review chunks converged with no remaining blocking issues after
+	      the ~CanvasWindow.fadeOut~ stack fix.
+
+	*** TODO Integrate remaining app/window/uielement object conversion fixes
     Push application, window, uielement, image, styledtext, pasteboard, and color
     values through typed helpers so Lua sees stable userdata/tables.
 

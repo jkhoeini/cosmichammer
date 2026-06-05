@@ -8,8 +8,10 @@ private let canvasMaxConversionDepth = 50
 
 private let canvasObjectUserdataGC: lua_CFunction = { L in
     guard let L = L, let ptr = lua_touserdata(L, 1) else { return 0 }
-    let raw = ptr.load(as: UnsafeRawPointer.self)
-    _ = Unmanaged<AnyObject>.fromOpaque(raw).takeRetainedValue()
+    let stored = ptr.assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
+    guard let opaque = stored.pointee else { return 0 }
+    stored.pointee = nil
+    _ = Unmanaged<AnyObject>.fromOpaque(UnsafeRawPointer(opaque)).takeRetainedValue()
     return 0
 }
 
@@ -38,6 +40,9 @@ private func canvas_valueFromLuaRecursive(_ L: UnsafeMutablePointer<lua_State>!,
         } else if keyName == "shadow" {
             return canvas_shadowFromLua(L, at: idx)
         } else if keyName == "canvas" {
+            if lua_type(L, idx) == LUA_TUSERDATA && luaL_testudata(L, idx, canvas_USERDATA_TAG) != nil {
+                return canvas_toHSCanvasViewFromLua(L, idx: idx) as? NSView
+            }
             return lua_toAnyObject(L, at: idx) as? NSView
         }
     }
@@ -371,14 +376,17 @@ func canvas_styledTextFromValue(_ value: Any?) -> NSAttributedString? {
     if let number = value as? NSNumber { return NSAttributedString(string: number.stringValue) }
     guard let array = value as? NSArray, array.count > 0 else { return nil }
 
-    let result = NSMutableAttributedString(string: String(describing: array[0]))
+    let baseString = String(describing: array[0])
+    let result = NSMutableAttributedString(string: baseString)
+    let byteMap = canvas_luaByteToObjCharMap(baseString as NSString)
     for idx in 1..<array.count {
         guard let style = array[idx] as? NSDictionary,
               let attributes = canvas_textAttributesFromValue(style["attributes"] as? NSDictionary) else { continue }
-        let start = max(0, Int((canvas_numberFromValue(style["starts"]) ?? 1) - 1))
-        let end = min(result.length, Int(canvas_numberFromValue(style["ends"]) ?? CGFloat(result.length)))
-        if end >= start {
-            result.setAttributes(attributes, range: NSRange(location: start, length: end - start))
+        let start = lua_Integer(canvas_numberFromValue(style["starts"]) ?? 1)
+        let end = lua_Integer(canvas_numberFromValue(style["ends"]) ?? CGFloat(baseString.utf8.count))
+        let resolved = canvas_luaRangeToObjCRange(byteMap, len: lua_Integer(baseString.utf8.count), luaI: start, luaJ: end)
+        if !resolved.empty {
+            result.setAttributes(attributes, range: NSRange(location: Int(resolved.i - 1), length: Int(resolved.j - (resolved.i - 1))))
         }
     }
     return result
@@ -420,6 +428,10 @@ private func canvas_textAttributesFromValue(_ value: NSDictionary?) -> [NSAttrib
 
     if let font = value["font"] as? NSFont {
         attributes[.font] = font
+    } else if let font = value["font"] as? NSDictionary,
+              let name = font["name"] as? String,
+              let size = canvas_numberFromValue(font["size"]) {
+        attributes[.font] = NSFont(name: name, size: size)
     }
 
     for (luaKey, attrKey) in canvasNumericTextAttributes {
@@ -545,6 +557,7 @@ private func canvas_pushValueRecursive(_ L: UnsafeMutablePointer<lua_State>!, _ 
     case let color as NSColor:
         canvas_pushColor(L, color)
     case let image as NSImage:
+        image.cacheMode = .never
         canvas_pushObjectUserdata(L, image, tag: "hs.image")
     case let string as NSAttributedString:
         canvas_pushObjectUserdata(L, string, tag: "hs.styledtext")
@@ -573,9 +586,15 @@ private func canvas_pushValueRecursive(_ L: UnsafeMutablePointer<lua_State>!, _ 
 
 private func canvas_pushArray(_ L: UnsafeMutablePointer<lua_State>!, _ array: [Any], depth: Int) {
     lua_createtable(L, Int32(array.count), 0)
+    var hasHole = false
     for (index, item) in array.enumerated() {
         canvas_pushValueRecursive(L, item, depth: depth + 1)
+        if lua_isnil(L, -1) { hasHole = true }
         lua_rawseti(L, -2, lua_Integer(index + 1))
+    }
+    if hasHole {
+        lua_pushinteger(L, lua_Integer(array.count))
+        lua_setfield(L, -2, "n")
     }
 }
 
@@ -640,9 +659,17 @@ private func canvas_pushParagraphStyle(_ L: UnsafeMutablePointer<lua_State>!, _ 
 }
 
 private func canvas_pushObjectUserdata(_ L: UnsafeMutablePointer<lua_State>!, _ object: AnyObject, tag: String) {
-    let ptr = lua_newuserdata(L, MemoryLayout<UnsafeRawPointer>.size)!
-    ptr.storeBytes(of: Unmanaged.passRetained(object).toOpaque(), as: UnsafeRawPointer.self)
-    canvas_setMetatableCreatingFallback(L, tag: tag)
+    if lua_pushretainedUserdata(L, object, metatableName: tag) {
+        return
+    }
+    if luaL_newmetatable(L, tag) != 0 {
+        lua_pushcfunction(L, canvasObjectUserdataGC)
+        lua_setfield(L, -2, "__gc")
+    }
+    lua_pop(L, 1)
+    if !lua_pushretainedUserdata(L, object, metatableName: tag) {
+        lua_pushnil(L)
+    }
 }
 
 private func canvas_setMetatableIfAvailable(_ L: UnsafeMutablePointer<lua_State>!, tag: String) {
@@ -651,19 +678,6 @@ private func canvas_setMetatableIfAvailable(_ L: UnsafeMutablePointer<lua_State>
     } else {
         lua_pop(L, 1)
     }
-}
-
-private func canvas_setMetatableCreatingFallback(_ L: UnsafeMutablePointer<lua_State>!, tag: String) {
-    if luaL_getmetatable(L, tag) == LUA_TTABLE {
-        lua_setmetatable(L, -2)
-        return
-    }
-    lua_pop(L, 1)
-    if luaL_newmetatable(L, tag) != 0 {
-        lua_pushcfunction(L, canvasObjectUserdataGC)
-        lua_setfield(L, -2, "__gc")
-    }
-    lua_setmetatable(L, -2)
 }
 
 // MARK: - Module Functions

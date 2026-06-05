@@ -90,9 +90,7 @@ import os.log
         if theView.selfRef != LUA_NOREF { return } // already in a fade
 
         // Push the canvas view userdata and create a reference to prevent GC during fade
-        lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(canvas_refTable))
-        // We need the view on the stack - push via its userdata
-        lua_pushany(L, theView)
+        canvas_pushValue(L, theView)
         theView.selfRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
 
         let alphaSetting = self.alphaValue
@@ -120,4 +118,3 @@ import os.log
         NSAnimationContext.endGrouping()
     }
 }
-
