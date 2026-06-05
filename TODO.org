@@ -348,9 +348,21 @@ LuaSkin → LuaSwift).
 	    - ~SDK_PATH="$(xcrun --show-sdk-path)" COSMIC_HAMMER_TEST_RESOURCES="$(pwd)/build/test/Cosmic Hammer.app/Contents/Resources" swift test -Xlinker -F -Xlinker "${SDK_PATH}/System/Library/PrivateFrameworks" --filter "CanvasValueConversionTests|LocationConversionTests|SpotlightConversionTests"~ passes 10 tests.
 	    - ~mise exec -- just build~ passes.
 
-	*** TODO Run full verification after broad app/window conversion fixes
-    Run the full local verification gate after the widest conversion batch before
-    continuing to system-extension integrations.
+		*** DONE Run full verification after broad app/window conversion fixes
+		    Completed 2026-06-05.
+		    Ran the full local verification gate after the widest conversion batch
+		    before continuing to system-extension integrations.
+
+		    Verification:
+		    - ~mise exec -- just verify~ fails after generated-file checks,
+		      docs-lint, build, and test-resource assembly pass.
+		    - The full Swift suite still has broad baseline failures in AppFinder,
+		      Application, Audiodevice, Brightness, Distributednotifications, FS,
+		      Hotkey, Math, Noises, Screen, Serial, Socket, and Task, then aborts
+		      in Timer with a ~ProcessTask.swift~ optional unwrap fatal error.
+		    - Focused conversion suites from the preceding commits still pass, so
+		      this checkpoint records the broader suite baseline rather than a new
+		      conversion regression.
 
 *** TODO Verify AppFinder stale head is covered by app/window integration
     Compare the AppFinder branch diff against the broad app/window conversion
