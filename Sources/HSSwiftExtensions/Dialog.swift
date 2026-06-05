@@ -368,6 +368,11 @@ private func chooseFileOrFolder(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 
 // MARK: - Webview Alert
 
+func dialog_webviewWindowFromLua(L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> HSWebViewWindow? {
+    guard luaL_testudata(L, idx, wv_USERDATA_TAG) != nil else { return nil }
+    return wv_getWindowFromUD(L, idx)
+}
+
 /// hs.dialog.webviewAlert(webview, callbackFn, message, [informativeText], [buttonOne], [buttonTwo], [style]) -> string
 /// Function
 /// Displays a simple dialog box using `NSAlert` in a `hs.webview`.
@@ -401,7 +406,9 @@ private func webviewAlert(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
     //                            webview,      callbackFn,   message,    [informativeText],         [buttonOne],               [buttonTwo],                         [style]
 
-    let webview = lua_tovalue(L, at: 1) as! NSWindow
+    guard let webview = dialog_webviewWindowFromLua(L: L, at: 1) else {
+        return luaL_argerror(L, 1, "expected hs.webview object")
+    }
 
     lua_pushvalue(L, 2) // Copy the callback function to the top of the stack
     var callbackRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE) // Store what's at the top of the stack in the registry

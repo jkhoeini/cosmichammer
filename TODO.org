@@ -381,9 +381,36 @@ LuaSkin → LuaSwift).
 	      harness failures through ~hs.window.get/find~, not missing conversion
 	      hunks from this stale head.
 
-*** TODO Inspect generic typed-userdata helper dependencies early
-    Check whether WebView, Canvas, Toolbar, or Chooser helper declarations from
-    the generic helper stale head should land before dependent integrations.
+	*** DONE Inspect generic typed-userdata helper dependencies early
+	    Completed 2026-06-05.
+	    Checked stale head ~zstzuukktylm~ before the later WebView, Canvas,
+	    Toolbar, and Chooser integrations.
+
+	    Audit:
+	    - ~ChooserLegacy.swift~: useful visibility dependency; ~pushHSChooser~
+	      must be available so toolbar callbacks can pass chooser window context
+	      as ~hs.chooser~ userdata.
+	    - ~Dialog.swift~: useful webview extraction helper; ~webviewAlert~ could
+	      not safely force-cast webview userdata through ~lua_tovalue~.
+	    - ~WebviewToolbar.swift~: useful prerequisite; toolbar callbacks and
+	      methods needed typed toolbar push/extract helpers.
+	    - ~LuaHelpers.swift~: stale direct branches are not appropriate for
+	      current head because the repo now has ~LuaUserdataConvertible~ and
+	      ~lua_pushretainedUserdata~. Keep broader generic-helper decisions for
+	      later integrations instead of blindly replaying the stale hunk.
+
+	    Implemented the prerequisite subset: typed webview alert extraction,
+	    typed toolbar method extraction, typed toolbar pushes, and typed toolbar
+	    callback window context for webviews and choosers.
+
+	    Verification:
+	    - ~mise exec -- just test-resources~ passes.
+	    - ~SDK_PATH="$(xcrun --show-sdk-path)" COSMIC_HAMMER_TEST_RESOURCES="$(pwd)/build/test/Cosmic Hammer.app/Contents/Resources" swift test -Xlinker -F -Xlinker "${SDK_PATH}/System/Library/PrivateFrameworks" --filter TypedUserdataConversion~ passes 5 tests.
+	    - ~mise exec -- just build~ passes.
+	    - Claude reviewed the plan and implementation in chunks. It found one
+	      test bootstrap concern, then withdrew it after checking that
+	      ~luaRunString~ bootstraps before execution; no actionable comments
+	      remain.
 
 *** TODO Integrate remaining Wi-Fi CoreWLAN conversion fixes
     Convert CoreWLAN interfaces, channels, configurations, profiles, and sets to
@@ -413,9 +440,13 @@ LuaSkin → LuaSwift).
     Make matrix constructors and methods use explicit ~NSAffineTransform~ table
     conversion so returned matrix tables stay chainable.
 
-*** TODO Integrate remaining generic typed-userdata helper fixes
-    Preserve WebView, Canvas, Toolbar, and Chooser userdata through generic push
-    and dialog/toolbar bridge paths.
+	*** TODO Integrate remaining generic typed-userdata helper fixes
+	    Preserve WebView, Canvas, Toolbar, and Chooser userdata through generic push
+	    and dialog/toolbar bridge paths.
+	    The prerequisite dialog/toolbar/chooser subset from ~zstzuukktylm~ has
+	    landed. Revisit only if later WebView/Canvas/Toolbar integrations still
+	    need a generic ~lua_pushany~ branch; do not replay the stale
+	    ~LuaHelpers.swift~ hunk blindly.
 
 *** TODO Integrate remaining console and speech conversion fixes
     Use explicit AppKit color/font/styledtext conversions in console APIs and

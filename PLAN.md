@@ -1,77 +1,103 @@
-# Plan: image/color/styledtext/pasteboard conversion fixes
+# Plan: generic typed-userdata helper prerequisites
 
 ## Scope
 
-Integrate the remaining useful parts of stale change `pklzrzypmpkw` after the
-app/window/uielement slice was already committed. This item covers only:
+Integrate the useful prerequisite subset from stale change `zstzuukktylm` without
+reverting to its old raw helper shape.
 
+This slice covers:
+
+- `Sources/HSSwiftExtensions/ChooserLegacy.swift`
 - `Sources/HSSwiftExtensions/Dialog.swift`
-- `Sources/HSSwiftExtensions/DrawingColor.swift`
-- `Sources/HSSwiftExtensions/Image.swift`
-- `Sources/HSSwiftExtensions/Menubar.swift`
-- `Sources/HSSwiftExtensions/Pasteboard.swift`
-- `Sources/HSSwiftExtensions/Styledtext.swift`
-- `Tests/CosmicHammerTests/ObjectConversionRegressionTests.swift`
+- `Sources/HSSwiftExtensions/WebviewToolbar.swift`
+- `Tests/CosmicHammerTests/TypedUserdataConversionTests.swift`
 - `TODO.org`
 
-Do not reapply the already-integrated app/window/uielement hunks from
-`pklzrzypmpkw`.
+Do not blindly apply the stale `LuaHelpers.swift` hunk. Current head already has
+`LuaUserdataConvertible` plus `lua_pushretainedUserdata`, which is the preferred
+shared userdata seam.
+
+## Audit Summary
+
+Stale change `zstzuukktylm` changes four files and adds one test file:
+
+- `ChooserLegacy.swift`: still useful as a visibility/API dependency for
+  toolbar window-context pushes.
+- `Dialog.swift`: still useful because `webviewAlert` currently force-casts
+  `lua_tovalue(... as! NSWindow)`, but webview userdata is not converted by
+  `lua_tovalue`.
+- `LuaHelpers.swift`: concept is useful, implementation shape is obsolete.
+  Prefer current retained-userdata APIs and specific module helpers instead of
+  adding old direct branches for every object type.
+- `WebviewToolbar.swift`: still useful because toolbar callbacks and methods use
+  generic `lua_pushany` and `lua_tovalue(... as! HSToolbar)` on toolbar userdata.
+- `TypedUserdataConversionTests.swift`: useful, but should be adjusted to current
+  helper names and retained-userdata behavior.
 
 ## Implementation
 
-1. Expose the richer local conversion helpers that other modules need:
-   - `NSColor_tolua` and `table_toNSColor` from `DrawingColor.swift`.
-   - `NSImage_tolua` from `Image.swift`, while preserving the current
-     `lua_pushretainedUserdata` implementation and not reverting to the stale
-     raw-pointer version.
-   - `lua_toNSAttributedString` and `NSAttributedString_toLua` from
-     `Styledtext.swift`.
-   - Concretely, widen these helpers from `private` to internal package/module
-     visibility. Leave helpers private when they are only used within their file.
+1. Fix the broken toolbar userdata reads first:
+   - Replace every `lua_tovalue(L, at: 1) as! HSToolbar` and toolbar
+     metamethod equivalent with `getToolbar`.
+   - Keep argument validation in place with `luaL_checkudata` where methods
+     already have it.
+   - Use `toolbar_pushHSToolbar` for places returning toolbar objects, including
+     copied toolbars and detached old toolbars.
 
-2. Replace generic `lua_pushany` / `lua_tovalue` paths for these types:
-   - `Dialog.swift`: color panel callbacks and color setter/getter use explicit
-     NSColor helpers.
-   - `DrawingColor.swift`: color/list pushers, color-table parsing, and pattern
-     image extraction use explicit helpers.
-   - `Image.swift`: constructors and image methods push `hs.image` userdata
-     explicitly; image methods extract with the current typed userdata helper.
-   - `Menubar.swift`: icon and attributed-title paths use explicit image and
-     styledtext helpers. Check current `Menubar.swift` against the stale hunk
-     before editing; do not blindly apply stale status-item code if current code
-     has drifted.
-   - `Pasteboard.swift`: read/write paths convert images, colors, styledtext,
-     arrays, and dictionaries explicitly without relying on generic userdata
-     conversion.
-   - `Styledtext.swift`: constructors, attribute tables, substring/copy/case
-     methods, fonts, shadows, paragraph styles, and concat paths use explicit
-     typed conversion helpers.
+2. Expose narrowly scoped helpers:
+   - Widen `pushHSChooser` enough for toolbar code to push chooser window
+     context as `hs.chooser` userdata.
+   - Add `dialog_webviewWindowFromLua(L:at:)` using `luaL_testudata` and
+     `wv_getWindowFromUD` so `hs.dialog.webviewAlert` can extract webview
+     userdata safely.
+   - Widen toolbar helpers as needed: `getToolbar`, `toolbar_pushHSToolbar`, and
+     `toolbar_pushWindowContext`.
 
-3. Add focused regression tests in `ObjectConversionRegressionTests.swift` for:
-   - `hs.image` constructors returning userdata.
-   - color tables converting through `hs.drawing.color`.
-   - styledtext attribute tables round-tripping as Lua tables.
-   - pasteboard image/styledtext read/write round-tripping as userdata.
+3. Replace unsafe toolbar callback/window-context pushes:
+   - Toolbar callbacks should push `capturedSelf` with `toolbar_pushHSToolbar`.
+   - Toolbar window context should return `"console"`, `hs.webview` userdata,
+     `hs.chooser` userdata, or a fallback value in a single helper.
+   - The fallback value is only for unknown window/controller types; known
+     webview and chooser contexts must not go through generic `lua_pushany`.
 
-4. Update `TODO.org` when the item is complete: mark this item `DONE`, keep the
-   split follow-up items intact, and add verification plus Claude review notes.
+4. Keep `LuaHelpers.swift` mostly unchanged for this slice:
+   - Do not add stale direct branches for `HSWebViewWindow`, `HSCanvasView`,
+     `HSToolbar`, and `HSChooser` until each type has a current, tested retained
+     userdata strategy.
+   - If `HSToolbar` can conform cleanly to `LuaUserdataConvertible` without
+     changing self-ref semantics, do that; otherwise use explicit toolbar
+     helpers only.
+
+5. Add focused tests:
+   - `dialog_webviewWindowFromLua` extracts the same `HSWebViewWindow` pushed by
+     `wv_HSWebViewWindow_toLua`.
+   - `toolbar_pushHSToolbar` produces `hs.webview.toolbar` userdata and
+     `lua_toAnyObject` returns the original toolbar.
+   - `toolbar_pushWindowContext` preserves `hs.webview` userdata for webview
+     windows.
+   - Add a Lua-level toolbar method smoke test that constructs a toolbar and
+     calls simple methods such as `identifier`, `isAttached`, `visible`, and
+     `copy` without crashing or returning fallback strings.
+
+6. Update `TODO.org`:
+   - Mark `Inspect generic typed-userdata helper dependencies early` done with
+     the file-by-file audit.
+   - If this implementation lands, also record that the prerequisite subset of
+     `Integrate remaining generic typed-userdata helper fixes` has been handled,
+     while leaving broader generic-helper cleanup for later stale heads if still
+     useful.
 
 ## Risks And Checks
 
-- Preserve current userdata lifecycle code in `Image.swift` and `Styledtext.swift`;
-  do not regress to stale raw-pointer storage.
-- Check every helper call that can return `0`; callers returning one Lua value
-  need an explicit nil fallback.
-- Keep color conversion using `table_toNSColor`, not the simpler shared
-  `tableToNSColor`, where named, hex, white, HSB, or pattern colors matter.
-- Watch stack balance in `Pasteboard.swift`, especially URL-table probing and
-  recursive array/dictionary pushing.
-- Dialog color-panel callbacks require UI event-loop interaction, so do not add
-  a brittle callback test unless there is an existing reliable harness. Cover the
-  same explicit color helper path through focused color conversion tests and
-  compile coverage.
-- Re-run Claude review in chunks after implementation because a full diff can
-  time out.
+- `wv_getWindowFromUD` assumes the userdata tag is correct; keep the
+  `luaL_testudata` guard before calling it.
+- `pushHSChooser` and `pushHSToolbar` have different lifetime patterns from the
+  newer retained-userdata helper; do not mix lifecycles unless tests prove it is
+  safe.
+- Toolbar callback stack shape is externally visible. Preserve callback argument
+  count and order exactly.
+- Do not treat every `lua_pushany` in toolbar as a bug; many push plain strings,
+  arrays, dictionaries, item definitions, or images.
 
 ## Verification
 
@@ -79,17 +105,10 @@ Run:
 
 ```sh
 zsh -ic 'mise exec -- just test-resources'
-SDK_PATH="$(xcrun --show-sdk-path)" COSMIC_HAMMER_TEST_RESOURCES="$(pwd)/build/test/Cosmic Hammer.app/Contents/Resources" swift test -Xlinker -F -Xlinker "${SDK_PATH}/System/Library/PrivateFrameworks" --filter ObjectConversionRegressionTests
+SDK_PATH="$(xcrun --show-sdk-path)" COSMIC_HAMMER_TEST_RESOURCES="$(pwd)/build/test/Cosmic Hammer.app/Contents/Resources" swift test -Xlinker -F -Xlinker "${SDK_PATH}/System/Library/PrivateFrameworks" --filter TypedUserdataConversion
+zsh -ic 'mise exec -- just build'
 ```
 
-Also re-run the prior conversion guards:
-
-```sh
-SDK_PATH="$(xcrun --show-sdk-path)" COSMIC_HAMMER_TEST_RESOURCES="$(pwd)/build/test/Cosmic Hammer.app/Contents/Resources" swift test -Xlinker -F -Xlinker "${SDK_PATH}/System/Library/PrivateFrameworks" --filter "CanvasValueConversionTests|LocationConversionTests|SpotlightConversionTests"
-```
-
-Also run `zsh -ic 'mise exec -- just build'` or a full filtered `swift test`
-compile after code edits to catch cross-module visibility errors. `just verify`
-is the final broad gate for the stale-head cleanup, but if it still hits known
-baseline UI/hardware failures, record the exact failures in `TODO.org` instead
-of treating them as this item.
+Also run a focused toolbar/webview/dialog filter if existing test suites expose
+one. Record any broad-suite baseline failures in `TODO.org` rather than hiding
+them.
