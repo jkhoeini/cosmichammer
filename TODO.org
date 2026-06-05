@@ -530,9 +530,20 @@ LuaSkin → LuaSwift).
         identified the missing retained-userdata release; that GC fix is included.
         Claude plan-review attempts stalled in this environment.
 
-***** TODO Integrate chooser userdata and typed-choice conversion fixes
-      Preserve chooser userdata in callbacks and methods, and preserve typed
-      ~hs.image~ / ~hs.styledtext~ values inside chooser choices.
+***** DONE Integrate chooser userdata and typed-choice conversion fixes
+      Completed 2026-06-05.
+      Chooser constructors, global callbacks, choice callbacks, methods, and
+      metamethods now use typed ~hs.chooser~ push/extract helpers instead of
+      generic userdata conversion. Static and dynamic chooser choices now preserve
+      ~hs.image~ and ~hs.styledtext~ values through explicit per-choice
+      conversion, and color setters/getters use current color helpers.
+
+      Verification:
+      - ~SDK_PATH="$(xcrun --show-sdk-path)" COSMIC_HAMMER_TEST_RESOURCES="$(pwd)/build/test/Cosmic Hammer.app/Contents/Resources" swift test -Xlinker -F -Xlinker "${SDK_PATH}/System/Library/PrivateFrameworks" --filter ObjectConversionRegressionTests~ passes 20 tests.
+      - ~mise exec -- just build~ passes.
+      - Claude plan and implementation review attempts both timed out after 90s
+        with no output. The final pass used the stale-diff audit, local review,
+        and focused regression tests.
 
 ***** TODO Integrate sharing userdata and typed-item conversion fixes
       Preserve sharing-service userdata plus URL, image, and styledtext item

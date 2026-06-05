@@ -466,7 +466,7 @@ private let chooserSetFgColor: lua_CFunction = { L in
         lua_pushvalue(L, 1)
 
     case LUA_TNONE:
-        lua_pushNSColor(L, chooser.fgColor)
+        pushNSColorOrNil(L, chooser.fgColor)
 
     default:
         os_log(.error, "ERROR: Unknown type in hs.chooser:fgColor(). This should not be possible")
@@ -499,7 +499,7 @@ private let chooserSetSubTextColor: lua_CFunction = { L in
         lua_pushvalue(L, 1)
 
     case LUA_TNONE:
-        lua_pushNSColor(L, chooser.subTextColor)
+        pushNSColorOrNil(L, chooser.subTextColor)
 
     default:
         os_log(.error, "ERROR: Unknown type in hs.chooser:subTextColor(). This should not be possible")
@@ -782,7 +782,7 @@ let pushHSChooser: @convention(c) (UnsafeMutablePointer<lua_State>?, Any?) -> In
     return 1
 }
 
-let toHSChooserFromLua: @convention(c) (UnsafeMutablePointer<lua_State>?, Int32) -> Any? = { L, idx in
+private let toHSChooserFromLua: @convention(c) (UnsafeMutablePointer<lua_State>?, Int32) -> Any? = { L, idx in
     if luaL_testudata(L, idx, USERDATA_TAG) != nil {
         return get_objectFromUserdata(HSChooser.self, L, idx, USERDATA_TAG)
     } else {
@@ -790,6 +790,16 @@ let toHSChooserFromLua: @convention(c) (UnsafeMutablePointer<lua_State>?, Int32)
                              lua_typename(L, lua_type(L, idx))))
     }
     return nil
+}
+
+private func pushNSColorOrNil(_ L: UnsafeMutablePointer<lua_State>!, _ color: NSColor?) {
+    guard let color else {
+        lua_pushnil(L)
+        return
+    }
+    if !lua_pushNSColor(L, color) {
+        lua_pushnil(L)
+    }
 }
 
 func lua_toChooserChoiceValue(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> Any? {
@@ -810,7 +820,7 @@ func lua_toChooserChoice(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -
     while lua_next(L, absIdx) != 0 {
         guard let key = lua_tovalue(L, at: -2) as? NSCopying,
               let value = lua_toChooserChoiceValue(L, at: -1) else {
-            lua_pop(L, 1)
+            lua_pop(L, 2)
             return nil
         }
         choice.setObject(value, forKey: key)
@@ -842,9 +852,13 @@ func lua_toChooserChoices(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) 
 func pushChooserChoiceValue(_ L: UnsafeMutablePointer<lua_State>!, _ value: Any?) {
     switch value {
     case let image as NSImage:
-        lua_pushNSImage(L, image)
+        if NSImage_tolua(L, image) == 0 {
+            lua_pushnil(L)
+        }
     case let styledText as NSAttributedString:
-        lua_pushNSAttributedString(L, styledText)
+        if NSAttributedString_toLua(L, obj: styledText) == 0 {
+            lua_pushnil(L)
+        }
     default:
         lua_pushany(L, value)
     }

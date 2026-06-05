@@ -1,3 +1,4 @@
+import AppKit
 import AVFoundation
 import Foundation
 import CLua
@@ -42,6 +43,20 @@ extension CosmicHammerTests {
                 }
                 try body(L)
             }
+        }
+
+        private func withBootstrappedLua(
+            requiring modules: [String],
+            _ body: (UnsafeMutablePointer<lua_State>) throws -> Void
+        ) rethrows {
+            bootstrapLuaForTesting()
+            for module in modules {
+                _ = runLua("require('\(module)')")
+            }
+            let L = lua_getCurrentState()!
+            let top = lua_gettop(L)
+            defer { lua_settop(L, top) }
+            try body(L)
         }
 
         @Test func testImageConstructorsReturnUserdata() {
@@ -503,6 +518,118 @@ extension CosmicHammerTests {
                 } else {
                     #expect(parts?.count == 9, "Lua result: \(result ?? "nil")")
                 }
+            }
+        }
+
+        @Test func testChooserConstructorAndSettersUseUserdata() {
+            let result = runLua("""
+                local chooser = require('hs.chooser')
+                local c = chooser.new(function() end)
+                local sameChoices = c:choices({ { text = 'plain' } })
+                local sameFg = c:fgColor({ red = 0.1, green = 0.2, blue = 0.3, alpha = 0.4 })
+                local fg = c:fgColor()
+                local sameSub = c:subTextColor({ red = 0.5, green = 0.6, blue = 0.7, alpha = 0.8 })
+                local sub = c:subTextColor()
+                return table.concat({
+                    type(c),
+                    type(sameChoices),
+                    tostring(sameChoices == c),
+                    type(sameFg),
+                    tostring(sameFg == c),
+                    type(fg),
+                    string.format('%.1f', fg.green),
+                    type(sameSub),
+                    tostring(sameSub == c),
+                    type(sub),
+                    string.format('%.1f', sub.alpha),
+                    tostring(c == c),
+                    tostring(c):match('^hs.chooser') and 'tostring' or 'bad',
+                }, ':')
+                """)
+            #expect(result == [
+                "userdata",
+                "userdata",
+                "true",
+                "userdata",
+                "true",
+                "table",
+                "0.2",
+                "userdata",
+                "true",
+                "table",
+                "0.8",
+                "true",
+                "tostring",
+            ].joined(separator: ":"))
+        }
+
+        @Test func testChooserChoiceConversionPreservesImageAndStyledtext() throws {
+            try withBootstrappedLua(requiring: ["hs.image", "hs.styledtext", "hs.chooser"]) { L in
+                #expect(luaL_dostring(L, """
+                    local image = require('hs.image')
+                    local styledtext = require('hs.styledtext')
+                    return {
+                        {
+                            text = styledtext.new('main'),
+                            subText = styledtext.new('sub'),
+                            image = image.imageFromName('NSApplicationIcon'),
+                            plain = 'value',
+                        },
+                    }
+                    """) == LUA_OK)
+
+                let choices = try #require(lua_toChooserChoices(L, at: -1))
+                #expect(choices.count == 1)
+                let choice = try #require(choices.object(at: 0) as? NSDictionary)
+                #expect((choice["text"] as? NSAttributedString)?.string == "main")
+                #expect((choice["subText"] as? NSAttributedString)?.string == "sub")
+                #expect(choice["image"] is NSImage)
+                #expect(choice["plain"] as? String == "value")
+
+                pushChooserChoice(L, choice)
+                #expect(lua_type(L, -1) == LUA_TTABLE)
+
+                lua_getfield(L, -1, "text")
+                #expect(toNSAttributedString(L, at: -1)?.string == "main")
+                lua_pop(L, 1)
+
+                lua_getfield(L, -1, "subText")
+                #expect(toNSAttributedString(L, at: -1)?.string == "sub")
+                lua_pop(L, 1)
+
+                lua_getfield(L, -1, "image")
+                #expect(toNSImage(L, at: -1) != nil)
+                lua_pop(L, 1)
+            }
+        }
+
+        @Test func testChooserDynamicChoicesCallbackPreservesTypedValues() throws {
+            try withBootstrappedLua(requiring: ["hs.image", "hs.styledtext", "hs.chooser"]) { L in
+                let chooser = HSChooser(refTable: LUA_NOREF, completionCallbackRef: LUA_NOREF)
+                #expect(luaL_dostring(L, """
+                    local image = require('hs.image')
+                    local styledtext = require('hs.styledtext')
+                    return function()
+                        return {
+                            {
+                                text = styledtext.new('dynamic'),
+                                image = image.imageFromName('NSApplicationIcon'),
+                            },
+                        }
+                    end
+                    """) == LUA_OK)
+
+                chooser.choicesCallbackRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+                defer {
+                    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, chooser.choicesCallbackRef)
+                    chooser.choicesCallbackRef = LUA_NOREF
+                }
+
+                let choices = try #require(chooser.getChoices())
+                #expect(choices.count == 1)
+                let choice = try #require(choices.object(at: 0) as? NSDictionary)
+                #expect((choice["text"] as? NSAttributedString)?.string == "dynamic")
+                #expect(choice["image"] is NSImage)
             }
         }
     }
