@@ -574,7 +574,9 @@ func menubarGetIcon(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let statusItem = Unmanaged<NSStatusItem>.fromOpaque(menuBarItem.pointee.menuBarItemObject!).takeUnretainedValue()
 
     if let theImage = statusItem.button?.image {
-        NSImage_tolua(L, theImage)
+        if NSImage_tolua(L, theImage) == 0 {
+            lua_pushnil(L)
+        }
     } else {
         lua_pushnil(L)
     }

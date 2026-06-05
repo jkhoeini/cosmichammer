@@ -324,11 +324,29 @@ LuaSkin → LuaSwift).
 	      ~Uielement.testCosmicHammerElements~ currently sees ~AXTextArea~ instead
 	      of its pre-existing ~AXTextField~ expectation.
 
-	*** TODO Integrate remaining image/color/styledtext/pasteboard conversion fixes
+	*** DONE Integrate remaining image/color/styledtext/pasteboard conversion fixes
+	    Completed 2026-06-05.
 	    Push image, styledtext, pasteboard, and color values through typed helpers so
 	    Lua sees stable userdata/tables. Split from the broad ~pklzrzypmpkw~ stale
 	    head after plan review flagged the original scope as too large for one safe
 	    commit.
+
+	    Implemented explicit typed conversion for dialog color-panel colors,
+	    drawing color/list/pattern image values, image constructors and methods,
+	    menubar icons/attributed titles, styledtext constructors/attributes/fonts/
+	    shadows/paragraph styles/concat, and pasteboard image/color/styledtext
+	    read/write/archive paths. Preserved the current retained-userdata lifecycle
+	    helpers instead of replaying stale raw-pointer userdata code.
+
+	    Claude review found valid force-cast, optional-font, push-failure,
+	    negative-index, pasteboard recursion, and test-coverage issues; those were
+	    fixed. Claude also repeated two stack-leak comments that were wrong after
+	    re-checking the exact snippets; it agreed both were already stack-balanced.
+
+	    Verification:
+	    - ~SDK_PATH="$(xcrun --show-sdk-path)" COSMIC_HAMMER_TEST_RESOURCES="$(pwd)/build/test/Cosmic Hammer.app/Contents/Resources" swift test -Xlinker -F -Xlinker "${SDK_PATH}/System/Library/PrivateFrameworks" --filter ObjectConversionRegressionTests~ passes 7 tests.
+	    - ~SDK_PATH="$(xcrun --show-sdk-path)" COSMIC_HAMMER_TEST_RESOURCES="$(pwd)/build/test/Cosmic Hammer.app/Contents/Resources" swift test -Xlinker -F -Xlinker "${SDK_PATH}/System/Library/PrivateFrameworks" --filter "CanvasValueConversionTests|LocationConversionTests|SpotlightConversionTests"~ passes 10 tests.
+	    - ~mise exec -- just build~ passes.
 
 	*** TODO Run full verification after broad app/window conversion fixes
     Run the full local verification gate after the widest conversion batch before

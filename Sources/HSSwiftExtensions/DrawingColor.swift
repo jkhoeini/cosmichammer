@@ -44,7 +44,9 @@ private func getColorLists(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * See also `hs.drawing.color.asHSB`
 private func colorAsRGB(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     luaL_checktype(L, 1, LUA_TTABLE)
-    let theColor = table_toNSColor(L, 1) as! NSColor
+    guard let theColor = table_toNSColor(L, 1) as? NSColor else {
+        return luaL_argerror(L, 1, "expected color table")
+    }
 
     let safeColor = theColor.usingColorSpace(NSColorSpace.genericRGB)
 
@@ -75,7 +77,9 @@ private func colorAsRGB(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * See also `hs.drawing.color.asRGB`
 private func colorAsHSB(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     luaL_checktype(L, 1, LUA_TTABLE)
-    let theColor = table_toNSColor(L, 1) as! NSColor
+    guard let theColor = table_toNSColor(L, 1) as? NSColor else {
+        return luaL_argerror(L, 1, "expected color table")
+    }
 
     let safeColor = theColor.usingColorSpace(NSColorSpace.genericRGB)
 
@@ -116,7 +120,9 @@ func NSColor_tolua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 
         lua_pushstring(L, "NSColor") ; lua_setfield(L, -2, "__luaSkinType")
     } else if theColor.colorSpaceName == .pattern {
         lua_newtable(L)
-        NSImage_tolua(L, theColor.patternImage)
+        if NSImage_tolua(L, theColor.patternImage) == 0 {
+            lua_pushnil(L)
+        }
         lua_setfield(L, -2, "image")
         lua_pushstring(L, "NSColor") ; lua_setfield(L, -2, "__luaSkinType")
     } else {

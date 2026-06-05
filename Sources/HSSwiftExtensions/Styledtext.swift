@@ -155,14 +155,17 @@ private func luaNameForAttributeKey(_ key: NSAttributedString.Key) -> String? {
 ///
 ///  * Passing an `hs.styledtext` object as the first parameter without specifying an `attributes` table is the equivalent of invoking `hs.styledtext:copy`.
 private func string_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let newString = (lua_checkUserdataObject(NSAttributedString.self, L, at: 1, metatableName: USERDATA_TAG)).mutableCopy() as! NSMutableAttributedString
+    guard let sourceString = lua_toNSAttributedString(L, at: 1) as? NSAttributedString else {
+        return luaL_argerror(L, 1, "expected string, table, or styledtext object")
+    }
+    let newString = sourceString.mutableCopy() as! NSMutableAttributedString
     if lua_gettop(L) == 2 {
-        if let attributes = lua_tovalue(L, at: 2) as? [NSAttributedString.Key: Any] {
+        if let attributes = table_toAttributesDictionary(L, at: 2) as? [NSAttributedString.Key: Any] {
             let theRange = NSRange(location: 0, length: newString.length)
             newString.addAttributes(attributes, range: theRange)
         }
     }
-    lua_pushany(L, newString)
+    NSAttributedString_toLua(L, obj: newString)
     return 1
 }
 
@@ -203,7 +206,7 @@ private func getStyledTextFromData(_ L: UnsafeMutablePointer<lua_State>!) -> Int
         let newString = try NSAttributedString(data: dataToPresent,
                                                options: [.documentType: dataType],
                                                documentAttributes: nil)
-        lua_pushany(L, newString)
+        NSAttributedString_toLua(L, obj: newString)
     } catch {
         return luaL_error(L, "setTextFromData: conversion error: \(error.localizedDescription)")
     }
@@ -240,7 +243,7 @@ private func getStyledTextFromFile(_ L: UnsafeMutablePointer<lua_State>!) -> Int
         let newString = try NSAttributedString(url: URL(fileURLWithPath: path),
                                                options: [.documentType: dataType],
                                                documentAttributes: nil)
-        lua_pushany(L, newString)
+        NSAttributedString_toLua(L, obj: newString)
     } catch {
         return luaL_error(L, "setTextFromFile: conversion error: \(error.localizedDescription)")
     }
@@ -313,13 +316,13 @@ private func fontsForFamily(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * a table containing the name and size of the font which most closely matches the specified font and the trait change requested.  If no such font is available, then the original font is returned unchanged.
 private func font_convertFont(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
-    guard let theFont = lua_tovalue(L, at: 1) as? NSFont else {
+    guard let theFont = table_toNSFont(L, at: 1) as? NSFont else {
         return luaL_argerror(L, 1, "does not specify a font")
     }
     if lua_type(L, 2) == LUA_TNUMBER {
-        lua_pushany(L, NSFontManager.shared.convert(theFont, toHaveTrait: NSFontTraitMask(rawValue: UInt(luaL_checkinteger(L, 2)))))
+        NSFont_toLua(L, obj: NSFontManager.shared.convert(theFont, toHaveTrait: NSFontTraitMask(rawValue: UInt(luaL_checkinteger(L, 2)))))
     } else {
-        lua_pushany(L, NSFontManager.shared.convertWeight(lua_toboolean(L, 2) != 0, of: theFont))
+        NSFont_toLua(L, obj: NSFontManager.shared.convertWeight(lua_toboolean(L, 2) != 0, of: theFont))
     }
     return 1
 }
@@ -559,18 +562,18 @@ private func defineLineAppliesTo(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 /// A table containing the system default fonts and sizes.
 private func defineDefaultFonts(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     lua_newtable(L)
-    lua_pushany(L, NSFont.boldSystemFont(ofSize: 0));     lua_setfield(L, -2, "boldSystem")
-    lua_pushany(L, NSFont.controlContentFont(ofSize: 0)); lua_setfield(L, -2, "controlContent")
-    lua_pushany(L, NSFont.labelFont(ofSize: 0));          lua_setfield(L, -2, "label")
-    lua_pushany(L, NSFont.menuFont(ofSize: 0));           lua_setfield(L, -2, "menu")
-    lua_pushany(L, NSFont.menuBarFont(ofSize: 0));        lua_setfield(L, -2, "menuBar")
-    lua_pushany(L, NSFont.messageFont(ofSize: 0));        lua_setfield(L, -2, "message")
-    lua_pushany(L, NSFont.paletteFont(ofSize: 0));        lua_setfield(L, -2, "palette")
-    lua_pushany(L, NSFont.systemFont(ofSize: 0));         lua_setfield(L, -2, "system")
-    lua_pushany(L, NSFont.titleBarFont(ofSize: 0));       lua_setfield(L, -2, "titleBar")
-    lua_pushany(L, NSFont.toolTipsFont(ofSize: 0));       lua_setfield(L, -2, "toolTips")
-    lua_pushany(L, NSFont.userFont(ofSize: 0));           lua_setfield(L, -2, "user")
-    lua_pushany(L, NSFont.userFixedPitchFont(ofSize: 0)); lua_setfield(L, -2, "userFixedPitch")
+    NSFont_toLua(L, obj: NSFont.boldSystemFont(ofSize: 0));     lua_setfield(L, -2, "boldSystem")
+    NSFont_toLua(L, obj: NSFont.controlContentFont(ofSize: 0)); lua_setfield(L, -2, "controlContent")
+    NSFont_toLua(L, obj: NSFont.labelFont(ofSize: 0));          lua_setfield(L, -2, "label")
+    NSFont_toLua(L, obj: NSFont.menuFont(ofSize: 0));           lua_setfield(L, -2, "menu")
+    NSFont_toLua(L, obj: NSFont.menuBarFont(ofSize: 0));        lua_setfield(L, -2, "menuBar")
+    NSFont_toLua(L, obj: NSFont.messageFont(ofSize: 0));        lua_setfield(L, -2, "message")
+    NSFont_toLua(L, obj: NSFont.paletteFont(ofSize: 0));        lua_setfield(L, -2, "palette")
+    NSFont_toLua(L, obj: NSFont.systemFont(ofSize: 0));         lua_setfield(L, -2, "system")
+    NSFont_toLua(L, obj: NSFont.titleBarFont(ofSize: 0));       lua_setfield(L, -2, "titleBar")
+    NSFont_toLua(L, obj: NSFont.toolTipsFont(ofSize: 0));       lua_setfield(L, -2, "toolTips")
+    NSFont_toLua(L, obj: NSFont.userFont(ofSize: 0));           lua_setfield(L, -2, "user")
+    NSFont_toLua(L, obj: NSFont.userFixedPitchFont(ofSize: 0)); lua_setfield(L, -2, "userFixedPitch")
     return 1
 }
 
@@ -592,6 +595,33 @@ private func luaToObjCMap(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 // MARK: - Methods unique to hs.styledtext objects
 
+private func styledtext_attributeValueToLua(_ L: UnsafeMutablePointer<lua_State>!, _ value: Any) {
+    switch value {
+    case let font as NSFont:
+        NSFont_toLua(L, obj: font)
+    case let paragraphStyle as NSParagraphStyle:
+        NSParagraphStyle_toLua(L, obj: paragraphStyle)
+    case let color as NSColor:
+        NSColor_tolua(L, color)
+    case let shadow as NSShadow:
+        NSShadow_toLua(L, obj: shadow)
+    case let textTab as NSTextTab:
+        NSTextTab_toLua(L, obj: textTab)
+    case let array as NSArray:
+        lua_createtable(L, Int32(array.count), 0)
+        for item in array {
+            styledtext_attributeValueToLua(L, item)
+            lua_rawseti(L, -2, luaL_len(L, -2) + 1)
+        }
+    default:
+        let top = lua_gettop(L)
+        lua_pushany(L, value)
+        if lua_gettop(L) == top {
+            lua_pushnil(L)
+        }
+    }
+}
+
 /// hs.styledtext:copy(styledText) -> styledText object
 /// Method
 /// Create a copy of the `hs.styledtext` object.
@@ -604,7 +634,7 @@ private func luaToObjCMap(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 private func string_copy(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let theString = get_objectFromUserdata(L, at: 1)
-    lua_pushany(L, theString.copy() as! NSAttributedString)
+    NSAttributedString_toLua(L, obj: theString.copy() as! NSAttributedString)
     return 1
 }
 
@@ -684,7 +714,7 @@ private func string_totable(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
             var containsUnsupportedFields = false
             lua_newtable(L)
             for (key, value) in attributes {
-                lua_pushany(L, value as AnyObject)
+                styledtext_attributeValueToLua(L, value)
                 if let luaName = luaNameForAttributeKey(key) {
                     lua_setfield(L, -2, luaName)
                 } else {
@@ -757,7 +787,7 @@ private func string_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 private func string_setStyleForRange(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
     let theString = get_objectFromUserdata(L, at: 1)
-    let attributes = lua_tovalue(L, at: 2) as? [NSAttributedString.Key: Any]
+    let attributes = table_toAttributesDictionary(L, at: 2) as? [NSAttributedString.Key: Any]
     let replaceAttributes = lua_isboolean(L, lua_gettop(L)) ? (lua_toboolean(L, lua_gettop(L)) != 0) : false
 
     let theMap = luaByteToObjCharMap(theString.string as NSString)
@@ -768,7 +798,7 @@ private func string_setStyleForRange(_ L: UnsafeMutablePointer<lua_State>!) -> I
 
     let resolved = luaRangeToObjCRange(theMap, len: len, luaI: luaI, luaJ: luaJ)
     if resolved.empty {
-        lua_pushany(L, theString.copy() as! NSAttributedString)
+        NSAttributedString_toLua(L, obj: theString.copy() as! NSAttributedString)
     } else {
         let i = resolved.i
         let j = resolved.j
@@ -781,7 +811,7 @@ private func string_setStyleForRange(_ L: UnsafeMutablePointer<lua_State>!) -> I
                 newString.addAttributes(attributes, range: theRange)
             }
         }
-        lua_pushany(L, newString)
+        NSAttributedString_toLua(L, obj: newString)
     }
     return 1
 }
@@ -830,7 +860,7 @@ private func string_removeStyleForRange(_ L: UnsafeMutablePointer<lua_State>!) -
 
     let resolved = luaRangeToObjCRange(theMap, len: len, luaI: luaI, luaJ: luaJ)
     if resolved.empty {
-        lua_pushany(L, theString.copy() as! NSAttributedString)
+        NSAttributedString_toLua(L, obj: theString.copy() as! NSAttributedString)
     } else {
         let i = resolved.i
         let j = resolved.j
@@ -839,7 +869,7 @@ private func string_removeStyleForRange(_ L: UnsafeMutablePointer<lua_State>!) -
         for key in attributeKeys {
             newString.removeAttribute(key, range: theRange)
         }
-        lua_pushany(L, newString)
+        NSAttributedString_toLua(L, obj: newString)
     }
     return 1
 }
@@ -864,7 +894,9 @@ private func string_replaceSubstringForRange(_ L: UnsafeMutablePointer<lua_State
         withAttributes = lua_toboolean(L, lua_gettop(L)) != 0
     }
 
-    let subString = lua_checkUserdataObject(NSAttributedString.self, L, at: 2, metatableName: USERDATA_TAG)
+    guard let subString = lua_toNSAttributedString(L, at: 2) as? NSAttributedString else {
+        return luaL_argerror(L, 2, "expected string, table, or styledtext object")
+    }
 
     let theMap = luaByteToObjCharMap(theString.string as NSString)
     let len = lua_Integer(theMap.count)
@@ -893,7 +925,7 @@ private func string_replaceSubstringForRange(_ L: UnsafeMutablePointer<lua_State
     } else {
         newString.replaceCharacters(in: theRange, with: subString.string)
     }
-    lua_pushany(L, newString)
+    NSAttributedString_toLua(L, obj: newString)
 
     return 1
 }
@@ -987,7 +1019,7 @@ private func string_upper(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     if newString.length > 0 {
         let stringRange = NSRange(location: 0, length: theString.length)
         newString.replaceCharacters(in: stringRange, with: theString.string.uppercased())
-        lua_pushany(L, newString)
+        NSAttributedString_toLua(L, obj: newString)
     } else {
         lua_pushnil(L)
     }
@@ -1010,7 +1042,7 @@ private func string_lower(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     if newString.length > 0 {
         let stringRange = NSRange(location: 0, length: theString.length)
         newString.replaceCharacters(in: stringRange, with: theString.string.lowercased())
-        lua_pushany(L, newString)
+        NSAttributedString_toLua(L, obj: newString)
     } else {
         lua_pushnil(L)
     }
@@ -1044,12 +1076,12 @@ private func string_sub(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
     let resolved = luaRangeToObjCRange(theMap, len: len, luaI: luaI, luaJ: luaJ)
     if resolved.empty {
-        lua_pushany(L, NSAttributedString(string: ""))
+        NSAttributedString_toLua(L, obj: NSAttributedString(string: ""))
     } else {
         let i = resolved.i
         let j = resolved.j
         let theRange = NSRange(location: Int(i - 1), length: Int(j - (i - 1)))
-        lua_pushany(L, theString.attributedSubstring(from: theRange))
+        NSAttributedString_toLua(L, obj: theString.attributedSubstring(from: theRange))
     }
     return 1
 }
@@ -1057,17 +1089,18 @@ private func string_sub(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 // MARK: - LuaSkin conversion helpers
 
 // NSAttributedString from userdata, table, or string/number at the specified index
-private func lua_toNSAttributedString(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> AnyObject! {
+func lua_toNSAttributedString(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> AnyObject! {
+    let absIdx = lua_absindex(L, idx)
     var theString: NSMutableAttributedString?
 
-    if lua_type(L, idx) == LUA_TSTRING || lua_type(L, idx) == LUA_TNUMBER {
-        luaL_tolstring(L, idx, nil)
+    if lua_type(L, absIdx) == LUA_TSTRING || lua_type(L, absIdx) == LUA_TNUMBER {
+        luaL_tolstring(L, absIdx, nil)
         theString = NSMutableAttributedString(string: lua_tovalue(L, at: -1) as! String)
         lua_pop(L, 1)
-    } else if lua_type(L, idx) == LUA_TUSERDATA && luaL_testudata(L, idx, USERDATA_TAG) != nil {
-        theString = get_objectFromUserdata(L, at: idx).mutableCopy() as? NSMutableAttributedString
-    } else if lua_type(L, idx) == LUA_TTABLE {
-        lua_rawgeti(L, idx, 1)
+    } else if lua_type(L, absIdx) == LUA_TUSERDATA && luaL_testudata(L, absIdx, USERDATA_TAG) != nil {
+        theString = get_objectFromUserdata(L, at: absIdx).mutableCopy() as? NSMutableAttributedString
+    } else if lua_type(L, absIdx) == LUA_TTABLE {
+        lua_rawgeti(L, absIdx, 1)
         luaL_tolstring(L, -1, nil)
         lua_remove(L, -2) // luaL_tolstring pushes its value onto the stack without removing/touching the original
         theString = NSMutableAttributedString(string: lua_tovalue(L, at: -1) as! String)
@@ -1076,7 +1109,7 @@ private func lua_toNSAttributedString(_ L: UnsafeMutablePointer<lua_State>!, at 
         let theMap = luaByteToObjCharMap(theString!.string as NSString)
 
         var locInTable: lua_Integer = 2
-        while lua_rawgeti(L, idx, locInTable) != LUA_TNIL {
+        while lua_rawgeti(L, absIdx, locInTable) != LUA_TNIL {
             if lua_type(L, -1) == LUA_TTABLE {
                 let loc: UInt = (lua_getfield(L, -1, "starts") == LUA_TNUMBER) ? UInt(lua_tointeger(L, -1)) - 1 : 0
                 lua_pop(L, 1)
@@ -1107,97 +1140,110 @@ private func lua_toNSAttributedString(_ L: UnsafeMutablePointer<lua_State>!, at 
 
 // Pseudo class: converts a Lua table of attribute key-value pairs into an NSDictionary
 private func table_toAttributesDictionary(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> AnyObject! {
+    let absIdx = lua_absindex(L, idx)
     let theAttributes = NSMutableDictionary()
 
-    if lua_type(L, idx) == LUA_TTABLE {
-        if lua_getfield(L, idx, "font") == LUA_TTABLE || lua_type(L, -1) == LUA_TSTRING {
+    if lua_type(L, absIdx) == LUA_TTABLE {
+        if lua_getfield(L, absIdx, "font") == LUA_TTABLE || lua_type(L, -1) == LUA_TSTRING {
             if let font = table_toNSFont(L, at: -1) as? NSFont {
                 theAttributes[NSAttributedString.Key.font] = font
             }
         }
         lua_pop(L, 1)
-        if lua_getfield(L, idx, "paragraphStyle") == LUA_TTABLE {
+        if lua_getfield(L, absIdx, "paragraphStyle") == LUA_TTABLE {
             if let ps = table_toNSParagraphStyle(L, at: -1) as? NSParagraphStyle {
                 theAttributes[NSAttributedString.Key.paragraphStyle] = ps
             }
         }
         lua_pop(L, 1)
 
-        if lua_getfield(L, idx, "underlineStyle") == LUA_TNUMBER {
+        if lua_getfield(L, absIdx, "underlineStyle") == LUA_TNUMBER {
             theAttributes[NSAttributedString.Key.underlineStyle] = NSNumber(value: lua_tointeger(L, -1))
         }
         lua_pop(L, 1)
-        if lua_getfield(L, idx, "superscript") == LUA_TNUMBER {
+        if lua_getfield(L, absIdx, "superscript") == LUA_TNUMBER {
             theAttributes[NSAttributedString.Key.superscript] = NSNumber(value: lua_tointeger(L, -1))
         }
         lua_pop(L, 1)
-        if lua_getfield(L, idx, "ligature") == LUA_TNUMBER {
+        if lua_getfield(L, absIdx, "ligature") == LUA_TNUMBER {
             theAttributes[NSAttributedString.Key.ligature] = NSNumber(value: lua_tointeger(L, -1))
         }
         lua_pop(L, 1)
-        if lua_getfield(L, idx, "strikethroughStyle") == LUA_TNUMBER {
+        if lua_getfield(L, absIdx, "strikethroughStyle") == LUA_TNUMBER {
             theAttributes[NSAttributedString.Key.strikethroughStyle] = NSNumber(value: lua_tointeger(L, -1))
         }
         lua_pop(L, 1)
-        if lua_getfield(L, idx, "baselineOffset") == LUA_TNUMBER {
+        if lua_getfield(L, absIdx, "baselineOffset") == LUA_TNUMBER {
             theAttributes[NSAttributedString.Key.baselineOffset] = NSNumber(value: lua_tonumber(L, -1))
         }
         lua_pop(L, 1)
-        if lua_getfield(L, idx, "kerning") == LUA_TNUMBER {
+        if lua_getfield(L, absIdx, "kerning") == LUA_TNUMBER {
             theAttributes[NSAttributedString.Key.kern] = NSNumber(value: lua_tonumber(L, -1))
         }
         lua_pop(L, 1)
-        if lua_getfield(L, idx, "strokeWidth") == LUA_TNUMBER {
+        if lua_getfield(L, absIdx, "strokeWidth") == LUA_TNUMBER {
             theAttributes[NSAttributedString.Key.strokeWidth] = NSNumber(value: lua_tonumber(L, -1))
         }
         lua_pop(L, 1)
-        if lua_getfield(L, idx, "obliqueness") == LUA_TNUMBER {
+        if lua_getfield(L, absIdx, "obliqueness") == LUA_TNUMBER {
             theAttributes[NSAttributedString.Key.obliqueness] = NSNumber(value: lua_tonumber(L, -1))
         }
         lua_pop(L, 1)
-        if lua_getfield(L, idx, "expansion") == LUA_TNUMBER {
+        if lua_getfield(L, absIdx, "expansion") == LUA_TNUMBER {
             theAttributes[NSAttributedString.Key.expansion] = NSNumber(value: lua_tonumber(L, -1))
         }
         lua_pop(L, 1)
 
-        if lua_getfield(L, idx, "color") == LUA_TTABLE {
-            theAttributes[NSAttributedString.Key.foregroundColor] = tableToNSColor(L, at: -1)
+        if lua_getfield(L, absIdx, "color") == LUA_TTABLE {
+            theAttributes[NSAttributedString.Key.foregroundColor] = table_toNSColor(L, -1)
         }
         lua_pop(L, 1)
-        if lua_getfield(L, idx, "backgroundColor") == LUA_TTABLE {
-            theAttributes[NSAttributedString.Key.backgroundColor] = tableToNSColor(L, at: -1)
+        if lua_getfield(L, absIdx, "backgroundColor") == LUA_TTABLE {
+            theAttributes[NSAttributedString.Key.backgroundColor] = table_toNSColor(L, -1)
         }
         lua_pop(L, 1)
-        if lua_getfield(L, idx, "strokeColor") == LUA_TTABLE {
-            theAttributes[NSAttributedString.Key.strokeColor] = tableToNSColor(L, at: -1)
+        if lua_getfield(L, absIdx, "strokeColor") == LUA_TTABLE {
+            theAttributes[NSAttributedString.Key.strokeColor] = table_toNSColor(L, -1)
         }
         lua_pop(L, 1)
-        if lua_getfield(L, idx, "underlineColor") == LUA_TTABLE {
-            theAttributes[NSAttributedString.Key.underlineColor] = tableToNSColor(L, at: -1)
+        if lua_getfield(L, absIdx, "underlineColor") == LUA_TTABLE {
+            theAttributes[NSAttributedString.Key.underlineColor] = table_toNSColor(L, -1)
         }
         lua_pop(L, 1)
-        if lua_getfield(L, idx, "strikethroughColor") == LUA_TTABLE {
-            theAttributes[NSAttributedString.Key.strikethroughColor] = tableToNSColor(L, at: -1)
+        if lua_getfield(L, absIdx, "strikethroughColor") == LUA_TTABLE {
+            theAttributes[NSAttributedString.Key.strikethroughColor] = table_toNSColor(L, -1)
         }
         lua_pop(L, 1)
-        if lua_getfield(L, idx, "shadow") == LUA_TTABLE {
+        if lua_getfield(L, absIdx, "shadow") == LUA_TTABLE {
             theAttributes[NSAttributedString.Key.shadow] = table_toNSShadow(L, at: -1)
         }
         lua_pop(L, 1)
     } else {
-        os_log(.error, "%{public}s", "invalid attributes dictionary: expected table, found \(String(cString: lua_typename(L, lua_type(L, idx))))")
+        os_log(.error, "%{public}s", "invalid attributes dictionary: expected table, found \(String(cString: lua_typename(L, lua_type(L, absIdx))))")
     }
 
     return theAttributes
 }
 
-private func NSAttributedString_toLua(_ L: UnsafeMutablePointer<lua_State>!, obj: Any!) -> Int32 {
-    guard let theString = obj as? NSAttributedString else { return 0 }
-    return lua_pushretainedUserdata(L, theString, metatableName: USERDATA_TAG) ? 1 : 0
+@discardableResult
+func NSAttributedString_toLua(_ L: UnsafeMutablePointer<lua_State>!, obj: Any!) -> Int32 {
+    guard let theString = obj as? NSAttributedString else {
+        lua_pushnil(L)
+        return 1
+    }
+    if lua_pushretainedUserdata(L, theString, metatableName: USERDATA_TAG) {
+        return 1
+    }
+    lua_pushnil(L)
+    return 1
 }
 
+@discardableResult
 private func NSFont_toLua(_ L: UnsafeMutablePointer<lua_State>!, obj: Any!) -> Int32 {
-    let theFont = obj as! NSFont
+    guard let theFont = obj as? NSFont else {
+        lua_pushnil(L)
+        return 1
+    }
 
     lua_newtable(L)
     lua_pushany(L, theFont.fontName as NSString)
@@ -1236,6 +1282,7 @@ private func table_toNSFont(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32
     }
 }
 
+@discardableResult
 private func NSShadow_toLua(_ L: UnsafeMutablePointer<lua_State>!, obj: Any!) -> Int32 {
     let theShadow = obj as! NSShadow
     let offset = theShadow.shadowOffset
@@ -1249,8 +1296,10 @@ private func NSShadow_toLua(_ L: UnsafeMutablePointer<lua_State>!, obj: Any!) ->
     lua_setfield(L, -2, "offset")
     lua_pushnumber(L, lua_Number(theShadow.shadowBlurRadius))
     lua_setfield(L, -2, "blurRadius")
-    lua_pushany(L, theShadow.shadowColor)
-    lua_setfield(L, -2, "color")
+    if let color = theShadow.shadowColor {
+        NSColor_tolua(L, color)
+        lua_setfield(L, -2, "color")
+    }
     lua_pushstring(L, "NSShadow"); lua_setfield(L, -2, "__luaSkinType")
 
     return 1
@@ -1268,7 +1317,7 @@ private func table_toNSShadow(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int
         }
         lua_pop(L, 1)
         if lua_getfield(L, idx, "color") == LUA_TTABLE {
-            theShadow.shadowColor = tableToNSColor(L, at: -1)
+            theShadow.shadowColor = table_toNSColor(L, -1) as? NSColor
         }
         lua_pop(L, 1)
     } else {
@@ -1277,6 +1326,7 @@ private func table_toNSShadow(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int
     return theShadow
 }
 
+@discardableResult
 private func NSParagraphStyle_toLua(_ L: UnsafeMutablePointer<lua_State>!, obj: Any!) -> Int32 {
     let thePS = obj as! NSParagraphStyle
 
@@ -1338,7 +1388,11 @@ private func NSParagraphStyle_toLua(_ L: UnsafeMutablePointer<lua_State>!, obj: 
     lua_pushboolean(L, thePS.allowsDefaultTighteningForTruncation ? 1 : 0)
     lua_setfield(L, -2, "allowsTighteningForTruncation")
 
-    lua_pushany(L, thePS.tabStops as NSArray?)
+    lua_createtable(L, Int32(thePS.tabStops.count), 0)
+    for tabStop in thePS.tabStops {
+        NSTextTab_toLua(L, obj: tabStop)
+        lua_rawseti(L, -2, luaL_len(L, -2) + 1)
+    }
     lua_setfield(L, -2, "tabStops")
     lua_pushinteger(L, lua_Integer(thePS.headerLevel))
     lua_setfield(L, -2, "headerLevel")
@@ -1537,6 +1591,7 @@ private func table_toNSParagraphStyle(_ L: UnsafeMutablePointer<lua_State>!, at 
     return thePS
 }
 
+@discardableResult
 private func NSTextTab_toLua(_ L: UnsafeMutablePointer<lua_State>!, obj: Any!) -> Int32 {
     let theTabStop = obj as! NSTextTab
     lua_newtable(L)
@@ -1599,10 +1654,9 @@ private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 private func userdata_concat(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     if lua_type(L, 1) == LUA_TSTRING || lua_type(L, 1) == LUA_TNUMBER {
         let theString1 = String(cString: lua_tostring(L, 1)!)
-        let theString2 = get_objectFromUserdata(L, at: 2).string
-        let newString = NSMutableString(string: theString1)
-        newString.append(theString2)
-        lua_pushany(L, newString)
+        let newString = NSMutableAttributedString(string: theString1)
+        newString.append(get_objectFromUserdata(L, at: 2))
+        NSAttributedString_toLua(L, obj: newString)
     } else {
         let theString1 = get_objectFromUserdata(L, at: 1)
         let newString = theString1.mutableCopy() as! NSMutableAttributedString
@@ -1612,7 +1666,7 @@ private func userdata_concat(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
         } else {
             newString.append(get_objectFromUserdata(L, at: 2))
         }
-        lua_pushany(L, newString)
+        NSAttributedString_toLua(L, obj: newString)
     }
     return 1
 }

@@ -493,7 +493,7 @@ private func imageFromPath(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let newImage = NSImage(byReferencingFile: imagePath)
 
     if let newImage = newImage, newImage.isValid {
-        lua_pushany(L, newImage)
+        pushNSImageOrNil(L, newImage)
     } else {
         lua_pushnil(L)
     }
@@ -534,7 +534,7 @@ private func imageWithContextFromASCII(_ L: UnsafeMutablePointer<lua_State>!) ->
 private func imageFromName(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let imageName = String(cString: luaL_checkstring(L, 1))
     if let newImage = NSImage(named: NSImage.Name(imageName)) {
-        lua_pushany(L, newImage)
+        pushNSImageOrNil(L, newImage)
     } else {
         lua_pushnil(L)
     }
@@ -561,7 +561,7 @@ private func imageFromURL(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     }
 
     if lua_type(L, 2) != LUA_TFUNCTION {
-        lua_pushany(L, NSImage(contentsOf: theURL))
+        pushNSImageOrNil(L, NSImage(contentsOf: theURL))
     } else {
         lua_pushvalue(L, 2)
         let fnRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
@@ -573,7 +573,7 @@ private func imageFromURL(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
                 if backgroundCallbacks.contains(NSNumber(value: fnRef)) {
                     let bgL = lua_getCurrentState()!
                     lua_rawgeti(bgL, LUA_REGISTRYINDEX_VALUE, lua_Integer(fnRef))
-                    lua_pushany(bgL, image)
+                    pushNSImageOrNil(bgL, image)
                     if lua_pcall(bgL, 1, 0, 0) != LUA_OK { lua_pop(bgL, 1) }
                     luaL_unref(bgL, LUA_REGISTRYINDEX_VALUE, fnRef)
                     backgroundCallbacks.remove(NSNumber(value: fnRef))
@@ -605,7 +605,7 @@ private func imageFromApp(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
     let iconImage = !imagePath.isEmpty ? NSWorkspace.shared.icon(forFile: imagePath) : missingIconForFile
     if let iconImage = iconImage {
-        lua_pushany(L, iconImage)
+        pushNSImageOrNil(L, iconImage)
     } else {
         lua_pushnil(L)
     }
@@ -639,7 +639,7 @@ private func imageForFiles(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     }
 
     if let theImage = NSWorkspace.shared.icon(forFiles: filesArray) as NSImage? {
-        lua_pushany(L, theImage)
+        pushNSImageOrNil(L, theImage)
     } else {
         lua_pushnil(L)
     }
@@ -659,7 +659,7 @@ private func imageForFileType(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     luaL_checktype(L, 1, LUA_TSTRING)
 
     let theImage = NSWorkspace.shared.icon(forFileType: lua_tovalue(L, at: 1) as! String)
-    lua_pushany(L, theImage)
+    pushNSImageOrNil(L, theImage)
     return 1
 }
 
@@ -754,7 +754,7 @@ private func imageFromMediaFile(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
     }
 
     if let theImage = theImage, theImage.isValid {
-        lua_pushany(L, theImage)
+        pushNSImageOrNil(L, theImage)
     } else {
         return imageForFiles(L)
     }
@@ -818,7 +818,7 @@ private func getImageSize(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
             let multiplier = min(destSize.width / srcSize.width, destSize.height / srcSize.height)
             theImage.size = NSSize(width: srcSize.width * multiplier, height: srcSize.height * multiplier)
         }
-        lua_pushany(L, theImage)
+        lua_pushvalue(L, 1)
     }
     return 1
 }
@@ -851,7 +851,11 @@ private func colorAt(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
         pixelColor = rep.colorAt(x: Int(point.x * xScale), y: Int(point.y * yScale))
     }
 
-    lua_pushany(L, pixelColor)
+    if let pixelColor = pixelColor {
+        NSColor_tolua(L, pixelColor)
+    } else {
+        lua_pushnil(L)
+    }
     return 1
 }
 
@@ -894,7 +898,7 @@ private func croppedCopy(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let imageRef = maskRef.cropping(to: correctedFrame)!
     let cropped = NSImage(cgImage: imageRef, size: frame.size)
 
-    lua_pushany(L, cropped)
+    pushNSImageOrNil(L, cropped)
     return 1
 }
 
@@ -1118,7 +1122,7 @@ private func imageTemplate(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 private func copyImage(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let theImage = lua_checkUserdataObject(NSImage.self, L, at: 1, metatableName: USERDATA_TAG)
-    lua_pushany(L, theImage.copy() as! NSImage)
+    pushNSImageOrNil(L, theImage.copy() as? NSImage)
     return 1
 }
 
@@ -1136,8 +1140,8 @@ private func toASCII(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
     let theImage = lua_checkUserdataObject(NSImage.self, L, at: 1, metatableName: USERDATA_TAG)
 
-    let width: Int = (lua_tovalue(L, at: 2) as? NSNumber)?.intValue ?? Int(theImage.size.width)
-    let height: Int = (lua_tovalue(L, at: 3) as? NSNumber)?.intValue ?? Int(theImage.size.height)
+    let width = lua_isnumber(L, 2) != 0 ? Int(lua_tointeger(L, 2)) : Int(theImage.size.width)
+    let height = lua_isnumber(L, 3) != 0 ? Int(lua_tointeger(L, 3)) : Int(theImage.size.height)
 
     let result = theImage.asciiArt(width: width, height: height)
     lua_pushany(L, result as NSString?)
@@ -1218,15 +1222,26 @@ private func image_bitmapRepresentation(_ L: UnsafeMutablePointer<lua_State>!) -
 
     let newImage = NSImage(size: bitmapSize)
     newImage.addRepresentation(rep)
-    lua_pushany(L, newImage)
+    pushNSImageOrNil(L, newImage)
     return 1
 }
 
 // MARK: - Conversion Extensions
 
+private func pushNSImageOrNil(_ L: UnsafeMutablePointer<lua_State>!, _ image: NSImage?) {
+    guard let image = image else {
+        lua_pushnil(L)
+        return
+    }
+    if NSImage_tolua(L, image) == 0 {
+        lua_pushnil(L)
+    }
+}
+
 // [skin pushNSObject:NSImage]
 // Pushes the provided NSImage onto the Lua Stack as a hs.image userdata object
-private func NSImage_tolua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
+@discardableResult
+func NSImage_tolua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
     guard let theImage = obj as? NSImage else { return 0 }
     theImage.cacheMode = .never
     return lua_pushretainedUserdata(L, theImage, metatableName: USERDATA_TAG) ? 1 : 0
