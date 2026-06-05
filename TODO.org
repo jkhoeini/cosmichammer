@@ -256,9 +256,23 @@ LuaSkin → LuaSwift).
     Replace generic tuple value pushes in ~Spotlight.swift~ with Spotlight-specific
     recursive conversion and add the regression test.
 
-*** TODO Capture stale-head preflight snapshot before integration
-    Record the non-current head list and intended disposition so the final
-    abandon pass can verify every branch head deliberately.
+*** DONE Capture stale-head preflight snapshot before integration
+    Completed 2026-06-05.
+    Oldest-to-newest audit order:
+    - ~lqmwtrnyzxkm~ Spotlight tuple conversion.
+    - ~puunumwuvrsq~ CoreLocation conversion.
+    - ~wkwoqqzwvnmu~ Canvas value conversion.
+    - ~pklzrzypmpkw~ app/window/uielement object conversion.
+    - ~ztmsoytoyrsn~ Wi-Fi CoreWLAN conversion.
+    - ~onltpntqosrs~ device/network object conversion.
+    - ~lmplzsxrmkwx~ WebView conversion.
+    - ~wtwynzxomtyy~ AppFinder subset, verify redundant after app/window conversion.
+    - ~uyrsyrpwzkxz~ audiodevice metatable registration.
+    - ~wqrzzyrnnyyy~ socket binary conversion.
+    - ~uvokrvxsuqsq~ Canvas matrix conversion.
+    - ~zstzuukktylm~ generic typed-userdata helpers.
+    - ~mtvxytwuwnzw~ console/speech conversion.
+    - ~zmqntpmzskkp~ release metadata only, verify stale before abandon.
 
 *** TODO Integrate remaining CoreLocation conversion fixes from stale heads
     Convert locations, regions, placemarks, and geocoders explicitly instead of
