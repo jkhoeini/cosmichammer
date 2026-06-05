@@ -661,13 +661,27 @@ LuaSkin → LuaSwift).
       cases. Claude plan review stalled and was killed; Claude implementation
       review reported ~NO ACTIONABLE ISSUES~.
 
-	*** TODO Integrate remaining generic typed-userdata helper fixes
-	    Preserve WebView, Canvas, Toolbar, and Chooser userdata through generic push
-	    and dialog/toolbar bridge paths.
-	    The prerequisite dialog/toolbar/chooser subset from ~zstzuukktylm~ has
-	    landed. Revisit only if later WebView/Canvas/Toolbar integrations still
-	    need a generic ~lua_pushany~ branch; do not replay the stale
-	    ~LuaHelpers.swift~ hunk blindly.
+	*** DONE Integrate remaining generic typed-userdata helper fixes
+	    Completed 2026-06-05.
+	    Audited stale head ~zstzuukktylm~ after the later WebView, Canvas, toolbar,
+	    chooser, and matrix integrations. The useful pieces are already landed:
+	    chooser helper visibility, dialog WebView extraction, toolbar typed
+	    extraction/push/window-context behavior, and typed-userdata tests.
+
+	    The stale broad ~LuaHelpers.swift~ branches for ~HSWebViewWindow~,
+	    ~HSCanvasView~, ~HSToolbar~, and ~HSChooser~ were intentionally not
+	    replayed. Current head routes those values through module-local typed
+	    pushers/dispatchers; generic ~lua_pushany~ should not grow
+	    module-order-sensitive adapters. The newer ~LuaUserdataConvertible~
+	    generic seam remains limited to hardware userdata types that explicitly
+	    opt in.
+
+	    Verification:
+	    - ~mise exec -- just test-resources~ passes.
+	    - ~SDK_PATH="$(xcrun --show-sdk-path)" COSMIC_HAMMER_TEST_RESOURCES="$(pwd)/build/test/Cosmic Hammer.app/Contents/Resources" swift test -Xlinker -F -Xlinker "${SDK_PATH}/System/Library/PrivateFrameworks" --filter TypedUserdataConversionTests~ passes 5 tests.
+	    - ~SDK_PATH="$(xcrun --show-sdk-path)" COSMIC_HAMMER_TEST_RESOURCES="$(pwd)/build/test/Cosmic Hammer.app/Contents/Resources" swift test -Xlinker -F -Xlinker "${SDK_PATH}/System/Library/PrivateFrameworks" --filter "WebviewConversionTests|CanvasValueConversionTests|CanvasMatrixTests"~ passes 13 tests.
+	    - Galileo's independent audit and Claude review both reported no
+	      remaining production-code changes needed.
 
 *** TODO Integrate remaining console and speech conversion fixes
     Use explicit AppKit color/font/styledtext conversions in console APIs and

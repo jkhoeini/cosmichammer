@@ -1,88 +1,63 @@
-# Plan: Canvas matrix typed conversion fixes
+# Plan: Generic typed-userdata helper audit
 
 ## Scope
 
-Implement the still-useful Canvas matrix slice from stale head `uvokrvxsuqsq`
-(`wip: canvas matrix conversion`).
+Resolve the remaining TODO for stale head `zstzuukktylm`
+(`wip: typed userdata conversion helpers`).
 
 This slice covers:
 
-- `Sources/HSSwiftExtensions/CanvasMatrix.swift`
-- `Tests/CosmicHammerTests/CanvasMatrixTests.swift`
+- `PLAN.md`
 - `TODO.org`
 
-Do not touch broad Canvas element conversion, WebView, socket, console, speech,
-or generic `LuaHelpers.swift` in this commit.
+No production code should change unless review finds a concrete missing current
+behavior.
 
 ## Audit Summary
 
-The stale diff is narrow and still useful:
+Most of `zstzuukktylm` has already landed in better-scoped commits:
 
-- `CanvasMatrix.swift` still pushes `NSAffineTransform` through generic
-  `lua_pushany`, but `LuaHelpers.swift` does not special-case
-  `NSAffineTransform`.
-- Matrix methods still pull matrix tables through `lua_tovalue(... as!
-  NSAffineTransform)`. Current `lua_tovalue` converts Lua tables to generic
-  dictionaries, so chained matrix methods can fail instead of receiving an
-  `NSAffineTransform`.
-- `CanvasLuaMethods.swift` already has local transform table push/parse helpers,
-  and current Canvas element value conversion already handles transformation
-  tables. This slice should fix only the standalone matrix module.
-- `extensions/canvas/canvas_matrix.lua` registers the `hs.canvas.matrix`
-  metatable in the Lua registry after loading `hs.libcanvasmatrix`, so native
-  functions called through `require("hs.canvas.matrix")` can return chainable
-  typed tables.
+- `ChooserLegacy.swift`: `pushHSChooser` is already module-visible.
+- `Dialog.swift`: `dialog_webviewWindowFromLua` already extracts typed WebView
+  userdata for `hs.dialog.webviewAlert`.
+- `WebviewToolbar.swift`: toolbar callbacks, window context, method receivers,
+  copying, equality, and tostring already use typed toolbar/window/chooser
+  helpers.
+- `TypedUserdataConversionTests.swift`: current head already has focused tests
+  for dialog WebView extraction, toolbar userdata push, WebView/chooser toolbar
+  window context, and toolbar Lua method smoke coverage.
 
-Not useful to replay:
+The only stale hunk not replayed is the broad `LuaHelpers.swift` branch that
+would make generic `lua_pushany` dispatch `HSWebViewWindow`, `HSCanvasView`,
+`HSToolbar`, and `HSChooser` through module-specific push helpers.
 
-- Do not add a generic `NSAffineTransform` branch to `LuaHelpers.swift`; matrix
-  values are Canvas-specific typed tables and the existing Canvas-local helpers
-  are the right boundary.
-- Do not refactor the broader Canvas value conversion that already landed.
-- Do not change matrix arithmetic semantics or add new public API.
+Do not replay that broad hunk:
+
+- Later WebView, Canvas, Canvas matrix, toolbar, and chooser integrations now
+  route user-visible values through local typed pushers/dispatchers at the
+  module boundary.
+- Broad generic dispatch couples `LuaHelpers.swift` to module metatable
+  registration order. Some stale pushers assume their metatable already exists,
+  unlike the newer `LuaUserdataConvertible` retained-userdata helper which
+  returns false if the metatable is absent.
+- There is no remaining socket, WebView, Canvas, toolbar, chooser, or dialog
+  call site that needs the generic branch after the landed scoped conversions.
 
 ## Implementation
 
-1. In `CanvasMatrix.swift`:
-   - Return all constructor/method results through `pushNSAffineTransform`
-     instead of `lua_pushany`.
-   - Pull all matrix receiver/argument tables through
-     `toNSAffineTransformFromLua`.
-   - Make `toNSAffineTransformFromLua` return `NSAffineTransform` instead of
-     `Any!` so call sites are typed.
-   - Preserve current tolerant field behavior: missing/non-number fields log and
-     retain the default identity field rather than raising a new Lua error.
-
-2. In `CanvasMatrixTests.swift`:
-   - Add a focused Lua test that requires `hs.canvas.matrix`, constructs a
-     matrix, chains `translate`, `scale`, and `append(identity)`, and asserts the
-     result is a table with `hs.canvas.matrix` metatable, chainable methods, and
-     expected transform fields.
-   - Add append/prepend coverage with plain six-field Lua tables, proving matrix
-     methods accept tables that have the right shape even before a metatable is
-     attached.
-   - Add coverage for partial/missing fields defaulting to identity values and
-     returned metatable `__type`.
-
-3. Update `TODO.org` after plan review, implementation review, build, and
-   focused tests.
+1. Leave production code unchanged.
+2. Mark the TODO done with the audit details and verification results.
 
 ## Verification
 
-Run focused tests:
+Run:
 
 ```sh
-SDK_PATH="$(xcrun --show-sdk-path)" COSMIC_HAMMER_TEST_RESOURCES="$(pwd)/build/test/Cosmic Hammer.app/Contents/Resources" swift test -Xlinker -F -Xlinker "${SDK_PATH}/System/Library/PrivateFrameworks" --filter CanvasMatrixTests
+SDK_PATH="$(xcrun --show-sdk-path)" COSMIC_HAMMER_TEST_RESOURCES="$(pwd)/build/test/Cosmic Hammer.app/Contents/Resources" swift test -Xlinker -F -Xlinker "${SDK_PATH}/System/Library/PrivateFrameworks" --filter TypedUserdataConversionTests
 ```
 
-Run adjacent Canvas conversion tests:
+Also rely on the already-passing adjacent suites from the previous slices:
 
-```sh
-SDK_PATH="$(xcrun --show-sdk-path)" COSMIC_HAMMER_TEST_RESOURCES="$(pwd)/build/test/Cosmic Hammer.app/Contents/Resources" swift test -Xlinker -F -Xlinker "${SDK_PATH}/System/Library/PrivateFrameworks" --filter CanvasValueConversionTests
-```
-
-Then run:
-
-```sh
-mise exec -- just build
-```
+- `WebviewConversionTests`
+- `CanvasValueConversionTests`
+- `CanvasMatrixTests`
