@@ -1,6 +1,6 @@
 import Foundation
 
-private var _MJConfigFile: NSString = "~/.cosmic-hammer/init.lua"
+private var _MJConfigFile: NSString = AppLifecycle.defaultConfigFile as NSString
 
 @_cdecl("MJConfigFileGet")
 func MJConfigFileGet() -> NSString {

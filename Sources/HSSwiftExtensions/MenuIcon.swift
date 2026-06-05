@@ -22,17 +22,35 @@ func MJMenuIconSetVisible(_ visible: Bool) {
 
 private func reflectMenuDefaults() {
     if MJMenuIconVisible() {
-        guard let icon = NSImage(named: "statusicon") else { return }
-        icon.isTemplate = true
+        let item: NSStatusItem
+        if let existingItem = statusItem {
+            item = existingItem
+        } else {
+            item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+            statusItem = item
+        }
 
-        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        item.button?.image = icon
+        if let icon = NSImage(named: "statusicon") {
+            icon.isTemplate = true
+            item.button?.image = icon
+        }
         item.menu = menuItemMenu
-        statusItem = item
     } else {
         if let item = statusItem {
             NSStatusBar.system.removeStatusItem(item)
             statusItem = nil
         }
     }
+}
+
+func MJMenuIconStatusItemIdentityForTesting() -> ObjectIdentifier? {
+    statusItem.map(ObjectIdentifier.init)
+}
+
+func MJMenuIconResetForTesting() {
+    if let item = statusItem {
+        NSStatusBar.system.removeStatusItem(item)
+    }
+    statusItem = nil
+    menuItemMenu = nil
 }

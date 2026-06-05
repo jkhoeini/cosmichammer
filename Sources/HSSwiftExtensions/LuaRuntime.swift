@@ -14,8 +14,8 @@ import os.log
 // MARK: - Module-level state (formerly static C variables)
 
 private var MJLuaLogDelegate: AnyObject?
-private var evalfn: Int32 = 0
-private var completionsForWordFn: Int32 = 0
+private var evalfn: Int32 = LUA_NOREF
+private var completionsForWordFn: Int32 = LUA_NOREF
 private var oldPanicFunction: lua_CFunction?
 private var loghandler: (@convention(block) (NSString) -> Void)?
 
@@ -910,10 +910,18 @@ func MJLuaInit() {
 
 // MARK: - Callbacks
 
+private func currentLuaStateForCallback(_ callbackName: String) -> UnsafeMutablePointer<lua_State>? {
+    guard let L = lua_getCurrentState() else {
+        os_log(.debug, "Skipping %{public}s callback because Lua state is not available", callbackName)
+        return nil
+    }
+    return L
+}
+
 /// Accessibility State Callback
 @_cdecl("callAccessibilityStateCallback")
 func callAccessibilityStateCallback() {
-    let L = lua_getCurrentState()!
+    guard let L = currentLuaStateForCallback("hs.accessibilityStateCallback") else { return }
     _lua_stackguard_entry(L)
 
     lua_getglobal(L, "hs")
@@ -938,7 +946,7 @@ func callAccessibilityStateCallback() {
 /// Text Dropped to Dock Icon Callback
 @_cdecl("textDroppedToDockIcon")
 func textDroppedToDockIcon(_ pboardString: NSString) {
-    let L = lua_getCurrentState()!
+    guard let L = currentLuaStateForCallback("hs.textDroppedToDockIconCallback") else { return }
     _lua_stackguard_entry(L)
 
     lua_getglobal(L, "hs")
@@ -964,7 +972,7 @@ func textDroppedToDockIcon(_ pboardString: NSString) {
 /// File Dropped to Dock Icon Callback
 @_cdecl("fileDroppedToDockIcon")
 func fileDroppedToDockIcon(_ filePath: NSString) {
-    let L = lua_getCurrentState()!
+    guard let L = currentLuaStateForCallback("hs.fileDroppedToDockIconCallback") else { return }
     _lua_stackguard_entry(L)
 
     lua_getglobal(L, "hs")
@@ -990,12 +998,7 @@ func fileDroppedToDockIcon(_ filePath: NSString) {
 /// Dock Icon Click Callback
 @_cdecl("callDockIconCallback")
 func callDockIconCallback() {
-    guard let L = lua_getCurrentState() else {
-        // It seems to be possible that NSApplicationDelegate:applicationShouldHandleReopen
-        // can be called before a Lua state has been created. We need to bail out immediately
-        // or we'll cause a crash.
-        return
-    }
+    guard let L = currentLuaStateForCallback("hs.dockIconClickCallback") else { return }
 
     _lua_stackguard_entry(L)
 
@@ -1047,6 +1050,8 @@ func MJLuaDeinit() {
     guard let L = lua_getCurrentState() else { return }
 
     callShutdownCallback(L)
+    evalfn = LUA_NOREF
+    completionsForWordFn = LUA_NOREF
 
     HSLoggerSetLuaState(MJLuaLogDelegate as AnyObject, nil)
 }
@@ -1065,8 +1070,14 @@ func MJLuaDealloc() {
 
 @_cdecl("MJLuaRunString")
 func MJLuaRunString(_ command: NSString) -> NSString {
-    let L = lua_getCurrentState()!
+    guard let L = currentLuaStateForCallback("MJLuaRunString") else { return "" }
     _lua_stackguard_entry(L)
+
+    guard evalfn != LUA_NOREF else {
+        os_log(.error, "ERROR: MJLuaRunString called before Lua lifecycle refs are available")
+        _lua_stackguard_exit(L)
+        return ""
+    }
 
     lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(evalfn))
     if !lua_isfunction(L, -1) {
@@ -1104,8 +1115,14 @@ func MJLuaRunString(_ command: NSString) -> NSString {
 
 @_cdecl("MJLuaCompletionsForWord")
 func MJLuaCompletionsForWord(_ completionWord: NSString) -> NSArray {
-    let L = lua_getCurrentState()!
+    guard let L = currentLuaStateForCallback("MJLuaCompletionsForWord") else { return [] }
     _lua_stackguard_entry(L)
+
+    guard completionsForWordFn != LUA_NOREF else {
+        os_log(.error, "ERROR: MJLuaCompletionsForWord called before Lua lifecycle refs are available")
+        _lua_stackguard_exit(L)
+        return []
+    }
 
     lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(completionsForWordFn))
     lua_pushany(L, completionWord)

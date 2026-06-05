@@ -447,7 +447,33 @@ LuaSkin → LuaSwift).
     - Tests can run deterministically without internet access.
     - Shared global Lua state is used only where explicitly required.
 
-*** TODO Concentrate core app state and make UI lifecycle idempotent
+*** DONE Concentrate core app state and make UI lifecycle idempotent
+    Completed 2026-06-05.
+
+    Added an ~AppLifecycle~ module for the core startup state that used to be
+    embedded directly in ~AppDelegate~: default registration, stored config-file
+    application, config/Spoons path derivation, throwing config directory
+    preparation, and current-directory changes. ~AppDelegate~ now registers
+    defaults before reading them, applies stored config only for live launches,
+    reports startup filesystem failures, and preserves test launch behavior by
+    skipping Spoons creation for XCTest/UI-test config paths.
+
+    Made menu icon reflection idempotent. Repeated visible-true calls now reuse
+    the existing ~NSStatusItem~ and update its image/menu instead of allocating a
+    new menu bar item. Core app Lua callbacks and console run/completion
+    entrypoints now guard missing Lua state/lifecycle refs, and Lua lifecycle
+    refs reset on deinit.
+
+    Verified:
+    - Explorer subagent reviewed the item and recommended this bounded slice.
+    - Claude review reported ~NO_MATERIAL_ISSUES~ after the final diff.
+    - ~swift test --filter AppLifecycle -Xlinker -F -Xlinker "$SDK_PATH/System/Library/PrivateFrameworks"~ passes 8 tests.
+    - ~swift test --filter LuaBootLifecycle -Xlinker -F -Xlinker "$SDK_PATH/System/Library/PrivateFrameworks"~ passes 10 tests.
+    - ~just check-generated~ exits 0.
+    - ~just test-resources~ exits 0 and copies 112 Lua files.
+    - ~just build~ exits 0 and assembles/signs the Debug app bundle.
+
+    Original issue:
     Issue:
     Core app state is spread through globals and ordering assumptions. Config
     is a mutable process global. AppDelegate reads config/defaults, creates

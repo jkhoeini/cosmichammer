@@ -2,16 +2,6 @@ import Cocoa
 import UniformTypeIdentifiers
 import os.log
 
-// MARK: - String constants (from variables.h)
-
-private let MJShowDockIconKey            = "MJShowDockIconKey"
-private let MJShowMenuIconKey            = "MJShowMenuIconKey"
-private let HSAutoLoadExtensions         = "HSAutoLoadExtensions"
-private let HSAppleScriptEnabledKey      = "HSAppleScriptEnabledKey"
-private let HSOpenConsoleOnDockClickKey  = "HSOpenConsoleOnDockClickKey"
-private let HSPreferencesDarkModeKey     = "HSPreferencesDarkModeKey"
-private let HSConsoleDarkModeKey         = "HSConsoleDarkModeKey"
-
 // MJLuaCreate, MJLuaDestroy, MJLuaReplace, callDockIconCallback,
 // callAccessibilityStateCallback, textDroppedToDockIcon, fileDroppedToDockIcon
 // are now defined in LuaRuntime.swift (same module) — no @_silgen_name needed.
@@ -376,6 +366,8 @@ class MJAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        AppLifecycle.registerDefaultDefaults()
+
         // Set app icon programmatically as a fallback for non-bundle contexts
         if let icon = NSImage(named: "CosmicHammer") {
             NSApp.applicationIconImage = icon
@@ -414,9 +406,12 @@ class MJAppDelegate: NSObject, NSApplicationDelegate {
         // Remove our early event manager handler so hs.urlevent can register for it later
         NSAppleEventManager.shared().removeEventHandler(forEventClass: AEEventClass(kInternetEventClass), andEventID: AEEventID(kAEGetURL))
 
+        let shouldPrepareSpoonsDirectory: Bool
+
         if NSClassFromString("XCTest") != nil {
             // CosmicHammer Tests
             os_log(.info, "in testing mode!")
+            shouldPrepareSpoonsDirectory = false
 
             let mainBundle = Bundle.main
             if let bundle = Bundle(path: "\(mainBundle.bundlePath)/Contents/Plugins/CosmicHammer Tests.xctest"),
@@ -431,45 +426,27 @@ class MJAppDelegate: NSObject, NSApplicationDelegate {
         } else if ProcessInfo.processInfo.environment["XCTESTING"] != nil {
             // CosmicHammer UI Tests
             os_log(.info, "in UI testing mode")
+            shouldPrepareSpoonsDirectory = false
             let initPath = FileManager.default.currentDirectoryPath + "/CosmicHammer UI Tests-Runner.app/Contents/PlugIns/CosmicHammer UI Tests.xctest/Contents/Resources/init.lua"
             let fsPath = (initPath as NSString).fileSystemRepresentation
             MJConfigFileSet(FileManager.default.string(withFileSystemRepresentation: fsPath, length: strlen(fsPath)) as NSString)
             showConsoleWindow(nil)
         } else {
             // No test environment detected, this is a live user run
-            if let userMJConfigFile = UserDefaults.standard.string(forKey: "MJConfigFile") {
-                MJConfigFileSet(userMJConfigFile as NSString)
-            }
-
-            // Ensure we have a Spoons directory
-            let spoonsPath = (MJConfigDirAbsolute() as String).appendingPathComponent("Spoons")
-            let fileManager = FileManager.default
-            var spoonsPathIsDir: ObjCBool = false
-            let spoonsPathExists = fileManager.fileExists(atPath: spoonsPath, isDirectory: &spoonsPathIsDir)
-
-            os_log(.info, "Determined Spoons path will be: %{public}s (exists: %{public}s, isDir: %{public}s)",
-                   spoonsPath,
-                   spoonsPathExists ? "YES" : "NO",
-                   spoonsPathIsDir.boolValue ? "YES" : "NO")
-
-            if spoonsPathExists && !spoonsPathIsDir.boolValue {
-                os_log(.error, "ERROR: %{public}s exists, but is a file", spoonsPath)
-                abort()
-            }
-
-            if !spoonsPathExists {
-                os_log(.info, "Creating Spoons directory at: %{public}s", spoonsPath)
-                try? fileManager.createDirectory(atPath: spoonsPath, withIntermediateDirectories: true, attributes: nil)
-            }
+            shouldPrepareSpoonsDirectory = true
+            AppLifecycle.applyStoredConfigFile()
         }
 
         // Become the handler for events from macOS Services
         NSApp.servicesProvider = self
 
-        MJEnsureDirectoryExists(MJConfigDir())
-        FileManager.default.changeCurrentDirectoryPath(MJConfigDir() as String)
-
-        registerDefaultDefaults()
+        do {
+            try AppLifecycle.prepareConfigDirectories(createSpoonsDirectory: shouldPrepareSpoonsDirectory)
+            try AppLifecycle.changeToConfigDirectory()
+        } catch {
+            terminateAfterStartupFilesystemError(error)
+            return
+        }
 
         MJMenuIconSetup(self.menuBarMenu!)
         MJDockIconSetup()
@@ -510,17 +487,18 @@ class MJAppDelegate: NSObject, NSApplicationDelegate {
         return .terminateNow
     }
 
-    private func registerDefaultDefaults() {
-        UserDefaults.standard.register(defaults: [
-            "NSApplicationCrashOnExceptions": true,
-            MJShowDockIconKey: false,
-            MJShowMenuIconKey: true,
-            HSAutoLoadExtensions: true,
-            HSAppleScriptEnabledKey: false,
-            HSOpenConsoleOnDockClickKey: true,
-            HSPreferencesDarkModeKey: false,
-            HSConsoleDarkModeKey: false,
-        ])
+    private func terminateAfterStartupFilesystemError(_ error: Error) {
+        let message = String(describing: error)
+        os_log(.error, "Unable to prepare Cosmic Hammer config directory: %{public}s", message)
+
+        let alert = NSAlert()
+        alert.addButton(withTitle: "OK")
+        alert.messageText = "Cosmic Hammer startup failed"
+        alert.informativeText = "Unable to prepare the config directory.\n\n\(message)"
+        alert.alertStyle = .critical
+        alert.runModal()
+
+        NSApplication.shared.terminate(nil)
     }
 
     // MARK: - Actions
