@@ -196,6 +196,9 @@ private func lua_pushvalue_recursive(_ L: UnsafeMutablePointer<lua_State>!, _ va
         }
         lua_pushstring(L, String(describing: obj))
 
+    case let font as NSFont:
+        lua_pushNSFont(L, font)
+
     // Known retained-pointer userdata adapters.
     case let image as NSImage:
         image.cacheMode = .never
@@ -330,6 +333,14 @@ func lua_pushNSColor(_ L: UnsafeMutablePointer<lua_State>!, _ color: NSColor) ->
     lua_pushnumber(L, lua_Number(converted.alphaComponent)); lua_setfield(L, -2, "alpha")
     lua_pushstring(L, "NSColor");                           lua_setfield(L, -2, "__luaSkinType")
     return true
+}
+
+/// Push an NSFont as a LuaSkin-compatible font table `{name=, size=}`.
+func lua_pushNSFont(_ L: UnsafeMutablePointer<lua_State>!, _ font: NSFont) {
+    lua_createtable(L, 0, 3)
+    lua_pushstring(L, font.fontName);                 lua_setfield(L, -2, "name")
+    lua_pushnumber(L, lua_Number(font.pointSize));    lua_setfield(L, -2, "size")
+    lua_pushstring(L, "NSFont");                      lua_setfield(L, -2, "__luaSkinType")
 }
 
 // MARK: - Raw bytes and retained userdata helpers

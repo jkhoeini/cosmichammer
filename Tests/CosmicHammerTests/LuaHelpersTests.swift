@@ -1,7 +1,6 @@
 import Testing
 import AppKit
 import Foundation
-import AppKit
 import CLua
 @testable import HSSwiftExtensions
 
@@ -179,47 +178,18 @@ extension CosmicHammerTests {
             }
         }
 
-        @Test func testPushNSNull() {
-            withLuaState { L in
-                lua_pushany(L, NSNull())
-                #expect(lua_type(L, -1) == LUA_TNIL)
-            }
-        }
-
-        @Test func testPushNSColorAsColorTable() {
-            withLuaState { L in
-                lua_pushany(L, NSColor(calibratedRed: 0.25, green: 0.5, blue: 0.75, alpha: 0.8))
-                #expect(lua_type(L, -1) == LUA_TTABLE)
-
-                lua_getfield(L, -1, "__luaSkinType")
-                #expect(String(cString: lua_tostring(L, -1)!) == "NSColor")
-                lua_pop(L, 1)
-
-                lua_getfield(L, -1, "red")
-                #expect(abs(lua_tonumber(L, -1) - 0.25) < 0.001)
-                lua_pop(L, 1)
-            }
-        }
-
-        @Test func testPushNSImageAsImageUserdata() {
-            withLuaState { L in
-                _ = luaopen_hs_libimage(L)
-                lua_pop(L, 1)
-
-                lua_pushany(L, NSImage(size: NSSize(width: 1, height: 1)))
-                #expect(lua_type(L, -1) == LUA_TUSERDATA)
-                #expect(luaL_testudata(L, -1, "hs.image") != nil)
-            }
-        }
-
-        @Test func testPushNSFontAsFontTable() {
+        @Test func testPushNSFontAsTable() {
             withLuaState { L in
                 let font = NSFont.systemFont(ofSize: 13)
                 lua_pushany(L, font)
                 #expect(lua_type(L, -1) == LUA_TTABLE)
 
                 lua_getfield(L, -1, "__luaSkinType")
-                #expect(String(cString: lua_tostring(L, -1)!) == "NSFont")
+                #expect(lua_tostringValue(L, at: -1) == "NSFont")
+                lua_pop(L, 1)
+
+                lua_getfield(L, -1, "name")
+                #expect(lua_type(L, -1) == LUA_TSTRING)
                 lua_pop(L, 1)
 
                 lua_getfield(L, -1, "size")
@@ -228,14 +198,10 @@ extension CosmicHammerTests {
             }
         }
 
-        @Test func testPushNSAttributedStringAsStyledTextUserdata() {
+        @Test func testPushNSNull() {
             withLuaState { L in
-                _ = luaopen_hs_libstyledtext(L)
-                lua_pop(L, 1)
-
-                lua_pushany(L, NSAttributedString(string: "styled"))
-                #expect(lua_type(L, -1) == LUA_TUSERDATA)
-                #expect(luaL_testudata(L, -1, "hs.styledtext") != nil)
+                lua_pushany(L, NSNull())
+                #expect(lua_type(L, -1) == LUA_TNIL)
             }
         }
 

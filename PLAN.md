@@ -1,63 +1,116 @@
-# Plan: Generic typed-userdata helper audit
+# Plan: Console and speech conversion stale-head integration
 
 ## Scope
 
-Resolve the remaining TODO for stale head `zstzuukktylm`
-(`wip: typed userdata conversion helpers`).
+Resolve the TODO for stale head `mtvxytwuwnzw`:
 
-This slice covers:
-
-- `PLAN.md`
+- `Sources/HSSwiftExtensions/Console.swift`
+- `Sources/HSSwiftExtensions/LuaHelpers.swift`
+- `Sources/HSSwiftExtensions/Speech.swift`
+- `Sources/HSSwiftExtensions/SpeechListener.swift`
+- focused tests under `Tests/CosmicHammerTests/`
 - `TODO.org`
 
-No production code should change unless review finds a concrete missing current
-behavior.
+## Stale-Head Audit
 
-## Audit Summary
+Useful hunks:
 
-Most of `zstzuukktylm` has already landed in better-scoped commits:
+- `Console.swift` must stop pulling colors, fonts, and styledtext through
+  `lua_tovalue(... as! ...)`. `lua_tovalue` intentionally returns nil for
+  userdata and plain dictionaries for Lua tables, so those casts are crash-prone.
+- `Speech.swift` and `SpeechListener.swift` must push their constructor and
+  callback self values with their local typed push helpers instead of generic
+  `lua_pushany`. Generic fallback stringifies these private AppKit subclasses.
+- The speech constructor regression test is useful because it catches both
+  synthesizer and listener userdata shape regressions without requiring live
+  audio or dictation callbacks.
 
-- `ChooserLegacy.swift`: `pushHSChooser` is already module-visible.
-- `Dialog.swift`: `dialog_webviewWindowFromLua` already extracts typed WebView
-  userdata for `hs.dialog.webviewAlert`.
-- `WebviewToolbar.swift`: toolbar callbacks, window context, method receivers,
-  copying, equality, and tostring already use typed toolbar/window/chooser
-  helpers.
-- `TypedUserdataConversionTests.swift`: current head already has focused tests
-  for dialog WebView extraction, toolbar userdata push, WebView/chooser toolbar
-  window context, and toolbar Lua method smoke coverage.
+Stale or risky hunks not to replay directly:
 
-The only stale hunk not replayed is the broad `LuaHelpers.swift` branch that
-would make generic `lua_pushany` dispatch `HSWebViewWindow`, `HSCanvasView`,
-`HSToolbar`, and `HSChooser` through module-specific push helpers.
-
-Do not replay that broad hunk:
-
-- Later WebView, Canvas, Canvas matrix, toolbar, and chooser integrations now
-  route user-visible values through local typed pushers/dispatchers at the
-  module boundary.
-- Broad generic dispatch couples `LuaHelpers.swift` to module metatable
-  registration order. Some stale pushers assume their metatable already exists,
-  unlike the newer `LuaUserdataConvertible` retained-userdata helper which
-  returns false if the metatable is absent.
-- There is no remaining socket, WebView, Canvas, toolbar, chooser, or dialog
-  call site that needs the generic branch after the landed scoped conversions.
+- Do not copy the stale broad `lua_pushany` branches for `NSColor`,
+  `NSAttributedString`, and generic AppKit values. Current head already has a
+  narrower `NSColor` push helper and retained-userdata support for
+  `NSAttributedString`.
+- Do not replace the current color parser with the stale `tableToNSColor`
+  expansion. `DrawingColor.swift` already has `table_toNSColor`, which preserves
+  `hs.drawing.color` semantics for RGB, HSB, white, named lists, custom color
+  collections, and pattern-image colors.
+- Do not add live speech callback tests. They would depend on timing, system
+  speech services, audio output, and dictation availability.
 
 ## Implementation
 
-1. Leave production code unchanged.
-2. Mark the TODO done with the audit details and verification results.
+1. Add a narrow `lua_pushNSFont` helper in `LuaHelpers.swift`, and route
+   `NSFont` through it in `lua_pushany`.
+2. In `Console.swift`, add local wrappers:
+   - `consoleColorFromLua`: requires a Lua table and calls `table_toNSColor`.
+   - `consolePushColor`: returns colors via `NSColor_tolua`.
+   - `consolePushFont`: returns fonts via `lua_pushNSFont`.
+   - `consoleAttributedStringFromLua`: accepts only `hs.styledtext` userdata
+     and pulls through `toNSAttributedString`.
+3. Replace console color setters and getters with the explicit wrappers.
+4. Replace `consoleFont` get/set with `tableToNSFont` and `lua_pushNSFont`.
+5. Replace console styledtext force-casts in `setConsole` and
+   `printStyledtext` with the explicit styledtext pull helper.
+6. Keep `setHistory` conversion as an array conversion only. The stale
+   `NSMutableArray(array: (lua_tovalue as? [Any]) ?? [])` avoids a crash but
+   silently accepts malformed tables as empty history. Use a checked conversion
+   and `luaL_argerror` on non-array tables.
+7. Replace speech synthesizer and speech listener constructor/callback
+   `lua_pushany` self pushes with typed helpers. For speech listener callbacks,
+   `pushHSSpeechRecognizer` is safe because it reuses `selfRef`. For speech
+   synthesizer callbacks, use a dedicated helper that pushes `selfRef` when it
+   exists and only falls back to `pushHSSpeechSynthesizer` if no self-reference
+   is available. Also fix `speak` / `speakToFile` return stack balance so
+   creating the self-reference cannot pop the only returned synthesizer value.
+8. Add focused tests:
+   - `lua_pushNSFont` produces `{ name, size, __luaSkinType = "NSFont" }`.
+   - speech constructors return userdata and expose expected methods.
+   Avoid direct console controller tests because the controller singleton is an
+   AppKit runtime object, not a deterministic test fixture here.
+
+## Self-Critique
+
+- Risk: `NSColor_tolua` can return a string for unconvertible color spaces.
+  That matches existing `hs.drawing.color` behavior and is better than adding a
+  second color table format.
+- Risk: `table_toNSColor` returns black for malformed color tables instead of
+  nil. This is existing color-module behavior; `consoleColorFromLua` should
+  still validate that the argument is a table so non-tables do not silently pass.
+- Risk: speech typed pushes increment retain/reference counters in callbacks.
+  Claude correctly flagged that blindly replaying the stale synthesizer callback
+  pushes could retain a fresh userdata for every callback. The implementation
+  should reuse `selfRef` for callback self arguments because speaking methods
+  create that registry reference before callbacks fire.
+- Risk: adding `NSFont` to generic `lua_pushany` is broader than console only.
+  It is acceptable because font tables are already an established LuaSkin shape
+  used by styledtext/canvas, and no metatable/module load order is involved.
 
 ## Verification
 
 Run:
 
 ```sh
-SDK_PATH="$(xcrun --show-sdk-path)" COSMIC_HAMMER_TEST_RESOURCES="$(pwd)/build/test/Cosmic Hammer.app/Contents/Resources" swift test -Xlinker -F -Xlinker "${SDK_PATH}/System/Library/PrivateFrameworks" --filter TypedUserdataConversionTests
+zsh -ic 'mise exec -- just test-resources'
+zsh -ic 'SDK_PATH="$(xcrun --show-sdk-path)" COSMIC_HAMMER_TEST_RESOURCES="$(pwd)/build/test/Cosmic Hammer.app/Contents/Resources" swift test -Xlinker -F -Xlinker "${SDK_PATH}/System/Library/PrivateFrameworks" --filter "LuaHelpersTests.testPushNSFontAsTable|ModuleLoadRegression.testSpeechConstructorsReturnUserdata"'
+zsh -ic 'mise exec -- just build'
 ```
 
-Also rely on the already-passing adjacent suites from the previous slices:
+## Plan Review Notes
 
-- `WebviewConversionTests`
-- `CanvasValueConversionTests`
-- `CanvasMatrixTests`
+Claude reviewed this plan. Valid feedback incorporated:
+
+- The original plan left the synthesizer callback retain strategy too vague.
+  The revised plan commits to reusing `selfRef` in callbacks and fixing the
+  `speak` / `speakToFile` return stack when creating that reference.
+- Console styledtext conversion must explicitly check the `hs.styledtext`
+  metatable before pulling userdata.
+- Console history conversion should not silently treat malformed tables as an
+  empty history.
+
+Feedback I believe is already addressed:
+
+- `table_toNSColor` is a visible free function in the same SPM target, so
+  `Console.swift` can call it directly.
+- `printStyledtext` keeps the existing split: `hs.styledtext` userdata uses the
+  typed pull helper; other values go through `luaL_tolstring`.

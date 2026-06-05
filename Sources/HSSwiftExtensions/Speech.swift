@@ -74,7 +74,7 @@ private class HSSpeechSynthesizer: NSSpeechSynthesizer, NSSpeechSynthesizerDeleg
         let charMap = luaByteToObjCharMap(text)
 
         lua_rawgeti(_L, LUA_REGISTRYINDEX_VALUE, lua_Integer(synth.callbackRef))
-        pushHSSpeechSynthesizer(_L, obj: synth)
+        pushHSSpeechSynthesizerCallbackSelf(_L, synth)
         lua_pushstring(_L, "willSpeakWord")
 
         let luaStart = charMap.allKeys(for: NSNumber(value: wordToSpeak.location))
@@ -93,7 +93,7 @@ private class HSSpeechSynthesizer: NSSpeechSynthesizer, NSSpeechSynthesizerDeleg
         let _L = lua_getCurrentState()!
 
         lua_rawgeti(_L, LUA_REGISTRYINDEX_VALUE, lua_Integer(synth.callbackRef))
-        pushHSSpeechSynthesizer(_L, obj: synth)
+        pushHSSpeechSynthesizerCallbackSelf(_L, synth)
         lua_pushstring(_L, "willSpeakPhoneme")
         lua_pushinteger(_L, lua_Integer(phonemeOpcode))
         if lua_pcall(_L, 3, 0, 0) != LUA_OK { lua_pop(_L, 1) }
@@ -106,7 +106,7 @@ private class HSSpeechSynthesizer: NSSpeechSynthesizer, NSSpeechSynthesizerDeleg
         let charMap = luaByteToObjCharMap(text)
 
         lua_rawgeti(_L, LUA_REGISTRYINDEX_VALUE, lua_Integer(synth.callbackRef))
-        pushHSSpeechSynthesizer(_L, obj: synth)
+        pushHSSpeechSynthesizerCallbackSelf(_L, synth)
         lua_pushstring(_L, "didEncounterError")
 
         let index = charMap.allKeys(for: NSNumber(value: characterIndex))
@@ -122,7 +122,7 @@ private class HSSpeechSynthesizer: NSSpeechSynthesizer, NSSpeechSynthesizerDeleg
         guard let synth = sender as? HSSpeechSynthesizer, synth.callbackRef != LUA_NOREF else { return }
         let _L = lua_getCurrentState()!
         lua_rawgeti(_L, LUA_REGISTRYINDEX_VALUE, lua_Integer(synth.callbackRef))
-        pushHSSpeechSynthesizer(_L, obj: synth)
+        pushHSSpeechSynthesizerCallbackSelf(_L, synth)
         lua_pushstring(_L, "didEncounterSync")
         // "errorMessage" as a string seems to be broken or at least odd since at least as far back as 10.5:
         //      see https://openradar.appspot.com/6524554
@@ -143,7 +143,7 @@ private class HSSpeechSynthesizer: NSSpeechSynthesizer, NSSpeechSynthesizerDeleg
 
         if synth.callbackRef != LUA_NOREF {
             lua_rawgeti(_L, LUA_REGISTRYINDEX_VALUE, lua_Integer(synth.callbackRef))
-            pushHSSpeechSynthesizer(_L, obj: synth)
+            pushHSSpeechSynthesizerCallbackSelf(_L, synth)
             lua_pushstring(_L, "didFinish")
             lua_pushboolean(_L, success ? 1 : 0)
             if lua_pcall(_L, 3, 0, 0) != LUA_OK { lua_pop(_L, 1) }
@@ -432,11 +432,12 @@ private func startSpeakingString(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
     }
 
     if synth.startSpeaking(theText) {
-        lua_pushvalue(L, 1)
         if synth.selfRef == LUA_NOREF {
+            lua_pushvalue(L, 1)
             synth.udReferenceCount += 1
             synth.selfRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
         }
+        lua_pushvalue(L, 1)
     } else {
         lua_pushnil(L)
     }
@@ -462,11 +463,12 @@ private func startSpeakingStringToURL(_ L: UnsafeMutablePointer<lua_State>!) -> 
 
     let url = URL(fileURLWithPath: (theFile as NSString).expandingTildeInPath, isDirectory: false)
     if synth.startSpeaking(theText, to: url) {
-        lua_pushvalue(L, 1)
         if synth.selfRef == LUA_NOREF {
+            lua_pushvalue(L, 1)
             synth.udReferenceCount += 1
             synth.selfRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
         }
+        lua_pushvalue(L, 1)
     } else {
         lua_pushnil(L)
     }
@@ -689,6 +691,17 @@ private func pushHSSpeechSynthesizer(_ L: UnsafeMutablePointer<lua_State>!, obj:
     luaL_getmetatable(L, USERDATA_TAG)
     lua_setmetatable(L, -2)
     return 1
+}
+
+private func pushHSSpeechSynthesizerCallbackSelf(_ L: UnsafeMutablePointer<lua_State>!, _ synth: HSSpeechSynthesizer) {
+    if synth.selfRef != LUA_NOREF && synth.selfRef != LUA_REFNIL {
+        lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(synth.selfRef))
+        if lua_type(L, -1) != LUA_TNIL {
+            return
+        }
+        lua_pop(L, 1)
+    }
+    pushHSSpeechSynthesizer(L, obj: synth)
 }
 
 // MARK: - Cosmic Hammer Infrastructure

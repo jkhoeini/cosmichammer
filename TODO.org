@@ -683,9 +683,31 @@ LuaSkin → LuaSwift).
 	    - Galileo's independent audit and Claude review both reported no
 	      remaining production-code changes needed.
 
-*** TODO Integrate remaining console and speech conversion fixes
-    Use explicit AppKit color/font/styledtext conversions in console APIs and
-    typed speech synthesizer/listener pushes.
+	*** DONE Integrate remaining console and speech conversion fixes
+	    Completed 2026-06-05.
+	    Integrated the useful parts of stale head ~mtvxytwuwnzw~.
+	    Console color setters/getters now use the canonical ~hs.drawing.color~
+	    conversion helpers, console fonts now round-trip through explicit
+	    ~NSFont~ tables, styledtext console paths pull typed ~hs.styledtext~
+	    userdata, and history replacement rejects malformed non-array tables
+	    instead of force-casting.
+
+	    Speech synthesizer/listener constructors and callbacks now push typed
+	    userdata instead of generic fallback strings. Claude plan review flagged
+	    the stale synthesizer callback push as a potential retained-userdata leak,
+	    so callbacks now reuse the in-flight ~selfRef~ when available and
+	    ~speak~ / ~speakToFile~ preserve their return stack after creating that
+	    self-reference.
+
+	    Verification:
+	    - ~mise exec -- just test-resources~ passes.
+	    - ~SDK_PATH="$(xcrun --show-sdk-path)" COSMIC_HAMMER_TEST_RESOURCES="$(pwd)/build/test/Cosmic Hammer.app/Contents/Resources" swift test -Xlinker -F -Xlinker "${SDK_PATH}/System/Library/PrivateFrameworks" --filter "LuaHelpersTests.testPushNSFontAsTable|ModuleLoadRegression.testSpeechConstructorsReturnUserdata"~ passes 2 tests.
+	    - ~SDK_PATH="$(xcrun --show-sdk-path)" COSMIC_HAMMER_TEST_RESOURCES="$(pwd)/build/test/Cosmic Hammer.app/Contents/Resources" swift test -Xlinker -F -Xlinker "${SDK_PATH}/System/Library/PrivateFrameworks" --filter LuaHelpersTests~ passes 48 tests.
+	    - ~mise exec -- just build~ passes.
+	    - Claude plan review found valid synthesizer callback retain/stack,
+	      styledtext metatable, and history validation concerns; those were fixed.
+	      Full-diff Claude implementation review attempts stalled, but a final
+	      reduced implementation-review checkpoint returned ~NO ACTIONABLE ISSUES~.
 
 *** TODO Account for release-only stale head in abandonment audit
     Confirm the release metadata branch only changes stale release bookkeeping

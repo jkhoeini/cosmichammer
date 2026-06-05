@@ -185,6 +185,9 @@ extension CosmicHammerTests {
                 if type(synth) ~= "userdata" then
                     return "speech.new returned " .. type(synth)
                 end
+                if type(synth.speak) ~= "function" then
+                    return "speech:speak is " .. type(synth.speak)
+                end
 
                 local listener = speech.listener
                 if type(listener.new) ~= "function" then
@@ -195,6 +198,9 @@ extension CosmicHammerTests {
                     return "listener.new returned " .. type(recognizer)
                 end
                 if recognizer ~= nil then
+                    if type(recognizer.commands) ~= "function" then
+                        return "listener:commands is " .. type(recognizer.commands)
+                    end
                     recognizer:delete()
                 end
                 return "ok"
