@@ -97,6 +97,42 @@ Claude implementation review on the final diff. If no actionable issues remain,
 mark the final TODOs done, commit, move `dev`, abandon the stale heads, and
 verify `jj log --no-pager -r "heads(all()) ~ ::@"` is empty.
 
+## Final Cleanup Result
+
+After the 14 ordered stale heads were abandoned, one additional non-current
+tagged head and two empty heads remained:
+
+- `syrvnpps` / `ac54e34a` / tag `v0.5.3`:
+  `fix: modernize Lua object conversions`.
+- `kopvpput` / `1ed9a2ec`: empty.
+- `vmynkvun` / `c669ac74`: empty.
+
+`syrvnpps` was audited with `jj diff -s --no-pager -r syrvnpps` and targeted
+per-file diffs for `LuaHelpers`, object conversion tests, AppKit object
+bridges, socket, canvas, application, uielement, and window behavior. Current
+`dev` already contains the useful behavior and tests under newer focused
+implementations. The stale broad generic typed-userdata branches remain rejected
+because current code uses explicit module-local pushers and no live generic
+path was found. The stale socket clamping behavior remains rejected in favor of
+the current checked-argument errors.
+
+Claude re-reviewed this remaining-head/tag plan and reported no actionable
+issues after asking to verify that the `v0.5.3` tag was local-only. After
+`jj git fetch --remote origin`, `jj tag list --all-remotes v0.5.3` still showed
+only local / `@git` state and no `@origin` target. The local `v0.5.3` tag was
+moved to `dev`, then `syrvnpps`, `kopvpput`, and `vmynkvun` were abandoned.
+
+Final repository-shape verification:
+
+```sh
+zsh -ic 'jj log --no-pager -r "heads(all()) ~ ::@"'
+zsh -ic 'jj tag list --all-remotes v0.5.3'
+zsh -ic 'jj status --no-pager'
+```
+
+The remaining-head query prints no heads, `v0.5.3` points at current `dev`, and
+the working copy was clean before recording this final TODO/PLAN update.
+
 ## Claude Review Focus
 
 Ask Claude to be adversarial on:

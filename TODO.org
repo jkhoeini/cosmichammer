@@ -730,7 +730,9 @@ LuaSkin → LuaSwift).
 	    - Claude plan review approved integration and recommended the Nix build as
 	      the release metadata gate.
 
-*** TODO Verify and abandon stale branch heads after integration
+*** DONE Verify and abandon stale branch heads after integration
+    Completed 2026-06-05.
+
     Re-check every non-current head against the linear current history, keep only
     changes that are not represented, and abandon heads only once they are stale.
 
@@ -795,9 +797,38 @@ LuaSkin → LuaSwift).
        numeric argument tests pass.
      - Claude implementation review retry reported ~NO ACTIONABLE ISSUES~.
 
-**** TODO Abandon verified stale branch heads
-     Once the leftover items above are implemented and reviewed, abandon the
-     stale heads whose useful changes are represented in current linear history.
+**** DONE Abandon verified stale branch heads
+     Completed 2026-06-05.
+
+     Abandoned the 14 ordered stale conversion/release heads after integrating
+     the useful leftovers and rejecting superseded broad generic conversion
+     hunks.
+
+     A second ~jj log --no-pager -r "heads(all()) ~ ::@"~ check found three
+     more non-current heads:
+     - ~syrvnpps~ / ~ac54e34a~ / ~v0.5.3~:
+       ~fix: modernize Lua object conversions~.
+     - ~kopvpput~ / ~1ed9a2ec~: empty head.
+     - ~vmynkvun~ / ~c669ac74~: empty head.
+
+     Audited ~syrvnpps~ with ~jj diff -s --no-pager -r syrvnpps~ and per-file
+     diffs in the high-risk conversion areas. Current ~dev~ already contains
+     the useful AppKit, object-conversion, socket, canvas, application,
+     uielement, and window behavior under newer focused implementations and
+     broader tests. The stale socket clamping behavior was intentionally not
+     kept; current ~dev~ rejects invalid ports/read lengths instead.
+
+     Claude challenged the audit and only asked to verify whether the
+     ~v0.5.3~ tag was local-only before moving it. After
+     ~jj git fetch --remote origin~, ~jj tag list --all-remotes v0.5.3~ still
+     showed only local / ~@git~ state and no ~@origin~ tag. Moved local
+     ~v0.5.3~ to current ~dev~, then abandoned ~syrvnpps~, ~kopvpput~, and
+     ~vmynkvun~.
+
+     Final verification:
+     - ~jj log --no-pager -r "heads(all()) ~ ::@"~ prints no remaining heads.
+     - ~jj tag list --all-remotes v0.5.3~ points at current ~dev~.
+     - ~jj status --no-pager~ is clean before this TODO/PLAN recording commit.
 
 *** DONE Teach BuildDocs about Swift docs and add docs-tool tests
     Completed 2026-06-05.
