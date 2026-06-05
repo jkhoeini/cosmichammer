@@ -460,5 +460,50 @@ extension CosmicHammerTests {
                 "tostring",
             ].joined(separator: ":"))
         }
+
+        @Test func testCameraAllCamerasReturnsTypedUserdataWhenAvailable() {
+            let result = runLua("""
+                local camera = require('hs.camera')
+                local cameras = camera.allCameras()
+                if #cameras == 0 then
+                    return 'empty'
+                end
+                local cam = cameras[1]
+                local output = table.concat({
+                    'camera',
+                    type(cam),
+                    type(cam:uid()),
+                    type(cam:connectionID()),
+                    type(cam:name()),
+                    type(cam:isInUse()),
+                    type(cam:isPropertyWatcherRunning()),
+                    tostring(cam == cam),
+                    tostring(cam):match('^hs.camera') and 'tostring' or 'bad',
+                }, ':')
+                cameras = nil
+                cam = nil
+                collectgarbage('collect')
+                collectgarbage('collect')
+                return output
+                """)
+            if result == "empty" {
+                #expect(result == "empty")
+            } else {
+                let parts = result?.split(separator: ":").map(String.init)
+                if let parts, parts.count == 9 {
+                    #expect(parts[0] == "camera")
+                    #expect(parts[1] == "userdata")
+                    #expect(["string", "nil"].contains(parts[2]))
+                    #expect(parts[3] == "number")
+                    #expect(["string", "nil"].contains(parts[4]))
+                    #expect(parts[5] == "boolean")
+                    #expect(parts[6] == "boolean")
+                    #expect(parts[7] == "true")
+                    #expect(parts[8] == "tostring")
+                } else {
+                    #expect(parts?.count == 9, "Lua result: \(result ?? "nil")")
+                }
+            }
+        }
     }
 }

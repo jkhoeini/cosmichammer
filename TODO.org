@@ -516,6 +516,28 @@ LuaSkin → LuaSwift).
      and sharing against current head. Integrate any still-useful typed userdata
      conversion paths and record redundant hunks before abandoning the stale head.
 
+***** DONE Integrate camera userdata conversion fixes
+      Completed 2026-06-05.
+      Camera lists and watcher callbacks now push typed ~hs.camera~ userdata,
+      methods and metamethods pull through ~toHSCameraFromLua~, and
+      ~hsCamera_gc~ now releases the retained ~HSCamera~ pointer and clears the
+      userdata pointer/metatable.
+
+      Verification:
+      - ~SDK_PATH="$(xcrun --show-sdk-path)" COSMIC_HAMMER_TEST_RESOURCES="$(pwd)/build/test/Cosmic Hammer.app/Contents/Resources" swift test -Xlinker -F -Xlinker "${SDK_PATH}/System/Library/PrivateFrameworks" --filter ObjectConversionRegressionTests~ passes 17 tests.
+      - ~mise exec -- just build~ passes.
+      - Camera explorer review found the stale conversion hunks useful and
+        identified the missing retained-userdata release; that GC fix is included.
+        Claude plan-review attempts stalled in this environment.
+
+***** TODO Integrate chooser userdata and typed-choice conversion fixes
+      Preserve chooser userdata in callbacks and methods, and preserve typed
+      ~hs.image~ / ~hs.styledtext~ values inside chooser choices.
+
+***** TODO Integrate sharing userdata and typed-item conversion fixes
+      Preserve sharing-service userdata plus URL, image, and styledtext item
+      conversions without replaying stale helper names that no longer exist.
+
 **** TODO Audit Razer, serial, and StreamDeck stale conversion leftovers
      Compare the stale ~onltpntqosrs~ hunks for hardware-oriented extensions
      against the current bridge migration. Integrate only useful conversion

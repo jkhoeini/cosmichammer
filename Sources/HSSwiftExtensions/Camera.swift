@@ -687,6 +687,12 @@ private func hsCamera_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 }
 
 private func hsCamera_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    let ptr = luaL_checkudata(L, 1, USERDATA_TAG)!
+        .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
+    if let rawPtr = ptr.pointee {
+        _ = Unmanaged<HSCamera>.fromOpaque(rawPtr).takeRetainedValue()
+        ptr.pointee = nil
+    }
     lua_pushnil(L)
     lua_setmetatable(L, 1)
     return 0
