@@ -463,6 +463,30 @@ LuaSkin → LuaSwift).
        test cleanup/name-collision concerns; those were fixed and final
        re-review had no actionable issues.
 
+**** DONE Integrate Bonjour browser and service userdata conversion fixes
+     Completed 2026-06-05.
+     Integrated the Bonjour slice from stale head ~onltpntqosrs~.
+     Browser and service constructors/callbacks now push typed userdata, methods
+     and metamethods pull through typed helpers, and Bonjour browser
+     ~NetService~ callback values are converted to ~hs.bonjour.service~
+     userdata. ~pushNSNetService~ now safely loads the service module before
+     using its registry/metatable, so direct ~hs.libbonjour~ users do not depend
+     on wrapper load order.
+
+     Added deterministic regression coverage for ~hs.libbonjour~ browser setter
+     identity, ~hs.libbonjourservice~ local/remote constructors and getters, and
+     direct ~pushNSNetService~ cached userdata pushes. Live mDNS browse/publish
+     tests were intentionally not added because they are timing and network
+     dependent.
+
+     Verification:
+     - ~mise exec -- just test-resources~ passes.
+     - ~SDK_PATH="$(xcrun --show-sdk-path)" COSMIC_HAMMER_TEST_RESOURCES="$(pwd)/build/test/Cosmic Hammer.app/Contents/Resources" swift test -Xlinker -F -Xlinker "${SDK_PATH}/System/Library/PrivateFrameworks" --filter ObjectConversionRegressionTests~ passes 12 tests.
+     - ~mise exec -- just build~ passes.
+     - Franklin independently reviewed the stale Bonjour diff and identified the
+       lazy service-module initialization risk. Claude reviewed ~Bonjour.swift~,
+       ~BonjourService.swift~, and the tests with no actionable issues.
+
 *** TODO Integrate remaining WebView conversion fixes
     Add WebView-specific push/pull helpers for windows, toolbars, datastores,
     navigation objects, user content, URL requests, and URL responses.

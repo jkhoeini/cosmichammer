@@ -1,5 +1,7 @@
 import Foundation
+import CLua
 import Testing
+@testable import HSSwiftExtensions
 
 extension CosmicHammerTests {
     @Suite(.serialized) @MainActor final class ObjectConversionRegressionTests {
@@ -182,8 +184,86 @@ extension CosmicHammerTests {
                     tostring(same == p),
                     p:hostName(),
                 }, ':')
-                """)
+            """)
             #expect(result == "userdata:userdata:true:127.0.0.1")
+        }
+
+        @Test func testBonjourBrowserSetterReturnsSameUserdata() {
+            let result = runLua("""
+                local bonjour = require('hs.libbonjour')
+                local browser = bonjour.new()
+                local same = browser:includesPeerToPeer(true)
+                return table.concat({
+                    type(browser),
+                    type(same),
+                    tostring(same == browser),
+                    tostring(browser:includesPeerToPeer()),
+                }, ':')
+                """)
+            #expect(result == "userdata:userdata:true:true")
+        }
+
+        @Test func testBonjourServiceConstructorsAndMethodsUseUserdata() {
+            let name = "bonjour-service-test-\(UUID().uuidString)"
+            let remoteName = "bonjour-remote-test-\(UUID().uuidString)"
+            let result = runLua("""
+                local service = require('hs.libbonjourservice')
+                local localService = service.new('\(name)', '_http._tcp.', 54321, 'local.')
+                local same = localService:includesPeerToPeer(true)
+                local remoteService = service.remote('\(remoteName)', '_ssh._tcp.', 'local.')
+                local output = table.concat({
+                    type(localService),
+                    localService:name(),
+                    localService:type(),
+                    localService:domain(),
+                    tostring(localService:port()),
+                    type(same),
+                    tostring(same == localService),
+                    type(remoteService),
+                    remoteService:name(),
+                    remoteService:type(),
+                    remoteService:domain(),
+                    tostring(remoteService:port()),
+                }, ':')
+                localService:stop()
+                remoteService:stop()
+                return output
+                """)
+            #expect(result == [
+                "userdata",
+                name,
+                "_http._tcp.",
+                "local.",
+                "54321",
+                "userdata",
+                "true",
+                "userdata",
+                remoteName,
+                "_ssh._tcp.",
+                "local.",
+                "-1",
+            ].joined(separator: ":"))
+        }
+
+        @Test func testBonjourNetServicePushInitializesServiceUserdata() {
+            bootstrapLuaForTesting()
+            let L = lua_getCurrentState()!
+            let top = lua_gettop(L)
+            defer { lua_settop(L, top) }
+
+            let service = NetService(
+                domain: "local.",
+                type: "_http._tcp.",
+                name: "bonjour-push-test-\(UUID().uuidString)"
+            )
+
+            #expect(pushNSNetService(L, service) == 1)
+            #expect(luaL_testudata(L, -1, "hs.bonjour.service") != nil)
+            let firstPointer = lua_topointer(L, -1)
+
+            #expect(pushNSNetService(L, service) == 1)
+            #expect(luaL_testudata(L, -1, "hs.bonjour.service") != nil)
+            #expect(lua_topointer(L, -1) == firstPointer)
         }
     }
 }

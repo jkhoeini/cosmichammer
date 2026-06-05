@@ -40,6 +40,14 @@ private func netServiceErrorToString(_ error: [String: Any]) -> String {
     return message
 }
 
+private func ensureBonjourServiceModuleLoaded(_ L: UnsafeMutablePointer<lua_State>!) {
+    guard serviceUDRecords == nil else { return }
+    "hs.libbonjourservice".withCString { moduleName in
+        luaL_requiref(L, moduleName, luaopen_hs_libbonjourservice, 0)
+        lua_pop(L, 1)
+    }
+}
+
 private func pushNetServiceCallbackArgument(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any) {
     if let service = obj as? NetService {
         pushNSNetService(L, service)
@@ -304,6 +312,7 @@ private func service_port(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 ///  * Text records are usually used to provide additional information concerning the service and their purpose and meanings are service dependant; for example, when advertising an `_http._tcp.` service, you can specify a specific path on the server by specifying a table of text records containing the "path" key.
 private func service_TXTRecordData(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    luaL_checkudata(L, 1, USERDATA_TAG.utf8Start)
     let wrapper: HSNetServiceWrapper = toHSNetServiceWrapperFromLua(L, 1) as! HSNetServiceWrapper
     if lua_gettop(L) == 1 {
         if let txtRecord = wrapper.service.txtRecordData() {
@@ -500,6 +509,7 @@ private func service_resolveWithTimeout(_ L: UnsafeMutablePointer<lua_State>!) -
 ///
 ///  * You *can* monitor for text changes on local serviceObjects that were created by [hs.bonjour.service.new](#new) and that you are publishing. This can be used to invoke a callback when one portion of your code makes changes to the text records you are publishing and you need another portion of your code to be aware of this change.
 private func service_startMonitoring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    luaL_checkudata(L, 1, USERDATA_TAG.utf8Start)
     let wrapper: HSNetServiceWrapper = toHSNetServiceWrapperFromLua(L, 1) as! HSNetServiceWrapper
 
     luaL_unref(L, LUA_REGISTRYINDEX_VALUE, wrapper.monitorCallbackRef)
@@ -600,6 +610,7 @@ private func toHSNetServiceWrapperFromLua(_ L: UnsafeMutablePointer<lua_State>!,
 @discardableResult
 func pushNSNetService(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any?) -> Int32 {
     guard let netService = obj as? NetService else { return 0 }
+    ensureBonjourServiceModuleLoaded(L)
     var valueRef: NSNumber? = nil
     var value: HSNetServiceWrapper? = nil
 
