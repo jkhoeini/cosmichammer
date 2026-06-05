@@ -24,7 +24,7 @@ extension CosmicHammerTests {
                 }
 
                 lua_getfield(L, -1, "key")
-                #expect(String(cString: lua_tostring(L, -1)) == "kMDItemDisplayName")
+                #expect(lua_tostringValue(L, at: -1) == "kMDItemDisplayName")
                 lua_pop(L, 1)
 
                 lua_getfield(L, -1, "ascending")
@@ -32,7 +32,7 @@ extension CosmicHammerTests {
                 lua_pop(L, 1)
 
                 lua_getfield(L, -1, "__luaSkinType")
-                #expect(String(cString: lua_tostring(L, -1)) == "NSSortDescriptor")
+                #expect(lua_tostringValue(L, at: -1) == "NSSortDescriptor")
                 lua_pop(L, 2)
             }
         }

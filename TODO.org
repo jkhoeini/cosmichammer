@@ -252,9 +252,13 @@ LuaSkin → LuaSwift).
 	- Unsafe force-casts in high-risk extensions are reduced or guarded.
 	- Userdata conversion has one documented seam and focused tests.
 
-*** TODO Integrate remaining Spotlight tuple conversion fix from stale heads
-    Replace generic tuple value pushes in ~Spotlight.swift~ with Spotlight-specific
-    recursive conversion and add the regression test.
+*** DONE Integrate remaining Spotlight tuple conversion fix from stale heads
+    Completed 2026-06-05.
+    Replaced generic tuple value pushes in ~Spotlight.swift~ with Spotlight-specific
+    recursive conversion and added the regression test.
+
+    Verification:
+    - ~mise exec -- just test-resources && SDK_PATH="$(xcrun --show-sdk-path)" COSMIC_HAMMER_TEST_RESOURCES="$(pwd)/build/test/Cosmic Hammer.app/Contents/Resources" swift test -Xlinker -F -Xlinker "${SDK_PATH}/System/Library/PrivateFrameworks" --filter SpotlightConversionTests~
 
 *** DONE Capture stale-head preflight snapshot before integration
     Completed 2026-06-05.
