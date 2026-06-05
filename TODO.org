@@ -562,10 +562,21 @@ LuaSkin → LuaSwift).
         implementation. Claude implementation review timed out after 120s with
         no output, so the final pass used focused tests plus local review.
 
-**** TODO Audit Razer, serial, and StreamDeck stale conversion leftovers
-     Compare the stale ~onltpntqosrs~ hunks for hardware-oriented extensions
-     against the current bridge migration. Integrate only useful conversion
-     changes that are not already represented by current typed helpers.
+**** DONE Audit Razer, serial, and StreamDeck stale conversion leftovers
+     Completed 2026-06-05.
+     Replaced remaining hardware-device ~lua_pushany~ object pushes with typed
+     Razer, serial, and StreamDeck userdata push helpers. Kept current
+     ~lua_checkUserdataObject~/~lua_testUserdataObject~ method receivers and
+     Serial ~lua_checkdata~ payload handling because those already supersede the
+     stale branch hunks.
+
+     Verification:
+     - ~SDK_PATH="$(xcrun --show-sdk-path)" COSMIC_HAMMER_TEST_RESOURCES="$(pwd)/build/test/Cosmic Hammer.app/Contents/Resources" swift test -Xlinker -F -Xlinker "${SDK_PATH}/System/Library/PrivateFrameworks" --filter ObjectConversionRegressionTests~ passes 26 tests.
+     - ~mise exec -- just build~ passes.
+     - Claude plan review found no actionable issues. During implementation,
+       ~hs.serial.newFromPath~ rejected a pseudo-terminal path, so the Serial
+       regression test was narrowed to the changed push-helper behavior; Claude
+       implementation review agreed and found no actionable issues.
 
 *** TODO Integrate remaining WebView conversion fixes
     Add WebView-specific push/pull helpers for windows, toolbars, datastores,

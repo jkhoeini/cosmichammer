@@ -205,7 +205,7 @@ private var deckManager: HSStreamDeckManager?
             let idx = Int(button)
             if buttonStateCache[idx] != newButtonStates[idx] {
                 lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(buttonCallbackRef))
-                lua_pushany(L, self)
+                _ = pushHSStreamDeckDevice(L, self)
                 lua_pushinteger(L, lua_Integer(button))
                 lua_pushboolean(L, newButtonStates[idx].boolValue ? 1 : 0)
                 if lua_pcall(L, 3, 0, 0) != LUA_OK { lua_pop(L, 1) }
@@ -232,7 +232,7 @@ private var deckManager: HSStreamDeckManager?
             let idx = Int(button)
             if encoderButtonStateCache[idx] != newPressEncoderStates[idx] {
                 lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(encoderCallbackRef))
-                lua_pushany(L, self)
+                _ = pushHSStreamDeckDevice(L, self)
                 lua_pushinteger(L, lua_Integer(button))
                 lua_pushboolean(L, newPressEncoderStates[idx].boolValue ? 1 : 0)
                 lua_pushboolean(L, 0)
@@ -258,7 +258,7 @@ private var deckManager: HSStreamDeckManager?
         }
 
         lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(encoderCallbackRef))
-        lua_pushany(L, self)
+        _ = pushHSStreamDeckDevice(L, self)
         lua_pushinteger(L, lua_Integer(button))
         lua_pushboolean(L, 0)
         lua_pushboolean(L, turningLeft ? 1 : 0)
@@ -281,7 +281,7 @@ private var deckManager: HSStreamDeckManager?
         }
 
         lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(screenCallbackRef))
-        lua_pushany(L, self)
+        _ = pushHSStreamDeckDevice(L, self)
         lua_pushany(L, eventType as NSString)
         lua_pushinteger(L, lua_Integer(startX))
         lua_pushinteger(L, lua_Integer(startY))
@@ -1048,7 +1048,7 @@ class HSStreamDeckDevicePedal: HSStreamDeckDevice {
 
         lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(discoveryCallbackRef))
         lua_pushboolean(L, 1)
-        lua_pushany(L, deck)
+        _ = pushHSStreamDeckDevice(L, deck)
         if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
         return deck
     }
@@ -1069,7 +1069,7 @@ class HSStreamDeckDevicePedal: HSStreamDeckDevice {
                 } else {
                     lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(discoveryCallbackRef))
                     lua_pushboolean(L, 0)
-                    lua_pushany(L, deckDevice)
+                    _ = pushHSStreamDeckDevice(L, deckDevice)
                     if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
                 }
 
@@ -1276,7 +1276,7 @@ private func streamdeck_getDevice(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
 
     let index = Int(lua_tointeger(L, 1)) - 1
     if let manager = deckManager, index >= 0, index < manager.devices.count {
-        lua_pushany(L, manager.devices[index])
+        _ = pushHSStreamDeckDevice(L, manager.devices[index])
     } else {
         lua_pushnil(L)
     }
@@ -1526,6 +1526,7 @@ private func streamdeck_setButtonColor(_ L: UnsafeMutablePointer<lua_State>!) ->
 
 // MARK: - Lua<->NSObject Conversion Functions
 
+@discardableResult
 private func pushHSStreamDeckDevice(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
     guard let value = obj as? HSStreamDeckDevice else { return 0 }
     return lua_pushretainedUserdata(L, value, metatableName: USERDATA_TAG, beforeRetain: {

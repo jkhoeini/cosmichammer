@@ -133,7 +133,7 @@ class HSSerialPort: NSObject, ORSSerialPortDelegate, LuaUserdataConvertible {
         let L = lua_getCurrentState()!
         guard lua_isStateGenerationValid(lsCanary) else { return }
         lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(callbackRef))
-        lua_pushany(L, self)
+        _ = pushHSSerialPort(L, self)
         lua_pushany(L, "opened" as NSString)
         if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
     }
@@ -143,7 +143,7 @@ class HSSerialPort: NSObject, ORSSerialPortDelegate, LuaUserdataConvertible {
         let L = lua_getCurrentState()!
         guard lua_isStateGenerationValid(lsCanary) else { return }
         lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(callbackRef))
-        lua_pushany(L, self)
+        _ = pushHSSerialPort(L, self)
         lua_pushany(L, "closed" as NSString)
         if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
     }
@@ -153,7 +153,7 @@ class HSSerialPort: NSObject, ORSSerialPortDelegate, LuaUserdataConvertible {
         let L = lua_getCurrentState()!
         guard lua_isStateGenerationValid(lsCanary) else { return }
         lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(callbackRef))
-        lua_pushany(L, self)
+        _ = pushHSSerialPort(L, self)
         lua_pushany(L, "received" as NSString)
         lua_pushany(L, data as NSData)
         lua_pushany(L, data.hexadecimalString as NSString)
@@ -169,7 +169,7 @@ class HSSerialPort: NSObject, ORSSerialPortDelegate, LuaUserdataConvertible {
             let L = lua_getCurrentState()!
             guard lua_isStateGenerationValid(lsCanary) else { return }
             lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(callbackRef))
-            lua_pushany(L, self)
+            _ = pushHSSerialPort(L, self)
             lua_pushany(L, "removed" as NSString)
             if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
         }
@@ -182,7 +182,7 @@ class HSSerialPort: NSObject, ORSSerialPortDelegate, LuaUserdataConvertible {
         let L = lua_getCurrentState()!
         guard lua_isStateGenerationValid(lsCanary) else { return }
         lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(callbackRef))
-        lua_pushany(L, self)
+        _ = pushHSSerialPort(L, self)
         lua_pushany(L, "error" as NSString)
         lua_pushany(L, error.localizedDescription as NSString)
         if lua_pcall(L, 3, 0, 0) != LUA_OK { lua_pop(L, 1) }
@@ -380,7 +380,7 @@ private func serial_newFromName(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
     serialPort.lsCanary = lua_currentStateGeneration()
 
     if serialPort.isPortNameValid(portName) {
-        lua_pushany(L, serialPort)
+        _ = pushHSSerialPort(L, serialPort)
     } else {
         lua_pushnil(L)
     }
@@ -407,7 +407,7 @@ private func serial_newFromPath(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
     serialPort.lsCanary = lua_currentStateGeneration()
 
     if serialPort.isPathValid(path) {
-        lua_pushany(L, serialPort)
+        _ = pushHSSerialPort(L, serialPort)
     } else {
         lua_pushnil(L)
     }
@@ -941,7 +941,8 @@ private func serial_deviceCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int
 
 // MARK: - Lua<->NSObject Conversion
 
-private func pushHSSerialPort(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
+@discardableResult
+func pushHSSerialPort(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
     guard let value = obj as? HSSerialPort else { return 0 }
     return lua_pushretainedUserdata(L, value, metatableName: USERDATA_TAG, beforeRetain: {
         value.luaUserdataWillRetain()

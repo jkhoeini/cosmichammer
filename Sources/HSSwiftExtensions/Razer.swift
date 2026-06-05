@@ -191,7 +191,7 @@ private struct HSRazerReportBuilder {
 
         let L = lua_getCurrentState()!
         lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(buttonCallbackRef))
-        lua_pushany(L, self)
+        _ = pushHSRazerDevice(L, self)
         lua_pushany(L, buttonName as NSString)
         lua_pushany(L, buttonAction as NSString)
         if lua_pcall(L, 3, 0, 0) != LUA_OK { lua_pop(L, 1) }
@@ -983,7 +983,7 @@ private func hidDisconnect(
             let L = lua_getCurrentState()!
             lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(discoveryCallbackRef))
             lua_pushboolean(L, 1)
-            lua_pushany(L, razerDevice)
+            _ = pushHSRazerDevice(L, razerDevice)
             if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
         }
 
@@ -1002,7 +1002,7 @@ private func hidDisconnect(
                 let L = lua_getCurrentState()!
                 lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(discoveryCallbackRef))
                 lua_pushboolean(L, 0)
-                lua_pushany(L, razerDevice)
+                _ = pushHSRazerDevice(L, razerDevice)
                 if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
             }
 
@@ -1096,7 +1096,7 @@ private let razer_getDevice: lua_CFunction = { L in
     }
 
     if let razer = manager.devices[deviceNumber] as? HSRazerDevice {
-        lua_pushany(L, razer)
+        _ = pushHSRazerDevice(L, razer)
     } else {
         lua_pushnil(L)
     }
@@ -1514,6 +1514,7 @@ private let razer_backlightsCustom: lua_CFunction = { L in
 
 // MARK: - Lua<->NSObject Conversion Functions
 
+@discardableResult
 private func pushHSRazerDevice(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
     guard let device = obj as? HSRazerDevice else { return 0 }
     return lua_pushretainedUserdata(L, device, metatableName: USERDATA_TAG, beforeRetain: {

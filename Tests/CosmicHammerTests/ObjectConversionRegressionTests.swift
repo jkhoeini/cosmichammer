@@ -752,5 +752,61 @@ extension CosmicHammerTests {
                 lua_pop(L, 1)
             }
         }
+
+        @Test func testSerialPushHelperProducesTypedUserdata() throws {
+            try withBootstrappedLua(requiring: ["hs.serial"]) { L in
+                let serialPort = HSSerialPort()
+                #expect(pushHSSerialPort(L, serialPort) == 1)
+                #expect(luaL_testudata(L, -1, "hs.serial") != nil)
+                #expect(lua_toAnyObject(L, at: -1) as? HSSerialPort === serialPort)
+                lua_pop(L, 1)
+            }
+        }
+
+        @Test func testRazerModuleHardwareTolerantDeviceLookup() {
+            let result = runLua("""
+                local razer = require('hs.razer')
+                local ok, err = pcall(function()
+                    razer.init(function() end)
+                end)
+                if not ok then return 'init-error:' .. tostring(err) end
+                local count = razer.numDevices()
+                local dev = razer.getDevice(1)
+                return table.concat({
+                    type(count),
+                    dev == nil and 'nil' or type(dev),
+                }, ':')
+                """)
+            let parts = result?.split(separator: ":").map(String.init)
+            if let parts, parts.count == 2 {
+                #expect(parts[0] == "number")
+                #expect(["nil", "userdata"].contains(parts[1]))
+            } else {
+                #expect(parts?.count == 2, "Lua result: \(result ?? "nil")")
+            }
+        }
+
+        @Test func testStreamDeckModuleHardwareTolerantDeviceLookup() {
+            let result = runLua("""
+                local streamdeck = require('hs.streamdeck')
+                local ok, err = pcall(function()
+                    streamdeck.init(function() end)
+                end)
+                if not ok then return 'init-error:' .. tostring(err) end
+                local count = streamdeck.numDevices()
+                local dev = streamdeck.getDevice(1)
+                return table.concat({
+                    type(count),
+                    dev == nil and 'nil' or type(dev),
+                }, ':')
+                """)
+            let parts = result?.split(separator: ":").map(String.init)
+            if let parts, parts.count == 2 {
+                #expect(parts[0] == "number")
+                #expect(["nil", "userdata"].contains(parts[1]))
+            } else {
+                #expect(parts?.count == 2, "Lua result: \(result ?? "nil")")
+            }
+        }
     }
 }

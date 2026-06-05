@@ -1,74 +1,70 @@
-# Plan: Sharing userdata and typed-item conversion fixes
+# Plan: Razer, Serial, and StreamDeck typed push leftovers
 
 ## Scope
 
-Implement the sharing slice from stale head `onltpntqosrs`
+Implement the hardware-oriented slice from stale head `onltpntqosrs`
 (`wip: device network object conversion audit`).
 
 This slice covers:
 
-- `Sources/HSSwiftExtensions/Sharing.swift`
+- `Sources/HSSwiftExtensions/Razer.swift`
+- `Sources/HSSwiftExtensions/Serial.swift`
+- `Sources/HSSwiftExtensions/StreamDeck.swift`
 - `Tests/CosmicHammerTests/ObjectConversionRegressionTests.swift`
 - `TODO.org`
 
-Do not touch Razer, serial, StreamDeck, WebView, or generic `LuaHelpers.swift`
-in this commit.
+Do not touch WebView, audiodevice, socket, Canvas matrix, console, speech, or
+generic `LuaHelpers.swift` in this commit.
 
 ## Audit Summary
 
-The stale sharing changes are useful, but need current-helper adaptation:
+Boyle audited the stale hunks against current head. Useful changes are narrow:
 
-- Sharing service constructors, delegate callbacks, methods, and metamethods
-  still rely on generic `lua_pushany` / `lua_tovalue(... as! HSSharingService)`
-  for service userdata.
-- Sharing item arrays can contain `hs.image`, `hs.styledtext`, and
-  `hs.sharing.URL(...)` tables. Generic table conversion loses the typed native
-  values that `NSSharingService` expects.
-- Generic `lua_pushany` turns `NSURL` into a plain string. The sharing module
-  promises URL tables, so sharing URL results need a module-local URL pusher.
-- The stale helper names `lua_pushNSImage` and `lua_pushNSAttributedString` do
-  not exist in current head. Use `NSImage_tolua` and
-  `NSAttributedString_toLua`.
-- `NSImage_tolua` returns `0` without pushing if the image is nil or invalid.
-  Image result paths and sharing item-array image pushes must push nil
-  explicitly in that case.
-- `NSAttributedString_toLua` was audited: it always pushes either styledtext
-  userdata or nil and returns `1`, so it does not need the same return-0 guard.
+- Razer, Serial, and StreamDeck callbacks/constructors/device lookups still push
+  device objects through generic `lua_pushany`, which no longer preserves typed
+  userdata.
+- Current head already uses `lua_checkUserdataObject` /
+  `lua_testUserdataObject` for method and metamethod receivers. Those are better
+  than the stale `toHS...FromLua(...) as!` replacements, so do not replay those
+  hunks.
+- Current Razer/StreamDeck color paths already use `tableToNSColor`.
+- Current Serial `sendData` already uses `lua_checkdata(L, at: 2)`, which is
+  better than the stale manual `lua_tolstring` hunk.
+- Fake HID devices are not viable for tests: `IOHIDDeviceCreate(..., 0)` returns
+  nil. Hardware-dependent callback behavior cannot be made deterministic here.
 
 ## Implementation
 
-1. In `Sharing.swift`:
-   - Add `sharingItemFromLua` / `sharingItemsFromLua` helpers that preserve:
-     - `hs.image` userdata via `toNSImage`;
-     - `hs.styledtext` userdata via `toNSAttributedString`;
-     - URL tables via `toNSURLFromLua`;
-     - existing primitive/table behavior via `lua_tovalue`.
-   - Add push helpers for sharing items, item arrays, URL arrays, and optional
-     images using `NSImage_tolua`, `NSAttributedString_toLua`, and `pushNSURL`.
-     The image item case must check `NSImage_tolua`'s return value before
-     `lua_rawseti`.
-   - Push sharing service userdata through `pushHSSharingService` in
-     constructors and delegate callbacks.
-   - Pull method/metamethod receivers through `toHSSharingServiceFromLua`.
-   - Convert `shareTypesFor`, `shareItems`, and `canShareItems` item tables
-     through `sharingItemsFromLua`.
-   - Return sharing URLs, attachment URLs, and permanent links as sharing URL
-     tables.
-   - Return sharing images as `hs.image` userdata or nil.
+1. In `Razer.swift`:
+   - Push button callback `self`, discovery callback devices, and
+     `getDevice(...)` results through `pushHSRazerDevice`.
+   - Mark `pushHSRazerDevice` `@discardableResult`.
+   - Leave receiver extraction and color hunks unchanged.
 
-2. Extend `ObjectConversionRegressionTests`:
-   - Add a Lua-level test for `hs.sharing.URL()` returning URL tables and
-     `shareTypesFor()` accepting URL/image/styledtext items without conversion
-     errors.
-   - Add a Lua-level test that creates an available sharing service and verifies
-     fluent methods return `hs.sharing` userdata.
-   - Add a nil-image result test via `:alternateImage()` on an available service,
-     because current host services expose nil alternate images.
-   - Add a direct Swift-side helper test that pushes a mixed sharing item array
-     and verifies URL tables, image userdata, and styledtext userdata.
+2. In `Serial.swift`:
+   - Push delegate callback `self` and `newFromName` / `newFromPath` results
+     through `pushHSSerialPort`.
+   - Mark `pushHSSerialPort` `@discardableResult` and make it internal for
+     focused test coverage.
+   - Leave method receiver extraction and `sendData` unchanged.
 
-3. Update `TODO.org`:
-   - Mark the sharing subitem done only after focused tests and build pass.
+3. In `StreamDeck.swift`:
+   - Push button, encoder, screen, discovery, and `getDevice(...)` device values
+     through `pushHSStreamDeckDevice`.
+   - Mark `pushHSStreamDeckDevice` `@discardableResult`.
+   - Leave receiver extraction, image extraction, and color hunks unchanged.
+
+4. Extend `ObjectConversionRegressionTests`:
+   - Add a direct no-hardware Serial push-helper test, because
+     `hs.serial.newFromPath` rejects pseudo-terminal paths before open on this
+     host.
+   - Add hardware-tolerant Razer and StreamDeck smoke tests: load module,
+     initialize without callbacks, assert `numDevices()` is a number, and if
+     `getDevice(1)` exists assert it is userdata.
+
+5. Update `TODO.org`:
+   - Mark the Razer/Serial/StreamDeck audit done only after focused tests and
+     build pass.
 
 ## Verification
 
