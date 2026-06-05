@@ -209,6 +209,7 @@ private func ipc_isValid(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * status   - a boolean indicating whether or not the local port responded before the timeout (true) or if an error or timeout occurred waiting for the response (false)
 ///  * response - the response from the local port, usually a string, but may be nil if there was no response returned.  If status is false, will contain an error message describing the error.
 private func ipc_sendMessage(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    luaL_checkudata(L, 1, USERDATA_TAG)
     let port = toHSIPCMessagePortFromLua(L, 1) as! HSIPCMessagePort
     guard CFMessagePortIsValid(port.messagePort) else {
         return luaL_error(L, "ipc port is no longer valid (early)")

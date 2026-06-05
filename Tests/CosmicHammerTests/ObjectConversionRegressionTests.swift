@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 
 extension CosmicHammerTests {
@@ -136,6 +137,53 @@ extension CosmicHammerTests {
                 return value
                 """)
             #expect(result == "true:table:0.4:0.8")
+        }
+
+        @Test func testIPCConstructorsReturnUserdata() {
+            let name = "cosmic-hammer-test-\(UUID().uuidString)"
+            let result = runLua("""
+                local ipc = require('hs.libipc')
+                local name = '\(name)'
+                local localPort = ipc.localPort(name, function(data) return data end)
+                local remotePort = ipc.remotePort(name)
+                local output = table.concat({
+                    type(localPort),
+                    localPort:name(),
+                    tostring(localPort:isRemote()),
+                    type(remotePort),
+                    remotePort:name(),
+                    tostring(remotePort:isRemote()),
+                }, ':')
+                localPort:delete()
+                remotePort:delete()
+                return output
+                """)
+            let parts = result?.split(separator: ":").map(String.init)
+            if let parts, parts.count == 6 {
+                #expect(parts[0] == "userdata")
+                #expect(parts[1] == name)
+                #expect(parts[2] == "false")
+                #expect(parts[3] == "userdata")
+                #expect(parts[4] == parts[1])
+                #expect(parts[5] == "true")
+            } else {
+                #expect(parts?.count == 6, "Lua result: \(result ?? "nil")")
+            }
+        }
+
+        @Test func testNetworkPingSetterReturnsSameUserdata() {
+            let result = runLua("""
+                local ping = require('hs.network.ping')
+                local p = ping.echoRequest('127.0.0.1')
+                local same = p:seeAllUnexpectedPackets(true)
+                return table.concat({
+                    type(p),
+                    type(same),
+                    tostring(same == p),
+                    p:hostName(),
+                }, ':')
+                """)
+            #expect(result == "userdata:userdata:true:127.0.0.1")
         }
     }
 }

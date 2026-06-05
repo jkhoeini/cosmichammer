@@ -443,6 +443,26 @@ LuaSkin → LuaSwift).
     Finish explicit userdata/value conversion for Bonjour, camera, chooser, IPC,
     network ping, notify, Razer, serial, sharing, sound, and streamdeck paths.
 
+**** DONE Integrate IPC and network ping userdata conversion fixes
+     Completed 2026-06-05.
+     Integrated the IPC and network ping slice from stale head
+     ~onltpntqosrs~. Constructors and callbacks now push typed userdata via
+     local helpers, methods/metamethods pull through typed helpers, and
+     ~ipc_sendMessage~ validates the userdata argument before extraction.
+
+     Added regression coverage for ~hs.libipc~ local/remote constructors and
+     ~hs.network.ping.echoRequest:seeAllUnexpectedPackets~ returning the same
+     userdata.
+
+     Verification:
+     - ~mise exec -- just test-resources~ passes.
+     - ~SDK_PATH="$(xcrun --show-sdk-path)" COSMIC_HAMMER_TEST_RESOURCES="$(pwd)/build/test/Cosmic Hammer.app/Contents/Resources" swift test -Xlinker -F -Xlinker "${SDK_PATH}/System/Library/PrivateFrameworks" --filter ObjectConversionRegressionTests~ passes 9 tests.
+     - ~mise exec -- just build~ passes.
+     - Claude reviewed IPC, network ping, and tests in file-sized chunks. It
+       identified the missing ~ipc_sendMessage~ ~luaL_checkudata~ guard and
+       test cleanup/name-collision concerns; those were fixed and final
+       re-review had no actionable issues.
+
 *** TODO Integrate remaining WebView conversion fixes
     Add WebView-specific push/pull helpers for windows, toolbars, datastores,
     navigation objects, user content, URL requests, and URL responses.
