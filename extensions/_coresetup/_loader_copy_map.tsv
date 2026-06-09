@@ -86,7 +86,6 @@ extensions/socket/socket.lua	hs/socket.lua	hs.socket
 extensions/sound/sound.lua	hs/sound.lua	hs.sound
 extensions/spaces/spaces.lua	hs/spaces.lua	hs.spaces
 extensions/speech/speech.lua	hs/speech.lua	hs.speech
-extensions/spoons/spoons.lua	hs/spoons.lua	hs.spoons
 extensions/spotify/spotify.lua	hs/spotify.lua	hs.spotify
 extensions/spotlight/spotlight.lua	hs/spotlight.lua	hs.spotlight
 extensions/sqlite3/sqlite3.lua	hs/sqlite3.lua	hs.sqlite3

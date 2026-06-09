@@ -105,8 +105,7 @@ private func processRegisteredFile(_ L: UnsafeMutablePointer<lua_State>!, _ path
 
     (registeredFiles[path] as! NSMutableDictionary)["json"] = obj
 
-    let isSpoon = ((registeredFiles[path] as! NSMutableDictionary)["spoon"] as? NSNumber)?.boolValue ?? false
-    let root: NSMutableDictionary = isSpoon ? (documentationTree["spoon"] as! NSMutableDictionary) : documentationTree
+    let root: NSMutableDictionary = documentationTree
 
     guard let objArray = obj as? NSArray else {
         os_log(.error, "%{public}s", "\(USERDATA_TAG).processRegisteredFile - malformed documentation file \(path): proper format requires an array of entries")
@@ -259,14 +258,6 @@ private func doc_help(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
                     result.appendFormat("%@\n", entry as NSString)
                 }
             }
-        } else if typeStr == "spoons" {
-            result.append("[spoons]\n")
-            let children = (pos.allKeys as! [String]).sorted { $0.caseInsensitiveCompare($1) == .orderedAscending }
-            for entry in children {
-                if !(entry.hasPrefix("__") && entry.hasSuffix("__")) {
-                    result.appendFormat("%@\n", entry as NSString)
-                }
-            }
         } else if let json = pos["__json__"] as? NSDictionary, json["items"] == nil {
             let signature = (json["signature"] as? String) ?? (json["def"] as? String) ?? ""
             result.appendFormat("%@: %@\n\n%@\n",
@@ -308,13 +299,12 @@ private func doc_help(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 1
 }
 
-/// hs.doc.registerJSONFile(jsonfile, [isSpoon]) -> status[, message]
+/// hs.doc.registerJSONFile(jsonfile) -> status[, message]
 /// Function
 /// Register a JSON file for inclusion when Cosmic Hammer generates internal documentation.
 ///
 /// Parameters:
 ///  * jsonfile - A string containing the location of a JSON file
-///  * isSpoon  - an optional boolean, default false, specifying that the documentation should be added to the `spoons` sub heading in the documentation hierarchy.
 ///
 /// Returns:
 ///  * status - Boolean flag indicating if the file was registered or not.  If the file was not registered, then a message indicating the error is also returned.
@@ -323,7 +313,6 @@ private func doc_help(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * this function just registers the documentation file; it won't actually be loaded and parsed until [hs.doc.help](#help) is invoked.
 private func doc_registerJSONFile(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     var path = String(cString: luaL_checkstring(L, 1)) as NSString
-    let isSpoon = lua_gettop(L) > 1 ? lua_toboolean(L, 2) != 0 : false
 
     // some tricks used to figure out if the docs.json file exists duplicate final "/" before "docs.json"
     // so rather then track them all down, just adjust it here; otherwise we have two "different" paths
@@ -337,7 +326,6 @@ private func doc_registerJSONFile(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
     }
 
     registeredFiles[path] = NSMutableDictionary()
-    (registeredFiles[path] as! NSMutableDictionary)["spoon"] = NSNumber(value: isSpoon)
 
     // changecount function will be triggered when json built in findUnloadedDocumentationFiles for new path
 
@@ -370,7 +358,6 @@ private func doc_unregisterJSONFile(_ L: UnsafeMutablePointer<lua_State>!) -> In
     documentationTree.removeAllObjects()
     documentationTree = NSMutableDictionary(dictionary: [
         "__type__": "root",
-        "spoon": NSMutableDictionary(dictionary: ["__type__": "spoons"]),
     ])
 
     for path2 in registeredFiles.allKeys {
@@ -504,7 +491,6 @@ public func luaopen_hs_libdoc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     // if you change this, also change it in doc_unregisterJSONFile
     documentationTree = NSMutableDictionary(dictionary: [
         "__type__": "root",
-        "spoon": NSMutableDictionary(dictionary: ["__type__": "spoons"]),
     ])
 
     return 1

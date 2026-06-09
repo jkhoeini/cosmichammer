@@ -8,7 +8,6 @@
 
     settings = require("hs.settings")
     documentation      = doc._jsonForModules
-    spoonDocumentation = doc._jsonForSpoons
 
     -- used to apply markdown to html conversion for text
     gfmConvert = function(theText)

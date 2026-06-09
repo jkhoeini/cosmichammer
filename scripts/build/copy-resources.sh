@@ -34,7 +34,6 @@ copy_required() {
 mkdir -p "$dest_root"
 
 copy_required "${repo_root}/CosmicHammer/CosmicHammer.icns" "${dest_root}/CosmicHammer.icns"
-copy_required "${repo_root}/CosmicHammer/Spoon.icns" "${dest_root}/Spoon.icns"
 copy_required "${repo_root}/CosmicHammer/Credits.rtf" "${dest_root}/Credits.rtf"
 copy_required "${repo_root}/CosmicHammer/CosmicHammer.sdef" "${dest_root}/CosmicHammer.sdef"
 copy_required "${repo_root}/CosmicHammer/setup.lua" "${dest_root}/setup.lua"

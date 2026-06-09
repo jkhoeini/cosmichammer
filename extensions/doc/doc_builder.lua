@@ -5,9 +5,9 @@
 ---
 --- This submodule provides functions for mimicking the documentation generation processes used when generating the official Cosmic Hammer documentation.  The long term goal is to provide a mechanism for generating complete Cosmic Hammer documentation in all of its formats with only the Cosmic Hammer application and source files without any additional software required.
 ---
---- This submodule can be used to generate and maintain the documentation for Spoon bundles and can also be used to generate documentation for third-party modules as well.
+--- This submodule can be used to generate and maintain the documentation for third-party modules.
 ---
---- Documentation for modules and spoons is expected to be embedded in the source code for the relevant object in specially formatted comment strings.  A very brief example of how to format documentation can be found at https://github.com/jkhoeini/cosmichammer/blob/master/SPOONS.md#documentation, but a better treatment is planned.
+--- Documentation for modules is expected to be embedded in the source code for the relevant object in specially formatted comment strings.  A better treatment of how to format documentation is planned.
 ---
 --- Most of this submodule should be considered at the "Proof of Concept" stage and will require some additional work on your part to generate useful documentation in HTML, Markdown, or Docset formats.  This is expected to change in the future.
 
@@ -36,7 +36,7 @@ local sections = {
 
 --- hs.doc.builder.genComments(path, [recurse]) -> table
 --- Function
---- Generates a documentation table for Cosmic Hammer modules or Spoon bundles from the source files located in the path(s) provided.
+--- Generates a documentation table for Cosmic Hammer modules from the source files located in the path(s) provided.
 ---
 --- Parameters:
 ---  * where - a string specifying a single path, or a table containing multiple strings specifying paths where source files should be examined to generate the documentation table.
@@ -202,8 +202,8 @@ end
 ---  * string - the JSON string representation of the documentation
 ---
 --- Notes:
----  * If you have installed the `hs` command line tool (see `hs.ipc`), you can use the following to generate the `docs.json` file that is used to provide documentation for Cosmic Hammer Spoon bundles: `hs -c "hs.doc.builder.genJSON(\"$(pwd)\")" > docs.json`
----  * You can also use this to generate documentation for any third-party-modules you build, but you will have to register the documentation with `hs.doc.registerJSONFile` yourself -- it is not automatically loaded for you like it is for Spoons.
+---  * If you have installed the `hs` command line tool (see `hs.ipc`), you can use the following to generate a `docs.json` file for a third-party module: `hs -c "hs.doc.builder.genJSON(\"$(pwd)\")" > docs.json`
+---  * You will have to register the resulting documentation with `hs.doc.registerJSONFile` yourself -- third-party module documentation is not automatically loaded for you.
 module.genJSON = function(mods)
     if type(mods) == "string" then mods = module.genComments(mods) end
     return json.encode(mods, true)

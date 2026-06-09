@@ -268,64 +268,6 @@ class MJAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func application(_ sender: NSApplication, openFile filename: String) -> Bool {
-        var typeOfFile: String? = nil
-        let fileURL = URL(fileURLWithPath: filename)
-        if let contentType = try? fileURL.resourceValues(forKeys: [.contentTypeKey]).contentType {
-            typeOfFile = contentType.identifier
-        }
-
-        if typeOfFile == "org.cosmic-hammer.cosmichammer.spoon" {
-            // This is a Spoon, so we will attempt to copy it to the Spoons directory
-            let spoonPath = (MJConfigDirAbsolute() as String).appendingPathComponent("Spoons")
-            let spoonName = (filename as NSString).lastPathComponent
-            let dstSpoonFullPath = (spoonPath as NSString).appendingPathComponent(spoonName)
-
-            if dstSpoonFullPath == filename {
-                os_log(.info, "User double clicked on a Spoon in %{public}s, skipping", MJConfigDirAbsolute() as String)
-                return true
-            }
-
-            let fileManager = FileManager.default
-
-            // Remove any preexisting copy of the Spoon
-            var upgrade = false
-            if fileManager.fileExists(atPath: dstSpoonFullPath) {
-                os_log(.info, "Spoon already exists at %{public}s, removing the old version", dstSpoonFullPath)
-                upgrade = true
-                do {
-                    try fileManager.removeItem(atPath: dstSpoonFullPath)
-                } catch {
-                    os_log(.error, "Unable to remove existing Spoon (%{public}s):%{public}s", dstSpoonFullPath, error.localizedDescription)
-                    let alert = NSAlert()
-                    alert.addButton(withTitle: "OK")
-                    alert.messageText = "Error upgrading Spoon"
-                    alert.informativeText = "\(error.localizedDescription)\n\nSource: \(filename)\nDest: \(spoonPath)"
-                    alert.alertStyle = .critical
-                    alert.runModal()
-                    return true
-                }
-            }
-
-            do {
-                try fileManager.moveItem(atPath: filename, toPath: dstSpoonFullPath)
-
-                let notification = NSUserNotification()
-                notification.title = "Spoon \(upgrade ? "upgraded" : "installed")"
-                notification.informativeText = "\(spoonName) is now available\(upgrade ? ", reload your config" : "")"
-                notification.soundName = NSUserNotificationDefaultSoundName
-                NSUserNotificationCenter.default.deliver(notification)
-            } catch {
-                os_log(.error, "Unable to move %{public}s to %{public}s: %{public}s", filename, spoonPath, error.localizedDescription)
-                let alert = NSAlert()
-                alert.addButton(withTitle: "OK")
-                alert.messageText = "Error installing Spoon"
-                alert.informativeText = "\(error.localizedDescription)\n\nSource: \(filename)\nDest: \(spoonPath)"
-                alert.alertStyle = .critical
-                alert.runModal()
-            }
-            return true  // Always return true so macOS doesn't tell the user we can't open Spoons
-        }
-
         let fileExtension = (filename as NSString).pathExtension
         let infoDict = Bundle.main.infoDictionary as NSDictionary?
         if let supportedExtensions = infoDict?.value(forKeyPath: "CFBundleDocumentTypes.CFBundleTypeExtensions") as? [Any] {
@@ -406,12 +348,9 @@ class MJAppDelegate: NSObject, NSApplicationDelegate {
         // Remove our early event manager handler so hs.urlevent can register for it later
         NSAppleEventManager.shared().removeEventHandler(forEventClass: AEEventClass(kInternetEventClass), andEventID: AEEventID(kAEGetURL))
 
-        let shouldPrepareSpoonsDirectory: Bool
-
         if NSClassFromString("XCTest") != nil {
             // CosmicHammer Tests
             os_log(.info, "in testing mode!")
-            shouldPrepareSpoonsDirectory = false
 
             let mainBundle = Bundle.main
             if let bundle = Bundle(path: "\(mainBundle.bundlePath)/Contents/Plugins/CosmicHammer Tests.xctest"),
@@ -426,14 +365,12 @@ class MJAppDelegate: NSObject, NSApplicationDelegate {
         } else if ProcessInfo.processInfo.environment["XCTESTING"] != nil {
             // CosmicHammer UI Tests
             os_log(.info, "in UI testing mode")
-            shouldPrepareSpoonsDirectory = false
             let initPath = FileManager.default.currentDirectoryPath + "/CosmicHammer UI Tests-Runner.app/Contents/PlugIns/CosmicHammer UI Tests.xctest/Contents/Resources/init.lua"
             let fsPath = (initPath as NSString).fileSystemRepresentation
             MJConfigFileSet(FileManager.default.string(withFileSystemRepresentation: fsPath, length: strlen(fsPath)) as NSString)
             showConsoleWindow(nil)
         } else {
             // No test environment detected, this is a live user run
-            shouldPrepareSpoonsDirectory = true
             AppLifecycle.applyStoredConfigFile()
         }
 
@@ -441,7 +378,7 @@ class MJAppDelegate: NSObject, NSApplicationDelegate {
         NSApp.servicesProvider = self
 
         do {
-            try AppLifecycle.prepareConfigDirectories(createSpoonsDirectory: shouldPrepareSpoonsDirectory)
+            try AppLifecycle.prepareConfigDirectories()
             try AppLifecycle.changeToConfigDirectory()
         } catch {
             terminateAfterStartupFilesystemError(error)

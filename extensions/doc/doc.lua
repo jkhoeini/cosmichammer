@@ -55,12 +55,10 @@ end
 moduleMT._registerTriggerFunction(triggerChangeCount)
 
 -- forward declarations for hsdocs
-local _jsonForSpoons = nil
 local _jsonForModules = nil
 
 module._changeCountWatcher = watchable.watch("hs.doc", "changeCount", function(w, p, k, o, n) -- luacheck: ignore
     _jsonForModules = nil
-    _jsonForSpoons  = nil
 end)
 
 -- forward declaration of things we're going to wrap
@@ -149,14 +147,13 @@ end
 --- Notes:
 ---  * This function is mainly for runtime API help while using Cosmic Hammer's Console
 ---
----  * Documentation files registered with [hs.doc.registerJSONFile](#registerJSONFile) or [hs.doc.preloadSpoonDocs](#preloadSpoonDocs) that have not yet been actually loaded will be loaded when this command is invoked in any of the forms described below.
+---  * Documentation files registered with [hs.doc.registerJSONFile](#registerJSONFile) that have not yet been actually loaded will be loaded when this command is invoked in any of the forms described below.
 ---
 ---  * You can also access the results of this function by the following methods from the console:
 ---    * help("prefix.path") -- quotes are required, e.g. `help("hs.reload")`
 ---    * help.prefix.path -- no quotes are required, e.g. `help.hs.reload`
 ---      * `prefix` can be one of the following:
 ---        * `hs`    - provides documentation for Cosmic Hammer's builtin commands and modules
----        * `spoon` - provides documentation for the Spoons installed on your system
 ---        * `lua`   - provides documentation for the version of lua Cosmic Hammer is using, currently 5.3
 ---          * `lua._man` - provides the table of contents for the Lua 5.3 manual.  You can pull up a specific section of the lua manual by including the chapter (and subsection) like this: `lua._man._3_4_8`.
 ---          * `lua._C`   - provides documentation specifically about the Lua C API for use when developing modules which require external libraries.
@@ -170,7 +167,7 @@ end
 
 --- hs.doc.locateJSONFile(module) -> path | false, message
 --- Function
---- Locates the JSON file corresponding to the specified third-party module or Spoon by searching package.path and package.cpath.
+--- Locates the JSON file corresponding to the specified third-party module by searching package.path and package.cpath.
 ---
 --- Parameters:
 ---  * module - the name of the module to locate a JSON file for
@@ -181,7 +178,7 @@ end
 --- Notes:
 ---  * The JSON should be named 'docs.json' and located in the same directory as the `lua` or `so` file which is used when the module is loaded via `require`.
 ---
----  * The documentation for core modules is stored in the JSON file specified by the `hs.docstrings_json_file` variable; this function is intended for use in locating the documentation file for third party modules and Spoons.
+---  * The documentation for core modules is stored in the JSON file specified by the `hs.docstrings_json_file` variable; this function is intended for use in locating the documentation file for third party modules.
 module.locateJSONFile = function(moduleName)
     local asLua = package.searchpath(moduleName, package.path)
     local asC   = package.searchpath(moduleName, package.cpath)
@@ -213,40 +210,6 @@ module.locateJSONFile = function(moduleName)
     end
 end
 
---- hs.doc.preloadSpoonDocs()
---- Function
---- Locates all installed Spoon documentation files and marks them for loading the next time the [hs.doc.help](#help) function is invoked.
----
---- Parameters:
----  * None
----
---- Returns:
----  * None
-module.preloadSpoonDocs = function()
-    local spoonPaths, installedSpoons = {}, {}
-    for path in package.path:gmatch("([^;]+Spoons/%?%.spoon/init%.lua)") do
-        table.insert(spoonPaths, path)
-    end
-    for _, v in ipairs(spoonPaths) do
-        local dirPath = v:match("^(.+)/%?%.spoon/init%.lua$")
-        if dirPath and (fs.attributes(dirPath) or {}).mode == "directory" then
-            for file in fs.dir(dirPath) do
-                local name = file:match("^(.+)%.spoon$")
-                local spoonInit = name and package.searchpath(name, table.concat(spoonPaths, ";"))
-                if name and spoonInit then
-                    local path     = spoonInit:match("^(.+)/init%.lua$")
-                    local docPath  = path .. "/docs.json"
-                    local hasDocs  = fs.attributes(docPath) and true or false
-                    if hasDocs then
-                        module.registerJSONFile(docPath, true)
-                        table.insert(installedSpoons, docPath)
-                    end
-                end
-            end
-        end
-    end
-end
-
 -- Return Module Object --------------------------------------------------
 
 module.registerJSONFile(hs.docstrings_json_file)
@@ -268,36 +231,20 @@ _mt.__index = function(self, key)
     _mt._loadRegisteredFiles() -- we have to assume they're accessing this for help or hsdocs, so load files
 
     -- massage the result for hsdocs, which we should really rewrite at some point
-    if key == "_jsonForSpoons" or key == "_jsonForModules" then
-        if not _jsonForSpoons then
-            _jsonForSpoons = {}
-            for _, path in ipairs(module.registeredFiles()) do
-                local file = _mt._registeredFilesObject()[path]
-                if file.spoon then
-                    for _, v in ipairs(file.json) do
-                        if not (v.name:match("^lua$") or v.name:match("^lua[%.:]")) then
-                            table.insert(_jsonForSpoons, v)
-                        end
-                    end
-                end
-            end
-            table.sort(_jsonForSpoons, function(a,b) return a.name:lower() < b.name:lower() end)
-        end
+    if key == "_jsonForModules" then
         if not _jsonForModules then
             _jsonForModules = {}
             for _, path in ipairs(module.registeredFiles()) do
                 local file = _mt._registeredFilesObject()[path]
-                if not file.spoon then
-                    for _, v in ipairs(file.json) do
-                        if not (v.name:match("^lua$") or v.name:match("^lua[%.:]")) then
-                            table.insert(_jsonForModules, v)
-                        end
+                for _, v in ipairs(file.json) do
+                    if not (v.name:match("^lua$") or v.name:match("^lua[%.:]")) then
+                        table.insert(_jsonForModules, v)
                     end
                 end
             end
             table.sort(_jsonForModules, function(a,b) return a.name:lower() < b.name:lower() end)
         end
-        return (key == "_jsonForModules") and _jsonForModules or _jsonForSpoons
+        return _jsonForModules
     end
     local children = _mt._children()
     if fnutils.contains(children, key) then

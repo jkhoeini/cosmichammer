@@ -106,26 +106,6 @@
 		<dict>
 			<key>CFBundleTypeExtensions</key>
 			<array>
-				<string>spoon</string>
-			</array>
-			<key>CFBundleTypeIconFile</key>
-			<string>Spoon</string>
-			<key>CFBundleTypeMIMETypes</key>
-			<array/>
-			<key>CFBundleTypeName</key>
-			<string>Cosmic Hammer Module</string>
-			<key>CFBundleTypeRole</key>
-			<string>Viewer</string>
-			<key>LSItemContentTypes</key>
-			<array>
-				<string>org.cosmic-hammer.CosmicHammer.Spoon</string>
-			</array>
-			<key>LSTypeIsPackage</key>
-			<integer>1</integer>
-		</dict>
-		<dict>
-			<key>CFBundleTypeExtensions</key>
-			<array>
 				<string>*</string>
 			</array>
 			<key>CFBundleTypeName</key>
@@ -261,28 +241,5 @@
 	<string>alert</string>
 	<key>OSAScriptingDefinition</key>
 	<string>CosmicHammer.sdef</string>
-	<key>UTExportedTypeDeclarations</key>
-	<array>
-		<dict>
-			<key>UTTypeConformsTo</key>
-			<array>
-				<string>public.composite-content</string>
-				<string>com.apple.package</string>
-			</array>
-			<key>UTTypeIconFile</key>
-			<string>Spoon</string>
-			<key>UTTypeIdentifier</key>
-			<string>org.cosmic-hammer.CosmicHammer.Spoon</string>
-			<key>UTTypeReferenceURL</key>
-			<string>https://www.cosmichammer.org/</string>
-			<key>UTTypeTagSpecification</key>
-			<dict>
-				<key>public.filename-extension</key>
-				<array>
-					<string>spoon</string>
-				</array>
-			</dict>
-		</dict>
-	</array>
 </dict>
 </plist>

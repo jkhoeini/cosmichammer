@@ -9,9 +9,6 @@
       for i, v in ipairs(documentation) do
           modNames[v.name] = true
       end
-      for i,v in ipairs(spoonDocumentation) do
-          modNames["spoon." .. v.name] = true
-      end
 
       -- the following code looks for the module to display as either part of URL PATH_INFO or as a
       -- query item.  The following URLs are supported:
@@ -43,7 +40,6 @@
           end
       end
 
-      local isSpoon = false
       local mod = {
           desc = "Module documentation not found",
           doc = "Module documentation not found\n\nThe requested module does not appear to have any documentation in the set available to this web site.",
@@ -51,21 +47,10 @@
           name = lookingFor or "** no module specified **"
       }
       if lookingFor then
-          if lookingFor:match("^spoon%.") then
-              isSpoon = true
-              local target = lookingFor:match("^spoon%.(.+)$")
-              for i, v in ipairs(spoonDocumentation) do
-                  if v.name == target then
-                      mod = v
-                      break
-                  end
-              end
-          else
-              for i, v in ipairs(documentation) do
-                  if v.name == lookingFor then
-                      mod = v
-                      break
-                  end
+          for i, v in ipairs(documentation) do
+              if v.name == lookingFor then
+                  mod = v
+                  break
               end
           end
       end
@@ -132,7 +117,7 @@
 
   <body>
     <header>
-      <h1><a href="<%= cgilua.mkurlpath("index.lp") .. (isSpoon and "?q=Spoons" or "") %>"><%= (isSpoon and "spoon" or "docs") %></a> &raquo; <%= mod.name %></h1>
+      <h1><a href="<%= cgilua.mkurlpath("index.lp") %>">docs</a> &raquo; <%= mod.name %></h1>
       <%= gfmConvert(mod.doc) %>
     </header>
     <h3>API Overview</h3>
@@ -140,8 +125,7 @@
       <%
         if mod.name ~= "hs" then
             local submodules = {}
-            local relevantJson = isSpoon and spoonDocumentation or documentation
-            for _, v in ipairs(relevantJson) do
+            for _, v in ipairs(documentation) do
                 if v.name:match("^" .. mod.name .. "%.") then table.insert(submodules, v.name) end
             end
 
@@ -149,7 +133,7 @@
                 <li>Submodules</li>
                 <ul>
                   <% for _, item in ipairs(submodules) do %>
-                      <li><a href="<%= cgilua.mkurlpath("module.lp/" .. (isSpoon and "spoon." or "") .. item) %>"><%= item %></a></li>
+                      <li><a href="<%= cgilua.mkurlpath("module.lp/" .. item) %>"><%= item %></a></li>
                   <% end %>
                 </ul>
           <% end

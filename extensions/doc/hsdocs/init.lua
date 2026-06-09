@@ -91,9 +91,6 @@ local makeModuleListForMenu = function()
     for i,v in ipairs(doc._jsonForModules) do
         table.insert(searchList, v.name)
     end
-    for i,v in ipairs(doc._jsonForSpoons) do
-        table.insert(searchList, "spoon." .. v.name)
-    end
     table.sort(searchList, function(a, b) return a:lower() < b:lower() end)
     return searchList
 end

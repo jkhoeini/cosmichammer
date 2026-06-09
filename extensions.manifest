@@ -78,7 +78,6 @@ socket	hs.libsocket=luaopen_hs_libsocket,hs.libsocketudp=luaopen_hs_libsocketudp
 sound	hs.libsound=luaopen_hs_libsound	hs.sound=sound.lua>sound.lua	-
 spaces	hs.libspaces=luaopen_hs_libspaces,hs.libspaces_watcher=luaopen_hs_libspaces_watcher	hs.spaces=spaces.lua>spaces.lua	hs.spaces.watcher=hs.libspaces_watcher
 speech	hs.libspeech=luaopen_hs_libspeech,hs.libspeechlistener=luaopen_hs_libspeechlistener	hs.speech=speech.lua>speech.lua	-
-spoons	-	hs.spoons=spoons.lua>spoons.lua	-
 spotify	-	hs.spotify=spotify.lua>spotify.lua	-
 spotlight	hs.libspotlight=luaopen_hs_libspotlight	hs.spotlight=spotlight.lua>spotlight.lua	-
 sqlite3	hs.liblsqlite3=luaopen_hs_liblsqlite3	hs.sqlite3=sqlite3.lua>sqlite3.lua	-

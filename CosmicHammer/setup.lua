@@ -19,13 +19,11 @@ local userruntime = os.getenv("HOME") .. "/.local/share/cosmic-hammer/site"
 local paths = {
   configdir .. "/?.lua",
   configdir .. "/?/init.lua",
-  configdir .. "/Spoons/?.spoon/init.lua",
   package.path,
   modpath .. "/?.lua",
   modpath .. "/?/init.lua",
   userruntime .. "/?.lua",
   userruntime .. "/?/init.lua",
-  userruntime .. "/Spoons/?.spoon/init.lua",
 }
 
 local cpaths = {

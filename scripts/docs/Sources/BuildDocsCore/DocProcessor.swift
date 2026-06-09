@@ -30,8 +30,6 @@ let links: [[String: String]] = [
     ["name": "Website", "url": "https://www.cosmichammer.org/"],
     ["name": "GitHub page", "url": "https://github.com/cosmichammer/cosmic-hammer"],
     ["name": "Getting Started Guide", "url": "https://www.cosmichammer.org/go/"],
-    ["name": "Spoon Plugin Documentation", "url": "https://github.com/cosmichammer/cosmic-hammer/blob/master/SPOONS.md"],
-    ["name": "Official Spoon repository", "url": "https://www.cosmichammer.org/Spoons"],
     ["name": "Discord server", "url": "https://discord.gg/vxchqkRbkR"],
     ["name": "LuaSkin API docs", "url": "https://www.cosmichammer.org/docs/LuaSkin/"],
 ]

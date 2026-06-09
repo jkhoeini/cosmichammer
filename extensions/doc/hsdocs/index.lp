@@ -18,6 +18,9 @@
       end
 
       local defaultTarget = cgilua.QUERY.q or "API"
+      -- "API" is the only tab; clamp any other value (e.g. a stale bookmark to a
+      -- tab that no longer exists) so a defaultOpen button is always rendered.
+      if defaultTarget ~= "API" then defaultTarget = "API" end
   %>
 
   <!-- Tabbed sections code is a variant on https://www.w3schools.com/howto/howto_js_tabs.asp -->
@@ -100,7 +103,7 @@
 
     <br>
     <div class="tab">
-    <% for i,label in ipairs({ "API", "Spoons" }) do
+    <% for i,label in ipairs({ "API" }) do
         if label == defaultTarget then %>
           <button class="tablinks" onclick="openTab(event, '<%= label %>')" id="defaultOpen"><%= label %></button>
       <% else %>
@@ -115,18 +118,6 @@
         <% for i, mod in ipairs(documentation) do %>
           <tr>
             <td><a href="<%= cgilua.mkurlpath("module.lp/" .. mod.name) %>"><%= mod.name %></a></td>
-            <td><%= gfmConvert(mod.desc) %></td>
-          </tr>
-        <% end %>
-      </table>
-    </div>
-
-    <div id="Spoons" class="tabcontent">
-      <h3>Spoon documentation</h3>
-      <table class="api-documentation-overview">
-        <% for i, mod in ipairs(spoonDocumentation) do %>
-          <tr>
-            <td><a href="<%= cgilua.mkurlpath("module.lp/spoon." .. mod.name) %>"><%= mod.name %></a></td>
             <td><%= gfmConvert(mod.desc) %></td>
           </tr>
         <% end %>

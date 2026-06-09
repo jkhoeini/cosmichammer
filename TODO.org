@@ -1030,11 +1030,11 @@ LuaSkin → LuaSwift).
 
     Added an ~AppLifecycle~ module for the core startup state that used to be
     embedded directly in ~AppDelegate~: default registration, stored config-file
-    application, config/Spoons path derivation, throwing config directory
+    application, config path derivation, throwing config directory
     preparation, and current-directory changes. ~AppDelegate~ now registers
     defaults before reading them, applies stored config only for live launches,
-    reports startup filesystem failures, and preserves test launch behavior by
-    skipping Spoons creation for XCTest/UI-test config paths.
+    reports startup filesystem failures, and preserves test launch behavior for
+    XCTest/UI-test config paths.
 
     Made menu icon reflection idempotent. Repeated visible-true calls now reuse
     the existing ~NSStatusItem~ and update its image/menu instead of allocating a

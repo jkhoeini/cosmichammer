@@ -51,46 +51,6 @@ extension CosmicHammerTests {
             }
         }
 
-        @Test func prepareConfigDirectoriesThrowsWhenSpoonsPathIsAFile() throws {
-            let root = try temporaryDirectory()
-            let configDir = root.appendingPathComponent("config")
-            try FileManager.default.createDirectory(at: configDir, withIntermediateDirectories: true)
-            FileManager.default.createFile(
-                atPath: configDir.appendingPathComponent("Spoons").path,
-                contents: Data(),
-                attributes: nil
-            )
-
-            let previousConfig = MJConfigFileGet()
-            defer {
-                MJConfigFileSet(previousConfig)
-                try? FileManager.default.removeItem(at: root)
-            }
-
-            MJConfigFileSet(configDir.appendingPathComponent("init.lua").path as NSString)
-
-            #expect(throws: AppLifecycleError.self) {
-                try AppLifecycle.prepareConfigDirectories()
-            }
-        }
-
-        @Test func prepareConfigDirectoriesCanSkipSpoonsForTestLaunches() throws {
-            let root = try temporaryDirectory()
-            let configDir = root.appendingPathComponent("config")
-
-            let previousConfig = MJConfigFileGet()
-            defer {
-                MJConfigFileSet(previousConfig)
-                try? FileManager.default.removeItem(at: root)
-            }
-
-            MJConfigFileSet(configDir.appendingPathComponent("init.lua").path as NSString)
-            try AppLifecycle.prepareConfigDirectories(createSpoonsDirectory: false)
-
-            #expect(FileManager.default.fileExists(atPath: configDir.path))
-            #expect(!FileManager.default.fileExists(atPath: configDir.appendingPathComponent("Spoons").path))
-        }
-
         @Test func menuIconVisibleTrueReusesExistingStatusItem() {
             let hadValue = UserDefaults.standard.object(forKey: "MJShowMenuIconKey") != nil
             let oldValue = UserDefaults.standard.bool(forKey: "MJShowMenuIconKey")
