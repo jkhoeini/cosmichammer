@@ -228,6 +228,7 @@ func bootstrapLuaForTesting() {
                 configFileDisplayPath: testConfigDir + "/init.lua",
                 configFilePath: testConfigDir + "/init.lua",
                 configDir: testConfigDir,
+                dataDir: testConfigDir + "/data",
                 docsJSONPath: docsPath,
                 hasInitFile: false,
                 autoloadExtensions: true

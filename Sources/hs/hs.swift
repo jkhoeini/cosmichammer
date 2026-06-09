@@ -7,6 +7,19 @@ private let defaultPortName = "Cosmic Hammer"
 private let defaultTimeout: CFTimeInterval = 4.0
 private let bundleID = "org.cosmic-hammer.CosmicHammer" as CFString
 
+/// XDG state dir for Cosmic Hammer: `${XDG_STATE_HOME:-~/.local/state}/cosmichammer`.
+/// Duplicated (not shared) from the app's `XDGPaths` because the `hs` CLI is a
+/// standalone target that does not link HSSwiftExtensions. Keep the two in sync.
+private func xdgStateHome() -> String {
+    let base: String
+    if let value = ProcessInfo.processInfo.environment["XDG_STATE_HOME"], value.hasPrefix("/") {
+        base = value
+    } else {
+        base = (NSHomeDirectory() as NSString).appendingPathComponent(".local/state")
+    }
+    return (base as NSString).appendingPathComponent("cosmichammer")
+}
+
 private enum MsgID: Int32 {
     case legacy     =   0
     case register   = 100
@@ -445,11 +458,14 @@ struct HSCli {
 
             let saveHistory = (CFPreferencesCopyAppValue("ipc.cli.saveHistory" as CFString, bundleID) as? Bool) ?? false
             let historyLimit: Int32 = (CFPreferencesCopyAppValue("ipc.cli.historyLimit" as CFString, bundleID) as? NSNumber)?.int32Value ?? 1000
-            let confDir = (CFPreferencesCopyAppValue("MJConfigFile" as CFString, bundleID) as? String ?? "~/.cosmic-hammer/init.lua")
-                .replacingOccurrences(of: "init.lua", with: ".cli.history")
-            let historyPath = NSString(string: confDir).expandingTildeInPath
+            // History lives under the XDG state dir, independent of the config location.
+            let stateHome = xdgStateHome()
+            let historyPath = (stateHome as NSString).appendingPathComponent(".cli.history")
 
-            if saveHistory { read_history(historyPath) }
+            if saveHistory {
+                try? FileManager.default.createDirectory(atPath: stateHome, withIntermediateDirectories: true)
+                read_history(historyPath)
+            }
             print("\(client.colors.banner)Cosmic Hammer interactive prompt.\(client.colors.reset)")
 
             rl_attempted_completion_function = completionHandler

@@ -52,7 +52,7 @@ return {setup=function(context)
 
 --- hs.configdir
 --- Constant
---- A string containing Cosmic Hammer's configuration directory. Typically `~/.cosmic-hammer/`
+--- A string containing Cosmic Hammer's configuration directory. Typically `${XDG_CONFIG_HOME:-~/.config}/cosmichammer/`
   hs.configdir = configdir
 
 --- hs.dockIconClickCallback

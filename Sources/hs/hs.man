@@ -117,8 +117,8 @@ will enter legacy mode. In legacy mode, output is collected until your code is c
 .Pa /Applications/Cosmic Hammer.app/Contents/Resources/extensions/hs/ipc/init.lua
 if you require this for your custom handler.
 .Sh FILES
-.Pa ~/.cosmic-hammer/.cli.history
-.Dl Command history is saved here if hs.ipc.cliSaveHistory is set to true. (The initial path may differ if your Cosmic Hammer prefix has been changed, but the file will be named .cli.history in your Cosmic Hammer configuration directory.)
+.Pa ${XDG_STATE_HOME:-~/.local/state}/cosmichammer/.cli.history
+.Dl Command history is saved here if hs.ipc.cliSaveHistory is set to true. (The path honors XDG_STATE_HOME if set.)
 .Sh DIAGNOSTICS
 .Ex -std
 The most common error codes are as follows:

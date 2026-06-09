@@ -697,10 +697,12 @@ int main()
             CFNumberRef CFhistoryLimit = CFPreferencesCopyAppValue(CFSTR("ipc.cli.historyLimit"), hammerspoonBundle) ;
             int  historyLimit = CFhistoryLimit ? [(__bridge_transfer NSNumber *)CFhistoryLimit intValue] : 1000 ;
 
-            CFStringRef CFhsDir   = CFPreferencesCopyAppValue(CFSTR("MJConfigFile"), hammerspoonBundle) ;
-            NSString    *confFile = CFhsDir ? (__bridge_transfer NSString *)CFhsDir : @"~/.cosmic-hammer/init.lua" ;
-            confFile = [[confFile substringToIndex:(confFile.length - 8)] stringByAppendingFormat:@".cli.history"] ;
-            confFile = confFile.stringByExpandingTildeInPath ;
+            // History lives under the XDG state dir, independent of the config location:
+            // ${XDG_STATE_HOME:-~/.local/state}/cosmichammer/.cli.history
+            NSString *xdgStateEnv = [[NSProcessInfo processInfo] environment][@"XDG_STATE_HOME"] ;
+            NSString *stateBase = (xdgStateEnv && [xdgStateEnv hasPrefix:@"/"]) ? xdgStateEnv : [NSHomeDirectory() stringByAppendingPathComponent:@".local/state"] ;
+            NSString *stateHome = [stateBase stringByAppendingPathComponent:@"cosmichammer"] ;
+            NSString *confFile = [stateHome stringByAppendingPathComponent:@".cli.history"] ;
 
             if (saveHistory) read_history(confFile.UTF8String) ;
 

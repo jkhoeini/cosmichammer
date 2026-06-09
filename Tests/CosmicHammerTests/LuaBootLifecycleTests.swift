@@ -11,9 +11,10 @@ extension CosmicHammerTests {
                 local context = ...
                 assert(type(context) == "table", "expected context table")
                 assert(context.extensionsPath == "/bundle/extensions")
-                assert(context.configFileDisplayPath == "~/.cosmic-hammer/init.lua")
+                assert(context.configFileDisplayPath == "/tmp/cosmic/init.lua")
                 assert(context.configFilePath == "/tmp/cosmic/init.lua")
                 assert(context.configDir == "/tmp/cosmic")
+                assert(context.dataDir == "/tmp/cosmic/data")
                 assert(context.docsJSONPath == "/bundle/docs.json")
                 assert(context.hasInitFile == true)
                 assert(context.autoloadExtensions == false)
@@ -207,9 +208,10 @@ private func testBootContext(
 ) -> LuaBoot.Context {
     LuaBoot.Context(
         extensionsPath: "/bundle/extensions",
-        configFileDisplayPath: "~/.cosmic-hammer/init.lua",
+        configFileDisplayPath: "\(configDir)/init.lua",
         configFilePath: "\(configDir)/init.lua",
         configDir: configDir,
+        dataDir: "\(configDir)/data",
         docsJSONPath: "/bundle/docs.json",
         hasInitFile: hasInitFile,
         autoloadExtensions: autoloadExtensions
@@ -242,6 +244,7 @@ private func withMinimalCoresetupBoot(
                 configFileDisplayPath: "\(configDir)/init.lua",
                 configFilePath: "\(configDir)/init.lua",
                 configDir: configDir,
+                dataDir: "\(configDir)/data",
                 docsJSONPath: resourceRoot.appendingPathComponent("docs.json").path,
                 hasInitFile: false,
                 autoloadExtensions: autoloadExtensions

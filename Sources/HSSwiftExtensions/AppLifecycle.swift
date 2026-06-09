@@ -21,7 +21,12 @@ enum AppLifecycleError: Error, CustomStringConvertible, LocalizedError {
 }
 
 enum AppLifecycle {
-    static let defaultConfigFile = "~/.cosmic-hammer/init.lua"
+    /// Default config file when no explicit `MJConfigFile` override is set:
+    /// `${XDG_CONFIG_HOME:-~/.config}/cosmichammer/init.lua`. Hard cut — there is
+    /// no `~/.cosmic-hammer` fallback.
+    static var defaultConfigFile: String {
+        (XDGPaths.configHome as NSString).appendingPathComponent("init.lua")
+    }
 
     static func registerDefaultDefaults(_ defaults: UserDefaults = .standard) {
         defaults.register(defaults: [
@@ -49,8 +54,15 @@ enum AppLifecycle {
         )
     }
 
+    /// Create the directories Cosmic Hammer writes to on launch. The config dir
+    /// tracks `MJConfigFile` (so an explicit override is honored); state and data
+    /// are fixed XDG locations independent of where the config file lives.
     static func prepareConfigDirectories() throws {
+        // Config dir first: a blocked/invalid config path should surface before
+        // we touch the XDG state/data dirs.
         try MJEnsureDirectoryExistsOrThrow(MJConfigDir() as String)
+        try MJEnsureDirectoryExistsOrThrow(XDGPaths.stateHome)
+        try MJEnsureDirectoryExistsOrThrow(XDGPaths.dataHome)
     }
 
     static func changeToConfigDirectory(fileManager: FileManager = .default) throws {

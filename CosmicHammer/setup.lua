@@ -14,7 +14,9 @@ end
 
 local modpath = stringField("extensionsPath")
 local configdir = stringField("configDir")
-local userruntime = os.getenv("HOME") .. "/.local/share/cosmic-hammer/site"
+-- User Lua site/runtime lives under the XDG data dir, resolved in Swift
+-- (${XDG_DATA_HOME:-~/.local/share}/cosmichammer) and passed in via the boot context.
+local userruntime = stringField("dataDir") .. "/site"
 
 local paths = {
   configdir .. "/?.lua",

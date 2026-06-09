@@ -34,6 +34,7 @@ enum LuaBoot {
         let configFileDisplayPath: String
         let configFilePath: String
         let configDir: String
+        let dataDir: String
         let docsJSONPath: String
         let hasInitFile: Bool
         let autoloadExtensions: Bool
@@ -109,11 +110,12 @@ enum LuaBoot {
     }
 
     static func pushContext(_ L: UnsafeMutablePointer<lua_State>, _ context: Context) {
-        lua_createtable(L, 0, 7)
+        lua_createtable(L, 0, 8)
         setField(L, "extensionsPath", context.extensionsPath)
         setField(L, "configFileDisplayPath", context.configFileDisplayPath)
         setField(L, "configFilePath", context.configFilePath)
         setField(L, "configDir", context.configDir)
+        setField(L, "dataDir", context.dataDir)
         setField(L, "docsJSONPath", context.docsJSONPath)
         setField(L, "hasInitFile", context.hasInitFile)
         setField(L, "autoloadExtensions", context.autoloadExtensions)
@@ -875,6 +877,7 @@ func MJLuaInit() {
         configFileDisplayPath: MJConfigFileGet() as String,
         configFilePath: MJConfigFileFullPath() as String,
         configDir: MJConfigDir() as String,
+        dataDir: XDGPaths.dataHome,
         docsJSONPath: docsPath,
         hasInitFile: FileManager.default.fileExists(atPath: MJConfigFileFullPath() as String),
         autoloadExtensions: UserDefaults.standard.bool(forKey: HSAutoLoadExtensions)

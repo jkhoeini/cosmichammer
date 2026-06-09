@@ -325,7 +325,7 @@ class MJAppDelegate: NSObject, NSApplicationDelegate {
 
             alert.addButton(withTitle: "Cancel")
             alert.messageText = "Do you want to delete the preferences?"
-            alert.informativeText = "Deleting the preferences will reset all Cosmic Hammer settings (including everything that uses hs.settings) to their defaults. This does not remove anything in ~/.cosmic-hammer/"
+            alert.informativeText = "Deleting the preferences will reset all Cosmic Hammer settings (including everything that uses hs.settings) to their defaults. This does not remove anything in your Cosmic Hammer configuration directory."
             alert.alertStyle = .warning
 
             if alert.runModal() == .alertFirstButtonReturn {
