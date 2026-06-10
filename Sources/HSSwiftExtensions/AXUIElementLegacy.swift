@@ -1,5 +1,6 @@
 import Cocoa
 import CLua
+import Lua
 import os.log
 
 private let USERDATA_TAG = axuielement_USERDATA_TAG
@@ -86,7 +87,7 @@ private func errorWrapper(_ L: UnsafeMutablePointer<lua_State>!, _ where_: NSStr
 ///
 /// Notes:
 ///  * if `windowObject` is a string or number, only the first item found with `hs.window.find` will be used by this function to create an axuielementObject.
-private func axuielement_getWindowElement(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func axuielement_getWindowElement(_ L: LuaState) throws -> CInt {
     // vararg here to mimic original behavior and allow constructs to use `hs.window(...)` as arg as this may
     // return more than one result
     if let object = luaNSObject(L, at: 1, metatableName: "hs.window"),
@@ -110,7 +111,7 @@ private func axuielement_getWindowElement(_ L: UnsafeMutablePointer<lua_State>!)
 ///
 /// Notes:
 ///  * if `applicationObject` is a string or number, only the first item found with `hs.application.find` will be used by this function to create an axuielementObject.
-private func axuielement_getApplicationElement(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func axuielement_getApplicationElement(_ L: LuaState) throws -> CInt {
     // vararg here to mimic original behavior and allow constructs to use `hs.application(...)` as arg as this may
     // return more than one result
     if let object = luaNSObject(L, at: 1, metatableName: "hs.application"),
@@ -131,7 +132,7 @@ private func axuielement_getApplicationElement(_ L: UnsafeMutablePointer<lua_Sta
 ///
 /// Returns:
 ///  * the axuielementObject for the system attributes
-private func axuielement_getSystemWideElement(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func axuielement_getSystemWideElement(_ L: LuaState) throws -> CInt {
     let value = AXUIElementCreateSystemWide()
     pushAXUIElement(L, value)
     return 1
@@ -146,7 +147,7 @@ private func axuielement_getSystemWideElement(_ L: UnsafeMutablePointer<lua_Stat
 ///
 /// Returns:
 ///  * an axuielementObject for the application specified, or nil if it cannot be determined
-private func axuielement_getApplicationElementForPID(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func axuielement_getApplicationElementForPID(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TNUMBER)
     let thePid = pid_t(luaL_checkinteger(L, 1))
     let value = AXUIElementCreateApplication(thePid)
@@ -169,7 +170,7 @@ private func axuielement_getApplicationElementForPID(_ L: UnsafeMutablePointer<l
 ///
 /// Returns:
 ///  * a new userdata object representing a new reference to the Accessibility object.
-private func axuielement_duplicateReference(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func axuielement_duplicateReference(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let theRef = get_axuielementref(L, 1, USERDATA_TAG)
     pushAXUIElement(L, theRef)
@@ -188,7 +189,7 @@ private func axuielement_duplicateReference(_ L: UnsafeMutablePointer<lua_State>
 ///
 /// Notes:
 ///  * Common attribute names can be found in the [hs.axuielement.attributes](#attributes) tables; however, this method will list only those names which are supported by this object, and is not limited to just those in the referenced table.
-private func axuielement_getAttributeNames(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func axuielement_getAttributeNames(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let theRef = get_axuielementref(L, 1, USERDATA_TAG)
     var attributeNames: CFArray?
@@ -219,7 +220,7 @@ private func axuielement_getAttributeNames(_ L: UnsafeMutablePointer<lua_State>!
 ///
 /// Notes:
 ///  * Common action names can be found in the [hs.axuielement.actions](#actions) table; however, this method will list only those names which are supported by this object, and is not limited to just those in the referenced table.
-private func axuielement_getActionNames(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func axuielement_getActionNames(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let theRef = get_axuielementref(L, 1, USERDATA_TAG)
     var attributeNames: CFArray?
@@ -250,7 +251,7 @@ private func axuielement_getActionNames(_ L: UnsafeMutablePointer<lua_State>!) -
 ///
 /// Notes:
 ///  * The action descriptions are provided by the target application; as such their accuracy and usefulness rely on the target application's developers.
-private func axuielement_getActionDescription(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func axuielement_getActionDescription(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     luaL_checktype(L, 2, LUA_TSTRING)
@@ -279,7 +280,7 @@ private func axuielement_getActionDescription(_ L: UnsafeMutablePointer<lua_Stat
 ///
 /// Returns:
 ///  * the current value of the attribute, nil if the attribute has no value, or nil and an error string if an accessibility error occurred
-private func axuielement_getAttributeValue(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func axuielement_getAttributeValue(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     luaL_checktype(L, 2, LUA_TSTRING)
@@ -315,7 +316,7 @@ private func axuielement_getAttributeValue(_ L: UnsafeMutablePointer<lua_State>!
 ///    * attributes for which no value is currently assigned will be given a table value with the following key-value pairs:
 ///      * `_code` = -25212
 ///      * `error` = "Requested value does not exist"
-private func axuielement_getAllAttributeValues(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func axuielement_getAllAttributeValues(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let theRef = get_axuielementref(L, 1, USERDATA_TAG)
     let includeErrors = lua_gettop(L) == 2 ? (lua_toboolean(L, 2) != 0) : false
@@ -358,7 +359,7 @@ private func axuielement_getAllAttributeValues(_ L: UnsafeMutablePointer<lua_Sta
 ///
 /// Returns:
 ///  * the number of items in the value for the attribute, if it is an array, or nil and an error string if an accessibility error occurred
-private func axuielement_getAttributeValueCount(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func axuielement_getAttributeValueCount(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     luaL_checktype(L, 2, LUA_TSTRING)
@@ -385,7 +386,7 @@ private func axuielement_getAttributeValueCount(_ L: UnsafeMutablePointer<lua_St
 ///
 /// Returns:
 ///  * an array of the names of all parameterized attributes supported by the axuielementObject or nil and an error string if an accessibility error occurred
-private func axuielement_getParameterizedAttributeNames(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func axuielement_getParameterizedAttributeNames(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let theRef = get_axuielementref(L, 1, USERDATA_TAG)
     var attributeNames: CFArray?
@@ -413,7 +414,7 @@ private func axuielement_getParameterizedAttributeNames(_ L: UnsafeMutablePointe
 ///
 /// Returns:
 ///  * a boolean value indicating whether or not the value of the parameter can be modified or nil and an error string if an accessibility error occurred
-private func axuielement_isAttributeSettable(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func axuielement_isAttributeSettable(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     luaL_checktype(L, 2, LUA_TSTRING)
@@ -443,7 +444,7 @@ private func axuielement_isAttributeSettable(_ L: UnsafeMutablePointer<lua_State
 ///
 /// Notes:
 ///  * an accessibilityObject can become invalid for a variety of reasons, including but not limited to the element referred to no longer being available (e.g. an element referring to a window or one of its descendants that has been closed) or the application terminating.
-private func axuielement_isValid(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func axuielement_isValid(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let theRef = get_axuielementref(L, 1, USERDATA_TAG)
     var value: CFTypeRef?
@@ -469,7 +470,7 @@ private func axuielement_isValid(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 ///
 /// Returns:
 ///  * the process ID for the application to which the accessibility object ultimately belongs or nil and an error string if an accessibility error occurred
-private func axuielement_getPid(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func axuielement_getPid(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let theRef = get_axuielementref(L, 1, USERDATA_TAG)
     var thePid: pid_t = 0
@@ -496,7 +497,7 @@ private func axuielement_getPid(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 ///
 /// Notes:
 ///  * The return value only suggests success or failure, but is not a guarantee.  The receiving application may have internal logic which prevents the action from occurring at this time for some reason, even though this method returns success (the axuielementObject).  Contrawise, the requested action may trigger a requirement for a response from the user and thus appear to time out, causing this method to return false or nil.
-private func axuielement_performAction(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func axuielement_performAction(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     luaL_checktype(L, 2, LUA_TSTRING)
@@ -539,7 +540,7 @@ private func axuielement_performAction(_ L: UnsafeMutablePointer<lua_State>!) ->
 ///  * This function does hit-testing based on window z-order (that is, layering). If one window is on top of another window, the returned accessibility object comes from whichever window is topmost at the specified location.
 ///  * If this method is called on an axuielementObject representing an application, the search is restricted to the application.
 ///  * If this method is called on an axuielementObject representing the system-wide element, the search is not restricted to any particular application.  See [hs.axuielement.systemElementAtPosition](#systemElementAtPosition).
-private func axuielement_getElementAtPosition(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func axuielement_getElementAtPosition(_ L: LuaState) throws -> CInt {
     let theRef = get_axuielementref(L, 1, USERDATA_TAG)
     var returnCount: Int32 = 1
     if isApplicationOrSystem(theRef) {
@@ -553,7 +554,7 @@ private func axuielement_getElementAtPosition(_ L: UnsafeMutablePointer<lua_Stat
             x = Float(lua_tonumber(L, 2))
             y = Float(lua_tonumber(L, 3))
         } else {
-            return luaL_error(L, "point table or x and y as numbers expected")
+            throw LuaCallError("point table or x and y as numbers expected")
         }
         var value: AXUIElement?
         let errorState = AXUIElementCopyElementAtPosition(theRef, x, y, &value)
@@ -564,7 +565,7 @@ private func axuielement_getElementAtPosition(_ L: UnsafeMutablePointer<lua_Stat
             returnCount += 1
         }
     } else {
-        return luaL_error(L, "must be application or systemWide element")
+        throw LuaCallError("must be application or systemWide element")
     }
     return returnCount
 }
@@ -582,7 +583,7 @@ private func axuielement_getElementAtPosition(_ L: UnsafeMutablePointer<lua_Stat
 ///
 /// Notes:
 ///  * The specific parameter required for a each parameterized attribute is different and is often application specific thus requiring some experimentation. Notes regarding identified parameter types and thoughts on some still being investigated will be provided in the Cosmic Hammer Wiki, hopefully shortly after this module becomes part of a Cosmic Hammer release.
-private func axuielement_getParameterizedAttributeValue(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func axuielement_getParameterizedAttributeValue(_ L: LuaState) throws -> CInt {
     let theRef = get_axuielementref(L, 1, USERDATA_TAG)
     let attribute = lua_tovalue(L, at: 2) as! NSString
     let parameter = lua_toCFType(L, 3)
@@ -610,7 +611,7 @@ private func axuielement_getParameterizedAttributeValue(_ L: UnsafeMutablePointe
 ///
 /// Returns:
 ///  * the axuielementObject on success; nil and an error string if the attribute could not be set or an accessibility error occurred.
-private func axuielement_setAttributeValue(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func axuielement_setAttributeValue(_ L: LuaState) throws -> CInt {
     let theRef = get_axuielementref(L, 1, USERDATA_TAG)
     let attribute = lua_tovalue(L, at: 2) as! NSString
     let value = lua_toCFType(L, 3)
@@ -637,7 +638,7 @@ private func axuielement_setAttributeValue(_ L: UnsafeMutablePointer<lua_State>!
 ///
 /// Notes:
 ///  * An element is considered an application by this method if it has an AXRole of AXApplication and has a process identifier (pid).
-private func axuielement_toHSApplication(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func axuielement_toHSApplication(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let theRef = get_axuielementref(L, 1, USERDATA_TAG)
     var value: CFTypeRef?
@@ -671,7 +672,7 @@ private func axuielement_toHSApplication(_ L: UnsafeMutablePointer<lua_State>!) 
 ///
 /// Notes:
 ///  * An element is considered a window by this method if it has an AXRole of AXWindow.
-private func axuielement_toHSWindow(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func axuielement_toHSWindow(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let theRef = get_axuielementref(L, 1, USERDATA_TAG)
     var value: CFTypeRef?
@@ -702,7 +703,7 @@ private func axuielement_toHSWindow(_ L: UnsafeMutablePointer<lua_State>!) -> In
 ///  * To change the global timeout affecting all queries on elements which do not have a specific timeout set, use this method on the systemwide element (see [hs.axuielement.systemWideElement](#systemWideElement).
 ///  * Changing the timeout value for an axuielement object only changes the value for that specific element -- other axuieleement objects that may refer to the identical accessibility item are not affected.
 ///  * Setting the value to 0.0 resets the timeout -- if applied to the `systemWideElement`, the global default will be reset to its default value; if applied to another axuielement object, the timeout will be reset to the current global value as applied to the systemWideElement.
-private func axuielement_setTimeout(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func axuielement_setTimeout(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     luaL_checktype(L, 2, LUA_TNUMBER)
@@ -1151,7 +1152,7 @@ private func axuielement_pushUnitsTable(_ L: UnsafeMutablePointer<lua_State>!) -
 
 // MARK: - Cosmic Hammer/Lua Infrastructure
 
-private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func userdata_tostring(_ L: LuaState) throws -> CInt {
     let theRef = get_axuielementref(L, 1, USERDATA_TAG)
     var value: CFTypeRef?
     let errorState = AXUIElementCopyAttributeValue(theRef, "AXRole" as CFString, &value)
@@ -1171,92 +1172,72 @@ private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 1
 }
 
-private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func userdata_gc(_ L: LuaState) throws -> CInt {
     let _ = get_axuielementref(L, 1, USERDATA_TAG)
     lua_pushnil(L)
     lua_setmetatable(L, 1)
     return 0
 }
 
-private func userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func userdata_eq(_ L: LuaState) throws -> CInt {
     let theRef1 = get_axuielementref(L, 1, USERDATA_TAG)
     let theRef2 = get_axuielementref(L, 2, USERDATA_TAG)
     lua_pushboolean(L, CFEqual(theRef1, theRef2) ? 1 : 0)
     return 1
 }
 
-// Metatable for userdata objects
-private var userdata_metaLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("attributeNames"),              func: axuielement_getAttributeNames),
-    luaL_Reg(name: strdup("allAttributeValues"),          func: axuielement_getAllAttributeValues),
-    luaL_Reg(name: strdup("parameterizedAttributeNames"), func: axuielement_getParameterizedAttributeNames),
-    luaL_Reg(name: strdup("actionNames"),                 func: axuielement_getActionNames),
-    luaL_Reg(name: strdup("actionDescription"),           func: axuielement_getActionDescription),
-    luaL_Reg(name: strdup("attributeValue"),              func: axuielement_getAttributeValue),
-    luaL_Reg(name: strdup("parameterizedAttributeValue"), func: axuielement_getParameterizedAttributeValue),
-    luaL_Reg(name: strdup("attributeValueCount"),         func: axuielement_getAttributeValueCount),
-    luaL_Reg(name: strdup("isAttributeSettable"),         func: axuielement_isAttributeSettable),
-    luaL_Reg(name: strdup("pid"),                         func: axuielement_getPid),
-    luaL_Reg(name: strdup("performAction"),               func: axuielement_performAction),
-    luaL_Reg(name: strdup("elementAtPosition"),           func: axuielement_getElementAtPosition),
-    luaL_Reg(name: strdup("setAttributeValue"),           func: axuielement_setAttributeValue),
-    luaL_Reg(name: strdup("asHSWindow"),                  func: axuielement_toHSWindow),
-    luaL_Reg(name: strdup("asHSApplication"),             func: axuielement_toHSApplication),
-    luaL_Reg(name: strdup("copy"),                        func: axuielement_duplicateReference),
-    luaL_Reg(name: strdup("setTimeout"),                  func: axuielement_setTimeout),
-    luaL_Reg(name: strdup("isValid"),                     func: axuielement_isValid),
-
-    luaL_Reg(name: strdup("__tostring"),                  func: userdata_tostring),
-    luaL_Reg(name: strdup("__eq"),                        func: userdata_eq),
-    luaL_Reg(name: strdup("__gc"),                        func: userdata_gc),
-    luaL_Reg(name: nil,                                   func: nil),
-]
-
-// Functions for returned object when module loads
-private var moduleLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("systemWideElement"),        func: axuielement_getSystemWideElement),
-    luaL_Reg(name: strdup("windowElement"),            func: axuielement_getWindowElement),
-    luaL_Reg(name: strdup("applicationElement"),       func: axuielement_getApplicationElement),
-    luaL_Reg(name: strdup("applicationElementForPID"), func: axuielement_getApplicationElementForPID),
-
-    luaL_Reg(name: nil,                                func: nil),
-]
-
 @_cdecl("luaopen_hs_libaxuielement")
 public func luaopen_hs_libaxuielement(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    // Create ref table in registry
-    lua_newtable(L)
-    refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+    runEntryPoint(L) { L in
+        // Create ref table in registry
+        lua_newtable(L)
+        refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
 
-    // Register userdata metatable
-    luaL_newmetatable(L, USERDATA_TAG)
-    lua_pushvalue(L, -1)
-    lua_setfield(L, -2, "__index")
-    luaL_setfuncs(L, &userdata_metaLib, 0)
-    lua_pop(L, 1)
+        // Register userdata metatable
+        luaL_newmetatable(L, USERDATA_TAG)
+        lua_pushvalue(L, -1)
+        lua_setfield(L, -2, "__index")
+        L.push(axuielement_getAttributeNames);              lua_setfield(L, -2, "attributeNames")
+        L.push(axuielement_getAllAttributeValues);           lua_setfield(L, -2, "allAttributeValues")
+        L.push(axuielement_getParameterizedAttributeNames);  lua_setfield(L, -2, "parameterizedAttributeNames")
+        L.push(axuielement_getActionNames);                  lua_setfield(L, -2, "actionNames")
+        L.push(axuielement_getActionDescription);            lua_setfield(L, -2, "actionDescription")
+        L.push(axuielement_getAttributeValue);               lua_setfield(L, -2, "attributeValue")
+        L.push(axuielement_getParameterizedAttributeValue);  lua_setfield(L, -2, "parameterizedAttributeValue")
+        L.push(axuielement_getAttributeValueCount);          lua_setfield(L, -2, "attributeValueCount")
+        L.push(axuielement_isAttributeSettable);             lua_setfield(L, -2, "isAttributeSettable")
+        L.push(axuielement_getPid);                          lua_setfield(L, -2, "pid")
+        L.push(axuielement_performAction);                   lua_setfield(L, -2, "performAction")
+        L.push(axuielement_getElementAtPosition);            lua_setfield(L, -2, "elementAtPosition")
+        L.push(axuielement_setAttributeValue);               lua_setfield(L, -2, "setAttributeValue")
+        L.push(axuielement_toHSWindow);                      lua_setfield(L, -2, "asHSWindow")
+        L.push(axuielement_toHSApplication);                 lua_setfield(L, -2, "asHSApplication")
+        L.push(axuielement_duplicateReference);              lua_setfield(L, -2, "copy")
+        L.push(axuielement_setTimeout);                      lua_setfield(L, -2, "setTimeout")
+        L.push(axuielement_isValid);                         lua_setfield(L, -2, "isValid")
+        L.push(userdata_tostring);                           lua_setfield(L, -2, "__tostring")
+        L.push(userdata_eq);                                 lua_setfield(L, -2, "__eq")
+        L.push(userdata_gc);                                 lua_setfield(L, -2, "__gc")
+        lua_pop(L, 1)
 
-    // Create module table
-    lua_createtable(L, 0, Int32(moduleLib.count - 1))
-    luaL_setfuncs(L, &moduleLib, 0)
+        // Create module table
+        lua_createtable(L, 0, 4)
+        L.push(axuielement_getSystemWideElement);        lua_setfield(L, -2, "systemWideElement")
+        L.push(axuielement_getWindowElement);            lua_setfield(L, -2, "windowElement")
+        L.push(axuielement_getApplicationElement);       lua_setfield(L, -2, "applicationElement")
+        L.push(axuielement_getApplicationElementForPID); lua_setfield(L, -2, "applicationElementForPID")
 
-    luaopen_hs_libaxuielementobserver(L); lua_setfield(L, -2, "observer")
-    luaopen_hs_axuielement_axtextmarker(L); lua_setfield(L, -2, "axtextmarker")
+        luaopen_hs_libaxuielementobserver(L); lua_setfield(L, -2, "observer")
+        luaopen_hs_axuielement_axtextmarker(L); lua_setfield(L, -2, "axtextmarker")
 
-    // For reference, since the object __init wrapper in init.lua and the keys for elementSearch don't
-    // actually use them in case the user wants to use an Application defined attribute or action not
-    // defined in the OS X headers.
-    axuielement_pushAttributesTable(L);              lua_setfield(L, -2, "attributes")
-    axuielement_pushParameterizedAttributesTable(L); lua_setfield(L, -2, "parameterizedAttributes")
-    axuielement_pushActionsTable(L);                 lua_setfield(L, -2, "actions")
-
-    // ditto on these, since they are actually results, not query-able parameters or actionable
-    // commands; however they can be used with elementSearch as values in the criteria to find such.
-    axuielement_pushRolesTable(L);                   lua_setfield(L, -2, "roles")
-    axuielement_pushSubrolesTable(L);                lua_setfield(L, -2, "subroles")
-    axuielement_pushSortDirectionsTable(L);          lua_setfield(L, -2, "sortDirections")
-    axuielement_pushOrientationsTable(L);            lua_setfield(L, -2, "orientations")
-    axuielement_pushRulerMarkerTypesTable(L);        lua_setfield(L, -2, "rulerMarkers")
-    axuielement_pushUnitsTable(L);                   lua_setfield(L, -2, "units")
-
-    return 1
+        axuielement_pushAttributesTable(L);              lua_setfield(L, -2, "attributes")
+        axuielement_pushParameterizedAttributesTable(L); lua_setfield(L, -2, "parameterizedAttributes")
+        axuielement_pushActionsTable(L);                 lua_setfield(L, -2, "actions")
+        axuielement_pushRolesTable(L);                   lua_setfield(L, -2, "roles")
+        axuielement_pushSubrolesTable(L);                lua_setfield(L, -2, "subroles")
+        axuielement_pushSortDirectionsTable(L);          lua_setfield(L, -2, "sortDirections")
+        axuielement_pushOrientationsTable(L);            lua_setfield(L, -2, "orientations")
+        axuielement_pushRulerMarkerTypesTable(L);        lua_setfield(L, -2, "rulerMarkers")
+        axuielement_pushUnitsTable(L);                   lua_setfield(L, -2, "units")
+    }
 }

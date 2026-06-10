@@ -1,5 +1,6 @@
 import Cocoa
 import CLua
+import Lua
 import os.log
 
 // MARK: - Canvas value conversion
@@ -685,7 +686,7 @@ private func canvas_setMetatableIfAvailable(_ L: UnsafeMutablePointer<lua_State>
 /// hs.canvas.useCustomAccessibilitySubrole([state]) -> boolean
 /// Function
 /// Get or set whether or not canvas objects use a custom accessibility subrole for the containing system window.
-func canvas_useCustomAccessibilitySubrole(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func canvas_useCustomAccessibilitySubrole(_ L: LuaState) throws -> CInt {
     if lua_gettop(L) == 1 {
         canvas_defaultCustomSubRole = lua_toboolean(L, 1) != 0
     }
@@ -696,7 +697,7 @@ func canvas_useCustomAccessibilitySubrole(_ L: UnsafeMutablePointer<lua_State>!)
 /// hs.canvas.new(rect) -> canvasObject
 /// Constructor
 /// Create a new canvas object at the specified coordinates
-func canvas_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func canvas_new(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TTABLE)
 
     let canvasWindow = HSCanvasWindow(contentRect: lua_tableToRect(L, at: 1),
@@ -714,7 +715,7 @@ func canvas_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.canvas.elementSpec() -> table
 /// Function
 /// Returns the list of attributes and their specifications that are recognized for canvas elements by this module.
-func dumpLanguageDictionary(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func dumpLanguageDictionary(_ L: LuaState) throws -> CInt {
     canvas_pushValue(L, canvas_languageDictionary)
     return 1
 }
@@ -722,7 +723,7 @@ func dumpLanguageDictionary(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.canvas.defaultTextStyle() -> `hs.styledtext` attributes table
 /// Function
 /// Returns a table containing the default font, size, color, and paragraphStyle used by `hs.canvas` for text drawing objects.
-func default_textAttributes(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func default_textAttributes(_ L: LuaState) throws -> CInt {
     lua_newtable(L)
     if let fontName = (canvas_languageDictionary["textFont"] as? NSDictionary)?["default"] as? String {
         let size = ((canvas_languageDictionary["textSize"] as? NSDictionary)?["default"] as? NSNumber)?.doubleValue ?? 27.0
@@ -742,7 +743,7 @@ func default_textAttributes(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 // MARK: - Module Methods
 
 /// hs.canvas:draggingCallback(fn) -> canvasObject
-func canvas_draggingCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func canvas_draggingCallback(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, canvas_USERDATA_TAG)
     let canvasView = canvas_toHSCanvasViewFromLua(L, idx: 1) as! HSCanvasView
 
@@ -762,7 +763,7 @@ func canvas_draggingCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 }
 
 /// hs.canvas:_accessibilitySubrole([subrole]) -> canvasObject | current value
-func canvas_accessibilitySubrole(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func canvas_accessibilitySubrole(_ L: LuaState) throws -> CInt {
     let canvasView = canvas_toHSCanvasViewFromLua(L, idx: 1) as! HSCanvasView
     let canvasWindow = canvasView.window as? HSCanvasWindow
 
@@ -776,7 +777,7 @@ func canvas_accessibilitySubrole(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 }
 
 /// hs.canvas:show([fadeInTime]) -> canvasObject
-func canvas_show(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func canvas_show(_ L: LuaState) throws -> CInt {
 
     let canvasView = canvas_toHSCanvasViewFromLua(L, idx: 1) as! HSCanvasView
 
@@ -798,7 +799,7 @@ func canvas_show(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 }
 
 /// hs.canvas:hide([fadeOutTime]) -> canvasObject
-func canvas_hide(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func canvas_hide(_ L: LuaState) throws -> CInt {
 
     let canvasView = canvas_toHSCanvasViewFromLua(L, idx: 1) as! HSCanvasView
     let canvasWindow = canvasView.window as? HSCanvasWindow
@@ -822,7 +823,7 @@ func canvas_hide(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 }
 
 /// hs.canvas:mouseCallback(mouseCallbackFn) -> canvasObject
-func canvas_mouseCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func canvas_mouseCallback(_ L: LuaState) throws -> CInt {
 
     let canvasView = canvas_toHSCanvasViewFromLua(L, idx: 1) as! HSCanvasView
     let canvasWindow = canvasView.wrapperWindow
@@ -845,7 +846,7 @@ func canvas_mouseCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 }
 
 /// hs.canvas:clickActivating([flag]) -> canvasObject | currentValue
-func canvas_clickActivating(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func canvas_clickActivating(_ L: LuaState) throws -> CInt {
 
     let canvasView = canvas_toHSCanvasViewFromLua(L, idx: 1) as! HSCanvasView
     let canvasWindow = canvasView.wrapperWindow!
@@ -865,7 +866,7 @@ func canvas_clickActivating(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 }
 
 /// hs.canvas:canvasMouseEvents([down], [up], [enterExit], [move]) -> canvasObject | current values
-func canvas_canvasMouseEvents(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func canvas_canvasMouseEvents(_ L: LuaState) throws -> CInt {
 
     let canvasView = canvas_toHSCanvasViewFromLua(L, idx: 1) as! HSCanvasView
 
@@ -887,7 +888,7 @@ func canvas_canvasMouseEvents(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 }
 
 /// hs.canvas:topLeft([point]) -> canvasObject | currentValue
-func canvas_topLeft(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func canvas_topLeft(_ L: LuaState) throws -> CInt {
 
     let canvasView = canvas_toHSCanvasViewFromLua(L, idx: 1) as! HSCanvasView
     if canvas_parentIsWindow(canvasView) {
@@ -909,7 +910,7 @@ func canvas_topLeft(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 }
 
 /// hs.canvas:imageFromCanvas() -> hs.image object
-func canvas_canvasAsImage(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func canvas_canvasAsImage(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, canvas_USERDATA_TAG)
 
     let canvasView = canvas_toHSCanvasViewFromLua(L, idx: 1) as! HSCanvasView
@@ -919,7 +920,7 @@ func canvas_canvasAsImage(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 }
 
 /// hs.canvas:size([size]) -> canvasObject | currentValue
-func canvas_size(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func canvas_size(_ L: LuaState) throws -> CInt {
 
     let canvasView = canvas_toHSCanvasViewFromLua(L, idx: 1) as! HSCanvasView
     if canvas_parentIsWindow(canvasView) {
@@ -989,7 +990,7 @@ func canvas_size(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 }
 
 /// hs.canvas:alpha([alpha]) -> canvasObject | currentValue
-func canvas_alpha(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func canvas_alpha(_ L: LuaState) throws -> CInt {
 
     let canvasView = canvas_toHSCanvasViewFromLua(L, idx: 1) as! HSCanvasView
     let canvasWindow = canvasView.window as? HSCanvasWindow
@@ -1015,17 +1016,17 @@ func canvas_alpha(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 }
 
 /// hs.canvas:orderAbove([canvas2]) -> canvasObject
-func canvas_orderAbove(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func canvas_orderAbove(_ L: LuaState) throws -> CInt {
     return canvas_orderHelper(L, mode: .above)
 }
 
 /// hs.canvas:orderBelow([canvas2]) -> canvasObject
-func canvas_orderBelow(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func canvas_orderBelow(_ L: LuaState) throws -> CInt {
     return canvas_orderHelper(L, mode: .below)
 }
 
 /// hs.canvas:level([level]) -> canvasObject | currentValue
-func canvas_level(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func canvas_level(_ L: LuaState) throws -> CInt {
 
     let canvasView = canvas_toHSCanvasViewFromLua(L, idx: 1) as! HSCanvasView
     if canvas_parentIsWindow(canvasView) {
@@ -1062,7 +1063,7 @@ func canvas_level(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 }
 
 /// hs.canvas:wantsLayer([flag]) -> canvasObject | currentValue
-func canvas_wantsLayer(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func canvas_wantsLayer(_ L: LuaState) throws -> CInt {
 
     let canvasView = canvas_toHSCanvasViewFromLua(L, idx: 1) as! HSCanvasView
 
@@ -1077,7 +1078,7 @@ func canvas_wantsLayer(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 1
 }
 
-func canvas_behavior(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func canvas_behavior(_ L: LuaState) throws -> CInt {
 
     let canvasView = canvas_toHSCanvasViewFromLua(L, idx: 1) as! HSCanvasView
     if canvas_parentIsWindow(canvasView) {
@@ -1098,9 +1099,9 @@ func canvas_behavior(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 }
 
 /// hs.canvas:delete([fadeOutTime]) -> none
-func canvas_delete(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func canvas_delete(_ L: LuaState) throws -> CInt {
 
-    canvas_hide(L)
+    _ = try canvas_hide(L)
     lua_pop(L, 1) // remove userdata pushed by hide
 
     lua_pushnil(L)
@@ -1108,7 +1109,7 @@ func canvas_delete(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 }
 
 /// hs.canvas:isShowing() -> boolean
-func canvas_isShowing(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func canvas_isShowing(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, canvas_USERDATA_TAG)
 
     let canvasView = canvas_toHSCanvasViewFromLua(L, idx: 1) as! HSCanvasView
@@ -1122,7 +1123,7 @@ func canvas_isShowing(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 }
 
 /// hs.canvas:isOccluded() -> boolean
-func canvas_isOccluded(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func canvas_isOccluded(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, canvas_USERDATA_TAG)
 
     let canvasView = canvas_toHSCanvasViewFromLua(L, idx: 1) as! HSCanvasView
@@ -1138,7 +1139,7 @@ func canvas_isOccluded(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 }
 
 /// hs.canvas:transformation([matrix]) -> canvasObject | current value
-func canvas_canvasTransformation(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func canvas_canvasTransformation(_ L: LuaState) throws -> CInt {
     let canvasView = canvas_toHSCanvasViewFromLua(L, idx: 1) as! HSCanvasView
 
     if lua_gettop(L) == 1 {
@@ -1156,7 +1157,7 @@ func canvas_canvasTransformation(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 }
 
 /// hs.canvas:elementCount() -> integer
-func canvas_elementCount(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func canvas_elementCount(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, canvas_USERDATA_TAG)
     let canvasView = canvas_toHSCanvasViewFromLua(L, idx: 1) as! HSCanvasView
     lua_pushinteger(L, lua_Integer(canvasView.elementList.count))
@@ -1164,7 +1165,7 @@ func canvas_elementCount(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 }
 
 /// hs.canvas:minimumTextSize([index], text) -> table
-func canvas_getTextElementSize(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func canvas_getTextElementSize(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, canvas_USERDATA_TAG)
     let canvasView = canvas_toHSCanvasViewFromLua(L, idx: 1) as! HSCanvasView
     var textIndex: Int32 = 2
@@ -1216,7 +1217,7 @@ func canvas_getTextElementSize(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 }
 
 /// hs.canvas:canvasDefaultFor(keyName, [newValue]) -> canvasObject | currentValue
-func canvas_canvasDefaultFor(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func canvas_canvasDefaultFor(_ L: LuaState) throws -> CInt {
 
     let canvasView = canvas_toHSCanvasViewFromLua(L, idx: 1) as! HSCanvasView
     let keyName = lua_tovalue(L, at: 2) as! String
@@ -1251,7 +1252,7 @@ func canvas_canvasDefaultFor(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 }
 
 /// hs.canvas:insertElement(elementTable, [index]) -> canvasObject
-func canvas_insertElementAtIndex(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func canvas_insertElementAtIndex(_ L: LuaState) throws -> CInt {
     let canvasView = canvas_toHSCanvasViewFromLua(L, idx: 1) as! HSCanvasView
     let elementCount = canvasView.elementList.count
     let tablePosition = (lua_gettop(L) == 3) ? Int(lua_tointeger(L, 3)) - 1 : elementCount
@@ -1282,7 +1283,7 @@ func canvas_insertElementAtIndex(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 }
 
 /// hs.canvas:removeElement([index]) -> canvasObject
-func canvas_removeElementAtIndex(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func canvas_removeElementAtIndex(_ L: LuaState) throws -> CInt {
     let canvasView = canvas_toHSCanvasViewFromLua(L, idx: 1) as! HSCanvasView
     let elementCount = canvasView.elementList.count
     let tablePosition = (lua_gettop(L) == 2) ? Int(lua_tointeger(L, 2)) - 1 : elementCount - 1
@@ -1304,7 +1305,7 @@ func canvas_removeElementAtIndex(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 }
 
 /// hs.canvas:elementAttribute(index, key, [value]) -> canvasObject | current value
-func canvas_elementAttributeAtIndex(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func canvas_elementAttributeAtIndex(_ L: LuaState) throws -> CInt {
     let canvasView = canvas_toHSCanvasViewFromLua(L, idx: 1) as! HSCanvasView
     var keyName = lua_tovalue(L, at: 3) as! String
 
@@ -1353,7 +1354,7 @@ func canvas_elementAttributeAtIndex(_ L: UnsafeMutablePointer<lua_State>!) -> In
 }
 
 /// hs.canvas:elementKeys(index, [optional]) -> table
-func canvas_elementKeysAtIndex(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func canvas_elementKeysAtIndex(_ L: LuaState) throws -> CInt {
     let canvasView = canvas_toHSCanvasViewFromLua(L, idx: 1) as! HSCanvasView
     let elementCount = canvasView.elementList.count
     let tablePosition = Int(lua_tointeger(L, 2)) - 1
@@ -1376,7 +1377,7 @@ func canvas_elementKeysAtIndex(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 }
 
 /// hs.canvas:canvasDefaults([module]) -> table
-func canvas_canvasDefaults(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func canvas_canvasDefaults(_ L: LuaState) throws -> CInt {
     let canvasView = canvas_toHSCanvasViewFromLua(L, idx: 1) as! HSCanvasView
 
     if lua_gettop(L) == 2 && lua_toboolean(L, 2) != 0 {
@@ -1394,7 +1395,7 @@ func canvas_canvasDefaults(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 }
 
 /// hs.canvas:canvasDefaultKeys([module]) -> table
-func canvas_canvasDefaultKeys(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func canvas_canvasDefaultKeys(_ L: LuaState) throws -> CInt {
     let canvasView = canvas_toHSCanvasViewFromLua(L, idx: 1) as! HSCanvasView
 
     let list = NSMutableSet(array: canvasView.canvasDefaults.allKeys)
@@ -1410,7 +1411,7 @@ func canvas_canvasDefaultKeys(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 }
 
 /// hs.canvas:canvasElements() -> table
-func canvas_canvasElements(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func canvas_canvasElements(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, canvas_USERDATA_TAG)
     let canvasView = canvas_toHSCanvasViewFromLua(L, idx: 1) as! HSCanvasView
     canvas_pushValue(L, canvasView.elementList)
@@ -1418,7 +1419,7 @@ func canvas_canvasElements(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 }
 
 /// hs.canvas:elementBounds(index) -> rectTable
-func canvas_elementBoundsAtIndex(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func canvas_elementBoundsAtIndex(_ L: LuaState) throws -> CInt {
     let canvasView = canvas_toHSCanvasViewFromLua(L, idx: 1) as! HSCanvasView
 
     let elementCount = canvasView.elementList.count
@@ -1454,7 +1455,7 @@ func canvas_elementBoundsAtIndex(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 }
 
 /// hs.canvas:assignElement(elementTable, [index]) -> canvasObject
-func canvas_assignElementAtIndex(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func canvas_assignElementAtIndex(_ L: LuaState) throws -> CInt {
     let canvasView = canvas_toHSCanvasViewFromLua(L, idx: 1) as! HSCanvasView
 
     let elementCount = canvasView.elementList.count

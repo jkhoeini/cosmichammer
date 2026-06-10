@@ -1,5 +1,6 @@
 import Cocoa
 import CLua
+import Lua
 import os.log
 
 // NSUserNotification and its relations are deprecated but we're not ready to switch quite yet...
@@ -160,7 +161,7 @@ func nt_pushNotificationArray(_ L: UnsafeMutablePointer<lua_State>!, _ notificat
 ///
 /// Notes:
 ///  * This will withdraw all notifications for Cosmic Hammer, including those not sent by this module or that linger from a previous load of Cosmic Hammer.
-let notification_withdraw_all: lua_CFunction = { L in
+private func notification_withdraw_all(_ L: LuaState) throws -> CInt {
     NSUserNotificationCenter.default.removeAllDeliveredNotifications()
     return 0
 }
@@ -174,7 +175,7 @@ let notification_withdraw_all: lua_CFunction = { L in
 ///
 /// Returns:
 ///  * None
-let notification_withdraw_allScheduled: lua_CFunction = { L in
+private func notification_withdraw_allScheduled(_ L: LuaState) throws -> CInt {
     NSUserNotificationCenter.default.scheduledNotifications = []
     return 0
 }
@@ -209,7 +210,7 @@ let notification_withdraw_allScheduled: lua_CFunction = { L in
 ///     end
 /// end)
 /// ~~~
-let notification_deliveredNotifications: lua_CFunction = { L in
+private func notification_deliveredNotifications(_ L: LuaState) throws -> CInt {
     let deliveredNotifications = NSUserNotificationCenter.default.deliveredNotifications
 
     nt_pushNotificationArray(L, deliveredNotifications)
@@ -238,7 +239,7 @@ let notification_deliveredNotifications: lua_CFunction = { L in
 ///  * Once a notification has been delivered, it is moved to [hs.notify.deliveredNotifications](#deliveredNotifications) or removed, depending upon the users action.
 ///
 ///  * You can use this function along with [hs.notify:getFunctionTag](#getFunctionTag) to re=register necessary callback functions with [hs.notify.register](#register) when Cosmic Hammer is restarted.
-let notification_scheduledNotifications: lua_CFunction = { L in
+private func notification_scheduledNotifications(_ L: LuaState) throws -> CInt {
     nt_pushNotificationArray(L, NSUserNotificationCenter.default.scheduledNotifications)
     return 1
 }
@@ -247,7 +248,7 @@ let notification_scheduledNotifications: lua_CFunction = { L in
 // hs.notify._new(fntag) -> notificationObject
 // Constructor
 // Returns a new notification object with the specified information and the assigned callback function.
-let notification_new: lua_CFunction = { L in
+private func notification_new(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TSTRING)
     let gus = ProcessInfo.processInfo.globallyUniqueString
 
@@ -343,7 +344,7 @@ func nt_toNSUserNotificationFromLua(_ L: UnsafeMutablePointer<lua_State>!, _ idx
 
 // MARK: - Cosmic Hammer/Lua Infrastructure
 
-let nt_userdata_tostring: lua_CFunction = { L in
+private func nt_userdata_tostring(_ L: LuaState) throws -> CInt {
     let obj = nt_getNotification(L, 1)
     let title = obj.title ?? ""
     let ptr = lua_topointer(L, 1)
@@ -351,7 +352,7 @@ let nt_userdata_tostring: lua_CFunction = { L in
     return 1
 }
 
-let nt_userdata_eq: lua_CFunction = { L in
+private func nt_userdata_eq(_ L: LuaState) throws -> CInt {
     // can't get here if at least one of us isn't a userdata type, and we only care if both types are ours,
     // so use luaL_testudata before the macro causes a lua error
     if luaL_testudata(L, 1, nt_USERDATA_TAG) != nil && luaL_testudata(L, 2, nt_USERDATA_TAG) != nil {
@@ -364,7 +365,7 @@ let nt_userdata_eq: lua_CFunction = { L in
     return 1
 }
 
-let nt_userdata_gc: lua_CFunction = { L in
+func nt_userdata_gc(_ L: LuaState) throws -> CInt {
     let ptr = luaL_checkudata(L, 1, nt_USERDATA_TAG)!
         .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
     if let rawPtr = ptr.pointee {
@@ -393,7 +394,7 @@ let nt_userdata_gc: lua_CFunction = { L in
 }
 
 // Metamethods for the module
-let nt_meta_gc: lua_CFunction = { _ in
+private func nt_meta_gc(_ L: LuaState) throws -> CInt {
     NSUserNotificationCenter.default.delegate = nt_old_delegate
     if nt_specifics != nil {
         nt_specifics.removeAllObjects()
@@ -425,103 +426,81 @@ func nt_debugHasSpecificsRecord(_ gus: String) -> Bool {
 @MainActor
 func nt_debugCleanupModule(_ L: UnsafeMutablePointer<lua_State>!) {
     if nt_specifics != nil {
-        _ = nt_meta_gc(L)
+        _ = try? nt_meta_gc(L)
     }
 }
 #endif
 
-// Metatable for userdata objects
-private var userdata_metaLib: [luaL_Reg] = {
-    var lib: [luaL_Reg] = [
-        luaL_Reg(name: strdup("send"),                        func: notification_send),
-        luaL_Reg(name: strdup("schedule"),                    func: notification_scheduleNotification),
-        luaL_Reg(name: strdup("withdraw"),                    func: notification_withdraw),
-        luaL_Reg(name: strdup("title"),                       func: notification_title),
-        luaL_Reg(name: strdup("subTitle"),                    func: notification_subtitle),
-        luaL_Reg(name: strdup("informativeText"),             func: notification_informativeText),
-        luaL_Reg(name: strdup("actionButtonTitle"),           func: notification_actionButtonTitle),
-        luaL_Reg(name: strdup("otherButtonTitle"),            func: notification_otherButtonTitle),
-        luaL_Reg(name: strdup("hasActionButton"),             func: notification_hasActionButton),
-        luaL_Reg(name: strdup("soundName"),                   func: notification_soundName),
-        luaL_Reg(name: strdup("alwaysPresent"),               func: notification_alwaysPresent),
-        luaL_Reg(name: strdup("autoWithdraw"),                func: notification_autoWithdraw),
-        luaL_Reg(name: strdup("_contentImage"),               func: notification_contentImage),
-        luaL_Reg(name: strdup("_setIdImage"),                 func: notification_setIdImage),
-        luaL_Reg(name: strdup("getFunctionTag"),              func: notification_getFunctionTag),
-        luaL_Reg(name: strdup("presented"),                   func: notification_presented),
-        luaL_Reg(name: strdup("delivered"),                   func: notification_delivered),
-        luaL_Reg(name: strdup("activationType"),              func: notification_activationType),
-        luaL_Reg(name: strdup("actualDeliveryDate"),          func: notification_actualDeliveryDate),
-
-        luaL_Reg(name: strdup("responsePlaceholder"),         func: notification_responsePlaceholder),
-        luaL_Reg(name: strdup("hasReplyButton"),              func: notification_hasReplyButton),
-        luaL_Reg(name: strdup("additionalActions"),           func: notification_additionalActions),
-        luaL_Reg(name: strdup("response"),                    func: notification_response),
-        luaL_Reg(name: strdup("additionalActivationAction"),  func: notification_additionalActivationAction),
-        luaL_Reg(name: strdup("alwaysShowAdditionalActions"), func: notification_alwaysShowAdditionalActions),
-        luaL_Reg(name: strdup("withdrawAfter"),               func: notification_withdrawAfter),
-    ]
-    #if DEBUG
-    lib.append(luaL_Reg(name: strdup("showMyDict"), func: showMyDict))
-    #endif
-    lib.append(contentsOf: [
-        luaL_Reg(name: strdup("__tostring"),          func: nt_userdata_tostring),
-        luaL_Reg(name: strdup("__eq"),                func: nt_userdata_eq),
-        luaL_Reg(name: strdup("__gc"),                func: nt_userdata_gc),
-        luaL_Reg(name: nil,                           func: nil),
-    ])
-    return lib
-}()
-
-// Functions for returned object when module loads
-private var moduleLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("_new"),                   func: notification_new),
-    luaL_Reg(name: strdup("withdrawAll"),            func: notification_withdraw_all),
-    luaL_Reg(name: strdup("withdrawAllScheduled"),   func: notification_withdraw_allScheduled),
-    luaL_Reg(name: strdup("deliveredNotifications"), func: notification_deliveredNotifications),
-    luaL_Reg(name: strdup("scheduledNotifications"), func: notification_scheduledNotifications),
-    luaL_Reg(name: nil,                              func: nil),
-]
-
-// Metatable for module, if needed
-private var module_metaLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("__gc"), func: nt_meta_gc),
-    luaL_Reg(name: nil,            func: nil),
-]
-
 @_cdecl("luaopen_hs_libnotify")
 public func luaopen_hs_libnotify(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    // Create ref table in registry
-    lua_newtable(L)
-    nt_refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+    runEntryPoint(L) { L in
+        // Create ref table in registry
+        lua_newtable(L)
+        nt_refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
 
-    // Register userdata metatable
-    luaL_newmetatable(L, nt_USERDATA_TAG)
-    lua_pushvalue(L, -1)
-    lua_setfield(L, -2, "__index")
-    luaL_setfuncs(L, &userdata_metaLib, 0)
-    lua_pop(L, 1)
+        // Register userdata metatable
+        luaL_newmetatable(L, nt_USERDATA_TAG)
+        lua_pushvalue(L, -1)
+        lua_setfield(L, -2, "__index")
 
-    // Create module table
-    lua_createtable(L, 0, Int32(moduleLib.count - 1))
-    luaL_setfuncs(L, &moduleLib, 0)
+        L.push(notification_send);                        lua_setfield(L, -2, "send")
+        L.push(notification_scheduleNotification);        lua_setfield(L, -2, "schedule")
+        L.push(notification_withdraw);                    lua_setfield(L, -2, "withdraw")
+        L.push(notification_title);                       lua_setfield(L, -2, "title")
+        L.push(notification_subtitle);                    lua_setfield(L, -2, "subTitle")
+        L.push(notification_informativeText);             lua_setfield(L, -2, "informativeText")
+        L.push(notification_actionButtonTitle);           lua_setfield(L, -2, "actionButtonTitle")
+        L.push(notification_otherButtonTitle);            lua_setfield(L, -2, "otherButtonTitle")
+        L.push(notification_hasActionButton);             lua_setfield(L, -2, "hasActionButton")
+        L.push(notification_soundName);                   lua_setfield(L, -2, "soundName")
+        L.push(notification_alwaysPresent);               lua_setfield(L, -2, "alwaysPresent")
+        L.push(notification_autoWithdraw);                lua_setfield(L, -2, "autoWithdraw")
+        L.push(notification_contentImage);                lua_setfield(L, -2, "_contentImage")
+        L.push(notification_setIdImage);                  lua_setfield(L, -2, "_setIdImage")
+        L.push(notification_getFunctionTag);              lua_setfield(L, -2, "getFunctionTag")
+        L.push(notification_presented);                   lua_setfield(L, -2, "presented")
+        L.push(notification_delivered);                   lua_setfield(L, -2, "delivered")
+        L.push(notification_activationType);              lua_setfield(L, -2, "activationType")
+        L.push(notification_actualDeliveryDate);          lua_setfield(L, -2, "actualDeliveryDate")
+        L.push(notification_responsePlaceholder);         lua_setfield(L, -2, "responsePlaceholder")
+        L.push(notification_hasReplyButton);              lua_setfield(L, -2, "hasReplyButton")
+        L.push(notification_additionalActions);           lua_setfield(L, -2, "additionalActions")
+        L.push(notification_response);                    lua_setfield(L, -2, "response")
+        L.push(notification_additionalActivationAction);  lua_setfield(L, -2, "additionalActivationAction")
+        L.push(notification_alwaysShowAdditionalActions); lua_setfield(L, -2, "alwaysShowAdditionalActions")
+        L.push(notification_withdrawAfter);               lua_setfield(L, -2, "withdrawAfter")
+        #if DEBUG
+        L.push(showMyDict);                               lua_setfield(L, -2, "showMyDict")
+        #endif
+        L.push(nt_userdata_tostring);                     lua_setfield(L, -2, "__tostring")
+        L.push(nt_userdata_eq);                           lua_setfield(L, -2, "__eq")
+        L.push(nt_userdata_gc);                           lua_setfield(L, -2, "__gc")
 
-    // Set module metatable (for __gc)
-    lua_createtable(L, 0, Int32(module_metaLib.count - 1))
-    luaL_setfuncs(L, &module_metaLib, 0)
-    lua_setmetatable(L, -2)
+        lua_pop(L, 1)
 
-    _ = nt_activationTypesTable(L)
-    lua_setfield(L, -2, "activationTypes")
+        // Create module table
+        lua_createtable(L, 0, 5)
+        L.push(notification_new);                    lua_setfield(L, -2, "_new")
+        L.push(notification_withdraw_all);           lua_setfield(L, -2, "withdrawAll")
+        L.push(notification_withdraw_allScheduled);  lua_setfield(L, -2, "withdrawAllScheduled")
+        L.push(notification_deliveredNotifications); lua_setfield(L, -2, "deliveredNotifications")
+        L.push(notification_scheduledNotifications); lua_setfield(L, -2, "scheduledNotifications")
 
-/// hs.notify.defaultNotificationSound
-/// Constant
-/// The string representation of the default notification sound. Use `hs.notify:soundName()` or set the `soundName` attribute in `hs:notify.new()`, to this constant, if you want to use the default sound
-    lua_pushstring(L, NSUserNotificationDefaultSoundName)
-    lua_setfield(L, -2, "defaultNotificationSound")
+        // Set module metatable (for __gc)
+        lua_createtable(L, 0, 1)
+        L.push(nt_meta_gc); lua_setfield(L, -2, "__gc")
+        lua_setmetatable(L, -2)
 
-    nt_delegate_setup()
-    nt_specifics = NSMutableDictionary()
+        _ = nt_activationTypesTable(L)
+        lua_setfield(L, -2, "activationTypes")
 
-    return 1
+    /// hs.notify.defaultNotificationSound
+    /// Constant
+    /// The string representation of the default notification sound. Use `hs.notify:soundName()` or set the `soundName` attribute in `hs:notify.new()`, to this constant, if you want to use the default sound
+        lua_pushstring(L, NSUserNotificationDefaultSoundName)
+        lua_setfield(L, -2, "defaultNotificationSound")
+
+        nt_delegate_setup()
+        nt_specifics = NSMutableDictionary()
+    }
 }

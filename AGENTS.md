@@ -1,6 +1,6 @@
 # AGENTS.md
 
-This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
+This file is the canonical agent-guidance doc for this repository; `CLAUDE.md` is a symlink to it. It provides guidance to coding agents (Claude Code, OpenAI Codex, and similar) when working with code in this repository.
 
 ## Version control
 
@@ -32,7 +32,7 @@ To run a single test suite, use `swift test --filter <SuiteName>` (with the priv
 
 Cosmic Hammer is a Lua scripting host for macOS. Three logical layers:
 
-1. **LuaSkin** (`Sources/LuaSkin/`) — Lua 5.4 C runtime + Objective-C bridge.
+1. **Lua runtime + LuaSkin-compat bridge** — Lua 5.4 (PUC-Rio C) is vendored via the `tomsci/LuaSwift` SwiftPM dependency (the `Lua` / `CLua` products in `Package.swift`). There is **no** `Sources/LuaSkin/` directory and no Objective-C LuaSkin class anymore; the legacy LuaSkin API is reimplemented in Swift (`Sources/HSSwiftExtensions/LuaSkinCompatibility.swift`, `LuaHelpers.swift`), which call the Lua C API directly through `CLua`.
 2. **Core app** (`CosmicHammer/` for resources, `Sources/HSExtensions/CosmicHammer/` for ObjC headers, `Sources/HSSwiftExtensions/{AppDelegate,LuaRuntime,ConsoleWindowController,DockIcon,PreferencesWindowController,MenuIcon,ConfigUtils,VersionUtils}.swift` for Swift) — The `Cosmic Hammer.app` AppKit shell. `AppDelegate.swift` boots the runtime; `LuaRuntime.swift` owns the `lua_State`, sets up `package.path`/`package.cpath`, and bootstraps `setup.lua` → `extensions/_coresetup/_coresetup.lua` → user `init.lua`.
 3. **Extensions** (`extensions/<name>/`) — 90+ extensions exposing system APIs to Lua. Each is a folder with a `<name>.lua` (stays in `extensions/`). Compiled Swift sources live in `Sources/HSSwiftExtensions/`, and C/ObjC sources live in `Sources/HSExtensions/<name>/`. They are **statically linked** into the app, not as separate dylibs.
 
@@ -41,9 +41,9 @@ Cosmic Hammer is a Lua scripting host for macOS. Three logical layers:
 All SPM code lives in a single root-level `Package.swift` with standard `Sources/<TargetName>/` layout:
 
 ```
-Package.swift              — root-level manifest
+Package.swift              — root-level manifest (Lua 5.4 comes from the
+                             tomsci/LuaSwift dependency — the `Lua`/`CLua` products)
 Sources/
-  LuaSkin/                 — Lua 5.4 + ObjC bridge
   HSExtensions/            — ObjC/C/C++ extension + core app code
     include/               — public headers (generated glue)
     CosmicHammer/          — core app ObjC headers
@@ -65,7 +65,7 @@ Key pieces of this model — preserve them when adding extensions:
   - `Sources/HSExtensions/include/HSExtensions/HSExtensions+Preload.h` (forward decls),
   - `Sources/HSSwiftExtensions/HSExtensionsGenerated.swift` (`HSExtensionsRegisterAll(L)` — registers each entry into `package.preload`).
 - `LuaRuntime.swift` calls `HSExtensionsRegisterAll(L)` once between creating the global `hs` table and loading `setup.lua`. Because Lua resolves `package.preload[name]` **before** `package.cpath`, no dylib lookup is needed.
-- `lsqlite3.c` is compiled as Objective-C via `Sources/HSExtensions/lsqlite3_wrapper.m` that `#include`s `sqlite3/lsqlite3.c`. Do not rename either file without updating the shim.
+- The `sqlite3` extension is now implemented in Swift (`Sources/HSSwiftExtensions/SQLite3Module.swift`; preload entry `luaopen_hs_liblsqlite3`, exposed to Lua as `hs.sqlite3` per `extensions.manifest`). The former `lsqlite3.c` / `lsqlite3_wrapper.m` Objective-C shim no longer exists.
 
 ### Adding a new extension
 

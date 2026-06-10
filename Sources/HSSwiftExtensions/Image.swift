@@ -1,5 +1,6 @@
 import Cocoa
 import CLua
+import Lua
 import os.log
 import AVFoundation
 
@@ -83,7 +84,7 @@ extension NSImage {
 /// Notes:
 ///  * Image names pulled from NSImage.h
 ///  * This table has a __tostring() metamethod which allows listing it's contents in the Cosmic Hammer console by typing `hs.image.systemImageNames`.
-private func pushNSImageNameTable(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func pushNSImageNameTable(_ L: LuaState) -> CInt {
     lua_newtable(L)
 
     let imageNames: [(String, String)] = [
@@ -240,7 +241,7 @@ private func pushNSImageNameTable(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
 ///
 /// Notes:
 ///  * The list of these images was pulled from a collection located in the repositories at https://github.com/hetima?tab=repositories.  As these image names are (for the most part) not formally listed in Apple's documentation or published APIs, their use cannot be guaranteed across all OS X versions.  If you identify any images which may be missing or could be added, please file an issue at https://github.com/jkhoeini/cosmichammer.
-private func additionalImages(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func additionalImages(_ L: LuaState) -> CInt {
     lua_newtable(L)
 
     // Helper to push a string array as a Lua array and set it as a field
@@ -447,7 +448,7 @@ private func additionalImages(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * A table of EXIF metadata, or `nil` if no metadata can be found or the file path is invalid.
-private func getExifFromPath(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func getExifFromPath(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TSTRING)
 
     var imagePath = lua_tovalue(L, at: 1) as! String
@@ -484,7 +485,7 @@ private func getExifFromPath(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * An `hs.image` object, or nil if an error occurred
-private func imageFromPath(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func imageFromPath(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TSTRING)
 
     var imagePath = lua_tovalue(L, at: 1) as! String
@@ -510,8 +511,8 @@ private func imageFromPath(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * This function always throws an error as the ASCIImage dependency has been removed.
-private func imageWithContextFromASCII(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    return luaL_error(L, "hs.image.imageFromASCII has been removed (ASCIImage dependency dropped)")
+private func imageWithContextFromASCII(_ L: LuaState) throws -> CInt {
+    throw LuaCallError("hs.image.imageFromASCII has been removed (ASCIImage dependency dropped)")
 }
 
 /// hs.image.imageFromName(string) -> object
@@ -531,7 +532,7 @@ private func imageWithContextFromASCII(_ L: UnsafeMutablePointer<lua_State>!) ->
 ///     * Cosmic Hammer's main application bundle
 ///     * the Application Kit framework (this is where most of the images listed in `hs.image.systemImageNames` are located)
 ///  * Image names can be assigned by the image creator or by calling the `hs.image:setName` method on an hs.image object.
-private func imageFromName(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func imageFromName(_ L: LuaState) throws -> CInt {
     let imageName = String(cString: luaL_checkstring(L, 1))
     if let newImage = NSImage(named: NSImage.Name(imageName)) {
         pushNSImageOrNil(L, newImage)
@@ -554,7 +555,7 @@ private func imageFromName(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Notes:
 ///  * If a callback function is supplied, this function will return nil immediately and the image will be fetched asynchronously
-private func imageFromURL(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func imageFromURL(_ L: LuaState) throws -> CInt {
     guard let theURL = URL(string: lua_tovalue(L, at: 1) as! String) else {
         lua_pushnil(L)
         return 1
@@ -595,7 +596,7 @@ private func imageFromURL(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * An `hs.image` object or nil, if no app icon was found
-private func imageFromApp(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func imageFromApp(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TSTRING)
 
     var imagePath = ""
@@ -621,7 +622,7 @@ private func imageFromApp(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * An `hs.image` object or nil, if there was an error.  The image will be the icon for the specified file or an icon representing multiple files if an array of multiple files is specified.
-private func imageForFiles(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func imageForFiles(_ L: LuaState) throws -> CInt {
 
     var theFiles: [Any]
     if lua_type(L, 1) == LUA_TSTRING {
@@ -633,7 +634,7 @@ private func imageForFiles(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     var filesArray: [String] = []
     for item in theFiles {
         guard let str = item as? String else {
-            return luaL_error(L, "invalid type, array of strings required")
+            throw LuaCallError("invalid type, array of strings required")
         }
         filesArray.append((str as NSString).expandingTildeInPath)
     }
@@ -655,7 +656,7 @@ private func imageForFiles(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * An `hs.image` object or nil, if there was an error
-private func imageForFileType(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func imageForFileType(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TSTRING)
 
     let theImage = NSWorkspace.shared.icon(forFileType: lua_tovalue(L, at: 1) as! String)
@@ -686,7 +687,7 @@ private func imageForFileType(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * This is faster than extracting image metadata and allows for obtaining artwork associated with file formats such as .flac/.ogg
 ///  * If no common album art filenames are found, it attempts to extract image metadata from the file. This works for .mp3/.m4a files
 ///  * If embedded image metadata is found, it is returned as an `hs.image` object, otherwise the filetype icon
-private func imageFromMediaFile(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func imageFromMediaFile(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TSTRING)
     var theFilePath = lua_tovalue(L, at: 1) as! String
     theFilePath = (theFilePath as NSString).expandingTildeInPath
@@ -696,7 +697,7 @@ private func imageFromMediaFile(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 
     // Bail if bad path
     guard FileManager.default.fileExists(atPath: theFilePath, isDirectory: &isDirectory) else {
-        return imageForFiles(L)
+        return try imageForFiles(L)
     }
 
     // If file has a movie UTI, try to generate an image from it
@@ -756,7 +757,7 @@ private func imageFromMediaFile(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
     if let theImage = theImage, theImage.isValid {
         pushNSImageOrNil(L, theImage)
     } else {
-        return imageForFiles(L)
+        return try imageForFiles(L)
     }
     return 1
 }
@@ -775,7 +776,7 @@ private func imageFromMediaFile(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 ///
 /// Notes:
 ///  * see also [hs.image:setName](#setName) for a variant that returns a boolean instead.
-private func getImageName(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func getImageName(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let testImage = lua_checkUserdataObject(NSImage.self, L, at: 1, metatableName: USERDATA_TAG)
     if lua_gettop(L) == 1 {
@@ -803,7 +804,7 @@ private func getImageName(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Notes:
 ///  * See also [hs.image:setSize](#setSize) for creating a copy of the image at a new size.
-private func getImageSize(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func getImageSize(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let theImage = lua_checkUserdataObject(NSImage.self, L, at: 1, metatableName: USERDATA_TAG)
     if lua_gettop(L) == 1 {
@@ -832,7 +833,7 @@ private func getImageSize(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * A `hs.drawing.color` object
-private func colorAt(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func colorAt(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     luaL_checktype(L, 2, LUA_TTABLE)
@@ -868,7 +869,7 @@ private func colorAt(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * a copy of the portion of the image specified
-private func croppedCopy(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func croppedCopy(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     luaL_checktype(L, 2, LUA_TTABLE)
@@ -932,7 +933,7 @@ private func parseFileType(_ label: String) -> NSBitmapImageRep.FileType? {
 ///
 /// Notes:
 ///  * You can convert the string back into an image object with [hs.image.imageFromURL](#URL), e.g. `hs.image.imageFromURL(string)`
-private func encodeAsString(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func encodeAsString(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let theImage = lua_checkUserdataObject(NSImage.self, L, at: 1, metatableName: USERDATA_TAG)
 
@@ -951,7 +952,7 @@ private func encodeAsString(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     }
 
     guard let fileType = parseFileType(typeLabel) else {
-        return luaL_error(L, "invalid image type specified")
+        throw LuaCallError("invalid image type specified")
     }
 
     let targetRect = NSRect(origin: .zero, size: theImage.size)
@@ -976,19 +977,16 @@ private func encodeAsString(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
         NSGraphicsContext.restoreGraphicsState()
     } else {
         guard let tiffRep = newImage.tiffRepresentation else {
-            lua_pushstring(L, "Unable to write image file: Can't create internal representation")
-            return lua_error(L)
+            throw LuaCallError("Unable to write image file: Can't create internal representation")
         }
         guard let r = NSBitmapImageRep(data: tiffRep) else {
-            lua_pushstring(L, "Unable to write image file: Can't wrap internal representation")
-            return lua_error(L)
+            throw LuaCallError("Unable to write image file: Can't wrap internal representation")
         }
         rep = r
     }
 
     guard let fileData = rep.representation(using: fileType, properties: [:]) else {
-        lua_pushstring(L, "Unable to write image file: Can't convert internal representation")
-        return lua_error(L)
+        throw LuaCallError("Unable to write image file: Can't convert internal representation")
     }
 
     let result = fileData.base64EncodedString(options: .endLineWithLineFeed)
@@ -1015,7 +1013,7 @@ private func encodeAsString(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Notes:
 ///  * Saves image at the size in points (or pixels, if `scale` is true) as reported by [hs.image:size()](#size) for the image object
-private func saveToFile(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func saveToFile(_ L: LuaState) throws -> CInt {
 
     let theImage = lua_checkUserdataObject(NSImage.self, L, at: 1, metatableName: USERDATA_TAG)
     let filePath = lua_tovalue(L, at: 2) as! String
@@ -1035,7 +1033,7 @@ private func saveToFile(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     }
 
     guard let fileType = parseFileType(typeLabel) else {
-        return luaL_error(L, "hs.image:saveToFile:: invalid file type specified")
+        throw LuaCallError("hs.image:saveToFile:: invalid file type specified")
     }
 
     let targetRect = NSRect(origin: .zero, size: theImage.size)
@@ -1060,27 +1058,23 @@ private func saveToFile(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
         NSGraphicsContext.restoreGraphicsState()
     } else {
         guard let tiffRep = newImage.tiffRepresentation else {
-            lua_pushstring(L, "Unable to write image file: Can't create internal representation")
-            return lua_error(L)
+            throw LuaCallError("Unable to write image file: Can't create internal representation")
         }
         guard let r = NSBitmapImageRep(data: tiffRep) else {
-            lua_pushstring(L, "Unable to write image file: Can't wrap internal representation")
-            return lua_error(L)
+            throw LuaCallError("Unable to write image file: Can't wrap internal representation")
         }
         rep = r
     }
 
     guard let fileData = rep.representation(using: fileType, properties: [:]) else {
-        lua_pushstring(L, "Unable to write image file: Can't convert internal representation")
-        return lua_error(L)
+        throw LuaCallError("Unable to write image file: Can't convert internal representation")
     }
 
     do {
         try fileData.write(to: URL(fileURLWithPath: (filePath as NSString).expandingTildeInPath), options: .atomic)
         lua_pushboolean(L, 1)
     } catch {
-        lua_pushstring(L, "Unable to write image file: \(error.localizedDescription)")
-        return lua_error(L)
+        throw LuaCallError("Unable to write image file: \(error.localizedDescription)")
     }
     return 1
 }
@@ -1098,7 +1092,7 @@ private func saveToFile(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Notes:
 ///  * Template images consist of black and clear colors (and an alpha channel). Template images are not intended to be used as standalone images and are usually mixed with other content to create the desired final appearance.
 ///  * Images with this flag set to true usually appear lighter than they would with this flag set to false.
-private func imageTemplate(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func imageTemplate(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let theImage = lua_checkUserdataObject(NSImage.self, L, at: 1, metatableName: USERDATA_TAG)
     if lua_gettop(L) == 1 {
@@ -1119,7 +1113,7 @@ private func imageTemplate(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * a new hs.image object
-private func copyImage(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func copyImage(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let theImage = lua_checkUserdataObject(NSImage.self, L, at: 1, metatableName: USERDATA_TAG)
     pushNSImageOrNil(L, theImage.copy() as? NSImage)
@@ -1136,7 +1130,7 @@ private func copyImage(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * A string.
-private func toASCII(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func toASCII(_ L: LuaState) throws -> CInt {
 
     let theImage = lua_checkUserdataObject(NSImage.self, L, at: 1, metatableName: USERDATA_TAG)
 
@@ -1163,7 +1157,7 @@ private func toASCII(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * a bitmap representation of an image is rendered at the specific size specified (or inherited) when it is generated -- if you later scale it to a different size, the bitmap will be scaled as larger or smaller pixels rather than smoothly.
 ///
 ///  * this method may be useful when preparing images for other devices (e.g. `hs.streamdeck`).
-private func image_bitmapRepresentation(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func image_bitmapRepresentation(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let theImage = lua_checkUserdataObject(NSImage.self, L, at: 1, metatableName: USERDATA_TAG)
 
@@ -1253,14 +1247,14 @@ private func HSImage_toNSImage(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int
 
 // MARK: - Cosmic Hammer/Lua Infrastructure
 
-private func image_userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func image_userdata_tostring(_ L: LuaState) throws -> CInt {
     let testImage = lua_checkUserdataObject(NSImage.self, L, at: 1, metatableName: USERDATA_TAG)
     let theName = testImage.name() ?? ""
     lua_pushstring(L, "\(USERDATA_TAG): \(theName) (\(String(describing: lua_topointer(L, 1))))")
     return 1
 }
 
-private func image_userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func image_userdata_eq(_ L: LuaState) throws -> CInt {
     if let image1 = lua_testUserdataObject(NSImage.self, L, at: 1, metatableName: USERDATA_TAG),
        let image2 = lua_testUserdataObject(NSImage.self, L, at: 2, metatableName: USERDATA_TAG) {
         lua_pushboolean(L, image1 === image2 ? 1 : 0)
@@ -1270,7 +1264,7 @@ private func image_userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 1
 }
 
-private func image_userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func image_userdata_gc(_ L: LuaState) throws -> CInt {
     guard let image = lua_takeRetainedUserdataObjectIfPresent(NSImage.self, L, at: 1, metatableName: USERDATA_TAG) else {
         return 0
     }
@@ -1279,7 +1273,7 @@ private func image_userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 0
 }
 
-private func image_meta_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func image_meta_gc(_ L: LuaState) throws -> CInt {
     backgroundCallbacks.enumerateObjects { ref, _ in
         if let num = ref as? NSNumber {
             luaL_unref(L, LUA_REGISTRYINDEX_VALUE, num.int32Value)
@@ -1289,99 +1283,54 @@ private func image_meta_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 0
 }
 
-// MARK: - C-callable wrappers
-
-private let getImageName_wrapper: lua_CFunction = { L in getImageName(L) }
-private let getImageSize_wrapper: lua_CFunction = { L in getImageSize(L) }
-private let imageTemplate_wrapper: lua_CFunction = { L in imageTemplate(L) }
-private let copyImage_wrapper: lua_CFunction = { L in copyImage(L) }
-private let croppedCopy_wrapper: lua_CFunction = { L in croppedCopy(L) }
-private let saveToFile_wrapper: lua_CFunction = { L in saveToFile(L) }
-private let encodeAsString_wrapper: lua_CFunction = { L in encodeAsString(L) }
-private let colorAt_wrapper: lua_CFunction = { L in colorAt(L) }
-private let toASCII_wrapper: lua_CFunction = { L in toASCII(L) }
-private let bitmapRep_wrapper: lua_CFunction = { L in image_bitmapRepresentation(L) }
-private let image_tostring_wrapper: lua_CFunction = { L in image_userdata_tostring(L) }
-private let image_eq_wrapper: lua_CFunction = { L in image_userdata_eq(L) }
-private let image_gc_wrapper: lua_CFunction = { L in image_userdata_gc(L) }
-private let imageFromPath_wrapper: lua_CFunction = { L in imageFromPath(L) }
-private let imageFromURL_wrapper: lua_CFunction = { L in imageFromURL(L) }
-private let imageFromASCII_wrapper: lua_CFunction = { L in imageWithContextFromASCII(L) }
-private let imageFromName_wrapper: lua_CFunction = { L in imageFromName(L) }
-private let imageFromApp_wrapper: lua_CFunction = { L in imageFromApp(L) }
-private let imageFromMediaFile_wrapper: lua_CFunction = { L in imageFromMediaFile(L) }
-private let imageForFiles_wrapper: lua_CFunction = { L in imageForFiles(L) }
-private let imageForFileType_wrapper: lua_CFunction = { L in imageForFileType(L) }
-private let getExifFromPath_wrapper: lua_CFunction = { L in getExifFromPath(L) }
-private let meta_gc_wrapper: lua_CFunction = { L in image_meta_gc(L) }
-
-// MARK: - Registration Tables
-
-// Metatable for userdata objects
-private var userdata_metaLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("name"), func: getImageName_wrapper),
-    luaL_Reg(name: strdup("size"), func: getImageSize_wrapper),
-    luaL_Reg(name: strdup("template"), func: imageTemplate_wrapper),
-    luaL_Reg(name: strdup("copy"), func: copyImage_wrapper),
-    luaL_Reg(name: strdup("croppedCopy"), func: croppedCopy_wrapper),
-    luaL_Reg(name: strdup("saveToFile"), func: saveToFile_wrapper),
-    luaL_Reg(name: strdup("encodeAsURLString"), func: encodeAsString_wrapper),
-    luaL_Reg(name: strdup("colorAt"), func: colorAt_wrapper),
-    luaL_Reg(name: strdup("toASCII"), func: toASCII_wrapper),
-    luaL_Reg(name: strdup("bitmapRepresentation"), func: bitmapRep_wrapper),
-    luaL_Reg(name: strdup("__tostring"), func: image_tostring_wrapper),
-    luaL_Reg(name: strdup("__eq"), func: image_eq_wrapper),
-    luaL_Reg(name: strdup("__gc"), func: image_gc_wrapper),
-    luaL_Reg(name: nil, func: nil),
-]
-
-// Functions for returned object when module loads
-private var moduleLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("imageFromPath"), func: imageFromPath_wrapper),
-    luaL_Reg(name: strdup("imageFromURL"), func: imageFromURL_wrapper),
-    luaL_Reg(name: strdup("imageFromASCII"), func: imageFromASCII_wrapper),
-    luaL_Reg(name: strdup("imageFromName"), func: imageFromName_wrapper),
-    luaL_Reg(name: strdup("imageFromAppBundle"), func: imageFromApp_wrapper),
-    luaL_Reg(name: strdup("imageFromMediaFile"), func: imageFromMediaFile_wrapper),
-    luaL_Reg(name: strdup("iconForFile"), func: imageForFiles_wrapper),
-    luaL_Reg(name: strdup("iconForFileType"), func: imageForFileType_wrapper),
-    luaL_Reg(name: strdup("getExifFromPath"), func: getExifFromPath_wrapper),
-    luaL_Reg(name: nil, func: nil),
-]
-
-// Metatable for module
-private var module_metaLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("__gc"), func: meta_gc_wrapper),
-    luaL_Reg(name: nil, func: nil),
-]
-
 @_cdecl("luaopen_hs_libimage")
 public func luaopen_hs_libimage(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    // Create ref table in registry
-    lua_newtable(L)
-    refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+    runEntryPoint(L) { L in
+        // Create ref table in registry
+        lua_newtable(L)
+        refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
 
-    // Register userdata metatable
-    luaL_newmetatable(L, USERDATA_TAG)
-    lua_pushvalue(L, -1)
-    lua_setfield(L, -2, "__index")
-    luaL_setfuncs(L, &userdata_metaLib, 0)
-    lua_pop(L, 1)
+        // Register userdata metatable
+        luaL_newmetatable(L, USERDATA_TAG)
+        lua_pushvalue(L, -1)
+        lua_setfield(L, -2, "__index")
+        L.push(getImageName);               lua_setfield(L, -2, "name")
+        L.push(getImageSize);               lua_setfield(L, -2, "size")
+        L.push(imageTemplate);              lua_setfield(L, -2, "template")
+        L.push(copyImage);                  lua_setfield(L, -2, "copy")
+        L.push(croppedCopy);                lua_setfield(L, -2, "croppedCopy")
+        L.push(saveToFile);                 lua_setfield(L, -2, "saveToFile")
+        L.push(encodeAsString);             lua_setfield(L, -2, "encodeAsURLString")
+        L.push(colorAt);                    lua_setfield(L, -2, "colorAt")
+        L.push(toASCII);                    lua_setfield(L, -2, "toASCII")
+        L.push(image_bitmapRepresentation); lua_setfield(L, -2, "bitmapRepresentation")
+        L.push(image_userdata_tostring);    lua_setfield(L, -2, "__tostring")
+        L.push(image_userdata_eq);          lua_setfield(L, -2, "__eq")
+        L.push(image_userdata_gc);          lua_setfield(L, -2, "__gc")
+        lua_pop(L, 1)
 
-    // Create module table
-    lua_createtable(L, 0, Int32(moduleLib.count - 1))
-    luaL_setfuncs(L, &moduleLib, 0)
+        // Create module table
+        lua_createtable(L, 0, 9)
+        L.push(imageFromPath);              lua_setfield(L, -2, "imageFromPath")
+        L.push(imageFromURL);               lua_setfield(L, -2, "imageFromURL")
+        L.push(imageWithContextFromASCII);  lua_setfield(L, -2, "imageFromASCII")
+        L.push(imageFromName);              lua_setfield(L, -2, "imageFromName")
+        L.push(imageFromApp);               lua_setfield(L, -2, "imageFromAppBundle")
+        L.push(imageFromMediaFile);         lua_setfield(L, -2, "imageFromMediaFile")
+        L.push(imageForFiles);              lua_setfield(L, -2, "iconForFile")
+        L.push(imageForFileType);           lua_setfield(L, -2, "iconForFileType")
+        L.push(getExifFromPath);            lua_setfield(L, -2, "getExifFromPath")
 
-    // Set module metatable (for __gc)
-    lua_createtable(L, 0, Int32(module_metaLib.count - 1))
-    luaL_setfuncs(L, &module_metaLib, 0)
-    lua_setmetatable(L, -2)
+        // Set module metatable (for __gc)
+        lua_createtable(L, 0, 1)
+        L.push(image_meta_gc);              lua_setfield(L, -2, "__gc")
+        lua_setmetatable(L, -2)
 
-    pushNSImageNameTable(L); lua_setfield(L, -2, "systemImageNames")
-    additionalImages(L);     lua_setfield(L, -2, "additionalImageNames")
+        pushNSImageNameTable(L); lua_setfield(L, -2, "systemImageNames")
+        additionalImages(L);     lua_setfield(L, -2, "additionalImageNames")
 
-    if missingIconForFile == nil { missingIconForFile = NSWorkspace.shared.icon(forFile: "") }
+        if missingIconForFile == nil { missingIconForFile = NSWorkspace.shared.icon(forFile: "") }
 
-    backgroundCallbacks = NSMutableSet()
-    return 1
+        backgroundCallbacks = NSMutableSet()
+    }
 }

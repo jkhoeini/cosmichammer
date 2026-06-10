@@ -1,5 +1,6 @@
 import Foundation
 import CLua
+import Lua
 import Cocoa
 import WebKit
 import os.log
@@ -61,7 +62,7 @@ func wv_delayUntilViewStopsLoading(_ theView: HSWebViewView, block: @escaping ()
 ///
 /// Returns:
 ///  * a boolean value indicating whether or not the datastore is non-persistent.
-func webview_privateBrowsing(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_privateBrowsing(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, wv_USERDATA_TAG)
     let theWindow = Unmanaged<HSWebViewWindow>.fromOpaque(
         luaL_checkudata(L, 1, wv_USERDATA_TAG)!.assumingMemoryBound(to: UnsafeMutableRawPointer?.self).pointee!
@@ -82,7 +83,7 @@ func wv_getWindowFromUD(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> 
 /// hs.webview:children() -> array
 /// Method
 /// Returns an array of webview objects which have been opened as children of this webview.
-func webview_children(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_children(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, wv_USERDATA_TAG)
     let theWindow = wv_getWindowFromUD(L, 1)
 
@@ -97,7 +98,7 @@ func webview_children(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.webview:parent() -> webviewObject | nil
 /// Method
 /// Get the parent webview object for the calling webview object, or nil if the webview has no parent.
-func webview_parent(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_parent(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, wv_USERDATA_TAG)
     let theWindow = wv_getWindowFromUD(L, 1)
     wv_pushAny(L, theWindow.parentWebView)
@@ -107,7 +108,7 @@ func webview_parent(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.webview:url([URL]) -> webviewObject, navigationIdentifier | url
 /// Method
 /// Get or set the URL to render for the webview.
-func webview_url(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_url(_ L: LuaState) throws -> CInt {
     let theWindow = wv_getWindowFromUD(L, 1)
     let theView = theWindow.contentView as! HSWebViewView
 
@@ -124,7 +125,7 @@ func webview_url(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
             lua_pushvalue(L, 1)
             return 1
         } else {
-            return luaL_error(L, "Invalid URL type.  String or table expected.")
+            throw LuaCallError("Invalid URL type.  String or table expected.")
         }
     }
 }
@@ -132,7 +133,7 @@ func webview_url(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.webview:userAgent([agent]) -> webviewObject | current value
 /// Method
 /// Get or set the webview's user agent string
-func webview_userAgent(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_userAgent(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, wv_USERDATA_TAG)
     let theWindow = wv_getWindowFromUD(L, 1)
     let theView = theWindow.contentView as! HSWebViewView
@@ -149,7 +150,7 @@ func webview_userAgent(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.webview:certificateChain() -> table | nil
 /// Method
 /// Returns the certificate chain for the most recently committed navigation of the webview.
-func webview_certificateChain(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_certificateChain(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, wv_USERDATA_TAG)
     let theWindow = wv_getWindowFromUD(L, 1)
     let theView = theWindow.contentView as! HSWebViewView
@@ -169,7 +170,7 @@ func webview_certificateChain(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.webview:title() -> title
 /// Method
 /// Get the title of the page displayed in the webview.
-func webview_title(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_title(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, wv_USERDATA_TAG)
     let theWindow = wv_getWindowFromUD(L, 1)
     let theView = theWindow.contentView as! HSWebViewView
@@ -180,7 +181,7 @@ func webview_title(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.webview:navigationID() -> navigationID
 /// Method
 /// Get the most recent navigation identifier for the specified webview.
-func webview_navigationID(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_navigationID(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, wv_USERDATA_TAG)
     let theWindow = wv_getWindowFromUD(L, 1)
     let theView = theWindow.contentView as! HSWebViewView
@@ -191,7 +192,7 @@ func webview_navigationID(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.webview:loading() -> boolean
 /// Method
 /// Returns a boolean value indicating whether or not the webview is still loading content.
-func webview_loading(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_loading(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, wv_USERDATA_TAG)
     let theWindow = wv_getWindowFromUD(L, 1)
     let theView = theWindow.contentView as! HSWebViewView
@@ -202,7 +203,7 @@ func webview_loading(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.webview:stopLoading() -> webviewObject
 /// Method
 /// Stop loading additional content for the webview.
-func webview_stopLoading(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_stopLoading(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, wv_USERDATA_TAG)
     let theWindow = wv_getWindowFromUD(L, 1)
     let theView = theWindow.contentView as! HSWebViewView
@@ -214,7 +215,7 @@ func webview_stopLoading(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.webview:estimatedProgress() -> number
 /// Method
 /// Returns the estimated percentage of expected content that has been loaded.
-func webview_estimatedProgress(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_estimatedProgress(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, wv_USERDATA_TAG)
     let theWindow = wv_getWindowFromUD(L, 1)
     let theView = theWindow.contentView as! HSWebViewView
@@ -225,7 +226,7 @@ func webview_estimatedProgress(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.webview:isOnlySecureContent() -> bool
 /// Method
 /// Returns a boolean value indicating if all content current displayed in the webview was loaded over securely encrypted connections.
-func webview_isOnlySecureContent(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_isOnlySecureContent(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, wv_USERDATA_TAG)
     let theWindow = wv_getWindowFromUD(L, 1)
     let theView = theWindow.contentView as! HSWebViewView
@@ -236,7 +237,7 @@ func webview_isOnlySecureContent(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 /// hs.webview:goForward() -> webviewObject
 /// Method
 /// Move to the next page in the webview's history, if possible.
-func webview_goForward(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_goForward(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, wv_USERDATA_TAG)
     let theWindow = wv_getWindowFromUD(L, 1)
     let theView = theWindow.contentView as! HSWebViewView
@@ -248,7 +249,7 @@ func webview_goForward(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.webview:goBack() -> webviewObject
 /// Method
 /// Move to the previous page in the webview's history, if possible.
-func webview_goBack(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_goBack(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, wv_USERDATA_TAG)
     let theWindow = wv_getWindowFromUD(L, 1)
     let theView = theWindow.contentView as! HSWebViewView
@@ -260,7 +261,7 @@ func webview_goBack(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.webview:reload([validate]) -> webviewObject, navigationIdentifier
 /// Method
 /// Reload the page in the webview, optionally performing end-to-end revalidation using cache-validating conditionals if possible.
-func webview_reload(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_reload(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, wv_USERDATA_TAG)
     let theWindow = wv_getWindowFromUD(L, 1)
     let theView = theWindow.contentView as! HSWebViewView
@@ -278,7 +279,7 @@ func webview_reload(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.webview:transparent([value]) -> webviewObject | current value
 /// Method
 /// Get or set whether or not the webview background is transparent.
-func webview_transparent(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_transparent(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, wv_USERDATA_TAG)
     let theWindow = wv_getWindowFromUD(L, 1)
 
@@ -296,7 +297,7 @@ func webview_transparent(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.webview:allowMagnificationGestures([value]) -> webviewObject | current value
 /// Method
 /// Get or set whether or not the webview will respond to magnification gestures from a trackpad or magic mouse.
-func webview_allowMagnificationGestures(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_allowMagnificationGestures(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, wv_USERDATA_TAG)
     let theWindow = wv_getWindowFromUD(L, 1)
     let theView = theWindow.contentView as! HSWebViewView
@@ -313,7 +314,7 @@ func webview_allowMagnificationGestures(_ L: UnsafeMutablePointer<lua_State>!) -
 /// hs.webview:allowNewWindows([value]) -> webviewObject | current value
 /// Method
 /// Get or set whether or not the webview allows new windows to be opened from it by any method.
-func webview_allowNewWindows(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_allowNewWindows(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, wv_USERDATA_TAG)
     let theWindow = wv_getWindowFromUD(L, 1)
     let theView = theWindow.contentView as! HSWebViewView
@@ -330,7 +331,7 @@ func webview_allowNewWindows(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.webview:examineInvalidCertificates([flag]) -> webviewObject | current value
 /// Method
 /// Get or set whether or not invalid SSL server certificates that are approved by the ssl callback function are accepted as valid for browsing with the webview.
-func webview_examineInvalidCertificates(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_examineInvalidCertificates(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, wv_USERDATA_TAG)
     let theWindow = wv_getWindowFromUD(L, 1)
     let theView = theWindow.contentView as! HSWebViewView
@@ -347,7 +348,7 @@ func webview_examineInvalidCertificates(_ L: UnsafeMutablePointer<lua_State>!) -
 /// hs.webview:allowNavigationGestures([value]) -> webviewObject | current value
 /// Method
 /// Get or set whether or not the webview will respond to the navigation gestures from a trackpad or magic mouse.
-func webview_allowNavigationGestures(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_allowNavigationGestures(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, wv_USERDATA_TAG)
     let theWindow = wv_getWindowFromUD(L, 1)
     let theView = theWindow.contentView as! HSWebViewView
@@ -364,7 +365,7 @@ func webview_allowNavigationGestures(_ L: UnsafeMutablePointer<lua_State>!) -> I
 /// hs.webview:magnification([value]) -> webviewObject | current value
 /// Method
 /// Get or set the webviews current magnification level.
-func webview_magnification(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_magnification(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, wv_USERDATA_TAG)
     let theWindow = wv_getWindowFromUD(L, 1)
     let theView = theWindow.contentView as! HSWebViewView
@@ -382,7 +383,7 @@ func webview_magnification(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.webview:html(html,[baseURL]) -> webviewObject, navigationIdentifier
 /// Method
 /// Render the given HTML in the webview with an optional base URL for relative links.
-func webview_html(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_html(_ L: LuaState) throws -> CInt {
     let theWindow = wv_getWindowFromUD(L, 1)
     let theView = theWindow.contentView as! HSWebViewView
 
@@ -403,7 +404,7 @@ func webview_html(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.webview:navigationCallback(fn) -> webviewObject
 /// Method
 /// Sets a callback for tracking a webview's navigation process.
-func webview_navigationCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_navigationCallback(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, wv_USERDATA_TAG)
     let theWindow = wv_getWindowFromUD(L, 1)
     let theView = theWindow.contentView as! HSWebViewView
@@ -423,7 +424,7 @@ func webview_navigationCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 /// hs.webview:policyCallback(fn) -> webviewObject
 /// Method
 /// Sets a callback to approve or deny web navigation activity.
-func webview_policyCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_policyCallback(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, wv_USERDATA_TAG)
     let theWindow = wv_getWindowFromUD(L, 1)
     let theView = theWindow.contentView as! HSWebViewView
@@ -443,7 +444,7 @@ func webview_policyCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.webview:sslCallback(fn) -> webviewObject
 /// Method
 /// Sets a callback to examine an invalid SSL certificate and determine if an exception should be granted.
-func webview_sslCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_sslCallback(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, wv_USERDATA_TAG)
     let theWindow = wv_getWindowFromUD(L, 1)
     let theView = theWindow.contentView as! HSWebViewView
@@ -463,7 +464,7 @@ func webview_sslCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.webview:historyList() -> historyTable
 /// Method
 /// Returns the URL history for the current webview as an array.
-func webview_historyList(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_historyList(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, wv_USERDATA_TAG)
     let theWindow = wv_getWindowFromUD(L, 1)
     let theView = theWindow.contentView as! HSWebViewView
@@ -474,7 +475,7 @@ func webview_historyList(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.webview:evaluateJavaScript(script, [callback]) -> webviewObject
 /// Method
 /// Execute JavaScript within the context of the current webview and optionally receive its result or error in a callback function.
-func webview_evaluateJavaScript(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_evaluateJavaScript(_ L: LuaState) throws -> CInt {
     let theWindow = wv_getWindowFromUD(L, 1)
     let theView = theWindow.contentView as! HSWebViewView
 
@@ -509,7 +510,7 @@ func webview_evaluateJavaScript(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 /// hs.webview:topLeft([point]) -> webviewObject | currentValue
 /// Method
 /// Get or set the top-left coordinate of the webview window
-func webview_topLeft(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_topLeft(_ L: LuaState) throws -> CInt {
     let theWindow = wv_getWindowFromUD(L, 1)
     let oldFrame = wv_RectWithFlippedYCoordinate(theWindow.frame)
 
@@ -527,7 +528,7 @@ func webview_topLeft(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.webview:size([size]) -> webviewObject | currentValue
 /// Method
 /// Get or set the size of a webview window
-func webview_size(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_size(_ L: LuaState) throws -> CInt {
     let theWindow = wv_getWindowFromUD(L, 1)
     let oldFrame = theWindow.frame
 
@@ -545,7 +546,7 @@ func webview_size(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.webview.new(rect, [preferencesTable], [userContentController]) -> webviewObject
 /// Constructor
 /// Create a webviewObject and optionally modify its preferences.
-func webview_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_new(_ L: LuaState) throws -> CInt {
     let windowRect = lua_tableToRect(L, at: 1)
 
     let theWindow = HSWebViewWindow(contentRect: windowRect, styleMask: .borderless, backing: .buffered, defer: true)
@@ -628,7 +629,7 @@ func webview_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.webview:show([fadeInTime]) -> webviewObject
 /// Method
 /// Displays the webview object
-func webview_show(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_show(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, wv_USERDATA_TAG)
     let theWindow = wv_getWindowFromUD(L, 1)
     let fadeTime: TimeInterval = (lua_gettop(L) == 2) ? lua_tonumber(L, 2) : 0.0
@@ -641,7 +642,7 @@ func webview_show(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.webview:hide([fadeOutTime]) -> webviewObject
 /// Method
 /// Hides the webview object
-func webview_hide(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_hide(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, wv_USERDATA_TAG)
     let theWindow = wv_getWindowFromUD(L, 1)
     let fadeTime: TimeInterval = (lua_gettop(L) == 2) ? lua_tonumber(L, 2) : 0.0
@@ -654,7 +655,7 @@ func webview_hide(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.webview:allowTextEntry([value]) -> webviewObject | current value
 /// Method
 /// Get or set whether or not the webview can accept keyboard for web form entry.
-func webview_allowTextEntry(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_allowTextEntry(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, wv_USERDATA_TAG)
     let theWindow = wv_getWindowFromUD(L, 1)
     if lua_type(L, 2) == LUA_TNONE {
@@ -669,7 +670,7 @@ func webview_allowTextEntry(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.webview:deleteOnClose([value]) -> webviewObject | current value
 /// Method
 /// Get or set whether or not the webview should delete itself when its window is closed.
-func webview_deleteOnClose(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_deleteOnClose(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, wv_USERDATA_TAG)
     let theWindow = wv_getWindowFromUD(L, 1)
     if lua_type(L, 2) == LUA_TNONE {
@@ -684,7 +685,7 @@ func webview_deleteOnClose(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.webview:darkMode([state]) -> bool
 /// Method
 /// Set or display whether or not the `hs.webview` window should display in dark mode.
-func webview_darkMode(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_darkMode(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, wv_USERDATA_TAG)
     let theWindow = wv_getWindowFromUD(L, 1)
 
@@ -701,7 +702,7 @@ func webview_darkMode(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.webview:closeOnEscape([flag]) -> webviewObject | current value
 /// Method
 /// If the webview is closable, this will get or set whether or not the Escape key is allowed to close the webview window.
-func webview_closeOnEscape(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_closeOnEscape(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, wv_USERDATA_TAG)
     let theWindow = wv_getWindowFromUD(L, 1)
     if lua_type(L, 2) == LUA_TNONE {
@@ -716,7 +717,7 @@ func webview_closeOnEscape(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.webview:hswindow() -> hs.window object
 /// Method
 /// Returns an hs.window object for the webview so that you can use hs.window methods on it.
-func webview_hswindow(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_hswindow(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, wv_USERDATA_TAG)
     let theWindow = wv_getWindowFromUD(L, 1)
     let windowID = CGWindowID(theWindow.windowNumber)
@@ -734,7 +735,7 @@ func webview_hswindow(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.webview:isVisible() -> boolean
 /// Method
 /// Checks to see if a webview window is visible or not.
-func webview_isVisible(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_isVisible(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, wv_USERDATA_TAG)
     let theWindow = wv_getWindowFromUD(L, 1)
     lua_pushboolean(L, theWindow.isVisible ? 1 : 0)
@@ -744,7 +745,7 @@ func webview_isVisible(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.webview:windowTitle([title]) -> webviewObject
 /// Method
 /// Sets the title for the webview window.
-func webview_windowTitle(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_windowTitle(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, wv_USERDATA_TAG)
     let theWindow = wv_getWindowFromUD(L, 1)
 
@@ -764,7 +765,7 @@ func webview_windowTitle(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.webview:titleVisibility([state]) -> webviewObject | string
 /// Function
 /// Get or set whether or not the title text appears in the webview window.
-func webview_titleVisibility(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_titleVisibility(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, wv_USERDATA_TAG)
     let theWindow = wv_getWindowFromUD(L, 1)
 
@@ -788,14 +789,14 @@ func webview_titleVisibility(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
             lua_pushvalue(L, 1)
         } else {
             let keys = mapping.keys.joined(separator: "', '")
-            return luaL_argerror(L, 2, "must be one of '\(keys)'")
+            throw LuaCallError("bad argument #2: must be one of '\(keys)'")
         }
     }
     return 1
 }
 
 // NOTE: wrapped in init.lua
-func webview_windowStyle(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_windowStyle(_ L: LuaState) throws -> CInt {
     let theWindow = wv_getWindowFromUD(L, 1)
     if lua_type(L, 2) == LUA_TNONE {
         lua_pushinteger(L, lua_Integer(theWindow.styleMask.rawValue))
@@ -812,7 +813,7 @@ func webview_windowStyle(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.webview:level([theLevel]) -> drawingObject | currentValue
 /// Method
 /// Get or set the window level
-func webview_level(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_level(_ L: LuaState) throws -> CInt {
     let theWindow = wv_getWindowFromUD(L, 1)
 
     if lua_gettop(L) == 1 {
@@ -824,7 +825,7 @@ func webview_level(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
         if targetLevel >= Int(minLevel) && targetLevel <= Int(maxLevel) {
             theWindow.level = NSWindow.Level(rawValue: Int(targetLevel))
         } else {
-            return luaL_error(L, "window level must be between \(minLevel) and \(maxLevel) inclusive")
+            throw LuaCallError("window level must be between \(minLevel) and \(maxLevel) inclusive")
         }
         lua_settop(L, 1)
     }
@@ -834,7 +835,7 @@ func webview_level(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.webview:bringToFront([aboveEverything]) -> webviewObject
 /// Method
 /// Places the drawing object on top of normal windows
-func webview_bringToFront(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_bringToFront(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, wv_USERDATA_TAG)
     let theWindow = wv_getWindowFromUD(L, 1)
     theWindow.level = lua_toboolean(L, 2) != 0 ? .screenSaver : .floating
@@ -845,7 +846,7 @@ func webview_bringToFront(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.webview:sendToBack() -> webviewObject
 /// Method
 /// Places the webview object behind normal windows, between the desktop wallpaper and desktop icons
-func webview_sendToBack(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_sendToBack(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, wv_USERDATA_TAG)
     let theWindow = wv_getWindowFromUD(L, 1)
     theWindow.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.desktopIconWindow)) - 1)
@@ -856,7 +857,7 @@ func webview_sendToBack(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.webview:alpha([alpha]) -> webviewObject | currentValue
 /// Method
 /// Get or set the alpha level of the window containing the hs.webview object.
-func webview_alpha(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_alpha(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, wv_USERDATA_TAG)
     let theWindow = wv_getWindowFromUD(L, 1)
 
@@ -873,7 +874,7 @@ func webview_alpha(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.webview:shadow([value]) -> webviewObject | current value
 /// Method
 /// Get or set whether or not the webview window has shadows.
-func webview_shadow(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_shadow(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, wv_USERDATA_TAG)
     let theWindow = wv_getWindowFromUD(L, 1)
 
@@ -903,25 +904,25 @@ func webview_orderHelper(_ L: UnsafeMutablePointer<lua_State>!, mode: NSWindow.O
 /// hs.webview:orderAbove([webview2]) -> webviewObject
 /// Method
 /// Moves webview object above webview2, or all webview objects in the same presentation level, if webview2 is not given.
-func webview_orderAbove(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_orderAbove(_ L: LuaState) throws -> CInt {
     return webview_orderHelper(L, mode: .above)
 }
 
 /// hs.webview:orderBelow([webview2]) -> webviewObject
 /// Method
 /// Moves webview object below webview2, or all webview objects in the same presentation level, if webview2 is not given.
-func webview_orderBelow(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_orderBelow(_ L: LuaState) throws -> CInt {
     return webview_orderHelper(L, mode: .below)
 }
 
 // NOTE: wrapped in init.lua
-func webview_delete(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_delete(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, wv_USERDATA_TAG)
     let theWindow = wv_getWindowFromUD(L, 1)
 
     if lua_gettop(L) == 1 || !theWindow.isVisible {
         theWindow.close()
-        lua_pushcfunction(L, wv_userdata_gc)
+        L.push(wv_userdata_gc)
         lua_pushvalue(L, 1)
         if lua_pcall(L, 1, 0, 0) != LUA_OK {
             os_log(.debug, "%{public}s", String(format: "%s:error invoking _gc for delete method:%s", wv_USERDATA_TAG, lua_tostring(L, -1)!))
@@ -938,7 +939,7 @@ func webview_delete(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.webview:behavior([behavior]) -> webviewObject | currentValue
 /// Method
 /// Get or set the window behavior settings for the webview object.
-func webview_behavior(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_behavior(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, wv_USERDATA_TAG)
     let theWindow = wv_getWindowFromUD(L, 1)
 
@@ -955,7 +956,7 @@ func webview_behavior(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.webview:windowCallback(fn) -> webviewObject
 /// Method
 /// Set or clear a callback for updates to the webview window
-func webview_windowCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func webview_windowCallback(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, wv_USERDATA_TAG)
     let theWindow = wv_getWindowFromUD(L, 1)
 
@@ -1617,7 +1618,7 @@ func wv_WKSecurityOrigin_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any
 
 // MARK: - Lua Framework Stuff
 
-func wv_userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func wv_userdata_tostring(_ L: LuaState) throws -> CInt {
     let theWindow = wv_getWindowFromUD(L, 1)
     let theView = theWindow.contentView as? HSWebViewView
     let title = theView?.title ?? ""
@@ -1627,14 +1628,14 @@ func wv_userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 1
 }
 
-func wv_userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func wv_userdata_eq(_ L: LuaState) throws -> CInt {
     let theWindow = wv_getWindowFromUD(L, 1)
     let otherWindow = wv_getWindowFromUD(L, 2)
     lua_pushboolean(L, theWindow.udRef == otherWindow.udRef ? 1 : 0)
     return 1
 }
 
-func wv_userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func wv_userdata_gc(_ L: LuaState) throws -> CInt {
     if luaL_testudata(L, 1, wv_USERDATA_TAG) == nil { return 0 }
 
     let ptr = luaL_checkudata(L, 1, wv_USERDATA_TAG)!
@@ -1698,7 +1699,7 @@ func wv_userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 0
 }
 
-func wv_meta_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func wv_meta_gc(_ L: LuaState) throws -> CInt {
     wv_ProcessPool = nil
 
     if let timers = wv_delayTimers {
@@ -1713,105 +1714,89 @@ func wv_meta_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 0
 }
 
-// Metatable for userdata objects
-private var userdata_metaLib: [luaL_Reg] = [
-    // Webview Related
-    luaL_Reg(name: strdup("goBack"),                     func: webview_goBack),
-    luaL_Reg(name: strdup("goForward"),                  func: webview_goForward),
-    luaL_Reg(name: strdup("url"),                        func: webview_url),
-    luaL_Reg(name: strdup("title"),                      func: webview_title),
-    luaL_Reg(name: strdup("navigationID"),               func: webview_navigationID),
-    luaL_Reg(name: strdup("reload"),                     func: webview_reload),
-    luaL_Reg(name: strdup("transparent"),                func: webview_transparent),
-    luaL_Reg(name: strdup("magnification"),              func: webview_magnification),
-    luaL_Reg(name: strdup("allowMagnificationGestures"), func: webview_allowMagnificationGestures),
-    luaL_Reg(name: strdup("allowNewWindows"),            func: webview_allowNewWindows),
-    luaL_Reg(name: strdup("allowNavigationGestures"),    func: webview_allowNavigationGestures),
-    luaL_Reg(name: strdup("isOnlySecureContent"),        func: webview_isOnlySecureContent),
-    luaL_Reg(name: strdup("estimatedProgress"),          func: webview_estimatedProgress),
-    luaL_Reg(name: strdup("loading"),                    func: webview_loading),
-    luaL_Reg(name: strdup("stopLoading"),                func: webview_stopLoading),
-    luaL_Reg(name: strdup("html"),                       func: webview_html),
-    luaL_Reg(name: strdup("historyList"),                func: webview_historyList),
-    luaL_Reg(name: strdup("navigationCallback"),         func: webview_navigationCallback),
-    luaL_Reg(name: strdup("policyCallback"),             func: webview_policyCallback),
-    luaL_Reg(name: strdup("sslCallback"),                func: webview_sslCallback),
-    luaL_Reg(name: strdup("children"),                   func: webview_children),
-    luaL_Reg(name: strdup("parent"),                     func: webview_parent),
-    luaL_Reg(name: strdup("evaluateJavaScript"),         func: webview_evaluateJavaScript),
-    luaL_Reg(name: strdup("privateBrowsing"),            func: webview_privateBrowsing),
-    luaL_Reg(name: strdup("userAgent"),                  func: webview_userAgent),
-    luaL_Reg(name: strdup("certificateChain"),           func: webview_certificateChain),
-    luaL_Reg(name: strdup("examineInvalidCertificates"), func: webview_examineInvalidCertificates),
-
-    // Window related
-    luaL_Reg(name: strdup("darkMode"),                   func: webview_darkMode),
-    luaL_Reg(name: strdup("titleVisibility"),            func: webview_titleVisibility),
-    luaL_Reg(name: strdup("show"),                       func: webview_show),
-    luaL_Reg(name: strdup("hide"),                       func: webview_hide),
-    luaL_Reg(name: strdup("closeOnEscape"),              func: webview_closeOnEscape),
-    luaL_Reg(name: strdup("allowTextEntry"),             func: webview_allowTextEntry),
-    luaL_Reg(name: strdup("hswindow"),                   func: webview_hswindow),
-    luaL_Reg(name: strdup("windowTitle"),                func: webview_windowTitle),
-    luaL_Reg(name: strdup("deleteOnClose"),              func: webview_deleteOnClose),
-    luaL_Reg(name: strdup("bringToFront"),               func: webview_bringToFront),
-    luaL_Reg(name: strdup("sendToBack"),                 func: webview_sendToBack),
-    luaL_Reg(name: strdup("shadow"),                     func: webview_shadow),
-    luaL_Reg(name: strdup("alpha"),                      func: webview_alpha),
-    luaL_Reg(name: strdup("orderAbove"),                 func: webview_orderAbove),
-    luaL_Reg(name: strdup("orderBelow"),                 func: webview_orderBelow),
-    luaL_Reg(name: strdup("behavior"),                   func: webview_behavior),
-    luaL_Reg(name: strdup("windowCallback"),             func: webview_windowCallback),
-    luaL_Reg(name: strdup("topLeft"),                    func: webview_topLeft),
-    luaL_Reg(name: strdup("size"),                       func: webview_size),
-    luaL_Reg(name: strdup("isVisible"),                  func: webview_isVisible),
-
-    luaL_Reg(name: strdup("_delete"),                    func: webview_delete),
-    luaL_Reg(name: strdup("_windowStyle"),               func: webview_windowStyle),
-    luaL_Reg(name: strdup("level"),                      func: webview_level),
-
-    luaL_Reg(name: strdup("__tostring"),                 func: wv_userdata_tostring),
-    luaL_Reg(name: strdup("__eq"),                       func: wv_userdata_eq),
-    luaL_Reg(name: strdup("__gc"),                       func: wv_userdata_gc),
-    luaL_Reg(name: nil, func: nil),
-]
-
-// Functions for returned object when module loads
-private var moduleLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("new"), func: webview_new),
-    luaL_Reg(name: nil, func: nil),
-]
-
-// Metatable for module
-private var module_metaLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("__gc"), func: wv_meta_gc),
-    luaL_Reg(name: nil, func: nil),
-]
-
 @_cdecl("luaopen_hs_libwebview")
 public func luaopen_hs_libwebview(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    // Create ref table in registry
-    lua_newtable(L)
-    wv_refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+    runEntryPoint(L) { L in
+        // Create ref table in registry
+        lua_newtable(L)
+        wv_refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
 
-    // Register userdata metatable
-    luaL_newmetatable(L, wv_USERDATA_TAG)
-    lua_pushvalue(L, -1)
-    lua_setfield(L, -2, "__index")
-    luaL_setfuncs(L, &userdata_metaLib, 0)
-    lua_pop(L, 1)
+        // Register userdata metatable
+        luaL_newmetatable(L, wv_USERDATA_TAG)
+        lua_pushvalue(L, -1)
+        lua_setfield(L, -2, "__index")
 
-    // Create module table
-    lua_createtable(L, 0, Int32(moduleLib.count - 1))
-    luaL_setfuncs(L, &moduleLib, 0)
+        // Webview Related
+        L.push(webview_goBack);                     lua_setfield(L, -2, "goBack")
+        L.push(webview_goForward);                  lua_setfield(L, -2, "goForward")
+        L.push(webview_url);                        lua_setfield(L, -2, "url")
+        L.push(webview_title);                      lua_setfield(L, -2, "title")
+        L.push(webview_navigationID);               lua_setfield(L, -2, "navigationID")
+        L.push(webview_reload);                     lua_setfield(L, -2, "reload")
+        L.push(webview_transparent);                lua_setfield(L, -2, "transparent")
+        L.push(webview_magnification);              lua_setfield(L, -2, "magnification")
+        L.push(webview_allowMagnificationGestures); lua_setfield(L, -2, "allowMagnificationGestures")
+        L.push(webview_allowNewWindows);            lua_setfield(L, -2, "allowNewWindows")
+        L.push(webview_allowNavigationGestures);    lua_setfield(L, -2, "allowNavigationGestures")
+        L.push(webview_isOnlySecureContent);        lua_setfield(L, -2, "isOnlySecureContent")
+        L.push(webview_estimatedProgress);          lua_setfield(L, -2, "estimatedProgress")
+        L.push(webview_loading);                    lua_setfield(L, -2, "loading")
+        L.push(webview_stopLoading);                lua_setfield(L, -2, "stopLoading")
+        L.push(webview_html);                       lua_setfield(L, -2, "html")
+        L.push(webview_historyList);                lua_setfield(L, -2, "historyList")
+        L.push(webview_navigationCallback);         lua_setfield(L, -2, "navigationCallback")
+        L.push(webview_policyCallback);             lua_setfield(L, -2, "policyCallback")
+        L.push(webview_sslCallback);                lua_setfield(L, -2, "sslCallback")
+        L.push(webview_children);                   lua_setfield(L, -2, "children")
+        L.push(webview_parent);                     lua_setfield(L, -2, "parent")
+        L.push(webview_evaluateJavaScript);         lua_setfield(L, -2, "evaluateJavaScript")
+        L.push(webview_privateBrowsing);            lua_setfield(L, -2, "privateBrowsing")
+        L.push(webview_userAgent);                  lua_setfield(L, -2, "userAgent")
+        L.push(webview_certificateChain);           lua_setfield(L, -2, "certificateChain")
+        L.push(webview_examineInvalidCertificates); lua_setfield(L, -2, "examineInvalidCertificates")
 
-    // Set module metatable (for __gc)
-    lua_createtable(L, 0, Int32(module_metaLib.count - 1))
-    luaL_setfuncs(L, &module_metaLib, 0)
-    lua_setmetatable(L, -2)
+        // Window related
+        L.push(webview_darkMode);                   lua_setfield(L, -2, "darkMode")
+        L.push(webview_titleVisibility);            lua_setfield(L, -2, "titleVisibility")
+        L.push(webview_show);                       lua_setfield(L, -2, "show")
+        L.push(webview_hide);                       lua_setfield(L, -2, "hide")
+        L.push(webview_closeOnEscape);              lua_setfield(L, -2, "closeOnEscape")
+        L.push(webview_allowTextEntry);             lua_setfield(L, -2, "allowTextEntry")
+        L.push(webview_hswindow);                   lua_setfield(L, -2, "hswindow")
+        L.push(webview_windowTitle);                lua_setfield(L, -2, "windowTitle")
+        L.push(webview_deleteOnClose);              lua_setfield(L, -2, "deleteOnClose")
+        L.push(webview_bringToFront);               lua_setfield(L, -2, "bringToFront")
+        L.push(webview_sendToBack);                 lua_setfield(L, -2, "sendToBack")
+        L.push(webview_shadow);                     lua_setfield(L, -2, "shadow")
+        L.push(webview_alpha);                      lua_setfield(L, -2, "alpha")
+        L.push(webview_orderAbove);                 lua_setfield(L, -2, "orderAbove")
+        L.push(webview_orderBelow);                 lua_setfield(L, -2, "orderBelow")
+        L.push(webview_behavior);                   lua_setfield(L, -2, "behavior")
+        L.push(webview_windowCallback);             lua_setfield(L, -2, "windowCallback")
+        L.push(webview_topLeft);                    lua_setfield(L, -2, "topLeft")
+        L.push(webview_size);                       lua_setfield(L, -2, "size")
+        L.push(webview_isVisible);                  lua_setfield(L, -2, "isVisible")
 
-    wv_windowMasksTable(L);    lua_setfield(L, -2, "windowMasks")
-    wv_pushCertificateOIDs(L); lua_setfield(L, -2, "certificateOIDs")
+        L.push(webview_delete);                     lua_setfield(L, -2, "_delete")
+        L.push(webview_windowStyle);                lua_setfield(L, -2, "_windowStyle")
+        L.push(webview_level);                      lua_setfield(L, -2, "level")
 
-    return 1
+        L.push(wv_userdata_tostring);               lua_setfield(L, -2, "__tostring")
+        L.push(wv_userdata_eq);                     lua_setfield(L, -2, "__eq")
+        L.push(wv_userdata_gc);                     lua_setfield(L, -2, "__gc")
+
+        lua_pop(L, 1)
+
+        // Create module table
+        lua_createtable(L, 0, 1)
+        L.push(webview_new); lua_setfield(L, -2, "new")
+
+        // Set module metatable (for __gc)
+        lua_createtable(L, 0, 1)
+        L.push(wv_meta_gc); lua_setfield(L, -2, "__gc")
+        lua_setmetatable(L, -2)
+
+        wv_windowMasksTable(L);    lua_setfield(L, -2, "windowMasks")
+        wv_pushCertificateOIDs(L); lua_setfield(L, -2, "certificateOIDs")
+    }
 }

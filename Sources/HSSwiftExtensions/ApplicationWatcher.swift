@@ -1,5 +1,6 @@
 import Cocoa
 import CLua
+import Lua
 
 // MARK: - Module constants
 
@@ -140,7 +141,7 @@ private func getWatcher(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) ->
 ///
 /// Notes:
 ///  * If the function is called with an event type of `hs.application.watcher.terminated` then the application name parameter will be `nil` and the `hs.application` parameter, will only be useful for getting the UNIX process ID (i.e. the PID) of the application
-private func app_watcher_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func app_watcher_new(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TFUNCTION)
 
     let watcher = AppWatcher()
@@ -167,7 +168,7 @@ private func app_watcher_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * The `hs.application.watcher` object
-private func app_watcher_start(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func app_watcher_start(_ L: LuaState) throws -> CInt {
     guard let watcher = getWatcher(L, at: 1) else { return 0 }
     lua_settop(L, 1)
 
@@ -189,7 +190,7 @@ private func app_watcher_start(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * The `hs.application.watcher` object
-private func app_watcher_stop(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func app_watcher_stop(_ L: LuaState) throws -> CInt {
     guard let watcher = getWatcher(L, at: 1) else { return 0 }
     lua_settop(L, 1)
 
@@ -202,7 +203,7 @@ private func app_watcher_stop(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 1
 }
 
-private func app_watcher_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func app_watcher_gc(_ L: LuaState) throws -> CInt {
     let ptr = luaL_checkudata(L, 1, USERDATA_TAG)!
         .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
     if let rawPtr = ptr.pointee {
@@ -216,13 +217,13 @@ private func app_watcher_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 0
 }
 
-private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func userdata_tostring(_ L: LuaState) throws -> CInt {
     let desc = "\(USERDATA_TAG): (\(String(describing: lua_topointer(L, 1)!)))"
     lua_pushstring(L, desc)
     return 1
 }
 
-private func meta_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func meta_gc(_ L: LuaState) throws -> CInt {
     return 0
 }
 
@@ -244,46 +245,36 @@ private func add_event_enum(_ L: UnsafeMutablePointer<lua_State>!) {
     }
 }
 
-// MARK: - Registration tables
-
-private let appLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("new"), func: app_watcher_new),
-    luaL_Reg(name: nil, func: nil),
-]
-
-private let metaGcLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("__gc"), func: meta_gc),
-    luaL_Reg(name: nil, func: nil),
-]
-
-private let metaLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("start"),      func: app_watcher_start),
-    luaL_Reg(name: strdup("stop"),       func: app_watcher_stop),
-    luaL_Reg(name: strdup("__tostring"), func: userdata_tostring),
-    luaL_Reg(name: strdup("__gc"),       func: app_watcher_gc),
-    luaL_Reg(name: nil, func: nil),
-]
-
 // MARK: - Module entry point
 
 @_cdecl("luaopen_hs_libapplicationwatcher")
 public func luaopen_hs_libapplicationwatcher(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    // Register userdata metatable
-    luaL_newmetatable(L, USERDATA_TAG)
-    lua_pushvalue(L, -1)
-    lua_setfield(L, -2, "__index")  // mt.__index = mt
-    luaL_setfuncs(L, metaLib, 0)
-    lua_pop(L, 1)
+    runEntryPoint(L) { L in
+        // Register userdata metatable
+        luaL_newmetatable(L, USERDATA_TAG)
+        lua_pushvalue(L, -1)
+        lua_setfield(L, -2, "__index")  // mt.__index = mt
+        L.push(app_watcher_start)
+        lua_setfield(L, -2, "start")
+        L.push(app_watcher_stop)
+        lua_setfield(L, -2, "stop")
+        L.push(userdata_tostring)
+        lua_setfield(L, -2, "__tostring")
+        L.push(app_watcher_gc)
+        lua_setfield(L, -2, "__gc")
+        lua_pop(L, 1)
 
-    // Create module table
-    lua_createtable(L, 0, Int32(appLib.count - 1))
-    luaL_setfuncs(L, appLib, 0)
+        // Create module table
+        lua_createtable(L, 0, 1)
+        L.push(app_watcher_new)
+        lua_setfield(L, -2, "new")
 
-    // Set module metatable for __gc
-    lua_createtable(L, 0, 1)
-    luaL_setfuncs(L, metaGcLib, 0)
-    lua_setmetatable(L, -2)
+        // Set module metatable for __gc
+        lua_createtable(L, 0, 1)
+        L.push(meta_gc)
+        lua_setfield(L, -2, "__gc")
+        lua_setmetatable(L, -2)
 
-    add_event_enum(L)
-    return 1
+        add_event_enum(L)
+    }
 }

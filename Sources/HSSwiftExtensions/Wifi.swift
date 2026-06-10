@@ -1,5 +1,6 @@
 import Cocoa
 import CLua
+import Lua
 import CoreWLAN
 import os.log
 
@@ -82,7 +83,7 @@ private class HSWifiScan: NSObject {
 ///
 /// Returns:
 ///  * True if the power change was successful, or false and an error string if an error occurred attempting to set the power state.  Returns nil if there is a problem attaching to the interface.
-private func setPower(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func setPower(_ L: LuaState) throws -> CInt {
     let powerState = lua_toboolean(L, 1) != 0
     var theName: String?
     if lua_gettop(L) == 2 {
@@ -115,7 +116,7 @@ private func setPower(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * None
-private func disassociate(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func disassociate(_ L: LuaState) throws -> CInt {
     var theName: String?
     if lua_gettop(L) == 1 {
         theName = String(cString: luaL_checkstring(L, 1))
@@ -142,7 +143,7 @@ private func disassociate(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * Enterprise WiFi networks are not currently supported. Please file an issue on GitHub if you need support for enterprise networks
 ///  * This function blocks Cosmic Hammer until the operation is completed
 ///  * If multiple access points are available with the same SSID, one will be chosen at random to connect to
-private func associate(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func associate(_ L: LuaState) throws -> CInt {
 
     var success = false
     var interfaceName: String?
@@ -175,7 +176,7 @@ private func associate(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Notes:
 ///  * For most systems, this will be one interface, but the result is still returned as an array.
-private func wifi_interfaces(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func wifi_interfaces(_ L: LuaState) throws -> CInt {
     let sharedClient = CWWiFiClient.shared()
     if let names = sharedClient.interfaceNames() {
         pushWifiValue(L, names)
@@ -197,7 +198,7 @@ private func wifi_interfaces(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Notes:
 ///  * WARNING: This function will block all Lua execution until the scan has completed. It's probably not very sensible to use this function very much, if at all.
-private func wifi_scan(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func wifi_scan(_ L: LuaState) throws -> CInt {
     var theName: String?
     if lua_gettop(L) == 1 {
         theName = String(cString: luaL_checkstring(L, 1))
@@ -231,7 +232,7 @@ private func wifi_scan(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * returns a scan object
-private func wifi_scan_background(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func wifi_scan_background(_ L: LuaState) throws -> CInt {
 
     var callbackRef: Int32 = LUA_NOREF
     if lua_type(L, 1) != LUA_TNIL {
@@ -263,7 +264,7 @@ private func wifi_scan_background(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
 ///
 /// Returns:
 ///  * A string containing the SSID of the WiFi network currently joined, or nil if no there is no WiFi connection
-private func wifi_current_ssid(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func wifi_current_ssid(_ L: LuaState) throws -> CInt {
     var theName: String?
     if lua_gettop(L) == 1 {
         theName = String(cString: luaL_checkstring(L, 1))
@@ -288,7 +289,7 @@ private func wifi_current_ssid(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * A table containing details about the interface.
-private func interfaceDetails(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func interfaceDetails(_ L: LuaState) throws -> CInt {
     var theName: String?
     if lua_gettop(L) == 1 {
         theName = String(cString: luaL_checkstring(L, 1))
@@ -315,7 +316,7 @@ private func interfaceDetails(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * a boolean value indicating whether or not the scan has been completed.
-private func backgroundScanIsDone(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func backgroundScanIsDone(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let scannerPtr = luaL_checkudata(L, 1, USERDATA_TAG)!
         .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
@@ -676,7 +677,7 @@ private func pushCWNetworkProfile(_ L: UnsafeMutablePointer<lua_State>!, _ obj: 
 
 // MARK: - Cosmic Hammer Infrastructure
 
-private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func userdata_tostring(_ L: LuaState) throws -> CInt {
     let scannerPtr = luaL_checkudata(L, 1, USERDATA_TAG)!
         .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
     let scanner = Unmanaged<HSWifiScan>.fromOpaque(scannerPtr.pointee!).takeUnretainedValue()
@@ -684,7 +685,7 @@ private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 1
 }
 
-private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func userdata_gc(_ L: LuaState) throws -> CInt {
     let scannerPtr = luaL_checkudata(L, 1, USERDATA_TAG)!
         .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
     let scanner = Unmanaged<HSWifiScan>.fromOpaque(scannerPtr.pointee!).takeRetainedValue()
@@ -701,41 +702,40 @@ private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 0
 }
 
-private var wifilib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("availableNetworks"), func: wifi_scan),
-    luaL_Reg(name: strdup("backgroundScan"), func: wifi_scan_background),
-    luaL_Reg(name: strdup("interfaces"), func: wifi_interfaces),
-    luaL_Reg(name: strdup("currentNetwork"), func: wifi_current_ssid),
-    luaL_Reg(name: strdup("interfaceDetails"), func: interfaceDetails),
-    luaL_Reg(name: strdup("setPower"), func: setPower),
-    luaL_Reg(name: strdup("disassociate"), func: disassociate),
-    luaL_Reg(name: strdup("associate"), func: associate),
-    luaL_Reg(name: nil, func: nil),
-]
-
-private var userdata_metaLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("isDone"), func: backgroundScanIsDone),
-    luaL_Reg(name: strdup("__tostring"), func: userdata_tostring),
-    luaL_Reg(name: strdup("__gc"), func: userdata_gc),
-    luaL_Reg(name: nil, func: nil),
-]
 
 @_cdecl("luaopen_hs_libwifi")
 public func luaopen_hs_libwifi(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    // Create ref table in registry
-    lua_newtable(L)
-    refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+    runEntryPoint(L) { L in
+        lua_newtable(L)
+        refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
 
-    // Register userdata metatable
-    luaL_newmetatable(L, USERDATA_TAG)
-    lua_pushvalue(L, -1)
-    lua_setfield(L, -2, "__index")
-    luaL_setfuncs(L, &userdata_metaLib, 0)
-    lua_pop(L, 1)
+        luaL_newmetatable(L, USERDATA_TAG)
+        lua_pushvalue(L, -1)
+        lua_setfield(L, -2, "__index")
+        L.push(backgroundScanIsDone)
+        lua_setfield(L, -2, "isDone")
+        L.push(userdata_tostring)
+        lua_setfield(L, -2, "__tostring")
+        L.push(userdata_gc)
+        lua_setfield(L, -2, "__gc")
+        lua_pop(L, 1)
 
-    // Create module table
-    lua_createtable(L, 0, Int32(wifilib.count - 1))
-    luaL_setfuncs(L, &wifilib, 0)
-
-    return 1
+        lua_createtable(L, 0, 8)
+        L.push(wifi_scan)
+        lua_setfield(L, -2, "availableNetworks")
+        L.push(wifi_scan_background)
+        lua_setfield(L, -2, "backgroundScan")
+        L.push(wifi_interfaces)
+        lua_setfield(L, -2, "interfaces")
+        L.push(wifi_current_ssid)
+        lua_setfield(L, -2, "currentNetwork")
+        L.push(interfaceDetails)
+        lua_setfield(L, -2, "interfaceDetails")
+        L.push(setPower)
+        lua_setfield(L, -2, "setPower")
+        L.push(disassociate)
+        lua_setfield(L, -2, "disassociate")
+        L.push(associate)
+        lua_setfield(L, -2, "associate")
+    }
 }

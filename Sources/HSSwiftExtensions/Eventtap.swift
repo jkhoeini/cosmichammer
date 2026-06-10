@@ -1,5 +1,6 @@
 import Cocoa
 import CLua
+import Lua
 import Carbon
 import os.log
 
@@ -102,7 +103,7 @@ private let eventtapCallback: CGEventTapCallBack = { proxy, type, event, userInf
 /// hs.eventtap.keyStrokes(text[, application])
 /// Function
 /// Generates and emits keystroke events for the supplied text
-private func eventtap_keyStrokes(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func eventtap_keyStrokes(_ L: LuaState) throws -> CInt {
 
     let theString = lua_tovalue(L, at: 1) as! NSString
     var targetPid: pid_t = 0
@@ -144,7 +145,7 @@ private func eventtap_keyStrokes(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 /// hs.eventtap.new(types, fn) -> eventtap
 /// Constructor
 /// Create a new event tap object
-private func eventtap_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func eventtap_new(_ L: LuaState) throws -> CInt {
 
     luaL_checktype(L, 1, LUA_TTABLE)
     luaL_checktype(L, 2, LUA_TFUNCTION)
@@ -162,10 +163,10 @@ private func eventtap_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
             if label == "all" {
                 eventtap.mask = CGEventMask(UInt64.max)
             } else {
-                return luaL_error(L, "Invalid event type specified. Must be a table of numbers or {\"all\"}.")
+                throw LuaCallError("Invalid event type specified. Must be a table of numbers or {\"all\"}.")
             }
         } else {
-            return luaL_error(L, "Invalid event types specified. Must be a table of numbers.")
+            throw LuaCallError("Invalid event types specified. Must be a table of numbers.")
         }
         lua_pop(L, 1)
     }
@@ -185,7 +186,7 @@ private func eventtap_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.eventtap:start()
 /// Method
 /// Starts an event tap
-private func eventtap_start(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func eventtap_start(_ L: LuaState) throws -> CInt {
     guard let e = getEventtap(L, at: 1) else { return 0 }
 
     let tapEnabled = e.tap.map { CGEvent.tapIsEnabled(tap: $0) } ?? false
@@ -226,7 +227,7 @@ private func eventtap_start(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.eventtap:stop()
 /// Method
 /// Stops an event tap
-private func eventtap_stop(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func eventtap_stop(_ L: LuaState) throws -> CInt {
     guard let e = getEventtap(L, at: 1) else { return 0 }
 
     if let tap = e.tap {
@@ -245,7 +246,7 @@ private func eventtap_stop(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.eventtap:isEnabled() -> bool
 /// Method
 /// Determine whether or not an event tap object is enabled.
-private func eventtap_isEnabled(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func eventtap_isEnabled(_ L: LuaState) throws -> CInt {
     guard let e = getEventtap(L, at: 1) else {
         lua_pushboolean(L, 0)
         return 1
@@ -258,7 +259,7 @@ private func eventtap_isEnabled(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 /// hs.eventtap.checkKeyboardModifiers([raw]) -> table
 /// Function
 /// Returns a table containing the current key modifiers being pressed
-private func checkKeyboardModifiers(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func checkKeyboardModifiers(_ L: LuaState) throws -> CInt {
     let theFlags = NSEvent.modifierFlags
 
     lua_newtable(L)
@@ -297,7 +298,7 @@ private func checkKeyboardModifiers(_ L: UnsafeMutablePointer<lua_State>!) -> In
 /// hs.eventtap.isSecureInputEnabled() -> boolean
 /// Function
 /// Checks if macOS is preventing keyboard events from being sent to event taps
-private func secureInputEnabled(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func secureInputEnabled(_ L: LuaState) throws -> CInt {
     lua_pushboolean(L, IsSecureEventInputEnabled() ? 1 : 0)
     return 1
 }
@@ -305,7 +306,7 @@ private func secureInputEnabled(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 /// hs.eventtap.checkMouseButtons() -> table
 /// Function
 /// Returns a table containing the current mouse buttons being pressed
-private func checkMouseButtons(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func checkMouseButtons(_ L: LuaState) throws -> CInt {
     var theButtons = NSEvent.pressedMouseButtons
     var i = 0
 
@@ -333,7 +334,7 @@ private func checkMouseButtons(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.eventtap.keyRepeatInterval() -> number
 /// Function
 /// Returns the system-wide setting for the interval between repeated keyboard events
-private func eventtap_keyRepeatInterval(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func eventtap_keyRepeatInterval(_ L: LuaState) throws -> CInt {
     lua_pushnumber(L, NSEvent.keyRepeatInterval)
     return 1
 }
@@ -341,7 +342,7 @@ private func eventtap_keyRepeatInterval(_ L: UnsafeMutablePointer<lua_State>!) -
 /// hs.eventtap.keyRepeatDelay() -> number
 /// Function
 /// Returns the system-wide setting for the delay before keyboard repeat events begin
-private func eventtap_keyRepeatDelay(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func eventtap_keyRepeatDelay(_ L: LuaState) throws -> CInt {
     lua_pushnumber(L, NSEvent.keyRepeatDelay)
     return 1
 }
@@ -349,14 +350,14 @@ private func eventtap_keyRepeatDelay(_ L: UnsafeMutablePointer<lua_State>!) -> I
 /// hs.eventtap.doubleClickInterval() -> number
 /// Function
 /// Returns the system-wide setting for the delay between two clicks
-private func eventtap_doubleClickInterval(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func eventtap_doubleClickInterval(_ L: LuaState) throws -> CInt {
     lua_pushnumber(L, NSEvent.doubleClickInterval)
     return 1
 }
 
 // MARK: - Infrastructure
 
-private func eventtap_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func eventtap_gc(_ L: LuaState) throws -> CInt {
     let ud = luaL_checkudata(L, 1, USERDATA_TAG)!
         .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
     if let rawPtr = ud.pointee {
@@ -386,11 +387,11 @@ private func eventtap_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 0
 }
 
-private func meta_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func meta_gc(_ L: LuaState) throws -> CInt {
     return 0
 }
 
-private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func userdata_tostring(_ L: LuaState) throws -> CInt {
     guard let e = getEventtap(L, at: 1) else {
         lua_pushstring(L, "\(USERDATA_TAG): (nil)")
         return 1
@@ -401,53 +402,49 @@ private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 // MARK: - Registration
 
-private var userdata_metaLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("start"),      func: eventtap_start),
-    luaL_Reg(name: strdup("stop"),       func: eventtap_stop),
-    luaL_Reg(name: strdup("isEnabled"),  func: eventtap_isEnabled),
-    luaL_Reg(name: strdup("__tostring"), func: userdata_tostring),
-    luaL_Reg(name: strdup("__gc"),       func: eventtap_gc),
-    luaL_Reg(name: nil, func: nil),
-]
-
-private var moduleLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("new"),                    func: eventtap_new),
-    luaL_Reg(name: strdup("keyStrokes"),             func: eventtap_keyStrokes),
-    luaL_Reg(name: strdup("checkKeyboardModifiers"), func: checkKeyboardModifiers),
-    luaL_Reg(name: strdup("checkMouseButtons"),      func: checkMouseButtons),
-    luaL_Reg(name: strdup("keyRepeatDelay"),         func: eventtap_keyRepeatDelay),
-    luaL_Reg(name: strdup("keyRepeatInterval"),      func: eventtap_keyRepeatInterval),
-    luaL_Reg(name: strdup("doubleClickInterval"),    func: eventtap_doubleClickInterval),
-    luaL_Reg(name: strdup("isSecureInputEnabled"),   func: secureInputEnabled),
-    luaL_Reg(name: nil, func: nil),
-]
-
-private var module_metaLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("__gc"), func: meta_gc),
-    luaL_Reg(name: nil, func: nil),
-]
-
 @_cdecl("luaopen_hs_libeventtap")
 public func luaopen_hs_libeventtap(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    // Create ref table in registry
-    lua_newtable(L)
-    refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+    runEntryPoint(L) { L in
+        lua_newtable(L)
+        refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
 
-    // Register userdata metatable
-    luaL_newmetatable(L, USERDATA_TAG)
-    lua_pushvalue(L, -1)
-    lua_setfield(L, -2, "__index")
-    luaL_setfuncs(L, &userdata_metaLib, 0)
-    lua_pop(L, 1)
+        luaL_newmetatable(L, USERDATA_TAG)
+        lua_pushvalue(L, -1)
+        lua_setfield(L, -2, "__index")
+        L.push(eventtap_start)
+        lua_setfield(L, -2, "start")
+        L.push(eventtap_stop)
+        lua_setfield(L, -2, "stop")
+        L.push(eventtap_isEnabled)
+        lua_setfield(L, -2, "isEnabled")
+        L.push(userdata_tostring)
+        lua_setfield(L, -2, "__tostring")
+        L.push(eventtap_gc)
+        lua_setfield(L, -2, "__gc")
+        lua_pop(L, 1)
 
-    // Create module table
-    lua_createtable(L, 0, Int32(moduleLib.count - 1))
-    luaL_setfuncs(L, &moduleLib, 0)
+        lua_createtable(L, 0, 8)
+        L.push(eventtap_new)
+        lua_setfield(L, -2, "new")
+        L.push(eventtap_keyStrokes)
+        lua_setfield(L, -2, "keyStrokes")
+        L.push(checkKeyboardModifiers)
+        lua_setfield(L, -2, "checkKeyboardModifiers")
+        L.push(checkMouseButtons)
+        lua_setfield(L, -2, "checkMouseButtons")
+        L.push(eventtap_keyRepeatDelay)
+        lua_setfield(L, -2, "keyRepeatDelay")
+        L.push(eventtap_keyRepeatInterval)
+        lua_setfield(L, -2, "keyRepeatInterval")
+        L.push(eventtap_doubleClickInterval)
+        lua_setfield(L, -2, "doubleClickInterval")
+        L.push(secureInputEnabled)
+        lua_setfield(L, -2, "isSecureInputEnabled")
 
-    // Set module metatable (for __gc)
-    lua_createtable(L, 0, Int32(module_metaLib.count - 1))
-    luaL_setfuncs(L, &module_metaLib, 0)
-    lua_setmetatable(L, -2)
-
-    return 1
+        // Set module metatable (for __gc)
+        lua_createtable(L, 0, 1)
+        L.push(meta_gc)
+        lua_setfield(L, -2, "__gc")
+        lua_setmetatable(L, -2)
+    }
 }

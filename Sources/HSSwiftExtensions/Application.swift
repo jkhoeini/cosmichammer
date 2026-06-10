@@ -1,5 +1,6 @@
 import Cocoa
 import CLua
+import Lua
 import Carbon
 import Carbon.HIToolbox
 import os.log
@@ -35,7 +36,7 @@ private func appClassMethod(_ sel: String, with arg1: Any? = nil) -> Any? {
 
 // MARK: - Module functions
 
-private func application_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func application_gc(_ L: LuaState) throws -> CInt {
     backgroundCallbacks.enumerateObjects { obj, _ in
         if let ref = obj as? NSNumber {
             luaL_unref(L, LUA_REGISTRYINDEX_VALUE, ref.int32Value)
@@ -54,7 +55,7 @@ private func application_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * An hs.application object
-private func application_frontmostapplication(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func application_frontmostapplication(_ L: LuaState) throws -> CInt {
     let result = HSapplication.frontmostApplication(withState: L)
     pushHSapplicationOrNil(L, result)
     return 1
@@ -69,7 +70,7 @@ private func application_frontmostapplication(_ L: UnsafeMutablePointer<lua_Stat
 ///
 /// Returns:
 ///  * A table containing zero or more hs.application objects currently running on the system
-private func application_runningapplications(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func application_runningapplications(_ L: LuaState) throws -> CInt {
     let result = HSapplication.runningApplications(withState: L)
     pushHSapplications(L, result)
     return 1
@@ -84,7 +85,7 @@ private func application_runningapplications(_ L: UnsafeMutablePointer<lua_State
 ///
 /// Returns:
 ///  * An hs.application object if one can be found, otherwise nil
-private func application_applicationforpid(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func application_applicationforpid(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TNUMBER)
     let pid = pid_t(lua_tointegerx(L, 1, nil))
     let result = HSapplication.application(forPID: pid, withState: L)
@@ -101,7 +102,7 @@ private func application_applicationforpid(_ L: UnsafeMutablePointer<lua_State>!
 ///
 /// Returns:
 ///  * A table of zero or more hs.application objects that match the given identifier
-private func application_applicationsForBundleID(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func application_applicationsForBundleID(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TSTRING)
     let bundleID = lua_tovalue(L, at: 1) as! String
     let result = HSapplication.applications(forBundleID: bundleID, withState: L)
@@ -118,7 +119,7 @@ private func application_applicationsForBundleID(_ L: UnsafeMutablePointer<lua_S
 ///
 /// Returns:
 ///  * A string containing the application name, or nil if the bundle identifier could not be located
-private func application_nameForBundleID(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func application_nameForBundleID(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TSTRING)
     let bundleID = lua_tovalue(L, at: 1) as! String
     let result = appClassMethod("nameForBundleID:", with: bundleID as NSString)
@@ -135,7 +136,7 @@ private func application_nameForBundleID(_ L: UnsafeMutablePointer<lua_State>!) 
 ///
 /// Returns:
 ///  * A string containing the app bundle's filesystem path, or nil if the bundle identifier could not be located
-private func application_pathForBundleID(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func application_pathForBundleID(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TSTRING)
     let bundleID = lua_tovalue(L, at: 1) as! String
     let result = appClassMethod("pathForBundleID:", with: bundleID as NSString)
@@ -152,7 +153,7 @@ private func application_pathForBundleID(_ L: UnsafeMutablePointer<lua_State>!) 
 ///
 /// Returns:
 ///  * A table containing information about the application, or nil if the bundle identifier could not be located
-private func application_infoForBundleID(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func application_infoForBundleID(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TSTRING)
     let bundleID = lua_tovalue(L, at: 1) as! String
     let result = appClassMethod("infoForBundleID:", with: bundleID as NSString)
@@ -169,7 +170,7 @@ private func application_infoForBundleID(_ L: UnsafeMutablePointer<lua_State>!) 
 ///
 /// Returns:
 ///  * A table containing language IDs for localizations in the bundle. The strings are ordered according to the user's language preferences and available localizations.
-private func application_preferredLocalizationsForBundleID(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func application_preferredLocalizationsForBundleID(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TSTRING)
     let bundleID = lua_tovalue(L, at: 1) as! String
     let result = appClassMethod("preferredLocalizationsForBundleID:", with: bundleID as NSString)
@@ -186,7 +187,7 @@ private func application_preferredLocalizationsForBundleID(_ L: UnsafeMutablePoi
 ///
 /// Returns:
 ///  * A table containing language IDs for localizations in the bundle. The strings are ordered according to the user's language preferences and available localizations.
-private func application_preferredLocalizationsForBundlePath(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func application_preferredLocalizationsForBundlePath(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TSTRING)
     let bundlePath = lua_tovalue(L, at: 1) as! String
     let result = appClassMethod("preferredLocalizationsForBundlePath:", with: bundlePath as NSString)
@@ -203,7 +204,7 @@ private func application_preferredLocalizationsForBundlePath(_ L: UnsafeMutableP
 ///
 /// Returns:
 ///  * A table containing language IDs for all the localizations contained in the bundle.
-private func application_localizationsForBundleID(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func application_localizationsForBundleID(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TSTRING)
     let bundleID = lua_tovalue(L, at: 1) as! String
     let result = appClassMethod("localizationsForBundleID:", with: bundleID as NSString)
@@ -220,7 +221,7 @@ private func application_localizationsForBundleID(_ L: UnsafeMutablePointer<lua_
 ///
 /// Returns:
 ///  * A table containing language IDs for all the localizations contained in the bundle.
-private func application_localizationsForBundlePath(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func application_localizationsForBundlePath(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TSTRING)
     let bundlePath = lua_tovalue(L, at: 1) as! String
     let result = appClassMethod("localizationsForBundlePath:", with: bundlePath as NSString)
@@ -237,7 +238,7 @@ private func application_localizationsForBundlePath(_ L: UnsafeMutablePointer<lu
 ///
 /// Returns:
 ///  * A table containing information about the application, or nil if the bundle could not be located
-private func application_infoForBundlePath(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func application_infoForBundlePath(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TSTRING)
     let bundlePath = lua_tovalue(L, at: 1) as! String
     let result = appClassMethod("infoForBundlePath:", with: bundlePath as NSString)
@@ -254,7 +255,7 @@ private func application_infoForBundlePath(_ L: UnsafeMutablePointer<lua_State>!
 ///
 /// Returns:
 ///  * A string containing a bundle ID, or nil if none could be found
-private func application_bundleForUTI(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func application_bundleForUTI(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TSTRING)
 
     let uti = lua_tovalue(L, at: 1) as! NSString
@@ -292,7 +293,7 @@ private func application_bundleForUTI(_ L: UnsafeMutablePointer<lua_State>!) -> 
 ///      as the union of all currently visible Spaces
 ///    - minimized windows and hidden windows (i.e. belonging to hidden apps, e.g. via cmd-h) are always considered
 ///      to be in the current Space
-private func application_allWindows(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func application_allWindows(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     guard let app = getApp(L, at: 1) else { lua_pushnil(L); return 1 }
     pushHSwindows(L, app.allWindows())
@@ -308,7 +309,7 @@ private func application_allWindows(_ L: UnsafeMutablePointer<lua_State>!) -> In
 ///
 /// Returns:
 ///  * An hs.window object representing the main window of the application, or nil if it has no windows
-private func application_mainWindow(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func application_mainWindow(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     guard let app = getApp(L, at: 1) else { lua_pushnil(L); return 1 }
     pushHSwindowOrNil(L, app.mainWindow())
@@ -324,27 +325,27 @@ private func application_mainWindow(_ L: UnsafeMutablePointer<lua_State>!) -> In
 ///
 /// Returns:
 ///  * An hs.window object representing the window of the application that currently has focus, or nil if there are none
-private func application_focusedWindow(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func application_focusedWindow(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     guard let app = getApp(L, at: 1) else { lua_pushnil(L); return 1 }
     pushHSwindowOrNil(L, app.focusedWindow())
     return 1
 }
 
-private func application__activate(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func application__activate(_ L: LuaState) throws -> CInt {
     guard let app = getApp(L, at: 1) else { lua_pushboolean(L, 0); return 1 }
     lua_pushboolean(L, app.activate(lua_toboolean(L, 2) != 0) ? 1 : 0)
     return 1
 }
 
-private func application_isunresponsive(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func application_isunresponsive(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     guard let app = getApp(L, at: 1) else { lua_pushboolean(L, 0); return 1 }
     lua_pushboolean(L, app.isResponsive() ? 0 : 1)
     return 1
 }
 
-private func application__bringtofront(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func application__bringtofront(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     guard let app = getApp(L, at: 1) else { lua_pushboolean(L, 0); return 1 }
     lua_pushboolean(L, app.setFrontmost(lua_toboolean(L, 2) != 0) ? 1 : 0)
@@ -360,7 +361,7 @@ private func application__bringtofront(_ L: UnsafeMutablePointer<lua_State>!) ->
 ///
 /// Returns:
 ///  * A string containing the name of the application
-private func application_title(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func application_title(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     guard let app = getApp(L, at: 1) else { lua_pushnil(L); return 1 }
     lua_pushany(L, app.title())
@@ -376,7 +377,7 @@ private func application_title(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * A string containing the bundle identifier of the application
-private func application_bundleID(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func application_bundleID(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     guard let app = getApp(L, at: 1) else { lua_pushnil(L); return 1 }
     lua_pushany(L, app.bundleID())
@@ -392,7 +393,7 @@ private func application_bundleID(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
 ///
 /// Returns:
 ///  * A string containing the filesystem path of the application or nil if the path could not be determined (e.g. if the application has terminated).
-private func application_path(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func application_path(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     guard let app = getApp(L, at: 1) else { lua_pushnil(L); return 1 }
     lua_pushany(L, app.path())
@@ -411,7 +412,7 @@ private func application_path(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Notes:
 ///  * If an application is terminated and re-launched, this method will still return false, as `hs.application` objects are tied to a specific instance of an application (i.e. its PID)
-private func application_isRunning(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func application_isRunning(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     guard let app = getApp(L, at: 1) else { lua_pushboolean(L, 0); return 1 }
     lua_pushboolean(L, app.isRunning(withState: L) ? 1 : 0)
@@ -427,7 +428,7 @@ private func application_isRunning(_ L: UnsafeMutablePointer<lua_State>!) -> Int
 ///
 /// Returns:
 ///  * A boolean indicating whether the application was successfully unhidden
-private func application_unhide(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func application_unhide(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     guard let app = getApp(L, at: 1) else { lua_pushboolean(L, 0); return 1 }
     app.hidden = false
@@ -444,7 +445,7 @@ private func application_unhide(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 ///
 /// Returns:
 ///  * A boolean indicating whether the application was successfully hidden
-private func application_hide(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func application_hide(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     guard let app = getApp(L, at: 1) else { lua_pushboolean(L, 0); return 1 }
     app.hidden = true
@@ -461,7 +462,7 @@ private func application_hide(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * None
-private func application_kill(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func application_kill(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     guard let app = getApp(L, at: 1) else { return 0 }
     app.kill()
@@ -477,7 +478,7 @@ private func application_kill(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * None
-private func application_kill9(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func application_kill9(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     guard let app = getApp(L, at: 1) else { return 0 }
     app.kill9()
@@ -493,7 +494,7 @@ private func application_kill9(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * A boolean indicating whether the application is hidden or not
-private func application_ishidden(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func application_ishidden(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     guard let app = getApp(L, at: 1) else { lua_pushboolean(L, 0); return 1 }
     lua_pushboolean(L, app.hidden ? 1 : 0)
@@ -509,7 +510,7 @@ private func application_ishidden(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
 ///
 /// Returns:
 ///  * True if the application is the frontmost application, otherwise false
-private func application_isfrontmost(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func application_isfrontmost(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     guard let app = getApp(L, at: 1) else { lua_pushboolean(L, 0); return 1 }
     lua_pushboolean(L, app.isFrontmost() ? 1 : 0)
@@ -525,7 +526,7 @@ private func application_isfrontmost(_ L: UnsafeMutablePointer<lua_State>!) -> I
 ///
 /// Returns:
 ///  * A boolean, true if the operation was successful, otherwise false
-private func application_setfrontmost(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func application_setfrontmost(_ L: LuaState) throws -> CInt {
     var allWindows = false
     luaL_checkudata(L, 1, USERDATA_TAG)
     guard let app = getApp(L, at: 1) else { lua_pushboolean(L, 0); return 1 }
@@ -547,7 +548,7 @@ private func application_setfrontmost(_ L: UnsafeMutablePointer<lua_State>!) -> 
 ///
 /// Returns:
 ///  * The UNIX process identifier of the application (i.e. a number)
-private func application_pid(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func application_pid(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     guard let app = getApp(L, at: 1) else { lua_pushinteger(L, 0); return 1 }
     lua_pushinteger(L, lua_Integer(app.pid))
@@ -563,7 +564,7 @@ private func application_pid(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * A number that is either 1 if the app is in the dock, 0 if it is not, or -1 if the application is prohibited from having GUI elements
-private func application_kind(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func application_kind(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     guard let app = getApp(L, at: 1) else { lua_pushinteger(L, -1); return 1 }
     lua_pushinteger(L, lua_Integer(app.kind()))
@@ -741,7 +742,7 @@ private func _findmenuitembypath(_ L: UnsafeMutablePointer<lua_State>!, _ app: A
 ///
 /// Notes:
 ///  * This can only search for menu items that don't have children - i.e. you can't search for the name of a submenu
-private func application_findmenuitem(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func application_findmenuitem(_ L: LuaState) throws -> CInt {
     guard let app = getApp(L, at: 1) else { lua_pushnil(L); return 1 }
 
     var foundItem: AXUIElement?
@@ -823,7 +824,7 @@ private func application_findmenuitem(_ L: UnsafeMutablePointer<lua_State>!) -> 
 ///
 /// Notes:
 ///  * Depending on the type of menu item involved, this will either activate or tick/untick the menu item
-private func application_selectmenuitem(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func application_selectmenuitem(_ L: LuaState) throws -> CInt {
     guard let app = getApp(L, at: 1) else { lua_pushnil(L); return 1 }
 
     var foundItem: AXUIElement?
@@ -1003,7 +1004,7 @@ private func _getMenuStructure(_ menuItem: AXUIElement) -> Any {
 ///   * AXMenuItemCmdChar - A string containing the key for the menu item's keyboard shortcut, or an empty string if no shortcut is present
 ///   * AXMenuItemCmdGlyph - An integer, corresponding to one of the defined glyphs in `hs.application.menuGlyphs` if the keyboard shortcut is a special character usually represented by a pictorial representation (think arrow keys, return, etc), or an empty string if no glyph is used in presenting the keyboard shortcut.
 ///  * Using `hs.inspect()` on these tables, while useful for exploration, can be extremely slow, taking several minutes to correctly render very complex menus
-private func application_getMenus(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func application_getMenus(_ L: LuaState) throws -> CInt {
     guard let app = getApp(L, at: 1) else { lua_pushnil(L); return 1 }
 
     if lua_gettop(L) == 1 {
@@ -1060,7 +1061,7 @@ private func application_getMenus(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
 ///
 /// Notes:
 ///  * The name parameter should match the name of the application on disk, e.g. "IntelliJ IDEA", rather than "IntelliJ"
-private func application_launchorfocus(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func application_launchorfocus(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TSTRING)
     guard let appClass = HSuicore.applicationClass else { lua_pushboolean(L, 0); return 1 }
     let name = lua_tovalue(L, at: 1) as! NSString
@@ -1083,7 +1084,7 @@ private func application_launchorfocus(_ L: UnsafeMutablePointer<lua_State>!) ->
 ///
 /// Notes:
 ///  * Bundle identifiers typically take the form of `com.company.ApplicationName`
-private func application_launchorfocusbybundleID(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func application_launchorfocusbybundleID(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TSTRING)
     guard let appClass = HSuicore.applicationClass else { lua_pushboolean(L, 0); return 1 }
     let bundleID = lua_tovalue(L, at: 1) as! NSString
@@ -1096,7 +1097,7 @@ private func application_launchorfocusbybundleID(_ L: UnsafeMutablePointer<lua_S
 
 // MARK: - hs.uielement methods
 
-private func application_uielement_isApplication(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func application_uielement_isApplication(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     guard let app = getApp(L, at: 1) else { lua_pushboolean(L, 0); return 1 }
     if let uiElement = app.uiElement as? HSuielementProtocol {
@@ -1107,7 +1108,7 @@ private func application_uielement_isApplication(_ L: UnsafeMutablePointer<lua_S
     return 1
 }
 
-private func application_uielement_isWindow(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func application_uielement_isWindow(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     guard let app = getApp(L, at: 1) else { lua_pushboolean(L, 0); return 1 }
     if let uiElement = app.uiElement as? HSuielementProtocol {
@@ -1118,7 +1119,7 @@ private func application_uielement_isWindow(_ L: UnsafeMutablePointer<lua_State>
     return 1
 }
 
-private func application_uielement_role(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func application_uielement_role(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     guard let app = getApp(L, at: 1) else { lua_pushnil(L); return 1 }
     if let uiElement = app.uiElement as? HSuielementProtocol {
@@ -1129,7 +1130,7 @@ private func application_uielement_role(_ L: UnsafeMutablePointer<lua_State>!) -
     return 1
 }
 
-private func application_uielement_selectedText(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func application_uielement_selectedText(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     guard let app = getApp(L, at: 1) else { lua_pushnil(L); return 1 }
     if let uiElement = app.uiElement as? HSuielementProtocol {
@@ -1140,7 +1141,7 @@ private func application_uielement_selectedText(_ L: UnsafeMutablePointer<lua_St
     return 1
 }
 
-private func application_uielement_newWatcher(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func application_uielement_newWatcher(_ L: LuaState) throws -> CInt {
     guard let app = getApp(L, at: 1) else { lua_pushnil(L); return 1 }
     if let uiElement = app.uiElement as? HSuielementProtocol {
         let watcher = uiElement.newWatcher(atIndex: 2, withUserdataAtIndex: 3, withLuaState: L)
@@ -1201,7 +1202,7 @@ private func toHSapplicationFromLua(_ L: UnsafeMutablePointer<lua_State>!, _ idx
 
 // MARK: - Infrastructure
 
-private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func userdata_tostring(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let app = getApp(L, at: 1)
     let title = app?.title() ?? "?"
@@ -1209,7 +1210,7 @@ private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 1
 }
 
-private func userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func userdata_eq(_ L: LuaState) throws -> CInt {
     var isEqual = false
     if luaL_testudata(L, 1, USERDATA_TAG) != nil && luaL_testudata(L, 2, USERDATA_TAG) != nil {
         if let app1 = toHSapplicationFromLua(L, 1) as? HSapplicationProtocol,
@@ -1221,7 +1222,7 @@ private func userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 1
 }
 
-private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func userdata_gc(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let ptr = luaL_checkudata(L, 1, USERDATA_TAG)!
         .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
@@ -1237,92 +1238,76 @@ private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 0
 }
 
-// MARK: - Registration
-
-private var moduleLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("runningApplications"), func: application_runningapplications),
-    luaL_Reg(name: strdup("frontmostApplication"), func: application_frontmostapplication),
-    luaL_Reg(name: strdup("applicationForPID"), func: application_applicationforpid),
-    luaL_Reg(name: strdup("applicationsForBundleID"), func: application_applicationsForBundleID),
-    luaL_Reg(name: strdup("nameForBundleID"), func: application_nameForBundleID),
-    luaL_Reg(name: strdup("pathForBundleID"), func: application_pathForBundleID),
-    luaL_Reg(name: strdup("infoForBundleID"), func: application_infoForBundleID),
-    luaL_Reg(name: strdup("infoForBundlePath"), func: application_infoForBundlePath),
-    luaL_Reg(name: strdup("preferredLocalizationsForBundleID"), func: application_preferredLocalizationsForBundleID),
-    luaL_Reg(name: strdup("preferredLocalizationsForBundlePath"), func: application_preferredLocalizationsForBundlePath),
-    luaL_Reg(name: strdup("localizationsForBundleID"), func: application_localizationsForBundleID),
-    luaL_Reg(name: strdup("localizationsForBundlePath"), func: application_localizationsForBundlePath),
-    luaL_Reg(name: strdup("defaultAppForUTI"), func: application_bundleForUTI),
-    luaL_Reg(name: strdup("launchOrFocus"), func: application_launchorfocus),
-    luaL_Reg(name: strdup("launchOrFocusByBundleID"), func: application_launchorfocusbybundleID),
-    luaL_Reg(name: nil, func: nil),
-]
-
-private var module_metaLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("__gc"), func: application_gc),
-    luaL_Reg(name: nil, func: nil),
-]
-
-private var userdata_metaLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("allWindows"), func: application_allWindows),
-    luaL_Reg(name: strdup("mainWindow"), func: application_mainWindow),
-    luaL_Reg(name: strdup("focusedWindow"), func: application_focusedWindow),
-    luaL_Reg(name: strdup("_activate"), func: application__activate),
-    luaL_Reg(name: strdup("_bringtofront"), func: application__bringtofront),
-    luaL_Reg(name: strdup("title"), func: application_title),
-    luaL_Reg(name: strdup("name"), func: application_title),
-    luaL_Reg(name: strdup("bundleID"), func: application_bundleID),
-    luaL_Reg(name: strdup("path"), func: application_path),
-    luaL_Reg(name: strdup("isRunning"), func: application_isRunning),
-    luaL_Reg(name: strdup("unhide"), func: application_unhide),
-    luaL_Reg(name: strdup("hide"), func: application_hide),
-    luaL_Reg(name: strdup("kill"), func: application_kill),
-    luaL_Reg(name: strdup("kill9"), func: application_kill9),
-    luaL_Reg(name: strdup("isHidden"), func: application_ishidden),
-    luaL_Reg(name: strdup("isFrontmost"), func: application_isfrontmost),
-    luaL_Reg(name: strdup("setFrontmost"), func: application_setfrontmost),
-    luaL_Reg(name: strdup("pid"), func: application_pid),
-    luaL_Reg(name: strdup("isUnresponsive"), func: application_isunresponsive),
-    luaL_Reg(name: strdup("kind"), func: application_kind),
-    luaL_Reg(name: strdup("findMenuItem"), func: application_findmenuitem),
-    luaL_Reg(name: strdup("selectMenuItem"), func: application_selectmenuitem),
-    luaL_Reg(name: strdup("getMenuItems"), func: application_getMenus),
-    luaL_Reg(name: strdup("isApplication"), func: application_uielement_isApplication),
-    luaL_Reg(name: strdup("isWindow"), func: application_uielement_isWindow),
-    luaL_Reg(name: strdup("role"), func: application_uielement_role),
-    luaL_Reg(name: strdup("selectedText"), func: application_uielement_selectedText),
-    luaL_Reg(name: strdup("newWatcher"), func: application_uielement_newWatcher),
-    luaL_Reg(name: strdup("__tostring"), func: userdata_tostring),
-    luaL_Reg(name: strdup("__eq"), func: userdata_eq),
-    luaL_Reg(name: strdup("__gc"), func: userdata_gc),
-    luaL_Reg(name: nil, func: nil),
-]
 
 // MARK: - Module entry point
 
 @_cdecl("luaopen_hs_libapplication")
 public func luaopen_hs_libapplication_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    backgroundCallbacks = NSMutableSet()
+    runEntryPoint(L) { L in
+        backgroundCallbacks = NSMutableSet()
 
-    // Create ref table in registry
-    lua_newtable(L)
-    refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+        // Create ref table in registry
+        lua_newtable(L)
+        refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
 
-    // Register userdata metatable
-    luaL_newmetatable(L, USERDATA_TAG)
-    lua_pushvalue(L, -1)
-    lua_setfield(L, -2, "__index")
-    luaL_setfuncs(L, &userdata_metaLib, 0)
-    lua_pop(L, 1)
+        // Register userdata metatable
+        luaL_newmetatable(L, USERDATA_TAG)
+        lua_pushvalue(L, -1)
+        lua_setfield(L, -2, "__index")
+        L.push(application_allWindows); lua_setfield(L, -2, "allWindows")
+        L.push(application_mainWindow); lua_setfield(L, -2, "mainWindow")
+        L.push(application_focusedWindow); lua_setfield(L, -2, "focusedWindow")
+        L.push(application__activate); lua_setfield(L, -2, "_activate")
+        L.push(application__bringtofront); lua_setfield(L, -2, "_bringtofront")
+        L.push(application_title); lua_setfield(L, -2, "title")
+        L.push(application_title); lua_setfield(L, -2, "name")
+        L.push(application_bundleID); lua_setfield(L, -2, "bundleID")
+        L.push(application_path); lua_setfield(L, -2, "path")
+        L.push(application_isRunning); lua_setfield(L, -2, "isRunning")
+        L.push(application_unhide); lua_setfield(L, -2, "unhide")
+        L.push(application_hide); lua_setfield(L, -2, "hide")
+        L.push(application_kill); lua_setfield(L, -2, "kill")
+        L.push(application_kill9); lua_setfield(L, -2, "kill9")
+        L.push(application_ishidden); lua_setfield(L, -2, "isHidden")
+        L.push(application_isfrontmost); lua_setfield(L, -2, "isFrontmost")
+        L.push(application_setfrontmost); lua_setfield(L, -2, "setFrontmost")
+        L.push(application_pid); lua_setfield(L, -2, "pid")
+        L.push(application_isunresponsive); lua_setfield(L, -2, "isUnresponsive")
+        L.push(application_kind); lua_setfield(L, -2, "kind")
+        L.push(application_findmenuitem); lua_setfield(L, -2, "findMenuItem")
+        L.push(application_selectmenuitem); lua_setfield(L, -2, "selectMenuItem")
+        L.push(application_getMenus); lua_setfield(L, -2, "getMenuItems")
+        L.push(application_uielement_isApplication); lua_setfield(L, -2, "isApplication")
+        L.push(application_uielement_isWindow); lua_setfield(L, -2, "isWindow")
+        L.push(application_uielement_role); lua_setfield(L, -2, "role")
+        L.push(application_uielement_selectedText); lua_setfield(L, -2, "selectedText")
+        L.push(application_uielement_newWatcher); lua_setfield(L, -2, "newWatcher")
+        L.push(userdata_tostring); lua_setfield(L, -2, "__tostring")
+        L.push(userdata_eq); lua_setfield(L, -2, "__eq")
+        L.push(userdata_gc); lua_setfield(L, -2, "__gc")
+        lua_pop(L, 1)
 
-    // Create module table
-    lua_createtable(L, 0, Int32(moduleLib.count - 1))
-    luaL_setfuncs(L, &moduleLib, 0)
+        // Create module table
+        lua_createtable(L, 0, 15)
+        L.push(application_runningapplications); lua_setfield(L, -2, "runningApplications")
+        L.push(application_frontmostapplication); lua_setfield(L, -2, "frontmostApplication")
+        L.push(application_applicationforpid); lua_setfield(L, -2, "applicationForPID")
+        L.push(application_applicationsForBundleID); lua_setfield(L, -2, "applicationsForBundleID")
+        L.push(application_nameForBundleID); lua_setfield(L, -2, "nameForBundleID")
+        L.push(application_pathForBundleID); lua_setfield(L, -2, "pathForBundleID")
+        L.push(application_infoForBundleID); lua_setfield(L, -2, "infoForBundleID")
+        L.push(application_infoForBundlePath); lua_setfield(L, -2, "infoForBundlePath")
+        L.push(application_preferredLocalizationsForBundleID); lua_setfield(L, -2, "preferredLocalizationsForBundleID")
+        L.push(application_preferredLocalizationsForBundlePath); lua_setfield(L, -2, "preferredLocalizationsForBundlePath")
+        L.push(application_localizationsForBundleID); lua_setfield(L, -2, "localizationsForBundleID")
+        L.push(application_localizationsForBundlePath); lua_setfield(L, -2, "localizationsForBundlePath")
+        L.push(application_bundleForUTI); lua_setfield(L, -2, "defaultAppForUTI")
+        L.push(application_launchorfocus); lua_setfield(L, -2, "launchOrFocus")
+        L.push(application_launchorfocusbybundleID); lua_setfield(L, -2, "launchOrFocusByBundleID")
 
-    // Set module metatable (for __gc)
-    lua_createtable(L, 0, Int32(module_metaLib.count - 1))
-    luaL_setfuncs(L, &module_metaLib, 0)
-    lua_setmetatable(L, -2)
-
-    return 1
+        // Set module metatable (for __gc)
+        lua_createtable(L, 0, 1)
+        L.push(application_gc); lua_setfield(L, -2, "__gc")
+        lua_setmetatable(L, -2)
+    }
 }

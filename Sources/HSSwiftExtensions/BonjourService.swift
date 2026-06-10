@@ -1,5 +1,6 @@
 import Cocoa
 import CLua
+import Lua
 import os.log
 import Darwin.POSIX.netinet
 import Darwin.POSIX.netdb
@@ -141,7 +142,7 @@ private func pushNetServiceCallbackArgument(_ L: UnsafeMutablePointer<lua_State>
 // MARK: - Module Functions
 
 // hs.bonjour.service.remote is documented with its wrapper in init.lua
-private func service_newForResolve(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func service_newForResolve(_ L: LuaState) throws -> CInt {
     let name: String = lua_tovalue(L, at: 1) as! String
     let type: String = lua_tovalue(L, at: 2) as! String
     let domain: String = lua_gettop(L) > 2 ? lua_tovalue(L, at: 3) as! String : ""
@@ -152,7 +153,7 @@ private func service_newForResolve(_ L: UnsafeMutablePointer<lua_State>!) -> Int
 }
 
 // hs.bonjour.service.new is documented with its wrapper in init.lua
-private func service_newForPublish(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func service_newForPublish(_ L: LuaState) throws -> CInt {
     let name: String = lua_tovalue(L, at: 1) as! String
     let type: String = lua_tovalue(L, at: 2) as! String
     let port = Int32(lua_tointeger(L, 3))
@@ -179,7 +180,7 @@ private func service_newForPublish(_ L: UnsafeMutablePointer<lua_State>!) -> Int
 /// Notes:
 ///  * for remote serviceObjects, the table will be empty if this method is invoked before [hs.bonjour.service:resolve](#resolve).
 ///  * for local (published) serviceObjects, this table will always be empty.
-private func service_addresses(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func service_addresses(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG.utf8Start)
     let wrapper: HSNetServiceWrapper = toHSNetServiceWrapperFromLua(L, 1) as! HSNetServiceWrapper
 
@@ -217,7 +218,7 @@ private func service_addresses(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Notes:
 ///  * for remote serviceObjects, this domain will be the domain the service was discovered in.
 ///  * for local (published) serviceObjects, this domain will be the domain the service is published in; if you did not specify a domain with [hs.bonjour.service.new](#new) then this will be an empty string until [hs.bonjour.service:publish](#publish) is invoked.
-private func service_domain(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func service_domain(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG.utf8Start)
     let wrapper: HSNetServiceWrapper = toHSNetServiceWrapperFromLua(L, 1) as! HSNetServiceWrapper
     lua_pushany(L, wrapper.service.domain as NSString)
@@ -233,7 +234,7 @@ private func service_domain(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * a string containing the name of the service represented by the serviceObject.
-private func service_name(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func service_name(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG.utf8Start)
     let wrapper: HSNetServiceWrapper = toHSNetServiceWrapperFromLua(L, 1) as! HSNetServiceWrapper
     lua_pushany(L, wrapper.service.name as NSString)
@@ -253,7 +254,7 @@ private func service_name(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Notes:
 ///  * for remote serviceObjects, this will be nil if this method is invoked before [hs.bonjour.service:resolve](#resolve).
 ///  * for local (published) serviceObjects, this method will always return nil.
-private func service_hostName(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func service_hostName(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG.utf8Start)
     let wrapper: HSNetServiceWrapper = toHSNetServiceWrapperFromLua(L, 1) as! HSNetServiceWrapper
     lua_pushany(L, wrapper.service.hostName as NSString?)
@@ -269,7 +270,7 @@ private func service_hostName(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * a string containing the type of service represented by the serviceObject.
-private func service_type(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func service_type(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG.utf8Start)
     let wrapper: HSNetServiceWrapper = toHSNetServiceWrapperFromLua(L, 1) as! HSNetServiceWrapper
     lua_pushany(L, wrapper.service.type as NSString)
@@ -289,7 +290,7 @@ private func service_type(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Notes:
 ///  * for remote serviceObjects, this will be -1 if this method is invoked before [hs.bonjour.service:resolve](#resolve).
 ///  * for local (published) serviceObjects, this method will always return the number specified when the serviceObject was created with the [hs.bonjour.service.new](#new) constructor.
-private func service_port(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func service_port(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG.utf8Start)
     let wrapper: HSNetServiceWrapper = toHSNetServiceWrapperFromLua(L, 1) as! HSNetServiceWrapper
     lua_pushinteger(L, lua_Integer(wrapper.service.port))
@@ -311,7 +312,7 @@ private func service_port(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * setting the text record for a service replaces the existing records for the serviceObject. If the serviceObject is remote, this change is only visible on the local machine. For a service you are advertising, this change will be advertised to other machines.
 ///
 ///  * Text records are usually used to provide additional information concerning the service and their purpose and meanings are service dependant; for example, when advertising an `_http._tcp.` service, you can specify a specific path on the server by specifying a table of text records containing the "path" key.
-private func service_TXTRecordData(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func service_TXTRecordData(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG.utf8Start)
     let wrapper: HSNetServiceWrapper = toHSNetServiceWrapperFromLua(L, 1) as! HSNetServiceWrapper
     if lua_gettop(L) == 1 {
@@ -337,7 +338,7 @@ private func service_TXTRecordData(_ L: UnsafeMutablePointer<lua_State>!) -> Int
                 errMsg = "expected table of key-value pairs"
             }
             if let errMsg = errMsg {
-                return luaL_argerror(L, 2, errMsg)
+                throw LuaCallError("bad argument #2 (\(errMsg))")
             }
             txtRecord = NetService.data(fromTXTRecord: dict as! [String: Data])
         }
@@ -365,7 +366,7 @@ private func service_TXTRecordData(_ L: UnsafeMutablePointer<lua_State>!) -> Int
 ///
 ///  * for remote serviceObjects, this flag determines if resolution and text record monitoring should occur over peer-to-peer network interfaces.
 ///  * for local (published) serviceObjects, this flag determines if advertising should occur over peer-to-peer network interfaces.
-private func service_includesPeerToPeer(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func service_includesPeerToPeer(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG.utf8Start)
     let wrapper: HSNetServiceWrapper = toHSNetServiceWrapperFromLua(L, 1) as! HSNetServiceWrapper
     if lua_gettop(L) == 1 {
@@ -397,10 +398,10 @@ private func service_includesPeerToPeer(_ L: UnsafeMutablePointer<lua_State>!) -
 ///
 /// Notes:
 ///  * this method should only be called on serviceObjects which were created with [hs.bonjour.service.new](#new).
-private func service_publish(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func service_publish(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG.utf8Start)
     let wrapper: HSNetServiceWrapper = toHSNetServiceWrapperFromLua(L, 1) as! HSNetServiceWrapper
-    if !wrapper.canPublish { return luaL_error(L, "can't publish a service created for resolution") }
+    if !wrapper.canPublish { throw LuaCallError("can't publish a service created for resolution") }
 
     var allowRename = true
     var hasFunction = false
@@ -456,10 +457,10 @@ private func service_publish(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 ///  * For a remote service, this method must be called in order to retrieve the [addresses](#addresses), the [port](#port), the [hostname](#hostname), and any the associated [text records](#txtRecord) for the service.
 ///  * To reduce the usage of system resources, you should generally specify a timeout value or make sure to invoke [hs.bonjour.service:stop](#stop) after you have verified that you have received the details you require.
-private func service_resolveWithTimeout(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func service_resolveWithTimeout(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG.utf8Start)
     let wrapper: HSNetServiceWrapper = toHSNetServiceWrapperFromLua(L, 1) as! HSNetServiceWrapper
-    if wrapper.canPublish { return luaL_error(L, "can't resolve a service created for publishing") }
+    if wrapper.canPublish { throw LuaCallError("can't resolve a service created for publishing") }
 
     var duration: TimeInterval = 0.0
     var hasFunction = false
@@ -508,7 +509,7 @@ private func service_resolveWithTimeout(_ L: UnsafeMutablePointer<lua_State>!) -
 ///  * When [hs.bonjour.service:resolve](#resolve) is invoked, the text records at the time of resolution are captured for retrieval with [hs.bonjour.service:txtRecord](#txtRecord). Subsequent changes to the text records will not be reflected by [hs.bonjour.service:txtRecord](#txtRecord) unless this method has been invoked (with or without a callback function) and is currently active.
 ///
 ///  * You *can* monitor for text changes on local serviceObjects that were created by [hs.bonjour.service.new](#new) and that you are publishing. This can be used to invoke a callback when one portion of your code makes changes to the text records you are publishing and you need another portion of your code to be aware of this change.
-private func service_startMonitoring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func service_startMonitoring(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG.utf8Start)
     let wrapper: HSNetServiceWrapper = toHSNetServiceWrapperFromLua(L, 1) as! HSNetServiceWrapper
 
@@ -541,7 +542,7 @@ private func service_startMonitoring(_ L: UnsafeMutablePointer<lua_State>!) -> I
 ///  * this method will stop the advertising of a service which has been published with [hs.bonjour.service:publish](#publish) or is being resolved with [hs.bonjour.service:resolve](#resolve).
 ///
 ///  * To reduce the usage of system resources, you should make sure to use this method when resolving a remote service if you did not specify a timeout for [hs.bonjour.service:resolve](#resolve) or specified a timeout of 0.0 once you have verified that you have the details you need.
-private func service_stop(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func service_stop(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG.utf8Start)
     let wrapper: HSNetServiceWrapper = toHSNetServiceWrapperFromLua(L, 1) as! HSNetServiceWrapper
     luaL_unref(L, LUA_REGISTRYINDEX_VALUE, wrapper.callbackRef)
@@ -564,7 +565,7 @@ private func service_stop(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Notes:
 ///  * This method will stop updating [hs.bonjour.service:txtRecord](#txtRecord) and invoking the callback, if any, assigned with [hs.bonjour.service:monitor](#monitor).
-private func service_stopMonitoring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func service_stopMonitoring(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG.utf8Start)
     let wrapper: HSNetServiceWrapper = toHSNetServiceWrapperFromLua(L, 1) as! HSNetServiceWrapper
     luaL_unref(L, LUA_REGISTRYINDEX_VALUE, wrapper.monitorCallbackRef)
@@ -640,14 +641,14 @@ func pushNSNetService(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any?) -> Int
 
 // MARK: - Cosmic Hammer/Lua Infrastructure
 
-private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func userdata_tostring(_ L: LuaState) throws -> CInt {
     let obj = toHSNetServiceWrapperFromLua(L, 1) as! HSNetServiceWrapper
     let title = "\(obj.service.name) (\(obj.service.type)\(obj.service.domain))"
     lua_pushany(L, "\(USERDATA_TAG): \(title) (\(String(describing: lua_topointer(L, 1))))" as NSString)
     return 1
 }
 
-private func userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func userdata_eq(_ L: LuaState) throws -> CInt {
     // can't get here if at least one of us isn't a userdata type, and we only care if both types are ours,
     // so use luaL_testudata before the macro causes a lua error
     if luaL_testudata(L, 1, USERDATA_TAG_STR) != nil && luaL_testudata(L, 2, USERDATA_TAG_STR) != nil {
@@ -660,7 +661,7 @@ private func userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 1
 }
 
-private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func userdata_gc(_ L: LuaState) throws -> CInt {
     guard luaL_testudata(L, 1, USERDATA_TAG_STR) != nil else { return 0 }
     let ptr = luaL_checkudata(L, 1, USERDATA_TAG_STR)!
         .assumingMemoryBound(to: UnsafeMutableRawPointer.self)
@@ -691,68 +692,51 @@ private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 0
 }
 
-private func meta_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func meta_gc(_ L: LuaState) throws -> CInt {
     serviceUDRecords.removeAllObjects()
     return 0
 }
 
-// Metatable for userdata objects
-private var userdata_metaLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("addresses"),          func: service_addresses),
-    luaL_Reg(name: strdup("domain"),             func: service_domain),
-    luaL_Reg(name: strdup("name"),               func: service_name),
-    luaL_Reg(name: strdup("hostname"),           func: service_hostName),
-    luaL_Reg(name: strdup("type"),               func: service_type),
-    luaL_Reg(name: strdup("port"),               func: service_port),
-    luaL_Reg(name: strdup("txtRecord"),          func: service_TXTRecordData),
-    luaL_Reg(name: strdup("includesPeerToPeer"), func: service_includesPeerToPeer),
-    luaL_Reg(name: strdup("resolve"),            func: service_resolveWithTimeout),
-    luaL_Reg(name: strdup("monitor"),            func: service_startMonitoring),
-    luaL_Reg(name: strdup("stop"),               func: service_stop),
-    luaL_Reg(name: strdup("stopMonitoring"),     func: service_stopMonitoring),
-    luaL_Reg(name: strdup("publish"),            func: service_publish),
-    luaL_Reg(name: strdup("__tostring"),         func: userdata_tostring),
-    luaL_Reg(name: strdup("__eq"),               func: userdata_eq),
-    luaL_Reg(name: strdup("__gc"),               func: userdata_gc),
-    luaL_Reg(name: nil, func: nil),
-]
-
-// Functions for returned object when module loads
-private var moduleLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("remote"), func: service_newForResolve),
-    luaL_Reg(name: strdup("new"),    func: service_newForPublish),
-    luaL_Reg(name: nil, func: nil),
-]
-
-// Metatable for module, if needed
-private var module_metaLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("__gc"), func: meta_gc),
-    luaL_Reg(name: nil, func: nil),
-]
 
 @_cdecl("luaopen_hs_libbonjourservice")
 public func luaopen_hs_libbonjourservice(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    // Create ref table in registry
-    lua_newtable(L)
-    refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+    runEntryPoint(L) { L in
+        // Create ref table in registry
+        lua_newtable(L)
+        refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
 
-    // Register userdata metatable
-    luaL_newmetatable(L, USERDATA_TAG_STR)
-    lua_pushvalue(L, -1)
-    lua_setfield(L, -2, "__index")
-    luaL_setfuncs(L, &userdata_metaLib, 0)
-    lua_pop(L, 1)
+        // Register userdata metatable
+        luaL_newmetatable(L, USERDATA_TAG_STR)
+        lua_pushvalue(L, -1)
+        lua_setfield(L, -2, "__index")
+        L.push(service_addresses);          lua_setfield(L, -2, "addresses")
+        L.push(service_domain);             lua_setfield(L, -2, "domain")
+        L.push(service_name);               lua_setfield(L, -2, "name")
+        L.push(service_hostName);           lua_setfield(L, -2, "hostname")
+        L.push(service_type);               lua_setfield(L, -2, "type")
+        L.push(service_port);               lua_setfield(L, -2, "port")
+        L.push(service_TXTRecordData);      lua_setfield(L, -2, "txtRecord")
+        L.push(service_includesPeerToPeer); lua_setfield(L, -2, "includesPeerToPeer")
+        L.push(service_resolveWithTimeout); lua_setfield(L, -2, "resolve")
+        L.push(service_startMonitoring);    lua_setfield(L, -2, "monitor")
+        L.push(service_stop);               lua_setfield(L, -2, "stop")
+        L.push(service_stopMonitoring);     lua_setfield(L, -2, "stopMonitoring")
+        L.push(service_publish);            lua_setfield(L, -2, "publish")
+        L.push(userdata_tostring);          lua_setfield(L, -2, "__tostring")
+        L.push(userdata_eq);                lua_setfield(L, -2, "__eq")
+        L.push(userdata_gc);                lua_setfield(L, -2, "__gc")
+        lua_pop(L, 1)
 
-    // Create module table
-    lua_createtable(L, 0, Int32(moduleLib.count - 1))
-    luaL_setfuncs(L, &moduleLib, 0)
+        // Create module table
+        lua_createtable(L, 0, 2)
+        L.push(service_newForResolve); lua_setfield(L, -2, "remote")
+        L.push(service_newForPublish); lua_setfield(L, -2, "new")
 
-    // Set module metatable (for __gc)
-    lua_createtable(L, 0, Int32(module_metaLib.count - 1))
-    luaL_setfuncs(L, &module_metaLib, 0)
-    lua_setmetatable(L, -2)
+        // Set module metatable (for __gc)
+        lua_createtable(L, 0, 1)
+        L.push(meta_gc); lua_setfield(L, -2, "__gc")
+        lua_setmetatable(L, -2)
 
-    serviceUDRecords = NSMapTable.strongToStrongObjects()
-
-    return 1
+        serviceUDRecords = NSMapTable.strongToStrongObjects()
+    }
 }

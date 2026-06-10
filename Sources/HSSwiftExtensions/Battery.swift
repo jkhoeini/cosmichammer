@@ -1,5 +1,6 @@
 import Cocoa
 import CLua
+import Lua
 import IOKit
 import IOKit.ps
 import IOKit.pwr_mgt
@@ -43,7 +44,7 @@ import IOBluetooth
 ///   * Greater than zero to indicate the number of minutes remaining
 ///   * -1 if the remaining battery life is still being calculated
 ///   * -2 if there is unlimited time remaining (i.e. the system is on AC power)
-private func battery_timeremaining(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func battery_timeremaining(_ L: LuaState) throws -> CInt {
     var remaining = IOPSGetTimeRemainingEstimate()
 
     if remaining > 0 {
@@ -63,7 +64,7 @@ private func battery_timeremaining(_ L: UnsafeMutablePointer<lua_State>!) -> Int
 ///
 /// Returns:
 ///  * A string containing one of {AC Power, Battery Power, UPS Power}.
-private func battery_powerSource(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func battery_powerSource(_ L: LuaState) throws -> CInt {
     if let sourcesBlob = IOPSCopyPowerSourcesInfo()?.takeRetainedValue() {
         let sourceType = IOPSGetProvidingPowerSourceType(sourcesBlob)?.takeUnretainedValue() as String?
         lua_pushany(L, sourceType)
@@ -90,7 +91,7 @@ private func battery_powerSource(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 ///    * "none" - indicates that the system is not in a low battery situation, or is currently attached to an AC power source.
 ///    * "low"  - the system is in a low battery situation and can provide no more than 20 minutes of runtime. Note that this is a guess only; 20 minutes cannot be guaranteed and will be greatly influenced by what the computer is doing at the time, how many applications are running, screen brightness, etc.
 ///    * "critical" - the system is in a very low battery situation and can provide no more than 10 minutes of runtime. Note that this is a guess only; 10 minutes cannot be guaranteed and will be greatly influenced by what the computer is doing at the time, how many applications are running, screen brightness, etc.
-private func battery_batteryWarningLevel(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func battery_batteryWarningLevel(_ L: LuaState) throws -> CInt {
     let level = IOPSGetBatteryWarningLevel()
     switch level {
     case kIOPSLowBatteryWarningNone:
@@ -114,7 +115,7 @@ private func battery_batteryWarningLevel(_ L: UnsafeMutablePointer<lua_State>!) 
 ///
 /// Returns:
 ///  * A table containing information about other batteries known to the system, or an empty table if no devices were found
-private func battery_others(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func battery_others(_ L: LuaState) throws -> CInt {
     var masterPort: mach_port_t = 0
     var ite: io_iterator_t = 0
     let batteryInfo = NSMutableArray(capacity: 5)
@@ -195,7 +196,7 @@ private func battery_others(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///    * isANCSupported - We believe this likely indicates whether or not this device supports Active Noise Cancelling (e.g. Beats Solo)
 ///  * Please report any crashes from this function - it's likely that there are Bluetooth devices we haven't tested which may return weird data
 ///  * Many/Most/All non-Apple party products will likely return zeros for all of the battery related fields here, as will Apple HID devices. It seems that these private APIs mostly exist to support Apple/Beats headphones.
-private func battery_private(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func battery_private(_ L: LuaState) throws -> CInt {
     let privateInfo = NSMutableArray()
 
     let connectedSel = NSSelectorFromString("connectedDevices")
@@ -241,7 +242,7 @@ private func battery_private(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 1
 }
 
-private func battery_externalAdapterDetails(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func battery_externalAdapterDetails(_ L: LuaState) throws -> CInt {
     if let psuInfo = IOPSCopyExternalPowerAdapterDetails()?.takeRetainedValue() {
         lua_pushany(L, psuInfo as NSDictionary)
     } else {
@@ -250,7 +251,7 @@ private func battery_externalAdapterDetails(_ L: UnsafeMutablePointer<lua_State>
     return 1
 }
 
-private func battery_powerSources(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func battery_powerSources(_ L: LuaState) throws -> CInt {
     guard let sourcesBlob = IOPSCopyPowerSourcesInfo()?.takeRetainedValue() else {
         lua_pushnil(L)
         lua_pushstring(L, "error retrieving power sources info")
@@ -275,7 +276,7 @@ private func battery_powerSources(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
     return 1
 }
 
-private func battery_appleSmartBattery(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func battery_appleSmartBattery(_ L: LuaState) throws -> CInt {
     let entry = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceNameMatching("AppleSmartBattery"))
     if entry != 0 {
         var battery: Unmanaged<CFMutableDictionary>?
@@ -294,7 +295,7 @@ private func battery_appleSmartBattery(_ L: UnsafeMutablePointer<lua_State>!) ->
     }
 }
 
-private func battery_iopmBatteryInfo(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func battery_iopmBatteryInfo(_ L: LuaState) throws -> CInt {
     var masterPort: mach_port_t = 0
     var batteryInfo: Unmanaged<CFArray>?
 
@@ -319,22 +320,27 @@ private func battery_iopmBatteryInfo(_ L: UnsafeMutablePointer<lua_State>!) -> I
     return 1
 }
 
-private var battery_lib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("timeRemaining"),               func: battery_timeremaining),
-    luaL_Reg(name: strdup("powerSource"),                 func: battery_powerSource),
-    luaL_Reg(name: strdup("otherBatteryInfo"),            func: battery_others),
-    luaL_Reg(name: strdup("privateBluetoothBatteryInfo"), func: battery_private),
-    luaL_Reg(name: strdup("warningLevel"),                func: battery_batteryWarningLevel),
-    luaL_Reg(name: strdup("_adapterDetails"),             func: battery_externalAdapterDetails),
-    luaL_Reg(name: strdup("_powerSources"),               func: battery_powerSources),
-    luaL_Reg(name: strdup("_appleSmartBattery"),          func: battery_appleSmartBattery),
-    luaL_Reg(name: strdup("_iopmBatteryInfo"),            func: battery_iopmBatteryInfo),
-    luaL_Reg(name: nil, func: nil),
-]
-
 @_cdecl("luaopen_hs_libbattery")
 public func luaopen_hs_libbattery(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    lua_createtable(L, 0, Int32(battery_lib.count - 1))
-    luaL_setfuncs(L, &battery_lib, 0)
-    return 1
+    runEntryPoint(L) { L in
+        lua_createtable(L, 0, 9)
+        L.push(battery_timeremaining)
+        lua_setfield(L, -2, "timeRemaining")
+        L.push(battery_powerSource)
+        lua_setfield(L, -2, "powerSource")
+        L.push(battery_others)
+        lua_setfield(L, -2, "otherBatteryInfo")
+        L.push(battery_private)
+        lua_setfield(L, -2, "privateBluetoothBatteryInfo")
+        L.push(battery_batteryWarningLevel)
+        lua_setfield(L, -2, "warningLevel")
+        L.push(battery_externalAdapterDetails)
+        lua_setfield(L, -2, "_adapterDetails")
+        L.push(battery_powerSources)
+        lua_setfield(L, -2, "_powerSources")
+        L.push(battery_appleSmartBattery)
+        lua_setfield(L, -2, "_appleSmartBattery")
+        L.push(battery_iopmBatteryInfo)
+        lua_setfield(L, -2, "_iopmBatteryInfo")
+    }
 }

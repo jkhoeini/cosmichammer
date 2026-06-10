@@ -68,7 +68,7 @@ class HSWebViewWindow: NSPanel, NSWindowDelegate {
             if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
         }
         if deleteOnClose {
-            lua_pushcfunction(L, wv_userdata_gc)
+            L.push(wv_userdata_gc)
             wv_pushAny(L, self)
             if lua_pcall(L, 1, 0, 0) != LUA_OK {
                 os_log(.error, "%{public}s", String(format: "%s:error invoking _gc for deleteOnClose:%s", wv_USERDATA_TAG, lua_tostring(L, -1)!))
@@ -158,7 +158,7 @@ class HSWebViewWindow: NSPanel, NSWindowDelegate {
             if let mySelf = bself {
                 if deleteWindow {
                     mySelf.close()
-                    lua_pushcfunction(L, wv_userdata_gc)
+                    L.push(wv_userdata_gc)
                     lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(mySelf.udRef))
                     if lua_pcall(L, 1, 0, 0) != LUA_OK {
                         os_log(.debug, "%{public}s", String(format: "%s:error invoking _gc for delete (with fade) method:%s", wv_USERDATA_TAG, lua_tostring(L, -1)!))

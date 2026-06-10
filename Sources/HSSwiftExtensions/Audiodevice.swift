@@ -1,5 +1,6 @@
 import Cocoa
 import CLua
+import Lua
 import Carbon
 import CoreAudio
 import AudioToolbox
@@ -173,7 +174,7 @@ func new_dataSource(_ L: UnsafeMutablePointer<lua_State>!, _ deviceID: AudioDevi
 ///
 /// Returns:
 ///  * A table of zero or more audio devices connected to the system
-private func audiodevice_alldevices(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func audiodevice_alldevices(_ L: LuaState) throws -> CInt {
 
     var propertyAddress = AudioObjectPropertyAddress(
         mSelector: kAudioHardwarePropertyDevices,
@@ -220,7 +221,7 @@ private func audiodevice_alldevices(_ L: UnsafeMutablePointer<lua_State>!) -> In
 ///
 /// Returns:
 ///  * An hs.audiodevice object, or nil if no suitable device could be found
-private func audiodevice_defaultoutputdevice(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func audiodevice_defaultoutputdevice(_ L: LuaState) throws -> CInt {
 
     var propertyAddress = AudioObjectPropertyAddress(
         mSelector: kAudioHardwarePropertyDefaultOutputDevice,
@@ -249,7 +250,7 @@ private func audiodevice_defaultoutputdevice(_ L: UnsafeMutablePointer<lua_State
 ///
 /// Returns:
 ///  * An hs.audiodevice object, or nil if no suitable device could be found
-private func audiodevice_defaultinputdevice(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func audiodevice_defaultinputdevice(_ L: LuaState) throws -> CInt {
 
     var propertyAddress = AudioObjectPropertyAddress(
         mSelector: kAudioHardwarePropertyDefaultInputDevice,
@@ -278,7 +279,7 @@ private func audiodevice_defaultinputdevice(_ L: UnsafeMutablePointer<lua_State>
 ///
 /// Returns:
 ///  * An hs.audiodevice object, or nil if no suitable device could be found
-private func audiodevice_defaulteffectdevice(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func audiodevice_defaulteffectdevice(_ L: LuaState) throws -> CInt {
 
     var propertyAddress = AudioObjectPropertyAddress(
         mSelector: kAudioHardwarePropertyDefaultSystemOutputDevice,
@@ -309,7 +310,7 @@ private func audiodevice_defaulteffectdevice(_ L: UnsafeMutablePointer<lua_State
 ///
 /// Returns:
 ///  * True if the audio device was successfully selected, otherwise false.
-private func audiodevice_setdefaultoutputdevice(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func audiodevice_setdefaultoutputdevice(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let audioDevice = userdataToAudioDevice(L, 1)
@@ -341,7 +342,7 @@ private func audiodevice_setdefaultoutputdevice(_ L: UnsafeMutablePointer<lua_St
 ///
 /// Returns:
 ///  * True if the audio device was successfully selected, otherwise false.
-private func audiodevice_setdefaulteffectdevice(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func audiodevice_setdefaulteffectdevice(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let audioDevice = userdataToAudioDevice(L, 1)
@@ -373,7 +374,7 @@ private func audiodevice_setdefaulteffectdevice(_ L: UnsafeMutablePointer<lua_St
 ///
 /// Returns:
 ///  * True if the audio device was successfully selected, otherwise false.
-private func audiodevice_setdefaultinputdevice(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func audiodevice_setdefaultinputdevice(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let audioDevice = userdataToAudioDevice(L, 1)
@@ -405,7 +406,7 @@ private func audiodevice_setdefaultinputdevice(_ L: UnsafeMutablePointer<lua_Sta
 ///
 /// Returns:
 ///  * A string containing the name of the audio device, or nil if it has no name
-private func audiodevice_name(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func audiodevice_name(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let audioDevice = userdataToAudioDevice(L, 1)
@@ -439,7 +440,7 @@ private func audiodevice_name(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * A string containing the UID of the audio device, or nil if it has no UID.
-private func audiodevice_uid(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func audiodevice_uid(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let audioDevice = userdataToAudioDevice(L, 1)
@@ -480,7 +481,7 @@ private func audiodevice_uid(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * True if the audio device is in use, False if not. nil if an error occurred.
-private func audiodevice_inUse(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func audiodevice_inUse(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let audioDevice = userdataToAudioDevice(L, 1)
@@ -521,7 +522,7 @@ private func audiodevice_inUse(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * True if the audio device's Input is muted. False if it's not muted, nil if it does not support muting
-private func audiodevice_inputMuted(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func audiodevice_inputMuted(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let audioDevice = userdataToAudioDevice(L, 1)
@@ -553,7 +554,7 @@ private func audiodevice_inputMuted(_ L: UnsafeMutablePointer<lua_State>!) -> In
 ///
 /// Returns:
 ///  * True if the audio device's Output is muted. False if it's not muted, nil if it does not support muting
-private func audiodevice_outputMuted(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func audiodevice_outputMuted(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let audioDevice = userdataToAudioDevice(L, 1)
@@ -588,7 +589,7 @@ private func audiodevice_outputMuted(_ L: UnsafeMutablePointer<lua_State>!) -> I
 ///
 /// Notes:
 ///  * If a device is capable of both input and output, this method will prefer the output. See `:inputMuted()` and `:outputMuted()` for specific variants.
-private func audiodevice_muted(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func audiodevice_muted(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let audioDevice = userdataToAudioDevice(L, 1)
@@ -622,7 +623,7 @@ private func audiodevice_muted(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * True if the device's Input mutedness state was set, or False if it does not support muting
-private func audiodevice_setInputMuted(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func audiodevice_setInputMuted(_ L: LuaState) throws -> CInt {
 
     let audioDevice = userdataToAudioDevice(L, 1)
     let deviceId = audioDevice.pointee.deviceId
@@ -653,7 +654,7 @@ private func audiodevice_setInputMuted(_ L: UnsafeMutablePointer<lua_State>!) ->
 ///
 /// Returns:
 ///  * True if the device's Output mutedness state was set, or False if it does not support muting
-private func audiodevice_setOutputMuted(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func audiodevice_setOutputMuted(_ L: LuaState) throws -> CInt {
 
     let audioDevice = userdataToAudioDevice(L, 1)
     let deviceId = audioDevice.pointee.deviceId
@@ -687,7 +688,7 @@ private func audiodevice_setOutputMuted(_ L: UnsafeMutablePointer<lua_State>!) -
 ///
 /// Notes:
 ///  * If a device is capable of both input and output, this method will prefer the output. See `:setInputMuted()` and `:setOutputMuted()` for specific variants.
-private func audiodevice_setmuted(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func audiodevice_setmuted(_ L: LuaState) throws -> CInt {
 
     let audioDevice = userdataToAudioDevice(L, 1)
     let deviceId = audioDevice.pointee.deviceId
@@ -723,7 +724,7 @@ private func audiodevice_setmuted(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
 ///
 /// Notes:
 ///  * The return value will be a floating point number
-private func audiodevice_inputVolume(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func audiodevice_inputVolume(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let audioDevice = userdataToAudioDevice(L, 1)
@@ -763,7 +764,7 @@ private func audiodevice_inputVolume(_ L: UnsafeMutablePointer<lua_State>!) -> I
 ///
 /// Notes:
 ///  * The return value will be a floating point number
-private func audiodevice_outputVolume(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func audiodevice_outputVolume(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let audioDevice = userdataToAudioDevice(L, 1)
@@ -804,7 +805,7 @@ private func audiodevice_outputVolume(_ L: UnsafeMutablePointer<lua_State>!) -> 
 /// Notes:
 ///  * The return value will be a floating point number
 ///  * This method will inspect the device to determine if it is an input or output device, and return the appropriate volume. For devices that are both input and output devices, see `:inputVolume()` and `:outputVolume()`
-private func audiodevice_volume(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func audiodevice_volume(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let audioDevice = userdataToAudioDevice(L, 1)
@@ -841,7 +842,7 @@ private func audiodevice_volume(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 ///
 /// Notes:
 ///  * The volume level is a floating point number. Depending on your audio hardware, it may not be possible to increase volume in single digit increments
-private func audiodevice_setInputVolume(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func audiodevice_setInputVolume(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     luaL_checktype(L, 2, LUA_TNUMBER)
@@ -881,7 +882,7 @@ private func audiodevice_setInputVolume(_ L: UnsafeMutablePointer<lua_State>!) -
 ///
 /// Notes:
 ///  * The volume level is a floating point number. Depending on your audio hardware, it may not be possible to increase volume in single digit increments
-private func audiodevice_setOutputVolume(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func audiodevice_setOutputVolume(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     luaL_checktype(L, 2, LUA_TNUMBER)
@@ -922,7 +923,7 @@ private func audiodevice_setOutputVolume(_ L: UnsafeMutablePointer<lua_State>!) 
 /// Notes:
 ///  * The volume level is a floating point number. Depending on your audio hardware, it may not be possible to increase volume in single digit increments.
 ///  * This method will inspect the device to determine if it is an input or output device, and set the appropriate volume. For devices that are both input and output devices, see `:setInputVolume()` and `:setOutputVolume()`
-private func audiodevice_setvolume(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func audiodevice_setvolume(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     luaL_checktype(L, 2, LUA_TNUMBER)
@@ -965,7 +966,7 @@ private func audiodevice_setvolume(_ L: UnsafeMutablePointer<lua_State>!) -> Int
 /// Notes:
 ///  * The return value will be a floating point number
 ///  * This method will inspect the device to determine if it is an input or output device, and return the appropriate volume. For devices that are both input and output devices, see `:inputVolume()` and `:outputVolume()`
-private func audiodevice_balance(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func audiodevice_balance(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let audioDevice = userdataToAudioDevice(L, 1)
@@ -1002,7 +1003,7 @@ private func audiodevice_balance(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 ///
 /// Notes:
 ///  * This method will inspect the device to determine if it is an input or output device, and set the appropriate volume. For devices that are both input and output devices, see `:setInputVolume()` and `:setOutputVolume()`
-private func audiodevice_setbalance(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func audiodevice_setbalance(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     luaL_checktype(L, 2, LUA_TNUMBER)
@@ -1045,7 +1046,7 @@ private func audiodevice_setbalance(_ L: UnsafeMutablePointer<lua_State>!) -> In
 /// Notes:
 ///  * This method only works on devices that have hardware support (often microphones with a built-in headphone jack)
 ///  * This setting corresponds to the "Thru" setting in Audio MIDI Setup
-private func audiodevice_thru(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func audiodevice_thru(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let audioDevice = userdataToAudioDevice(L, 1)
@@ -1083,7 +1084,7 @@ private func audiodevice_thru(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Notes:
 ///  * This method only works on devices that have hardware support (often microphones with a built-in headphone jack)
 ///  * This setting corresponds to the "Thru" setting in Audio MIDI Setup
-private func audiodevice_setThru(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func audiodevice_setThru(_ L: LuaState) throws -> CInt {
 
     let audioDevice = userdataToAudioDevice(L, 1)
     let deviceId = audioDevice.pointee.deviceId
@@ -1116,7 +1117,7 @@ private func audiodevice_setThru(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 ///
 /// Returns:
 ///  * A boolean, true if the device is an output device, false if not
-private func audiodevice_isOutputDevice(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func audiodevice_isOutputDevice(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let audioDevice = userdataToAudioDevice(L, 1)
@@ -1134,7 +1135,7 @@ private func audiodevice_isOutputDevice(_ L: UnsafeMutablePointer<lua_State>!) -
 ///
 /// Returns:
 ///  * A boolean, true if the device is an input device, false if not
-private func audiodevice_isInputDevice(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func audiodevice_isInputDevice(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let audioDevice = userdataToAudioDevice(L, 1)
@@ -1152,7 +1153,7 @@ private func audiodevice_isInputDevice(_ L: UnsafeMutablePointer<lua_State>!) ->
 ///
 /// Returns:
 ///  * A string containing the transport type, or nil if an error occurred
-private func audiodevice_transportType(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func audiodevice_transportType(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let audioDevice = userdataToAudioDevice(L, 1)
@@ -1201,7 +1202,7 @@ private func audiodevice_transportType(_ L: UnsafeMutablePointer<lua_State>!) ->
 ///
 /// Returns:
 ///  * A boolean, true if a jack is connected, false if not, or nil if the device does not support jack sense
-private func audiodevice_jackConnected(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func audiodevice_jackConnected(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let audioDevice = userdataToAudioDevice(L, 1)
@@ -1234,7 +1235,7 @@ private func audiodevice_jackConnected(_ L: UnsafeMutablePointer<lua_State>!) ->
 ///
 /// Returns:
 ///  * A boolean, true if the device supports input data sources, false if not
-private func audiodevice_supportsInputDataSources(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func audiodevice_supportsInputDataSources(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let audioDevice = userdataToAudioDevice(L, 1)
@@ -1260,7 +1261,7 @@ private func audiodevice_supportsInputDataSources(_ L: UnsafeMutablePointer<lua_
 ///
 /// Returns:
 ///  * A boolean, true if the device supports output data sources, false if not
-private func audiodevice_supportsOutputDataSources(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func audiodevice_supportsOutputDataSources(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let audioDevice = userdataToAudioDevice(L, 1)
@@ -1289,7 +1290,7 @@ private func audiodevice_supportsOutputDataSources(_ L: UnsafeMutablePointer<lua
 ///
 /// Notes:
 ///  * Before calling this method, you should check the result of hs.audiodevice:supportsInputDataSources()
-private func audiodevice_currentInputDataSource(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func audiodevice_currentInputDataSource(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let audioDevice = userdataToAudioDevice(L, 1)
@@ -1325,7 +1326,7 @@ private func audiodevice_currentInputDataSource(_ L: UnsafeMutablePointer<lua_St
 ///
 /// Notes:
 ///  * Before calling this method, you should check the result of hs.audiodevice:supportsOutputDataSources()
-private func audiodevice_currentOutputDataSource(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func audiodevice_currentOutputDataSource(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let audioDevice = userdataToAudioDevice(L, 1)
@@ -1358,7 +1359,7 @@ private func audiodevice_currentOutputDataSource(_ L: UnsafeMutablePointer<lua_S
 ///
 /// Returns:
 ///  * A list of hs.audiodevice.dataSource objects, or nil if an error occurred
-private func audiodevice_allOutputDataSources(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func audiodevice_allOutputDataSources(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let audioDevice = userdataToAudioDevice(L, 1)
@@ -1405,7 +1406,7 @@ private func audiodevice_allOutputDataSources(_ L: UnsafeMutablePointer<lua_Stat
 ///
 /// Returns:
 ///  * A list of hs.audiodevice.dataSource objects, or nil if an error occurred
-private func audiodevice_allInputDataSources(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func audiodevice_allInputDataSources(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let audioDevice = userdataToAudioDevice(L, 1)
@@ -1472,7 +1473,7 @@ private func audiodevice_allInputDataSources(_ L: UnsafeMutablePointer<lua_State
 /// Notes:
 ///  * You will receive many events to your callback, so filtering on the name/scope/element arguments is vital. For example, on a stereo device, it is not uncommon to receive a `volm` event for each audio channel when the volume changes, or multiple `mute` events for channels. Dragging a volume slider in the system Sound preferences will produce a large number of `volm` events. Plugging/unplugging headphones may trigger `volm` events in addition to `jack` ones, etc.
 ///  * If you need to use the `hs.audiodevice` object in your callback, use `hs.audiodevice.findDeviceByUID()` to obtain it fro the first callback argument
-private func audiodevice_watcherSetCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func audiodevice_watcherSetCallback(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let audioDevice = userdataToAudioDevice(L, 1)
@@ -1506,7 +1507,7 @@ private func audiodevice_watcherSetCallback(_ L: UnsafeMutablePointer<lua_State>
 ///
 /// Returns:
 ///  * The `hs.audiodevice` object, or nil if an error occurred
-private func audiodevice_watcherStart(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func audiodevice_watcherStart(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let audioDevice = userdataToAudioDevice(L, 1)
@@ -1568,7 +1569,7 @@ func watcherStop(_ audioDevice: UnsafeMutablePointer<AudioDeviceUserData>) {
 ///
 /// Returns:
 ///  * The `hs.audiodevice` object
-private func audiodevice_watcherStop(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func audiodevice_watcherStop(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let audioDevice = userdataToAudioDevice(L, 1)
@@ -1589,7 +1590,7 @@ private func audiodevice_watcherStop(_ L: UnsafeMutablePointer<lua_State>!) -> I
 ///
 /// Returns:
 ///  * A boolean, true if the watcher is running, false if not
-private func audiodevice_watcherIsRunning(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func audiodevice_watcherIsRunning(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let audioDevice = userdataToAudioDevice(L, 1)
@@ -1599,7 +1600,7 @@ private func audiodevice_watcherIsRunning(_ L: UnsafeMutablePointer<lua_State>!)
     return 1
 }
 
-private func audiodevice_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func audiodevice_tostring(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let audioDevice = userdataToAudioDevice(L, 1)
@@ -1628,7 +1629,7 @@ private func audiodevice_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
     return 1
 }
 
-private func audiodevice_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func audiodevice_eq(_ L: LuaState) throws -> CInt {
 
     let deviceA = userdataToAudioDevice(L, 1)
     let deviceB = userdataToAudioDevice(L, 2)
@@ -1637,12 +1638,12 @@ private func audiodevice_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 1
 }
 
-private func audiodevice_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func audiodevice_gc(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let audioDevice = userdataToAudioDevice(L, 1)
 
-    _ = audiodevice_watcherStop(L)
+    _ = try audiodevice_watcherStop(L)
 
     luaL_unref(L, LUA_REGISTRYINDEX_VALUE, audioDevice.pointee.callback)
 
@@ -1700,7 +1701,7 @@ func get_datasource_name(_ hostDevice: AudioDeviceID, _ dataSource: UInt32) -> S
 ///
 /// Returns:
 ///  * A string containing the name of the datasource
-private func datasource_name(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func datasource_name(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_DATASOURCE_TAG)
 
     let dataSource = userdataToDataSource(L, 1)
@@ -1720,7 +1721,7 @@ private func datasource_name(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * The `hs.audiodevice.datasource` object
-private func datasource_setDefault(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func datasource_setDefault(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_DATASOURCE_TAG)
 
     let dataSource = userdataToDataSource(L, 1)
@@ -1750,7 +1751,7 @@ private func datasource_setDefault(_ L: UnsafeMutablePointer<lua_State>!) -> Int
     return 1
 }
 
-private func datasource_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func datasource_tostring(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_DATASOURCE_TAG)
 
     let dataSource = userdataToDataSource(L, 1)
@@ -1762,7 +1763,7 @@ private func datasource_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
     return 1
 }
 
-private func datasource_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func datasource_eq(_ L: LuaState) throws -> CInt {
 
     let sourceA = userdataToDataSource(L, 1)
     let sourceB = userdataToDataSource(L, 2)
@@ -1773,93 +1774,124 @@ private func datasource_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 // MARK: - Library initialisation
 
-// Metatable for audiodevice objects
-private var audiodevice_metalib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("setDefaultOutputDevice"),  func: audiodevice_setdefaultoutputdevice),
-    luaL_Reg(name: strdup("setDefaultInputDevice"),   func: audiodevice_setdefaultinputdevice),
-    luaL_Reg(name: strdup("setDefaultEffectDevice"),  func: audiodevice_setdefaulteffectdevice),
-    luaL_Reg(name: strdup("name"),                    func: audiodevice_name),
-    luaL_Reg(name: strdup("uid"),                     func: audiodevice_uid),
-    luaL_Reg(name: strdup("volume"),                  func: audiodevice_volume),
-    luaL_Reg(name: strdup("inputVolume"),             func: audiodevice_inputVolume),
-    luaL_Reg(name: strdup("outputVolume"),            func: audiodevice_outputVolume),
-    luaL_Reg(name: strdup("setVolume"),               func: audiodevice_setvolume),
-    luaL_Reg(name: strdup("balance"),                 func: audiodevice_balance),
-    luaL_Reg(name: strdup("setBalance"),              func: audiodevice_setbalance),
-    luaL_Reg(name: strdup("thru"),                    func: audiodevice_thru),
-    luaL_Reg(name: strdup("setThru"),                 func: audiodevice_setThru),
-    luaL_Reg(name: strdup("setInputVolume"),          func: audiodevice_setInputVolume),
-    luaL_Reg(name: strdup("setOutputVolume"),         func: audiodevice_setOutputVolume),
-    luaL_Reg(name: strdup("muted"),                   func: audiodevice_muted),
-    luaL_Reg(name: strdup("inputMuted"),              func: audiodevice_inputMuted),
-    luaL_Reg(name: strdup("outputMuted"),             func: audiodevice_outputMuted),
-    luaL_Reg(name: strdup("setMuted"),                func: audiodevice_setmuted),
-    luaL_Reg(name: strdup("setInputMuted"),           func: audiodevice_setInputMuted),
-    luaL_Reg(name: strdup("setOutputMuted"),          func: audiodevice_setOutputMuted),
-    luaL_Reg(name: strdup("inUse"),                   func: audiodevice_inUse),
-    luaL_Reg(name: strdup("isOutputDevice"),          func: audiodevice_isOutputDevice),
-    luaL_Reg(name: strdup("isInputDevice"),           func: audiodevice_isInputDevice),
-    luaL_Reg(name: strdup("transportType"),           func: audiodevice_transportType),
-    luaL_Reg(name: strdup("jackConnected"),           func: audiodevice_jackConnected),
-    luaL_Reg(name: strdup("supportsInputDataSources"),func: audiodevice_supportsInputDataSources),
-    luaL_Reg(name: strdup("supportsOutputDataSources"),func: audiodevice_supportsOutputDataSources),
-    luaL_Reg(name: strdup("currentInputDataSource"),  func: audiodevice_currentInputDataSource),
-    luaL_Reg(name: strdup("currentOutputDataSource"), func: audiodevice_currentOutputDataSource),
-    luaL_Reg(name: strdup("allOutputDataSources"),    func: audiodevice_allOutputDataSources),
-    luaL_Reg(name: strdup("allInputDataSources"),     func: audiodevice_allInputDataSources),
-    luaL_Reg(name: strdup("watcherCallback"),         func: audiodevice_watcherSetCallback),
-    luaL_Reg(name: strdup("watcherStart"),            func: audiodevice_watcherStart),
-    luaL_Reg(name: strdup("watcherStop"),             func: audiodevice_watcherStop),
-    luaL_Reg(name: strdup("watcherIsRunning"),        func: audiodevice_watcherIsRunning),
-    luaL_Reg(name: strdup("__tostring"),              func: audiodevice_tostring),
-    luaL_Reg(name: strdup("__eq"),                    func: audiodevice_eq),
-    luaL_Reg(name: strdup("__gc"),                    func: audiodevice_gc),
-    luaL_Reg(name: nil, func: nil),
-]
-
-private var audiodeviceLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("allDevices"),              func: audiodevice_alldevices),
-    luaL_Reg(name: strdup("defaultOutputDevice"),     func: audiodevice_defaultoutputdevice),
-    luaL_Reg(name: strdup("defaultInputDevice"),      func: audiodevice_defaultinputdevice),
-    luaL_Reg(name: strdup("defaultEffectDevice"),     func: audiodevice_defaulteffectdevice),
-    luaL_Reg(name: nil, func: nil),
-]
-
-private var dataSourceLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("name"),                    func: datasource_name),
-    luaL_Reg(name: strdup("setDefault"),              func: datasource_setDefault),
-    luaL_Reg(name: strdup("__tostring"),              func: datasource_tostring),
-    luaL_Reg(name: strdup("__eq"),                    func: datasource_eq),
-    luaL_Reg(name: nil, func: nil),
-]
-
 @_cdecl("luaopen_hs_libaudiodevice")
 public func luaopen_hs_libaudiodevice(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    // Create ref table in registry
-    lua_newtable(L)
-    refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+    runEntryPoint(L) { L in
+        // Create ref table in registry
+        lua_newtable(L)
+        refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
 
-    // Register audiodevice userdata metatable
-    luaL_newmetatable(L, USERDATA_TAG)
-    lua_pushvalue(L, -1)
-    lua_setfield(L, -2, "__index")
-    lua_pushstring(L, USERDATA_TAG)
-    lua_setfield(L, -2, "__type")
-    luaL_setfuncs(L, &audiodevice_metalib, 0)
-    lua_pop(L, 1)
+        // Register audiodevice userdata metatable
+        luaL_newmetatable(L, USERDATA_TAG)
+        lua_pushvalue(L, -1)
+        lua_setfield(L, -2, "__index")
+        lua_pushstring(L, USERDATA_TAG)
+        lua_setfield(L, -2, "__type")
+        L.push(audiodevice_setdefaultoutputdevice)
+        lua_setfield(L, -2, "setDefaultOutputDevice")
+        L.push(audiodevice_setdefaultinputdevice)
+        lua_setfield(L, -2, "setDefaultInputDevice")
+        L.push(audiodevice_setdefaulteffectdevice)
+        lua_setfield(L, -2, "setDefaultEffectDevice")
+        L.push(audiodevice_name)
+        lua_setfield(L, -2, "name")
+        L.push(audiodevice_uid)
+        lua_setfield(L, -2, "uid")
+        L.push(audiodevice_volume)
+        lua_setfield(L, -2, "volume")
+        L.push(audiodevice_inputVolume)
+        lua_setfield(L, -2, "inputVolume")
+        L.push(audiodevice_outputVolume)
+        lua_setfield(L, -2, "outputVolume")
+        L.push(audiodevice_setvolume)
+        lua_setfield(L, -2, "setVolume")
+        L.push(audiodevice_balance)
+        lua_setfield(L, -2, "balance")
+        L.push(audiodevice_setbalance)
+        lua_setfield(L, -2, "setBalance")
+        L.push(audiodevice_thru)
+        lua_setfield(L, -2, "thru")
+        L.push(audiodevice_setThru)
+        lua_setfield(L, -2, "setThru")
+        L.push(audiodevice_setInputVolume)
+        lua_setfield(L, -2, "setInputVolume")
+        L.push(audiodevice_setOutputVolume)
+        lua_setfield(L, -2, "setOutputVolume")
+        L.push(audiodevice_muted)
+        lua_setfield(L, -2, "muted")
+        L.push(audiodevice_inputMuted)
+        lua_setfield(L, -2, "inputMuted")
+        L.push(audiodevice_outputMuted)
+        lua_setfield(L, -2, "outputMuted")
+        L.push(audiodevice_setmuted)
+        lua_setfield(L, -2, "setMuted")
+        L.push(audiodevice_setInputMuted)
+        lua_setfield(L, -2, "setInputMuted")
+        L.push(audiodevice_setOutputMuted)
+        lua_setfield(L, -2, "setOutputMuted")
+        L.push(audiodevice_inUse)
+        lua_setfield(L, -2, "inUse")
+        L.push(audiodevice_isOutputDevice)
+        lua_setfield(L, -2, "isOutputDevice")
+        L.push(audiodevice_isInputDevice)
+        lua_setfield(L, -2, "isInputDevice")
+        L.push(audiodevice_transportType)
+        lua_setfield(L, -2, "transportType")
+        L.push(audiodevice_jackConnected)
+        lua_setfield(L, -2, "jackConnected")
+        L.push(audiodevice_supportsInputDataSources)
+        lua_setfield(L, -2, "supportsInputDataSources")
+        L.push(audiodevice_supportsOutputDataSources)
+        lua_setfield(L, -2, "supportsOutputDataSources")
+        L.push(audiodevice_currentInputDataSource)
+        lua_setfield(L, -2, "currentInputDataSource")
+        L.push(audiodevice_currentOutputDataSource)
+        lua_setfield(L, -2, "currentOutputDataSource")
+        L.push(audiodevice_allOutputDataSources)
+        lua_setfield(L, -2, "allOutputDataSources")
+        L.push(audiodevice_allInputDataSources)
+        lua_setfield(L, -2, "allInputDataSources")
+        L.push(audiodevice_watcherSetCallback)
+        lua_setfield(L, -2, "watcherCallback")
+        L.push(audiodevice_watcherStart)
+        lua_setfield(L, -2, "watcherStart")
+        L.push(audiodevice_watcherStop)
+        lua_setfield(L, -2, "watcherStop")
+        L.push(audiodevice_watcherIsRunning)
+        lua_setfield(L, -2, "watcherIsRunning")
+        L.push(audiodevice_tostring)
+        lua_setfield(L, -2, "__tostring")
+        L.push(audiodevice_eq)
+        lua_setfield(L, -2, "__eq")
+        L.push(audiodevice_gc)
+        lua_setfield(L, -2, "__gc")
+        lua_pop(L, 1)
 
-    // Register datasource userdata metatable
-    luaL_newmetatable(L, USERDATA_DATASOURCE_TAG)
-    lua_pushvalue(L, -1)
-    lua_setfield(L, -2, "__index")
-    lua_pushstring(L, USERDATA_DATASOURCE_TAG)
-    lua_setfield(L, -2, "__type")
-    luaL_setfuncs(L, &dataSourceLib, 0)
-    lua_pop(L, 1)
+        // Register datasource userdata metatable
+        luaL_newmetatable(L, USERDATA_DATASOURCE_TAG)
+        lua_pushvalue(L, -1)
+        lua_setfield(L, -2, "__index")
+        lua_pushstring(L, USERDATA_DATASOURCE_TAG)
+        lua_setfield(L, -2, "__type")
+        L.push(datasource_name)
+        lua_setfield(L, -2, "name")
+        L.push(datasource_setDefault)
+        lua_setfield(L, -2, "setDefault")
+        L.push(datasource_tostring)
+        lua_setfield(L, -2, "__tostring")
+        L.push(datasource_eq)
+        lua_setfield(L, -2, "__eq")
+        lua_pop(L, 1)
 
-    // Create module table
-    lua_createtable(L, 0, Int32(audiodeviceLib.count - 1))
-    luaL_setfuncs(L, &audiodeviceLib, 0)
-
-    return 1
+        // Create module table
+        lua_createtable(L, 0, 4)
+        L.push(audiodevice_alldevices)
+        lua_setfield(L, -2, "allDevices")
+        L.push(audiodevice_defaultoutputdevice)
+        lua_setfield(L, -2, "defaultOutputDevice")
+        L.push(audiodevice_defaultinputdevice)
+        lua_setfield(L, -2, "defaultInputDevice")
+        L.push(audiodevice_defaulteffectdevice)
+        lua_setfield(L, -2, "defaultEffectDevice")
+    }
 }

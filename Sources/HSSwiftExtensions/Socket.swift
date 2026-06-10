@@ -1,5 +1,6 @@
 import Cocoa
 import CLua
+import Lua
 import os.log
 import Network
 
@@ -859,7 +860,7 @@ private extension NWConnection {
 /// Returns:
 ///  * An [`hs.socket`](#new) object.
 ///
-private func socket_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func socket_new(_ L: LuaState) throws -> CInt {
     let asyncSocket = HSAsyncTcpSocket()
 
     if lua_type(L, 1) == LUA_TFUNCTION {
@@ -915,7 +916,7 @@ private func socket_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// AF_LINK | 18 | Link layer interface
 /// AF_INET6 | 30 | IPv6
 ///
-private func socket_parseAddress(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func socket_parseAddress(_ L: LuaState) throws -> CInt {
     let address = lua_checkdata(L, at: 1)
 
     // Parse the sockaddr structure directly
@@ -992,7 +993,7 @@ private func socket_parseAddress(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 /// Notes:
 ///  * Either a host/port pair OR a Unix domain socket path must be supplied. If no port is passed, the first parameter is assumed to be a path to the socket file.
 ///
-private func socket_connect(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func socket_connect(_ L: LuaState) throws -> CInt {
     let asyncSocket = getUserData(L, 1)
 
     if lua_type(L, 3) == LUA_TNUMBER {
@@ -1043,7 +1044,7 @@ private func socket_connect(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * The [`hs.socket`](#new) object, or `nil` if an error occurred.
 ///
-private func socket_listen(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func socket_listen(_ L: LuaState) throws -> CInt {
     let asyncSocket = getUserData(L, 1)
 
     if lua_type(L, 2) == LUA_TNUMBER {
@@ -1086,7 +1087,7 @@ private func socket_listen(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Notes:
 ///  * If called on a listening socket with multiple connections, each client is disconnected.
 ///
-private func socket_disconnect(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func socket_disconnect(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let asyncSocket = getUserData(L, 1)
 
@@ -1111,7 +1112,7 @@ private func socket_disconnect(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * Results are passed to the socket's [callback function](#setCallback), which must be set to use this method.
 ///  * If called on a listening socket with multiple connections, data is read from each of them.
 ///
-private func socket_read(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func socket_read(_ L: LuaState) throws -> CInt {
     let asyncSocket = getUserData(L, 1)
     let tag: Int = lua_type(L, 3) == LUA_TNUMBER ? Int(lua_tointeger(L, 3)) : -1
 
@@ -1157,7 +1158,7 @@ private func socket_read(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Notes:
 ///  * If called on a listening socket with multiple connections, data is broadcast to all connected sockets.
 ///
-private func socket_write(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func socket_write(_ L: LuaState) throws -> CInt {
     let asyncSocket = getUserData(L, 1)
     let message = lua_checkdata(L, at: 2)
     let tag: Int = lua_type(L, 3) == LUA_TNUMBER ? Int(lua_tointeger(L, 3)) : -1
@@ -1194,7 +1195,7 @@ private func socket_write(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Notes:
 ///  * A callback must be set in order to read data from the socket.
 ///
-private func socket_setCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func socket_setCallback(_ L: LuaState) throws -> CInt {
     let asyncSocket = getUserData(L, 1)
     lua_replaceRegistryFunctionRef(L, &asyncSocket.readCallbackRef, at: 2)
 
@@ -1215,7 +1216,7 @@ private func socket_setCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 /// Notes:
 ///  *  If the timeout value is negative, the operations will not use a timeout, which is the default.
 ///
-private func socket_setTimeout(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func socket_setTimeout(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     luaL_checktype(L, 2, LUA_TNUMBER)
@@ -1241,7 +1242,7 @@ private func socket_setTimeout(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * The socket will disconnect immediately if TLS negotiation fails.
 ///  * **IMPORTANT SECURITY NOTE**: The default settings will check to make sure the remote party's certificate is signed by a trusted 3rd party certificate agency (e.g. verisign) and that the certificate is not expired.  However it will not verify the name on the certificate unless you give it a name to verify against via `peerName`.  The security implications of this are important to understand.  Imagine you are attempting to create a secure connection to MySecureServer.com, but your socket gets directed to MaliciousServer.com because of a hacked DNS server.  If you simply use the default settings, and MaliciousServer.com has a valid certificate, the default settings will not detect any problems since the certificate is valid.  To properly secure your connection in this particular scenario you should set `peerName` to "MySecureServer.com".
 ///
-private func socket_startTLS(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func socket_startTLS(_ L: LuaState) throws -> CInt {
     let asyncSocket = getUserData(L, 1)
 
     var verify = true
@@ -1280,7 +1281,7 @@ private func get_socket_connections(_ asyncSocket: HSAsyncTcpSocket) -> Int {
 /// Notes:
 ///  * If the socket is bound for listening, this method returns `true` if there is at least one connection.
 ///
-private func socket_connected(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func socket_connected(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let asyncSocket = getUserData(L, 1)
 
@@ -1301,7 +1302,7 @@ private func socket_connected(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Notes:
 ///  * This method returns at most 1 for default (non-listening) sockets.
 ///
-private func socket_connections(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func socket_connections(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let asyncSocket = getUserData(L, 1)
 
@@ -1338,7 +1339,7 @@ private func socket_connections(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 ///    * unixSocketPath - `string`
 ///    * userData - `string`
 ///
-private func socket_info(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func socket_info(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let asyncSocket = getUserData(L, 1)
 
@@ -1370,7 +1371,7 @@ private func socket_info(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 // MARK: - Library Registration Functions
 
-private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func userdata_tostring(_ L: LuaState) throws -> CInt {
     let asyncSocket = getUserData(L, 1)
 
     let isServer = asyncSocket.role == .server
@@ -1383,7 +1384,7 @@ private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 1
 }
 
-private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func userdata_gc(_ L: LuaState) throws -> CInt {
     let userData = lua_touserdata(L, 1)!.assumingMemoryBound(to: AsyncSocketUserData.self)
     let asyncSocket: HSAsyncTcpSocket = Unmanaged.fromOpaque(userData.pointee.asyncSocket!).takeRetainedValue()
     userData.pointee.asyncSocket = nil
@@ -1396,61 +1397,60 @@ private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 0
 }
 
-private func meta_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func meta_gc(_ L: LuaState) throws -> CInt {
     return 0
 }
 
-// Functions for returned object when module loads
-private var moduleLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("new"), func: socket_new),
-    luaL_Reg(name: strdup("parseAddress"), func: socket_parseAddress),
-    luaL_Reg(name: nil, func: nil),
-]
-
-// Metatable for created objects when _new invoked
-private var userdata_metaLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("connect"), func: socket_connect),
-    luaL_Reg(name: strdup("listen"), func: socket_listen),
-    luaL_Reg(name: strdup("disconnect"), func: socket_disconnect),
-    luaL_Reg(name: strdup("read"), func: socket_read),
-    luaL_Reg(name: strdup("write"), func: socket_write),
-    luaL_Reg(name: strdup("setCallback"), func: socket_setCallback),
-    luaL_Reg(name: strdup("setTimeout"), func: socket_setTimeout),
-    luaL_Reg(name: strdup("startTLS"), func: socket_startTLS),
-    luaL_Reg(name: strdup("connected"), func: socket_connected),
-    luaL_Reg(name: strdup("connections"), func: socket_connections),
-    luaL_Reg(name: strdup("info"), func: socket_info),
-    luaL_Reg(name: strdup("__tostring"), func: userdata_tostring),
-    luaL_Reg(name: strdup("__gc"), func: userdata_gc),
-    luaL_Reg(name: nil, func: nil),
-]
-
-private var meta_gcLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("__gc"), func: meta_gc),
-    luaL_Reg(name: nil, func: nil),
-]
-
 @_cdecl("luaopen_hs_libsocket")
 public func luaopen_hs_libsocket(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    // Create ref table in registry
-    lua_newtable(L)
-    refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+    runEntryPoint(L) { L in
+        // Create ref table in registry
+        lua_newtable(L)
+        refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
 
-    // Register userdata metatable
-    luaL_newmetatable(L, USERDATA_TAG)
-    lua_pushvalue(L, -1)
-    lua_setfield(L, -2, "__index")
-    luaL_setfuncs(L, &userdata_metaLib, 0)
-    lua_pop(L, 1)
+        // Register userdata metatable
+        luaL_newmetatable(L, USERDATA_TAG)
+        lua_pushvalue(L, -1)
+        lua_setfield(L, -2, "__index")
+        L.push(socket_connect)
+        lua_setfield(L, -2, "connect")
+        L.push(socket_listen)
+        lua_setfield(L, -2, "listen")
+        L.push(socket_disconnect)
+        lua_setfield(L, -2, "disconnect")
+        L.push(socket_read)
+        lua_setfield(L, -2, "read")
+        L.push(socket_write)
+        lua_setfield(L, -2, "write")
+        L.push(socket_setCallback)
+        lua_setfield(L, -2, "setCallback")
+        L.push(socket_setTimeout)
+        lua_setfield(L, -2, "setTimeout")
+        L.push(socket_startTLS)
+        lua_setfield(L, -2, "startTLS")
+        L.push(socket_connected)
+        lua_setfield(L, -2, "connected")
+        L.push(socket_connections)
+        lua_setfield(L, -2, "connections")
+        L.push(socket_info)
+        lua_setfield(L, -2, "info")
+        L.push(userdata_tostring)
+        lua_setfield(L, -2, "__tostring")
+        L.push(userdata_gc)
+        lua_setfield(L, -2, "__gc")
+        lua_pop(L, 1)
 
-    // Create module table
-    lua_createtable(L, 0, Int32(moduleLib.count - 1))
-    luaL_setfuncs(L, &moduleLib, 0)
+        // Create module table
+        lua_createtable(L, 0, 2)
+        L.push(socket_new)
+        lua_setfield(L, -2, "new")
+        L.push(socket_parseAddress)
+        lua_setfield(L, -2, "parseAddress")
 
-    // Set module metatable (for __gc)
-    lua_createtable(L, 0, Int32(meta_gcLib.count - 1))
-    luaL_setfuncs(L, &meta_gcLib, 0)
-    lua_setmetatable(L, -2)
-
-    return 1
+        // Set module metatable (for __gc)
+        lua_createtable(L, 0, 1)
+        L.push(meta_gc)
+        lua_setfield(L, -2, "__gc")
+        lua_setmetatable(L, -2)
+    }
 }

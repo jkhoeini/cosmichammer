@@ -1,5 +1,6 @@
 import Cocoa
 import CLua
+import Lua
 import IOKit
 import IOKit.hid
 import os.log
@@ -143,7 +144,7 @@ private class HSmouse {
 /// Notes:
 ///  * This function leverages code from [ManyMouse](http://icculus.org/manymouse/).
 ///  * This function considers any mouse labelled as "Apple Internal Keyboard / Trackpad" to be an internal mouse.
-private func mouse_count(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func mouse_count(_ L: LuaState) throws -> CInt {
     let includeInternal = lua_toboolean(L, 1) != 0
 
     let mouseManager = HSmouse()
@@ -169,7 +170,7 @@ private func mouse_count(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Notes:
 ///  * This function leverages code from [ManyMouse](http://icculus.org/manymouse/).
-private func mouse_names(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func mouse_names(_ L: LuaState) throws -> CInt {
     let mouseManager = HSmouse()
 
     lua_pushany(L, mouseManager.getNames() as NSArray)
@@ -188,7 +189,7 @@ private func mouse_names(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Notes:
 ///  * If no parameters are supplied, the current position will be returned. If a point table parameter is supplied, the mouse pointer position will be set and the new co-ordinates returned
-private func mouse_absolutePosition(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func mouse_absolutePosition(_ L: LuaState) throws -> CInt {
     let mouseManager = HSmouse()
 
     if lua_type(L, 1) == LUA_TTABLE {
@@ -216,7 +217,7 @@ private func mouse_absolutePosition(_ L: UnsafeMutablePointer<lua_State>!) -> In
 ///  * Note that not all values will work, they should map to the steps defined in the System Preferences app, which are:
 ///    * 0.0, 0.125, 0.5, 0.6875, 0.875, 1.0, 1.5, 2.0, 2.5, 3.0
 ///  * Note that changes to this value will not be noticed immediately by macOS
-private func mouse_mouseAcceleration(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func mouse_mouseAcceleration(_ L: LuaState) throws -> CInt {
     let mouseManager = HSmouse()
 
     var isTrackpad = false
@@ -247,7 +248,7 @@ private func mouse_mouseAcceleration(_ L: UnsafeMutablePointer<lua_State>!) -> I
 ///
 /// Returns:
 ///  * A string, either "natural" or "normal"
-private func mouse_scrollDirection(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func mouse_scrollDirection(_ L: LuaState) throws -> CInt {
     let mouseManager = HSmouse()
 
     lua_pushstring(L, mouseManager.isScrollDirectionNatural ? "natural" : "normal")
@@ -267,7 +268,7 @@ private func mouse_scrollDirection(_ L: UnsafeMutablePointer<lua_State>!) -> Int
 /// Notes:
 ///  * Possible values include: arrowCursor, contextualMenuCursor, closedHandCursor, crosshairCursor, disappearingItemCursor, dragCopyCursor, dragLinkCursor, IBeamCursor, operationNotAllowedCursor, pointingHandCursor, resizeDownCursor, resizeLeftCursor, resizeLeftRightCursor, resizeRightCursor, resizeUpCursor, resizeUpDownCursor, IBeamCursorForVerticalLayout or unknown if the cursor type cannot be determined.
 ///  * This function can also return daVinciResolveHorizontalArrows, when hovering over mouse-draggable text-boxes in DaVinci Resolve. This is determined using the "hotspot" value of the cursor.
-private func mouse_currentCursorType(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func mouse_currentCursorType(_ L: LuaState) throws -> CInt {
     var value = "unknown"
 
     guard let currentCursor = NSCursor.currentSystem else {
@@ -322,19 +323,21 @@ private func mouse_currentCursorType(_ L: UnsafeMutablePointer<lua_State>!) -> I
 
 // Note to future authors, there is no function to use kIOHIDTrackpadAccelerationType because it doesn't appear to do anything on modern systems.
 
-private var mouseLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("absolutePosition"), func: mouse_absolutePosition),
-    luaL_Reg(name: strdup("trackingSpeed"), func: mouse_mouseAcceleration),
-    luaL_Reg(name: strdup("scrollDirection"), func: mouse_scrollDirection),
-    luaL_Reg(name: strdup("currentCursorType"), func: mouse_currentCursorType),
-    luaL_Reg(name: strdup("count"), func: mouse_count),
-    luaL_Reg(name: strdup("names"), func: mouse_names),
-    luaL_Reg(name: nil, func: nil),
-]
-
 @_cdecl("luaopen_hs_libmouse")
 public func luaopen_hs_libmouse(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    lua_createtable(L, 0, Int32(mouseLib.count - 1))
-    luaL_setfuncs(L, &mouseLib, 0)
-    return 1
+    runEntryPoint(L) { L in
+        lua_createtable(L, 0, 6)
+        L.push(mouse_absolutePosition)
+        lua_setfield(L, -2, "absolutePosition")
+        L.push(mouse_mouseAcceleration)
+        lua_setfield(L, -2, "trackingSpeed")
+        L.push(mouse_scrollDirection)
+        lua_setfield(L, -2, "scrollDirection")
+        L.push(mouse_currentCursorType)
+        lua_setfield(L, -2, "currentCursorType")
+        L.push(mouse_count)
+        lua_setfield(L, -2, "count")
+        L.push(mouse_names)
+        lua_setfield(L, -2, "names")
+    }
 }

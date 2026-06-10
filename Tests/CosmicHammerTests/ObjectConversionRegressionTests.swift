@@ -394,8 +394,8 @@ extension CosmicHammerTests {
             }
         }
 
-        @Test func testNotifyUserdataGcRemovesSelfRefRecord() {
-            withLibNotifyState { L in
+        @Test func testNotifyUserdataGcRemovesSelfRefRecord() throws {
+            try withLibNotifyState { L in
                 let gus = "notify-gc-test-\(UUID().uuidString)"
                 let userInfo = NSMutableDictionary(dictionary: [
                     KEY_ID: gus,
@@ -411,11 +411,11 @@ extension CosmicHammerTests {
                 #expect(nt_pushNSUserNotification(L, notification) == 1)
                 #expect(nt_debugSelfRefCount(gus) == 2)
 
-                #expect(nt_userdata_gc(L) == 0)
+                try #expect(nt_userdata_gc(L) == 0)
                 #expect(nt_debugSelfRefCount(gus) == 1)
                 lua_remove(L, 1)
 
-                #expect(nt_userdata_gc(L) == 0)
+                try #expect(nt_userdata_gc(L) == 0)
                 #expect(!nt_debugHasSpecificsRecord(gus))
             }
         }

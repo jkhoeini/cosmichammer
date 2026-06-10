@@ -1,5 +1,6 @@
 import Foundation
 import CLua
+import Lua
 import Cocoa
 import Carbon
 
@@ -164,7 +165,7 @@ private class HSWebSocketDelegate: NSObject, URLSessionWebSocketDelegate {
 ///  * Given a path '/mysock' and a port of 8000, the websocket URL is as follows:
 ///    * ws://localhost:8000/mysock
 ///    * wss://localhost:8000/mysock (if SSL enabled)
-private func websocket_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func websocket_new(_ L: LuaState) throws -> CInt {
     let urlString = String(cString: luaL_checkstring(L, 1))
     luaL_checktype(L, 2, LUA_TFUNCTION)
     let ws = HSWebSocketDelegate(url: URL(string: urlString)!)
@@ -203,7 +204,7 @@ private func websocket_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///   contains invalid UTF8 character sequences (the default string behavior is to make
 ///   sure everything is "printable" by converting invalid sequences into the Unicode
 ///   Invalid Character sequence).
-private func websocket_send(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func websocket_send(_ L: LuaState) throws -> CInt {
     let ws = getWsUserData(L, 1)
     luaL_checktype(L, 2, LUA_TSTRING)
 
@@ -239,7 +240,7 @@ private func websocket_send(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///   * closing
 ///   * closed
 ///   * unknown
-private func websocket_status(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func websocket_status(_ L: LuaState) throws -> CInt {
     let ws = getWsUserData(L, 1)
 
     switch ws.webSocket?.state {
@@ -264,7 +265,7 @@ private func websocket_status(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * The `hs.websocket` object
-private func websocket_close(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func websocket_close(_ L: LuaState) throws -> CInt {
     let ws = getWsUserData(L, 1)
 
     ws.close()
@@ -273,7 +274,7 @@ private func websocket_close(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 1
 }
 
-private func websocket_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func websocket_gc(_ L: LuaState) throws -> CInt {
     let userData = lua_touserdata(L, 1)!.assumingMemoryBound(to: WebSocketUserData.self)
     let ws = Unmanaged<HSWebSocketDelegate>.fromOpaque(userData.pointee.ws!).takeRetainedValue()
     userData.pointee.ws = nil
@@ -289,7 +290,7 @@ private func websocket_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 0
 }
 
-private func websocket_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func websocket_tostring(_ L: LuaState) throws -> CInt {
     let ws = getWsUserData(L, 1)
     let host = ws.isOpen ? "connected" : "disconnected"
     let str = "\(WS_USERDATA_TAG): \(host) (\(String(describing: lua_topointer(L, 1)!)))"
@@ -297,47 +298,39 @@ private func websocket_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
     return 1
 }
 
-private var websocketlib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("new"), func: websocket_new),
-    luaL_Reg(name: nil, func: nil),
-]
-
-private var metalib: [luaL_Reg] = [
-    luaL_Reg(name: nil, func: nil),
-]
-
-private var wsMetalib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("send"), func: websocket_send),
-    luaL_Reg(name: strdup("close"), func: websocket_close),
-    luaL_Reg(name: strdup("status"), func: websocket_status),
-    luaL_Reg(name: strdup("__tostring"), func: websocket_tostring),
-    luaL_Reg(name: strdup("__gc"), func: websocket_gc),
-    luaL_Reg(name: nil, func: nil),
-]
 
 @_cdecl("luaopen_hs_libwebsocket")
 public func luaopen_hs_libwebsocket(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    // Create ref table in registry
-    lua_newtable(L)
-    refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+    runEntryPoint(L) { L in
+        // Create ref table in registry
+        lua_newtable(L)
+        refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
 
-    // Register userdata metatable
-    luaL_newmetatable(L, WS_USERDATA_TAG)
-    lua_pushvalue(L, -1)
-    lua_setfield(L, -2, "__index")  // mt.__index = mt
-    lua_pushstring(L, WS_USERDATA_TAG)
-    lua_setfield(L, -2, "__type")
-    luaL_setfuncs(L, &wsMetalib, 0)
-    lua_pop(L, 1)
+        // Register userdata metatable
+        luaL_newmetatable(L, WS_USERDATA_TAG)
+        lua_pushvalue(L, -1)
+        lua_setfield(L, -2, "__index")
+        lua_pushstring(L, WS_USERDATA_TAG)
+        lua_setfield(L, -2, "__type")
+        L.push(websocket_send)
+        lua_setfield(L, -2, "send")
+        L.push(websocket_close)
+        lua_setfield(L, -2, "close")
+        L.push(websocket_status)
+        lua_setfield(L, -2, "status")
+        L.push(websocket_tostring)
+        lua_setfield(L, -2, "__tostring")
+        L.push(websocket_gc)
+        lua_setfield(L, -2, "__gc")
+        lua_pop(L, 1)
 
-    // Create module table
-    lua_createtable(L, 0, Int32(websocketlib.count - 1))
-    luaL_setfuncs(L, &websocketlib, 0)
+        // Create module table
+        lua_createtable(L, 0, 1)
+        L.push(websocket_new)
+        lua_setfield(L, -2, "new")
 
-    // Set module metatable (for __gc)
-    lua_createtable(L, 0, Int32(metalib.count - 1))
-    luaL_setfuncs(L, &metalib, 0)
-    lua_setmetatable(L, -2)
-
-    return 1
+        // Set module metatable (empty, for __gc pattern)
+        lua_createtable(L, 0, 0)
+        lua_setmetatable(L, -2)
+    }
 }

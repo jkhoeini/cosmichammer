@@ -1,5 +1,6 @@
 import Cocoa
 import CLua
+import Lua
 
 /// hs.dockicon.visible() -> bool
 /// Function
@@ -10,7 +11,7 @@ import CLua
 ///
 /// Returns:
 ///  * A boolean, true if the dock icon is visible, false if not
-private func icon_visible(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func icon_visible(_ L: LuaState) throws -> CInt {
     lua_pushboolean(L, MJDockIconVisible() ? 1 : 0)
     return 1
 }
@@ -24,7 +25,7 @@ private func icon_visible(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * None
-private func icon_show(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func icon_show(_ L: LuaState) throws -> CInt {
     MJDockIconSetVisible(true)
     return 0
 }
@@ -38,7 +39,7 @@ private func icon_show(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * None
-private func icon_hide(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func icon_hide(_ L: LuaState) throws -> CInt {
     MJDockIconSetVisible(false)
     return 0
 }
@@ -52,7 +53,7 @@ private func icon_hide(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * None
-private func icon_bounce(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func icon_bounce(_ L: LuaState) throws -> CInt {
     let requestType: NSApplication.RequestUserAttentionType = lua_toboolean(L, 1) != 0 ? .criticalRequest : .informationalRequest
     NSApplication.shared.requestUserAttention(requestType)
     return 0
@@ -67,7 +68,7 @@ private func icon_bounce(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * None
-private func icon_setBadge(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func icon_setBadge(_ L: LuaState) throws -> CInt {
     let tile = NSApplication.shared.dockTile
     tile.badgeLabel = String(cString: luaL_checkstring(L, 1))
     tile.display()
@@ -90,7 +91,7 @@ private func icon_setBadge(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Notes:
 ///  * If you update the canvas object by changing any of its components, it will not be reflected in the dock icon until you invoke [hs.dockicon.tileUpdate](#tileUpdate).
-private func icon_docktileCanvas(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func icon_docktileCanvas(_ L: LuaState) throws -> CInt {
     let tile = NSApplication.shared.dockTile
 
     if lua_gettop(L) != 0 {
@@ -134,7 +135,7 @@ private func icon_docktileCanvas(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 ///
 /// Notes:
 ///  * the size returned specifies the display size of the dock icon tile. If your canvas item is larger than this, then only the top left portion corresponding to the size returned will be displayed.
-private func icon_docktileSize(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func icon_docktileSize(_ L: LuaState) throws -> CInt {
     let tile = NSApplication.shared.dockTile
     lua_pushNSSize(L, tile.size)
     return 1
@@ -152,29 +153,33 @@ private func icon_docktileSize(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Notes:
 ///  * Changes made to a canvas object are not reflected automatically like they are when a canvas is being displayed on the screen; you must invoke this method after making changes to the canvas for the updates to be reflected in the dock icon.
-private func icon_docktileUpdate(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func icon_docktileUpdate(_ L: LuaState) throws -> CInt {
     let tile = NSApplication.shared.dockTile
     tile.display()
     return 0
 }
 
-private var icon_lib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("visible"),    func: icon_visible),
-    luaL_Reg(name: strdup("show"),       func: icon_show),
-    luaL_Reg(name: strdup("hide"),       func: icon_hide),
-    luaL_Reg(name: strdup("bounce"),     func: icon_bounce),
-    luaL_Reg(name: strdup("setBadge"),   func: icon_setBadge),
-    luaL_Reg(name: strdup("tileCanvas"), func: icon_docktileCanvas),
-    luaL_Reg(name: strdup("tileSize"),   func: icon_docktileSize),
-    luaL_Reg(name: strdup("tileUpdate"), func: icon_docktileUpdate),
-    luaL_Reg(name: nil, func: nil),
-]
 
 @_cdecl("luaopen_hs_libdockicon")
 public func luaopen_hs_libdockicon(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    // Create module table
-    lua_createtable(L, 0, Int32(icon_lib.count - 1))
-    luaL_setfuncs(L, &icon_lib, 0)
-
-    return 1
+    runEntryPoint(L) { L in
+        // Create module table
+        lua_createtable(L, 0, 8)
+        L.push(icon_visible)
+        lua_setfield(L, -2, "visible")
+        L.push(icon_show)
+        lua_setfield(L, -2, "show")
+        L.push(icon_hide)
+        lua_setfield(L, -2, "hide")
+        L.push(icon_bounce)
+        lua_setfield(L, -2, "bounce")
+        L.push(icon_setBadge)
+        lua_setfield(L, -2, "setBadge")
+        L.push(icon_docktileCanvas)
+        lua_setfield(L, -2, "tileCanvas")
+        L.push(icon_docktileSize)
+        lua_setfield(L, -2, "tileSize")
+        L.push(icon_docktileUpdate)
+        lua_setfield(L, -2, "tileUpdate")
+    }
 }

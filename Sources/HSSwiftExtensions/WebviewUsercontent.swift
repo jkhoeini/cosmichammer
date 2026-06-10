@@ -1,5 +1,6 @@
 import Foundation
 import CLua
+import Lua
 import Cocoa
 import WebKit
 import os.log
@@ -48,7 +49,7 @@ private class HSUserContentController: WKUserContentController, WKScriptMessageH
 /// Notes:
 ///  * This object should be provided as the final argument to the `hs.webview.new` constructor in order to tie the webview to this content controller.  All new windows which are created from this parent webview will also use this controller.
 ///  * See `hs.webview.usercontent:setCallback` for more information about the message port.
-private func ucc_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func ucc_new(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TSTRING)
 
     let theName = lua_tovalue(L, at: 1) as! String
@@ -69,7 +70,7 @@ private func ucc_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * the usercontentControllerObject or nil if the script table was malformed in some way.
-private func ucc_inject(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func ucc_inject(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_UCC_TAG)
 
     luaL_checktype(L, 2, LUA_TTABLE)
@@ -102,7 +103,7 @@ private func ucc_inject(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Notes:
 ///  * Because the WKUserContentController class only allows for removing all scripts, you can use this method to generate a list of all scripts, modify it, and then use it in a loop to reapply the scripts if you need to remove just a few scripts.
-private func ucc_userScripts(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func ucc_userScripts(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_UCC_TAG)
     let ptr = luaL_checkudata(L, 1, USERDATA_UCC_TAG)!
         .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
@@ -127,7 +128,7 @@ private func ucc_userScripts(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * the usercontentControllerObject
 /// Notes:
 ///  * The WKUserContentController class only allows for removing all scripts.  If you need finer control, make a copy of the current scripts with `hs.webview.usercontent.userScripts()` first so you can recreate the scripts you want to keep.
-private func ucc_removeAllScripts(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func ucc_removeAllScripts(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_UCC_TAG)
     let ptr = luaL_checkudata(L, 1, USERDATA_UCC_TAG)!
         .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
@@ -158,7 +159,7 @@ private func ucc_removeAllScripts(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
 ///      }
 ///
 ///  * Where *name* matches the name specified in the constructor and *message-object* is the object to post to the function.  This object can be a number, string, date, array, dictionary(table), or nil.
-private func ucc_setCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func ucc_setCallback(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_UCC_TAG)
     let ptr = luaL_checkudata(L, 1, USERDATA_UCC_TAG)!
         .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
@@ -274,7 +275,7 @@ private func table_toWKUserScript(_ L: UnsafeMutablePointer<lua_State>!, _ idx: 
 
 // MARK: - Lua infrastructure support
 
-private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func userdata_tostring(_ L: LuaState) throws -> CInt {
     let ptr = luaL_checkudata(L, 1, USERDATA_UCC_TAG)!
         .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
     var name: String
@@ -289,7 +290,7 @@ private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 1
 }
 
-private func userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func userdata_eq(_ L: LuaState) throws -> CInt {
     let ptr1 = luaL_checkudata(L, 1, USERDATA_UCC_TAG)!
         .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
     let ptr2 = luaL_checkudata(L, 2, USERDATA_UCC_TAG)!
@@ -304,7 +305,7 @@ private func userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 1
 }
 
-private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func userdata_gc(_ L: LuaState) throws -> CInt {
     let ptr = luaL_checkudata(L, 1, USERDATA_UCC_TAG)!
         .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
 
@@ -323,40 +324,36 @@ private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 0
 }
 
-// Metatable for userdata objects
-private var userdata_metaLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("injectScript"), func: ucc_inject),
-    luaL_Reg(name: strdup("userScripts"), func: ucc_userScripts),
-    luaL_Reg(name: strdup("removeAllScripts"), func: ucc_removeAllScripts),
-    luaL_Reg(name: strdup("setCallback"), func: ucc_setCallback),
-    luaL_Reg(name: strdup("__tostring"), func: userdata_tostring),
-    luaL_Reg(name: strdup("__eq"), func: userdata_eq),
-    luaL_Reg(name: strdup("__gc"), func: userdata_gc),
-    luaL_Reg(name: nil, func: nil),
-]
-
-// Functions for returned object when module loads
-private var moduleLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("new"), func: ucc_new),
-    luaL_Reg(name: nil, func: nil),
-]
-
 @_cdecl("luaopen_hs_libwebviewusercontent")
 public func luaopen_hs_libwebviewusercontent(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    // Create ref table in registry
-    lua_newtable(L)
-    refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+    runEntryPoint(L) { L in
+        // Create ref table in registry
+        lua_newtable(L)
+        refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
 
-    // Register userdata metatable
-    luaL_newmetatable(L, USERDATA_UCC_TAG)
-    lua_pushvalue(L, -1)
-    lua_setfield(L, -2, "__index")
-    luaL_setfuncs(L, &userdata_metaLib, 0)
-    lua_pop(L, 1)
+        // Register userdata metatable
+        luaL_newmetatable(L, USERDATA_UCC_TAG)
+        lua_pushvalue(L, -1)
+        lua_setfield(L, -2, "__index")
+        L.push(ucc_inject)
+        lua_setfield(L, -2, "injectScript")
+        L.push(ucc_userScripts)
+        lua_setfield(L, -2, "userScripts")
+        L.push(ucc_removeAllScripts)
+        lua_setfield(L, -2, "removeAllScripts")
+        L.push(ucc_setCallback)
+        lua_setfield(L, -2, "setCallback")
+        L.push(userdata_tostring)
+        lua_setfield(L, -2, "__tostring")
+        L.push(userdata_eq)
+        lua_setfield(L, -2, "__eq")
+        L.push(userdata_gc)
+        lua_setfield(L, -2, "__gc")
+        lua_pop(L, 1)
 
-    // Create module table
-    lua_createtable(L, 0, Int32(moduleLib.count - 1))
-    luaL_setfuncs(L, &moduleLib, 0)
-
-    return 1
+        // Create module table
+        lua_createtable(L, 0, 1)
+        L.push(ucc_new)
+        lua_setfield(L, -2, "new")
+    }
 }

@@ -4,6 +4,7 @@
 
 import Foundation
 import CLua
+import Lua
 import Cocoa
 import WebKit
 import os.log
@@ -24,7 +25,7 @@ private var backgroundCallbacks = NSMutableSet()
 ///
 /// Returns:
 ///  * a list of strings where each string is a specific data type stored in a datastore.
-private func datastore_allWebsiteDataTypes(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func datastore_allWebsiteDataTypes(_ L: LuaState) throws -> CInt {
     lua_pushany(L, Array(WKWebsiteDataStore.allWebsiteDataTypes()) as NSArray)
     return 1
 }
@@ -41,7 +42,7 @@ private func datastore_allWebsiteDataTypes(_ L: UnsafeMutablePointer<lua_State>!
 ///
 /// Notes:
 ///  * this is the datastore used unless otherwise specified when creating an `hs.webview` instance.
-private func datastore_newDefaultDataStore(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func datastore_newDefaultDataStore(_ L: LuaState) throws -> CInt {
     wv_pushAny(L, WKWebsiteDataStore.default())
     return 1
 }
@@ -58,7 +59,7 @@ private func datastore_newDefaultDataStore(_ L: UnsafeMutablePointer<lua_State>!
 ///
 /// Notes:
 ///  * The datastore represented by this object will be initially empty.  You can use this function to create a non-persistent datastore that you wish to share among multiple `hs.webview` instances.
-private func datastore_newPrivateDataStore(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func datastore_newPrivateDataStore(_ L: LuaState) throws -> CInt {
     wv_pushAny(L, WKWebsiteDataStore.nonPersistent())
     return 1
 }
@@ -72,7 +73,7 @@ private func datastore_newPrivateDataStore(_ L: UnsafeMutablePointer<lua_State>!
 ///
 /// Returns:
 ///  * a datastoreObject
-private func datastore_fromWebview(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func datastore_fromWebview(_ L: LuaState) throws -> CInt {
     let ptr = luaL_checkudata(L, 1, "hs.webview")!
         .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
     let theWindow = Unmanaged<NSWindow>.fromOpaque(ptr.pointee!).takeUnretainedValue()
@@ -96,7 +97,7 @@ private func datastore_fromWebview(_ L: UnsafeMutablePointer<lua_State>!) -> Int
 ///
 /// Returns:
 ///  * the datastore object
-private func datastore_fetchRecords(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func datastore_fetchRecords(_ L: LuaState) throws -> CInt {
 
     let dataStore = wv_toWKWebsiteDataStore(L, 1)!
     var dataTypes: [String] = Array(WKWebsiteDataStore.allWebsiteDataTypes())
@@ -112,13 +113,13 @@ private func datastore_fetchRecords(_ L: UnsafeMutablePointer<lua_State>!) -> In
         if let arr = arr as? [String] {
             dataTypes = arr
         } else {
-            return luaL_argerror(L, 2, "expected a string or an array of string values")
+            throw LuaCallError("bad argument #2 (expected a string or an array of string values)")
         }
     }
 
     let typeSet = Set(dataTypes)
     if !typeSet.isSubset(of: WKWebsiteDataStore.allWebsiteDataTypes()) {
-        return luaL_argerror(L, 3, "invalid datastore data type specified")
+        throw LuaCallError("bad argument #3 (invalid datastore data type specified)")
     }
 
     dataStore.fetchDataRecords(ofTypes: typeSet) { records in
@@ -152,7 +153,7 @@ private func datastore_fetchRecords(_ L: UnsafeMutablePointer<lua_State>!) -> In
 ///
 /// Returns:
 ///  * the datastore object
-private func datastore_removeRecords(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func datastore_removeRecords(_ L: LuaState) throws -> CInt {
     let dataStore = wv_toWKWebsiteDataStore(L, 1)!
 
     var recordNames: [String]
@@ -163,7 +164,7 @@ private func datastore_removeRecords(_ L: UnsafeMutablePointer<lua_State>!) -> I
         recordNames = [lua_tovalue(L, at: 2) as! String]
     } else {
         guard let arr = lua_tovalue(L, at: 2) as? [String] else {
-            return luaL_argerror(L, 2, "expected a single string or an array of string values")
+            throw LuaCallError("bad argument #2 (expected a single string or an array of string values)")
         }
         recordNames = arr
     }
@@ -172,14 +173,14 @@ private func datastore_removeRecords(_ L: UnsafeMutablePointer<lua_State>!) -> I
         recordTypes = [lua_tovalue(L, at: 3) as! String]
     } else {
         guard let arr = lua_tovalue(L, at: 3) as? [String] else {
-            return luaL_argerror(L, 3, "expected a single string or an array of string values")
+            throw LuaCallError("bad argument #3 (expected a single string or an array of string values)")
         }
         recordTypes = arr
     }
 
     let typeSet = Set(recordTypes)
     if !typeSet.isSubset(of: WKWebsiteDataStore.allWebsiteDataTypes()) {
-        return luaL_argerror(L, 3, "invalid datastore data type specified")
+        throw LuaCallError("bad argument #3 (invalid datastore data type specified)")
     }
 
     if lua_type(L, 4) == LUA_TFUNCTION {
@@ -217,7 +218,7 @@ private func datastore_removeRecords(_ L: UnsafeMutablePointer<lua_State>!) -> I
 ///
 /// Returns:
 ///  * the datastore object
-private func datastore_removeDataFrom(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func datastore_removeDataFrom(_ L: LuaState) throws -> CInt {
     let dataStore = wv_toWKWebsiteDataStore(L, 1)!
 
     var theDate: Date
@@ -231,7 +232,7 @@ private func datastore_removeDataFrom(_ L: UnsafeMutablePointer<lua_State>!) -> 
         rfc3339DateFormatter.dateFormat = "yyyy'-'MM'-'dd'T'HH':'mm':'ss'Z'"
         rfc3339DateFormatter.timeZone = TimeZone(secondsFromGMT: 0)
         guard let parsed = rfc3339DateFormatter.date(from: lua_tovalue(L, at: 2) as! String) else {
-            return luaL_argerror(L, 2, "invalid date format")
+            throw LuaCallError("bad argument #2 (invalid date format)")
         }
         theDate = parsed
     } else {
@@ -242,14 +243,14 @@ private func datastore_removeDataFrom(_ L: UnsafeMutablePointer<lua_State>!) -> 
         recordTypes = [lua_tovalue(L, at: 3) as! String]
     } else {
         guard let arr = lua_tovalue(L, at: 3) as? [String] else {
-            return luaL_argerror(L, 3, "expected a single string or an array of string values")
+            throw LuaCallError("bad argument #3 (expected a single string or an array of string values)")
         }
         recordTypes = arr
     }
 
     let typeSet = Set(recordTypes)
     if !typeSet.isSubset(of: WKWebsiteDataStore.allWebsiteDataTypes()) {
-        return luaL_argerror(L, 3, "invalid datastore data type specified")
+        throw LuaCallError("bad argument #3 (invalid datastore data type specified)")
     }
 
     if lua_type(L, 4) == LUA_TFUNCTION {
@@ -285,7 +286,7 @@ private func datastore_removeDataFrom(_ L: UnsafeMutablePointer<lua_State>!) -> 
 ///
 /// Notes:
 ///  * Note that this value is the inverse of `hs.webview:privateBrowsing()`, since private browsing uses a non-persistent datastore.
-private func datastore_persistent(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func datastore_persistent(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_DS_TAG)
     let dataStore = wv_toWKWebsiteDataStore(L, 1)!
     lua_pushboolean(L, dataStore.isPersistent ? 1 : 0)
@@ -341,7 +342,7 @@ func wv_toWKWebsiteDataStore(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32
 
 // MARK: - Cosmic Hammer/Lua Infrastructure
 
-private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func userdata_tostring(_ L: LuaState) throws -> CInt {
     let obj = wv_toWKWebsiteDataStore(L, 1)
     let title: String = (obj?.isPersistent ?? false) ? "persistent" : "non-persistent"
     let ptr = lua_topointer(L, 1)
@@ -350,7 +351,7 @@ private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 1
 }
 
-private func userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func userdata_eq(_ L: LuaState) throws -> CInt {
     if luaL_testudata(L, 1, USERDATA_DS_TAG) != nil && luaL_testudata(L, 2, USERDATA_DS_TAG) != nil {
         let obj1 = wv_toWKWebsiteDataStore(L, 1)
         let obj2 = wv_toWKWebsiteDataStore(L, 2)
@@ -361,7 +362,7 @@ private func userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 1
 }
 
-private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func userdata_gc(_ L: LuaState) throws -> CInt {
     let ptr = luaL_checkudata(L, 1, USERDATA_DS_TAG)!
         .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
     if let rawPtr = ptr.pointee {
@@ -373,7 +374,7 @@ private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 0
 }
 
-private func meta_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func meta_gc(_ L: LuaState) throws -> CInt {
     backgroundCallbacks.enumerateObjects { obj, _ in
         if let ref = obj as? NSNumber {
             luaL_unref(L, LUA_REGISTRYINDEX_VALUE, ref.int32Value)
@@ -383,55 +384,48 @@ private func meta_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 0
 }
 
-// Metatable for userdata objects
-private var userdata_metaLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("fetchRecords"), func: datastore_fetchRecords),
-    luaL_Reg(name: strdup("removeRecordsFor"), func: datastore_removeRecords),
-    luaL_Reg(name: strdup("removeRecordsAfter"), func: datastore_removeDataFrom),
-    luaL_Reg(name: strdup("persistent"), func: datastore_persistent),
-    luaL_Reg(name: strdup("__tostring"), func: userdata_tostring),
-    luaL_Reg(name: strdup("__eq"), func: userdata_eq),
-    luaL_Reg(name: strdup("__gc"), func: userdata_gc),
-    luaL_Reg(name: nil, func: nil),
-]
-
-// Functions for returned object when module loads
-private var moduleLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("websiteDataTypes"), func: datastore_allWebsiteDataTypes),
-    luaL_Reg(name: strdup("default"), func: datastore_newDefaultDataStore),
-    luaL_Reg(name: strdup("newPrivate"), func: datastore_newPrivateDataStore),
-    luaL_Reg(name: strdup("fromWebview"), func: datastore_fromWebview),
-    luaL_Reg(name: nil, func: nil),
-]
-
-// Metatable for module
-private var module_metaLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("__gc"), func: meta_gc),
-    luaL_Reg(name: nil, func: nil),
-]
 
 @_cdecl("luaopen_hs_libwebviewdatastore")
 public func luaopen_hs_libwebviewdatastore(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    // Create ref table in registry
-    lua_newtable(L)
-    refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+    runEntryPoint(L) { L in
+        lua_newtable(L)
+        refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
 
-    // Register userdata metatable
-    luaL_newmetatable(L, USERDATA_DS_TAG)
-    lua_pushvalue(L, -1)
-    lua_setfield(L, -2, "__index")
-    luaL_setfuncs(L, &userdata_metaLib, 0)
-    lua_pop(L, 1)
+        luaL_newmetatable(L, USERDATA_DS_TAG)
+        lua_pushvalue(L, -1)
+        lua_setfield(L, -2, "__index")
+        L.push(datastore_fetchRecords)
+        lua_setfield(L, -2, "fetchRecords")
+        L.push(datastore_removeRecords)
+        lua_setfield(L, -2, "removeRecordsFor")
+        L.push(datastore_removeDataFrom)
+        lua_setfield(L, -2, "removeRecordsAfter")
+        L.push(datastore_persistent)
+        lua_setfield(L, -2, "persistent")
+        L.push(userdata_tostring)
+        lua_setfield(L, -2, "__tostring")
+        L.push(userdata_eq)
+        lua_setfield(L, -2, "__eq")
+        L.push(userdata_gc)
+        lua_setfield(L, -2, "__gc")
+        lua_pop(L, 1)
 
-    // Create module table
-    lua_createtable(L, 0, Int32(moduleLib.count - 1))
-    luaL_setfuncs(L, &moduleLib, 0)
+        lua_createtable(L, 0, 4)
+        L.push(datastore_allWebsiteDataTypes)
+        lua_setfield(L, -2, "websiteDataTypes")
+        L.push(datastore_newDefaultDataStore)
+        lua_setfield(L, -2, "default")
+        L.push(datastore_newPrivateDataStore)
+        lua_setfield(L, -2, "newPrivate")
+        L.push(datastore_fromWebview)
+        lua_setfield(L, -2, "fromWebview")
 
-    // Set module metatable (for __gc)
-    lua_createtable(L, 0, Int32(module_metaLib.count - 1))
-    luaL_setfuncs(L, &module_metaLib, 0)
-    lua_setmetatable(L, -2)
+        // Set module metatable (for __gc)
+        lua_createtable(L, 0, 1)
+        L.push(meta_gc)
+        lua_setfield(L, -2, "__gc")
+        lua_setmetatable(L, -2)
 
-    backgroundCallbacks = NSMutableSet()
-    return 1
+        backgroundCallbacks = NSMutableSet()
+    }
 }

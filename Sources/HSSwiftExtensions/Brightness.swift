@@ -1,5 +1,6 @@
 import Cocoa
 import CLua
+import Lua
 import Carbon
 import IOKit.graphics
 import os.log
@@ -57,7 +58,7 @@ private func LMUtoLux(_ value: UInt64) -> UInt64 {
 ///
 ///  * On Silicon based macs, this function uses a method similar to that used by `corebrightnessdiag` to retrieve the aggregate lux as reported to `sysdiagnose`.
 ///  * On Intel based macs, the raw sensor data is converted to lux via an algorithm used by Mozilla Firefox and is not guaranteed to give an accurate lux value.
-private func brightness_ambient(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func brightness_ambient(_ L: LuaState) throws -> CInt {
     let serviceObject = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AppleLMUController"))
 
     if serviceObject == IO_OBJECT_NULL {
@@ -137,7 +138,7 @@ private func brightness_ambient(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 ///
 /// Returns:
 ///  * True if the brightness was set, false if not
-private func brightness_set(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func brightness_set(_ L: LuaState) throws -> CInt {
     let level = Float(min(max(luaL_checknumber(L, 1) / 100.0, 0.0), 1.0))
     if let setBrightness = _setBrightness {
         let err = setBrightness(CGMainDisplayID(), level)
@@ -157,7 +158,7 @@ private func brightness_set(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * A number containing the brightness of the display, between 0 and 100
-private func brightness_get(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func brightness_get(_ L: LuaState) throws -> CInt {
     var level: Float = 0
     if let getBrightness = _getBrightness {
         let err = getBrightness(CGMainDisplayID(), &level)
@@ -174,17 +175,15 @@ private func brightness_get(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 // MARK: - Module registration
 
-private let brightnessLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("set"), func: brightness_set),
-    luaL_Reg(name: strdup("get"), func: brightness_get),
-    luaL_Reg(name: strdup("ambient"), func: brightness_ambient),
-    luaL_Reg(name: nil, func: nil),
-]
-
 @_cdecl("luaopen_hs_libbrightness")
 public func luaopen_hs_libbrightness(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    var lib = brightnessLib
-    lua_createtable(L, 0, Int32(lib.count - 1))
-    luaL_setfuncs(L, &lib, 0)
-    return 1
+    runEntryPoint(L) { L in
+        lua_createtable(L, 0, 3)
+        L.push(brightness_set)
+        lua_setfield(L, -2, "set")
+        L.push(brightness_get)
+        lua_setfield(L, -2, "get")
+        L.push(brightness_ambient)
+        lua_setfield(L, -2, "ambient")
+    }
 }

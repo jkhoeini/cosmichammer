@@ -1,5 +1,6 @@
 import Cocoa
 import CLua
+import Lua
 import os.log
 import SystemConfiguration
 
@@ -58,7 +59,7 @@ private let doDynamicStoreCallback: SCDynamicStoreCallBack = { store, changedKey
 ///
 /// Returns:
 ///  * the storeObject
-private func newStoreObject(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func newStoreObject(_ L: LuaState) throws -> CInt {
     let theName = UUID().uuidString
     let thePtr = lua_newuserdata(L, MemoryLayout<DynamicStoreData>.size)!.assumingMemoryBound(to: DynamicStoreData.self)
     memset(thePtr, 0, MemoryLayout<DynamicStoreData>.size)
@@ -74,7 +75,7 @@ private func newStoreObject(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
         luaL_getmetatable(L, USERDATA_TAG)
         lua_setmetatable(L, -2)
     } else {
-        return luaL_error(L, "** unable to get dynamicStore reference:\(String(cString: SCErrorString(SCError())))")
+        throw LuaCallError("** unable to get dynamicStore reference:\(String(cString: SCErrorString(SCError())))")
     }
     return 1
 }
@@ -94,7 +95,7 @@ private func newStoreObject(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Notes:
 ///  * if no parameters are provided, then all key-value pairs in the dynamic store are returned.
-private func dynamicStoreContents(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func dynamicStoreContents(_ L: LuaState) throws -> CInt {
     let theStore = getPtr(L, 1).pointee.storeObject!
 
     var keys: NSArray
@@ -120,7 +121,7 @@ private func dynamicStoreContents(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
     if let results = results {
         lua_pushany(L, results as NSDictionary)
     } else {
-        return luaL_error(L, "** unable to get dynamicStore contents:\(String(cString: SCErrorString(SCError())))")
+        throw LuaCallError("** unable to get dynamicStore contents:\(String(cString: SCErrorString(SCError())))")
     }
     return 1
 }
@@ -134,7 +135,7 @@ private func dynamicStoreContents(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
 ///
 /// Returns:
 ///  * a table of keys from the dynamic store.
-private func dynamicStoreKeys(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func dynamicStoreKeys(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let theStore = getPtr(L, 1).pointee.storeObject!
 
@@ -142,7 +143,7 @@ private func dynamicStoreKeys(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     if let results = SCDynamicStoreCopyKeyList(theStore, keysPattern as CFString) {
         lua_pushany(L, results as NSArray)
     } else {
-        return luaL_error(L, "** unable to get dynamicStore keys:\(String(cString: SCErrorString(SCError())))")
+        throw LuaCallError("** unable to get dynamicStore keys:\(String(cString: SCErrorString(SCError())))")
     }
     return 1
 }
@@ -160,7 +161,7 @@ private func dynamicStoreKeys(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Notes:
 ///  * a list of possible Service ID's can be retrieved with `hs.network.configuration:contents("Setup:/Network/Global/IPv4")`
 ///  * generates an error if the service ID is invalid or was not assigned an IP address via DHCP.
-private func dynamicStoreDHCPInfo(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func dynamicStoreDHCPInfo(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let theStore = getPtr(L, 1).pointee.storeObject!
 
@@ -174,7 +175,7 @@ private func dynamicStoreDHCPInfo(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
     if let results = _SCDynamicStoreCopyDHCPInfo(theStore, serviceID) {
         lua_pushany(L, results as NSDictionary)
     } else {
-        return luaL_error(L, "** unable to get DHCP info:\(String(cString: SCErrorString(SCError())))")
+        throw LuaCallError("** unable to get DHCP info:\(String(cString: SCErrorString(SCError())))")
     }
     return 1
 }
@@ -192,7 +193,7 @@ private func dynamicStoreDHCPInfo(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
 ///
 /// Notes:
 ///  * You can also retrieve this information as key-value pairs with `hs.network.configuration:contents("Setup:/System")`
-private func dynamicStoreComputerName(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func dynamicStoreComputerName(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let theStore = getPtr(L, 1).pointee.storeObject!
 
@@ -220,7 +221,7 @@ private func dynamicStoreComputerName(_ L: UnsafeMutablePointer<lua_State>!) -> 
         }
         lua_pushany(L, encodingName)
     } else {
-        return luaL_error(L, "** error retrieving computer name:\(String(cString: SCErrorString(SCError())))")
+        throw LuaCallError("** error retrieving computer name:\(String(cString: SCErrorString(SCError())))")
     }
     return 2
 }
@@ -239,7 +240,7 @@ private func dynamicStoreComputerName(_ L: UnsafeMutablePointer<lua_State>!) -> 
 ///
 /// Notes:
 ///  * You can also retrieve this information as key-value pairs with `hs.network.configuration:contents("State:/Users/ConsoleUser")`
-private func dynamicStoreConsoleUser(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func dynamicStoreConsoleUser(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let theStore = getPtr(L, 1).pointee.storeObject!
 
@@ -250,7 +251,7 @@ private func dynamicStoreConsoleUser(_ L: UnsafeMutablePointer<lua_State>!) -> I
         lua_pushinteger(L, lua_Integer(uid))
         lua_pushinteger(L, lua_Integer(gid))
     } else {
-        return luaL_error(L, "** error retrieving console user:\(String(cString: SCErrorString(SCError())))")
+        throw LuaCallError("** error retrieving console user:\(String(cString: SCErrorString(SCError())))")
     }
     return 3
 }
@@ -267,14 +268,14 @@ private func dynamicStoreConsoleUser(_ L: UnsafeMutablePointer<lua_State>!) -> I
 ///
 /// Notes:
 ///  * You can also retrieve this information as key-value pairs with `hs.network.configuration:contents("Setup:/System")`
-private func dynamicStoreLocalHostName(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func dynamicStoreLocalHostName(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let theStore = getPtr(L, 1).pointee.storeObject!
 
     if let localHostName = SCDynamicStoreCopyLocalHostName(theStore) {
         lua_pushany(L, localHostName as String)
     } else {
-        return luaL_error(L, "** error retrieving local host name:\(String(cString: SCErrorString(SCError())))")
+        throw LuaCallError("** error retrieving local host name:\(String(cString: SCErrorString(SCError())))")
     }
     return 1
 }
@@ -300,7 +301,7 @@ func SCPreferencesCreateWithOptions(
 ///
 /// Returns:
 ///  * bool - true if the location was successfully changed, false if there was an error
-private func dynamicStoreSetLocation(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func dynamicStoreSetLocation(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     luaL_checktype(L, 2, LUA_TSTRING)
@@ -365,14 +366,14 @@ private func dynamicStoreSetLocation(_ L: UnsafeMutablePointer<lua_State>!) -> I
 /// Notes:
 ///  * You can also retrieve this information as key-value pairs with `hs.network.configuration:contents("Setup:")`
 ///  * If you have different locations defined in the Network preferences panel, this can be used to determine the currently active location.
-private func dynamicStoreLocation(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func dynamicStoreLocation(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let theStore = getPtr(L, 1).pointee.storeObject!
 
     if let location = SCDynamicStoreCopyLocation(theStore) {
         lua_pushany(L, location as String)
     } else {
-        return luaL_error(L, "** error retrieving location:\(String(cString: SCErrorString(SCError())))")
+        throw LuaCallError("** error retrieving location:\(String(cString: SCErrorString(SCError())))")
     }
     return 1
 }
@@ -386,7 +387,7 @@ private func dynamicStoreLocation(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
 ///
 /// Returns:
 ///  * a table of key-value pairs mapping location UUIDs to their names
-private func dynamicStoreLocations(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func dynamicStoreLocations(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     guard let prefs = SCPreferencesCreate(nil, "Cosmic Hammer" as CFString, nil) else {
         lua_pushnil(L)
@@ -421,14 +422,14 @@ private func dynamicStoreLocations(_ L: UnsafeMutablePointer<lua_State>!) -> Int
 ///
 /// Notes:
 ///  * You can also retrieve this information as key-value pairs with `hs.network.configuration:contents("State:/Network/Global/Proxies")`
-private func dynamicStoreProxies(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func dynamicStoreProxies(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let theStore = getPtr(L, 1).pointee.storeObject!
 
     if let proxies = SCDynamicStoreCopyProxies(theStore) {
         lua_pushany(L, proxies as NSDictionary)
     } else {
-        return luaL_error(L, "** error retrieving proxies:\(String(cString: SCErrorString(SCError())))")
+        throw LuaCallError("** error retrieving proxies:\(String(cString: SCErrorString(SCError())))")
     }
     return 1
 }
@@ -446,7 +447,7 @@ private func dynamicStoreProxies(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 /// Notes:
 ///  * The callback function will be invoked each time a monitored key changes value and the callback function should accept two parameters: the storeObject itself, and an array of the keys which contain values that have changed.
 ///  * This method just sets the callback function.  You specify which keys to watch with [hs.network.configuration:monitorKeys](#monitorKeys) and start or stop the watcher with [hs.network.configuration:start](#start) or [hs.network.configuration:stop](#stop)
-private func dynamicStoreSetCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func dynamicStoreSetCallback(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let thePtr = getPtr(L, 1)
 
@@ -483,14 +484,14 @@ private func dynamicStoreSetCallback(_ L: UnsafeMutablePointer<lua_State>!) -> I
 ///
 /// Notes:
 ///  * The callback function should be specified with [hs.network.configuration:setCallback](#setCallback) and the keys to monitor should be specified with [hs.network.configuration:monitorKeys](#monitorKeys).
-private func dynamicStoreStartWatcher(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func dynamicStoreStartWatcher(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let thePtr = getPtr(L, 1)
     if !thePtr.pointee.watcherEnabled {
         if SCDynamicStoreSetDispatchQueue(thePtr.pointee.storeObject!, dynamicStoreQueue) {
             thePtr.pointee.watcherEnabled = true
         } else {
-            return luaL_error(L, "unable to set watcher dispatch queue:\(String(cString: SCErrorString(SCError())))")
+            throw LuaCallError("unable to set watcher dispatch queue:\(String(cString: SCErrorString(SCError())))")
         }
     }
     lua_pushvalue(L, 1)
@@ -506,7 +507,7 @@ private func dynamicStoreStartWatcher(_ L: UnsafeMutablePointer<lua_State>!) -> 
 ///
 /// Returns:
 ///  * the store object
-private func dynamicStoreStopWatcher(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func dynamicStoreStopWatcher(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let thePtr = getPtr(L, 1)
     if !SCDynamicStoreSetDispatchQueue(thePtr.pointee.storeObject!, nil) {
@@ -530,7 +531,7 @@ private func dynamicStoreStopWatcher(_ L: UnsafeMutablePointer<lua_State>!) -> I
 ///
 /// Notes:
 ///  * if no parameters are provided, then all key-value pairs in the dynamic store are monitored for changes.
-private func dynamicStoreMonitorKeys(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func dynamicStoreMonitorKeys(_ L: LuaState) throws -> CInt {
     let theStore = getPtr(L, 1).pointee.storeObject!
 
     var keys: NSArray
@@ -556,20 +557,20 @@ private func dynamicStoreMonitorKeys(_ L: UnsafeMutablePointer<lua_State>!) -> I
     if result {
         lua_pushvalue(L, 1)
     } else {
-        return luaL_error(L, "** unable to set keys to monitor:\(String(cString: SCErrorString(SCError())))")
+        throw LuaCallError("** unable to set keys to monitor:\(String(cString: SCErrorString(SCError())))")
     }
     return 1
 }
 
 // MARK: - Cosmic Hammer/Lua Infrastructure
 
-private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func userdata_tostring(_ L: LuaState) throws -> CInt {
     let ptr = lua_topointer(L, 1)
     lua_pushany(L, "\(USERDATA_TAG): (\(String(describing: ptr)))" as NSString)
     return 1
 }
 
-private func userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func userdata_eq(_ L: LuaState) throws -> CInt {
     if luaL_testudata(L, 1, USERDATA_TAG) != nil && luaL_testudata(L, 2, USERDATA_TAG) != nil {
         let theStore1 = getPtr(L, 1).pointee.storeObject!
         let theStore2 = getPtr(L, 2).pointee.storeObject!
@@ -580,7 +581,7 @@ private func userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 1
 }
 
-private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func userdata_gc(_ L: LuaState) throws -> CInt {
     let thePtr = getPtr(L, 1)
     if thePtr.pointee.callbackRef != LUA_NOREF {
         luaL_unref(L, LUA_REGISTRYINDEX_VALUE, thePtr.pointee.callbackRef)
@@ -601,69 +602,69 @@ private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 0
 }
 
-private func meta_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func meta_gc(_ L: LuaState) throws -> CInt {
     dynamicStoreQueue = nil
     return 0
 }
 
-// Metatable for userdata objects
-private var userdata_metaLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("contents"), func: dynamicStoreContents),
-    luaL_Reg(name: strdup("keys"), func: dynamicStoreKeys),
-    luaL_Reg(name: strdup("dhcpInfo"), func: dynamicStoreDHCPInfo),
-    luaL_Reg(name: strdup("computerName"), func: dynamicStoreComputerName),
-    luaL_Reg(name: strdup("consoleUser"), func: dynamicStoreConsoleUser),
-    luaL_Reg(name: strdup("hostname"), func: dynamicStoreLocalHostName),
-    luaL_Reg(name: strdup("location"), func: dynamicStoreLocation),
-    luaL_Reg(name: strdup("locations"), func: dynamicStoreLocations),
-    luaL_Reg(name: strdup("proxies"), func: dynamicStoreProxies),
-    luaL_Reg(name: strdup("monitorKeys"), func: dynamicStoreMonitorKeys),
-    luaL_Reg(name: strdup("setCallback"), func: dynamicStoreSetCallback),
-    luaL_Reg(name: strdup("setLocation"), func: dynamicStoreSetLocation),
-    luaL_Reg(name: strdup("start"), func: dynamicStoreStartWatcher),
-    luaL_Reg(name: strdup("stop"), func: dynamicStoreStopWatcher),
-
-    luaL_Reg(name: strdup("__tostring"), func: userdata_tostring),
-    luaL_Reg(name: strdup("__eq"), func: userdata_eq),
-    luaL_Reg(name: strdup("__gc"), func: userdata_gc),
-    luaL_Reg(name: nil, func: nil),
-]
-
-// Functions for returned object when module loads
-private var moduleLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("open"), func: newStoreObject),
-    luaL_Reg(name: nil, func: nil),
-]
-
-// Metatable for module
-private var module_metaLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("__gc"), func: meta_gc),
-    luaL_Reg(name: nil, func: nil),
-]
-
 @_cdecl("luaopen_hs_libnetworkconfiguration")
 public func luaopen_hs_libnetworkconfiguration(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    // Create ref table in registry
-    lua_newtable(L)
-    refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+    runEntryPoint(L) { L in
+        // Create ref table in registry
+        lua_newtable(L)
+        refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
 
-    // Register userdata metatable
-    luaL_newmetatable(L, USERDATA_TAG)
-    lua_pushvalue(L, -1)
-    lua_setfield(L, -2, "__index")
-    luaL_setfuncs(L, &userdata_metaLib, 0)
-    lua_pop(L, 1)
+        // Register userdata metatable
+        luaL_newmetatable(L, USERDATA_TAG)
+        lua_pushvalue(L, -1)
+        lua_setfield(L, -2, "__index")
+        L.push(dynamicStoreContents)
+        lua_setfield(L, -2, "contents")
+        L.push(dynamicStoreKeys)
+        lua_setfield(L, -2, "keys")
+        L.push(dynamicStoreDHCPInfo)
+        lua_setfield(L, -2, "dhcpInfo")
+        L.push(dynamicStoreComputerName)
+        lua_setfield(L, -2, "computerName")
+        L.push(dynamicStoreConsoleUser)
+        lua_setfield(L, -2, "consoleUser")
+        L.push(dynamicStoreLocalHostName)
+        lua_setfield(L, -2, "hostname")
+        L.push(dynamicStoreLocation)
+        lua_setfield(L, -2, "location")
+        L.push(dynamicStoreLocations)
+        lua_setfield(L, -2, "locations")
+        L.push(dynamicStoreProxies)
+        lua_setfield(L, -2, "proxies")
+        L.push(dynamicStoreMonitorKeys)
+        lua_setfield(L, -2, "monitorKeys")
+        L.push(dynamicStoreSetCallback)
+        lua_setfield(L, -2, "setCallback")
+        L.push(dynamicStoreSetLocation)
+        lua_setfield(L, -2, "setLocation")
+        L.push(dynamicStoreStartWatcher)
+        lua_setfield(L, -2, "start")
+        L.push(dynamicStoreStopWatcher)
+        lua_setfield(L, -2, "stop")
+        L.push(userdata_tostring)
+        lua_setfield(L, -2, "__tostring")
+        L.push(userdata_eq)
+        lua_setfield(L, -2, "__eq")
+        L.push(userdata_gc)
+        lua_setfield(L, -2, "__gc")
+        lua_pop(L, 1)
 
-    // Create module table
-    lua_createtable(L, 0, Int32(moduleLib.count - 1))
-    luaL_setfuncs(L, &moduleLib, 0)
+        // Create module table
+        lua_createtable(L, 0, 1)
+        L.push(newStoreObject)
+        lua_setfield(L, -2, "open")
 
-    // Set module metatable (for __gc)
-    lua_createtable(L, 0, Int32(module_metaLib.count - 1))
-    luaL_setfuncs(L, &module_metaLib, 0)
-    lua_setmetatable(L, -2)
+        // Set module metatable (for __gc)
+        lua_createtable(L, 0, 1)
+        L.push(meta_gc)
+        lua_setfield(L, -2, "__gc")
+        lua_setmetatable(L, -2)
 
-    dynamicStoreQueue = DispatchQueue.global(qos: .utility)
-
-    return 1
+        dynamicStoreQueue = DispatchQueue.global(qos: .utility)
+    }
 }

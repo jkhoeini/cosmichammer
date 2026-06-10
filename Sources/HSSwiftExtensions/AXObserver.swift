@@ -1,5 +1,6 @@
 import Cocoa
 import CLua
+import Lua
 import os.log
 
 // MARK: observer.m — AXObserver Wrapper
@@ -110,12 +111,12 @@ let observerCallbackPtr: AXObserverCallbackWithInfo = { (observer, element, noti
 // MARK: - Module Functions (observer)
 
 /// hs.axuielement.observer.new(pid) -> observerObject
-private func axobserver_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func axobserver_new(_ L: LuaState) throws -> CInt {
     let appPid = pid_t(lua_tointeger(L, 1))
     var observer: AXObserver?
     let err = AXObserverCreateWithInfoCallback(appPid, observerCallbackPtr, &observer)
 
-    if err != .success { return luaL_error(L, String(cString: AXErrorAsString(err))) }
+    if err != .success { throw LuaCallError(String(cString: AXErrorAsString(err))) }
 
     pushAXObserver(L, observer!)
     // ARC manages the extra reference from AXObserverCreateWithInfoCallback;
@@ -126,7 +127,7 @@ private func axobserver_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 // MARK: - Module Methods (observer)
 
 /// hs.axuielement.observer:start() -> observerObject
-private func axobserver_start(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func axobserver_start(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, axuielement_OBSERVER_TAG)
     let observer = get_axobserverref(L, 1, axuielement_OBSERVER_TAG)
     let observerKey = observer as AnyObject
@@ -142,7 +143,7 @@ private func axobserver_start(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 }
 
 /// hs.axuielement.observer:stop() -> observerObject
-private func axobserver_stop(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func axobserver_stop(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, axuielement_OBSERVER_TAG)
     let observer = get_axobserverref(L, 1, axuielement_OBSERVER_TAG)
     let observerKey = observer as AnyObject
@@ -158,7 +159,7 @@ private func axobserver_stop(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 }
 
 /// hs.axuielement.observer:isRunning() -> boolean
-private func axobserver_isRunning(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func axobserver_isRunning(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, axuielement_OBSERVER_TAG)
     let observer = get_axobserverref(L, 1, axuielement_OBSERVER_TAG)
     let observerKey = observer as AnyObject
@@ -170,7 +171,7 @@ private func axobserver_isRunning(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
 }
 
 /// hs.axuielement.observer:callback([fn]) -> observerObject | fn | nil
-private func axobserver_callback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func axobserver_callback(_ L: LuaState) throws -> CInt {
     let observer = get_axobserverref(L, 1, axuielement_OBSERVER_TAG)
     let observerKey = observer as AnyObject
     let details = observerDetails![observerKey] as! NSMutableDictionary
@@ -198,7 +199,7 @@ private func axobserver_callback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 }
 
 /// hs.axuielement.observer:addWatcher(element, notification) -> observerObject
-private func axobserver_addWatchedElement(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func axobserver_addWatchedElement(_ L: LuaState) throws -> CInt {
     let observer = get_axobserverref(L, 1, axuielement_OBSERVER_TAG)
     let observerKey = observer as AnyObject
     let details = observerDetails![observerKey] as! NSMutableDictionary
@@ -221,9 +222,9 @@ private func axobserver_addWatchedElement(_ L: UnsafeMutablePointer<lua_State>!)
         if let exMsg = catchingObjCException({
             err = AXObserverAddNotification(observer, element, what as CFString, nil)
         }) {
-            return luaL_error(L, "ObjC exception in AXObserverAddNotification: \(exMsg)")
+            throw LuaCallError("ObjC exception in AXObserverAddNotification: \(exMsg)")
         }
-        if err != .success { return luaL_error(L, String(cString: AXErrorAsString(err))) }
+        if err != .success { throw LuaCallError(String(cString: AXErrorAsString(err))) }
         notifications!.add(what)
     }
     lua_pushvalue(L, 1)
@@ -231,7 +232,7 @@ private func axobserver_addWatchedElement(_ L: UnsafeMutablePointer<lua_State>!)
 }
 
 /// hs.axuielement.observer:removeWatcher(element, notification) -> observerObject
-private func axobserver_removeWatchedElement(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func axobserver_removeWatchedElement(_ L: LuaState) throws -> CInt {
     let observer = get_axobserverref(L, 1, axuielement_OBSERVER_TAG)
     let observerKey = observer as AnyObject
     let details = observerDetails![observerKey] as! NSMutableDictionary
@@ -247,17 +248,17 @@ private func axobserver_removeWatchedElement(_ L: UnsafeMutablePointer<lua_State
         if let exMsg = catchingObjCException({
             err = AXObserverRemoveNotification(observer, element, what as CFString)
         }) {
-            return luaL_error(L, "ObjC exception in AXObserverRemoveNotification: \(exMsg)")
+            throw LuaCallError("ObjC exception in AXObserverRemoveNotification: \(exMsg)")
         }
         notifications.removeObject(at: idx)
-        if err != .success { return luaL_error(L, String(cString: AXErrorAsString(err))) }
+        if err != .success { throw LuaCallError(String(cString: AXErrorAsString(err))) }
     }
     lua_pushvalue(L, 1)
     return 1
 }
 
 /// hs.axuielement.observer:watching([element]) -> table
-private func axobserver_watchedElements(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func axobserver_watchedElements(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, axuielement_OBSERVER_TAG)
     let observer = get_axobserverref(L, 1, axuielement_OBSERVER_TAG)
     let observerKey = observer as AnyObject
@@ -293,7 +294,7 @@ private func axobserver_watchedElements(_ L: UnsafeMutablePointer<lua_State>!) -
 
 // MARK: - Module Constants (observer)
 
-private func pushNotificationsTable(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func pushNotificationsTable(_ L: LuaState) throws -> CInt {
     lua_newtable(L)
     // Focus notifications
     lua_pushany(L, kAXMainWindowChangedNotification as String);       lua_setfield(L, -2, "mainWindowChanged")
@@ -345,14 +346,14 @@ private func pushNotificationsTable(_ L: UnsafeMutablePointer<lua_State>!) -> In
 
 // MARK: - Cosmic Hammer/Lua Infrastructure (observer)
 
-private func observer_userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func observer_userdata_tostring(_ L: LuaState) throws -> CInt {
     let tagStr = String(cString: axuielement_OBSERVER_TAG)
     let ptr = Int(bitPattern: lua_topointer(L, 1))
     lua_pushany(L, NSString(format: "%@: (0x%lx)", tagStr as NSString, ptr))
     return 1
 }
 
-private func observer_userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func observer_userdata_gc(_ L: LuaState) throws -> CInt {
     let observer = get_axobserverref(L, 1, axuielement_OBSERVER_TAG)
     let observerKey = observer as AnyObject
 
@@ -380,14 +381,14 @@ private func observer_userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
     return 0
 }
 
-private func observer_userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func observer_userdata_eq(_ L: LuaState) throws -> CInt {
     let observer1 = get_axobserverref(L, 1, axuielement_OBSERVER_TAG)
     let observer2 = get_axobserverref(L, 2, axuielement_OBSERVER_TAG)
     lua_pushboolean(L, CFEqual(observer1, observer2) ? 1 : 0)
     return 1
 }
 
-private func observer_meta_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func observer_meta_gc(_ L: LuaState) throws -> CInt {
     if let od = observerDetails {
         for (key, value) in od {
             let observer = unsafeBitCast(key as AnyObject, to: AXObserver.self)
@@ -401,61 +402,52 @@ private func observer_meta_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 0
 }
 
-// Metatable for observer userdata
-private var observer_userdata_metaLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("start"),         func: axobserver_start),
-    luaL_Reg(name: strdup("stop"),          func: axobserver_stop),
-    luaL_Reg(name: strdup("isRunning"),     func: axobserver_isRunning),
-    luaL_Reg(name: strdup("callback"),      func: axobserver_callback),
-    luaL_Reg(name: strdup("addWatcher"),    func: axobserver_addWatchedElement),
-    luaL_Reg(name: strdup("removeWatcher"), func: axobserver_removeWatchedElement),
-    luaL_Reg(name: strdup("watching"),      func: axobserver_watchedElements),
-    luaL_Reg(name: strdup("__tostring"),    func: observer_userdata_tostring),
-    luaL_Reg(name: strdup("__eq"),          func: observer_userdata_eq),
-    luaL_Reg(name: strdup("__gc"),          func: observer_userdata_gc),
-    luaL_Reg(name: nil,                     func: nil),
-]
-
-// Module functions
-private var observer_moduleLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("new"), func: axobserver_new),
-    luaL_Reg(name: nil,           func: nil),
-]
-
-// Module metatable
-private var observer_module_metaLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("__gc"), func: observer_meta_gc),
-    luaL_Reg(name: nil,            func: nil),
-]
-
 @_cdecl("luaopen_hs_libaxuielementobserver")
 @discardableResult
 public func luaopen_hs_libaxuielementobserver(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    // Create ref table in registry
-    lua_newtable(L)
-    observerRefTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+    runEntryPoint(L) { L in
+        lua_newtable(L)
+        observerRefTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
 
-    // Register userdata metatable
-    luaL_newmetatable(L, axuielement_OBSERVER_TAG)
-    lua_pushvalue(L, -1)
-    lua_setfield(L, -2, "__index")
-    luaL_setfuncs(L, &observer_userdata_metaLib, 0)
-    lua_pop(L, 1)
+        luaL_newmetatable(L, axuielement_OBSERVER_TAG)
+        lua_pushvalue(L, -1)
+        lua_setfield(L, -2, "__index")
+        L.push(axobserver_start)
+        lua_setfield(L, -2, "start")
+        L.push(axobserver_stop)
+        lua_setfield(L, -2, "stop")
+        L.push(axobserver_isRunning)
+        lua_setfield(L, -2, "isRunning")
+        L.push(axobserver_callback)
+        lua_setfield(L, -2, "callback")
+        L.push(axobserver_addWatchedElement)
+        lua_setfield(L, -2, "addWatcher")
+        L.push(axobserver_removeWatchedElement)
+        lua_setfield(L, -2, "removeWatcher")
+        L.push(axobserver_watchedElements)
+        lua_setfield(L, -2, "watching")
+        L.push(observer_userdata_tostring)
+        lua_setfield(L, -2, "__tostring")
+        L.push(observer_userdata_eq)
+        lua_setfield(L, -2, "__eq")
+        L.push(observer_userdata_gc)
+        lua_setfield(L, -2, "__gc")
+        lua_pop(L, 1)
 
-    // Create module table
-    lua_createtable(L, 0, Int32(observer_moduleLib.count - 1))
-    luaL_setfuncs(L, &observer_moduleLib, 0)
+        lua_createtable(L, 0, 1)
+        L.push(axobserver_new)
+        lua_setfield(L, -2, "new")
 
-    // Set module metatable (for __gc)
-    lua_createtable(L, 0, Int32(observer_module_metaLib.count - 1))
-    luaL_setfuncs(L, &observer_module_metaLib, 0)
-    lua_setmetatable(L, -2)
+        // Set module metatable (for __gc)
+        lua_createtable(L, 0, 1)
+        L.push(observer_meta_gc)
+        lua_setfield(L, -2, "__gc")
+        lua_setmetatable(L, -2)
 
-    if observerDetails == nil {
-        observerDetails = NSMutableDictionary()
+        if observerDetails == nil {
+            observerDetails = NSMutableDictionary()
+        }
+
+        _ = try pushNotificationsTable(L); lua_setfield(L, -2, "notifications")
     }
-
-    pushNotificationsTable(L); lua_setfield(L, -2, "notifications")
-
-    return 1
 }

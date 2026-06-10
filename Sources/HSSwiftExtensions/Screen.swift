@@ -1,5 +1,6 @@
 import Cocoa
 import CLua
+import Lua
 import Carbon
 import IOKit.graphics
 import os.log
@@ -118,13 +119,13 @@ private func getScreenID(_ screen: NSScreen) -> CGDirectDisplayID {
 
 // MARK: - Lua callbacks
 
-private func screen_frame(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func screen_frame(_ L: LuaState) throws -> CInt {
     let screen = get_screen_arg(L, 1)
     geom_pushrect(L, screen.frame)
     return 1
 }
 
-private func screen_visibleframe(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func screen_visibleframe(_ L: LuaState) throws -> CInt {
     let screen = get_screen_arg(L, 1)
     geom_pushrect(L, screen.visibleFrame)
     return 1
@@ -139,7 +140,7 @@ private func screen_visibleframe(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 ///
 /// Returns:
 ///  * A number containing the ID of the screen
-private func screen_id(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func screen_id(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let screen = get_screen_arg(L, 1)
@@ -156,7 +157,7 @@ private func screen_id(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * A string containing the name of the screen, or nil if an error occurred
-private func screen_name(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func screen_name(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let screen = get_screen_arg(L, 1)
@@ -179,7 +180,7 @@ private func screen_name(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///   * freq - A number containing the vertical refresh rate in Hz
 ///   * depth - A number containing the bit depth
 ///   * desc - A string containing a representation of the mode as used in `hs.screen:availableModes()` - e.g. "1920x1080@2x 60Hz 4bpp"
-private func screen_currentMode(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func screen_currentMode(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let screen = get_screen_arg(L, 1)
@@ -233,7 +234,7 @@ private func screen_currentMode(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 /// Notes:
 ///  * Prior to 0.9.83, only 32-bit colour modes would be returned, but now all colour depths are returned. This has necessitated changing the naming of the modes in the returned table.
 ///  * "points" are not necessarily the same as pixels, because they take the scale factor into account (e.g. "1440x900@2x" is a 2880x1800 screen resolution, with a scaling factor of 2, i.e. with HiDPI pixel-doubled rendering enabled), however, they are far more useful to work with than native pixel modes, when a Retina screen is involved. For non-retina screens, points and pixels are equivalent.
-private func screen_availableModes(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func screen_availableModes(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let screen = get_screen_arg(L, 1)
@@ -299,7 +300,7 @@ private func handleDisplayUpdate(_ L: UnsafeMutablePointer<lua_State>!, _ config
 ///
 /// Notes:
 ///  * The available widths/heights/scales can be seen in the output of `hs.screen:availableModes()`, however, it should be noted that the CoreGraphics subsystem seems to list more modes for a given screen than it is actually prepared to set, so you may find that seemingly valid modes still return false. It is not currently understood why this is so!
-private func screen_setMode(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func screen_setMode(_ L: LuaState) throws -> CInt {
 
     let screen = get_screen_arg(L, 1)
     let width = lua_tointeger(L, 2)
@@ -341,7 +342,7 @@ private func screen_setMode(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Notes:
 ///  * This returns all displays to the gamma tables specified by the user's selected ColorSync display profiles
-private func screen_gammaRestore(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func screen_gammaRestore(_ L: LuaState) throws -> CInt {
 
     CGDisplayRestoreColorSyncSettings()
     currentGammas.removeAllObjects()
@@ -361,7 +362,7 @@ private func screen_gammaRestore(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 ///   * red
 ///   * green
 ///   * blue
-private func screen_gammaGet(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func screen_gammaGet(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let screen = get_screen_arg(L, 1)
@@ -514,7 +515,7 @@ private func displayReconfigurationCallback(_ display: CGDirectDisplayID, _ flag
 ///
 /// Notes:
 ///  * If the whitepoint and blackpoint specified, are very similar, it will be impossible to read the screen. You should exercise caution, and may wish to bind a hotkey to `hs.screen.restoreGamma()` when experimenting
-private func screen_gammaSet(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func screen_gammaSet(_ L: LuaState) throws -> CInt {
 
     let screen = get_screen_arg(L, 1)
     let screen_id = getScreenID(screen)
@@ -599,7 +600,7 @@ private func screen_gammaSet(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * A floating point number between 0 and 1, containing the current brightness level, or nil if the display does not support brightness queries
-private func screen_getBrightness(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func screen_getBrightness(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let screen = get_screen_arg(L, 1)
@@ -624,7 +625,7 @@ private func screen_getBrightness(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
 ///
 /// Returns:
 ///  * The `hs.screen` object
-private func screen_setBrightness(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func screen_setBrightness(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     luaL_checktype(L, 2, LUA_TNUMBER)
@@ -648,7 +649,7 @@ private func screen_setBrightness(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
 ///
 /// Returns:
 ///  * A string containing the UUID, or nil if an error occurred.
-private func screen_getUUID(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func screen_getUUID(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let screen = get_screen_arg(L, 1)
@@ -674,7 +675,7 @@ private func screen_getUUID(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  *  A table containing various information, or nil if an error occurred.
-private func screen_getDisplayInfo(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func screen_getDisplayInfo(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let screen = get_screen_arg(L, 1)
@@ -714,7 +715,7 @@ private func screen_getDisplayInfo(_ L: UnsafeMutablePointer<lua_State>!) -> Int
 ///
 /// Returns:
 ///  * A boolean, true if the ForceToGray mode is set, otherwise false
-private func screen_getForceToGray(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func screen_getForceToGray(_ L: LuaState) throws -> CInt {
 
     lua_pushboolean(L, CGDisplayUsesForceToGray() ? 1 : 0)
     return 1
@@ -729,7 +730,7 @@ private func screen_getForceToGray(_ L: UnsafeMutablePointer<lua_State>!) -> Int
 ///
 /// Returns:
 ///  * None
-private func screen_setForceToGray(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func screen_setForceToGray(_ L: LuaState) throws -> CInt {
 
     CGDisplayForceToGray(lua_toboolean(L, 1) != 0)
     return 0
@@ -744,7 +745,7 @@ private func screen_setForceToGray(_ L: UnsafeMutablePointer<lua_State>!) -> Int
 ///
 /// Returns:
 ///  * A boolean, true if the InvertedPolarity mode is set, otherwise false
-private func screen_getInvertedPolarity(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func screen_getInvertedPolarity(_ L: LuaState) throws -> CInt {
 
     lua_pushboolean(L, CGDisplayUsesInvertedPolarity() ? 1 : 0)
     return 1
@@ -759,19 +760,19 @@ private func screen_getInvertedPolarity(_ L: UnsafeMutablePointer<lua_State>!) -
 ///
 /// Returns:
 ///  * None
-private func screen_setInvertedPolarity(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func screen_setInvertedPolarity(_ L: LuaState) throws -> CInt {
 
     CGDisplaySetInvertedPolarity(lua_toboolean(L, 1) != 0)
     return 0
 }
 
-private func screen_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func screen_gc(_ L: LuaState) throws -> CInt {
     let ptr = luaL_checkudata(L, 1, USERDATA_TAG)!.assumingMemoryBound(to: UnsafeMutableRawPointer.self)
     let _ = Unmanaged<NSScreen>.fromOpaque(ptr.pointee).takeRetainedValue()
     return 0
 }
 
-private func screen_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func screen_eq(_ L: LuaState) throws -> CInt {
     let screenA = get_screen_arg(L, 1)
     let screenB = get_screen_arg(L, 2)
     lua_pushboolean(L, screenA.isEqual(screenB) ? 1 : 0)
@@ -795,7 +796,7 @@ func new_screen(_ L: UnsafeMutablePointer<lua_State>!, _ screen: NSScreen) {
 ///
 /// Returns:
 ///  * A table containing one or more `hs.screen` objects
-private func screen_allScreens(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func screen_allScreens(_ L: LuaState) throws -> CInt {
 
     lua_newtable(L)
 
@@ -819,7 +820,7 @@ private func screen_allScreens(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * An `hs.screen` object
-private func screen_mainScreen(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func screen_mainScreen(_ L: LuaState) throws -> CInt {
 
     if let main = NSScreen.main {
         new_screen(L, main)
@@ -838,7 +839,7 @@ private func screen_mainScreen(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * A boolean, true if the operation succeeded, otherwise false
-private func screen_setPrimary(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func screen_setPrimary(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let maxDisplays: CGDisplayCount = 32
@@ -900,7 +901,7 @@ private func screen_setPrimary(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * If the rotation is being set, a boolean, true if the operation succeeded, otherwise false. If the rotation is being queried, a number will be returned
-private func screen_rotate(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func screen_rotate(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let screen = get_screen_arg(L, 1)
@@ -989,7 +990,7 @@ private func screen_rotate(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * true if the operation succeeded, otherwise false
-private func screen_setOrigin(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func screen_setOrigin(_ L: LuaState) throws -> CInt {
 
     let screen = get_screen_arg(L, 1)
     let x = Int32(lua_tointeger(L, 2))
@@ -1029,7 +1030,7 @@ private func screen_setOrigin(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * true if the operation succeeded, otherwise false
-private func screen_mirrorOf(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func screen_mirrorOf(_ L: LuaState) throws -> CInt {
 
     let mirrorTarget = get_screen_arg(L, 1)
     let mirrorSource = get_screen_arg(L, 2)
@@ -1056,7 +1057,7 @@ private func screen_mirrorOf(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * true if the operation succeeded, otherwise false
-private func screen_mirrorStop(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func screen_mirrorStop(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let screen = get_screen_arg(L, 1)
@@ -1130,7 +1131,7 @@ func screenToNSImage(_ screen: NSScreen, _ screenRect: NSRect) -> NSImage? {
 ///
 /// Returns:
 ///  * An `hs.image` object, or nil if an error occurred
-private func screen_snapshot(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func screen_snapshot(_ L: LuaState) throws -> CInt {
 
     let screen = get_screen_arg(L, 1)
     let rect = screenRectToNSRect(L, 2)
@@ -1154,7 +1155,7 @@ private func screen_snapshot(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Notes:
 ///  * If the user has set a folder of pictures to be alternated as the desktop background, the path to that folder will be returned.
-private func screen_desktopImageURL(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func screen_desktopImageURL(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let workspace = NSWorkspace.shared
@@ -1192,7 +1193,7 @@ private func screen_desktopImageURL(_ L: UnsafeMutablePointer<lua_State>!) -> In
 ///    * IncreaseContrast
 ///    * InvertColors (only available on macOS 10.12 or later)
 ///    * DifferentiateWithoutColor
-private func screen_accessibilitySettings(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func screen_accessibilitySettings(_ L: LuaState) throws -> CInt {
 
     let ws = NSWorkspace.shared
     let settings = NSMutableDictionary(capacity: 5)
@@ -1207,13 +1208,13 @@ private func screen_accessibilitySettings(_ L: UnsafeMutablePointer<lua_State>!)
     return 1
 }
 
-private func screens_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func screens_gc(_ L: LuaState) throws -> CInt {
     CGDisplayRemoveReconfigurationCallback(displayReconfigurationCallback, nil)
-    _ = screen_gammaRestore(L)
+    _ = try screen_gammaRestore(L)
     return 0
 }
 
-private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func userdata_tostring(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let screen = get_screen_arg(L, 1)
@@ -1224,78 +1225,93 @@ private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 1
 }
 
-// MARK: - luaL_Reg tables
-
-private var screenlib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("allScreens"), func: screen_allScreens),
-    luaL_Reg(name: strdup("mainScreen"), func: screen_mainScreen),
-    luaL_Reg(name: strdup("restoreGamma"), func: screen_gammaRestore),
-    luaL_Reg(name: strdup("accessibilitySettings"), func: screen_accessibilitySettings),
-    luaL_Reg(name: strdup("getForceToGray"), func: screen_getForceToGray),
-    luaL_Reg(name: strdup("setForceToGray"), func: screen_setForceToGray),
-    luaL_Reg(name: strdup("getInvertedPolarity"), func: screen_getInvertedPolarity),
-    luaL_Reg(name: strdup("setInvertedPolarity"), func: screen_setInvertedPolarity),
-    luaL_Reg(name: nil, func: nil),
-]
-
-private var screen_objectlib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("_frame"), func: screen_frame),
-    luaL_Reg(name: strdup("_visibleframe"), func: screen_visibleframe),
-    luaL_Reg(name: strdup("id"), func: screen_id),
-    luaL_Reg(name: strdup("name"), func: screen_name),
-    luaL_Reg(name: strdup("availableModes"), func: screen_availableModes),
-    luaL_Reg(name: strdup("currentMode"), func: screen_currentMode),
-    luaL_Reg(name: strdup("setMode"), func: screen_setMode),
-    luaL_Reg(name: strdup("snapshot"), func: screen_snapshot),
-    luaL_Reg(name: strdup("getGamma"), func: screen_gammaGet),
-    luaL_Reg(name: strdup("setGamma"), func: screen_gammaSet),
-    luaL_Reg(name: strdup("getBrightness"), func: screen_getBrightness),
-    luaL_Reg(name: strdup("setBrightness"), func: screen_setBrightness),
-    luaL_Reg(name: strdup("getUUID"), func: screen_getUUID),
-    luaL_Reg(name: strdup("getInfo"), func: screen_getDisplayInfo),
-    luaL_Reg(name: strdup("rotate"), func: screen_rotate),
-    luaL_Reg(name: strdup("setPrimary"), func: screen_setPrimary),
-    luaL_Reg(name: strdup("desktopImageURL"), func: screen_desktopImageURL),
-    luaL_Reg(name: strdup("setOrigin"), func: screen_setOrigin),
-    luaL_Reg(name: strdup("mirrorOf"), func: screen_mirrorOf),
-    luaL_Reg(name: strdup("mirrorStop"), func: screen_mirrorStop),
-    luaL_Reg(name: strdup("__tostring"), func: userdata_tostring),
-    luaL_Reg(name: strdup("__gc"), func: screen_gc),
-    luaL_Reg(name: strdup("__eq"), func: screen_eq),
-    luaL_Reg(name: nil, func: nil),
-]
-
-private var metalib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("__gc"), func: screens_gc),
-    luaL_Reg(name: nil, func: nil),
-]
-
 // MARK: - Module entry point
 
 @_cdecl("luaopen_hs_libscreen")
 public func luaopen_hs_libscreen(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    // Initialize gamma structures, populate them, and register callbacks
-    originalGammas = NSMutableDictionary()
-    currentGammas = NSMutableDictionary()
-    getAllInitialScreenGammas()
-    notificationQueue = DispatchQueue(label: "org.cosmic-hammer.CosmicHammer.gammaReapplyNotificationQueue")
-    CGDisplayRegisterReconfigurationCallback(displayReconfigurationCallback, nil)
+    runEntryPoint(L) { L in
+        // Initialize gamma structures, populate them, and register callbacks
+        originalGammas = NSMutableDictionary()
+        currentGammas = NSMutableDictionary()
+        getAllInitialScreenGammas()
+        notificationQueue = DispatchQueue(label: "org.cosmic-hammer.CosmicHammer.gammaReapplyNotificationQueue")
+        CGDisplayRegisterReconfigurationCallback(displayReconfigurationCallback, nil)
 
-    // Register userdata metatable
-    luaL_newmetatable(L, USERDATA_TAG)
-    lua_pushvalue(L, -1)
-    lua_setfield(L, -2, "__index")
-    luaL_setfuncs(L, &screen_objectlib, 0)
-    lua_pop(L, 1)
+        // Register userdata metatable
+        luaL_newmetatable(L, USERDATA_TAG)
+        lua_pushvalue(L, -1)
+        lua_setfield(L, -2, "__index")
+        L.push(screen_frame)
+        lua_setfield(L, -2, "_frame")
+        L.push(screen_visibleframe)
+        lua_setfield(L, -2, "_visibleframe")
+        L.push(screen_id)
+        lua_setfield(L, -2, "id")
+        L.push(screen_name)
+        lua_setfield(L, -2, "name")
+        L.push(screen_availableModes)
+        lua_setfield(L, -2, "availableModes")
+        L.push(screen_currentMode)
+        lua_setfield(L, -2, "currentMode")
+        L.push(screen_setMode)
+        lua_setfield(L, -2, "setMode")
+        L.push(screen_snapshot)
+        lua_setfield(L, -2, "snapshot")
+        L.push(screen_gammaGet)
+        lua_setfield(L, -2, "getGamma")
+        L.push(screen_gammaSet)
+        lua_setfield(L, -2, "setGamma")
+        L.push(screen_getBrightness)
+        lua_setfield(L, -2, "getBrightness")
+        L.push(screen_setBrightness)
+        lua_setfield(L, -2, "setBrightness")
+        L.push(screen_getUUID)
+        lua_setfield(L, -2, "getUUID")
+        L.push(screen_getDisplayInfo)
+        lua_setfield(L, -2, "getInfo")
+        L.push(screen_rotate)
+        lua_setfield(L, -2, "rotate")
+        L.push(screen_setPrimary)
+        lua_setfield(L, -2, "setPrimary")
+        L.push(screen_desktopImageURL)
+        lua_setfield(L, -2, "desktopImageURL")
+        L.push(screen_setOrigin)
+        lua_setfield(L, -2, "setOrigin")
+        L.push(screen_mirrorOf)
+        lua_setfield(L, -2, "mirrorOf")
+        L.push(screen_mirrorStop)
+        lua_setfield(L, -2, "mirrorStop")
+        L.push(userdata_tostring)
+        lua_setfield(L, -2, "__tostring")
+        L.push(screen_gc)
+        lua_setfield(L, -2, "__gc")
+        L.push(screen_eq)
+        lua_setfield(L, -2, "__eq")
+        lua_pop(L, 1)
 
-    // Create module table
-    lua_createtable(L, 0, Int32(screenlib.count - 1))
-    luaL_setfuncs(L, &screenlib, 0)
+        // Create module table
+        lua_createtable(L, 0, 8)
+        L.push(screen_allScreens)
+        lua_setfield(L, -2, "allScreens")
+        L.push(screen_mainScreen)
+        lua_setfield(L, -2, "mainScreen")
+        L.push(screen_gammaRestore)
+        lua_setfield(L, -2, "restoreGamma")
+        L.push(screen_accessibilitySettings)
+        lua_setfield(L, -2, "accessibilitySettings")
+        L.push(screen_getForceToGray)
+        lua_setfield(L, -2, "getForceToGray")
+        L.push(screen_setForceToGray)
+        lua_setfield(L, -2, "setForceToGray")
+        L.push(screen_getInvertedPolarity)
+        lua_setfield(L, -2, "getInvertedPolarity")
+        L.push(screen_setInvertedPolarity)
+        lua_setfield(L, -2, "setInvertedPolarity")
 
-    // Set module metatable (for __gc)
-    lua_createtable(L, 0, Int32(metalib.count - 1))
-    luaL_setfuncs(L, &metalib, 0)
-    lua_setmetatable(L, -2)
-
-    return 1
+        // Set module metatable (for __gc)
+        lua_createtable(L, 0, 1)
+        L.push(screens_gc)
+        lua_setfield(L, -2, "__gc")
+        lua_setmetatable(L, -2)
+    }
 }

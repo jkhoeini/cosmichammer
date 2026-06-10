@@ -1,5 +1,6 @@
 import Cocoa
 import CLua
+import Lua
 import os.log
 import AVFoundation
 
@@ -57,7 +58,7 @@ private class HSSoundObject: NSObject, NSSoundDelegate {
 ///
 /// Notes:
 ///  * Example usage: `hs.inspect(hs.audiounit.getAudioEffectNames())`
-private func sound_getAudioEffectNames(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func sound_getAudioEffectNames(_ L: LuaState) throws -> CInt {
     var description = AudioComponentDescription()
     description.componentType = kAudioUnitType_Effect
     description.componentSubType = 0
@@ -95,7 +96,7 @@ private func sound_getAudioEffectNames(_ L: UnsafeMutablePointer<lua_State>!) ->
 ///
 /// Notes:
 ///  * Sounds can only be loaded by name if they are System Sounds (i.e. those found in ~/Library/Sounds, /Library/Sounds, /Network/Library/Sounds and /System/Library/Sounds) or are sound files that have previously been loaded and named
-private func sound_byname(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func sound_byname(_ L: LuaState) throws -> CInt {
     _ = luaL_checkstring(L, 1) // force number to be a string
     if let theSound = NSSound(named: NSSound.Name(lua_tovalue(L, at: 1) as! String)) {
         pushNSSound(L, obj: theSound)
@@ -114,7 +115,7 @@ private func sound_byname(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * An `hs.sound` object or nil if the file could not be loaded
-private func sound_byfile(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func sound_byfile(_ L: LuaState) throws -> CInt {
     _ = luaL_checkstring(L, 1) // force number to be a string
     if let theSound = NSSound(contentsOfFile: lua_tovalue(L, at: 1) as! String, byReference: false) {
         pushNSSound(L, obj: theSound)
@@ -136,7 +137,7 @@ private func sound_byfile(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Notes:
 ///  * The sounds listed by this function can be loaded using `hs.sound.getByName()`
-private func sound_systemSounds(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func sound_systemSounds(_ L: LuaState) throws -> CInt {
     var i: Int32 = 0
 
     lua_newtable(L)
@@ -166,7 +167,7 @@ private func sound_systemSounds(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 ///
 /// Returns:
 ///  * A table containing the UTI sound formats that are supported by the system
-private func sound_soundUnfilteredTypes(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func sound_soundUnfilteredTypes(_ L: LuaState) throws -> CInt {
     lua_pushany(L, NSSound.soundUnfilteredTypes as NSArray)
     return 1
 }
@@ -183,7 +184,7 @@ private func sound_soundUnfilteredTypes(_ L: UnsafeMutablePointer<lua_State>!) -
 ///
 /// Notes:
 ///  * This function is unlikely to be tremendously useful, as filename extensions are essentially meaningless. The data returned by `hs.sound.soundTypes()` is far more valuable
-private func sound_soundUnfilteredFileTypes(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func sound_soundUnfilteredFileTypes(_ L: LuaState) throws -> CInt {
     if NSSound.responds(to: Selector(("soundUnfilteredFileTypes"))) {
         if let types = catchingObjCException({
             NSSound.perform(Selector(("soundUnfilteredFileTypes")))?.takeUnretainedValue() as? NSArray
@@ -209,7 +210,7 @@ private func sound_soundUnfilteredFileTypes(_ L: UnsafeMutablePointer<lua_State>
 ///
 /// Returns:
 ///  * The `hs.sound` object if the command was successful, otherwise false.
-private func sound_play(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func sound_play(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let obj = toHSSoundObjectFromLua(L, idx: 1) as! HSSoundObject
     if obj.soundObject?.play() == true {
@@ -233,7 +234,7 @@ private func sound_play(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * The `hs.sound` object if the command was successful, otherwise false.
-private func sound_pause(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func sound_pause(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let obj = toNSSoundFromLua(L, idx: 1) as! NSSound
     if obj.pause() {
@@ -253,7 +254,7 @@ private func sound_pause(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * The `hs.sound` object if the command was successful, otherwise false.
-private func sound_resume(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func sound_resume(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let obj = toNSSoundFromLua(L, idx: 1) as! NSSound
     if obj.resume() {
@@ -273,7 +274,7 @@ private func sound_resume(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * The `hs.sound` object if the command was successful, otherwise false.
-private func sound_stop(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func sound_stop(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let obj = toNSSoundFromLua(L, idx: 1) as! NSSound
     if obj.stop() {
@@ -296,7 +297,7 @@ private func sound_stop(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Notes:
 ///  * If you have registered a callback function for completion of a sound's playback, it will not be called when the sound loops
-private func sound_loopSound(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func sound_loopSound(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let obj = toNSSoundFromLua(L, idx: 1) as! NSSound
     if lua_gettop(L) == 2 {
@@ -320,7 +321,7 @@ private func sound_loopSound(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Notes:
 ///  * This method can only be used on a named `hs.sound` object, see `hs.sound:name()`
-private func sound_stopOnRelease(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func sound_stopOnRelease(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let obj = toHSSoundObjectFromLua(L, idx: 1) as! HSSoundObject
     if lua_gettop(L) == 2 {
@@ -328,7 +329,7 @@ private func sound_stopOnRelease(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
             obj.stopOnRelease = lua_toboolean(L, 2) != 0
             lua_pushvalue(L, 1)
         } else {
-            return luaL_error(L, "you must first assign a name to this sound in order to change this attribute")
+            throw LuaCallError("you must first assign a name to this sound in order to change this attribute")
         }
     } else {
         lua_pushboolean(L, obj.stopOnRelease ? 1 : 0)
@@ -348,7 +349,7 @@ private func sound_stopOnRelease(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 ///
 /// Notes:
 ///  * If remove the sound name by specifying `nil`, the sound will automatically be set to stop when Cosmic Hammer is reloaded.
-private func sound_name(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func sound_name(_ L: LuaState) throws -> CInt {
     let obj = toHSSoundObjectFromLua(L, idx: 1) as! HSSoundObject
     if lua_gettop(L) == 2 {
         if lua_isnil(L, 2) {
@@ -380,7 +381,7 @@ private func sound_name(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Notes:
 ///  * To obtain the UID of a sound device, see `hs.audiodevice:uid()`
-private func sound_device(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func sound_device(_ L: LuaState) throws -> CInt {
     let obj = toNSSoundFromLua(L, idx: 1) as! NSSound
     if lua_gettop(L) == 2 {
         if lua_type(L, 2) == LUA_TNIL {
@@ -411,7 +412,7 @@ private func sound_device(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * If a parameter is provided, returns the sound object; otherwise returns the current position.
-private func sound_currentTime(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func sound_currentTime(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let obj = toNSSoundFromLua(L, idx: 1) as! NSSound
     if lua_gettop(L) == 2 {
@@ -432,7 +433,7 @@ private func sound_currentTime(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * A number containing the length of the sound, in seconds
-private func sound_duration(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func sound_duration(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let obj = toNSSoundFromLua(L, idx: 1) as! NSSound
     lua_pushnumber(L, obj.duration)
@@ -448,7 +449,7 @@ private func sound_duration(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * If a parameter is provided, returns the sound object; otherwise returns the current value.
-private func sound_volume(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func sound_volume(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let obj = toNSSoundFromLua(L, idx: 1) as! NSSound
     if lua_gettop(L) == 2 {
@@ -469,7 +470,7 @@ private func sound_volume(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * A boolean, true if the sound is currently playing, otherwise false
-private func sound_isPlaying(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func sound_isPlaying(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let obj = toNSSoundFromLua(L, idx: 1) as! NSSound
     lua_pushboolean(L, obj.isPlaying ? 1 : 0)
@@ -490,7 +491,7 @@ private func sound_isPlaying(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * the callback function should accept two parameters and return none.  The parameters passed to the callback function are:
 ///    * state - a boolean flag indicating if the sound completed playing.  Returns true if playback completes properly, or false if a decoding error occurs or if the sound is stopped early with `hs.sound:stop`.
 ///    * sound - the soundObject userdata
-private func sound_callback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func sound_callback(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let obj = toHSSoundObjectFromLua(L, idx: 1) as! HSSoundObject
     // in either case, we need to remove an existing callback, so...
@@ -559,14 +560,14 @@ private func toNSSoundFromLua(_ L: UnsafeMutablePointer<lua_State>!, idx: Int32)
 
 // MARK: - Cosmic Hammer/Lua Infrastructure
 
-private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func userdata_tostring(_ L: LuaState) throws -> CInt {
     let obj = toHSSoundObjectFromLua(L, idx: 1) as! HSSoundObject
     let title = obj.soundObject?.name ?? "(unnamed sound)" as NSSound.Name
     lua_pushany(L, "\(USERDATA_TAG): \(title) (\(lua_topointer(L, 1)!))" as NSString)
     return 1
 }
 
-private func userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func userdata_eq(_ L: LuaState) throws -> CInt {
     if luaL_testudata(L, 1, USERDATA_TAG) != nil && luaL_testudata(L, 2, USERDATA_TAG) != nil {
         let obj1 = toHSSoundObjectFromLua(L, idx: 1) as! HSSoundObject
         let obj2 = toHSSoundObjectFromLua(L, idx: 2) as! HSSoundObject
@@ -577,7 +578,7 @@ private func userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 1
 }
 
-private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func userdata_gc(_ L: LuaState) throws -> CInt {
     let ptr = lua_touserdata(L, 1)!.assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
     if let rawPtr = ptr.pointee {
         let obj: HSSoundObject = Unmanaged.fromOpaque(rawPtr).takeRetainedValue()
@@ -600,52 +601,42 @@ private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 // MARK: - Module Registration
 
-private var userdata_metaLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("play"), func: sound_play),
-    luaL_Reg(name: strdup("pause"), func: sound_pause),
-    luaL_Reg(name: strdup("resume"), func: sound_resume),
-    luaL_Reg(name: strdup("stop"), func: sound_stop),
-    luaL_Reg(name: strdup("loopSound"), func: sound_loopSound),
-    luaL_Reg(name: strdup("name"), func: sound_name),
-    luaL_Reg(name: strdup("volume"), func: sound_volume),
-    luaL_Reg(name: strdup("currentTime"), func: sound_currentTime),
-    luaL_Reg(name: strdup("duration"), func: sound_duration),
-    luaL_Reg(name: strdup("device"), func: sound_device),
-    luaL_Reg(name: strdup("stopOnReload"), func: sound_stopOnRelease),
-    luaL_Reg(name: strdup("setCallback"), func: sound_callback),
-    luaL_Reg(name: strdup("isPlaying"), func: sound_isPlaying),
-    luaL_Reg(name: strdup("__tostring"), func: userdata_tostring),
-    luaL_Reg(name: strdup("__eq"), func: userdata_eq),
-    luaL_Reg(name: strdup("__gc"), func: userdata_gc),
-    luaL_Reg(name: nil, func: nil),
-]
-
-private var moduleLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("soundTypes"), func: sound_soundUnfilteredTypes),
-    luaL_Reg(name: strdup("soundFileTypes"), func: sound_soundUnfilteredFileTypes),
-    luaL_Reg(name: strdup("getByName"), func: sound_byname),
-    luaL_Reg(name: strdup("getByFile"), func: sound_byfile),
-    luaL_Reg(name: strdup("systemSounds"), func: sound_systemSounds),
-    luaL_Reg(name: strdup("getAudioEffectNames"), func: sound_getAudioEffectNames),
-    luaL_Reg(name: nil, func: nil),
-]
-
 @_cdecl("luaopen_hs_libsound")
 public func luaopen_hs_libsound(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    // Create ref table in registry
-    lua_newtable(L)
-    refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+    runEntryPoint(L) { L in
+        // Create ref table in registry
+        lua_newtable(L)
+        refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
 
-    // Register userdata metatable
-    luaL_newmetatable(L, USERDATA_TAG)
-    lua_pushvalue(L, -1)
-    lua_setfield(L, -2, "__index")
-    luaL_setfuncs(L, &userdata_metaLib, 0)
-    lua_pop(L, 1)
+        // Register userdata metatable
+        luaL_newmetatable(L, USERDATA_TAG)
+        lua_pushvalue(L, -1)
+        lua_setfield(L, -2, "__index")
+        L.push(sound_play);                  lua_setfield(L, -2, "play")
+        L.push(sound_pause);                 lua_setfield(L, -2, "pause")
+        L.push(sound_resume);                lua_setfield(L, -2, "resume")
+        L.push(sound_stop);                  lua_setfield(L, -2, "stop")
+        L.push(sound_loopSound);             lua_setfield(L, -2, "loopSound")
+        L.push(sound_name);                  lua_setfield(L, -2, "name")
+        L.push(sound_volume);                lua_setfield(L, -2, "volume")
+        L.push(sound_currentTime);           lua_setfield(L, -2, "currentTime")
+        L.push(sound_duration);              lua_setfield(L, -2, "duration")
+        L.push(sound_device);                lua_setfield(L, -2, "device")
+        L.push(sound_stopOnRelease);         lua_setfield(L, -2, "stopOnReload")
+        L.push(sound_callback);              lua_setfield(L, -2, "setCallback")
+        L.push(sound_isPlaying);             lua_setfield(L, -2, "isPlaying")
+        L.push(userdata_tostring);           lua_setfield(L, -2, "__tostring")
+        L.push(userdata_eq);                 lua_setfield(L, -2, "__eq")
+        L.push(userdata_gc);                 lua_setfield(L, -2, "__gc")
+        lua_pop(L, 1)
 
-    // Create module table
-    lua_createtable(L, 0, Int32(moduleLib.count - 1))
-    luaL_setfuncs(L, &moduleLib, 0)
-
-    return 1
+        // Create module table
+        lua_createtable(L, 0, 6)
+        L.push(sound_soundUnfilteredTypes);      lua_setfield(L, -2, "soundTypes")
+        L.push(sound_soundUnfilteredFileTypes);  lua_setfield(L, -2, "soundFileTypes")
+        L.push(sound_byname);                    lua_setfield(L, -2, "getByName")
+        L.push(sound_byfile);                    lua_setfield(L, -2, "getByFile")
+        L.push(sound_systemSounds);              lua_setfield(L, -2, "systemSounds")
+        L.push(sound_getAudioEffectNames);       lua_setfield(L, -2, "getAudioEffectNames")
+    }
 }

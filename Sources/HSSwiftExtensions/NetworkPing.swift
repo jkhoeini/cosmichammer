@@ -18,6 +18,7 @@
 
 import Cocoa
 import CLua
+import Lua
 import os.log
 import Darwin.POSIX
 
@@ -218,7 +219,7 @@ private class PingableObject: SimplePing, SimplePingDelegate {
 ///  * This constructor returns a lower-level object than the `hs.network.ping.ping` constructor and is more difficult to use. It is recommended that you use this constructor only if `hs.network.ping.ping` is not sufficient for your needs.
 ///
 ///  * For convenience, you can call this constructor as `hs.network.ping.echoRequest(server)`
-private let echoRequest_new: lua_CFunction = { L in
+private func echoRequest_new(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TSTRING)
     let pinger = PingableObject(hostName: lua_tovalue(L, at: 1) as! String)
     pushPingableObject(L, pinger)
@@ -284,7 +285,7 @@ private let echoRequest_new: lua_CFunction = { L in
 ///        * the ICMP type does not match an ICMP Echo Reply
 ///        * When using IPv6, this is especially common because IPv6 uses ICMP for network management functions like Router Advertisement and Neighbor Discovery.
 ///      * In general, it is reasonably safe to ignore these messages, unless you are having problems receiving anything else, in which case it could indicate problems on your network that need addressing.
-private let echoRequest_setCallback: lua_CFunction = { L in
+private func echoRequest_setCallback(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let pinger = toPingableObjectFromLua(L, 1) as! PingableObject
 
@@ -309,7 +310,7 @@ private let echoRequest_setCallback: lua_CFunction = { L in
 ///
 /// Returns:
 ///  * a string containing the hostname as specified when the object was created.
-private let echoRequest_hostName: lua_CFunction = { L in
+private func echoRequest_hostName(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let pinger = toPingableObjectFromLua(L, 1) as! PingableObject
     lua_pushany(L, pinger.hostName as NSString)
@@ -328,7 +329,7 @@ private let echoRequest_hostName: lua_CFunction = { L in
 ///
 /// Notes:
 ///  * ICMP Echo Replies which include this identifier will generate a "receivedPacket" message to the object callback, while replies which include a different identifier will generate a "receivedUnexpectedPacket" message.
-private let echoRequest_identifier: lua_CFunction = { L in
+private func echoRequest_identifier(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let pinger = toPingableObjectFromLua(L, 1) as! PingableObject
     lua_pushinteger(L, lua_Integer(pinger.identifier))
@@ -349,7 +350,7 @@ private let echoRequest_identifier: lua_CFunction = { L in
 ///  * ICMP Echo Replies which are expected by this object should always be less than this number, with the caveat that this number is a 16-bit integer which will wrap around to 0 after sending a packet with the sequence number 65535.
 ///  * Because of this wrap around effect, this module will generate a "receivedPacket" message to the object callback whenever the received packet has a sequence number that is within the last 120 sequence numbers we've sent and a "receivedUnexpectedPacket" otherwise.
 ///    * Per the comments in Apple's SimplePing.m file: Why 120?  Well, if we send one ping per second, 120 is 2 minutes, which is the standard "max time a packet can bounce around the Internet" value.
-private let echoRequest_nextSequenceNumber: lua_CFunction = { L in
+private func echoRequest_nextSequenceNumber(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let pinger = toPingableObjectFromLua(L, 1) as! PingableObject
     lua_pushinteger(L, lua_Integer(pinger.nextSequenceNumber))
@@ -371,7 +372,7 @@ private let echoRequest_nextSequenceNumber: lua_CFunction = { L in
 ///  * If this value is set to "any", then the first address which is discovered for the server's name will determine whether ICMPv6 or ICMP(v4) is used, based upon the family of the address.
 ///
 ///  * Setting a value with this method will have no immediate effect on an echoRequestObject which has already been started with [hs.network.ping.echoRequest:start](#start). You must first stop and then restart the object for any change to have an effect.
-private let echoRequest_addressStyle: lua_CFunction = { L in
+private func echoRequest_addressStyle(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let pinger = toPingableObjectFromLua(L, 1) as! PingableObject
 
@@ -390,7 +391,7 @@ private let echoRequest_addressStyle: lua_CFunction = { L in
             lua_pushvalue(L, 1)
         } else {
             let allKeys = ADDRESS_STYLES.keys.joined(separator: ", ")
-            return luaL_argerror(L, 1, "must be one of \(allKeys)")
+            throw LuaCallError("bad argument #1 (must be one of \(allKeys))")
         }
     }
     return 1
@@ -405,7 +406,7 @@ private let echoRequest_addressStyle: lua_CFunction = { L in
 ///
 /// Returns:
 ///  * the echoRequestObject
-private let echoRequest_start: lua_CFunction = { L in
+private func echoRequest_start(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let pinger = toPingableObjectFromLua(L, 1) as! PingableObject
 
@@ -427,7 +428,7 @@ private let echoRequest_start: lua_CFunction = { L in
 ///
 /// Returns:
 ///  * the echoRequestObject
-private let echoRequest_stop: lua_CFunction = { L in
+private func echoRequest_stop(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let pinger = toPingableObjectFromLua(L, 1) as! PingableObject
 
@@ -450,7 +451,7 @@ private let echoRequest_stop: lua_CFunction = { L in
 ///
 /// Returns:
 ///  * true if the object is currently listening for ICMP Echo Replies, or false if it is not.
-private let echoRequest_isRunning: lua_CFunction = { L in
+private func echoRequest_isRunning(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let pinger = toPingableObjectFromLua(L, 1) as! PingableObject
     lua_pushboolean(L, (pinger.selfRef != LUA_NOREF) ? 1 : 0)
@@ -468,7 +469,7 @@ private let echoRequest_isRunning: lua_CFunction = { L in
 ///  * If the object has been started and address resolution has completed, then the string representation of the server's IP address is returned.
 ///  * If the object has been started, but resolution is still pending, returns a boolean value of false.
 ///  * If the object has not been started, returns nil.
-private let echoRequest_hostAddress: lua_CFunction = { L in
+private func echoRequest_hostAddress(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let pinger = toPingableObjectFromLua(L, 1) as! PingableObject
     if let hostAddress = pinger.hostAddress {
@@ -497,7 +498,7 @@ private let echoRequest_hostAddress: lua_CFunction = { L in
 ///
 /// Notes:
 ///  * By convention, unless you are trying to test for specific network fragmentation or congestion problems, ICMP Echo Requests are generally 64 bytes in length (this includes the 8 byte header, giving 56 bytes of payload data).  If you do not specify a payload, a default payload which will result in a packet size of 64 bytes is constructed.
-private let echoRequest_sendPayload: lua_CFunction = { L in
+private func echoRequest_sendPayload(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let pinger = toPingableObjectFromLua(L, 1) as! PingableObject
     var payload: Data? = nil
@@ -540,7 +541,7 @@ private let echoRequest_sendPayload: lua_CFunction = { L in
 ///    * "IPv4"       - indicates that ICMP(v4) packets are being sent and listened for.
 ///    * "IPv6"       - indicates that ICMPv6 packets are being sent and listened for.
 ///    * "unresolved" - indicates that the echoRequestObject has not been started or that address resolution is still in progress.
-private let echoRequest_addressFamily: lua_CFunction = { L in
+private func echoRequest_addressFamily(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let pinger = toPingableObjectFromLua(L, 1) as! PingableObject
 
@@ -573,7 +574,7 @@ private let echoRequest_addressFamily: lua_CFunction = { L in
 ///    * By default, a valid packet (i.e. with a valid checksum) which does not contain our identifier is ignored since it was not intended for our receiver.  Only corrupt or packets with our identifier but that were otherwise unexpected will generate a "receivedUnexpectedPacket" callback message.
 ///    * This method optionally allows the echoRequestObject to receive *all* incoming packets, even ones which are expected by another process or echoRequestObject.
 ///  * If you wish to examine ICMPv6 router advertisement and neighbor discovery packets, you should set this property to true. Note that this module does not provide the necessary tools to decode these packets at present, so you will have to decode them yourself if you wish to examine their contents.
-private let echoRequest_seeAllUnexpectedPackets: lua_CFunction = { L in
+private func echoRequest_seeAllUnexpectedPackets(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let pinger = toPingableObjectFromLua(L, 1) as! PingableObject
 
@@ -617,7 +618,7 @@ private func toPingableObjectFromLua(_ L: UnsafeMutablePointer<lua_State>!, _ id
 
 // MARK: - Cosmic Hammer/Lua Infrastructure
 
-private let userdata_tostring: lua_CFunction = { L in
+private func userdata_tostring(_ L: LuaState) throws -> CInt {
     let obj = toPingableObjectFromLua(L, 1) as! PingableObject
     let title = obj.hostName
     let ptr = lua_topointer(L, 1)
@@ -625,7 +626,7 @@ private let userdata_tostring: lua_CFunction = { L in
     return 1
 }
 
-private let userdata_eq: lua_CFunction = { L in
+private func userdata_eq(_ L: LuaState) throws -> CInt {
     if luaL_testudata(L, 1, USERDATA_TAG) != nil && luaL_testudata(L, 2, USERDATA_TAG) != nil {
         let obj1 = toPingableObjectFromLua(L, 1) as! PingableObject
         let obj2 = toPingableObjectFromLua(L, 2) as! PingableObject
@@ -636,7 +637,7 @@ private let userdata_eq: lua_CFunction = { L in
     return 1
 }
 
-private let userdata_gc: lua_CFunction = { L in
+private func userdata_gc(_ L: LuaState) throws -> CInt {
     let ptr = luaL_checkudata(L, 1, USERDATA_TAG)!
         .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
     if let rawPtr = ptr.pointee {
@@ -659,49 +660,53 @@ private let userdata_gc: lua_CFunction = { L in
     return 0
 }
 
-// Metatable for userdata objects
-private var userdata_metaLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("hostName"),                func: echoRequest_hostName),
-    luaL_Reg(name: strdup("identifier"),              func: echoRequest_identifier),
-    luaL_Reg(name: strdup("nextSequenceNumber"),      func: echoRequest_nextSequenceNumber),
-    luaL_Reg(name: strdup("setCallback"),             func: echoRequest_setCallback),
-    luaL_Reg(name: strdup("acceptAddressFamily"),     func: echoRequest_addressStyle),
-    luaL_Reg(name: strdup("start"),                   func: echoRequest_start),
-    luaL_Reg(name: strdup("stop"),                    func: echoRequest_stop),
-    luaL_Reg(name: strdup("isRunning"),               func: echoRequest_isRunning),
-    luaL_Reg(name: strdup("hostAddress"),             func: echoRequest_hostAddress),
-    luaL_Reg(name: strdup("hostAddressFamily"),       func: echoRequest_addressFamily),
-    luaL_Reg(name: strdup("sendPayload"),             func: echoRequest_sendPayload),
-    luaL_Reg(name: strdup("seeAllUnexpectedPackets"), func: echoRequest_seeAllUnexpectedPackets),
-
-    luaL_Reg(name: strdup("__tostring"),              func: userdata_tostring),
-    luaL_Reg(name: strdup("__eq"),                    func: userdata_eq),
-    luaL_Reg(name: strdup("__gc"),                    func: userdata_gc),
-    luaL_Reg(name: nil,                               func: nil),
-]
-
-// Functions for returned object when module loads
-private var moduleLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("echoRequest"), func: echoRequest_new),
-    luaL_Reg(name: nil,                   func: nil),
-]
 
 @_cdecl("luaopen_hs_libnetworkping")
 public func luaopen_hs_libnetworkping(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    // Create ref table in registry
-    lua_newtable(L)
-    refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+    runEntryPoint(L) { L in
+        // Create ref table in registry
+        lua_newtable(L)
+        refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
 
-    // Register userdata metatable
-    luaL_newmetatable(L, USERDATA_TAG)
-    lua_pushvalue(L, -1)
-    lua_setfield(L, -2, "__index")
-    luaL_setfuncs(L, &userdata_metaLib, 0)
-    lua_pop(L, 1)
+        // Register userdata metatable
+        luaL_newmetatable(L, USERDATA_TAG)
+        lua_pushvalue(L, -1)
+        lua_setfield(L, -2, "__index")
+        L.push(echoRequest_hostName)
+        lua_setfield(L, -2, "hostName")
+        L.push(echoRequest_identifier)
+        lua_setfield(L, -2, "identifier")
+        L.push(echoRequest_nextSequenceNumber)
+        lua_setfield(L, -2, "nextSequenceNumber")
+        L.push(echoRequest_setCallback)
+        lua_setfield(L, -2, "setCallback")
+        L.push(echoRequest_addressStyle)
+        lua_setfield(L, -2, "acceptAddressFamily")
+        L.push(echoRequest_start)
+        lua_setfield(L, -2, "start")
+        L.push(echoRequest_stop)
+        lua_setfield(L, -2, "stop")
+        L.push(echoRequest_isRunning)
+        lua_setfield(L, -2, "isRunning")
+        L.push(echoRequest_hostAddress)
+        lua_setfield(L, -2, "hostAddress")
+        L.push(echoRequest_addressFamily)
+        lua_setfield(L, -2, "hostAddressFamily")
+        L.push(echoRequest_sendPayload)
+        lua_setfield(L, -2, "sendPayload")
+        L.push(echoRequest_seeAllUnexpectedPackets)
+        lua_setfield(L, -2, "seeAllUnexpectedPackets")
+        L.push(userdata_tostring)
+        lua_setfield(L, -2, "__tostring")
+        L.push(userdata_eq)
+        lua_setfield(L, -2, "__eq")
+        L.push(userdata_gc)
+        lua_setfield(L, -2, "__gc")
+        lua_pop(L, 1)
 
-    // Create module table
-    lua_createtable(L, 0, Int32(moduleLib.count - 1))
-    luaL_setfuncs(L, &moduleLib, 0)
-
-    return 1
+        // Create module table
+        lua_createtable(L, 0, 1)
+        L.push(echoRequest_new)
+        lua_setfield(L, -2, "echoRequest")
+    }
 }

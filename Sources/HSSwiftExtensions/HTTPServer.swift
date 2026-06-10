@@ -1,5 +1,6 @@
 import Cocoa
 import CLua
+import Lua
 import os.log
 
 // MARK: - Constants
@@ -251,7 +252,7 @@ private class HSHTTPServer {
 ///  * By default, the server will start on a random TCP port and advertise itself with Bonjour. You can check the port with `hs.httpserver:getPort()`
 ///  * By default, the server will listen on all network interfaces. You can override this with `hs.httpserver:setInterface()` before starting the server
 ///  * Currently, in HTTPS mode, the server will use a self-signed certificate, which most browsers will warn about. If you want/need to be able to use `hs.httpserver` with a certificate signed by a trusted Certificate Authority, please file an bug on Cosmic Hammer requesting support for this.
-private func httpserver_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func httpserver_new(_ L: LuaState) throws -> CInt {
 
     let useSSL = (lua_type(L, 1) == LUA_TBOOLEAN) ? (lua_toboolean(L, 1) != 0) : false
     let useBonjour = (lua_type(L, 2) == LUA_TBOOLEAN) ? (lua_toboolean(L, 2) != 0) : true
@@ -292,7 +293,7 @@ private func httpserver_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * Given a path '/mysock' and a port of 8000, the websocket URL is as follows:
 ///   * ws://localhost:8000/mysock
 ///   * wss://localhost:8000/mysock (if SSL enabled)
-private func httpserver_websocket(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func httpserver_websocket(_ L: LuaState) throws -> CInt {
     let server = getUserData(L, 1)
 
     server.wsPath = String(cString: luaL_checkstring(L, 2))
@@ -315,7 +316,7 @@ private func httpserver_websocket(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
 ///
 /// Returns:
 ///  * The `hs.httpserver` object
-private func httpserver_send(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func httpserver_send(_ L: LuaState) throws -> CInt {
     let server = getUserData(L, 1)
 
     if lua_type(L, 2) == LUA_TSTRING {
@@ -350,7 +351,7 @@ private func httpserver_send(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Notes:
 ///  * A POST request, often used by HTML forms, will store the contents of the form in the body of the request.
-private func httpserver_setCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func httpserver_setCallback(_ L: LuaState) throws -> CInt {
     let server = getUserData(L, 1)
 
     lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(refTable))
@@ -382,7 +383,7 @@ private func httpserver_setCallback(_ L: UnsafeMutablePointer<lua_State>!) -> In
 ///
 /// Notes:
 ///  * Because the Cosmic Hammer http server processes incoming requests completely in memory, this method puts a limit on the maximum size for a POST or PUT request.
-private func httpserver_maxBodySize(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func httpserver_maxBodySize(_ L: LuaState) throws -> CInt {
     let server = getUserData(L, 1)
     if lua_gettop(L) == 2 {
         server.maxBodySize = Int(lua_tointeger(L, 2))
@@ -405,7 +406,7 @@ private func httpserver_maxBodySize(_ L: UnsafeMutablePointer<lua_State>!) -> In
 ///
 /// Notes:
 ///  * It is not currently possible to set multiple passwords for different users, or passwords only on specific paths
-private func httpserver_setPassword(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func httpserver_setPassword(_ L: LuaState) throws -> CInt {
     let server = getUserData(L, 1)
 
     switch lua_type(L, 2) {
@@ -430,7 +431,7 @@ private func httpserver_setPassword(_ L: UnsafeMutablePointer<lua_State>!) -> In
 ///
 /// Returns:
 ///  * The `hs.httpserver` object
-private func httpserver_start(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func httpserver_start(_ L: LuaState) throws -> CInt {
     let server = getUserData(L, 1)
 
     if server.fn == LUA_NOREF && server.wsCallback == LUA_NOREF {
@@ -456,7 +457,7 @@ private func httpserver_start(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * The `hs.httpserver` object
-private func httpserver_stop(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func httpserver_stop(_ L: LuaState) throws -> CInt {
     let server = getUserData(L, 1)
     server.stop()
 
@@ -473,7 +474,7 @@ private func httpserver_stop(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * A number containing the TCP port
-private func httpserver_getPort(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func httpserver_getPort(_ L: LuaState) throws -> CInt {
     let server = getUserData(L, 1)
     lua_pushinteger(L, lua_Integer(server.listeningPort()))
     return 1
@@ -488,7 +489,7 @@ private func httpserver_getPort(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 ///
 /// Returns:
 ///  * The `hs.httpserver` object
-private func httpserver_setPort(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func httpserver_setPort(_ L: LuaState) throws -> CInt {
     let server = getUserData(L, 1)
     server.setPort(UInt16(luaL_checkinteger(L, 2)))
     lua_pushvalue(L, 1)
@@ -504,7 +505,7 @@ private func httpserver_setPort(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 ///
 /// Returns:
 ///  * A string containing the network interface name, or nil if the server will listen on all interfaces
-private func httpserver_getInterface(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func httpserver_getInterface(_ L: LuaState) throws -> CInt {
     let server = getUserData(L, 1)
     if let iface = server.interface() {
         lua_pushstring(L, iface)
@@ -530,7 +531,7 @@ private func httpserver_getInterface(_ L: UnsafeMutablePointer<lua_State>!) -> I
 ///   * localhost
 ///   * loopback
 ///   * nil (which means all interfaces, and is the default)
-private func httpserver_setInterface(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func httpserver_setInterface(_ L: LuaState) throws -> CInt {
     let server = getUserData(L, 1)
     if lua_isnoneornil(L, 2) {
         server.setInterface(nil)
@@ -553,7 +554,7 @@ private func httpserver_setInterface(_ L: UnsafeMutablePointer<lua_State>!) -> I
 ///
 /// Notes:
 ///  * This is not the hostname of the server, just its name in Bonjour service lists (e.g. Safari's Bonjour bookmarks menu)
-private func httpserver_getName(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func httpserver_getName(_ L: LuaState) throws -> CInt {
     let server = getUserData(L, 1)
     if let name = server.name() {
         lua_pushstring(L, name)
@@ -575,7 +576,7 @@ private func httpserver_getName(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 ///
 /// Notes:
 ///  * This is not the hostname of the server, just its name in Bonjour service lists (e.g. Safari's Bonjour bookmarks menu)
-private func httpserver_setName(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func httpserver_setName(_ L: LuaState) throws -> CInt {
     let server = getUserData(L, 1)
     server.setName(String(cString: luaL_checkstring(L, 2)))
     lua_pushvalue(L, 1)
@@ -584,7 +585,7 @@ private func httpserver_setName(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 
 // MARK: - GC / Meta
 
-private func httpserver_objectGC(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func httpserver_objectGC(_ L: LuaState) throws -> CInt {
     let httpServer = get_item_arg(L, 1)
     let server = Unmanaged<HSHTTPServer>.fromOpaque(httpServer.pointee.server!).takeRetainedValue()
     server.stop()
@@ -596,7 +597,7 @@ private func httpserver_objectGC(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
     return 0
 }
 
-private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func userdata_tostring(_ L: LuaState) throws -> CInt {
     let server = getUserData(L, 1)
     let theName = server.name() ?? "unnamed"
     let thePort = server.listeningPort()
@@ -608,48 +609,52 @@ private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 // MARK: - Registration
 
-private let httpserverLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("new"), func: httpserver_new),
-    luaL_Reg(name: nil, func: nil),
-]
-
-private let httpserverObjectLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("websocket"),    func: httpserver_websocket),
-    luaL_Reg(name: strdup("send"),         func: httpserver_send),
-    luaL_Reg(name: strdup("start"),        func: httpserver_start),
-    luaL_Reg(name: strdup("stop"),         func: httpserver_stop),
-    luaL_Reg(name: strdup("getPort"),      func: httpserver_getPort),
-    luaL_Reg(name: strdup("setPort"),      func: httpserver_setPort),
-    luaL_Reg(name: strdup("getInterface"), func: httpserver_getInterface),
-    luaL_Reg(name: strdup("setInterface"), func: httpserver_setInterface),
-    luaL_Reg(name: strdup("getName"),      func: httpserver_getName),
-    luaL_Reg(name: strdup("setName"),      func: httpserver_setName),
-    luaL_Reg(name: strdup("setCallback"),  func: httpserver_setCallback),
-    luaL_Reg(name: strdup("setPassword"),  func: httpserver_setPassword),
-    luaL_Reg(name: strdup("maxBodySize"),  func: httpserver_maxBodySize),
-    luaL_Reg(name: strdup("__tostring"),   func: userdata_tostring),
-    luaL_Reg(name: strdup("__gc"),         func: httpserver_objectGC),
-    luaL_Reg(name: nil, func: nil),
-]
-
 @_cdecl("luaopen_hs_libhttpserver")
 public func luaopen_hs_libhttpserver(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    // Create ref table in registry
-    lua_newtable(L)
-    refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+    runEntryPoint(L) { L in
+        // Create ref table in registry
+        lua_newtable(L)
+        refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
 
-    // Register userdata metatable
-    var objLib = httpserverObjectLib
-    luaL_newmetatable(L, USERDATA_TAG)
-    lua_pushvalue(L, -1)
-    lua_setfield(L, -2, "__index")  // mt.__index = mt
-    luaL_setfuncs(L, &objLib, 0)
-    lua_pop(L, 1)
+        // Register userdata metatable
+        luaL_newmetatable(L, USERDATA_TAG)
+        lua_pushvalue(L, -1)
+        lua_setfield(L, -2, "__index")  // mt.__index = mt
+        L.push(httpserver_websocket)
+        lua_setfield(L, -2, "websocket")
+        L.push(httpserver_send)
+        lua_setfield(L, -2, "send")
+        L.push(httpserver_start)
+        lua_setfield(L, -2, "start")
+        L.push(httpserver_stop)
+        lua_setfield(L, -2, "stop")
+        L.push(httpserver_getPort)
+        lua_setfield(L, -2, "getPort")
+        L.push(httpserver_setPort)
+        lua_setfield(L, -2, "setPort")
+        L.push(httpserver_getInterface)
+        lua_setfield(L, -2, "getInterface")
+        L.push(httpserver_setInterface)
+        lua_setfield(L, -2, "setInterface")
+        L.push(httpserver_getName)
+        lua_setfield(L, -2, "getName")
+        L.push(httpserver_setName)
+        lua_setfield(L, -2, "setName")
+        L.push(httpserver_setCallback)
+        lua_setfield(L, -2, "setCallback")
+        L.push(httpserver_setPassword)
+        lua_setfield(L, -2, "setPassword")
+        L.push(httpserver_maxBodySize)
+        lua_setfield(L, -2, "maxBodySize")
+        L.push(userdata_tostring)
+        lua_setfield(L, -2, "__tostring")
+        L.push(httpserver_objectGC)
+        lua_setfield(L, -2, "__gc")
+        lua_pop(L, 1)
 
-    // Create module table
-    var lib = httpserverLib
-    lua_createtable(L, 0, Int32(lib.count - 1))
-    luaL_setfuncs(L, &lib, 0)
-
-    return 1
+        // Create module table
+        lua_createtable(L, 0, 1)
+        L.push(httpserver_new)
+        lua_setfield(L, -2, "new")
+    }
 }

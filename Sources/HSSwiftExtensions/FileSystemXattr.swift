@@ -1,5 +1,6 @@
 import Cocoa
 import CLua
+import Lua
 import Darwin.POSIX.sys.xattr
 
 /// === hs.fs.xattr ===
@@ -22,7 +23,7 @@ import Darwin.POSIX.sys.xattr
 
 // MARK: - Support Functions
 
-private func parseOptionsTable(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> Int32 {
+private func parseOptionsTable(_ L: LuaState, _ idx: Int32) throws -> Int32 {
     let optionList: [Any]
     if lua_type(L, idx) == LUA_TTABLE {
         optionList = lua_tovalue(L, at: idx) as? [Any] ?? []
@@ -52,12 +53,12 @@ private func parseOptionsTable(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int
         if errMsg != nil { break }
     }
     if let errMsg = errMsg {
-        return luaL_argerror(L, idx, errMsg)
+        throw LuaCallError("bad argument #\(idx) (\(errMsg))")
     }
     return options
 }
 
-private func expandErrno(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func expandErrno() throws -> Never {
     let msg: String
     switch errno {
     case ENOTSUP:      msg = "filesystem does not support extended attributes"
@@ -78,7 +79,7 @@ private func expandErrno(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     case E2BIG:        msg = "data size of extended attribute is too large"
     default:           msg = "unrecognized errno code \(errno); see /usr/include/sys/errno.h"
     }
-    return luaL_error(L, msg)
+    throw LuaCallError(msg)
 }
 
 // MARK: - Module Functions
@@ -96,7 +97,7 @@ private func expandErrno(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * True if the operation succeeds; otherwise throws a Lua error with a description of reason for failure.
-private func xattr_setxattr(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func xattr_setxattr(_ L: LuaState) throws -> CInt {
     var path = NSString(utf8String: luaL_checkstring(L, 1))!
     path = path.expandingTildeInPath as NSString
 
@@ -107,15 +108,15 @@ private func xattr_setxattr(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let valuePtr = luaL_checklstring(L, 3, &valueLen)!
     let value = NSData(bytes: valuePtr, length: valueLen)
 
-    let options = parseOptionsTable(L, 4)
+    let options = try parseOptionsTable(L, 4)
 
     let position: UInt32 = (lua_gettop(L) == 5) ? UInt32(lua_tointeger(L, 5)) : 0
     if position != 0 && !(attribute as String == XATTR_RESOURCEFORK_NAME) {
-        return luaL_argerror(L, 5, "position argument only valid with \(XATTR_RESOURCEFORK_NAME) attribute")
+        throw LuaCallError("bad argument #5 (position argument only valid with \(XATTR_RESOURCEFORK_NAME) attribute)")
     }
 
     if setxattr(path.utf8String, attribute.utf8String, value.bytes, value.length, position, Int32(options)) < 0 {
-        return expandErrno(L)
+        try expandErrno()
     } else {
         lua_pushboolean(L, 1)
     }
@@ -133,16 +134,16 @@ private func xattr_setxattr(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * True if the operation succeeds; otherwise throws a Lua error with a description of reason for failure.
-private func xattr_removexattr(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func xattr_removexattr(_ L: LuaState) throws -> CInt {
     var path = NSString(utf8String: luaL_checkstring(L, 1))!
     path = path.expandingTildeInPath as NSString
 
     let attribute = NSString(utf8String: luaL_checkstring(L, 2))!
 
-    let options = parseOptionsTable(L, 3)
+    let options = try parseOptionsTable(L, 3)
 
     if removexattr(path.utf8String, attribute.utf8String, Int32(options)) < 0 {
-        return expandErrno(L)
+        try expandErrno()
     } else {
         lua_pushboolean(L, 1)
     }
@@ -164,17 +165,17 @@ private func xattr_removexattr(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Notes:
 ///  * See also [hs.fs.xattr.getHumanReadable](#getHumanReadable).
-private func xattr_getxattr(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func xattr_getxattr(_ L: LuaState) throws -> CInt {
     var path = NSString(utf8String: luaL_checkstring(L, 1))!
     path = path.expandingTildeInPath as NSString
 
     let attribute = NSString(utf8String: luaL_checkstring(L, 2))!
 
-    let options = parseOptionsTable(L, 3)
+    let options = try parseOptionsTable(L, 3)
 
     let position: UInt32 = (lua_gettop(L) == 4) ? UInt32(lua_tointeger(L, 4)) : 0
     if position != 0 && !(attribute as String == XATTR_RESOURCEFORK_NAME) {
-        return luaL_argerror(L, 4, "position argument only valid with \(XATTR_RESOURCEFORK_NAME) attribute")
+        throw LuaCallError("bad argument #4 (position argument only valid with \(XATTR_RESOURCEFORK_NAME) attribute)")
     }
 
     var bufferSize = getxattr(path.utf8String, attribute.utf8String, nil, 0, position, Int32(options))
@@ -192,7 +193,7 @@ private func xattr_getxattr(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
         if errno == ENOATTR {
             lua_pushnil(L)
         } else {
-            return expandErrno(L)
+            try expandErrno()
         }
     }
     return 1
@@ -208,11 +209,11 @@ private func xattr_getxattr(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * a table containing an array of strings identifying the extended attributes currently defined for the file or directory; note that the order of the attributes is nondeterministic and is not guaranteed to be the same for future queries.  Throws a Lua error on failure with a description of the reason for the failure.
-private func xattr_listxattr(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func xattr_listxattr(_ L: LuaState) throws -> CInt {
     var path = NSString(utf8String: luaL_checkstring(L, 1))!
     path = path.expandingTildeInPath as NSString
 
-    let options = parseOptionsTable(L, 2)
+    let options = try parseOptionsTable(L, 2)
 
     lua_newtable(L)
     var bufferSize = listxattr(path.utf8String, nil, 0, Int32(options))
@@ -234,25 +235,24 @@ private func xattr_listxattr(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     }
     if bufferSize < 0 {
         lua_pop(L, 1)
-        return expandErrno(L)
+        try expandErrno()
     }
     return 1
 }
 
 // MARK: - Lua registration
 
-private let moduleLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("list"),   func: xattr_listxattr),
-    luaL_Reg(name: strdup("get"),    func: xattr_getxattr),
-    luaL_Reg(name: strdup("set"),    func: xattr_setxattr),
-    luaL_Reg(name: strdup("remove"), func: xattr_removexattr),
-    luaL_Reg(name: nil, func: nil),
-]
-
 @_cdecl("luaopen_hs_libfsxattr")
 public func luaopen_hs_libfsxattr(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    var lib = moduleLib
-    lua_createtable(L, 0, Int32(lib.count - 1))
-    luaL_setfuncs(L, &lib, 0)
-    return 1
+    runEntryPoint(L) { L in
+        lua_createtable(L, 0, 4)
+        L.push(xattr_listxattr)
+        lua_setfield(L, -2, "list")
+        L.push(xattr_getxattr)
+        lua_setfield(L, -2, "get")
+        L.push(xattr_setxattr)
+        lua_setfield(L, -2, "set")
+        L.push(xattr_removexattr)
+        lua_setfield(L, -2, "remove")
+    }
 }

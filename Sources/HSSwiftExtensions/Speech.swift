@@ -1,5 +1,6 @@
 import Cocoa
 import CLua
+import Lua
 import os.log
 
 private let USERDATA_TAG = "hs.speech"
@@ -183,7 +184,7 @@ private func get_synthFromUserdata_transfer(_ L: UnsafeMutablePointer<lua_State>
 ///
 /// Notes:
 ///  * All of the names that have been encountered thus far follow this pattern for their full name:  `com.apple.speech.synthesis.voice.*name*`.  This prefix is normally suppressed unless you pass in true.
-private func availableVoices(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func availableVoices(_ L: LuaState) throws -> CInt {
     let displayFullName = lua_isboolean(L, 1) ? (lua_toboolean(L, 1) != 0) : false
 
     lua_newtable(L)
@@ -211,7 +212,7 @@ private func availableVoices(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Notes:
 ///  * All of the names that have been encountered thus far follow this pattern for their full name:  `com.apple.speech.synthesis.voice.*name*`.  You can provide this suffix or not as you prefer when specifying a voice name.
-private func attributesForVoice(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func attributesForVoice(_ L: LuaState) throws -> CInt {
 
     if lua_type(L, 1) != LUA_TNIL { _ = luaL_checkstring(L, 1) }
     let voiceName = lua_tovalue(L, at: 1) as? String
@@ -233,7 +234,7 @@ private func attributesForVoice(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 ///
 /// Notes:
 ///  * All of the names that have been encountered thus far follow this pattern for their full name:  `com.apple.speech.synthesis.voice.*name*`.  This prefix is normally suppressed unless you pass in true.
-private func defaultVoice(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func defaultVoice(_ L: LuaState) throws -> CInt {
     let displayFullName = lua_isboolean(L, 1) ? (lua_toboolean(L, 1) != 0) : false
 
     let voiceName = NSSpeechSynthesizer.defaultVoice.rawValue
@@ -257,7 +258,7 @@ private func defaultVoice(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Notes:
 ///  * See also `hs.speech:speaking`.
-private func isAnyApplicationSpeaking(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func isAnyApplicationSpeaking(_ L: LuaState) throws -> CInt {
 
     lua_pushboolean(L, NSSpeechSynthesizer.isAnyApplicationSpeaking ? 1 : 0)
     return 1
@@ -276,7 +277,7 @@ private func isAnyApplicationSpeaking(_ L: UnsafeMutablePointer<lua_State>!) -> 
 /// Notes:
 ///  * All of the names that have been encountered thus far follow this pattern for their full name:  `com.apple.speech.synthesis.voice.*name*`.  You can provide this suffix or not as you prefer when specifying a voice name.
 ///  * You can change the voice later with the `hs.speech:voice` method.
-private func newSpeechSynthesizer(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func newSpeechSynthesizer(_ L: LuaState) throws -> CInt {
 
     var voiceName: NSSpeechSynthesizer.VoiceName? = nil
     if lua_gettop(L) == 1 {
@@ -304,7 +305,7 @@ private func newSpeechSynthesizer(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
 /// hs.speech:usesFeedbackWindow([flag]) -> synthesizerObject | boolean
 /// Method
 /// Gets or sets whether or not the synthesizer uses the speech feedback window.
-private func usesFeedbackWindow(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func usesFeedbackWindow(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let synth = get_synthFromUserdata(L, at: 1)
 
@@ -320,7 +321,7 @@ private func usesFeedbackWindow(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 /// hs.speech:voice([full] | [voice]) -> synthesizerObject | voice
 /// Method
 /// Gets or sets the active voice for a synthesizer.
-private func voice(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func voice(_ L: LuaState) throws -> CInt {
     let synth = get_synthFromUserdata(L, at: 1)
 
     if lua_gettop(L) == 2 && lua_type(L, 2) != LUA_TBOOLEAN {
@@ -355,7 +356,7 @@ private func voice(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.speech:rate([rate]) -> synthesizerObject | rate
 /// Method
 /// Gets or sets the synthesizers speaking rate (words per minute).
-private func rate(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func rate(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let synth = get_synthFromUserdata(L, at: 1)
 
@@ -371,15 +372,14 @@ private func rate(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.speech:volume([volume]) -> synthesizerObject | volume
 /// Method
 /// Gets or sets the synthesizers speaking volume.
-private func volume(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func volume(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let synth = get_synthFromUserdata(L, at: 1)
 
     if lua_gettop(L) == 2 {
         let vol = Float(lua_tonumber(L, 2))
         if vol < 0.0 || vol > 1.0 {
-            luaL_argerror(L, 2, "must be between 0.0 and 1.0 inclusive")
-            return 0
+            throw LuaCallError("bad argument #2 (must be between 0.0 and 1.0 inclusive)")
         }
         synth.volume = vol
         lua_pushvalue(L, 1)
@@ -392,7 +392,7 @@ private func volume(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.speech:speaking() -> boolean
 /// Method
 /// Returns whether or not this synthesizer is currently generating speech.
-private func speaking(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func speaking(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let synth = get_synthFromUserdata(L, at: 1)
 
@@ -403,7 +403,7 @@ private func speaking(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.speech:setCallback(fn) -> synthesizerObject
 /// Method
 /// Sets or removes a callback function for the synthesizer.
-private func setCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func setCallback(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let synth = get_synthFromUserdata(L, at: 1)
 
@@ -422,13 +422,12 @@ private func setCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.speech:speak(textToSpeak) -> synthesizerObject
 /// Method
 /// Starts speaking the provided text through the system's current audio device.
-private func startSpeakingString(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func startSpeakingString(_ L: LuaState) throws -> CInt {
     let synth = get_synthFromUserdata(L, at: 1)
 
     _ = luaL_checkstring(L, 2)
     guard let theText = lua_tovalue(L, at: 2) as? String else {
-        luaL_error(L, "invalid speech text, evaluates to nil")
-        return 0
+        throw LuaCallError("invalid speech text, evaluates to nil")
     }
 
     if synth.startSpeaking(theText) {
@@ -447,18 +446,16 @@ private func startSpeakingString(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 /// hs.speech:speakToFile(textToSpeak, destination) -> synthesizerObject
 /// Method
 /// Starts speaking the provided text and saves the audio as an AIFF file.
-private func startSpeakingStringToURL(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func startSpeakingStringToURL(_ L: LuaState) throws -> CInt {
     let synth = get_synthFromUserdata(L, at: 1)
 
     _ = luaL_checkstring(L, 2)
     _ = luaL_checkstring(L, 3)
     guard let theText = lua_tovalue(L, at: 2) as? String else {
-        luaL_error(L, "invalid speech text, evaluates to nil")
-        return 0
+        throw LuaCallError("invalid speech text, evaluates to nil")
     }
     guard let theFile = lua_tovalue(L, at: 3) as? String else {
-        luaL_error(L, "invalid file name, evaluates to nil")
-        return 0
+        throw LuaCallError("invalid file name, evaluates to nil")
     }
 
     let url = URL(fileURLWithPath: (theFile as NSString).expandingTildeInPath, isDirectory: false)
@@ -494,7 +491,7 @@ private func parseBoundary(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32,
 /// hs.speech:pause([where]) -> synthesizerObject
 /// Method
 /// Pauses the output of the speech synthesizer.
-private func pauseSpeakingAtBoundary(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func pauseSpeakingAtBoundary(_ L: LuaState) throws -> CInt {
     let synth = get_synthFromUserdata(L, at: 1)
 
     let boundary = parseBoundary(L, at: 2, label: "pausing")
@@ -506,7 +503,7 @@ private func pauseSpeakingAtBoundary(_ L: UnsafeMutablePointer<lua_State>!) -> I
 /// hs.speech:stop([where]) -> synthesizerObject
 /// Method
 /// Stops the output of the speech synthesizer.
-private func stopSpeakingAtBoundary(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func stopSpeakingAtBoundary(_ L: LuaState) throws -> CInt {
     let synth = get_synthFromUserdata(L, at: 1)
 
     let boundary = parseBoundary(L, at: 2, label: "stopping")
@@ -524,7 +521,7 @@ private func stopSpeakingAtBoundary(_ L: UnsafeMutablePointer<lua_State>!) -> In
 /// hs.speech:continue() -> synthesizerObject
 /// Method
 /// Resumes a paused speech synthesizer.
-private func continueSpeaking(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func continueSpeaking(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let synth = get_synthFromUserdata(L, at: 1)
 
@@ -536,13 +533,12 @@ private func continueSpeaking(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.speech:phonemes(text) -> string
 /// Method
 /// Returns the phonemes which would be spoken if the text were to be synthesized.
-private func phonemesFromText(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func phonemesFromText(_ L: LuaState) throws -> CInt {
     let synth = get_synthFromUserdata(L, at: 1)
 
     _ = luaL_checkstring(L, 2)
     guard let theText = lua_tovalue(L, at: 2) as? String else {
-        luaL_error(L, "invalid speech text, evaluates to nil")
-        return 0
+        throw LuaCallError("invalid speech text, evaluates to nil")
     }
     lua_pushany(L, synth.phonemes(from: theText) as NSString)
     return 1
@@ -551,7 +547,7 @@ private func phonemesFromText(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.speech:isSpeaking() -> boolean | nil
 /// Method
 /// Returns whether or not the synthesizer is currently speaking, either to an audio device or to a file.
-private func isSpeaking(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func isSpeaking(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let synth = get_synthFromUserdata(L, at: 1)
 
@@ -573,7 +569,7 @@ private func isSpeaking(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.speech:isPaused() -> boolean | nil
 /// Method
 /// Returns whether or not the synthesizer is currently paused.
-private func isPaused(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func isPaused(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let synth = get_synthFromUserdata(L, at: 1)
 
@@ -595,7 +591,7 @@ private func isPaused(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.speech:phoneticSymbols() -> array | nil
 /// Method
 /// Returns an array of the phonetic symbols recognized by the synthesizer for the current voice.
-private func phoneticSymbols(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func phoneticSymbols(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let synth = get_synthFromUserdata(L, at: 1)
 
@@ -612,7 +608,7 @@ private func phoneticSymbols(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.speech:pitch([pitch]) -> synthesizerObject | pitch | nil
 /// Method
 /// Gets or sets the base pitch for the synthesizer's voice.
-private func pitchBase(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func pitchBase(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let synth = get_synthFromUserdata(L, at: 1)
 
@@ -639,7 +635,7 @@ private func pitchBase(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.speech:modulation([modulation]) -> synthesizerObject | modulation | nil
 /// Method
 /// Gets or sets the pitch modulation for the synthesizer's voice.
-private func pitchMod(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func pitchMod(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let synth = get_synthFromUserdata(L, at: 1)
 
@@ -666,7 +662,7 @@ private func pitchMod(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.speech:reset() -> synthesizerObject | nil
 /// Method
 /// Reset a synthesizer back to its default state.
-private func reset(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func reset(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let synth = get_synthFromUserdata(L, at: 1)
 
@@ -706,7 +702,7 @@ private func pushHSSpeechSynthesizerCallbackSelf(_ L: UnsafeMutablePointer<lua_S
 
 // MARK: - Cosmic Hammer Infrastructure
 
-private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func userdata_tostring(_ L: LuaState) throws -> CInt {
     let synth = get_synthFromUserdata(L, at: 1)
     let voiceName = synth.voice()?.rawValue ?? "unknown"
     let ptr = Unmanaged.passUnretained(synth).toOpaque()
@@ -714,7 +710,7 @@ private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 1
 }
 
-private func userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func userdata_eq(_ L: LuaState) throws -> CInt {
     if luaL_testudata(L, 1, USERDATA_TAG) != nil && luaL_testudata(L, 2, USERDATA_TAG) != nil {
         let synth1 = get_synthFromUserdata(L, at: 1)
         let synth2 = get_synthFromUserdata(L, at: 2)
@@ -725,7 +721,7 @@ private func userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 1
 }
 
-private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func userdata_gc(_ L: LuaState) throws -> CInt {
     let synth = get_synthFromUserdata_transfer(L, at: 1)
     synth.udReferenceCount -= 1
 
@@ -746,62 +742,76 @@ private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 0
 }
 
-// MARK: - luaL_Reg tables
-
-private var userdata_metaLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("usesFeedbackWindow"), func: usesFeedbackWindow),
-    luaL_Reg(name: strdup("voice"), func: voice),
-    luaL_Reg(name: strdup("rate"), func: rate),
-    luaL_Reg(name: strdup("volume"), func: volume),
-    luaL_Reg(name: strdup("speaking"), func: speaking),
-    luaL_Reg(name: strdup("setCallback"), func: setCallback),
-    luaL_Reg(name: strdup("speak"), func: startSpeakingString),
-    luaL_Reg(name: strdup("speakToFile"), func: startSpeakingStringToURL),
-    luaL_Reg(name: strdup("pause"), func: pauseSpeakingAtBoundary),
-    luaL_Reg(name: strdup("continue"), func: continueSpeaking),
-    luaL_Reg(name: strdup("stop"), func: stopSpeakingAtBoundary),
-    luaL_Reg(name: strdup("phonemes"), func: phonemesFromText),
-    luaL_Reg(name: strdup("isSpeaking"), func: isSpeaking),
-    luaL_Reg(name: strdup("isPaused"), func: isPaused),
-    luaL_Reg(name: strdup("phoneticSymbols"), func: phoneticSymbols),
-    luaL_Reg(name: strdup("pitch"), func: pitchBase),
-    luaL_Reg(name: strdup("modulation"), func: pitchMod),
-    luaL_Reg(name: strdup("reset"), func: reset),
-    luaL_Reg(name: strdup("__tostring"), func: userdata_tostring),
-    luaL_Reg(name: strdup("__eq"), func: userdata_eq),
-    luaL_Reg(name: strdup("__gc"), func: userdata_gc),
-    luaL_Reg(name: nil, func: nil)
-]
-
-private var moduleLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("availableVoices"), func: availableVoices),
-    luaL_Reg(name: strdup("attributesForVoice"), func: attributesForVoice),
-    luaL_Reg(name: strdup("defaultVoice"), func: defaultVoice),
-    luaL_Reg(name: strdup("isAnyApplicationSpeaking"), func: isAnyApplicationSpeaking),
-    luaL_Reg(name: strdup("new"), func: newSpeechSynthesizer),
-    luaL_Reg(name: nil, func: nil)
-]
-
 // MARK: - Module Entry Point
 
 @_cdecl("luaopen_hs_libspeech")
 public func luaopen_hs_libspeech(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    // Create ref table in registry
-    lua_newtable(L)
-    refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+    runEntryPoint(L) { L in
+        // Create ref table in registry
+        lua_newtable(L)
+        refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
 
-    // Register userdata metatable
-    luaL_newmetatable(L, USERDATA_TAG)
-    lua_pushvalue(L, -1)
-    lua_setfield(L, -2, "__index")
-    luaL_setfuncs(L, &userdata_metaLib, 0)
-    lua_pop(L, 1)
+        // Register userdata metatable
+        luaL_newmetatable(L, USERDATA_TAG)
+        lua_pushvalue(L, -1)
+        lua_setfield(L, -2, "__index")
+        L.push(usesFeedbackWindow)
+        lua_setfield(L, -2, "usesFeedbackWindow")
+        L.push(voice)
+        lua_setfield(L, -2, "voice")
+        L.push(rate)
+        lua_setfield(L, -2, "rate")
+        L.push(volume)
+        lua_setfield(L, -2, "volume")
+        L.push(speaking)
+        lua_setfield(L, -2, "speaking")
+        L.push(setCallback)
+        lua_setfield(L, -2, "setCallback")
+        L.push(startSpeakingString)
+        lua_setfield(L, -2, "speak")
+        L.push(startSpeakingStringToURL)
+        lua_setfield(L, -2, "speakToFile")
+        L.push(pauseSpeakingAtBoundary)
+        lua_setfield(L, -2, "pause")
+        L.push(continueSpeaking)
+        lua_setfield(L, -2, "continue")
+        L.push(stopSpeakingAtBoundary)
+        lua_setfield(L, -2, "stop")
+        L.push(phonemesFromText)
+        lua_setfield(L, -2, "phonemes")
+        L.push(isSpeaking)
+        lua_setfield(L, -2, "isSpeaking")
+        L.push(isPaused)
+        lua_setfield(L, -2, "isPaused")
+        L.push(phoneticSymbols)
+        lua_setfield(L, -2, "phoneticSymbols")
+        L.push(pitchBase)
+        lua_setfield(L, -2, "pitch")
+        L.push(pitchMod)
+        lua_setfield(L, -2, "modulation")
+        L.push(reset)
+        lua_setfield(L, -2, "reset")
+        L.push(userdata_tostring)
+        lua_setfield(L, -2, "__tostring")
+        L.push(userdata_eq)
+        lua_setfield(L, -2, "__eq")
+        L.push(userdata_gc)
+        lua_setfield(L, -2, "__gc")
+        lua_pop(L, 1)
 
-    // Create module table
-    lua_createtable(L, 0, Int32(moduleLib.count - 1))
-    luaL_setfuncs(L, &moduleLib, 0)
-
-    return 1
+        // Create module table
+        lua_createtable(L, 0, 5)
+        L.push(availableVoices)
+        lua_setfield(L, -2, "availableVoices")
+        L.push(attributesForVoice)
+        lua_setfield(L, -2, "attributesForVoice")
+        L.push(defaultVoice)
+        lua_setfield(L, -2, "defaultVoice")
+        L.push(isAnyApplicationSpeaking)
+        lua_setfield(L, -2, "isAnyApplicationSpeaking")
+        L.push(newSpeechSynthesizer)
+        lua_setfield(L, -2, "new")
+    }
 }
 
 // MARK: - Dictionary helper for allKeys(for:)

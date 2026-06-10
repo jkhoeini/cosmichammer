@@ -1,5 +1,6 @@
 import Cocoa
 import CLua
+import Lua
 import os.log
 
 private let USERDATA_TAG: StaticString = "hs.bonjour"
@@ -127,7 +128,7 @@ private func pushBonjourCallbackArgument(_ L: UnsafeMutablePointer<lua_State>!, 
 ///
 /// Returns:
 ///  * a new browserObject or nil if an error occurs
-private func browser_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func browser_new(_ L: LuaState) throws -> CInt {
     let browser = HSNetServiceBrowser()
     pushHSNetServiceBrowser(L, browser)
     return 1
@@ -147,7 +148,7 @@ private func browser_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Notes:
 ///  * This property must be set before initiating a search to have an effect.
-private func browser_includesPeerToPeer(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func browser_includesPeerToPeer(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG.utf8Start)
     let browser: HSNetServiceBrowser = toHSNetServiceBrowserFromLua(L, 1) as! HSNetServiceBrowser
     if lua_gettop(L) == 1 {
@@ -184,7 +185,7 @@ private func browser_includesPeerToPeer(_ L: UnsafeMutablePointer<lua_State>!) -
 ///
 ///  * When `moreExpected` becomes false, it is the macOS's best guess as to whether additional records are available.
 ///    * Generally macOS is fairly accurate in this regard concerning domain searches, so to reduce the impact on system resources, it is recommended that you use [hs.bonjour:stop](#stop) when this parameter is false
-private func browser_searchForBrowsableDomains(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func browser_searchForBrowsableDomains(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG.utf8Start)
 
     luaL_checktype(L, 2, LUA_TFUNCTION)
@@ -222,7 +223,7 @@ private func browser_searchForBrowsableDomains(_ L: UnsafeMutablePointer<lua_Sta
 ///
 ///  * When `moreExpected` becomes false, it is the macOS's best guess as to whether additional records are available.
 ///    * Generally macOS is fairly accurate in this regard concerning domain searches, so to reduce the impact on system resources, it is recommended that you use [hs.bonjour:stop](#stop) when this parameter is false
-private func browser_searchForRegistrationDomains(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func browser_searchForRegistrationDomains(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG.utf8Start)
 
     luaL_checktype(L, 2, LUA_TFUNCTION)
@@ -236,7 +237,7 @@ private func browser_searchForRegistrationDomains(_ L: UnsafeMutablePointer<lua_
 }
 
 // hs.bonjour:findServices is documented with its wrapper in init.lua
-private func browser_searchForServices(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func browser_searchForServices(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG.utf8Start)
     let browser: HSNetServiceBrowser = toHSNetServiceBrowserFromLua(L, 1) as! HSNetServiceBrowser
     var service = "_services._dns-sd._udp."
@@ -275,7 +276,7 @@ private func browser_searchForServices(_ L: UnsafeMutablePointer<lua_State>!) ->
 ///  * Invoking this method on an already idle browser will do nothing
 ///
 ///  * In general, when your callback function for [hs.bonjour:findBrowsableDomains](#findBrowsableDomains), [hs.bonjour:findRegistrationDomains](#findRegistrationDomains), or [hs.bonjour:findServices](#findServices) receives false for the `moreExpected` parameter, you should invoke this method on the browserObject unless there are specific reasons not to. Possible reasons you might want to extend the life of the browserObject are documented within each method.
-private func browser_stop(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func browser_stop(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG.utf8Start)
     let browser: HSNetServiceBrowser = toHSNetServiceBrowserFromLua(L, 1) as! HSNetServiceBrowser
     browser.stop(withState: L)
@@ -312,12 +313,12 @@ private func toHSNetServiceBrowserFromLua(_ L: UnsafeMutablePointer<lua_State>!,
 
 // MARK: - Cosmic Hammer/Lua Infrastructure
 
-private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func userdata_tostring(_ L: LuaState) throws -> CInt {
     lua_pushany(L, "\(USERDATA_TAG): (\(String(describing: lua_topointer(L, 1))))" as NSString)
     return 1
 }
 
-private func userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func userdata_eq(_ L: LuaState) throws -> CInt {
     // can't get here if at least one of us isn't a userdata type, and we only care if both types are ours,
     // so use luaL_testudata before the macro causes a lua error
     if luaL_testudata(L, 1, USERDATA_TAG_STR) != nil && luaL_testudata(L, 2, USERDATA_TAG_STR) != nil {
@@ -330,7 +331,7 @@ private func userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 1
 }
 
-private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func userdata_gc(_ L: LuaState) throws -> CInt {
     guard luaL_testudata(L, 1, USERDATA_TAG_STR) != nil else { return 0 }
     let ptr = luaL_checkudata(L, 1, USERDATA_TAG_STR)!
         .assumingMemoryBound(to: UnsafeMutableRawPointer.self)
@@ -346,41 +347,35 @@ private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 0
 }
 
-// Metatable for userdata objects
-private var userdata_metaLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("includesPeerToPeer"),      func: browser_includesPeerToPeer),
-    luaL_Reg(name: strdup("findBrowsableDomains"),    func: browser_searchForBrowsableDomains),
-    luaL_Reg(name: strdup("findRegistrationDomains"), func: browser_searchForRegistrationDomains),
-    luaL_Reg(name: strdup("findServices"),            func: browser_searchForServices),
-    luaL_Reg(name: strdup("stop"),                    func: browser_stop),
-    luaL_Reg(name: strdup("__tostring"),              func: userdata_tostring),
-    luaL_Reg(name: strdup("__eq"),                    func: userdata_eq),
-    luaL_Reg(name: strdup("__gc"),                    func: userdata_gc),
-    luaL_Reg(name: nil, func: nil),
-]
-
-// Functions for returned object when module loads
-private var moduleLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("new"), func: browser_new),
-    luaL_Reg(name: nil, func: nil),
-]
-
 @_cdecl("luaopen_hs_libbonjour")
 public func luaopen_hs_libbonjour(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    // Create ref table in registry
-    lua_newtable(L)
-    refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+    runEntryPoint(L) { L in
+        lua_newtable(L)
+        refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
 
-    // Register userdata metatable
-    luaL_newmetatable(L, USERDATA_TAG_STR)
-    lua_pushvalue(L, -1)
-    lua_setfield(L, -2, "__index")
-    luaL_setfuncs(L, &userdata_metaLib, 0)
-    lua_pop(L, 1)
+        luaL_newmetatable(L, USERDATA_TAG_STR)
+        lua_pushvalue(L, -1)
+        lua_setfield(L, -2, "__index")
+        L.push(browser_includesPeerToPeer)
+        lua_setfield(L, -2, "includesPeerToPeer")
+        L.push(browser_searchForBrowsableDomains)
+        lua_setfield(L, -2, "findBrowsableDomains")
+        L.push(browser_searchForRegistrationDomains)
+        lua_setfield(L, -2, "findRegistrationDomains")
+        L.push(browser_searchForServices)
+        lua_setfield(L, -2, "findServices")
+        L.push(browser_stop)
+        lua_setfield(L, -2, "stop")
+        L.push(userdata_tostring)
+        lua_setfield(L, -2, "__tostring")
+        L.push(userdata_eq)
+        lua_setfield(L, -2, "__eq")
+        L.push(userdata_gc)
+        lua_setfield(L, -2, "__gc")
+        lua_pop(L, 1)
 
-    // Create module table
-    lua_createtable(L, 0, Int32(moduleLib.count - 1))
-    luaL_setfuncs(L, &moduleLib, 0)
-
-    return 1
+        lua_createtable(L, 0, 1)
+        L.push(browser_new)
+        lua_setfield(L, -2, "new")
+    }
 }

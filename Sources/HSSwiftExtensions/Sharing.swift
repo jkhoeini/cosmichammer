@@ -1,5 +1,6 @@
 import Cocoa
 import CLua
+import Lua
 import os.log
 
 private let USERDATA_TAG = "hs.sharing"
@@ -185,7 +186,7 @@ class HSSharingService: NSObject, NSSharingServiceDelegate {
 ///
 /// Returns:
 ///  * a sharingObject or nil if the type identifier cannot be created on this system
-private func sharing_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func sharing_new(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TSTRING)
 
     let serviceName = lua_tovalue(L, at: 1) as! String
@@ -211,12 +212,12 @@ private func sharing_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Notes:
 ///  * this function is intended to be used to determine the identifiers for sharing services available on your computer and that may not be included in the [hs.sharing.builtinSharingServices](#builtinSharingServices) table.
-private func sharing_servicesForItems(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func sharing_servicesForItems(_ L: LuaState) throws -> CInt {
 
     var items: [Any]?
     if lua_gettop(L) == 1 {
         guard let arr = sharingItemsFromLua(L, 1) else {
-            return luaL_argerror(L, 1, "unrecognized element in array")
+            throw LuaCallError("bad argument #1 (unrecognized element in array)")
         }
         items = arr
     }
@@ -257,7 +258,7 @@ private func sharing_servicesForItems(_ L: UnsafeMutablePointer<lua_State>!) -> 
 ///    * url           - a string containing the URL with a proper schema and resource locator
 ///    * filePath      = a string specifying the actual path to the file in case the url is a file reference URL.  Note that setting this field with this method will be silently ignored; the field is automatically inserted if appropriate when returning an NSURL object to lua.
 ///    * __luaSkinType - a string specifying the macOS type this table represents when converted into an Objective-C type
-private func sharing_makeURL(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func sharing_makeURL(_ L: LuaState) throws -> CInt {
 
     let shouldBeFileURL = lua_gettop(L) == 2 ? (lua_toboolean(L, 2) != 0) : false
 
@@ -295,7 +296,7 @@ private func sharing_makeURL(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Notes:
 ///  * You can check to see if all of your items can be shared with the [hs.sharing:canShareItems](#canShareItems) method.
-private func sharing_performWith(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func sharing_performWith(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     luaL_checktype(L, 2, LUA_TTABLE)
@@ -303,7 +304,7 @@ private func sharing_performWith(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
     let wrapper: HSSharingService = toHSSharingServiceFromLua(L, idx: 1) as! HSSharingService
 
     guard let items = sharingItemsFromLua(L, 2) else {
-        return luaL_argerror(L, 2, "unrecognized element in array")
+        throw LuaCallError("bad argument #2 (unrecognized element in array)")
     }
 
     if wrapper.sharingService?.canPerform(withItems:items) ?? false {
@@ -330,7 +331,7 @@ private func sharing_performWith(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 ///
 /// Returns:
 ///  * a boolean value indicating whether or not all of the specified items can be shared with the sharing service represented by the sharingObject.
-private func sharing_canPerformWith(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func sharing_canPerformWith(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     luaL_checktype(L, 2, LUA_TTABLE)
@@ -338,7 +339,7 @@ private func sharing_canPerformWith(_ L: UnsafeMutablePointer<lua_State>!) -> In
     let wrapper: HSSharingService = toHSSharingServiceFromLua(L, idx: 1) as! HSSharingService
 
     guard let items = sharingItemsFromLua(L, 2) else {
-        return luaL_argerror(L, 2, "unrecognized element in array")
+        throw LuaCallError("bad argument #2 (unrecognized element in array)")
     }
 
     lua_pushboolean(L, (wrapper.sharingService?.canPerform(withItems:items) ?? false) ? 1 : 0)
@@ -364,7 +365,7 @@ private func sharing_canPerformWith(_ L: UnsafeMutablePointer<lua_State>!) -> In
 ///      * "willShare" - the sharing service is about to start sharing the items; occurs before sharing actually begins
 ///    * an array (table) containing the items being shared; if the message is "didFail" or "didShare", the items may be in a different order or converted to a different internal type to facilitate sharing.
 ///    * if the message is "didFail", the fourth argument will be a localized description of the error that occurred.
-private func sharing_callback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func sharing_callback(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let wrapper: HSSharingService = toHSSharingServiceFromLua(L, idx: 1) as! HSSharingService
@@ -394,7 +395,7 @@ private func sharing_callback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Notes:
 ///  * not all sharing services will make use of the value set by this method.
 ///  * the individual recipients should be specified as strings in the format expected by the sharing service; e.g. for items being shared in an email, the recipients should be email address, etc.
-private func sharing_recipients(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func sharing_recipients(_ L: LuaState) throws -> CInt {
 
     let wrapper: HSSharingService = toHSSharingServiceFromLua(L, idx: 1) as! HSSharingService
 
@@ -402,7 +403,7 @@ private func sharing_recipients(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
         lua_pushany(L, wrapper.sharingService?.recipients as NSArray?)
     } else {
         guard let recipients = lua_tovalue(L, at: 2) as? [Any] else {
-            return luaL_argerror(L, 2, "expected table of strings")
+            throw LuaCallError("bad argument #2 (expected table of strings)")
         }
 
         var errorMessage: String?
@@ -414,7 +415,7 @@ private func sharing_recipients(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
         }
 
         if let msg = errorMessage {
-            return luaL_argerror(L, 2, msg)
+            throw LuaCallError("bad argument #2 (\(msg))")
         } else {
             wrapper.sharingService?.recipients = recipients as? [String]
             lua_pushvalue(L, 1)
@@ -435,7 +436,7 @@ private func sharing_recipients(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 ///
 /// Notes:
 ///  * not all sharing services will make use of the value set by this method.
-private func sharing_subject(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func sharing_subject(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let wrapper: HSSharingService = toHSSharingServiceFromLua(L, idx: 1) as! HSSharingService
@@ -465,7 +466,7 @@ private func sharing_subject(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Notes:
 ///  * not all sharing services will set a value for this property.
-private func sharing_attachmentURLs(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func sharing_attachmentURLs(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let wrapper: HSSharingService = toHSSharingServiceFromLua(L, idx: 1) as! HSSharingService
     pushSharingURLs(L, wrapper.sharingService?.attachmentFileURLs)
@@ -484,7 +485,7 @@ private func sharing_attachmentURLs(_ L: UnsafeMutablePointer<lua_State>!) -> In
 ///
 /// Notes:
 ///  * According to the Apple API documentation, only the Twitter and Sina Weibo sharing services will set this property, but this has not been fully tested.
-private func sharing_accountName(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func sharing_accountName(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let wrapper: HSSharingService = toHSSharingServiceFromLua(L, idx: 1) as! HSSharingService
     if let name = wrapper.sharingService?.accountName {
@@ -507,7 +508,7 @@ private func sharing_accountName(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 ///
 /// Notes:
 ///  * not all sharing services will set a value for this property.
-private func sharing_messageBody(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func sharing_messageBody(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let wrapper: HSSharingService = toHSSharingServiceFromLua(L, idx: 1) as! HSSharingService
     if let body = wrapper.sharingService?.messageBody {
@@ -530,7 +531,7 @@ private func sharing_messageBody(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 ///
 /// Notes:
 ///  * this string differs from the identifier used to create the sharing service object with [hs.sharing.newShare](#newShare) and is intended to provide a more friendly label for the service if you need to list or refer to it elsewhere.
-private func sharing_title(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func sharing_title(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let wrapper: HSSharingService = toHSSharingServiceFromLua(L, idx: 1) as! HSSharingService
     lua_pushany(L, wrapper.sharingService?.title as NSString?)
@@ -549,7 +550,7 @@ private func sharing_title(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Notes:
 ///  * this string will match the identifier used to create the sharing service object with [hs.sharing.newShare](#newShare)
-private func sharing_serviceName(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func sharing_serviceName(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let wrapper: HSSharingService = toHSSharingServiceFromLua(L, idx: 1) as! HSSharingService
 
@@ -579,7 +580,7 @@ private func sharing_serviceName(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 ///
 /// Notes:
 ///  * not all sharing services will set a value for this property.
-private func sharing_permanentLink(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func sharing_permanentLink(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let wrapper: HSSharingService = toHSSharingServiceFromLua(L, idx: 1) as! HSSharingService
     if let url = wrapper.sharingService?.permanentLink {
@@ -599,7 +600,7 @@ private func sharing_permanentLink(_ L: UnsafeMutablePointer<lua_State>!) -> Int
 ///
 /// Returns:
 ///  * an hs.image object or nil, if no alternate image representation for the sharing service is defined.
-private func sharing_alternateImage(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func sharing_alternateImage(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let wrapper: HSSharingService = toHSSharingServiceFromLua(L, idx: 1) as! HSSharingService
     pushSharingImageOrNil(L, wrapper.sharingService?.alternateImage)
@@ -615,7 +616,7 @@ private func sharing_alternateImage(_ L: UnsafeMutablePointer<lua_State>!) -> In
 ///
 /// Returns:
 ///  * an hs.image object or nil, if no image representation for the sharing service is defined.
-private func sharing_image(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func sharing_image(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let wrapper: HSSharingService = toHSSharingServiceFromLua(L, idx: 1) as! HSSharingService
     pushSharingImageOrNil(L, wrapper.sharingService?.image)
@@ -679,14 +680,14 @@ private func toNSURLFromLuaHelper(_ L: UnsafeMutablePointer<lua_State>!, idx: In
 
 // MARK: - Cosmic Hammer/Lua Infrastructure
 
-private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func userdata_tostring(_ L: LuaState) throws -> CInt {
     let obj = toHSSharingServiceFromLua(L, idx: 1) as! HSSharingService
     let title = obj.sharingService?.title ?? "unknown"
     lua_pushany(L, "\(USERDATA_TAG): \(title) (\(String(describing: lua_topointer(L, 1)!)))" as NSString)
     return 1
 }
 
-private func userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func userdata_eq(_ L: LuaState) throws -> CInt {
     if luaL_testudata(L, 1, USERDATA_TAG) != nil && luaL_testudata(L, 2, USERDATA_TAG) != nil {
         let obj1 = toHSSharingServiceFromLua(L, idx: 1) as! HSSharingService
         let obj2 = toHSSharingServiceFromLua(L, idx: 2) as! HSSharingService
@@ -697,7 +698,7 @@ private func userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 1
 }
 
-private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func userdata_gc(_ L: LuaState) throws -> CInt {
     let ptr = luaL_checkudata(L, 1, USERDATA_TAG)!.assumingMemoryBound(to: UnsafeMutableRawPointer.self)
     let obj = Unmanaged<HSSharingService>.fromOpaque(ptr.pointee).takeRetainedValue()
 
@@ -714,56 +715,60 @@ private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 0
 }
 
-// MARK: - luaL_Reg tables
-
-private var userdata_metaLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("callback"), func: sharing_callback),
-    luaL_Reg(name: strdup("recipients"), func: sharing_recipients),
-    luaL_Reg(name: strdup("subject"), func: sharing_subject),
-    luaL_Reg(name: strdup("shareItems"), func: sharing_performWith),
-    luaL_Reg(name: strdup("canShareItems"), func: sharing_canPerformWith),
-    luaL_Reg(name: strdup("attachments"), func: sharing_attachmentURLs),
-    luaL_Reg(name: strdup("accountName"), func: sharing_accountName),
-    luaL_Reg(name: strdup("messageBody"), func: sharing_messageBody),
-    luaL_Reg(name: strdup("title"), func: sharing_title),
-    luaL_Reg(name: strdup("permanentLink"), func: sharing_permanentLink),
-    luaL_Reg(name: strdup("alternateImage"), func: sharing_alternateImage),
-    luaL_Reg(name: strdup("image"), func: sharing_image),
-    luaL_Reg(name: strdup("serviceName"), func: sharing_serviceName),
-    luaL_Reg(name: strdup("__tostring"), func: userdata_tostring),
-    luaL_Reg(name: strdup("__eq"), func: userdata_eq),
-    luaL_Reg(name: strdup("__gc"), func: userdata_gc),
-    luaL_Reg(name: nil, func: nil),
-]
-
-private var moduleLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("newShare"), func: sharing_new),
-    luaL_Reg(name: strdup("shareTypesFor"), func: sharing_servicesForItems),
-    luaL_Reg(name: strdup("URL"), func: sharing_makeURL),
-    luaL_Reg(name: nil, func: nil),
-]
-
 // MARK: - Module entry point
 
 @_cdecl("luaopen_hs_libsharing")
 public func luaopen_hs_libsharing(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    // Create ref table in registry
-    lua_newtable(L)
-    refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+    runEntryPoint(L) { L in
+        lua_newtable(L)
+        refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
 
-    // Register userdata metatable
-    luaL_newmetatable(L, USERDATA_TAG)
-    lua_pushvalue(L, -1)
-    lua_setfield(L, -2, "__index")
-    luaL_setfuncs(L, &userdata_metaLib, 0)
-    lua_pop(L, 1)
+        luaL_newmetatable(L, USERDATA_TAG)
+        lua_pushvalue(L, -1)
+        lua_setfield(L, -2, "__index")
+        L.push(sharing_callback)
+        lua_setfield(L, -2, "callback")
+        L.push(sharing_recipients)
+        lua_setfield(L, -2, "recipients")
+        L.push(sharing_subject)
+        lua_setfield(L, -2, "subject")
+        L.push(sharing_performWith)
+        lua_setfield(L, -2, "shareItems")
+        L.push(sharing_canPerformWith)
+        lua_setfield(L, -2, "canShareItems")
+        L.push(sharing_attachmentURLs)
+        lua_setfield(L, -2, "attachments")
+        L.push(sharing_accountName)
+        lua_setfield(L, -2, "accountName")
+        L.push(sharing_messageBody)
+        lua_setfield(L, -2, "messageBody")
+        L.push(sharing_title)
+        lua_setfield(L, -2, "title")
+        L.push(sharing_permanentLink)
+        lua_setfield(L, -2, "permanentLink")
+        L.push(sharing_alternateImage)
+        lua_setfield(L, -2, "alternateImage")
+        L.push(sharing_image)
+        lua_setfield(L, -2, "image")
+        L.push(sharing_serviceName)
+        lua_setfield(L, -2, "serviceName")
+        L.push(userdata_tostring)
+        lua_setfield(L, -2, "__tostring")
+        L.push(userdata_eq)
+        lua_setfield(L, -2, "__eq")
+        L.push(userdata_gc)
+        lua_setfield(L, -2, "__gc")
+        lua_pop(L, 1)
 
-    // Create module table
-    lua_createtable(L, 0, Int32(moduleLib.count - 1))
-    luaL_setfuncs(L, &moduleLib, 0)
+        lua_createtable(L, 0, 4)
+        L.push(sharing_new)
+        lua_setfield(L, -2, "newShare")
+        L.push(sharing_servicesForItems)
+        lua_setfield(L, -2, "shareTypesFor")
+        L.push(sharing_makeURL)
+        lua_setfield(L, -2, "URL")
 
-    _ = pushBuiltinSharingServices(L)
-    lua_setfield(L, -2, "builtinSharingServices")
-
-    return 1
+        _ = pushBuiltinSharingServices(L)
+        lua_setfield(L, -2, "builtinSharingServices")
+    }
 }

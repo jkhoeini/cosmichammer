@@ -1,5 +1,6 @@
 import Cocoa
 import CLua
+import Lua
 import Carbon
 import os.log
 import IOKit
@@ -85,7 +86,7 @@ private func hsToPoint(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> C
 
 // MARK: - GC
 
-private func eventtap_event_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func eventtap_event_gc(_ L: LuaState) throws -> CInt {
     let ud = luaL_checkudata(L, 1, EVENTTAP_EVENT_USERDATA_TAG)!
         .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
     if let rawPtr = ud.pointee {
@@ -99,20 +100,20 @@ private func eventtap_event_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 // MARK: - Constructors
 
-private func eventtap_event_copy(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func eventtap_event_copy(_ L: LuaState) throws -> CInt {
     let event = getEvent(L, 1)
     guard let copy = event.copy() else { lua_pushnil(L); return 1 }
     newEventtapEvent(L, copy)
     return 1
 }
 
-private func eventtap_event_newEvent(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func eventtap_event_newEvent(_ L: LuaState) throws -> CInt {
     guard let event = CGEvent(source: eventSource) else { lua_pushnil(L); return 1 }
     newEventtapEvent(L, event)
     return 1
 }
 
-private func eventtap_event_newEventFromData(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func eventtap_event_newEventFromData(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TSTRING)
     let data = lua_checkdata(L, at: 1)
     if let event = CGEvent(withDataAllocator: nil, data: data as CFData) {
@@ -123,13 +124,13 @@ private func eventtap_event_newEventFromData(_ L: UnsafeMutablePointer<lua_State
     return 1
 }
 
-private func eventtap_event_newGesture(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    return luaL_error(L, "hs.eventtap.event: gesture synthesis is not implemented in this version")
+private func eventtap_event_newGesture(_ L: LuaState) throws -> CInt {
+    throw LuaCallError("hs.eventtap.event: gesture synthesis is not implemented in this version")
 }
 
 // MARK: - Methods
 
-private func eventtap_event_asData(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func eventtap_event_asData(_ L: LuaState) throws -> CInt {
     let event = getEvent(L, 1)
     if let data = event.data {
         lua_pushany(L, data as NSData)
@@ -139,7 +140,7 @@ private func eventtap_event_asData(_ L: UnsafeMutablePointer<lua_State>!) -> Int
     return 1
 }
 
-private func eventtap_event_location(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func eventtap_event_location(_ L: LuaState) throws -> CInt {
     let event = getEvent(L, 1)
     if lua_gettop(L) == 1 {
         let loc = event.location
@@ -152,7 +153,7 @@ private func eventtap_event_location(_ L: UnsafeMutablePointer<lua_State>!) -> I
     return 1
 }
 
-private func eventtap_event_timestamp(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func eventtap_event_timestamp(_ L: LuaState) throws -> CInt {
     let event = getEvent(L, 1)
     if lua_gettop(L) == 1 {
         lua_pushinteger(L, lua_Integer(event.timestamp))
@@ -163,14 +164,14 @@ private func eventtap_event_timestamp(_ L: UnsafeMutablePointer<lua_State>!) -> 
     return 1
 }
 
-private func eventtap_event_setType(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func eventtap_event_setType(_ L: LuaState) throws -> CInt {
     let event = getEvent(L, 1)
     event.type = CGEventType(rawValue: UInt32(lua_tointeger(L, 2)))!
     lua_pushvalue(L, 1)
     return 1
 }
 
-private func eventtap_event_rawFlags(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func eventtap_event_rawFlags(_ L: LuaState) throws -> CInt {
     let event = getEvent(L, 1)
     if lua_gettop(L) == 1 {
         lua_pushinteger(L, lua_Integer(event.flags.rawValue))
@@ -181,7 +182,7 @@ private func eventtap_event_rawFlags(_ L: UnsafeMutablePointer<lua_State>!) -> I
     return 1
 }
 
-private func eventtap_event_getFlags(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func eventtap_event_getFlags(_ L: LuaState) throws -> CInt {
     let event = getEvent(L, 1)
     lua_newtable(L)
     let flags = event.flags
@@ -195,7 +196,7 @@ private func eventtap_event_getFlags(_ L: UnsafeMutablePointer<lua_State>!) -> I
     return 1
 }
 
-private func eventtap_event_setFlags(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func eventtap_event_setFlags(_ L: LuaState) throws -> CInt {
     let event = getEvent(L, 1)
     luaL_checktype(L, 2, LUA_TTABLE)
     var flags = CGEventFlags(rawValue: 0)
@@ -209,7 +210,7 @@ private func eventtap_event_setFlags(_ L: UnsafeMutablePointer<lua_State>!) -> I
     return 1
 }
 
-private func eventtap_event_getRawEventData(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func eventtap_event_getRawEventData(_ L: LuaState) throws -> CInt {
     let event = getEvent(L, 1)
     let cgType = event.type
 
@@ -257,7 +258,7 @@ private func eventtap_event_getRawEventData(_ L: UnsafeMutablePointer<lua_State>
     return 1
 }
 
-private func eventtap_event_getCharacters(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func eventtap_event_getCharacters(_ L: LuaState) throws -> CInt {
     let event = getEvent(L, 1)
     let clean = lua_isnone(L, 2) ? false : lua_toboolean(L, -1) != 0
     let cgType = event.type
@@ -275,13 +276,13 @@ private func eventtap_event_getCharacters(_ L: UnsafeMutablePointer<lua_State>!)
     return 1
 }
 
-private func eventtap_event_getKeyCode(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func eventtap_event_getKeyCode(_ L: LuaState) throws -> CInt {
     let event = getEvent(L, 1)
     lua_pushinteger(L, event.getIntegerValueField(.keyboardEventKeycode))
     return 1
 }
 
-private func eventtap_event_setKeyCode(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func eventtap_event_setKeyCode(_ L: LuaState) throws -> CInt {
     let event = getEvent(L, 1)
     let keycode = luaL_checkinteger(L, 2)
     event.setIntegerValueField(.keyboardEventKeycode, value: Int64(keycode))
@@ -289,7 +290,7 @@ private func eventtap_event_setKeyCode(_ L: UnsafeMutablePointer<lua_State>!) ->
     return 1
 }
 
-private func eventtap_event_getUnicodeString(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func eventtap_event_getUnicodeString(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, EVENTTAP_EVENT_USERDATA_TAG)
     let event = getEvent(L, 1)
 
@@ -302,7 +303,7 @@ private func eventtap_event_getUnicodeString(_ L: UnsafeMutablePointer<lua_State
     return 1
 }
 
-private func eventtap_event_setUnicodeString(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func eventtap_event_setUnicodeString(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, EVENTTAP_EVENT_USERDATA_TAG)
 
     luaL_checktype(L, 2, LUA_TSTRING)
@@ -321,7 +322,7 @@ private func eventtap_event_setUnicodeString(_ L: UnsafeMutablePointer<lua_State
     return 1
 }
 
-private func eventtap_event_post(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func eventtap_event_post(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, EVENTTAP_EVENT_USERDATA_TAG)
     let event = getEvent(L, 1)
 
@@ -337,7 +338,7 @@ private func eventtap_event_post(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
     return 1
 }
 
-private func eventtap_event_getType(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func eventtap_event_getType(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, EVENTTAP_EVENT_USERDATA_TAG)
     let event = getEvent(L, 1)
     let nsEvent = (lua_gettop(L) > 1) ? (lua_toboolean(L, 2) != 0) : false
@@ -354,7 +355,7 @@ private func eventtap_event_getType(_ L: UnsafeMutablePointer<lua_State>!) -> In
     return 1
 }
 
-private func eventtap_event_getProperty(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func eventtap_event_getProperty(_ L: LuaState) throws -> CInt {
     let event = getEvent(L, 1)
     let field = CGEventField(rawValue: UInt32(luaL_checkinteger(L, 2)))!
 
@@ -378,7 +379,7 @@ private func eventtap_event_getProperty(_ L: UnsafeMutablePointer<lua_State>!) -
     return 1
 }
 
-private func eventtap_event_getButtonState(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func eventtap_event_getButtonState(_ L: LuaState) throws -> CInt {
     let event = getEvent(L, 1)
     let whichButton = CGMouseButton(rawValue: UInt32(luaL_checkinteger(L, 2)))!
     let stateID = CGEventSourceStateID(rawValue: Int32(event.getIntegerValueField(.eventSourceStateID)))!
@@ -386,7 +387,7 @@ private func eventtap_event_getButtonState(_ L: UnsafeMutablePointer<lua_State>!
     return 1
 }
 
-private func eventtap_event_setProperty(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func eventtap_event_setProperty(_ L: LuaState) throws -> CInt {
     let event = getEvent(L, 1)
     let field = CGEventField(rawValue: UInt32(luaL_checkinteger(L, 2)))!
 
@@ -413,7 +414,7 @@ private func eventtap_event_setProperty(_ L: UnsafeMutablePointer<lua_State>!) -
 
 // MARK: - Key Event Constructors
 
-private func eventtap_event_newKeyEvent(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func eventtap_event_newKeyEvent(_ L: LuaState) throws -> CInt {
     var hasModTable = false
     var keyCodePos: Int32 = 2
     var flags = CGEventFlags(rawValue: 0)
@@ -437,7 +438,7 @@ private func eventtap_event_newKeyEvent(_ L: UnsafeMutablePointer<lua_State>!) -
     return 1
 }
 
-private func eventtap_event_newSystemKeyEvent(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func eventtap_event_newSystemKeyEvent(_ L: LuaState) throws -> CInt {
 
     guard let keyName = lua_tostring(L, 1).map({ String(cString: $0) }) else {
         lua_pushnil(L); return 1
@@ -494,7 +495,7 @@ private func eventtap_event_newSystemKeyEvent(_ L: UnsafeMutablePointer<lua_Stat
     return 1
 }
 
-private func eventtap_event_newScrollWheelEvent(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func eventtap_event_newScrollWheelEvent(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TTABLE)
     lua_pushnumber(L, 1); lua_gettable(L, 1); let offsetY = Int32(lua_tointeger(L, -1)); lua_pop(L, 1)
     lua_pushnumber(L, 2); lua_gettable(L, 1); let offsetX = Int32(lua_tointeger(L, -1)); lua_pop(L, 1)
@@ -513,7 +514,7 @@ private func eventtap_event_newScrollWheelEvent(_ L: UnsafeMutablePointer<lua_St
     return 1
 }
 
-private func eventtap_event_newMouseEvent(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func eventtap_event_newMouseEvent(_ L: LuaState) throws -> CInt {
     let type = CGEventType(rawValue: UInt32(luaL_checkinteger(L, 1)))!
     let point = hsToPoint(L, 2)
     guard let buttonString = lua_tostring(L, 3).map({ String(cString: $0) }) else {
@@ -543,7 +544,7 @@ private func eventtap_event_newMouseEvent(_ L: UnsafeMutablePointer<lua_State>!)
 
 // MARK: - System Key / Touches
 
-private func eventtap_event_systemKey(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func eventtap_event_systemKey(_ L: LuaState) throws -> CInt {
     let event = getEvent(L, 1)
     guard let sysEvent = NSEvent(cgEvent: event) else {
         lua_newtable(L); return 1
@@ -594,7 +595,7 @@ private func eventtap_event_systemKey(_ L: UnsafeMutablePointer<lua_State>!) -> 
     return 1
 }
 
-private func eventtap_event_getTouches(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func eventtap_event_getTouches(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, EVENTTAP_EVENT_USERDATA_TAG)
     let event = getEvent(L, 1)
 
@@ -611,7 +612,7 @@ private func eventtap_event_getTouches(_ L: UnsafeMutablePointer<lua_State>!) ->
     return 1
 }
 
-private func eventtap_event_getTouchDetails(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func eventtap_event_getTouchDetails(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, EVENTTAP_EVENT_USERDATA_TAG)
     let event = getEvent(L, 1)
 
@@ -800,7 +801,7 @@ private func flags_containExactly(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
 
 // MARK: - __tostring / meta_gc
 
-private func event_userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func event_userdata_tostring(_ L: LuaState) throws -> CInt {
     let event = getEvent(L, 1)
     let eventType = event.type.rawValue
     let ptr = lua_topointer(L, 1)!
@@ -808,7 +809,7 @@ private func event_userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> I
     return 1
 }
 
-private func event_meta_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func event_meta_gc(_ L: LuaState) throws -> CInt {
     if let src = eventSource {
         eventSource = nil
         _ = src // ARC releases
@@ -898,91 +899,106 @@ private func pushNSTouch(_ L: UnsafeMutablePointer<lua_State>!, _ touch: NSTouch
     lua_setfield(L, -2, "deviceSize")
 }
 
-// MARK: - Registration Tables
-
-private var eventtapevent_metalib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("asData"),          func: eventtap_event_asData),
-    luaL_Reg(name: strdup("location"),        func: eventtap_event_location),
-    luaL_Reg(name: strdup("rawFlags"),        func: eventtap_event_rawFlags),
-    luaL_Reg(name: strdup("timestamp"),       func: eventtap_event_timestamp),
-    luaL_Reg(name: strdup("setType"),         func: eventtap_event_setType),
-    luaL_Reg(name: strdup("copy"),            func: eventtap_event_copy),
-    luaL_Reg(name: strdup("getFlags"),        func: eventtap_event_getFlags),
-    luaL_Reg(name: strdup("setFlags"),        func: eventtap_event_setFlags),
-    luaL_Reg(name: strdup("getKeyCode"),      func: eventtap_event_getKeyCode),
-    luaL_Reg(name: strdup("setKeyCode"),      func: eventtap_event_setKeyCode),
-    luaL_Reg(name: strdup("getUnicodeString"), func: eventtap_event_getUnicodeString),
-    luaL_Reg(name: strdup("setUnicodeString"), func: eventtap_event_setUnicodeString),
-    luaL_Reg(name: strdup("getType"),         func: eventtap_event_getType),
-    luaL_Reg(name: strdup("getTouches"),      func: eventtap_event_getTouches),
-    luaL_Reg(name: strdup("getTouchDetails"), func: eventtap_event_getTouchDetails),
-    luaL_Reg(name: strdup("post"),            func: eventtap_event_post),
-    luaL_Reg(name: strdup("getProperty"),     func: eventtap_event_getProperty),
-    luaL_Reg(name: strdup("setProperty"),     func: eventtap_event_setProperty),
-    luaL_Reg(name: strdup("getButtonState"),  func: eventtap_event_getButtonState),
-    luaL_Reg(name: strdup("getRawEventData"), func: eventtap_event_getRawEventData),
-    luaL_Reg(name: strdup("getCharacters"),   func: eventtap_event_getCharacters),
-    luaL_Reg(name: strdup("systemKey"),       func: eventtap_event_systemKey),
-    luaL_Reg(name: strdup("__tostring"),      func: event_userdata_tostring),
-    luaL_Reg(name: strdup("__gc"),            func: eventtap_event_gc),
-    luaL_Reg(name: nil, func: nil),
-]
-
-private var eventtapeventlib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("newGesture"),        func: eventtap_event_newGesture),
-    luaL_Reg(name: strdup("newEvent"),          func: eventtap_event_newEvent),
-    luaL_Reg(name: strdup("newEventFromData"),  func: eventtap_event_newEventFromData),
-    luaL_Reg(name: strdup("newKeyEvent"),       func: eventtap_event_newKeyEvent),
-    luaL_Reg(name: strdup("newSystemKeyEvent"), func: eventtap_event_newSystemKeyEvent),
-    luaL_Reg(name: strdup("_newMouseEvent"),    func: eventtap_event_newMouseEvent),
-    luaL_Reg(name: strdup("newScrollEvent"),    func: eventtap_event_newScrollWheelEvent),
-    luaL_Reg(name: nil, func: nil),
-]
-
-private var meta_gcLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("__gc"), func: event_meta_gc),
-    luaL_Reg(name: nil, func: nil),
-]
-
 // MARK: - Entry Point
 
 @_cdecl("luaopen_hs_libeventtapevent")
 public func luaopen_hs_libeventtapevent(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    // Register userdata metatable
-    luaL_newmetatable(L, EVENTTAP_EVENT_USERDATA_TAG)
-    lua_pushvalue(L, -1)
-    lua_setfield(L, -2, "__index")
-    luaL_setfuncs(L, &eventtapevent_metalib, 0)
-    lua_pop(L, 1)
+    runEntryPoint(L) { L in
+        // Register userdata metatable
+        luaL_newmetatable(L, EVENTTAP_EVENT_USERDATA_TAG)
+        lua_pushvalue(L, -1)
+        lua_setfield(L, -2, "__index")
+        L.push(eventtap_event_asData)
+        lua_setfield(L, -2, "asData")
+        L.push(eventtap_event_location)
+        lua_setfield(L, -2, "location")
+        L.push(eventtap_event_rawFlags)
+        lua_setfield(L, -2, "rawFlags")
+        L.push(eventtap_event_timestamp)
+        lua_setfield(L, -2, "timestamp")
+        L.push(eventtap_event_setType)
+        lua_setfield(L, -2, "setType")
+        L.push(eventtap_event_copy)
+        lua_setfield(L, -2, "copy")
+        L.push(eventtap_event_getFlags)
+        lua_setfield(L, -2, "getFlags")
+        L.push(eventtap_event_setFlags)
+        lua_setfield(L, -2, "setFlags")
+        L.push(eventtap_event_getKeyCode)
+        lua_setfield(L, -2, "getKeyCode")
+        L.push(eventtap_event_setKeyCode)
+        lua_setfield(L, -2, "setKeyCode")
+        L.push(eventtap_event_getUnicodeString)
+        lua_setfield(L, -2, "getUnicodeString")
+        L.push(eventtap_event_setUnicodeString)
+        lua_setfield(L, -2, "setUnicodeString")
+        L.push(eventtap_event_getType)
+        lua_setfield(L, -2, "getType")
+        L.push(eventtap_event_getTouches)
+        lua_setfield(L, -2, "getTouches")
+        L.push(eventtap_event_getTouchDetails)
+        lua_setfield(L, -2, "getTouchDetails")
+        L.push(eventtap_event_post)
+        lua_setfield(L, -2, "post")
+        L.push(eventtap_event_getProperty)
+        lua_setfield(L, -2, "getProperty")
+        L.push(eventtap_event_setProperty)
+        lua_setfield(L, -2, "setProperty")
+        L.push(eventtap_event_getButtonState)
+        lua_setfield(L, -2, "getButtonState")
+        L.push(eventtap_event_getRawEventData)
+        lua_setfield(L, -2, "getRawEventData")
+        L.push(eventtap_event_getCharacters)
+        lua_setfield(L, -2, "getCharacters")
+        L.push(eventtap_event_systemKey)
+        lua_setfield(L, -2, "systemKey")
+        L.push(event_userdata_tostring)
+        lua_setfield(L, -2, "__tostring")
+        L.push(eventtap_event_gc)
+        lua_setfield(L, -2, "__gc")
+        lua_pop(L, 1)
 
-    // Create module table
-    lua_createtable(L, 0, Int32(eventtapeventlib.count - 1))
-    luaL_setfuncs(L, &eventtapeventlib, 0)
+        // Create module table
+        lua_createtable(L, 0, 7)
+        L.push(eventtap_event_newGesture)
+        lua_setfield(L, -2, "newGesture")
+        L.push(eventtap_event_newEvent)
+        lua_setfield(L, -2, "newEvent")
+        L.push(eventtap_event_newEventFromData)
+        lua_setfield(L, -2, "newEventFromData")
+        L.push(eventtap_event_newKeyEvent)
+        lua_setfield(L, -2, "newKeyEvent")
+        L.push(eventtap_event_newSystemKeyEvent)
+        lua_setfield(L, -2, "newSystemKeyEvent")
+        L.push(eventtap_event_newMouseEvent)
+        lua_setfield(L, -2, "_newMouseEvent")
+        L.push(eventtap_event_newScrollWheelEvent)
+        lua_setfield(L, -2, "newScrollEvent")
 
-    // Set module metatable (for __gc)
-    lua_createtable(L, 0, Int32(meta_gcLib.count - 1))
-    luaL_setfuncs(L, &meta_gcLib, 0)
-    lua_setmetatable(L, -2)
+        // Set module metatable (for __gc)
+        lua_createtable(L, 0, 1)
+        L.push(event_meta_gc)
+        lua_setfield(L, -2, "__gc")
+        lua_setmetatable(L, -2)
 
-    pushTypesTable(L)
-    lua_setfield(L, -2, "types")
+        pushTypesTable(L)
+        lua_setfield(L, -2, "types")
 
-    pushPropertiesTable(L)
-    lua_setfield(L, -2, "properties")
+        pushPropertiesTable(L)
+        lua_setfield(L, -2, "properties")
 
-    _ = pushFlagMasks(L)
-    lua_setfield(L, -2, "rawFlagMasks")
+        _ = pushFlagMasks(L)
+        lua_setfield(L, -2, "rawFlagMasks")
 
-    eventSource = CGEventSource(stateID: .privateState)
+        eventSource = CGEventSource(stateID: .privateState)
 
-    luaL_newmetatable(L, FLAGS_TAG)
-    lua_newtable(L)
-    lua_pushcfunction(L, flags_contain)
-    lua_setfield(L, -2, "contain")
-    lua_pushcfunction(L, flags_containExactly)
-    lua_setfield(L, -2, "containExactly")
-    lua_setfield(L, -2, "__index")
-    lua_pop(L, 1)
-
-    return 1
+        luaL_newmetatable(L, FLAGS_TAG)
+        lua_newtable(L)
+        lua_pushcfunction(L, flags_contain)
+        lua_setfield(L, -2, "contain")
+        lua_pushcfunction(L, flags_containExactly)
+        lua_setfield(L, -2, "containExactly")
+        lua_setfield(L, -2, "__index")
+        lua_pop(L, 1)
+    }
 }

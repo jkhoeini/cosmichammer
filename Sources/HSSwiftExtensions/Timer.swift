@@ -1,30 +1,43 @@
 import Cocoa
 import CLua
+import Lua
 import Darwin.POSIX.sys.time
 import os.log
 
 // MARK: - Common Code
 
 private let USERDATA_TAG = "hs.timer"
-private var refTable: Int32 = 0
 
 // MARK: - HSTimer class
 
 class HSTimer: NSObject {
     var t: Timer?
-    var fnRef: Int32 = LUA_NOREF
+    var callback: LuaValue?
     var continueOnError: Bool = false
     var repeats: Bool = false
     var interval: TimeInterval = 0
     var generation: UInt64 = 0
+    private var tornDown = false
 
     func create(_ interval: TimeInterval, repeat shouldRepeat: Bool) {
-        t = Timer(timeInterval: interval, target: self, selector: #selector(callback(_:)), userInfo: nil, repeats: shouldRepeat)
+        t = Timer(timeInterval: interval, target: self, selector: #selector(callbackFired(_:)), userInfo: nil, repeats: shouldRepeat)
     }
 
-    @objc func callback(_ timer: Timer) {
+    /// Idempotent teardown: stop the NSTimer, drop the Lua callback reference,
+    /// mark as torn down.  Called from the explicit __gc closure while the
+    /// lua_State is still alive, AND from the callback when the generation
+    /// canary fires.
+    func teardown() {
+        guard !tornDown else { return }
+        tornDown = true
+        t?.invalidate()
+        t = nil
+        callback = nil   // drops the LuaValue ref while L is still open
+    }
+
+    @objc func callbackFired(_ timer: Timer) {
         if !lua_isStateGenerationValid(generation) {
-            stop()
+            teardown()
             return
         }
 
@@ -39,7 +52,10 @@ class HSTimer: NSObject {
             os_log(.error, "hs.timer callback fired with inconsistencies about which NSTimer object it owns. This is a bug")
         }
 
-        lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(fnRef))
+        guard let cb = callback else { return }
+
+        // Push the callback and call it with zero arguments
+        cb.push(onto: L)
         if lua_pcall(L, 0, 0, 0) != LUA_OK {
             let errorMsg = lua_tostring(L, -1).map { String(cString: $0) } ?? "(non-string error)"
             os_log(.error, "hs.timer callback error: %{public}s", errorMsg)
@@ -93,9 +109,9 @@ class HSTimer: NSObject {
     }
 }
 
-private func createHSTimer(_ interval: TimeInterval, callbackRef: Int32, continueOnError: Bool, shouldRepeat: Bool) -> HSTimer {
+private func createHSTimer(_ L: LuaState, interval: TimeInterval, callbackValue: LuaValue, continueOnError: Bool, shouldRepeat: Bool) -> HSTimer {
     let timer = HSTimer()
-    timer.fnRef = callbackRef
+    timer.callback = callbackValue
     timer.continueOnError = continueOnError
     timer.repeats = shouldRepeat
     timer.interval = interval
@@ -105,19 +121,7 @@ private func createHSTimer(_ interval: TimeInterval, callbackRef: Int32, continu
     return timer
 }
 
-// MARK: - Helper to extract HSTimer from userdata
-
-private func getTimer(from L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> HSTimer {
-    let ptr = luaL_checkudata(L, idx, USERDATA_TAG)!
-    return Unmanaged<HSTimer>.fromOpaque(ptr.assumingMemoryBound(to: UnsafeMutableRawPointer.self).pointee).takeUnretainedValue()
-}
-
-private func getTimerTransfer(from L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> HSTimer {
-    let ptr = luaL_checkudata(L, idx, USERDATA_TAG)!
-    return Unmanaged<HSTimer>.fromOpaque(ptr.assumingMemoryBound(to: UnsafeMutableRawPointer.self).pointee).takeRetainedValue()
-}
-
-// MARK: - Lua functions
+// MARK: - Lua constructors
 
 /// hs.timer.new(interval, fn [, continueOnError]) -> timer
 /// Constructor
@@ -144,8 +148,8 @@ private func timer_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
         os_log(.info, "Minimum non-zero hs.timer interval is 0.00001s. Forcing to 0.00001")
         sec = 0.00001
     }
-    lua_pushvalue(L, 2)
-    let callbackRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+
+    let cb = L.ref(index: 2)
 
     let continueOnError: Bool
     if lua_isboolean(L, 3) {
@@ -156,37 +160,9 @@ private func timer_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
     let shouldRepeat = sec != 0.0
 
-    let timer = createHSTimer(sec, callbackRef: callbackRef, continueOnError: continueOnError, shouldRepeat: shouldRepeat)
+    let timer = createHSTimer(L, interval: sec, callbackValue: cb, continueOnError: continueOnError, shouldRepeat: shouldRepeat)
 
-    // Wire up the timer object to Lua
-    let userData = lua_newuserdata(L, MemoryLayout<UnsafeMutableRawPointer>.size)!.assumingMemoryBound(to: UnsafeMutableRawPointer.self)
-    userData.pointee = Unmanaged.passRetained(timer).toOpaque()
-    luaL_getmetatable(L, USERDATA_TAG)
-    lua_setmetatable(L, -2)
-
-    return 1
-}
-
-/// hs.timer:start() -> timer
-/// Method
-/// Starts an `hs.timer` object
-///
-/// Parameters:
-///  * None
-///
-/// Returns:
-///  * The `hs.timer` object
-///
-/// Notes:
-///  * The timer will not call the callback immediately, the timer will wait until it fires
-///  * If the callback function results in an error, the timer will be stopped to prevent repeated error notifications (see the `continueOnError` parameter to `hs.timer.new()` to override this)
-private func timer_start(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let timer = getTimer(from: L, at: 1)
-    lua_settop(L, 1)
-
-    if !timer.isRunning {
-        timer.start()
-    }
+    L.push(userdata: timer)
 
     return 1
 }
@@ -210,22 +186,19 @@ private func timer_doAfter(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     luaL_checktype(L, 2, LUA_TFUNCTION)
 
     let sec = lua_tonumber(L, 1)
-    lua_pushvalue(L, 2)
-    let callbackRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+    let cb = L.ref(index: 2)
 
-    let timer = createHSTimer(sec, callbackRef: callbackRef, continueOnError: false, shouldRepeat: false)
+    let timer = createHSTimer(L, interval: sec, callbackValue: cb, continueOnError: false, shouldRepeat: false)
 
     // Immediately start it
     timer.start()
 
-    // Wire up the timer object to Lua
-    let userData = lua_newuserdata(L, MemoryLayout<UnsafeMutableRawPointer>.size)!.assumingMemoryBound(to: UnsafeMutableRawPointer.self)
-    userData.pointee = Unmanaged.passRetained(timer).toOpaque()
-    luaL_getmetatable(L, USERDATA_TAG)
-    lua_setmetatable(L, -2)
+    L.push(userdata: timer)
 
     return 1
 }
+
+// MARK: - Lua pure functions
 
 /// hs.timer.usleep(microsecs)
 /// Function
@@ -243,145 +216,6 @@ private func timer_usleep(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let microsecs = useconds_t(luaL_checkinteger(L, 1))
     usleep(microsecs)
     return 0
-}
-
-/// hs.timer:running() -> boolean
-/// Method
-/// Returns a boolean indicating whether or not the timer is currently running.
-///
-/// Parameters:
-///  * None
-///
-/// Returns:
-///  * A boolean value indicating whether or not the timer is currently running.
-private func timer_running(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let timer = getTimer(from: L, at: 1)
-
-    lua_pushboolean(L, timer.isRunning ? 1 : 0)
-    return 1
-}
-
-/// hs.timer:nextTrigger() -> number
-/// Method
-/// Returns the number of seconds until the timer will next trigger
-///
-/// Parameters:
-///  * None
-///
-/// Returns:
-///  * A number containing the number of seconds until the next firing
-///
-/// Notes:
-///  * The return value may be a negative integer in two circumstances:
-///   * Cosmic Hammer's runloop is backlogged and is catching up on missed timer triggers
-///   * The timer object is not currently running. In this case, the return value of this method is the number of seconds since the last firing (you can check if the timer is running or not, with `hs.timer:running()`
-private func timer_nextTrigger(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let timer = getTimer(from: L, at: 1)
-
-    lua_pushnumber(L, timer.nextTrigger)
-    return 1
-}
-
-/// hs.timer:setNextTrigger(seconds) -> timer
-/// Method
-/// Sets the next trigger time of a timer
-///
-/// Parameters:
-///  * seconds - A number of seconds after which to trigger the timer
-///
-/// Returns:
-///  * The `hs.timer` object, or nil if an error occurred
-///
-/// Notes:
-///  * If the timer is not already running, this will start it
-private func timer_setNextTrigger(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let timer = getTimer(from: L, at: 1)
-    luaL_checktype(L, 2, LUA_TNUMBER)
-
-    let seconds = lua_tonumber(L, 2)
-
-    if !timer.isRunning {
-        timer.start()
-    }
-
-    timer.setNextTrigger(seconds)
-
-    lua_pushvalue(L, 1)
-    return 1
-}
-
-/// hs.timer:fire() -> timer
-/// Method
-/// Immediately fires a timer
-///
-/// Parameters:
-///  * None
-///
-/// Returns:
-///  * The `hs.timer` object
-///
-/// Notes:
-///  * This cannot be used on a timer which has already stopped running
-private func timer_trigger(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let timer = getTimer(from: L, at: 1)
-
-    timer.trigger()
-
-    lua_pushvalue(L, 1)
-    return 1
-}
-
-/// hs.timer:stop() -> timer
-/// Method
-/// Stops an `hs.timer` object
-///
-/// Parameters:
-///  * None
-///
-/// Returns:
-///  * The `hs.timer` object
-private func timer_stop(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let timer = getTimer(from: L, at: 1)
-    lua_settop(L, 1)
-
-    timer.stop()
-
-    return 1
-}
-
-private func timer_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let timer = getTimerTransfer(from: L, at: 1)
-
-    timer.stop()
-    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, timer.fnRef)
-    timer.fnRef = Int32(LUA_NOREF)
-    timer.t = nil
-
-    // Remove the Metatable so future use of the variable in Lua won't think its valid
-    lua_pushnil(L)
-    lua_setmetatable(L, 1)
-
-    return 0
-}
-
-private func meta_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    return 0
-}
-
-private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let timer = getTimer(from: L, at: 1)
-
-    let title: String
-    if timer.t == nil {
-        title = "BUG ENCOUNTERED, hs.timer tostring found timer.t nil"
-    } else if timer.isRunning {
-        title = "running"
-    } else {
-        title = "not running"
-    }
-
-    lua_pushstring(L, "\(USERDATA_TAG): \(title) (\(lua_topointer(L, 1)!))")
-    return 1
 }
 
 /// hs.timer.secondsSinceEpoch() -> sec
@@ -424,60 +258,115 @@ private func timer_absoluteTime(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
     return 1
 }
 
-// MARK: - luaL_Reg tables
-
-// Metatable for created objects when _new invoked
-private var timer_metalib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("start"), func: { timer_start($0) }),
-    luaL_Reg(name: strdup("stop"), func: { timer_stop($0) }),
-    luaL_Reg(name: strdup("running"), func: { timer_running($0) }),
-    luaL_Reg(name: strdup("nextTrigger"), func: { timer_nextTrigger($0) }),
-    luaL_Reg(name: strdup("setNextTrigger"), func: { timer_setNextTrigger($0) }),
-    luaL_Reg(name: strdup("fire"), func: { timer_trigger($0) }),
-    luaL_Reg(name: strdup("__tostring"), func: { userdata_tostring($0) }),
-    luaL_Reg(name: strdup("__gc"), func: { timer_gc($0) }),
-    luaL_Reg(name: nil, func: nil),
-]
-
-// Functions for returned object when module loads
-private var timerLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("doAfter"), func: { timer_doAfter($0) }),
-    luaL_Reg(name: strdup("new"), func: { timer_new($0) }),
-    luaL_Reg(name: strdup("usleep"), func: { timer_usleep($0) }),
-    luaL_Reg(name: strdup("secondsSinceEpoch"), func: { timer_getSecondsSinceEpoch($0) }),
-    luaL_Reg(name: strdup("absoluteTime"), func: { timer_absoluteTime($0) }),
-    luaL_Reg(name: nil, func: nil),
-]
-
-// Metatable for returned object when module loads
-private var meta_gcLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("__gc"), func: { meta_gc($0) }),
-    luaL_Reg(name: nil, func: nil),
-]
+// MARK: - Module-level pure functions + constructors
 
 // MARK: - Module entry point
 
 @_cdecl("luaopen_hs_libtimer")
 public func luaopen_hs_libtimer(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    // Create ref table in registry
-    lua_newtable(L)
-    refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+    // Register idiomatic Metatable<HSTimer> with LuaSwift.
+    // This creates an internal metatable "LuaSwift_Type_HSTimer" and sets __gc
+    // to LuaSwift's gcUserdata (which deinitializes the Any box).
+    L.register(Metatable<HSTimer>(
+        fields: [
+            // Self-returning methods use .closure to preserve Lua identity:
+            // t:start() == t  (same userdata box, not a new one)
+            "start": .closure { L in
+                let timer: HSTimer = try L.checkArgument(1)
+                lua_settop(L, 1)
+                if !timer.isRunning {
+                    timer.start()
+                }
+                return 1  // return self (arg 1)
+            },
+            "stop": .closure { L in
+                let timer: HSTimer = try L.checkArgument(1)
+                lua_settop(L, 1)
+                timer.stop()
+                return 1  // return self (arg 1)
+            },
+            "setNextTrigger": .closure { L in
+                let timer: HSTimer = try L.checkArgument(1)
+                luaL_checktype(L, 2, LUA_TNUMBER)
+                let seconds = lua_tonumber(L, 2)
+                if !timer.isRunning {
+                    timer.start()
+                }
+                timer.setNextTrigger(seconds)
+                lua_pushvalue(L, 1)
+                return 1  // return self
+            },
+            "fire": .closure { L in
+                let timer: HSTimer = try L.checkArgument(1)
+                timer.trigger()
+                lua_pushvalue(L, 1)
+                return 1  // return self
+            },
+            // Primitive-returning methods can use .memberfn
+            "running": .memberfn { $0.isRunning },
+            "nextTrigger": .memberfn { $0.nextTrigger },
+        ],
+        // __tostring: reproduce the exact format "hs.timer: running/not running (<pointer>)"
+        tostring: .closure { L in
+            let timer: HSTimer = try L.checkArgument(1)
+            let title: String
+            if timer.t == nil {
+                title = "BUG ENCOUNTERED, hs.timer tostring found timer.t nil"
+            } else if timer.isRunning {
+                title = "running"
+            } else {
+                title = "not running"
+            }
+            lua_pushstring(L, "\(USERDATA_TAG): \(title) (\(lua_topointer(L, 1)!))")
+            return 1
+        }
+    ))
 
-    // Register userdata metatable
-    luaL_newmetatable(L, USERDATA_TAG)
-    lua_pushvalue(L, -1)
-    lua_setfield(L, -2, "__index")
-    luaL_setfuncs(L, &timer_metalib, 0)
-    lua_pop(L, 1)
+    // -- Post-registration metatable patching --
+    // LuaSwift's register() always installs its own gcUserdata as __gc, which
+    // only deinitializes the Any box. We MUST replace it with a custom __gc
+    // that first calls teardown() (stop the NSTimer, drop the LuaValue callback)
+    // and THEN deinitializes the Any box. Without this, the RunLoop→NSTimer→HSTimer
+    // retain cycle keeps HSTimer alive after the box is deinitialized, leaking the
+    // callback ref and letting the timer keep firing.
+    L.pushMetatable(for: HSTimer.self)
+
+    // Replace __gc with our explicit teardown + deinitialize
+    lua_pushcclosure(L, { (L: LuaState!) -> CInt in
+        // Extract the HSTimer from the Any box BEFORE deinitializing
+        if let timer: HSTimer = L.touserdata(1) {
+            timer.teardown()
+        }
+        // Now deinitialize the Any box (same as LuaSwift's gcUserdata)
+        let rawptr = lua_touserdata(L, 1)!
+        let anyPtr = rawptr.assumingMemoryBound(to: Any.self)
+        anyPtr.deinitialize(count: 1)
+        return 0
+    }, 0)
+    lua_setfield(L, -2, "__gc")
+
+    // Set __type and __name for lsunit.lua assertIsUserdataOfType and tostring
+    lua_pushstring(L, USERDATA_TAG)
+    lua_setfield(L, -2, "__type")
+    lua_pushstring(L, USERDATA_TAG)
+    lua_setfield(L, -2, "__name")
+
+    // Alias the metatable under the legacy registry name "hs.timer" so that
+    // core_getObjectMetatable("hs.timer") still resolves.
+    lua_setfield(L, LUA_REGISTRYINDEX_VALUE, USERDATA_TAG)
 
     // Create module table
-    lua_createtable(L, 0, Int32(timerLib.count - 1))
-    luaL_setfuncs(L, &timerLib, 0)
-
-    // Set module metatable (for __gc)
-    lua_createtable(L, 0, Int32(meta_gcLib.count - 1))
-    luaL_setfuncs(L, &meta_gcLib, 0)
-    lua_setmetatable(L, -2)
+    lua_createtable(L, 0, 5)
+    L.push(timer_doAfter)
+    lua_setfield(L, -2, "doAfter")
+    L.push(timer_new)
+    lua_setfield(L, -2, "new")
+    L.push(timer_usleep)
+    lua_setfield(L, -2, "usleep")
+    L.push(timer_getSecondsSinceEpoch)
+    lua_setfield(L, -2, "secondsSinceEpoch")
+    L.push(timer_absoluteTime)
+    lua_setfield(L, -2, "absoluteTime")
 
     return 1
 }

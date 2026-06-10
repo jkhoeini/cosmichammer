@@ -1,5 +1,6 @@
 import Foundation
 import CLua
+import Lua
 import OSAKit
 
 /// hs.osascript._osascript(source, language) -> bool, object, descriptor
@@ -14,7 +15,7 @@ import OSAKit
 ///  * A boolean value indicating whether the code succeeded or not
 ///  * An object containing the parsed output that can be any type, or nil if unsuccessful
 ///  * A string containing the raw output of the code and/or its errors
-private let runosascript: lua_CFunction = { L in
+private func runosascript(_ L: LuaState) throws -> CInt {
     let source = String(cString: luaL_checkstring(L, 1))
     let language = String(cString: luaL_checkstring(L, 2))
 
@@ -43,15 +44,11 @@ private let runosascript: lua_CFunction = { L in
     return 3
 }
 
-private var scriptlib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("_osascript"), func: runosascript),
-    luaL_Reg(name: nil,                  func: nil),
-]
-
 @_cdecl("luaopen_hs_libosascript")
 public func luaopen_hs_libosascript(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    lua_createtable(L, 0, Int32(scriptlib.count - 1))
-    luaL_setfuncs(L, &scriptlib, 0)
-
-    return 1
+    runEntryPoint(L) { L in
+        lua_createtable(L, 0, 1)
+        L.push(runosascript)
+        lua_setfield(L, -2, "_osascript")
+    }
 }

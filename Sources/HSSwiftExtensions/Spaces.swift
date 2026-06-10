@@ -1,5 +1,6 @@
 import Cocoa
 import CLua
+import Lua
 import os.log
 
 // MARK: - SkyLight Private Framework Declarations
@@ -61,7 +62,7 @@ private func workspace_is_macos_sonoma14_5_or_newer() -> Bool {
 ///
 /// Returns:
 ///  * true or false representing the status of the "Displays Have Separate Spaces" option within Mission Control.
-private func spaces_screensHaveSeparateSpaces(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func spaces_screensHaveSeparateSpaces(_ L: LuaState) throws -> CInt {
     lua_pushboolean(L, NSScreen.screensHaveSeparateSpaces ? 1 : 0)
     return 1
 }
@@ -78,7 +79,7 @@ private func spaces_screensHaveSeparateSpaces(_ L: UnsafeMutablePointer<lua_Stat
 ///
 /// Notes:
 ///  * the format and detail of this table is too complex and varied to describe here; suffice it to say this is the workhorse for this module and a careful examination of this table may be informative, but is not required in the normal course of using this module.
-private func spaces_managedDisplaySpaces(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func spaces_managedDisplaySpaces(_ L: LuaState) throws -> CInt {
     if let managedDisplaySpaces = SLSCopyManagedDisplaySpaces(g_connection) {
         lua_pushany(L, managedDisplaySpaces as NSArray)
     } else {
@@ -101,7 +102,7 @@ private func spaces_managedDisplaySpaces(_ L: UnsafeMutablePointer<lua_State>!) 
 ///
 /// Notes:
 ///  * *usually* the currently active screen will be returned by `hs.screen.mainScreen()`; however some full screen applications may have focus without updating which screen is considered "main". You can use this function, and look up the screen UUID with [hs.spaces.spaceDisplay](#spaceDisplay) to determine the "true" focused screen if required.
-private func spaces_getActiveSpace(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func spaces_getActiveSpace(_ L: LuaState) throws -> CInt {
     lua_pushinteger(L, lua_Integer(SLSGetActiveSpace(g_connection)))
     return 1
 }
@@ -123,7 +124,7 @@ private func spaces_getActiveSpace(_ L: UnsafeMutablePointer<lua_State>!) -> Int
 ///  * This function *will* prune Cosmic Hammer canvas elements from the list because we "own" these and can identify their window ID's programmatically. This does not help with other applications, however.
 ///  * Reviewing how third-party applications have generally pruned this list, I believe it will be necessary to use `hs.window.filter` to prune the list and access `hs.window` objects that are on the non-visible spaces.
 ///    * as `hs.window.filter` is scheduled to undergo a re-write soon to (hopefully) dramatically speed it up, I am providing this function *as is* at present for those who wish to experiment with it; however, I hope to make it more useful in the coming months and the contents may change in the future (the format won't, but hopefully the useless extras will disappear requiring less pruning logic on your end).
-private func spaces_windowsForSpace(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func spaces_windowsForSpace(_ L: LuaState) throws -> CInt {
     let sid = UInt64(lua_tointeger(L, 1))
     let includeMinimized: Bool = lua_gettop(L) > 1 ? (lua_toboolean(L, 2) != 0) : true
 
@@ -173,7 +174,7 @@ private func spaces_windowsForSpace(_ L: UnsafeMutablePointer<lua_State>!) -> In
 ///
 /// Notes:
 ///  * a window can only be moved from a user space to another user space -- you cannot move the window of a full screen (or tiled) application to another space. you also cannot move a window *to* the same space as a full screen application unless `force` is set to true and even then it works for floating windows only.
-private func spaces_moveWindowToSpace(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func spaces_moveWindowToSpace(_ L: LuaState) throws -> CInt {
     var wid = UInt32(lua_tointeger(L, 1))
     let sid = UInt64(lua_tointeger(L, 2))
     let force: Bool = lua_gettop(L) > 2 ? (lua_toboolean(L, 3) != 0) : false
@@ -229,7 +230,7 @@ private func spaces_moveWindowToSpace(_ L: UnsafeMutablePointer<lua_State>!) -> 
 ///  * If the window ID does not specify a valid window, then an empty array will be returned.
 ///  * For most windows, this will be a single element table; however some applications may create "sticky" windows that may appear on more than one space.
 ///    * For example, the container windows for `hs.canvas` objects which have the `canJoinAllSpaces` behavior set will appear on all spaces and the table returned by this function will contain all spaceIDs for the screen which displays the canvas.
-private func spaces_windowSpaces(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func spaces_windowSpaces(_ L: LuaState) throws -> CInt {
     let wid = UInt32(lua_tointeger(L, 1))
 
     let windows = [NSNumber(value: wid)] as CFArray
@@ -252,7 +253,7 @@ private func spaces_windowSpaces(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
     return 1
 }
 
-private func spaces_coreDesktopSendNotification(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func spaces_coreDesktopSendNotification(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TSTRING)
     let message = lua_tovalue(L, at: 1) as! NSString
 
@@ -262,38 +263,40 @@ private func spaces_coreDesktopSendNotification(_ L: UnsafeMutablePointer<lua_St
 
 // MARK: - Module Registration
 
-private var moduleLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("screensHaveSeparateSpaces"), func: spaces_screensHaveSeparateSpaces),
-    luaL_Reg(name: strdup("data_managedDisplaySpaces"), func: spaces_managedDisplaySpaces),
-    luaL_Reg(name: strdup("focusedSpace"), func: spaces_getActiveSpace),
-    luaL_Reg(name: strdup("moveWindowToSpace"), func: spaces_moveWindowToSpace),
-    luaL_Reg(name: strdup("windowsForSpace"), func: spaces_windowsForSpace),
-    luaL_Reg(name: strdup("windowSpaces"), func: spaces_windowSpaces),
-    luaL_Reg(name: strdup("_coreDesktopNotification"), func: spaces_coreDesktopSendNotification),
-    luaL_Reg(name: nil, func: nil),
-]
-
 @_cdecl("luaopen_hs_libspaces")
 public func luaopen_hs_libspaces(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    // Create ref table in registry
-    lua_newtable(L)
-    refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+    runEntryPoint(L) { L in
+        // Create ref table in registry
+        lua_newtable(L)
+        refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
 
-    // Create module table
-    lua_createtable(L, 0, Int32(moduleLib.count - 1))
-    luaL_setfuncs(L, &moduleLib, 0)
+        // Create module table
+        lua_createtable(L, 0, 7)
+        L.push(spaces_screensHaveSeparateSpaces)
+        lua_setfield(L, -2, "screensHaveSeparateSpaces")
+        L.push(spaces_managedDisplaySpaces)
+        lua_setfield(L, -2, "data_managedDisplaySpaces")
+        L.push(spaces_getActiveSpace)
+        lua_setfield(L, -2, "focusedSpace")
+        L.push(spaces_moveWindowToSpace)
+        lua_setfield(L, -2, "moveWindowToSpace")
+        L.push(spaces_windowsForSpace)
+        lua_setfield(L, -2, "windowsForSpace")
+        L.push(spaces_windowSpaces)
+        lua_setfield(L, -2, "windowSpaces")
+        L.push(spaces_coreDesktopSendNotification)
+        lua_setfield(L, -2, "_coreDesktopNotification")
 
-    g_connection = SLSMainConnectionID()
+        g_connection = SLSMainConnectionID()
 
-    do {
-        regEx_UUID = try NSRegularExpression(
-            pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
-            options: .caseInsensitive
-        )
-    } catch {
-        regEx_UUID = nil
-        os_log(.error, "%{public}s","\(USERDATA_TAG).luaopen - unable to create UUID regular expression: \(error.localizedDescription)")
+        do {
+            regEx_UUID = try NSRegularExpression(
+                pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                options: .caseInsensitive
+            )
+        } catch {
+            regEx_UUID = nil
+            os_log(.error, "%{public}s","\(USERDATA_TAG).luaopen - unable to create UUID regular expression: \(error.localizedDescription)")
+        }
     }
-
-    return 1
 }

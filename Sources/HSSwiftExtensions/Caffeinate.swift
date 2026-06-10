@@ -1,5 +1,6 @@
 import Cocoa
 import CLua
+import Lua
 import Carbon
 import IOKit.pwr_mgt
 import os.log
@@ -108,19 +109,19 @@ private func caffeinate_release_assertion(_ L: UnsafeMutablePointer<lua_State>!,
 // MARK: - Functions for display sleep when user is idle
 
 // Prevent display sleep if the user goes idle (and by implication, system sleep)
-private func caffeinate_preventIdleDisplaySleep(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func caffeinate_preventIdleDisplaySleep(_ L: LuaState) throws -> CInt {
     caffeinate_create_assertion(L, kIOPMAssertionTypePreventUserIdleDisplaySleep as CFString, &noIdleDisplaySleep)
     return 0
 }
 
 // Allow display sleep if the user goes idle
-private func caffeinate_allowIdleDisplaySleep(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func caffeinate_allowIdleDisplaySleep(_ L: LuaState) throws -> CInt {
     caffeinate_release_assertion(L, &noIdleDisplaySleep)
     return 0
 }
 
 // Determine if idle display sleep is currently prevented
-private func caffeinate_isIdleDisplaySleepPrevented(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func caffeinate_isIdleDisplaySleepPrevented(_ L: LuaState) throws -> CInt {
     lua_pushboolean(L, noIdleDisplaySleep != 0 ? 1 : 0)
     return 1
 }
@@ -128,19 +129,19 @@ private func caffeinate_isIdleDisplaySleepPrevented(_ L: UnsafeMutablePointer<lu
 // MARK: - Functions for system sleep when user is idle
 
 // Prevent system sleep if the user goes idle (display may still sleep)
-private func caffeinate_preventIdleSystemSleep(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func caffeinate_preventIdleSystemSleep(_ L: LuaState) throws -> CInt {
     caffeinate_create_assertion(L, kIOPMAssertionTypePreventUserIdleSystemSleep as CFString, &noIdleSystemSleep)
     return 0
 }
 
 // Allow system sleep if the user goes idle
-private func caffeinate_allowIdleSystemSleep(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func caffeinate_allowIdleSystemSleep(_ L: LuaState) throws -> CInt {
     caffeinate_release_assertion(L, &noIdleSystemSleep)
     return 0
 }
 
 // Determine if idle system sleep is currently prevented
-private func caffeinate_isIdleSystemSleepPrevented(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func caffeinate_isIdleSystemSleepPrevented(_ L: LuaState) throws -> CInt {
     lua_pushboolean(L, noIdleSystemSleep != 0 ? 1 : 0)
     return 1
 }
@@ -148,7 +149,7 @@ private func caffeinate_isIdleSystemSleepPrevented(_ L: UnsafeMutablePointer<lua
 // MARK: - Functions for system sleep
 
 // Prevent system sleep
-private func caffeinate_preventSystemSleep(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func caffeinate_preventSystemSleep(_ L: LuaState) throws -> CInt {
     var acAndBattery = false
     if lua_isboolean(L, 1) {
         acAndBattery = lua_toboolean(L, 1) != 0
@@ -173,13 +174,13 @@ private func caffeinate_preventSystemSleep(_ L: UnsafeMutablePointer<lua_State>!
 }
 
 // Allow system sleep
-private func caffeinate_allowSystemSleep(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func caffeinate_allowSystemSleep(_ L: LuaState) throws -> CInt {
     caffeinate_release_assertion(L, &noSystemSleep)
     return 0
 }
 
 // Determine if system sleep is currently prevented
-private func caffeinate_isSystemSleepPrevented(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func caffeinate_isSystemSleepPrevented(_ L: LuaState) throws -> CInt {
     lua_pushboolean(L, noSystemSleep != 0 ? 1 : 0)
     return 1
 }
@@ -193,7 +194,7 @@ private func caffeinate_isSystemSleepPrevented(_ L: UnsafeMutablePointer<lua_Sta
 ///
 /// Returns:
 ///  * None
-private func caffeinate_systemSleep(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func caffeinate_systemSleep(_ L: LuaState) throws -> CInt {
     let port = IOPMFindPowerManagement(UInt32(MACH_PORT_NULL))
     IOPMSleepSystem(port)
     IOServiceClose(port)
@@ -213,7 +214,7 @@ private func caffeinate_systemSleep(_ L: UnsafeMutablePointer<lua_State>!) -> In
 /// Notes:
 ///  * This is intended to simulate user activity, for example to prevent displays from sleeping, or to wake them up
 ///  * It is not mandatory to re-use assertion IDs if you are calling this function multiple times, but it is recommended that you do so if the calls are related
-private func caffeinate_declareUserActivity(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func caffeinate_declareUserActivity(_ L: LuaState) throws -> CInt {
     // Optional integer or nil argument
 
     var assertionID = IOPMAssertionID(kIOPMNullAssertionID)
@@ -239,7 +240,7 @@ private func caffeinate_declareUserActivity(_ L: UnsafeMutablePointer<lua_State>
 ///
 /// Notes:
 ///  * This function uses private Apple APIs and could therefore stop working in any given release of macOS without warning.
-private func caffeinate_lockScreen(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func caffeinate_lockScreen(_ L: LuaState) throws -> CInt {
     // Load the private API we need to call SACLockScreenImmediate()
     if loginFramework == nil {
         let bundlePath = "/System/Library/PrivateFrameworks/login.framework"
@@ -275,7 +276,7 @@ private func caffeinate_lockScreen(_ L: UnsafeMutablePointer<lua_State>!) -> Int
 ///
 /// Notes:
 ///  * The keys in this dictionary will vary based on the current state of the system (e.g. local vs VNC login, screen locked vs unlocked).
-private func caffeinate_sessionProperties(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func caffeinate_sessionProperties(_ L: LuaState) throws -> CInt {
     guard let ref = CGSessionCopyCurrentDictionary() else {
         lua_pushnil(L)
         return 1
@@ -294,7 +295,7 @@ private func caffeinate_sessionProperties(_ L: UnsafeMutablePointer<lua_State>!)
 ///
 /// Returns:
 ///  * A table containing information about current power assertions, with process IDs (PID) as the keys, each of which may contain multiple assertions
-private func caffeinate_currentAssertions(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func caffeinate_currentAssertions(_ L: LuaState) throws -> CInt {
     var assertions: Unmanaged<CFDictionary>?
     let result = IOPMCopyAssertionsByProcess(&assertions)
     if result != kIOReturnSuccess {
@@ -313,11 +314,11 @@ private func caffeinate_currentAssertions(_ L: UnsafeMutablePointer<lua_State>!)
 
 // MARK: - Lua/hs glue
 
-private func caffeinate_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func caffeinate_gc(_ L: LuaState) throws -> CInt {
     // TODO: We should register which of the assertions we have active, somewhere that persists a reload()
-    _ = caffeinate_allowIdleDisplaySleep(L)
-    _ = caffeinate_allowIdleSystemSleep(L)
-    _ = caffeinate_allowSystemSleep(L)
+    _ = try caffeinate_allowIdleDisplaySleep(L)
+    _ = try caffeinate_allowIdleSystemSleep(L)
+    _ = try caffeinate_allowSystemSleep(L)
 
     loginFramework = nil
 
@@ -326,45 +327,49 @@ private func caffeinate_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 // MARK: - Module registration
 
-private var caffeinatelib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("preventIdleDisplaySleep"), func: caffeinate_preventIdleDisplaySleep),
-    luaL_Reg(name: strdup("allowIdleDisplaySleep"), func: caffeinate_allowIdleDisplaySleep),
-    luaL_Reg(name: strdup("isIdleDisplaySleepPrevented"), func: caffeinate_isIdleDisplaySleepPrevented),
-
-    luaL_Reg(name: strdup("preventIdleSystemSleep"), func: caffeinate_preventIdleSystemSleep),
-    luaL_Reg(name: strdup("allowIdleSystemSleep"), func: caffeinate_allowIdleSystemSleep),
-    luaL_Reg(name: strdup("isIdleSystemSleepPrevented"), func: caffeinate_isIdleSystemSleepPrevented),
-
-    luaL_Reg(name: strdup("_preventSystemSleep"), func: caffeinate_preventSystemSleep),
-    luaL_Reg(name: strdup("allowSystemSleep"), func: caffeinate_allowSystemSleep),
-    luaL_Reg(name: strdup("isSystemSleepPrevented"), func: caffeinate_isSystemSleepPrevented),
-    luaL_Reg(name: strdup("systemSleep"), func: caffeinate_systemSleep),
-
-    luaL_Reg(name: strdup("declareUserActivity"), func: caffeinate_declareUserActivity),
-    luaL_Reg(name: strdup("lockScreen"), func: caffeinate_lockScreen),
-
-    luaL_Reg(name: strdup("sessionProperties"), func: caffeinate_sessionProperties),
-
-    luaL_Reg(name: strdup("currentAssertions"), func: caffeinate_currentAssertions),
-
-    luaL_Reg(name: nil, func: nil),
-]
-
-private var metalib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("__gc"), func: caffeinate_gc),
-    luaL_Reg(name: nil, func: nil),
-]
-
 @_cdecl("luaopen_hs_libcaffeinate")
 public func luaopen_hs_libcaffeinate(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    // Create module table
-    lua_createtable(L, 0, Int32(caffeinatelib.count - 1))
-    luaL_setfuncs(L, &caffeinatelib, 0)
+    runEntryPoint(L) { L in
+        // Create module table
+        lua_createtable(L, 0, 14)
+        L.push(caffeinate_preventIdleDisplaySleep)
+        lua_setfield(L, -2, "preventIdleDisplaySleep")
+        L.push(caffeinate_allowIdleDisplaySleep)
+        lua_setfield(L, -2, "allowIdleDisplaySleep")
+        L.push(caffeinate_isIdleDisplaySleepPrevented)
+        lua_setfield(L, -2, "isIdleDisplaySleepPrevented")
 
-    // Set module metatable (for __gc)
-    lua_createtable(L, 0, Int32(metalib.count - 1))
-    luaL_setfuncs(L, &metalib, 0)
-    lua_setmetatable(L, -2)
+        L.push(caffeinate_preventIdleSystemSleep)
+        lua_setfield(L, -2, "preventIdleSystemSleep")
+        L.push(caffeinate_allowIdleSystemSleep)
+        lua_setfield(L, -2, "allowIdleSystemSleep")
+        L.push(caffeinate_isIdleSystemSleepPrevented)
+        lua_setfield(L, -2, "isIdleSystemSleepPrevented")
 
-    return 1
+        L.push(caffeinate_preventSystemSleep)
+        lua_setfield(L, -2, "_preventSystemSleep")
+        L.push(caffeinate_allowSystemSleep)
+        lua_setfield(L, -2, "allowSystemSleep")
+        L.push(caffeinate_isSystemSleepPrevented)
+        lua_setfield(L, -2, "isSystemSleepPrevented")
+        L.push(caffeinate_systemSleep)
+        lua_setfield(L, -2, "systemSleep")
+
+        L.push(caffeinate_declareUserActivity)
+        lua_setfield(L, -2, "declareUserActivity")
+        L.push(caffeinate_lockScreen)
+        lua_setfield(L, -2, "lockScreen")
+
+        L.push(caffeinate_sessionProperties)
+        lua_setfield(L, -2, "sessionProperties")
+
+        L.push(caffeinate_currentAssertions)
+        lua_setfield(L, -2, "currentAssertions")
+
+        // Set module metatable (for __gc)
+        lua_createtable(L, 0, 1)
+        L.push(caffeinate_gc)
+        lua_setfield(L, -2, "__gc")
+        lua_setmetatable(L, -2)
+    }
 }

@@ -1,5 +1,6 @@
 import Cocoa
 import CLua
+import Lua
 import IOKit
 import IOKit.usb
 
@@ -21,7 +22,7 @@ private let vendorIDKey = kUSBVendorID as CFString
 ///   * vendorName - A string containing the name of the device vendor
 ///   * vendorID - A number containing the Vendor ID of the device
 ///   * productID - A number containing the Product ID of the device
-private func usb_attachedDevices(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func usb_attachedDevices(_ L: LuaState) throws -> CInt {
     guard let matchingDict = IOServiceMatching(kIOUSBDeviceClassName) else {
         lua_pushnil(L)
         return 1
@@ -77,14 +78,11 @@ private func usb_attachedDevices(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
     return 1
 }
 
-private var usblib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("attachedDevices"), func: usb_attachedDevices),
-    luaL_Reg(name: nil, func: nil),
-]
-
 @_cdecl("luaopen_hs_libusb")
 public func luaopen_hs_libusb(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    lua_createtable(L, 0, Int32(usblib.count - 1))
-    luaL_setfuncs(L, &usblib, 0)
-    return 1
+    runEntryPoint(L) { L in
+        lua_createtable(L, 0, 1)
+        L.push(usb_attachedDevices)
+        lua_setfield(L, -2, "attachedDevices")
+    }
 }

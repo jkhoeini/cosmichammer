@@ -1,5 +1,6 @@
 import Cocoa
 import CLua
+import Lua
 
 /// === hs.pasteboard.watcher ===
 ///
@@ -163,7 +164,7 @@ class HSPasteboardTimer: NSObject {
 ///  specialPBWatcher = hs.pasteboard.watcher.new(function(v) print(string.format("Special Pasteboard Contents: %s", v)) end, "special")
 ///  hs.pasteboard.writeObjects("This is on the general pasteboard.")
 ///  hs.pasteboard.writeObjects("This is on the special pasteboard.", "special")```
-private func pasteboardwatcher_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func pasteboardwatcher_new(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TFUNCTION)
 
     let pbName: String? = (lua_type(L, 2) == LUA_TSTRING) ? String(cString: lua_tostring(L, 2)!) : nil
@@ -198,7 +199,7 @@ private func pasteboardwatcher_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int
 ///
 /// Returns:
 ///  * The `hs.pasteboard.watcher` object
-private func pasteboardwatcher_start(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func pasteboardwatcher_start(_ L: LuaState) throws -> CInt {
     let timer: HSPasteboardTimer? = get_objectFromUserdata(L, 1, USERDATA_TAG)
     lua_settop(L, 1)
 
@@ -217,7 +218,7 @@ private func pasteboardwatcher_start(_ L: UnsafeMutablePointer<lua_State>!) -> I
 ///
 /// Returns:
 ///  * A boolean value indicating whether or not the timer is currently running.
-private func pasteboardwatcher_running(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func pasteboardwatcher_running(_ L: LuaState) throws -> CInt {
     let timer: HSPasteboardTimer? = get_objectFromUserdata(L, 1, USERDATA_TAG)
 
     lua_pushboolean(L, (timer?.isRunning ?? false) ? 1 : 0)
@@ -234,7 +235,7 @@ private func pasteboardwatcher_running(_ L: UnsafeMutablePointer<lua_State>!) ->
 ///
 /// Returns:
 ///  * The `hs.pasteboard.watcher` object
-private func pasteboardwatcher_stop(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func pasteboardwatcher_stop(_ L: LuaState) throws -> CInt {
     let timer: HSPasteboardTimer? = get_objectFromUserdata(L, 1, USERDATA_TAG)
     lua_settop(L, 1)
 
@@ -257,7 +258,7 @@ private func pasteboardwatcher_stop(_ L: UnsafeMutablePointer<lua_State>!) -> In
 /// Notes:
 ///  * This only affects new watchers, not existing/running ones.
 ///  * The default value is 0.25.
-private func pasteboardwatcher_interval(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func pasteboardwatcher_interval(_ L: LuaState) throws -> CInt {
     if lua_gettop(L) == 1 && lua_type(L, 1) == LUA_TNUMBER {
         pollingInterval = lua_tonumber(L, 1)
     }
@@ -265,7 +266,7 @@ private func pasteboardwatcher_interval(_ L: UnsafeMutablePointer<lua_State>!) -
     return 1
 }
 
-private func pasteboardwatcher_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func pasteboardwatcher_gc(_ L: LuaState) throws -> CInt {
     let timer: HSPasteboardTimer? = get_objectFromUserdata_transfer(L, 1, USERDATA_TAG)
 
     if let timer = timer {
@@ -283,7 +284,7 @@ private func pasteboardwatcher_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
     return 0
 }
 
-private func meta_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func meta_gc(_ L: LuaState) throws -> CInt {
     if let timer = sharedPasteboardTimer {
         timer.invalidate()
         sharedPasteboardTimer = nil
@@ -291,7 +292,7 @@ private func meta_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 0
 }
 
-private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func userdata_tostring(_ L: LuaState) throws -> CInt {
     let timer: HSPasteboardTimer? = get_objectFromUserdata(L, 1, USERDATA_TAG)
 
     let title: String
@@ -306,46 +307,36 @@ private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 1
 }
 
-// Metatable for created objects when _new invoked
-private let pasteboardWatcher_metalib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("start"),      func: { L in pasteboardwatcher_start(L) }),
-    luaL_Reg(name: strdup("stop"),       func: { L in pasteboardwatcher_stop(L) }),
-    luaL_Reg(name: strdup("running"),    func: { L in pasteboardwatcher_running(L) }),
-    luaL_Reg(name: strdup("__tostring"), func: { L in userdata_tostring(L) }),
-    luaL_Reg(name: strdup("__gc"),       func: { L in pasteboardwatcher_gc(L) }),
-    luaL_Reg(name: nil, func: nil),
-]
-
-// Functions for returned object when module loads
-private let pasteboardWatcher_lib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("new"),      func: { L in pasteboardwatcher_new(L) }),
-    luaL_Reg(name: strdup("interval"), func: { L in pasteboardwatcher_interval(L) }),
-    luaL_Reg(name: nil, func: nil),
-]
-
-// Metatable for returned object when module loads
-private let meta_gcLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("__gc"), func: { L in meta_gc(L) }),
-    luaL_Reg(name: nil, func: nil),
-]
-
 @_cdecl("luaopen_hs_libpasteboardwatcher")
 public func luaopen_hs_libpasteboardwatcher(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    // Register userdata metatable
-    luaL_newmetatable(L, USERDATA_TAG)
-    lua_pushvalue(L, -1)
-    lua_setfield(L, -2, "__index")  // mt.__index = mt
-    luaL_setfuncs(L, pasteboardWatcher_metalib, 0)
-    lua_pop(L, 1)
+    runEntryPoint(L) { L in
+        // Register userdata metatable
+        luaL_newmetatable(L, USERDATA_TAG)
+        lua_pushvalue(L, -1)
+        lua_setfield(L, -2, "__index")  // mt.__index = mt
+        L.push(pasteboardwatcher_start)
+        lua_setfield(L, -2, "start")
+        L.push(pasteboardwatcher_stop)
+        lua_setfield(L, -2, "stop")
+        L.push(pasteboardwatcher_running)
+        lua_setfield(L, -2, "running")
+        L.push(userdata_tostring)
+        lua_setfield(L, -2, "__tostring")
+        L.push(pasteboardwatcher_gc)
+        lua_setfield(L, -2, "__gc")
+        lua_pop(L, 1)
 
-    // Create module table
-    lua_createtable(L, 0, Int32(pasteboardWatcher_lib.count - 1))
-    luaL_setfuncs(L, pasteboardWatcher_lib, 0)
+        // Create module table
+        lua_createtable(L, 0, 2)
+        L.push(pasteboardwatcher_new)
+        lua_setfield(L, -2, "new")
+        L.push(pasteboardwatcher_interval)
+        lua_setfield(L, -2, "interval")
 
-    // Set module metatable for __gc
-    lua_createtable(L, 0, 1)
-    luaL_setfuncs(L, meta_gcLib, 0)
-    lua_setmetatable(L, -2)
-
-    return 1
+        // Set module metatable for __gc
+        lua_createtable(L, 0, 1)
+        L.push(meta_gc)
+        lua_setfield(L, -2, "__gc")
+        lua_setmetatable(L, -2)
+    }
 }

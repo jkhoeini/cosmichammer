@@ -66,11 +66,497 @@ LuaSkin → LuaSwift).
     most can be deleted. Keep only those needed for ObjC interop
     (NSNotification selectors, KVO, delegate callbacks from AppKit).
 
-*** TODO Adopt LuaSwift Swift APIs in extensions
-    Extensions currently use raw Lua C API (~lua_pushstring~,
-    ~luaL_setfuncs~, etc.). LuaSwift provides nicer Swift alternatives
-    (~Metatable<T>~, ~Pushable~, ~checkArgument<T>~). Optional polish —
-    migrate incrementally starting with the simplest modules.
+*** TODO Adopt LuaSwift Swift APIs in extensions → see dedicated effort
+    Superseded by the dedicated top-level effort
+    "Migrate raw Lua C API (CLua) to idiomatic LuaSwift API" below, which
+    carries the full inventory, ordered plan, and verification strategy.
+
+* TODO — Migrate raw Lua C API (CLua) to idiomatic LuaSwift API
+:PROPERTIES:
+:STATUS: PLANNING
+:OWNER: agent-pipeline
+:END:
+
+  Origin: surfaced while evaluating ecritum (see ~ECRITUM_PLAN.org~ B1). The
+  ergonomic win attributed to ecritum is actually available today by adopting
+  LuaSwift's idiomatic Swift API — no engine swap, no capability loss.
+
+** Context / why
+   Extensions were ported from Hammerspoon's C by transliterating the Lua C API
+   into Swift + ~CLua~, rather than rewriting onto LuaSwift's idiomatic Swift
+   API. Result (measured 2026-06-10):
+   - 112 files ~import CLua~; idiomatic LuaSwift API used in ~1 file.
+   - Raw call-site counts in ~Sources/HSSwiftExtensions/~: ~lua_setfield~ ×1330,
+     ~lua_pushany~ ×948, ~luaL_checkudata~ ×577, ~lua_pop~ ×558,
+     ~lua_pushboolean~ ×550, ~luaL_setfuncs~ ×210, ~luaL_unref~ ×206,
+     ~luaL_ref~ ×197, ~lua_createtable~ ×186, …
+   - Home-grown ~lua_pushany~/~lua_tovalue~ duplicate LuaSwift's
+     ~push(any:)~/~tovalue~/~toany~.
+
+   LuaSwift (already a dependency — the ~Lua~ product) provides: ~Metatable<T>~,
+   ~register(Metatable<T>)~, ~push(closure:)~, typed ~push<Args,Ret>(closure:)~,
+   ~push(userdata:)~, ~tovalue<T>()~, ~toany~, ~LuaValue~, ~ref()~, ~Pushable~,
+   ~PushableWithMetatable~. Adopting these cuts boilerplate and removes whole
+   classes of stack-discipline / ref-lifetime / force-cast bugs while keeping
+   Lua 5.4, userdata, metatables, and synchronous main-thread callbacks intact.
+
+** Goals / non-goals
+   - Goal: replace raw ~CLua~ boilerplate with idiomatic LuaSwift in extension
+     registration, value conversion, userdata/metatables, and registry refs —
+     incrementally, module by module, each step independently buildable and
+     verifiable.
+   - Goal: deduplicate home-grown conversion against LuaSwift equivalents where
+     behavior provably matches (esp. binary-safe strings, NUL handling).
+   - Non-goal: any change to public Lua API/behavior, the threading model, the
+     bundle layout, or the engine.
+   - Non-goal: a big-bang rewrite. Every step must ~just build~ + pass its
+     focused tests before the next starts.
+
+** Verification harness (every step uses this)
+   - Resources: ~mise exec -- just test-resources~
+   - Build: ~mise exec -- just build~
+   - Focused tests:
+     ~SDK_PATH="$(xcrun --show-sdk-path)" COSMIC_HAMMER_TEST_RESOURCES="$(pwd)/build/test/Cosmic Hammer.app/Contents/Resources" swift test -Xlinker -F -Xlinker "${SDK_PATH}/System/Library/PrivateFrameworks" --filter <Suite>~
+   - Generated glue stays consistent: ~just check-generated~
+   - Each step adds/keeps regression tests proving identical Lua-visible behavior
+     (userdata identity, metatable methods, binary strings, refs/GC).
+
+** High-level plan (produced by inventory agent 2026-06-10)
+
+*** Pivotal constraint — userdata is byte-incompatible (all-or-nothing per type)
+    LuaSwift `push(userdata:)` stores an inline `Any` box (`MemoryLayout<Any>.size`)
+    under a generated metatable named `LuaSwift_Type_<T>` with a synthesized
+    `__gc` that only deinits the box. The repo stores a *retained raw pointer*
+    (`Unmanaged.passRetained`) under an `hs.<name>` metatable with a hand-written
+    `__gc` that also unrefs callbacks / invalidates timers / closes resources.
+    These models cannot be mixed on the same metatable: `lua_checkUserdataObject`
+    / `lua_pushretainedUserdata` read the pointer slot and will crash on a
+    LuaSwift box; `touserdata<T>` returns nil on a repo box. THEREFORE a userdata
+    type must flip 100% at once — type + every producer/consumer (including the
+    `hs.image` / `hs.styledtext` cross-module special-cases in
+    `LuaHelpers.swift:203-225`, and any string `luaL_getmetatable("hs.foo")` /
+    `core_getObjectMetatable` lookups in `LuaRuntime.swift:634`). Value
+    conversion, function-table registration, and registry refs, by contrast, CAN
+    migrate incrementally.
+
+*** Mapping table (raw CLua → idiomatic LuaSwift) — the transforms each WP applies
+    - C1  `[luaL_Reg]`+`strdup`+`luaL_setfuncs` → `L.setfuncs([...])` / push throwing closures
+    - C2  `luaL_newmetatable`+setfuncs+`__index` → `L.register(Metatable<T>(fields:[".memberfn"...]))`
+    - C3  `lua_newuserdata`+`Unmanaged.passRetained` → `L.push(userdata: obj)`  (all-or-nothing, see above)
+    - C4  `luaL_checkudata`+`takeUnretainedValue` → `try L.checkArgument(i)` / `L.touserdata(i)`
+    - C5  hand-written `__gc` teardown → Swift `deinit` / `Closable.close` (preserve GC-canary semantics)
+    - C6  `luaL_ref`/`lua_rawgeti`/`luaL_unref` → `LuaValue` (auto-unref on deinit; invoke via `pcall`)
+    - C7  `lua_pushany` → `L.push(any:)`  (keep geometry `__luaSkinType` + cross-module userdata routing)
+    - C8  `lua_tovalue ... as!` → `L.tovalue(i)` / `try L.checkArgument(i)`  (round-trip tests required)
+    - C9  `luaL_checkstring` (binary) → `tovalue<Data>/<[UInt8]>` / `lua_checkdata` parity (binary-safe)
+    - C10 `luaL_checktype`+`lua_tonumber` → `let x: Double = try L.checkArgument(n)`
+    - C11 `luaL_error` (in CFunction) → `throw L.error("…")` (only in throwing `LuaClosure` bodies)
+    NOTE: `@_cdecl("luaopen_hs_lib…")` entry-point *signatures* stay C-shaped (imported by
+    `@_silgen_name` in generated `HSExtensionsGenerated.swift`); only the *body* migrates.
+    The idiomatic API works on the existing `luaL_newstate()` — `LuaState` is the same
+    `UnsafeMutablePointer<lua_State>`; first idiomatic call lazily registers LuaSwift's
+    private `_State` bookkeeping (names `LuaSwift_*`, disjoint from `hs.*`).
+
+*** Ordered work-packages
+    - WP0 (foundation, M): adapter + equivalence/characterization harness in `LuaHelpers.swift`;
+      prove `push(any:)`/`tovalue` == home-grown helpers (binary/NUL, ints vs doubles, CFBoolean,
+      nested/sparse tables, geometry tags). Verify: new equivalence suite + `ObjectConversionRegressionTests`,
+      `TypedUserdataConversionTests`, `LuaHelpersTests`.
+    - WP1 (PILOT, S): pure-function modules `Math.swift`, `Base64.swift` (C1/C7/C9/C10/C11). No userdata.
+      Verify: `MathTests`/`MathFunctionalTests`/`test_math.lua`, `Base64Tests`/`Base64FunctionalTests`/`test_base64.lua`.
+    - WP2 (M): value-conversion dedup in `JSON`/`Plist`/`Settings`/`Hash`/`Pasteboard` (C7/C8/C9), leave their userdata raw.
+    - WP3 (PILOT userdata, M): `Timer.swift` whole-type flip (C2/C3/C5/C6); not pushed cross-module.
+      Verify: `TimerTests`/`TimerFunctionalTests`/`test_timer.lua` + userdata identity + stop-on-GC.
+    - WP4 (M–L): self-contained userdata modules not pushed cross-module: `CanvasMatrix`, `Doc`, `Keycodes`,
+      `Spaces`, `Uielement`/`UielementWatcher`. Watch `core_getObjectMetatable` name lookups.
+    - WP5 (XL): cross-module types — `Image` (+all `hs.image` producers) and `Styledtext` (+producers) flipped atomically.
+    - WP6 (L): callback/watcher modules + `Hotkey`/`Dialog`/`Urlevent` (C6/C5, preserve GC canary).
+    - WP7 (XL): networking/async — `HTTP(Server)`, `Socket(Udp)`, `Websocket`, `Network*`, `Bonjour*`, `Location`.
+    - WP8 (XL, decompose): large UI/media — `Application`, `Window`, `Screen`, `Audiodevice`, `Menubar`, `Notify`,
+      `Chooser`, `Sharing`, `Speech`, `Sound`, `Camera`, `Eventtap(Event)`, `ProcessTask`, `IPC`, `AXUIElement(+Legacy)`,
+      `Spotlight`, `Webview*` cluster, `Canvas*` cluster.
+
+*** Do-not-migrate (with reasons)
+    - `SQLite3Module.swift` — raw `sqlite3*`/`sqlite3_stmt*` pointer userdata + hand `__gc` (`Any`-box doesn't fit).
+    - Hardware: `Razer`, `StreamDeck`, `Serial`, `Milight` — unverifiable without devices; `Milight` struct userdata.
+    - `@_cdecl` entry-point signatures + `HSExtensionsGenerated.swift` (generated, C-symbol-coupled).
+    - `LuaSkinCompatibility.swift` (pure Lua) and the `extensions/**/*.lua` files.
+    - AppKit view/window/category files with no Lua-bridge surface.
+    - Struct-backed userdata inside otherwise-migrating modules (e.g. `FileSystem` `dir_data`/`lfs_Lock`).
+
+*** Pilot: WP1 (`Math`+`Base64`) gated behind WP0, then WP3 (`Timer`) to prove the userdata path.
+
+*** Pipeline status
+    - [x] high-level plan (this section)
+    - [x] focused detailed plans: WP0, WP1, WP3 (WP2/WP4–WP8 detailed AFTER pilots prove the pattern)
+    - [x] codex review of detailed plans → feedback folded (see "CODEX REVIEW" blocks per WP)
+    - [x] WP3 (Timer userdata pilot) — DONE & GREEN
+          Timer.swift fully migrated: Metatable<HSTimer>, push(userdata:),
+          LuaValue callback, explicit __gc (post-registration patch — LuaSwift
+          Metatable<T> has no gc: parameter; gcUserdata is hardcoded).
+          Teardown design: idempotent teardown() called from explicit __gc,
+          invalidates NSTimer + nils LuaValue while state is still open.
+          __type/__name = "hs.timer" + registry alias for core_getObjectMetatable.
+          Identity preserved via .closure + lua_pushvalue(L,1) for self-returning methods.
+          Timer.swift 374 LOC (was 483). No Unmanaged/luaL_checkudata/luaL_Reg metatable left.
+          TimerFunctionalTests 2/2; CosmicHammerTests.Timer 16/22 (was 10/22 — 4 fixed);
+          all WP0/WP1 suites still green; check-generated clean.
+          DEVIATION: Metatable<T> has no gc: param (plan assumed it did) — worked
+          around by patching __gc on the metatable post-registration.
+          FINDING: LuaSwift always installs gcUserdata as __gc in
+          doRegisterMetatable (LuaState.swift:3178) — future userdata WPs must
+          use the same post-registration patch pattern.
+    - [~] implement WP0 — green, but codex review found fixes (fix-up in progress)
+          CODEX IMPL REVIEW (2026-06-11) — must-fix before WP1:
+          1. CRITICAL/UB: `runEntryPoint` calls `lua_error` from Swift
+             (LuaIdiomaticAdapter.swift:73) → longjmp skips ARC cleanup of the
+             `error`/`message` locals. LuaSwift avoids this via a C trampoline
+             (CLua/extensions.c:42, sentinel LUASWIFT_CALLCLOSURE_ERROR). FIX:
+             do not call lua_error from Swift; make entry-point bodies
+             non-throwing table builders and route per-function errors through
+             LuaSwift `push(closure:)` (its C trampoline handles throw→lua_error
+             safely). This is what WP1 will use, so fix the helper now.
+          2. TEST BUG: coexistence "_State absent initially" assertion shares the
+             singleton booted state; `.serialized` ≠ ordered, so another test
+             forcing _State first makes it fail. FIX: assert _State-absence on a
+             FRESH state, not the shared booted one.
+          3. CONFIRMED REAL BUG: `lua_pushany` recurses without `lua_checkstack`
+             (LuaHelpers.swift:157,173) → SIGABRT (api_check) on deep structures;
+             reachable from hs.json.decode (JSON.swift:131), hs.settings.get
+             (Settings.swift:173), hs.plist (Plist.swift:56). FIX: add
+             lua_checkstack guards; convert the masking `nestedCyclicTableTerminates`
+             pcall test into a real regression (deep-but-safe nested push succeeds,
+             produces correct table; no abort).
+          4. GC coexistence test only creates LuaSwift closures — strengthen to
+             prove a REAL repo userdata (e.g. hs.image) survives collectgarbage.
+          5. Minor: NSValue divergence asserted only for point — add size/rect/range;
+             fix test-only retained-userdata leaks (install __gc or balance retain).
+    - [~] (was) implement WP0 (expanded equivalence matrix incl. Foundation/AppKit types) → codex review impl → iterate to green
+          Files: Sources/HSSwiftExtensions/LuaIdiomaticAdapter.swift,
+          Tests/CosmicHammerTests/IdiomaticEquivalenceTests.swift (27 pass),
+          IdiomaticCoexistenceTests.swift (5 pass). Regression unchanged
+          (LuaHelpers 48 / ObjectConversionRegression 26 / TypedUserdata 5).
+          just build + check-generated green.
+          IMPL FINDINGS (matter for later WPs):
+          - push(any:) extra non-delegatable cases beyond the plan: Swift `Float`
+            (boxes as LuaSwift_Type_Float, not a Lua number); empty `[Any]`
+            (matches the `[UInt8]` case → pushes empty STRING not table).
+          - LATENT BUG (pre-existing): home-grown `lua_pushany` (LuaHelpers.swift)
+            never calls `lua_checkstack`, so an unprotected push of a structure
+            deeper than LUA_MINSTACK aborts the process (SIGABRT via api_check).
+            kMaxPushDepth=50 prevents infinite loop but not the stack overflow.
+            → add `lua_checkstack` hardening (own follow-up item).
+          - Confirmed `getState()`/_State init is triggered by push(closure:)/
+            register/push(userdata:), NOT by bare scalar pushes.
+    - [x] implement WP1 (Math+Base64) — DONE & GREEN
+          Math.swift + Base64.swift migrated to idiomatic LuaSwift closures.
+          4 strdup leaks eliminated; 2 luaL_Reg arrays removed.
+          Base64 SecTransform nil-result now throws instead of force-unwrap.
+          5 new binary-safety proof tests (NUL, 0x00-0xFF, invalid UTF-8, 100KB, garbage).
+          MathFunctionalTests 2/2, Base64FunctionalTests 10/10,
+          WP0 suites 30+6 unchanged, check-generated green.
+          NOTE: CosmicHammerTests.Math.testRandomFromRange has a PRE-EXISTING
+          failure (test calls randomFromRange(-1,100) without pcall — error aborts
+          the test function; identical behavior before and after migration).
+          Filed as a separate fix-up (test needs pcall wrapping).
+    - [ ] implement WP2 (value-conversion dedup: JSON/Plist/Settings/Hash/Pasteboard)
+    - [ ] implement WP4–WP8 (parallelized via isolated jj workspaces)
+
+    Codex top-3 fixes before impl: (1) solve timer GC explicitly — synthesized
+    `__gc` is insufficient for a runloop-retained timer; (2) remove/hard-block all
+    raw retained-pointer timer access before aliasing the metatable to `"hs.timer"`;
+    (3) expand WP0 equivalence tests (invalid/binary strings, Foundation/AppKit
+    values, table-key semantics, CFBoolean/NSNumber).
+
+*** DETAILED PLAN — WP0 (adapter & equivalence harness)  [codex-review: DONE 2026-06-10]
+    Objective: prove LuaSwift's idiomatic API works on the EXISTING raw
+    `lua_State` (created `LuaRuntime.swift:834`) and that its first-call lazy
+    `_State` bookkeeping coexists with the repo's `hs.*` metatables; build a
+    characterization harness pinning current helper behavior so later WPs swap
+    safely. Purely additive — zero production edits, zero `@_cdecl` changes.
+
+    Pre-work verification (gate):
+    - `Lua` product already linked (`Package.swift:39,105`); `LuaState =
+      UnsafeMutablePointer<lua_State>` so idiomatic methods call on existing `L`.
+    - LuaSwift metatable namespace is `LuaSwift_State`/`LuaSwift_Default`/
+      `LuaSwift_Type_*`; repo uses `hs.*` → NO overlap. Assert: repo has no
+      `luaL_*metatable("LuaSwift…")`.
+    - GC canary (`LuaHelpers.swift:732-744`) is a Swift static, independent of
+      LuaSwift `_State` (registry userdata) → `getState()` cannot bump it.
+    - Gating experiment (encoded as a test): on booted state, capture
+      `lua_currentStateGeneration()`+`lua_gettop`; assert `LuaSwift_State` absent;
+      first idiomatic call `L.push(any: 1); L.pop()`; assert `LuaSwift_State`
+      now present, `hs.image`/`hs.styledtext` metatables pointer-stable, stack
+      balanced, canary UNCHANGED; then `require('hs.image')…` still yields
+      userdata. If this fails, the whole migration premise is void.
+
+    Adapter — new file `Sources/HSSwiftExtensions/LuaIdiomaticAdapter.swift`
+    (imports CLua+Lua; keeps `LuaHelpers.swift` as source of truth):
+    - `runEntryPoint(_ L, _ body:(LuaState) throws -> CInt) -> CInt` (converts
+      thrown Swift error → Lua error; keeps `@_cdecl` C ABI).
+    - `buildModuleTable(_ L, KeyValuePairs<String,lua_CFunction>) -> CInt` and a
+      `closures:[String:LuaClosure]` overload.
+    - `lua_pushany_idiomatic` / `lua_tovalue_idiomatic` (parallel, NOT wired to
+      any production caller in WP0 — only characterized).
+    - Header conventions: do NOT delegate to LuaSwift the CFBoolean/NSNumber-bool
+      path (`LuaHelpers.swift:23,71`), the geometry `__luaSkinType` helpers, the
+      retained-userdata seam (`lua_pushretainedUserdata:205`), or the GC canary.
+
+    Tests (additive, under `CosmicHammerTests`):
+    - `IdiomaticEquivalenceTests` (standalone state via `withLuaState`): 18 cases
+      — empty/binary-NUL/large/invalid-UTF8 strings; int-boundary, int-vs-float,
+      float; CFBoolean true/false (EXPECTED DIVERGENCE: home-grown=boolean,
+      `push(any:)`=number → off-limits for delegation); NSNumber(1); empty/array/
+      dict/sparse/mixed/zero-key/cyclic tables (home-grown `[Any]`/`[String:Any]`
+      string-keyed vs LuaSwift `[AnyHashable:Any]` native-keyed → documented
+      INTENTIONAL DIFFERENCES); geometry NSPoint/Rect/Size/Color/Font/Range
+      `__luaSkinType` round-trip (NOT delegated). Each case asserts equality OR
+      annotates the intentional difference with file:line.
+    - `IdiomaticCoexistenceTests` (booted state): C1 gating experiment; C2 NSImage
+      still routes to `hs.image`; C3 NSAttributedString→`hs.styledtext`; C4 typed
+      userdata round-trips; C5 `collectgarbage` ×2 after idiomatic call doesn't
+      crash, canary valid.
+
+    Steps: (1) add adapter file → `just build`; (2) add `IdiomaticEquivalenceTests`;
+    (3) add `IdiomaticCoexistenceTests` incl. gate; (4) check `AllTests.swift`
+    (Swift Testing auto-discovers — likely no edit); (5) `just check-generated`.
+
+    Verify: `just test-resources`; `just build`; `--filter IdiomaticEquivalenceTests`;
+    `--filter IdiomaticCoexistenceTests`; regression `--filter LuaHelpersTests`,
+    `ObjectConversionRegressionTests`, `TypedUserdataConversionTests`;
+    `just check-generated`.
+
+    Acceptance: build green, no `@_cdecl` change; coexistence gate passes (canary
+    unchanged, metatables pointer-stable, stack balanced, image still userdata);
+    all 18 equivalence rows assert equality-or-documented-difference; off-limits
+    cases (CFBoolean, table-shape, geometry) explicitly pinned; existing helper
+    suites still green; `check-generated` no drift.
+
+    Risks: shared-state metatable clash (mitigated: no prefix overlap, C1
+    asserts pointer-stability); canary vs `_State` confusion (orthogonal,
+    asserted); NSNumber/bool + table-shape divergence (pinned, marked
+    non-delegatable); cyclic-table recursion (safety-characterized); v5 adapter
+    vs v6 tests (keep adapter v5-clean, `just build` is the gate).
+    Rollback: delete the 3 new files (additive only).
+
+    CODEX REVIEW — corrections folded (2026-06-10):
+    - (WP0.3 GAP) Equivalence matrix MUST also cover the Foundation/AppKit types
+      `lua_pushany` special-cases (`LuaHelpers.swift:138-225`): NSDate, NSURL/URL,
+      NSValue, NSColor, NSFont, NSImage, NSAttributedString, and
+      `LuaUserdataConvertible`. LuaSwift `push(any:)` falls through to
+      `push(userdata:)` for these (`LuaState.swift:2471,2544-2545`) → an Any-box
+      userdata under a `LuaSwift_Type_*` metatable, NOT the repo's
+      `hs.image`/`hs.styledtext`/geometry-table result. Mark ALL of these
+      explicitly NON-delegatable and add a divergence case for each.
+    - (WP0.1) Not every idiomatic call triggers `_State`; only those that call
+      `getState()`. The coexistence gate must use a call that forces it
+      (e.g. `register`/`push(closure:)`), not a bare scalar push.
+    - (WP0.4 RISK) Do NOT alias any LuaSwift metatable to an `hs.*` registry key
+      in WP0 — raw `luaL_checkudata` consumers would then misread an Any-box
+      layout. That aliasing belongs to WP3+ and is gated on first removing all
+      raw extractors for the migrated type.
+
+*** DETAILED PLAN — WP1 (pilot: Math + Base64)  [codex-review: DONE 2026-06-10]
+    Objective: migrate the two pure-function modules off raw CLua to idiomatic
+    LuaSwift (throwing closures, `push(any:)`/`push(_:[UInt8])`, `checkArgument`,
+    `L.error`), proving the WP0 pipeline at lowest risk. Depends on WP0.
+
+    Invariants (must NOT change): `@_cdecl("luaopen_hs_libmath")` /
+    `@_cdecl("luaopen_hs_libbase64")` symbols + C signature
+    `(_ L: UnsafeMutablePointer<lua_State>!) -> Int32` (imported via
+    `@_silgen_name`, `HSExtensionsGenerated.swift:28,145`; preloaded :301,340);
+    Base64 entry point stays `public`, Math non-`public`; exported names
+    `randomFloat`/`randomFromRange`/`_encode`/`_decode` and their Lua-visible
+    types (float / integer / raw-byte string); `extensions.manifest`,
+    generated glue, `extensions/{math,base64}/*.lua`, `Package.swift` untouched.
+
+    Current state:
+    - Math: `randomFloat`→Lua float (`lua_pushnumber`); `randomFromRange(s,e)`
+      `luaL_checkinteger` + range guard `s<0||e<=0||e<=s` → verbatim
+      `luaL_error("Please check the docs for hs.math.randomForRange() - your
+      range is not acceptable")`; `lua_pushinteger`. `[luaL_Reg]`+`strdup` leak.
+    - Base64: `_encode`/`_decode` accept `LUA_TNUMBER` OR `LUA_TSTRING` (number
+      coerced via `luaL_tolstring`), operate on raw bytes via `NSData`+SecTransform,
+      push raw via `lua_pushlstring` — BINARY-SAFE incl. embedded NUL / non-UTF8.
+
+    Target: closure-based module table (REJECT LuaSwift `setfuncs` — it only takes
+    `lua_CFunction`, can't host throwing closures, gives nothing over current
+    `luaL_setfuncs`). Entry point keeps `@_cdecl` + C signature, body =
+    `lua_createtable` + `L.push(closure:)` + `lua_setfield` per fn + `return 1`.
+    `randomFromRange` → `(Int,Int) throws -> Int` (typed overload pushes Lua
+    integer; range error via `LuaCallError("…verbatim…")`; keep `Int32` arithmetic
+    for overflow parity). Base64 → `(LuaState) throws -> CInt` closures using a
+    `checkBinaryArg(L,n)` helper that PRESERVES number-coercion (branch on
+    `lua_type`: `LUA_TSTRING`→`L.todata` raw bytes; `LUA_TNUMBER`→`luaL_tolstring`;
+    else `throw L.error("expected string or number for argument n")`) and pushes
+    via binary-safe `push(_:[UInt8])`. Delete both `[luaL_Reg]`+`strdup` arrays.
+
+    Binary-safety proof obligations (in `Base64FunctionalTests.swift`, asserted via
+    `lua_tolstring` length+bytes, NOT `String(cString:)`): empty; ASCII; embedded
+    NUL byte-checked; full 0x00–0xFF; invalid UTF-8 (`0xC3 0x28`, lone `0xFF`);
+    ≥100 KiB; byte-exact `decode(encode(x))==x`. Keep existing `test_base64.lua`
+    width-split cases (validate the wrapper) untouched.
+
+    Steps: A) Math — add `import Lua`; rewrite both fns; delete `mathLib`; rewrite
+    entry-point body (atomic edit A1–A5). B) Base64 — add `import Lua`; add
+    `checkBinaryArg`; rewrite `_encode`/`_decode`; delete `base64_lib`; rewrite
+    entry point (atomic B6–B10). C) extend `Base64FunctionalTests`.
+
+    Verify: `just test-resources`; `just build`; `just check-generated` (green,
+    symbols unchanged); `--filter CosmicHammerTests.Math`, `MathFunctionalTests`,
+    `CosmicHammerTests.Base64`, `Base64FunctionalTests`; optional `just test`.
+
+    Risks: binary fidelity (mitigated by `checkBinaryArg` + the 7 byte-level
+    tests); int-vs-float regression (typed overloads + existing tests pin it);
+    error-text drift (throw VERBATIM legacy strings for the two pinned messages;
+    for arg-type mismatches assert error occurrence, not text — no test pins it);
+    `strdup` removal (field-name keys via `lua_setfield` are copied by Lua —
+    behavior-neutral, removes a leak); first `import Lua`/v5 build (gate at
+    `just build`); `@_cdecl` body using idiomatic methods (safe — `L` is the
+    `LuaState` pointer type).
+    Rollback: revert `Math.swift`/`Base64.swift`/`Base64FunctionalTests.swift`
+    only; nothing else touched.
+
+    Acceptance: no `luaL_Reg`/`strdup`/`luaL_setfuncs` left; `@_cdecl` symbols +
+    signatures + visibility unchanged; `check-generated` green; build green;
+    ALL existing Math/Base64 tests pass unchanged; new binary-safety cases pass;
+    exported names/return-types byte-identical; the two legacy error strings
+    preserved verbatim.
+
+    CODEX REVIEW — corrections folded (2026-06-10):
+    - (WP1.5 CONFIRMED) Return `Double` for `randomFloat` (Lua float) and
+      `Int`/`lua_Integer` for `randomFromRange` (Lua integer) — verified via
+      `Pushable.swift:21-24,67-70`. NEVER let a Swift `throw` escape the bare
+      `@_cdecl` entry-point body; only the typed-closure trampoline converts
+      throws to Lua errors. Wrap the entry-point body so no error crosses the C
+      frame (this is what `runEntryPoint` from WP0 is for).
+    - (WP1.6 HOLE) Current Base64 force-unwraps the SecTransform result
+      (`Base64.swift:8-11`); the migration must preserve OR improve that — do not
+      crash on SecTransform failure. Add a failure-path test.
+
+*** DETAILED PLAN — WP3 (pilot userdata: Timer)  [codex-review: DONE 2026-06-10 — REVISE before impl]
+    Objective: flip the whole `hs.timer` userdata type (`Timer.swift`) from the
+    retained-raw-pointer model to LuaSwift: `Metatable<HSTimer>` via `register`,
+    instances via `push(userdata:)`, args via `checkArgument`/`touserdata`,
+    callback as a `LuaValue`, teardown moved into the Swift type. Timer userdata
+    is not shared cross-module → flips in isolation. Depends on WP0, WP1.
+
+    Behavior to preserve (Lua-visible):
+    - Module table fns: `doAfter`,`new`,`usleep`,`secondsSinceEpoch`,`absoluteTime`
+      (table must stay a plain writable table — `timer.lua` extends it).
+    - Constructors: `new(interval,fn[,continueOnError])` coerces interval in
+      (0,0.00001)→0.00001, does NOT start; `doAfter(sec,fn)` starts immediately.
+    - Methods (return SELF via `lua_pushvalue(L,1)` today): `start`,`stop`,
+      `running`,`nextTrigger`,`setNextTrigger`,`fire`.
+    - `__tostring` `"hs.timer: <state> (<ptr>)"` (test only asserts it's a string).
+    - `__gc` side effects today: stop NSTimer + `luaL_unref` callback + nil
+      metatable. Observable contract: after GC timer stops firing, callback freed.
+    - Identity: NOT interned — same handle only because methods return arg 1.
+      `timer.lua` (`delayed`,`doAt`) captures the ctor result once and chains.
+    - continueOnError; stale-generation no-op (`callback` first line:
+      `if !lua_isStateGenerationValid(generation){stop();return}`); `refTable`
+      is written-but-never-read (dead — safe to drop).
+
+    CRITICAL TRAPS (the two mandatory shims):
+    1. `__type`/`__name`: `lsunit.lua` `assertIsUserdataOfType("hs.timer",t)`
+       reads `getmetatable(t).__type=="hs.timer"`, and `_coresetup.lua:548`
+       completion reads `__name`/`__type`. LuaSwift names the metatable
+       `LuaSwift_Type_HSTimer` and sets neither. → After `register`, do
+       `L.pushMetatable(for: HSTimer.self)` and set `__type` and `__name` to
+       `"hs.timer"`, pop. (Do NOT replace instance metatables.)
+    2. `core_getObjectMetatable` (`LuaRuntime.swift:634-649`) does
+       `luaL_getmetatable(L,"hs.timer")` — now nil. → Alias the metatable under
+       the `"hs.timer"` registry key: `L.pushMetatable(for:HSTimer.self);
+       lua_setfield(L,LUA_REGISTRYINDEX,"hs.timer")`.
+    Step 0 (read-only): confirm HOW the `__type` assertion passes TODAY before
+    changing anything (the shim guarantees it post-migration regardless).
+
+    Target design:
+    - `HSTimer`: replace `fnRef:Int32` with `callback:LuaValue`; conform to
+      `Closable`; idempotent `teardown()` (stop + `t=nil` + drop `callback`);
+      `deinit{teardown()}` + `close(){teardown()}`. `callback(_:)` keeps the
+      generation guard FIRST, then `try callback.pcall(...)`; on error log and
+      (if !continueOnError) invalidate.
+    - `Metatable<HSTimer>`: `running`/`nextTrigger` as `.memberfn` (primitives);
+      self-returning methods (`start`/`stop`/`setNextTrigger`/`fire`) as
+      `.closure { L in let t:HSTimer = try L.checkArgument(1); …;
+      lua_pushvalue(L,1); return 1 }` to preserve IDENTITY bit-for-bit (a
+      `.memberfn` returning `HSTimer` would mint a NEW box/handle); `tostring` as
+      `.closure` to keep the exact format; `close:.synthesize`.
+    - Constructors: `let cb = L.ref(index:2)`; `L.push(userdata: timer)`.
+    - LuaValue reload-safety (verified in LuaSwift): on `lua_close`,
+      `_State.deinit` nils `.L` on every tracked `LuaValue` → later `deinit`
+      is inert (no double-unref/UAF). Strictly safer than manual `luaL_unref`.
+      Canary is independent and the guard prevents firing into a dead state.
+
+    Steps: 0 verify baseline; 1 `import Lua`; 2 storage+teardown (LuaValue,
+    Closable, deinit/close, callback via pcall); 3 use `L` directly as LuaState;
+    4 constructors `ref(index:)`+`push(userdata:)`; 5 delete `getTimer*`/`timer_*`
+    C-fns/`timer_gc`/`userdata_tostring`/`timer_metalib`/`meta_gc*`, add
+    `Metatable<HSTimer>` + `__type`/`__name` shim; 6 rewrite
+    `luaopen_hs_libtimer` (keep `@_cdecl` name byte-identical; register metatable;
+    alias under `"hs.timer"` registry key; keep pure-fn `timerLib` via
+    `luaL_setfuncs`; drop no-op module `__gc`); 7 audit every `"hs.timer"` literal
+    (test_timer.lua/_loader_metadata/_coresetup unaffected; only
+    `core_getObjectMetatable` needs the alias shim). Steps 2–6 land atomically
+    (mutually dependent).
+
+    Tests — preserve all existing (`CosmicHammerTests.Timer` 21 cases,
+    `TimerFunctionalTests`, `test_timer.lua`). ADD `TimerUserdataPilotTests`:
+    identity-on-chain (`t:start()==t`, etc.); `__type`/`__name`=="hs.timer";
+    `hs.getObjectMetatable("hs.timer")~=nil`; fires-once; stop-prevents-fire;
+    GC-stops-and-unrefs; stale-generation no-op (call `callback(_:)` after
+    `lua_bumpStateGeneration()` → must stop, not enter Lua); callback-error
+    continue vs stop. Re-run `RequireAllTests`, `TypedUserdataConversionTests`,
+    `UserdataLifecycleTests`, `ModuleRegistrationTests`, `ModuleLoadRegressionTests`,
+    `LuaHelpersTests` (canary).
+
+    Verify: `just check-generated`; `just build`; `just test-resources`; the
+    filters above; full `just verify`.
+
+    Risks: `__type`/name regression (HIGHEST — mitigated by both shims + tests);
+    GC double-teardown (idempotent `teardown`); LuaValue vs reload (verified safe);
+    identity regression (use `.closure`+`pushvalue(1)`); reentrancy unchanged;
+    `refTable` removal (no reader); first `import Lua`; `tostring` pointer differs
+    (only asserted as string).
+    Rollback: revert `Timer.swift` (+ additive tests) only; isolated type, symbol
+    unchanged → cannot leave a mixed-model state elsewhere.
+
+    Acceptance: `check-generated`+build+`just verify` green; all existing Timer
+    tests pass; `__type=="hs.timer"`; `getObjectMetatable("hs.timer")~=nil`; new
+    pilot tests pass; userdata/conversion regression suites green; no
+    `lua_newuserdata`/`passRetained`/`takeRetainedValue`/`luaL_unref`-for-callback/
+    `luaL_checkudata`/`luaL_ref`-for-callback remain in `Timer.swift`; teardown
+    lives in `deinit`/`close`; callback is a `LuaValue`.
+
+    CODEX REVIEW — corrections folded (2026-06-10); REVISE plan before impl:
+    - (WP3.10 REFUTED — HIGHEST RISK) Teardown design is UNSAFE as written.
+      LuaSwift's synthesized `__gc` only deinitializes the inline `Any` box
+      (`LuaState.swift:142-150,3178-3179`); `close:.synthesize` is `__close` for
+      to-be-closed variables, NOT `__gc` (`Metatables.swift:276-317`). A scheduled
+      `NSTimer` RETAINS its target and `HSTimer` retains the `NSTimer`
+      (`Timer.swift:13-23,61-69`): when Lua GCs the userdata box, the box's strong
+      ref drops but `HSTimer.deinit` does NOT run (runloop→NSTimer→HSTimer keeps it
+      alive) → the timer KEEPS FIRING and the callback ref LEAKS. FIX: keep an
+      EXPLICIT `__gc` metamethod that stops the NSTimer + drops the `LuaValue`,
+      OR break the target retain (block-based `Timer(timeInterval:repeats:block:)`
+      or a weak-proxy target) so `deinit` actually runs on box collection. Do NOT
+      rely on `deinit`/`close:.synthesize` alone. Re-plan this before implementing.
+    - (WP3.8 wording WRONG) Using a `LuaValue` AFTER `lua_close` FATAL-ERRORS
+      (`LuaValue.swift:112-118`); `_State.deinit` only nils `.L` so the unref is
+      skipped — it is not a usable "inert" object. And the repo bumps the
+      generation AFTER `lua_close` (`LuaRuntime.swift:1065-1068`), not before. So
+      drop the callback `LuaValue` in the explicit stop/`__gc` path while the
+      state is still open; never lean on post-close deinit to unref.
+    - (WP3.7) Before aliasing the metatable under the `"hs.timer"` registry key,
+      ELIMINATE every raw retained-pointer extractor (`Timer.swift:110-117`) — a
+      leftover `luaL_checkudata`+`Unmanaged.fromOpaque` on an Any-box userdata
+      misreads memory. The whole-type flip must remove all raw accessors atomically.
+    - (WP3.9 CONFIRMED) `.closure`+`lua_pushvalue(L,1)` preserves identity;
+      `.memberfn` returning `HSTimer` would mint a new box (`LuaState.swift:2336-2345`).
+    - ACTION: spawn a follow-up focused planning agent to redesign WP3 teardown
+      (explicit `__gc` vs block/weak-proxy timer) and re-run codex on the revision
+      BEFORE the WP3 implementation agent starts.
 
 * TODO — Architecture (design decisions needed)
 

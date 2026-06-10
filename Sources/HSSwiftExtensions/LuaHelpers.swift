@@ -35,6 +35,14 @@ private func cfBooleanValue(_ obj: Any) -> Bool {
 /// Maximum recursion depth for nested tables to prevent stack overflow.
 private let kMaxPushDepth: Int = 50
 
+/// Lua value-stack slots each recursion level of `lua_pushvalue_recursive`
+/// needs available before it pushes anything. The deepest single level pushes
+/// a container table and then, for dictionaries, a key + a value on top of it
+/// (3 simultaneous slots) before settling back down. We reserve a small fixed
+/// headroom per level via `lua_checkstack` so a structure deeper than
+/// `LUA_MINSTACK` (20) cannot trip Lua's `api_check` and abort the process.
+private let kPushStackSlotsPerLevel: Int32 = 4
+
 /// Push any Swift/Foundation value onto the Lua stack.
 ///
 /// Handles: nil, Bool, Int, Double, Float, String, NSString, NSNumber
@@ -46,9 +54,20 @@ func lua_pushany(_ L: UnsafeMutablePointer<lua_State>!, _ value: Any?) {
 }
 
 private func lua_pushvalue_recursive(_ L: UnsafeMutablePointer<lua_State>!, _ value: Any?, depth: Int) {
-    guard depth < kMaxPushDepth else {
-        lua_pushnil(L)
-        return
+    // Reserve the value-stack slots this level needs BEFORE pushing anything.
+    // Without this, a structure deeper than LUA_MINSTACK (20) overflows the
+    // stack and Lua's api_check aborts the whole process (SIGABRT). Reachable
+    // from normal Lua via hs.json.decode / hs.settings.get / hs.plist. If the
+    // stack genuinely cannot grow (true OOM), raise a catchable Lua error
+    // rather than abort, matching the luaL_error convention used elsewhere in
+    // this file. NOTE: there are no Swift ARC objects live on the *Lua* stack
+    // at this point, so this matches the existing home-grown error convention.
+    if lua_checkstack(L, kPushStackSlotsPerLevel) == 0 {
+        // Pass a plain (already-formatted) string; luaL_error is variadic and
+        // treats its argument as a format string, and the existing usages in
+        // this repo pass single literals with no % specifiers — match that.
+        luaL_error(L, "lua_pushany: cannot grow Lua stack for nested value at depth \(depth)")
+        return // unreachable; luaL_error does not return
     }
 
     guard let value = value else {
@@ -154,7 +173,13 @@ private func lua_pushvalue_recursive(_ L: UnsafeMutablePointer<lua_State>!, _ va
     // NSArray / Array
     // Use luaL_len+1 for indexing (matching LuaSkin behavior): when a nil
     // is pushed, the next element takes its position, collapsing holes.
+    // Depth guard: if we've exceeded kMaxPushDepth, push nil instead of
+    // recursing into more containers (prevents unbounded cycle-following).
+    // The guard is on the container entry, not on scalar pushes, so that
+    // dictionary keys (strings/numbers) always push correctly and never
+    // cause a "table index is nil" PANIC.
     case let arr as NSArray:
+        guard depth < kMaxPushDepth else { lua_pushnil(L); return }
         lua_createtable(L, Int32(arr.count), 0)
         for i in 0..<arr.count {
             let item: Any = arr[i]
@@ -163,6 +188,7 @@ private func lua_pushvalue_recursive(_ L: UnsafeMutablePointer<lua_State>!, _ va
         }
 
     case let arr as [Any]:
+        guard depth < kMaxPushDepth else { lua_pushnil(L); return }
         lua_createtable(L, Int32(arr.count), 0)
         for item in arr {
             lua_pushvalue_recursive(L, item, depth: depth + 1)
@@ -171,6 +197,7 @@ private func lua_pushvalue_recursive(_ L: UnsafeMutablePointer<lua_State>!, _ va
 
     // NSDictionary / Dictionary
     case let dict as NSDictionary:
+        guard depth < kMaxPushDepth else { lua_pushnil(L); return }
         lua_createtable(L, 0, Int32(dict.count))
         for (key, val) in dict {
             lua_pushvalue_recursive(L, key, depth: depth + 1)
@@ -179,6 +206,7 @@ private func lua_pushvalue_recursive(_ L: UnsafeMutablePointer<lua_State>!, _ va
         }
 
     case let dict as [String: Any]:
+        guard depth < kMaxPushDepth else { lua_pushnil(L); return }
         lua_createtable(L, 0, Int32(dict.count))
         for (key, val) in dict {
             lua_pushstring(L, key)

@@ -1,5 +1,6 @@
 import Cocoa
 import CLua
+import Lua
 import Carbon
 import CoreServices
 import os.log
@@ -159,7 +160,7 @@ private var eventHandler: HSURLEventHandler?
 // MARK: - C / Lua bridge functions
 
 // Rather than manage complex callback state from C, we just have one path into Lua for all events, and events are directed to their callbacks from there
-private func urleventSetCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func urleventSetCallback(_ L: LuaState) throws -> CInt {
 
     luaL_checktype(L, 1, LUA_TFUNCTION)
     lua_pushvalue(L, 1)
@@ -181,7 +182,7 @@ private func urleventSetCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 ///
 /// Notes:
 ///  * You don't have to call this function if you want Cosmic Hammer to permanently be your default handler. Only use this if you want the handler to be automatically reverted to something else when Cosmic Hammer exits/reloads.
-private func urleventsetRestoreHandler(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func urleventsetRestoreHandler(_ L: LuaState) throws -> CInt {
 
     eventHandler?.restoreHandlers[lua_tovalue(L, at: 1)!] = lua_tovalue(L, at: 2)
 
@@ -201,7 +202,7 @@ private func urleventsetRestoreHandler(_ L: UnsafeMutablePointer<lua_State>!) ->
 ///
 /// Notes:
 ///  * Changing the default handler for http/https URLs will display a system prompt asking the user to confirm the change
-private func urleventsetDefaultHandler(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func urleventsetDefaultHandler(_ L: LuaState) throws -> CInt {
 
     let scheme = String(cString: lua_tostring(L, 1)!).lowercased()
     var bundleID = Bundle.main.bundleIdentifier ?? "org.cosmic-hammer.CosmicHammer"
@@ -244,7 +245,7 @@ private func urleventsetDefaultHandler(_ L: UnsafeMutablePointer<lua_State>!) ->
 ///
 /// Returns:
 ///  * A string containing the bundle identifier of the current default application
-private func urleventgetDefaultHandler(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func urleventgetDefaultHandler(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TSTRING)
 
     let scheme = String(cString: lua_tostring(L, 1)!)
@@ -265,7 +266,7 @@ private func urleventgetDefaultHandler(_ L: UnsafeMutablePointer<lua_State>!) ->
 ///
 /// Returns:
 ///  * A table containing the bundle identifiers of all applications that can handle the scheme
-private func urleventgetAllHandlersForScheme(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func urleventgetAllHandlersForScheme(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TSTRING)
 
     let scheme = String(cString: lua_tostring(L, 1)!)
@@ -296,7 +297,7 @@ private func urleventgetAllHandlersForScheme(_ L: UnsafeMutablePointer<lua_State
 ///
 /// Returns:
 ///  * True if the application was launched successfully, otherwise false
-private func urleventopenURLWithBundle(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func urleventopenURLWithBundle(_ L: LuaState) throws -> CInt {
 
     var result = false
 
@@ -326,29 +327,12 @@ private func urlevent_setup() {
 
 // MARK: - Lua/hs glue
 
-private func urlevent_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func urlevent_gc(_ L: LuaState) throws -> CInt {
     eventHandler?.gc(withState: L)
     eventHandler = nil
 
     return 0
 }
-
-// MARK: - luaL_Reg tables
-
-private var urleventlib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("setCallback"), func: { urleventSetCallback($0) }),
-    luaL_Reg(name: strdup("setRestoreHandler"), func: { urleventsetRestoreHandler($0) }),
-    luaL_Reg(name: strdup("setDefaultHandler"), func: { urleventsetDefaultHandler($0) }),
-    luaL_Reg(name: strdup("getDefaultHandler"), func: { urleventgetDefaultHandler($0) }),
-    luaL_Reg(name: strdup("getAllHandlersForScheme"), func: { urleventgetAllHandlersForScheme($0) }),
-    luaL_Reg(name: strdup("openURLWithBundle"), func: { urleventopenURLWithBundle($0) }),
-    luaL_Reg(name: nil, func: nil),
-]
-
-private var urlevent_gclib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("__gc"), func: { urlevent_gc($0) }),
-    luaL_Reg(name: nil, func: nil),
-]
 
 // MARK: - Module entry point
 
@@ -357,20 +341,32 @@ private var urlevent_gclib: [luaL_Reg] = [
 
 @_cdecl("luaopen_hs_liburlevent")
 public func luaopen_hs_liburlevent(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    urlevent_setup()
+    runEntryPoint(L) { L in
+        urlevent_setup()
 
-    // Create ref table in registry
-    lua_newtable(L)
-    refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+        // Create ref table in registry
+        lua_newtable(L)
+        refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
 
-    // Create module table
-    lua_createtable(L, 0, Int32(urleventlib.count - 1))
-    luaL_setfuncs(L, &urleventlib, 0)
+        // Create module table
+        lua_createtable(L, 0, 6)
+        L.push(urleventSetCallback)
+        lua_setfield(L, -2, "setCallback")
+        L.push(urleventsetRestoreHandler)
+        lua_setfield(L, -2, "setRestoreHandler")
+        L.push(urleventsetDefaultHandler)
+        lua_setfield(L, -2, "setDefaultHandler")
+        L.push(urleventgetDefaultHandler)
+        lua_setfield(L, -2, "getDefaultHandler")
+        L.push(urleventgetAllHandlersForScheme)
+        lua_setfield(L, -2, "getAllHandlersForScheme")
+        L.push(urleventopenURLWithBundle)
+        lua_setfield(L, -2, "openURLWithBundle")
 
-    // Set module metatable (for __gc)
-    lua_createtable(L, 0, Int32(urlevent_gclib.count - 1))
-    luaL_setfuncs(L, &urlevent_gclib, 0)
-    lua_setmetatable(L, -2)
-
-    return 1
+        // Set module metatable (for __gc)
+        lua_createtable(L, 0, 1)
+        L.push(urlevent_gc)
+        lua_setfield(L, -2, "__gc")
+        lua_setmetatable(L, -2)
+    }
 }

@@ -1,5 +1,6 @@
 import Cocoa
 import CLua
+import Lua
 import Carbon
 import os.log
 
@@ -46,7 +47,7 @@ private var systemWideElement: AXUIElement = {
 /// hs.window.list(allWindows) -> table
 /// Function
 /// Gets a table containing all the window data retrieved from CGWindowListCreate.
-private func window_list(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func window_list(_ L: LuaState) throws -> CInt {
     let allWindows = lua_toboolean(L, 1) != 0
 
     var windows = CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID) as? [NSDictionary] ?? []
@@ -75,7 +76,7 @@ private func window_list(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.window.timeout(value) -> boolean
 /// Function
 /// Sets the timeout value used in the accessibility API.
-private func window_timeout(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func window_timeout(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TNUMBER)
     let value = Float(lua_tonumber(L, 1))
     let result = AXUIElementSetMessagingTimeout(systemWideElement, value)
@@ -96,7 +97,7 @@ private func window_timeout(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.window.focusedWindow() -> window
 /// Constructor
 /// Returns the window that has keyboard/mouse focus
-private func window_focusedwindow(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func window_focusedwindow(_ L: LuaState) throws -> CInt {
     if let windowClass = HSuicore.windowClass {
         let result = catchingObjCException {
             (windowClass as AnyObject).perform(Selector(("focusedWindow")))?.takeUnretainedValue()
@@ -111,7 +112,7 @@ private func window_focusedwindow(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
 /// hs.window.setShadows(shadows)
 /// Function
 /// Enables/Disables window shadows
-private func window_setShadows(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func window_setShadows(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TBOOLEAN)
     let shadows = lua_toboolean(L, 1) != 0
     cgsSetDebugOptions(shadows ? kCGSDebugOptionNormal : kCGSDebugOptionNoShadows)
@@ -121,7 +122,7 @@ private func window_setShadows(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.window.snapshotForID(ID [, keepTransparency]) -> hs.image-object
 /// Function
 /// Returns a snapshot of the window specified by the ID
-private func window_snapshotForID(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func window_snapshotForID(_ L: LuaState) throws -> CInt {
     let windowID = CGWindowID(lua_tointeger(L, 1))
     let keepTransparency = lua_toboolean(L, 2) != 0
     if let windowClass = HSuicore.windowClass {
@@ -139,7 +140,7 @@ private func window_snapshotForID(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
     return 1
 }
 
-private func window__orderedwinids(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func window__orderedwinids(_ L: LuaState) throws -> CInt {
     if let windowClass = HSuicore.windowClass {
         let result = catchingObjCException {
             (windowClass as AnyObject).perform(Selector(("orderedWindowIDs")))?.takeUnretainedValue()
@@ -153,49 +154,49 @@ private func window__orderedwinids(_ L: UnsafeMutablePointer<lua_State>!) -> Int
 
 // MARK: - Instance Methods
 
-private func window_title(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func window_title(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     guard let win = getWindow(L, at: 1) else { lua_pushnil(L); return 1 }
     lua_pushany(L, win.title() as NSString?)
     return 1
 }
 
-private func window_subrole(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func window_subrole(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     guard let win = getWindow(L, at: 1) else { lua_pushnil(L); return 1 }
     lua_pushany(L, win.subRole() as NSString?)
     return 1
 }
 
-private func window_role(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func window_role(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     guard let win = getWindow(L, at: 1) else { lua_pushnil(L); return 1 }
     lua_pushany(L, win.role() as NSString?)
     return 1
 }
 
-private func window_isstandard(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func window_isstandard(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     guard let win = getWindow(L, at: 1) else { lua_pushboolean(L, 0); return 1 }
     lua_pushboolean(L, win.isStandard() ? 1 : 0)
     return 1
 }
 
-private func window__topleft(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func window__topleft(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     guard let win = getWindow(L, at: 1) else { lua_pushnil(L); return 1 }
     lua_pushNSPoint(L, win.getTopLeft())
     return 1
 }
 
-private func window__size(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func window__size(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     guard let win = getWindow(L, at: 1) else { lua_pushnil(L); return 1 }
     lua_pushNSSize(L, win.getSize())
     return 1
 }
 
-private func window__settopleft(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func window__settopleft(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     luaL_checktype(L, 2, LUA_TTABLE)
@@ -205,7 +206,7 @@ private func window__settopleft(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
     return 1
 }
 
-private func window__setsize(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func window__setsize(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     luaL_checktype(L, 2, LUA_TTABLE)
@@ -215,7 +216,7 @@ private func window__setsize(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 1
 }
 
-private func window__setframe(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func window__setframe(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     luaL_checktype(L, 2, LUA_TTABLE)
@@ -225,7 +226,7 @@ private func window__setframe(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 1
 }
 
-private func window__togglezoom(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func window__togglezoom(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     guard let win = getWindow(L, at: 1) else { lua_pushvalue(L, 1); return 1 }
     win.toggleZoom()
@@ -233,14 +234,14 @@ private func window__togglezoom(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
     return 1
 }
 
-private func window_getZoomButtonRect(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func window_getZoomButtonRect(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     guard let win = getWindow(L, at: 1) else { lua_pushnil(L); return 1 }
     lua_pushNSRect(L, win.getZoomButtonRect())
     return 1
 }
 
-private func window_isMaximizable(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func window_isMaximizable(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     guard let win = getWindow(L, at: 1) else { lua_pushnil(L); return 1 }
 
@@ -258,42 +259,42 @@ private func window_isMaximizable(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
     return 1
 }
 
-private func window__close(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func window__close(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     guard let win = getWindow(L, at: 1) else { lua_pushboolean(L, 0); return 1 }
     lua_pushboolean(L, win.close() ? 1 : 0)
     return 1
 }
 
-private func window_focustab(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func window_focustab(_ L: LuaState) throws -> CInt {
     guard let win = getWindow(L, at: 1) else { lua_pushboolean(L, 0); return 1 }
     let tabIndex = Int32(lua_tointeger(L, 2))
     lua_pushboolean(L, win.focusTab(tabIndex) ? 1 : 0)
     return 1
 }
 
-private func window_tabcount(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func window_tabcount(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     guard let win = getWindow(L, at: 1) else { lua_pushinteger(L, 0); return 1 }
     lua_pushinteger(L, lua_Integer(win.getTabCount()))
     return 1
 }
 
-private func window__setfullscreen(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func window__setfullscreen(_ L: LuaState) throws -> CInt {
     guard let win = getWindow(L, at: 1) else { lua_pushvalue(L, 1); return 1 }
     win.setFullscreen(lua_toboolean(L, 2) != 0)
     lua_pushvalue(L, 1)
     return 1
 }
 
-private func window_isfullscreen(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func window_isfullscreen(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     guard let win = getWindow(L, at: 1) else { lua_pushnil(L); return 1 }
     lua_pushboolean(L, win.isFullscreen() ? 1 : 0)
     return 1
 }
 
-private func window__minimize(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func window__minimize(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     guard let win = getWindow(L, at: 1) else { lua_pushvalue(L, 1); return 1 }
     win.setMinimized(true)
@@ -301,7 +302,7 @@ private func window__minimize(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 1
 }
 
-private func window__unminimize(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func window__unminimize(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     guard let win = getWindow(L, at: 1) else { lua_pushvalue(L, 1); return 1 }
     win.setMinimized(false)
@@ -309,21 +310,21 @@ private func window__unminimize(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
     return 1
 }
 
-private func window_isminimized(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func window_isminimized(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     guard let win = getWindow(L, at: 1) else { lua_pushboolean(L, 0); return 1 }
     lua_pushboolean(L, win.isMinimized() ? 1 : 0)
     return 1
 }
 
-private func window_pid(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func window_pid(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     guard let win = getWindow(L, at: 1) else { lua_pushnil(L); return 1 }
     lua_pushinteger(L, lua_Integer(win.pid))
     return 1
 }
 
-private func window_application(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func window_application(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     guard let win = getWindow(L, at: 1) else { lua_pushnil(L); return 1 }
 
@@ -337,7 +338,7 @@ private func window_application(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
     return 1
 }
 
-private func window_becomemain(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func window_becomemain(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     guard let win = getWindow(L, at: 1) else { lua_pushvalue(L, 1); return 1 }
     win.becomeMain()
@@ -345,7 +346,7 @@ private func window_becomemain(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 1
 }
 
-private func window_raise(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func window_raise(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     guard let win = getWindow(L, at: 1) else { lua_pushvalue(L, 1); return 1 }
     win.raise()
@@ -353,14 +354,14 @@ private func window_raise(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 1
 }
 
-private func window_id(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func window_id(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     guard let win = getWindow(L, at: 1) else { lua_pushnil(L); return 1 }
     lua_pushinteger(L, lua_Integer(win.winID))
     return 1
 }
 
-private func window_snapshot(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func window_snapshot(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     guard let win = getWindow(L, at: 1) else { lua_pushnil(L); return 1 }
     let keepTransparency = lua_toboolean(L, 2) != 0
@@ -401,7 +402,7 @@ private func windowCornerRadius(for windowID: CGWindowID) -> CGFloat? {
 ///  * This uses a private macOS API (SkyLight) and may not work on all macOS versions.
 ///  * Standard windows on macOS Sequoia/Tahoe have a corner radius of approximately 10.
 ///  * Returns 0 for windows whose corner radius cannot be determined.
-private func window_cornerRadius(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func window_cornerRadius(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     guard let win = getWindow(L, at: 1) else {
         lua_pushnumber(L, 0)
@@ -426,7 +427,7 @@ private func window_cornerRadius(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 ///  * This uses a private macOS API (SkyLight) and may not work on all macOS versions.
 ///  * Standard windows on macOS Sequoia/Tahoe have a corner radius of approximately 10.
 ///  * Returns 0 for windows whose corner radius cannot be determined or for invalid window IDs.
-private func window_cornerRadiusForID(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func window_cornerRadiusForID(_ L: LuaState) throws -> CInt {
     let windowID = CGWindowID(lua_tointeger(L, 1))
     let radius = windowCornerRadius(for: windowID) ?? 0
     lua_pushnumber(L, lua_Number(radius))
@@ -435,7 +436,7 @@ private func window_cornerRadiusForID(_ L: UnsafeMutablePointer<lua_State>!) -> 
 
 // MARK: - hs.uielement methods on hs.window
 
-private func window_uielement_isApplication(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func window_uielement_isApplication(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     guard let win = getWindow(L, at: 1) else { lua_pushboolean(L, 0); return 1 }
     let element = HSuielement(withElement: win.elementRef)
@@ -443,7 +444,7 @@ private func window_uielement_isApplication(_ L: UnsafeMutablePointer<lua_State>
     return 1
 }
 
-private func window_uielement_isWindow(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func window_uielement_isWindow(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     guard let win = getWindow(L, at: 1) else { lua_pushboolean(L, 0); return 1 }
     let element = HSuielement(withElement: win.elementRef)
@@ -459,7 +460,7 @@ private func window_uielement_role(_ L: UnsafeMutablePointer<lua_State>!) -> Int
     return 1
 }
 
-private func window_uielement_selectedText(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func window_uielement_selectedText(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     guard let win = getWindow(L, at: 1) else { lua_pushnil(L); return 1 }
     let element = HSuielement(withElement: win.elementRef)
@@ -467,7 +468,7 @@ private func window_uielement_selectedText(_ L: UnsafeMutablePointer<lua_State>!
     return 1
 }
 
-private func window_uielement_newWatcher(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func window_uielement_newWatcher(_ L: LuaState) throws -> CInt {
     guard let win = getWindow(L, at: 1) else { lua_pushnil(L); return 1 }
     let element = HSuielement(withElement: win.elementRef)
     let watcher = element.newWatcher(atIndex: 2, withUserdataAtIndex: 3, withLuaState: L)
@@ -525,7 +526,7 @@ private func toHSwindowFromLua(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int
 
 // MARK: - Infrastructure
 
-private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func userdata_tostring(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let win = getWindow(L, at: 1)
     let title = win?.title() ?? "nil"
@@ -533,7 +534,7 @@ private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 1
 }
 
-private func userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func userdata_eq(_ L: LuaState) throws -> CInt {
     var isEqual = false
     if luaL_testudata(L, 1, USERDATA_TAG) != nil && luaL_testudata(L, 2, USERDATA_TAG) != nil {
         if let w1 = toHSwindowFromLua(L, 1) as? HSwindowProtocol,
@@ -545,7 +546,7 @@ private func userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 1
 }
 
-private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func userdata_gc(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let ptr = luaL_checkudata(L, 1, USERDATA_TAG)!
         .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
@@ -563,80 +564,68 @@ private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 // MARK: - Registration
 
-private var moduleLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("focusedWindow"),      func: window_focusedwindow),
-    luaL_Reg(name: strdup("_orderedwinids"),      func: window__orderedwinids),
-    luaL_Reg(name: strdup("setShadows"),          func: window_setShadows),
-    luaL_Reg(name: strdup("snapshotForID"),       func: window_snapshotForID),
-    luaL_Reg(name: strdup("cornerRadiusForID"),   func: window_cornerRadiusForID),
-    luaL_Reg(name: strdup("timeout"),             func: window_timeout),
-    luaL_Reg(name: strdup("list"),                func: window_list),
-    luaL_Reg(name: nil, func: nil),
-]
-
-private var module_metaLib: [luaL_Reg] = [
-    luaL_Reg(name: nil, func: nil),
-]
-
-private var userdata_metaLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("title"),          func: window_title),
-    luaL_Reg(name: strdup("subrole"),        func: window_subrole),
-    luaL_Reg(name: strdup("role"),           func: window_role),
-    luaL_Reg(name: strdup("isStandard"),     func: window_isstandard),
-    luaL_Reg(name: strdup("_topLeft"),       func: window__topleft),
-    luaL_Reg(name: strdup("_size"),          func: window__size),
-    luaL_Reg(name: strdup("_setTopLeft"),    func: window__settopleft),
-    luaL_Reg(name: strdup("_setSize"),       func: window__setsize),
-    luaL_Reg(name: strdup("_setFrame"),      func: window__setframe),
-    luaL_Reg(name: strdup("_minimize"),      func: window__minimize),
-    luaL_Reg(name: strdup("_unminimize"),    func: window__unminimize),
-    luaL_Reg(name: strdup("isMinimized"),    func: window_isminimized),
-    luaL_Reg(name: strdup("isMaximizable"),  func: window_isMaximizable),
-    luaL_Reg(name: strdup("pid"),            func: window_pid),
-    luaL_Reg(name: strdup("application"),    func: window_application),
-    luaL_Reg(name: strdup("focusTab"),       func: window_focustab),
-    luaL_Reg(name: strdup("tabCount"),       func: window_tabcount),
-    luaL_Reg(name: strdup("becomeMain"),     func: window_becomemain),
-    luaL_Reg(name: strdup("raise"),          func: window_raise),
-    luaL_Reg(name: strdup("id"),             func: window_id),
-    luaL_Reg(name: strdup("_toggleZoom"),    func: window__togglezoom),
-    luaL_Reg(name: strdup("zoomButtonRect"), func: window_getZoomButtonRect),
-    luaL_Reg(name: strdup("_close"),         func: window__close),
-    luaL_Reg(name: strdup("_setFullScreen"), func: window__setfullscreen),
-    luaL_Reg(name: strdup("isFullScreen"),   func: window_isfullscreen),
-    luaL_Reg(name: strdup("snapshot"),       func: window_snapshot),
-    luaL_Reg(name: strdup("cornerRadius"),   func: window_cornerRadius),
-    luaL_Reg(name: strdup("isApplication"),  func: window_uielement_isApplication),
-    luaL_Reg(name: strdup("isWindow"),       func: window_uielement_isWindow),
-    luaL_Reg(name: strdup("selectedText"),   func: window_uielement_selectedText),
-    luaL_Reg(name: strdup("newWatcher"),     func: window_uielement_newWatcher),
-    luaL_Reg(name: strdup("__tostring"),     func: userdata_tostring),
-    luaL_Reg(name: strdup("__eq"),           func: userdata_eq),
-    luaL_Reg(name: strdup("__gc"),           func: userdata_gc),
-    luaL_Reg(name: nil, func: nil),
-]
-
 @_cdecl("luaopen_hs_libwindow")
 public func luaopen_hs_libwindow(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    // Create ref table in registry
-    lua_newtable(L)
-    refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+    runEntryPoint(L) { L in
+        // Create ref table in registry
+        lua_newtable(L)
+        refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
 
-    // Register userdata metatable
-    luaL_newmetatable(L, USERDATA_TAG)
-    lua_pushvalue(L, -1)
-    lua_setfield(L, -2, "__index")
-    luaL_setfuncs(L, &userdata_metaLib, 0)
-    lua_pop(L, 1)
+        // Register userdata metatable
+        luaL_newmetatable(L, USERDATA_TAG)
+        lua_pushvalue(L, -1)
+        lua_setfield(L, -2, "__index")
 
-    // Create module table
-    lua_createtable(L, 0, Int32(moduleLib.count - 1))
-    luaL_setfuncs(L, &moduleLib, 0)
+        L.push(window_title);                   lua_setfield(L, -2, "title")
+        L.push(window_subrole);                  lua_setfield(L, -2, "subrole")
+        L.push(window_role);                     lua_setfield(L, -2, "role")
+        L.push(window_isstandard);               lua_setfield(L, -2, "isStandard")
+        L.push(window__topleft);                 lua_setfield(L, -2, "_topLeft")
+        L.push(window__size);                    lua_setfield(L, -2, "_size")
+        L.push(window__settopleft);              lua_setfield(L, -2, "_setTopLeft")
+        L.push(window__setsize);                 lua_setfield(L, -2, "_setSize")
+        L.push(window__setframe);                lua_setfield(L, -2, "_setFrame")
+        L.push(window__minimize);                lua_setfield(L, -2, "_minimize")
+        L.push(window__unminimize);              lua_setfield(L, -2, "_unminimize")
+        L.push(window_isminimized);              lua_setfield(L, -2, "isMinimized")
+        L.push(window_isMaximizable);            lua_setfield(L, -2, "isMaximizable")
+        L.push(window_pid);                      lua_setfield(L, -2, "pid")
+        L.push(window_application);              lua_setfield(L, -2, "application")
+        L.push(window_focustab);                 lua_setfield(L, -2, "focusTab")
+        L.push(window_tabcount);                 lua_setfield(L, -2, "tabCount")
+        L.push(window_becomemain);               lua_setfield(L, -2, "becomeMain")
+        L.push(window_raise);                    lua_setfield(L, -2, "raise")
+        L.push(window_id);                       lua_setfield(L, -2, "id")
+        L.push(window__togglezoom);              lua_setfield(L, -2, "_toggleZoom")
+        L.push(window_getZoomButtonRect);        lua_setfield(L, -2, "zoomButtonRect")
+        L.push(window__close);                   lua_setfield(L, -2, "_close")
+        L.push(window__setfullscreen);           lua_setfield(L, -2, "_setFullScreen")
+        L.push(window_isfullscreen);             lua_setfield(L, -2, "isFullScreen")
+        L.push(window_snapshot);                 lua_setfield(L, -2, "snapshot")
+        L.push(window_cornerRadius);             lua_setfield(L, -2, "cornerRadius")
+        L.push(window_uielement_isApplication);  lua_setfield(L, -2, "isApplication")
+        L.push(window_uielement_isWindow);       lua_setfield(L, -2, "isWindow")
+        L.push(window_uielement_selectedText);   lua_setfield(L, -2, "selectedText")
+        L.push(window_uielement_newWatcher);     lua_setfield(L, -2, "newWatcher")
+        L.push(userdata_tostring);               lua_setfield(L, -2, "__tostring")
+        L.push(userdata_eq);                     lua_setfield(L, -2, "__eq")
+        L.push(userdata_gc);                     lua_setfield(L, -2, "__gc")
 
-    // Set module metatable (for __gc)
-    lua_createtable(L, 0, Int32(module_metaLib.count - 1))
-    luaL_setfuncs(L, &module_metaLib, 0)
-    lua_setmetatable(L, -2)
+        lua_pop(L, 1)
 
-    return 1
+        // Create module table
+        lua_createtable(L, 0, 7)
+
+        L.push(window_focusedwindow);    lua_setfield(L, -2, "focusedWindow")
+        L.push(window__orderedwinids);   lua_setfield(L, -2, "_orderedwinids")
+        L.push(window_setShadows);       lua_setfield(L, -2, "setShadows")
+        L.push(window_snapshotForID);    lua_setfield(L, -2, "snapshotForID")
+        L.push(window_cornerRadiusForID); lua_setfield(L, -2, "cornerRadiusForID")
+        L.push(window_timeout);          lua_setfield(L, -2, "timeout")
+        L.push(window_list);             lua_setfield(L, -2, "list")
+
+        // Set module metatable (for __gc)
+        lua_createtable(L, 0, 0)
+        lua_setmetatable(L, -2)
+    }
 }

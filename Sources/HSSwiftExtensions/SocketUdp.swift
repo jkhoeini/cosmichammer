@@ -1,5 +1,6 @@
 import Cocoa
 import CLua
+import Lua
 import os.log
 import Network
 
@@ -797,7 +798,7 @@ private class HSAsyncUdpSocket {
 /// Returns:
 ///  * An [`hs.socket.udp`](#new) object.
 ///
-private func socketudp_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func socketudp_new(_ L: LuaState) throws -> CInt {
     let udpDelegateQueue = DispatchQueue(label: "udpDelegateQueue")
     let asyncUdpSocket = HSAsyncUdpSocket(queue: udpDelegateQueue)
 
@@ -849,7 +850,7 @@ private func socketudp_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// * You cannot bind a socket for listening after it has been connected.
 /// * You can only connect a socket once.
 ///
-private func socketudp_connect(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func socketudp_connect(_ L: LuaState) throws -> CInt {
     let asyncUdpSocket = getUserData(L, 1)
     let theHost = lua_tovalue(L, at: 2) as! String
     let thePort = socketUdpCheckPort(L, at: 3)
@@ -881,7 +882,7 @@ private func socketudp_connect(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * The [`hs.socket.udp`](#new) object, or `nil` if an error occurred.
 ///
-private func socketudp_listen(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func socketudp_listen(_ L: LuaState) throws -> CInt {
     let asyncUdpSocket = getUserData(L, 1)
     let thePort = socketUdpCheckPort(L, at: 2)
 
@@ -909,7 +910,7 @@ private func socketudp_listen(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * The [`hs.socket.udp`](#new) object.
 ///
-private func socketudp_close(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func socketudp_close(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let asyncUdpSocket = getUserData(L, 1)
 
@@ -932,7 +933,7 @@ private func socketudp_close(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Notes:
 ///  * Call one of the receive methods to resume.
 ///
-private func socketudp_pause(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func socketudp_pause(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let asyncUdpSocket = getUserData(L, 1)
 
@@ -994,7 +995,7 @@ private func socketudp_receiveContinuous(_ L: UnsafeMutablePointer<lua_State>!, 
 ///  * You may switch back and forth between one-at-a-time mode and continuous mode.
 ///  * If the socket is currently in one-at-a-time mode, calling this method will switch it to continuous mode.
 ///
-private func socketudp_receive(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func socketudp_receive(_ L: LuaState) throws -> CInt {
     if socketudp_receiveContinuous(L, readContinuous: true) {
         lua_pushvalue(L, 1)
     } else {
@@ -1023,7 +1024,7 @@ private func socketudp_receive(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * You may switch back and forth between one-at-a-time mode and continuous mode.
 ///  * If the socket is currently in continuous mode, calling this method will switch it to one-at-a-time mode
 ///
-private func socketudp_receiveOne(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func socketudp_receiveOne(_ L: LuaState) throws -> CInt {
     if socketudp_receiveContinuous(L, readContinuous: false) {
         lua_pushvalue(L, 1)
     } else {
@@ -1052,7 +1053,7 @@ private func socketudp_receiveOne(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
 ///  * Recall that connecting is optional for a UDP socket.
 ///  * For connected sockets, data can only be sent to the connected address.
 ///
-private func socketudp_send(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func socketudp_send(_ L: LuaState) throws -> CInt {
     let asyncUdpSocket = getUserData(L, 1)
 
     let sendData = lua_checkdata(L, at: 2)
@@ -1069,8 +1070,7 @@ private func socketudp_send(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
         asyncUdpSocket.send(sendData, withTimeout: asyncUdpSocket.socketTimeout, tag: tag)
     } else {
         guard let theHost = lua_tostringValue(L, at: 3) else {
-            _ = luaL_argerror(L, 3, "string expected")
-            return 0
+            throw LuaCallError("bad argument #3 (string expected)")
         }
         let thePort = socketUdpCheckPort(L, at: 4)
         let tag: Int = lua_type(L, 5) == LUA_TNUMBER ? Int(lua_tointeger(L, 5)) : -1
@@ -1104,7 +1104,7 @@ private func socketudp_send(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * A broadcast is a UDP message to addresses like "192.168.255.255" or "255.255.255.255" that is delivered to every host on the network.
 ///  * The reason this is generally disabled by default (by the OS) is to prevent accidental broadcast messages from flooding the network.
 ///
-private func socketudp_enableBroadcast(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func socketudp_enableBroadcast(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let asyncUdpSocket = getUserData(L, 1)
     let enableFlag: Bool = !(lua_type(L, 2) == LUA_TBOOLEAN && lua_toboolean(L, 3) == 0)
@@ -1137,7 +1137,7 @@ private func socketudp_enableBroadcast(_ L: UnsafeMutablePointer<lua_State>!) ->
 ///  * All processes that wish to use the address & port simultaneously must all enable reuse port on the socket bound to that port.
 ///  * Must be called before binding the socket.
 ///
-private func socketudp_enableReusePort(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func socketudp_enableReusePort(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let asyncUdpSocket = getUserData(L, 1)
     let enableFlag: Bool = !(lua_type(L, 2) == LUA_TBOOLEAN && lua_toboolean(L, 3) == 0)
@@ -1170,7 +1170,7 @@ private func socketudp_enableReusePort(_ L: UnsafeMutablePointer<lua_State>!) ->
 ///    * `hs.socket.udp.new(callback):enableIPv(4, false):listen(port):receive()`
 ///  * The convenience constructor [`hs.socket.server`](#server) will automatically bind the socket and requires closing and relistening to use this method.
 ///
-private func socketudp_enableIPversion(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func socketudp_enableIPversion(_ L: LuaState) throws -> CInt {
     let asyncUdpSocket = getUserData(L, 1)
     let ipVersion = UInt8(lua_tointeger(L, 2))
     let enableFlag: Bool = !(lua_type(L, 3) == LUA_TBOOLEAN && lua_toboolean(L, 3) == 0)
@@ -1204,7 +1204,7 @@ private func socketudp_enableIPversion(_ L: UnsafeMutablePointer<lua_State>!) ->
 ///  * If a DNS lookup returns only IPv6 results, the socket will automatically use IPv6.
 ///  * If a DNS lookup returns both IPv4 and IPv6 results, then the protocol used depends on the configured preference.
 ///
-private func socketudp_preferIPversion(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func socketudp_preferIPversion(_ L: LuaState) throws -> CInt {
     let asyncUdpSocket = getUserData(L, 1)
 
     if lua_type(L, 2) == LUA_TNUMBER && lua_tointeger(L, 2) == 4 {
@@ -1238,7 +1238,7 @@ private func socketudp_preferIPversion(_ L: UnsafeMutablePointer<lua_State>!) ->
 ///  * In practice the size of UDP packets is generally much smaller than the max. Most protocols will send and receive packets of only a few bytes, or will set a limit on the size of packets to prevent fragmentation in the IP layer.
 ///  * If you set the buffer size too small, the sockets API in the OS will silently discard any extra data.
 ///
-private func socketudp_setReceiveBufferSize(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func socketudp_setReceiveBufferSize(_ L: LuaState) throws -> CInt {
     let asyncUdpSocket = getUserData(L, 1)
     let bufferSize = UInt(lua_tointeger(L, 2))
     let ipv4BufferSize = bufferSize > UInt(UInt16.max) ? UInt16.max : UInt16(bufferSize)
@@ -1274,7 +1274,7 @@ private func socketudp_setReceiveBufferSize(_ L: UnsafeMutablePointer<lua_State>
 /// Notes:
 ///  * A callback must be set in order to read data from the socket.
 ///
-private func socketudp_setCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func socketudp_setCallback(_ L: LuaState) throws -> CInt {
     let asyncUdpSocket = getUserData(L, 1)
 
     lua_replaceRegistryFunctionRef(L, &asyncUdpSocket.readCallbackRef, at: 2)
@@ -1296,7 +1296,7 @@ private func socketudp_setCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int
 /// Notes:
 ///  *  If the timeout value is negative, the operations will not use a timeout, which is the default.
 ///
-private func socketudp_setTimeout(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func socketudp_setTimeout(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     luaL_checktype(L, 2, LUA_TNUMBER)
@@ -1321,7 +1321,7 @@ private func socketudp_setTimeout(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
 ///  * UDP sockets are typically meant to be connectionless.
 ///  * This method will only return `true` if the [`hs.socket.udp:connect`](#connect) method has been explicitly called.
 ///
-private func socketudp_connected(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func socketudp_connected(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let asyncUdpSocket = getUserData(L, 1)
 
@@ -1344,7 +1344,7 @@ private func socketudp_connected(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 ///  * Sending a packet anywhere, regardless of whether or not the destination receives it, opens the socket until it is explicitly closed.
 ///  * An active listening socket will not be closed, but will not be 'connected' unless the [`hs.socket.udp:connect`](#connect) method has been called.
 ///
-private func socketudp_closed(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func socketudp_closed(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let asyncUdpSocket = getUserData(L, 1)
 
@@ -1387,7 +1387,7 @@ private func socketudp_closed(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///    * timeout - `number`
 ///    * userData - `string`
 ///
-private func socketudp_info(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func socketudp_info(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let asyncUdpSocket = getUserData(L, 1)
 
@@ -1425,7 +1425,7 @@ private func socketudp_info(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 // MARK: - Library Registration Functions
 
-private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func userdata_tostring(_ L: LuaState) throws -> CInt {
     let asyncUdpSocket = getUserData(L, 1)
 
     let isServer = asyncUdpSocket.userData() as? NSString == SERVER
@@ -1436,7 +1436,7 @@ private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 1
 }
 
-private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func userdata_gc(_ L: LuaState) throws -> CInt {
     let userData = lua_touserdata(L, 1)!.assumingMemoryBound(to: AsyncSocketUserData.self)
     let asyncUdpSocket: HSAsyncUdpSocket = Unmanaged.fromOpaque(userData.pointee.asyncSocket!).takeRetainedValue()
     userData.pointee.asyncSocket = nil
@@ -1449,66 +1449,50 @@ private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 0
 }
 
-private func meta_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func meta_gc(_ L: LuaState) throws -> CInt {
     return 0
 }
 
-// Functions for returned object when module loads
-private var moduleLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("new"), func: socketudp_new),
-    luaL_Reg(name: nil, func: nil),
-]
-
-// Metatable for created objects when _new invoked
-private var userdata_metaLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("connect"), func: socketudp_connect),
-    luaL_Reg(name: strdup("listen"), func: socketudp_listen),
-    luaL_Reg(name: strdup("close"), func: socketudp_close),
-    luaL_Reg(name: strdup("pause"), func: socketudp_pause),
-    luaL_Reg(name: strdup("receive"), func: socketudp_receive),
-    luaL_Reg(name: strdup("receiveOne"), func: socketudp_receiveOne),
-    luaL_Reg(name: strdup("send"), func: socketudp_send),
-    luaL_Reg(name: strdup("broadcast"), func: socketudp_enableBroadcast),
-    luaL_Reg(name: strdup("reusePort"), func: socketudp_enableReusePort),
-    luaL_Reg(name: strdup("enableIPv"), func: socketudp_enableIPversion),
-    luaL_Reg(name: strdup("preferIPv"), func: socketudp_preferIPversion),
-    luaL_Reg(name: strdup("setBufferSize"), func: socketudp_setReceiveBufferSize),
-    luaL_Reg(name: strdup("setCallback"), func: socketudp_setCallback),
-    luaL_Reg(name: strdup("setTimeout"), func: socketudp_setTimeout),
-    luaL_Reg(name: strdup("connected"), func: socketudp_connected),
-    luaL_Reg(name: strdup("closed"), func: socketudp_closed),
-    luaL_Reg(name: strdup("info"), func: socketudp_info),
-    luaL_Reg(name: strdup("__tostring"), func: userdata_tostring),
-    luaL_Reg(name: strdup("__gc"), func: userdata_gc),
-    luaL_Reg(name: nil, func: nil),
-]
-
-private var meta_gcLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("__gc"), func: meta_gc),
-    luaL_Reg(name: nil, func: nil),
-]
 
 @_cdecl("luaopen_hs_libsocketudp")
 public func luaopen_hs_libsocketudp(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    // Create ref table in registry
-    lua_newtable(L)
-    refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+    runEntryPoint(L) { L in
+        // Create ref table in registry
+        lua_newtable(L)
+        refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
 
-    // Register userdata metatable
-    luaL_newmetatable(L, USERDATA_TAG)
-    lua_pushvalue(L, -1)
-    lua_setfield(L, -2, "__index")
-    luaL_setfuncs(L, &userdata_metaLib, 0)
-    lua_pop(L, 1)
+        // Register userdata metatable
+        luaL_newmetatable(L, USERDATA_TAG)
+        lua_pushvalue(L, -1)
+        lua_setfield(L, -2, "__index")
+        L.push(socketudp_connect);              lua_setfield(L, -2, "connect")
+        L.push(socketudp_listen);               lua_setfield(L, -2, "listen")
+        L.push(socketudp_close);                lua_setfield(L, -2, "close")
+        L.push(socketudp_pause);                lua_setfield(L, -2, "pause")
+        L.push(socketudp_receive);              lua_setfield(L, -2, "receive")
+        L.push(socketudp_receiveOne);           lua_setfield(L, -2, "receiveOne")
+        L.push(socketudp_send);                 lua_setfield(L, -2, "send")
+        L.push(socketudp_enableBroadcast);      lua_setfield(L, -2, "broadcast")
+        L.push(socketudp_enableReusePort);      lua_setfield(L, -2, "reusePort")
+        L.push(socketudp_enableIPversion);      lua_setfield(L, -2, "enableIPv")
+        L.push(socketudp_preferIPversion);      lua_setfield(L, -2, "preferIPv")
+        L.push(socketudp_setReceiveBufferSize); lua_setfield(L, -2, "setBufferSize")
+        L.push(socketudp_setCallback);          lua_setfield(L, -2, "setCallback")
+        L.push(socketudp_setTimeout);           lua_setfield(L, -2, "setTimeout")
+        L.push(socketudp_connected);            lua_setfield(L, -2, "connected")
+        L.push(socketudp_closed);               lua_setfield(L, -2, "closed")
+        L.push(socketudp_info);                 lua_setfield(L, -2, "info")
+        L.push(userdata_tostring);              lua_setfield(L, -2, "__tostring")
+        L.push(userdata_gc);                    lua_setfield(L, -2, "__gc")
+        lua_pop(L, 1)
 
-    // Create module table
-    lua_createtable(L, 0, Int32(moduleLib.count - 1))
-    luaL_setfuncs(L, &moduleLib, 0)
+        // Create module table
+        lua_createtable(L, 0, 1)
+        L.push(socketudp_new);                  lua_setfield(L, -2, "new")
 
-    // Set module metatable (for __gc)
-    lua_createtable(L, 0, Int32(meta_gcLib.count - 1))
-    luaL_setfuncs(L, &meta_gcLib, 0)
-    lua_setmetatable(L, -2)
-
-    return 1
+        // Set module metatable (for __gc)
+        lua_createtable(L, 0, 1)
+        L.push(meta_gc);                        lua_setfield(L, -2, "__gc")
+        lua_setmetatable(L, -2)
+    }
 }

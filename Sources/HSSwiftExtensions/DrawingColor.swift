@@ -1,5 +1,6 @@
 import Cocoa
 import CLua
+import Lua
 import Carbon
 import os.log
 
@@ -20,7 +21,7 @@ private var colorCollectionsTable: Int32 = LUA_NOREF
 ///  * Where possible, each color node is provided as its RGB color representation.  Where this is not possible, the color node contains the keys `list` and `name` which identify the indicated color.  This means that you can use the following wherever a color parameter is expected: `hs.drawing.color.lists()["list-name"]["color-name"]`
 ///  * This function provides a tostring metatable method which allows listing the defined color lists in the Cosmic Hammer console with: `hs.drawing.color.lists()`
 ///  * See also `hs.drawing.color.colorsFor`
-private func getColorLists(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func getColorLists(_ L: LuaState) throws -> CInt {
 
     lua_newtable(L)
     for colorList in NSColorList.availableColorLists {
@@ -42,10 +43,10 @@ private func getColorLists(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Notes:
 ///  * See also `hs.drawing.color.asHSB`
-private func colorAsRGB(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func colorAsRGB(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TTABLE)
     guard let theColor = table_toNSColor(L, 1) as? NSColor else {
-        return luaL_argerror(L, 1, "expected color table")
+        throw LuaCallError("bad argument #1 (expected color table)")
     }
 
     let safeColor = theColor.usingColorSpace(NSColorSpace.genericRGB)
@@ -75,10 +76,10 @@ private func colorAsRGB(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Notes:
 ///  * See also `hs.drawing.color.asRGB`
-private func colorAsHSB(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func colorAsHSB(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TTABLE)
     guard let theColor = table_toNSColor(L, 1) as? NSColor else {
-        return luaL_argerror(L, 1, "expected color table")
+        throw LuaCallError("bad argument #1 (expected color table)")
     }
 
     let safeColor = theColor.usingColorSpace(NSColorSpace.genericRGB)
@@ -300,7 +301,7 @@ func table_toNSColor(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> Any
 }
 
 // register the lookup table for Lua defined color tables
-private func registerColorCollectionsTable(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func registerColorCollectionsTable(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TTABLE)
 
     lua_pushvalue(L, 1)
@@ -308,25 +309,24 @@ private func registerColorCollectionsTable(_ L: UnsafeMutablePointer<lua_State>!
     return 0
 }
 
-private var moduleLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("lists"), func: getColorLists),
-    luaL_Reg(name: strdup("asRGB"), func: colorAsRGB),
-    luaL_Reg(name: strdup("asHSB"), func: colorAsHSB),
-    luaL_Reg(name: strdup("_registerColorCollectionsTable"), func: registerColorCollectionsTable),
-    luaL_Reg(name: nil, func: nil),
-]
-
 @_cdecl("luaopen_hs_libdrawing_color")
 public func luaopen_hs_libdrawing_color(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    // Create ref table in registry
-    lua_newtable(L)
-    refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+    runEntryPoint(L) { L in
+        // Create ref table in registry
+        lua_newtable(L)
+        refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
 
-    // Create module table
-    lua_createtable(L, 0, Int32(moduleLib.count - 1))
-    luaL_setfuncs(L, &moduleLib, 0)
+        // Create module table
+        lua_createtable(L, 0, 4)
+        L.push(getColorLists)
+        lua_setfield(L, -2, "lists")
+        L.push(colorAsRGB)
+        lua_setfield(L, -2, "asRGB")
+        L.push(colorAsHSB)
+        lua_setfield(L, -2, "asHSB")
+        L.push(registerColorCollectionsTable)
+        lua_setfield(L, -2, "_registerColorCollectionsTable")
 
-    colorCollectionsTable = LUA_NOREF
-
-    return 1
+        colorCollectionsTable = LUA_NOREF
+    }
 }

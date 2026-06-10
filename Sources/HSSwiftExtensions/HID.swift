@@ -1,5 +1,6 @@
 import Cocoa
 import CLua
+import Lua
 import IOKit
 import IOKit.hid
 import os
@@ -139,7 +140,7 @@ private func accessCapslock(_ op: Int32) -> Int32 {
 // hs.hid.capslock.get() -> bool
 // Function
 // Checks the state of the caps lock via HID
-private func hid_capslock_query(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func hid_capslock_query(_ L: LuaState) throws -> CInt {
     let state = accessCapslock(CAPSLOCK_QUERY)
     lua_pushboolean(L, state)
     return 1
@@ -148,7 +149,7 @@ private func hid_capslock_query(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 // hs.hid.capslock.toggle() -> bool
 // Function
 // Toggles the state of caps lock via HID
-private func hid_capslock_toggle(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func hid_capslock_toggle(_ L: LuaState) throws -> CInt {
     let state = accessCapslock(CAPSLOCK_TOGGLE)
     lua_pushboolean(L, state)
     return 1
@@ -157,7 +158,7 @@ private func hid_capslock_toggle(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 // hs.hid.capslock.set(true) -> bool
 // Function
 // Assigns capslock to the desired state
-private func hid_capslock_on(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func hid_capslock_on(_ L: LuaState) throws -> CInt {
     let state = accessCapslock(CAPSLOCK_ON)
     lua_pushboolean(L, state)
     return 1
@@ -166,18 +167,18 @@ private func hid_capslock_on(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 // hs.hid.capslock.set(false) -> bool
 // Function
 // Assigns capslock to the desired state
-private func hid_capslock_off(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func hid_capslock_off(_ L: LuaState) throws -> CInt {
     let state = accessCapslock(CAPSLOCK_OFF)
     lua_pushboolean(L, state)
     return 1
 }
 
-private func hid_led_set(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func hid_led_set(_ L: LuaState) throws -> CInt {
     guard lua_type(L, 1) == LUA_TSTRING else {
-        return luaL_error(L, "expected string for argument 1")
+        throw LuaCallError("expected string for argument 1")
     }
     guard lua_type(L, 2) == LUA_TBOOLEAN else {
-        return luaL_error(L, "expected boolean for argument 2")
+        throw LuaCallError("expected boolean for argument 2")
     }
 
     let name = String(cString: lua_tostring(L, 1)!)
@@ -192,25 +193,26 @@ private func hid_led_set(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     case "num":
         ret = hidled_set(UInt32(kHIDUsage_LED_NumLock), targetValue)
     default:
-        return luaL_error(L, "Unsupported LED name")
+        throw LuaCallError("Unsupported LED name")
     }
 
     lua_pushboolean(L, ret ? 1 : 0)
     return 1
 }
 
-private var hid_lib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("_capslock_query"), func: hid_capslock_query),
-    luaL_Reg(name: strdup("_capslock_toggle"), func: hid_capslock_toggle),
-    luaL_Reg(name: strdup("_capslock_on"), func: hid_capslock_on),
-    luaL_Reg(name: strdup("_capslock_off"), func: hid_capslock_off),
-    luaL_Reg(name: strdup("_led_set"), func: hid_led_set),
-    luaL_Reg(name: nil, func: nil),
-]
-
 @_cdecl("luaopen_hs_libhid")
 func luaopen_hs_libhid(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    lua_createtable(L, 0, Int32(hid_lib.count - 1))
-    luaL_setfuncs(L, &hid_lib, 0)
-    return 1
+    runEntryPoint(L) { L in
+        lua_createtable(L, 0, 5)
+        L.push(hid_capslock_query)
+        lua_setfield(L, -2, "_capslock_query")
+        L.push(hid_capslock_toggle)
+        lua_setfield(L, -2, "_capslock_toggle")
+        L.push(hid_capslock_on)
+        lua_setfield(L, -2, "_capslock_on")
+        L.push(hid_capslock_off)
+        lua_setfield(L, -2, "_capslock_off")
+        L.push(hid_led_set)
+        lua_setfield(L, -2, "_led_set")
+    }
 }

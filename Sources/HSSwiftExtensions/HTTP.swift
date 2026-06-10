@@ -1,5 +1,6 @@
 import Foundation
 import CLua
+import Lua
 import Cocoa
 import Carbon
 import os.log
@@ -198,7 +199,7 @@ private func extractHeadersFromStack(_ L: UnsafeMutablePointer<lua_State>!, _ in
 ///  * If authentication is required in order to download the request, the required credentials must be specified as part of the URL (e.g. "http://user:password@host.com/"). If authentication fails, or credentials are missing, the connection will attempt to continue without credentials.
 ///  * If the Content-Type response header begins `text/` then the response body return value is a UTF8 string. Any other content type passes the response body, unaltered, as a stream of bytes.
 ///  * If enableRedirect is set to true, response body will be empty string. Http body will be dropped even though response has the body. This seems the limitation of 'connection:willSendRequest:redirectResponse' method.
-private func http_doAsyncRequest(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func http_doAsyncRequest(_ L: LuaState) throws -> CInt {
 
     var cachePolicy: String? = nil
     var enableRedirect = true
@@ -253,7 +254,7 @@ private func http_doAsyncRequest(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 ///  * This function is synchronous and will therefore block all Lua execution until it completes. You are encouraged to use the asynchronous functions.
 ///  * If you attempt to connect to a local Cosmic Hammer server created with `hs.httpserver`, then Cosmic Hammer will block until the connection times out (60 seconds), return a failed result due to the timeout, and then the `hs.httpserver` callback function will be invoked (so any side effects of the function will occur, but it's results will be lost).  Use [hs.http.doAsyncRequest](#doAsyncRequest) to avoid this.
 ///  * If the Content-Type response header begins `text/` then the response body return value is a UTF8 string. Any other content type passes the response body, unaltered, as a stream of bytes.
-private func http_doRequest(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func http_doRequest(_ L: LuaState) throws -> CInt {
 
     let cachePolicy: String? = lua_tovalue(L, at: 5) as? String
 
@@ -274,7 +275,7 @@ private func http_doRequest(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 }
 
 // NOTE: this function is wrapped in init.lua
-private func http_encodeForQuery(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func http_encodeForQuery(_ L: LuaState) throws -> CInt {
     _ = luaL_checkstring(L, 1)
     let value: String = lua_tovalue(L, at: 1) as! String
 
@@ -314,7 +315,7 @@ private func http_encodeForQuery(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 ///    * scheme                   - the scheme of the URL
 ///    * standardizedURL          - the URL with any instances of ".." or "." removed from its path
 ///    * user                     - the username, if specified in the URL
-private func http_urlParts(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func http_urlParts(_ L: LuaState) throws -> CInt {
 
     let theURL: NSURL
     if lua_type(L, 1) == LUA_TUSERDATA {
@@ -556,7 +557,7 @@ private func table_toNSURLRequest(_ L: UnsafeMutablePointer<lua_State>!, _ idx: 
 
 // MARK: - GC
 
-private func http_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func http_gc(_ L: LuaState) throws -> CInt {
     let delegatesCopy = NSMutableArray(array: delegates)
     for delegate in delegatesCopy {
         remove_delegate(L, delegate as! ConnectionDelegate)
@@ -564,45 +565,32 @@ private func http_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 0
 }
 
-// MARK: - C Callback Wrappers
-
-private let http_doRequest_C: @convention(c) (UnsafeMutablePointer<lua_State>?) -> Int32 = { L in http_doRequest(L) }
-private let http_doAsyncRequest_C: @convention(c) (UnsafeMutablePointer<lua_State>?) -> Int32 = { L in http_doAsyncRequest(L) }
-private let http_urlParts_C: @convention(c) (UnsafeMutablePointer<lua_State>?) -> Int32 = { L in http_urlParts(L) }
-private let http_encodeForQuery_C: @convention(c) (UnsafeMutablePointer<lua_State>?) -> Int32 = { L in http_encodeForQuery(L) }
-private let http_gc_C: @convention(c) (UnsafeMutablePointer<lua_State>?) -> Int32 = { L in http_gc(L) }
-
 // MARK: - Module Registration
-
-private var httplib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("doRequest"),      func: http_doRequest_C),
-    luaL_Reg(name: strdup("doAsyncRequest"), func: http_doAsyncRequest_C),
-    luaL_Reg(name: strdup("urlParts"),       func: http_urlParts_C),
-    luaL_Reg(name: strdup("encodeForQuery"), func: http_encodeForQuery_C),
-    luaL_Reg(name: nil, func: nil),
-]
-
-private var metalib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("__gc"), func: http_gc_C),
-    luaL_Reg(name: nil, func: nil),
-]
 
 @_cdecl("luaopen_hs_libhttp")
 public func luaopen_hs_libhttp(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    delegates = NSMutableArray()
+    runEntryPoint(L) { L in
+        delegates = NSMutableArray()
 
-    // Create ref table in registry
-    lua_newtable(L)
-    refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+        // Create ref table in registry
+        lua_newtable(L)
+        refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
 
-    // Create module table
-    lua_createtable(L, 0, Int32(httplib.count - 1))
-    luaL_setfuncs(L, &httplib, 0)
+        // Create module table
+        lua_createtable(L, 0, 4)
+        L.push(http_doRequest)
+        lua_setfield(L, -2, "doRequest")
+        L.push(http_doAsyncRequest)
+        lua_setfield(L, -2, "doAsyncRequest")
+        L.push(http_urlParts)
+        lua_setfield(L, -2, "urlParts")
+        L.push(http_encodeForQuery)
+        lua_setfield(L, -2, "encodeForQuery")
 
-    // Set module metatable (for __gc)
-    lua_createtable(L, 0, Int32(metalib.count - 1))
-    luaL_setfuncs(L, &metalib, 0)
-    lua_setmetatable(L, -2)
-
-    return 1
+        // Set module metatable (for __gc)
+        lua_createtable(L, 0, 1)
+        L.push(http_gc)
+        lua_setfield(L, -2, "__gc")
+        lua_setmetatable(L, -2)
+    }
 }

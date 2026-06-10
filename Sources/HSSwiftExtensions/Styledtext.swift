@@ -1,5 +1,6 @@
 import Cocoa
 import CLua
+import Lua
 import os.log
 
 private let USERDATA_TAG = "hs.styledtext"
@@ -154,9 +155,9 @@ private func luaNameForAttributeKey(_ key: NSAttributedString.Key) -> String? {
 ///  * See the module description documentation (`help.hs.styledtext`) for a description of the attributes table format which can be provided for the optional second argument.
 ///
 ///  * Passing an `hs.styledtext` object as the first parameter without specifying an `attributes` table is the equivalent of invoking `hs.styledtext:copy`.
-private func string_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func string_new(_ L: LuaState) throws -> CInt {
     guard let sourceString = lua_toNSAttributedString(L, at: 1) as? NSAttributedString else {
-        return luaL_argerror(L, 1, "expected string, table, or styledtext object")
+        throw LuaCallError("bad argument #1 (expected string, table, or styledtext object)")
     }
     let newString = sourceString.mutableCopy() as! NSMutableAttributedString
     if lua_gettop(L) == 2 {
@@ -182,7 +183,7 @@ private func string_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Notes:
 ///  * See also `hs.styledtext.getStyledTextFromFile`
-private func getStyledTextFromData(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func getStyledTextFromData(_ L: LuaState) throws -> CInt {
 
     var dataType: NSAttributedString.DocumentType = .html
     if lua_type(L, 2) != LUA_TNONE {
@@ -190,7 +191,7 @@ private func getStyledTextFromData(_ L: UnsafeMutablePointer<lua_State>!) -> Int
            let resolved = documentType(from: requestType) {
             dataType = resolved
         } else {
-            return luaL_argerror(L, 2, "unrecognized encoding type")
+            throw LuaCallError("bad argument #2 (unrecognized encoding type)")
         }
     }
 
@@ -208,7 +209,7 @@ private func getStyledTextFromData(_ L: UnsafeMutablePointer<lua_State>!) -> Int
                                                documentAttributes: nil)
         NSAttributedString_toLua(L, obj: newString)
     } catch {
-        return luaL_error(L, "setTextFromData: conversion error: \(error.localizedDescription)")
+        throw LuaCallError("setTextFromData: conversion error: \(error.localizedDescription)")
     }
     return 1
 }
@@ -226,7 +227,7 @@ private func getStyledTextFromData(_ L: UnsafeMutablePointer<lua_State>!) -> Int
 ///
 /// Notes:
 ///  * See also `hs.styledtext.getStyledTextFromData`
-private func getStyledTextFromFile(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func getStyledTextFromFile(_ L: LuaState) throws -> CInt {
 
     var dataType: NSAttributedString.DocumentType = .html
     if lua_type(L, 2) != LUA_TNONE {
@@ -234,7 +235,7 @@ private func getStyledTextFromFile(_ L: UnsafeMutablePointer<lua_State>!) -> Int
            let resolved = documentType(from: requestType) {
             dataType = resolved
         } else {
-            return luaL_argerror(L, 2, "unrecognized encoding type")
+            throw LuaCallError("bad argument #2 (unrecognized encoding type)")
         }
     }
 
@@ -245,7 +246,7 @@ private func getStyledTextFromFile(_ L: UnsafeMutablePointer<lua_State>!) -> Int
                                                documentAttributes: nil)
         NSAttributedString_toLua(L, obj: newString)
     } catch {
-        return luaL_error(L, "setTextFromFile: conversion error: \(error.localizedDescription)")
+        throw LuaCallError("setTextFromFile: conversion error: \(error.localizedDescription)")
     }
     return 1
 }
@@ -261,7 +262,7 @@ private func getStyledTextFromFile(_ L: UnsafeMutablePointer<lua_State>!) -> Int
 ///
 /// Returns:
 ///  * a table containing the names of every font installed for the system.  The individual names are strings which can be used in the `hs.drawing:setTextFont(fontname)` method.
-private func fontNames(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func fontNames(_ L: LuaState) throws -> CInt {
 
     if let names = NSFontManager.shared.availableFonts as NSArray? {
         lua_pushany(L, names.sortedArray(using: #selector(NSString.localizedCaseInsensitiveCompare(_:))) as NSArray)
@@ -280,7 +281,7 @@ private func fontNames(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * a table containing the names of every font family installed for the system.
-private func fontFamilies(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func fontFamilies(_ L: LuaState) throws -> CInt {
 
     if let families = NSFontManager.shared.availableFontFamilies as NSArray? {
         lua_pushany(L, families.sortedArray(using: #selector(NSString.localizedCaseInsensitiveCompare(_:))) as NSArray)
@@ -290,7 +291,7 @@ private func fontFamilies(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 1
 }
 
-private func fontsForFamily(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func fontsForFamily(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TSTRING)
 
     if let fontFamily = lua_tovalue(L, at: 1) as? String {
@@ -314,10 +315,10 @@ private func fontsForFamily(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * a table containing the name and size of the font which most closely matches the specified font and the trait change requested.  If no such font is available, then the original font is returned unchanged.
-private func font_convertFont(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func font_convertFont(_ L: LuaState) throws -> CInt {
 
     guard let theFont = table_toNSFont(L, at: 1) as? NSFont else {
-        return luaL_argerror(L, 1, "does not specify a font")
+        throw LuaCallError("bad argument #1 (does not specify a font)")
     }
     if lua_type(L, 2) == LUA_TNUMBER {
         NSFont_toLua(L, obj: NSFontManager.shared.convert(theFont, toHaveTrait: NSFontTraitMask(rawValue: UInt(luaL_checkinteger(L, 2)))))
@@ -339,7 +340,7 @@ private func font_convertFont(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Notes:
 ///  * specifying 0 or an empty table will match all fonts that are neither italic nor bold.  This would be the same list as you'd get with { hs.styledtext.fontTraits.unBold, hs.styledtext.fontTraits.unItalic } as the parameter.
-private func fontNamesWithTraits(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func fontNamesWithTraits(_ L: LuaState) throws -> CInt {
 
     var theTraits: NSFontTraitMask = NSFontTraitMask(rawValue: 0)
 
@@ -355,7 +356,7 @@ private func fontNamesWithTraits(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
             lua_pop(L, 1)
         }
     default:
-        return luaL_argerror(L, 1, "expected integer or table")
+        throw LuaCallError("bad argument #1 (expected integer or table)")
     }
 
     if let names = NSFontManager.shared.availableFontNames(with: theTraits) {
@@ -411,7 +412,7 @@ private func fontTraits(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * `true` if valid, otherwise `false`.
-private func validFont(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func validFont(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TSTRING)
 
     let fontName = lua_tovalue(L, at: 1) as! String
@@ -431,7 +432,7 @@ private func validFont(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * a table containing font information keys
-private func fontInformation(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func fontInformation(_ L: LuaState) throws -> CInt {
     let theFont = tableToNSFont(L, at: -1) ?? NSFont.systemFont(ofSize: 0)
 
     lua_newtable(L)
@@ -493,7 +494,7 @@ private func fontInformation(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * The path to the font or `nil` if the font name is not valid.
-private func fontPath(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func fontPath(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TSTRING)
 
     let fontName = lua_tovalue(L, at: 1) as! String
@@ -560,7 +561,7 @@ private func defineLineAppliesTo(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 /// hs.styledtext.defaultFonts
 /// Constant
 /// A table containing the system default fonts and sizes.
-private func defineDefaultFonts(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func defineDefaultFonts(_ L: LuaState) throws -> CInt {
     lua_newtable(L)
     NSFont_toLua(L, obj: NSFont.boldSystemFont(ofSize: 0));     lua_setfield(L, -2, "boldSystem")
     NSFont_toLua(L, obj: NSFont.controlContentFont(ofSize: 0)); lua_setfield(L, -2, "controlContent")
@@ -579,7 +580,7 @@ private func defineDefaultFonts(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 
 // MARK: - Lua byte to ObjC char mapping validation
 
-private func luaToObjCMap(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func luaToObjCMap(_ L: LuaState) throws -> CInt {
     let theString = NSString(utf8String: lua_tostring(L, 1)!)!
     let theMap = luaByteToObjCharMap(theString)
     lua_pushany(L, theMap)
@@ -631,7 +632,7 @@ private func styledtext_attributeValueToLua(_ L: UnsafeMutablePointer<lua_State>
 ///
 /// Returns:
 ///  * a copy of the styledText object
-private func string_copy(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func string_copy(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let theString = get_objectFromUserdata(L, at: 1)
     NSAttributedString_toLua(L, obj: theString.copy() as! NSAttributedString)
@@ -650,7 +651,7 @@ private func string_copy(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Notes:
 ///  * comparing two `hs.styledtext` objects with the `==` operator only compares whether or not the string values are identical.  This method also compares their attributes.
-private func string_identical(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func string_identical(_ L: LuaState) throws -> CInt {
     let theString1 = get_objectFromUserdata(L, at: 1)
     let theString2 = get_objectFromUserdata(L, at: 2)
     lua_pushboolean(L, theString1.isEqual(to: theString2) ? 1 : 0)
@@ -667,7 +668,7 @@ private func string_identical(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * a table representing the `hs.styledtext` object.
-private func string_totable(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func string_totable(_ L: LuaState) throws -> CInt {
 
     let theString = get_objectFromUserdata(L, at: 1)
     let theMap = luaByteToObjCharMap(theString.string as NSString)
@@ -748,7 +749,7 @@ private func string_totable(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Notes:
 ///  * `starts` and `ends` follow the conventions of `i` and `j` for Lua's `string.sub` function.
-private func string_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func string_tostring(_ L: LuaState) throws -> CInt {
 
     let theString = get_objectFromUserdata(L, at: 1)
     let theMap = luaByteToObjCharMap(theString.string as NSString)
@@ -784,7 +785,7 @@ private func string_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Notes:
 ///  * `starts` and `ends` follow the conventions of `i` and `j` for Lua's `string.sub` function.
-private func string_setStyleForRange(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func string_setStyleForRange(_ L: LuaState) throws -> CInt {
 
     let theString = get_objectFromUserdata(L, at: 1)
     let attributes = table_toAttributesDictionary(L, at: 2) as? [NSAttributedString.Key: Any]
@@ -830,7 +831,7 @@ private func string_setStyleForRange(_ L: UnsafeMutablePointer<lua_State>!) -> I
 ///
 /// Notes:
 ///  * `starts` and `ends` follow the conventions of `i` and `j` for Lua's `string.sub` function.
-private func string_removeStyleForRange(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func string_removeStyleForRange(_ L: LuaState) throws -> CInt {
 
     let theString = get_objectFromUserdata(L, at: 1)
     var attributeKeys: [NSAttributedString.Key] = []
@@ -886,7 +887,7 @@ private func string_removeStyleForRange(_ L: UnsafeMutablePointer<lua_State>!) -
 ///
 /// Returns:
 ///  * a copy of the `hs.styledtext` object with the specified substring replacement to the original object, or nil if an error occurs
-private func string_replaceSubstringForRange(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func string_replaceSubstringForRange(_ L: LuaState) throws -> CInt {
 
     let theString = get_objectFromUserdata(L, at: 1)
     var withAttributes = (lua_type(L, 2) == LUA_TSTRING || lua_type(L, 2) == LUA_TNUMBER) ? false : true
@@ -895,7 +896,7 @@ private func string_replaceSubstringForRange(_ L: UnsafeMutablePointer<lua_State
     }
 
     guard let subString = lua_toNSAttributedString(L, at: 2) as? NSAttributedString else {
-        return luaL_argerror(L, 2, "expected string, table, or styledtext object")
+        throw LuaCallError("bad argument #2 (expected string, table, or styledtext object)")
     }
 
     let theMap = luaByteToObjCharMap(theString.string as NSString)
@@ -911,7 +912,7 @@ private func string_replaceSubstringForRange(_ L: UnsafeMutablePointer<lua_State
     if j > len { j = len }
     if insert && i > len + 1 { i = len + 1 }
     if !insert && i > j {
-        return luaL_argerror(L, 3, "starts index must be < ends index")
+        throw LuaCallError("bad argument #3 (starts index must be < ends index)")
     }
 
     i = lua_Integer((theMap.object(forKey: NSNumber(value: i)) as! NSNumber).intValue)
@@ -939,7 +940,7 @@ private func string_replaceSubstringForRange(_ L: UnsafeMutablePointer<lua_State
 ///
 /// Returns:
 ///  * a string containing the converted data
-private func string_convert(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func string_convert(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let theString = get_objectFromUserdata(L, at: 1)
@@ -959,10 +960,10 @@ private func string_convert(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
             case "webArchive": dataType = .webArchive
             case "open":       dataType = .openDocument
             default:
-                return luaL_argerror(L, 2, "unrecognized encoding type")
+                throw LuaCallError("bad argument #2 (unrecognized encoding type)")
             }
         } else {
-            return luaL_argerror(L, 2, "unrecognized encoding type")
+            throw LuaCallError("bad argument #2 (unrecognized encoding type)")
         }
     }
 
@@ -971,7 +972,7 @@ private func string_convert(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
                                            documentAttributes: [.documentType: dataType])
         lua_pushany(L, theResult as NSData)
     } catch {
-        return luaL_error(L, "convert: conversion error: \(error.localizedDescription)")
+        throw LuaCallError("convert: conversion error: \(error.localizedDescription)")
     }
     return 1
 }
@@ -985,7 +986,7 @@ private func string_convert(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * If the font can be registered returns `true`, otherwise `false` and an error message as string.
-private func registerFontByPath(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func registerFontByPath(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TSTRING)
 
     let path = (lua_tovalue(L, at: 1) as! NSString).expandingTildeInPath
@@ -1012,7 +1013,7 @@ private func registerFontByPath(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 ///
 /// Returns:
 ///  * a copy of the `hs.styledtext` object with all alpha characters converted to upper case
-private func string_upper(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func string_upper(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let theString = get_objectFromUserdata(L, at: 1)
     let newString = theString.mutableCopy() as! NSMutableAttributedString
@@ -1035,7 +1036,7 @@ private func string_upper(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * a copy of the `hs.styledtext` object with all alpha characters converted to lower case
-private func string_lower(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func string_lower(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let theString = get_objectFromUserdata(L, at: 1)
     let newString = theString.mutableCopy() as! NSMutableAttributedString
@@ -1062,7 +1063,7 @@ private func string_lower(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Notes:
 ///  * `starts` and `ends` follow the conventions of `i` and `j` for Lua's `string.sub` function.
-private func string_sub(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func string_sub(_ L: LuaState) throws -> CInt {
     let theString = get_objectFromUserdata(L, at: 1)
 
     let theMap = luaByteToObjCharMap(theString.string as NSString)
@@ -1640,7 +1641,7 @@ private func table_toNSTextTab(_ L: UnsafeMutablePointer<lua_State>!, at idx: In
 
 // MARK: - Lua Infrastructure
 
-private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func userdata_tostring(_ L: LuaState) throws -> CInt {
     let title = get_objectFromUserdata(L, at: 1).string
     if title.count > 20 {
         let truncated = String(title.prefix(20))
@@ -1651,7 +1652,7 @@ private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 1
 }
 
-private func userdata_concat(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func userdata_concat(_ L: LuaState) throws -> CInt {
     if lua_type(L, 1) == LUA_TSTRING || lua_type(L, 1) == LUA_TNUMBER {
         let theString1 = String(cString: lua_tostring(L, 1)!)
         let newString = NSMutableAttributedString(string: theString1)
@@ -1671,7 +1672,7 @@ private func userdata_concat(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 1
 }
 
-private func userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func userdata_eq(_ L: LuaState) throws -> CInt {
     let theString1 = (lua_type(L, 1) == LUA_TUSERDATA) ? get_objectFromUserdata(L, at: 1).string :
                                                           String(cString: lua_tostring(L, 1)!)
     let theString2 = (lua_type(L, 2) == LUA_TUSERDATA) ? get_objectFromUserdata(L, at: 2).string :
@@ -1680,7 +1681,7 @@ private func userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 1
 }
 
-private func userdata_lt(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func userdata_lt(_ L: LuaState) throws -> CInt {
     let theString1 = (lua_type(L, 1) == LUA_TUSERDATA) ? get_objectFromUserdata(L, at: 1).string :
                                                           String(cString: lua_tostring(L, 1)!)
     let theString2 = (lua_type(L, 2) == LUA_TUSERDATA) ? get_objectFromUserdata(L, at: 2).string :
@@ -1689,7 +1690,7 @@ private func userdata_lt(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 1
 }
 
-private func userdata_le(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func userdata_le(_ L: LuaState) throws -> CInt {
     let theString1 = (lua_type(L, 1) == LUA_TUSERDATA) ? get_objectFromUserdata(L, at: 1).string :
                                                           String(cString: lua_tostring(L, 1)!)
     let theString2 = (lua_type(L, 2) == LUA_TUSERDATA) ? get_objectFromUserdata(L, at: 2).string :
@@ -1707,14 +1708,14 @@ private func userdata_le(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * an integer which is the length of the text of the `hs.styledtext` object.
-private func userdata_len(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func userdata_len(_ L: LuaState) throws -> CInt {
     let theString = get_objectFromUserdata(L, at: 1)
     let theMap = luaByteToObjCharMap(theString.string as NSString)
     lua_pushinteger(L, lua_Integer(theMap.count))
     return 1
 }
 
-private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func userdata_gc(_ L: LuaState) throws -> CInt {
     if luaL_testudata(L, 1, USERDATA_TAG) != nil {
         let _ = get_objectFromUserdata_transfer(L, at: 1)
         lua_pushnil(L)
@@ -1723,82 +1724,98 @@ private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 0
 }
 
-// MARK: - luaL_Reg tables
-
-private var userdata_metaLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("isIdentical"), func: string_identical),
-    luaL_Reg(name: strdup("copy"), func: string_copy),
-    luaL_Reg(name: strdup("asTable"), func: string_totable),
-    luaL_Reg(name: strdup("getString"), func: string_tostring),
-    luaL_Reg(name: strdup("setStyle"), func: string_setStyleForRange),
-    luaL_Reg(name: strdup("removeStyle"), func: string_removeStyleForRange),
-    luaL_Reg(name: strdup("setString"), func: string_replaceSubstringForRange),
-    luaL_Reg(name: strdup("convert"), func: string_convert),
-
-    luaL_Reg(name: strdup("len"), func: userdata_len),
-    luaL_Reg(name: strdup("upper"), func: string_upper),
-    luaL_Reg(name: strdup("lower"), func: string_lower),
-    luaL_Reg(name: strdup("sub"), func: string_sub),
-
-    luaL_Reg(name: strdup("__tostring"), func: userdata_tostring),
-    luaL_Reg(name: strdup("__concat"), func: userdata_concat),
-    luaL_Reg(name: strdup("__len"), func: userdata_len),
-    luaL_Reg(name: strdup("__eq"), func: userdata_eq),
-    luaL_Reg(name: strdup("__lt"), func: userdata_lt),
-    luaL_Reg(name: strdup("__le"), func: userdata_le),
-    luaL_Reg(name: strdup("__gc"), func: userdata_gc),
-    luaL_Reg(name: nil, func: nil)
-]
-
-private var moduleLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("new"), func: string_new),
-    luaL_Reg(name: strdup("getStyledTextFromFile"), func: getStyledTextFromFile),
-    luaL_Reg(name: strdup("getStyledTextFromData"), func: getStyledTextFromData),
-    luaL_Reg(name: strdup("luaToObjCMap"), func: luaToObjCMap),
-
-    luaL_Reg(name: strdup("loadFont"), func: registerFontByPath),
-    luaL_Reg(name: strdup("convertFont"), func: font_convertFont),
-    luaL_Reg(name: strdup("validFont"), func: validFont),
-    luaL_Reg(name: strdup("_fontInfo"), func: fontInformation),
-    luaL_Reg(name: strdup("_fontNames"), func: fontNames),
-    luaL_Reg(name: strdup("_fontFamilies"), func: fontFamilies),
-    luaL_Reg(name: strdup("_fontsForFamily"), func: fontsForFamily),
-    luaL_Reg(name: strdup("_fontNamesWithTraits"), func: fontNamesWithTraits),
-    luaL_Reg(name: strdup("fontPath"), func: fontPath),
-
-    luaL_Reg(name: strdup("_defaultFonts"), func: defineDefaultFonts),
-
-    luaL_Reg(name: nil, func: nil)
-]
-
 // MARK: - Module Entry Point
 
 @_cdecl("luaopen_hs_libstyledtext")
 public func luaopen_hs_libstyledtext(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    // Create ref table in registry
-    lua_newtable(L)
-    refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+    runEntryPoint(L) { L in
+        // Create ref table in registry
+        lua_newtable(L)
+        refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
 
-    // Register userdata metatable
-    luaL_newmetatable(L, USERDATA_TAG)
-    lua_pushvalue(L, -1)
-    lua_setfield(L, -2, "__index")
-    luaL_setfuncs(L, &userdata_metaLib, 0)
-    lua_pop(L, 1)
+        // Register userdata metatable
+        luaL_newmetatable(L, USERDATA_TAG)
+        lua_pushvalue(L, -1)
+        lua_setfield(L, -2, "__index")
+        L.push(string_identical)
+        lua_setfield(L, -2, "isIdentical")
+        L.push(string_copy)
+        lua_setfield(L, -2, "copy")
+        L.push(string_totable)
+        lua_setfield(L, -2, "asTable")
+        L.push(string_tostring)
+        lua_setfield(L, -2, "getString")
+        L.push(string_setStyleForRange)
+        lua_setfield(L, -2, "setStyle")
+        L.push(string_removeStyleForRange)
+        lua_setfield(L, -2, "removeStyle")
+        L.push(string_replaceSubstringForRange)
+        lua_setfield(L, -2, "setString")
+        L.push(string_convert)
+        lua_setfield(L, -2, "convert")
+        L.push(userdata_len)
+        lua_setfield(L, -2, "len")
+        L.push(string_upper)
+        lua_setfield(L, -2, "upper")
+        L.push(string_lower)
+        lua_setfield(L, -2, "lower")
+        L.push(string_sub)
+        lua_setfield(L, -2, "sub")
+        L.push(userdata_tostring)
+        lua_setfield(L, -2, "__tostring")
+        L.push(userdata_concat)
+        lua_setfield(L, -2, "__concat")
+        L.push(userdata_len)
+        lua_setfield(L, -2, "__len")
+        L.push(userdata_eq)
+        lua_setfield(L, -2, "__eq")
+        L.push(userdata_lt)
+        lua_setfield(L, -2, "__lt")
+        L.push(userdata_le)
+        lua_setfield(L, -2, "__le")
+        L.push(userdata_gc)
+        lua_setfield(L, -2, "__gc")
+        lua_pop(L, 1)
 
-    // Create module table
-    lua_createtable(L, 0, Int32(moduleLib.count - 1))
-    luaL_setfuncs(L, &moduleLib, 0)
+        // Create module table
+        lua_createtable(L, 0, 14)
+        L.push(string_new)
+        lua_setfield(L, -2, "new")
+        L.push(getStyledTextFromFile)
+        lua_setfield(L, -2, "getStyledTextFromFile")
+        L.push(getStyledTextFromData)
+        lua_setfield(L, -2, "getStyledTextFromData")
+        L.push(luaToObjCMap)
+        lua_setfield(L, -2, "luaToObjCMap")
+        L.push(registerFontByPath)
+        lua_setfield(L, -2, "loadFont")
+        L.push(font_convertFont)
+        lua_setfield(L, -2, "convertFont")
+        L.push(validFont)
+        lua_setfield(L, -2, "validFont")
+        L.push(fontInformation)
+        lua_setfield(L, -2, "_fontInfo")
+        L.push(fontNames)
+        lua_setfield(L, -2, "_fontNames")
+        L.push(fontFamilies)
+        lua_setfield(L, -2, "_fontFamilies")
+        L.push(fontsForFamily)
+        lua_setfield(L, -2, "_fontsForFamily")
+        L.push(fontNamesWithTraits)
+        lua_setfield(L, -2, "_fontNamesWithTraits")
+        L.push(fontPath)
+        lua_setfield(L, -2, "fontPath")
+        L.push(defineDefaultFonts)
+        lua_setfield(L, -2, "_defaultFonts")
 
-    fontTraits(L)
-    lua_setfield(L, -2, "fontTraits")
+        fontTraits(L)
+        lua_setfield(L, -2, "fontTraits")
 
-    defineLinePatterns(L)
-    lua_setfield(L, -2, "linePatterns")
-    defineLineStyles(L)
-    lua_setfield(L, -2, "lineStyles")
-    defineLineAppliesTo(L)
-    lua_setfield(L, -2, "lineAppliesTo")
-
-    return 1
+        defineLinePatterns(L)
+        lua_setfield(L, -2, "linePatterns")
+        defineLineStyles(L)
+        lua_setfield(L, -2, "lineStyles")
+        defineLineAppliesTo(L)
+        lua_setfield(L, -2, "lineAppliesTo")
+    }
 }

@@ -1,0 +1,527 @@
+#+TITLE: Ecritum vs. Cosmic Hammer Lua Integration — Feasibility Findings
+#+SUBTITLE: Can ecritum replace LuaSkin/Lua 5.4 while keeping Lua as-is and adding other languages?
+#+AUTHOR: Evaluation report
+#+DATE: 2026-06-10
+#+STARTUP: overview
+#+OPTIONS: toc:3 num:t
+
+* TL;DR verdict
+:PROPERTIES:
+:VERDICT: NOT-FEASIBLE-AS-REPLACEMENT
+:END:
+
+*No.* Ecritum cannot replace Cosmic Hammer's current Lua integration while
+"continuing to support Lua as-is." The two systems are architecturally
+*opposite*. The mismatch is disqualifying on *five independent axes*, any one of
+which alone blocks a drop-in replacement:
+
+1. Ecritum has *no Lua C API* and forbids native modules → all *68 native
+   extensions* (the entire macOS-integration core) cannot load.
+2. Ecritum passes *only 8 immutable value kinds* and explicitly rejects
+   userdata / metatables / host objects → the object model of the ~hs~ API
+   (~hs.window~, ~hs.application~, …) cannot be expressed.
+3. Ecritum is *async*, runs scripts on *worker threads*, and *forbids
+   synchronous callback re-entry* → Cosmic Hammer's single main-thread
+   ~lua_State~ + real-time synchronous callbacks (esp. ~hs.eventtap~ /
+   ~hs.hotkey~) are impossible.
+4. Ecritum's Lua is *LuaJ, not PUC-Rio Lua 5.4*, and strips
+   ~require~/~package~/~coroutine~/~os~/~io~/~load~ → Cosmic Hammer's
+   ~require~-driven bootstrap and ~36K lines of pure-Lua extensions break.
+5. Ecritum is *"planned"/alpha* (v0.2.0-alpha.1), *~477 MB*, GraalVM-based, and
+   designed for *untrusted sandboxed scripts* — the opposite trust model and
+   ~1500× the footprint of native Lua.
+
+There is a realistic *additive* path (embed ecritum *alongside* the existing
+core for a new, sandboxed multi-language "rules/snippets" surface). It does not
+replace anything, and the "Lua" it adds is a different, incompatible dialect.
+See [[*The only realistic path: additive, not replacement]].
+
+* Scope and method
+
+This evaluation compared:
+
+- *Local:* the live Cosmic Hammer repo at =/Users/mohammadk/src/cosmichammer=
+  — ~Package.swift~, ~extensions.manifest~, the generated registration glue,
+  and representative extension sources.
+- *Remote:* =github.com/jkhoeini/ecritum= — README, the full file tree, the
+  Swift public API (~Sources/Ecritum/*.swift~), the C ABI value model, the Lua
+  example, and the architecture decision records (~docs/adr/0001..0028~).
+
+Every finding below is backed by primary source (a file path, line, or ADR
+number). See [[*Evidence index]].
+
+NOTE: ~CLAUDE.md~ still states the Lua runtime lives in ~Sources/LuaSkin/~. That
+directory *no longer exists*; ~Sources/~ now contains only ~CEditline, hs,
+HSApp, HSExtensions, HSSwiftExtensions~. The Lua 5.4 runtime now comes from the
+~tomsci/LuaSwift~ SPM dependency, and the old ObjC ~LuaSkin~ class has been
+replaced by Swift glue that calls the Lua C API directly. This is stale doc, not
+a behavior change — the C-API coupling conclusion is unchanged. (Worth fixing in
+~CLAUDE.md~ separately.)
+
+* System summaries (side by side)
+
+| Dimension     | Cosmic Hammer (current)                          | Ecritum                                                  |
+|---------------+--------------------------------------------------+----------------------------------------------------------|
+| Purpose       | Trusted in-process automation host (HS fork)     | Sandboxed polyglot scripting for embedding scripts       |
+| Lua engine    | PUC-Rio *Lua 5.4.8* (C), via ~tomsci/LuaSwift~   | *LuaJ* (pure-Java reimpl) in a GraalVM Native Image      |
+| Interop       | *Direct Lua C API* (userdata, metatables, refs)  | Flat namespaced RPC; *8 immutable value kinds only*      |
+| Threading     | Single ~lua_State~ on *main thread*, runloop     | *Async*, scripts on worker threads; no sync re-entry     |
+| Trust model   | *Fully trusted* (FFI, OS, network, AppKit)       | *Deny-by-default*; no FFI/subprocess/raw-net/full-FS     |
+| Footprint     | ~native Lua (sub-MB)                             | *~477 MB* XCFramework + GraalVM runtime                  |
+| Maturity      | Production (shipping app)                         | *"Planned", prerelease v0.2.0-alpha.1*                   |
+
+One-line framing: *Hammerspoon's entire power comes from exactly the things
+ecritum forbids by design.*
+
+* What the current Cosmic Hammer Lua integration actually is (verified)
+
+** Engine: PUC-Rio Lua 5.4.8 (C), via LuaSwift
+- ~Package.swift:30~ declares ~.package(url:
+  "https://github.com/tomsci/LuaSwift.git", from: "1.0.0")~; targets link the
+  ~Lua~ product (~Package.swift:39,105~).
+- Build defines ~LUA_USE_MACOSX~ and ~LUA_COMPAT_5_3~ (~Package.swift:47-54~).
+- This is the *reference C implementation*, with the *integer subtype*
+  (~lua_Integer~, 64-bit) used throughout.
+
+** Extension inventory (from extensions.manifest)
+- *90 extensions total* → *68 with native ~luaopen_hs_*~ entry points* and
+  *24 Lua-only*.
+- The 68 native modules are *Swift* functions exported with
+  ~@_cdecl("luaopen_hs_lib…")~ that call the *Lua C API directly* through
+  Swift's C interop.
+
+** The C API coupling is pervasive and load-bearing
+The whole ~hs~ API is built on Lua C-API primitives:
+- *Userdata + metatables for object types.* e.g. ~Application.swift~ does
+  ~luaL_newmetatable(L, "hs.application")~, ~luaL_setfuncs(L, &userdata_metaLib,
+  0)~, and pushes ~lua_newuserdata~ wrapping ~Unmanaged<AnyObject>~. The API is
+  object-oriented: ~hs.window~, ~hs.application~, ~hs.screen~, ~hs.canvas~,
+  ~hs.axuielement~, … are *userdata with methods*.
+- *Registry refs for callbacks.* ~luaL_ref(L, LUA_REGISTRYINDEX)~ /
+  ~luaL_unref~ / ~lua_rawgeti~ are everywhere.
+- *Function tables* (~luaL_Reg~ arrays), ~luaL_checkstring~, ~luaL_checkudata~,
+  ~lua_pcall~, etc.
+
+** Registration: package.preload, require-driven
+- ~HSExtensionsGenerated.swift~ imports 68 ~luaopen_*~ symbols via
+  ~@_silgen_name~ and installs them into ~package.preload~, so
+  ~require "hs.libapplication"~ resolves *in-process with no dylib lookup*.
+- Bootstrap is ~require~-based: ~setup.lua~ → ~_coresetup~ → user ~init.lua~,
+  with ~package.path~ / ~package.cpath~ configured in ~setup.lua~.
+
+** Threading: one lua_State, main thread, synchronous callbacks
+- *One shared ~lua_State~ on the main thread*, integrated with the macOS
+  runloop.
+- All async sources (timers, HTTP, pasteboard, eventtaps, hotkeys) marshal
+  *synchronously* back into that single state via ~lua_rawgeti~ + ~lua_pcall~.
+- Generation counters invalidate stale refs across hot-reload. No coroutine-based
+  threading.
+
+** Scale
+- ~73K lines of Swift extension code + ~36K lines of pure-Lua, *all* assuming
+  the Lua 5.4 C API and Lua 5.4 semantics.
+
+* What ecritum actually is (verified from source + ADRs)
+
+- *Status:* "planned… prerelease v0.2.0-alpha.1… not yet fully
+  production-ready" (README).
+- *Languages:* Clojure (SCI), JavaScript (GraalJS), Lua (*LuaJ*), Python
+  (GraalPy), Ruby (TruffleRuby) — all on *GraalVM Native Image*, shipped as one
+  ~libecritum_graal.dylib~ in a *~477 MB* XCFramework.
+- *Lua = LuaJ* (ADR-0023): runs only ~BaseLib~ + ~LuaC~ + table/string/math.
+  *Denied to scripts:* ~io~, ~os~, ~debug~, ~package~, ~require~, ~load~,
+  ~loadstring~, ~loadfile~, ~dofile~, ~string.dump~, ~coroutine~, ~luajava~,
+  Java classes, native libraries, bytecode. *No Lua C API; no native module
+  loading.* No coroutines.
+- *Value model* (ADR-0021 + ~EcritumValue.swift~): exactly *8 kinds* —
+  ~null, bool, int(Int64), double, string, data, array,
+  object([String:EcritumValue])~. All *immutable, owned, copied*. Quote: "There
+  is no userdata mechanism, metatable proxies, or opaque handle types crossing
+  the boundary." Function/thread/userdata shapes → ~ECRITUM_ERROR_SCRIPT~.
+- *Host interop:* flat namespaced RPC. Register
+  ~@Sendable (EcritumCall) throws -> EcritumValue~ on a namespace; scripts call
+  e.g. ~ecritum.app.facts()~. ~EcritumCall~ exposes only ~argumentCount()~ and
+  ~value(at:)~. Scripts *cannot hold references to host objects*.
+- *Concurrency* (ADR-0003): "Async eval is the primary native model." Scripts
+  run on *Ecritum-owned worker threads — not the caller thread, not the Swift
+  executor, not MainActor.* One live job per context. *Host callbacks cannot
+  synchronously re-enter the runtime* → ~ECRITUM_ERROR_REENTRANT_CALL~.
+- *Trust model* (ADR-0004): deny-by-default; targets "scripts from end users,
+  documents, plugins, or sync data that may attempt to bypass policy." Untrusted
+  end-user scripting is *explicitly blocked in the CE distribution* until
+  stronger isolation lands.
+- *Concrete usage shape* (~Examples/LuaRulesEngine~): a *stateless rules
+  evaluator* — host sets facts, Lua reads ~ecritum.app.facts()~ (a plain
+  table), returns a decision object. The canonical ecritum use case is pure,
+  sandboxed, value-in/value-out computation — *not* system automation.
+
+* BLOCKING PROBLEMS (item by item)
+
+Each item: what is true, why it matters for the "replace Lua" goal, a concrete
+example, and the evidence.
+
+** TODO [#A] B1 — No Lua C API: the 68 native extensions are unportable
+:PROPERTIES:
+:SEVERITY: BLOCKER
+:AXIS: 1
+:END:
+
+*Finding.* LuaJ has no Lua C API, and ecritum forbids native module loading and
+FFI by design (ADR-0023, ADR-0004). There is no mechanism — not even an unsafe
+one — to load a ~luaopen_hs_*~ entry point.
+
+*Why it matters.* Cosmic Hammer *is* its native bridge. ~hs.window~,
+~hs.application~, ~hs.eventtap~, ~hs.hotkey~, ~hs.screen~, ~hs.canvas~, ~hs.fs~,
+~hs.pasteboard~, ~hs.audiodevice~, ~hs.axuielement~ — 68 modules — are C-API
+modules talking to AppKit / CoreGraphics / Accessibility. None can be loaded by
+ecritum. *100% of the system-integration surface would have to be rebuilt* as
+ecritum host functions.
+
+*Concrete example.* Today an extension exports:
+#+begin_src swift
+@_cdecl("luaopen_hs_libapplication")
+public func luaopen_hs_libapplication_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    luaL_newmetatable(L, "hs.application")        // userdata metatable
+    luaL_setfuncs(L, &userdata_metaLib, 0)        // methods on the object
+    lua_createtable(L, 0, Int32(moduleLib.count - 1))
+    luaL_setfuncs(L, &moduleLib, 0)               // module functions
+    return 1
+}
+#+end_src
+and ~HSExtensionsRegisterAll(L)~ puts it in ~package.preload~ so
+~require "hs.libapplication"~ works. Under ecritum there is *no ~lua_State~, no
+~luaL_*~, no ~package.preload~, and no ~require~* — this entire pattern is
+unavailable.
+
+*Evidence.* ~Sources/HSSwiftExtensions/HSExtensionsGenerated.swift~ (68
+~@_silgen_name~ imports); ~extensions.manifest~ (68 ~luaopen_*~ symbols);
+ecritum ADR-0023 (no C API / no native modules); ADR-0004 (FFI denied).
+
+*Correction / important nuance (added after review).* The verbosity of the
+~@_cdecl~ + raw-stack style above is *not* caused by using native Lua — it is
+caused by calling the *raw ~CLua~ C shim directly* instead of the *idiomatic
+Swift API that ~tomsci/LuaSwift~ already ships* (the ~Lua~ product:
+~Metatable<T>~, ~push(closure:)~, typed ~push<Args,Ret>(closure:)~,
+~push(userdata:)~, ~tovalue<T>()~, ~LuaValue~, ~Pushable~). Today 112 files
+~import CLua~ and the idiomatic API is used in essentially *one* file; the
+home-grown ~lua_pushany~/~lua_tovalue~ helpers even duplicate LuaSwift's
+~push(any:)~/~tovalue~/~toany~.
+
+So the ergonomic improvement people notice when comparing to ecritum is *real*,
+but it is achievable *without ecritum* — on Lua 5.4, with zero capability loss —
+by adopting the LuaSwift Swift API. This is tracked as a dedicated effort in
+~TODO.org~: "Migrate raw Lua C API (CLua) to idiomatic LuaSwift API". Crucially,
+ecritum's clean closure model only *stays* clean for *pure value-in/value-out*
+functions; the moment a module needs object identity + methods
+(~hs.window:focus()~) or a synchronous re-entrant callback (~hs.eventtap~),
+ecritum cannot express it at all (see B2, B3), whereas LuaSwift's
+~Metatable<T>~ / ~push(userdata:)~ gives the *same* clean ergonomics *and* keeps
+the object model. Right symptom, wrong remedy: the fix is "use the idiomatic
+LuaSwift layer," not "swap the engine."
+
+** TODO [#A] B2 — No userdata/objects: the API's object model cannot be expressed
+:PROPERTIES:
+:SEVERITY: BLOCKER
+:AXIS: 2
+:END:
+
+*Finding.* Ecritum crosses the boundary with *only 8 immutable value kinds* and
+*explicitly rejects userdata, metatable proxies, and opaque handles* (ADR-0021,
+~EcritumValue.swift~). Scripts cannot hold references to host objects.
+
+*Why it matters.* The ~hs~ API is fundamentally object-oriented and chained.
+Host objects have *identity*, *mutable state*, and *methods*. Ecritum can only
+hand a script a copied snapshot of primitives/arrays/maps.
+
+*Concrete example.* Idiomatic Hammerspoon:
+#+begin_src lua
+local w = hs.window.focusedWindow()   -- returns an hs.window userdata
+w:moveToUnit({0, 0, 0.5, 1})          -- method mutates the live window
+w:focus()                              -- another method on the same object
+print(w:application():name())          -- object returns another object
+#+end_src
+Under ecritum there is no ~hs.window~ object to return and no ~:method()~ to
+call on it. You would have to redesign the whole API into flat RPC keyed by a
+host-managed handle, e.g.
+#+begin_src lua
+local id = ecritum.hs.window.focused()        -- returns a string/int handle you invented
+ecritum.hs.window.moveToUnit(id, {0,0,0.5,1}) -- every method becomes a function taking the handle
+ecritum.hs.window.focus(id)
+#+end_src
+That is a *total API redesign*, not a port — every method on every object type,
+plus a hand-rolled handle registry and lifecycle, on the host side.
+
+*Evidence.* ecritum ADR-0021 ("no userdata mechanism, metatable proxies, or
+opaque handle types crossing the boundary"); ~Sources/Ecritum/EcritumValue.swift~
+(the 8-case enum); local userdata pattern in ~Application.swift~
+(~lua_newuserdata~ + ~Unmanaged<AnyObject>~ + ~luaL_setmetatable~).
+
+** TODO [#A] B3 — Threading/runloop mismatch: real-time callbacks break
+:PROPERTIES:
+:SEVERITY: BLOCKER
+:AXIS: 3
+:END:
+
+*Finding.* Ecritum is async-first; scripts run on *Ecritum-owned worker
+threads* (not the caller, not MainActor), one live job per context, and
+*callbacks cannot synchronously re-enter the runtime* (~ECRITUM_ERROR_REENTRANT_CALL~)
+(ADR-0003). Cosmic Hammer uses a *single main-thread ~lua_State~* with
+*synchronous re-entrant callbacks* on the macOS runloop.
+
+*Why it matters.* This is the hardest blocker. Several core features require a
+callback to run *synchronously on the main thread and return a verdict in real
+time*:
+- ~hs.eventtap~: the callback must decide *synchronously* whether to swallow or
+  pass a keystroke/mouse event back to ~CGEventTap~.
+- ~hs.hotkey~: pressed/released handlers fire on the main runloop.
+- Timers / HTTP / pasteboard watchers: all re-enter the same ~lua_State~
+  synchronously.
+
+You cannot drive AppKit / CGEventTap from a GraalVM worker thread with deferred
+async semantics, and you cannot call back into the runtime from inside a
+callback.
+
+*Concrete example.* Current synchronous marshalling (timer callback):
+#+begin_src swift
+@objc func callback(_ timer: Timer) {
+    let L = lua_getCurrentState()!
+    lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(fnRef))
+    if lua_pcall(L, 0, 0, 0) != LUA_OK { /* handle error */ }
+}
+#+end_src
+An eventtap callback additionally *returns a boolean to the OS* to decide event
+propagation — that round trip must be synchronous and on the main thread.
+Ecritum's model (worker thread + async job + no re-entry) cannot satisfy this.
+
+*Evidence.* ecritum ADR-0003 (async-first; worker threads; one live job;
+~ECRITUM_ERROR_REENTRANT_CALL~); local callback patterns in ~Timer.swift~,
+~HTTP.swift~, ~PasteboardWatcher.swift~ (all ~lua_getCurrentState()~ +
+~lua_rawgeti~ + ~lua_pcall~ synchronously).
+
+** TODO [#A] B4 — LuaJ ≠ Lua 5.4: dialect and bootstrap break
+:PROPERTIES:
+:SEVERITY: BLOCKER
+:AXIS: 4
+:END:
+
+*Finding.* Ecritum's Lua is *LuaJ* with a hardened standard library. Scripts are
+*denied* ~require~, ~package~, ~coroutine~, ~os~, ~io~, ~load~, ~loadstring~,
+~loadfile~, ~dofile~, ~debug~, ~string.dump~ (ADR-0023). LuaJ also is not a
+byte-for-byte PUC-Rio Lua 5.4.
+
+*Why it matters.* Two things break:
+1. *The bootstrap.* The entire module/loader chain is ~require~-based:
+   ~setup.lua~ configures ~package.path~/~package.cpath~ and then loads
+   ~_coresetup~ and user ~init.lua~ via ~require~. With ~require~/~package~
+   removed, this does not run at all.
+2. *Pure-Lua extensions and user config.* The 24 Lua-only extensions plus ~36K
+   lines of pure-Lua frequently use ~require~, and some use ~os~/~io~/coroutines.
+   Even "pure" Lua would face LuaJ vs. PUC-Rio 5.4 semantic differences
+   (integer/float edge cases, library completeness).
+
+*Concrete example.* A typical extension head:
+#+begin_src lua
+--- hs.alert
+local module = require("hs.libalert")     -- 'require' is DENIED under ecritum
+local timer  = require("hs.timer")        -- so is loading another module
+local screen = require("hs.screen")
+#+end_src
+None of these ~require~ calls resolve. And user ~init.lua~ patterns like
+~hs.timer.doAfter(...)~ assume the whole ~require~-loaded module graph exists.
+
+*Evidence.* ecritum ADR-0023 (denied list incl. ~require~/~package~/~coroutine~/
+~os~/~io~/~load~); local bootstrap in ~CosmicHammer/setup.lua~ (sets
+~package.path~/~cpath~, uses ~require~); ~_coresetup~ chain referenced in
+~LuaRuntime.swift~ + ~extensions.manifest~.
+
+** TODO [#A] B5 — Footprint, maturity, and trust model are all wrong-way
+:PROPERTIES:
+:SEVERITY: BLOCKER
+:AXIS: 5
+:END:
+
+*Finding.* Ecritum ships a *~477 MB* XCFramework + a GraalVM/Native-Image
+runtime, is *alpha/"planned"* (v0.2.0-alpha.1), and is engineered to *contain*
+scripts (deny-by-default, no ambient host authority) (README; ADR-0004;
+ADR-0018 budgets).
+
+*Why it matters.*
+- *Footprint:* ~477 MB vs. sub-MB native Lua is a non-starter for a lightweight
+  menu-bar automation app (~1500× larger).
+- *Maturity:* betting the app's core engine on alpha software is high-risk; the
+  README itself disclaims production-readiness.
+- *Trust model inversion:* Cosmic Hammer's value is *granting* scripts full
+  machine authority (FFI, OS, network, AppKit). Ecritum's value is *denying* it.
+  Adopting ecritum's model would neuter the product; working around it would
+  fight the framework's core design intent.
+
+*Concrete example.* ecritum denies ~subprocess~, raw network, unrestricted
+filesystem, and env vars by default. Cosmic Hammer extensions like ~hs.task~
+(subprocess), ~hs.http~ (raw network), ~hs.fs~ (filesystem), and
+~hs.execute~ exist precisely to do those things on behalf of a trusting user.
+
+*Evidence.* ecritum README (size ~477 MB; "planned"/alpha); ADR-0004 (deny by
+default; untrusted-script threat model; CE blocks untrusted scripting);
+ADR-0018 (artifact budget).
+
+* SECONDARY PROBLEMS / FRICTION (item by item)
+
+** TODO [#B] S1 — No coroutines
+:PROPERTIES:
+:SEVERITY: MAJOR
+:END:
+LuaJ coroutines bypass ecritum's instruction budget, so ~coroutine~ is denied
+(ADR-0023). Hammerspoon ecosystems and some extensions use coroutines for
+cooperative async flows; these patterns are unavailable.
+
+** TODO [#B] S2 — Async-only eval doesn't fit a live REPL/console
+:PROPERTIES:
+:SEVERITY: MAJOR
+:END:
+Cosmic Hammer's console (~MJLuaRunString~, ~MJLuaCompletionsForWord~) evaluates
+synchronously against the live ~lua_State~ and offers completion over the global
+table. Ecritum eval is async, on a worker thread, with one job per context, and
+no live shared mutable global state the console can introspect the same way.
+
+** TODO [#B] S3 — Hot reload / shared global state semantics differ
+:PROPERTIES:
+:SEVERITY: MAJOR
+:END:
+Cosmic Hammer keeps a *persistent shared ~lua_State~* with long-lived globals,
+timers, watchers, and registry refs across reloads (generation counters
+invalidate stale refs). Ecritum's model is short-lived value-in/value-out jobs;
+there is no equivalent persistent in-process script world holding live OS
+resources.
+
+** TODO [#B] S4 — Binary/data marshalling is copy-only
+:PROPERTIES:
+:SEVERITY: MINOR
+:END:
+Ecritum's ~data~ value is an owned, copied ~Data~. Cosmic Hammer passes bytes via
+~lua_pushlstring~ and shares object identity through userdata. Large or
+frequently-passed payloads incur full copies and lose identity.
+
+** TODO [#B] S5 — Multi-language support is per-host-function, not per-API
+:PROPERTIES:
+:SEVERITY: CONTEXT
+:END:
+Ecritum's polyglot value (Python/JS/Ruby/Clojure) only applies to whatever flat
+host functions you expose as ecritum namespaces. It does *not* magically give
+other languages the ~hs~ API — you must design and maintain that exposed surface
+yourself, for all languages at once.
+
+** TODO [#B] S6 — Two incompatible "Lua"s side by side is confusing
+:PROPERTIES:
+:SEVERITY: CONTEXT
+:END:
+If ecritum is added additively, users would have PUC-Rio Lua 5.4 (the real
+automation engine) and LuaJ (sandboxed, no ~require~/~os~/~io~/coroutine) under
+the same product name. Same language name, different dialect, different
+capabilities — a documentation and support hazard.
+
+* What "keep Lua as-is" would literally require (and why ecritum won't give it)
+
+To preserve today's behavior, ecritum would need to provide ALL of:
+
+- A real Lua C API (or native-module loading) — *ecritum non-goal* (ADR-0023).
+- Host userdata/objects with identity and methods — *ecritum non-goal* (ADR-0021).
+- A single main-thread ~lua_State~-equivalent with synchronous re-entrant
+  callbacks on the macOS runloop — *contrary to ADR-0003*.
+- PUC-Rio-compatible Lua 5.4 with ~require~/~coroutine~/~os~/~io~ — *contrary to
+  ADR-0023*.
+
+These are not missing features ecritum might add; they are *explicit design
+non-goals*. "Replace and keep Lua as-is" is therefore not merely hard — it is
+contrary to ecritum's purpose.
+
+* The only realistic path: additive, not replacement
+
+If the real goal is "let users also write automation in Python/JS/Ruby/Clojure,"
+the only viable shape is:
+
+1. *Keep the LuaSkin/Lua 5.4 core exactly as-is.* It remains the automation
+   engine and owns all 68 native extensions.
+2. *Embed ecritum as a separate, optional, sandboxed surface* for a NEW limited
+   use case — e.g., user-authored "rule"/"snippet" handlers that may only call a
+   *curated set of ~hs~ capabilities re-exposed as ecritum host functions*,
+   marshalled to/from the 8 value kinds.
+3. *Bridge with hand-written adapters*, faking object identity via string/int
+   handles managed Swift-side, e.g. ~ecritum.hs.alert(msg)~,
+   ~ecritum.hs.window.focus(idString)~.
+
+Honest costs of even this narrow path:
+- You re-expose only a *tiny, flattened subset* of the API (no objects, no event
+  callbacks, no real-time hooks).
+- *+477 MB* to the app and a GraalVM dependency.
+- The "Lua" ecritum adds is *LuaJ* — a second, incompatible Lua next to the real
+  one (see [[*TODO [#B] S6 — Two incompatible "Lua"s side by side is confusing][S6]]).
+- Ecritum's async/worker-thread model means snippets *cannot* participate in the
+  synchronous main-thread automation flow — they are fire-and-eval, not live
+  hooks.
+
+So ecritum could plausibly power a "sandboxed user macros in multiple languages"
+*feature*, but it cannot be the engine behind ~hs.eventtap~, ~hs.hotkey~,
+~hs.window~, timers, etc.
+
+* Rough cost framing (if anyone attempts replacement anyway)
+
+- *Native bridge rewrite:* ~73K lines of C-API-coupled Swift across 68 modules,
+  redesigned from object/method to flat RPC + a host-side handle registry.
+  Effectively a from-scratch reimplementation of the bridge layer.
+- *Pure-Lua port:* ~36K lines assuming ~require~ and full stdlib; must be
+  restructured around ecritum's denied-library model (or abandoned).
+- *Callback/runtime model:* fundamentally incompatible; features like
+  ~hs.eventtap~ cannot be reproduced at all under the async/worker model.
+- *Footprint/runtime:* +~477 MB, +GraalVM.
+- Net: this is *not a migration*; it is building a different product.
+
+* Recommendation and next steps
+
+- *Do not replace LuaSkin/Lua 5.4 with ecritum.* See blockers B1–B5.
+- If multi-language scripting is genuinely wanted, pursue the *additive,
+  sandboxed side-feature* (above) and weigh it against simpler alternatives:
+  - Expose the ~hs~ API over a local RPC/IPC any language can call.
+  - Embed a single additional native engine for one extra language if a specific
+    language is the actual ask.
+- Suggested follow-ups (pick any):
+  1. Prototype the additive bridge: expose one ~hs~ capability as an ecritum host
+     function across all 5 languages, to measure ergonomics and footprint.
+  2. Draft an ADR in this repo recording this decision.
+  3. Quantify the rewrite cost of one representative complex extension
+     (~hs.eventtap~ or ~hs.canvas~) to make the "not a migration" point concrete.
+- Fix the stale ~CLAUDE.md~ reference to ~Sources/LuaSkin/~ (see [[*Scope and method]]).
+
+NOTE: ecritum appears to be the same author's repo (~jkhoeini~). If its ADRs are
+out of date relative to unpushed work, re-assess against the current design.
+
+* Evidence index
+
+** Cosmic Hammer (local)
+- ~Package.swift~ — LuaSwift dependency (line 30), Lua product (39, 105),
+  ~LUA_USE_MACOSX~/~LUA_COMPAT_5_3~ (47–54).
+- ~extensions.manifest~ — 90 extensions; 68 native ~luaopen_*~ symbols; 24
+  Lua-only.
+- ~Sources/HSSwiftExtensions/HSExtensionsGenerated.swift~ — 68 ~@_silgen_name~
+  imports; ~HSExtensionsRegisterAll~ → ~package.preload~.
+- ~Sources/HSSwiftExtensions/LuaRuntime.swift~ — single ~lua_State~ lifecycle,
+  bootstrap, generation counters, console eval.
+- ~Sources/HSSwiftExtensions/Application.swift~ — representative userdata +
+  metatable + ~luaopen_hs_libapplication~.
+- ~Sources/HSSwiftExtensions/{Timer,HTTP,PasteboardWatcher}.swift~ — synchronous
+  ~lua_rawgeti~ + ~lua_pcall~ callback marshalling.
+- ~CosmicHammer/setup.lua~ — ~require~-based bootstrap; ~package.path~/~cpath~.
+
+** Ecritum (remote, github.com/jkhoeini/ecritum)
+- ~README.md~ — status (planned/alpha v0.2.0-alpha.1), 5 languages, LuaJ, ~477 MB,
+  cold-start/first-eval numbers.
+- ~Sources/Ecritum/EcritumValue.swift~ — 8-case value enum.
+- ~Sources/Ecritum/EcritumHostRegistration.swift~ —
+  ~@Sendable (EcritumCall) throws -> EcritumValue~; ~argumentCount()~/~value(at:)~.
+- ~Sources/CEcritum/include/ecritum.h~ — C ABI surface.
+- ~Examples/LuaRulesEngine/…/main.swift~ — value-in/value-out rules usage shape.
+- ~docs/adr/0003~ — concurrency/async job model; worker threads; no sync re-entry.
+- ~docs/adr/0004~ — permission model / untrusted threat model; deny-by-default.
+- ~docs/adr/0013~ — Java/host interop exposure policy.
+- ~docs/adr/0021~ — value/call/eval ABI surface; no userdata/handles.
+- ~docs/adr/0023~ — Lua via LuaJ spike; denied libraries; no C API; no coroutines.
+- ~docs/adr/0018~ — performance/artifact budget policy.

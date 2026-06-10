@@ -1,5 +1,6 @@
 import Cocoa
 import CLua
+import Lua
 import AVFoundation
 import CoreMediaIO
 import os.log
@@ -284,7 +285,7 @@ private var cameraManagerInstance = HSCameraManager()
 ///
 /// Returns:
 ///  * A table containing all of the known cameras
-private func allCameras(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func allCameras(_ L: LuaState) throws -> CInt {
 
     lua_newtable(L)
     for (idx, camera) in cameraManagerInstance.getCameras().enumerated() {
@@ -333,7 +334,7 @@ private func deviceWatcherDoCallback(_ deviceId: CMIODeviceID, _ event: String) 
 ///
 /// Returns:
 ///  * None
-private func startWatcher(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func startWatcher(_ L: LuaState) throws -> CInt {
 
     guard let watcher = deviceWatcher, watcher.pointee.callback != LUA_NOREF else {
         os_log(.error, "%{public}s", "You must call hs.camera.setWatcherCallback() before hs.camera.startWatcher()")
@@ -394,10 +395,8 @@ private func startWatcher(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * None
-private func stopWatcher(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func stopWatcher(_ L: LuaState) throws -> CInt {
     // This is an ugly hack so we can call this from elsewhere without checkArgs exploding
-    if L != nil {
-        }
 
     guard let watcher = deviceWatcher else { return 0 }
 
@@ -422,7 +421,7 @@ private func stopWatcher(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * A boolean, True if the watcher is running, otherwise False
-private func isWatcherRunning(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func isWatcherRunning(_ L: LuaState) throws -> CInt {
 
     lua_pushboolean(L, (deviceWatcher != nil && deviceWatcher!.pointee.running) ? 1 : 0)
     return 1
@@ -446,7 +445,7 @@ private func isWatcherRunning(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///   * A string, either "Added" or "Removed" depending on whether the device was added or removed from the system
 ///  * For "Removed" events, most methods on the hs.camera device object will not function correctly anymore and the device object passed to the callback is likely to be useless. It is recommended you re-check `hs.camera.allCameras()` and keep records of the cameras you care about
 ///  * Passing nil will cause the watcher to stop if it is running
-private func setWatcherCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func setWatcherCallback(_ L: LuaState) throws -> CInt {
 
     if deviceWatcher == nil {
         deviceWatcher = .allocate(capacity: 1)
@@ -465,7 +464,7 @@ private func setWatcherCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
         lua_pushvalue(L, 1)
         deviceWatcher!.pointee.callback = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
     case LUA_TNIL:
-        _ = stopWatcher(nil)
+        _ = try stopWatcher(L)
     default:
         break
     }
@@ -485,7 +484,7 @@ private func setWatcherCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 ///
 /// Notes:
 ///  * The UID is not guaranteed to be stable across reboots
-private func camera_uid(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func camera_uid(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let camera: HSCamera = toHSCameraFromLua(L, 1) as! HSCamera
@@ -502,7 +501,7 @@ private func camera_uid(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * A number containing the connection ID of the camera
-private func camera_cID(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func camera_cID(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let camera: HSCamera = toHSCameraFromLua(L, 1) as! HSCamera
@@ -519,7 +518,7 @@ private func camera_cID(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * A string containing the name of the camera
-private func camera_name(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func camera_name(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let camera: HSCamera = toHSCameraFromLua(L, 1) as! HSCamera
@@ -536,7 +535,7 @@ private func camera_name(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * A boolean, True if the camera is in use, otherwise False
-private func camera_isinuse(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func camera_isinuse(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let camera: HSCamera = toHSCameraFromLua(L, 1) as! HSCamera
@@ -558,7 +557,7 @@ private func camera_isinuse(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * The `hs.camera` object
-private func camera_propertyWatcherCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func camera_propertyWatcherCallback(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let camera: HSCamera = toHSCameraFromLua(L, 1) as! HSCamera
@@ -589,7 +588,7 @@ private func camera_propertyWatcherCallback(_ L: UnsafeMutablePointer<lua_State>
 ///
 /// Returns:
 ///  * The `hs.camera` object
-private func camera_startPropertyWatcher(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func camera_startPropertyWatcher(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let camera: HSCamera = toHSCameraFromLua(L, 1) as! HSCamera
@@ -615,7 +614,7 @@ private func camera_startPropertyWatcher(_ L: UnsafeMutablePointer<lua_State>!) 
 ///
 /// Returns:
 ///  * The `hs.camera` object
-private func camera_stopPropertyWatcher(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func camera_stopPropertyWatcher(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let camera: HSCamera = toHSCameraFromLua(L, 1) as! HSCamera
@@ -634,7 +633,7 @@ private func camera_stopPropertyWatcher(_ L: UnsafeMutablePointer<lua_State>!) -
 ///
 /// Returns:
 ///  * A boolean, True if the property watcher is running, otherwise False
-private func camera_isPropertyWatcherRunning(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func camera_isPropertyWatcherRunning(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let camera: HSCamera = toHSCameraFromLua(L, 1) as! HSCamera
@@ -669,13 +668,13 @@ private func toHSCameraFromLua(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int
 
 // MARK: - Core Lua metamethods
 
-private func hsCamera_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func hsCamera_tostring(_ L: LuaState) throws -> CInt {
     let camera: HSCamera = toHSCameraFromLua(L, 1) as! HSCamera
     lua_pushany(L, "\(USERDATA_TAG): (\(camera.uid ?? "nil"):\(camera.name ?? "nil"))" as NSString)
     return 1
 }
 
-private func hsCamera_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func hsCamera_eq(_ L: LuaState) throws -> CInt {
     if luaL_testudata(L, 1, USERDATA_TAG) != nil && luaL_testudata(L, 2, USERDATA_TAG) != nil {
         let obj1: HSCamera = toHSCameraFromLua(L, 1) as! HSCamera
         let obj2: HSCamera = toHSCameraFromLua(L, 2) as! HSCamera
@@ -686,7 +685,7 @@ private func hsCamera_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 1
 }
 
-private func hsCamera_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func hsCamera_gc(_ L: LuaState) throws -> CInt {
     let ptr = luaL_checkudata(L, 1, USERDATA_TAG)!
         .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
     if let rawPtr = ptr.pointee {
@@ -698,10 +697,10 @@ private func hsCamera_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 0
 }
 
-private func module_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func module_gc(_ L: LuaState) throws -> CInt {
 
     if let watcher = deviceWatcher {
-        _ = stopWatcher(nil)
+        _ = try stopWatcher(L)
         luaL_unref(L, LUA_REGISTRYINDEX_VALUE, watcher.pointee.callback)
 
         watcher.pointee.callback = LUA_NOREF
@@ -717,64 +716,62 @@ private func module_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 0
 }
 
-// MARK: - Registration tables
-
-private var cameraDeviceLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("uid"), func: camera_uid),
-    luaL_Reg(name: strdup("connectionID"), func: camera_cID),
-    luaL_Reg(name: strdup("name"), func: camera_name),
-    luaL_Reg(name: strdup("isInUse"), func: camera_isinuse),
-    luaL_Reg(name: strdup("setPropertyWatcherCallback"), func: camera_propertyWatcherCallback),
-    luaL_Reg(name: strdup("startPropertyWatcher"), func: camera_startPropertyWatcher),
-    luaL_Reg(name: strdup("stopPropertyWatcher"), func: camera_stopPropertyWatcher),
-    luaL_Reg(name: strdup("isPropertyWatcherRunning"), func: camera_isPropertyWatcherRunning),
-
-    luaL_Reg(name: strdup("__tostring"), func: hsCamera_tostring),
-    luaL_Reg(name: strdup("__eq"), func: hsCamera_eq),
-    luaL_Reg(name: strdup("__gc"), func: hsCamera_gc),
-    luaL_Reg(name: nil, func: nil),
-]
-
-private var cameraLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("allCameras"), func: allCameras),
-    luaL_Reg(name: strdup("setWatcherCallback"), func: setWatcherCallback),
-    luaL_Reg(name: strdup("startWatcher"), func: startWatcher),
-    luaL_Reg(name: strdup("stopWatcher"), func: stopWatcher),
-    luaL_Reg(name: strdup("isWatcherRunning"), func: isWatcherRunning),
-
-    luaL_Reg(name: nil, func: nil),
-]
-
-private var cameraLibMeta: [luaL_Reg] = [
-    luaL_Reg(name: strdup("__gc"), func: module_gc),
-    luaL_Reg(name: nil, func: nil),
-]
-
 // MARK: - Lua initialisation
 
 @_cdecl("luaopen_hs_libcamera")
 public func luaopen_hs_libcamera(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    cameraManagerInstance = HSCameraManager()
+    runEntryPoint(L) { L in
+        cameraManagerInstance = HSCameraManager()
 
-    // Create ref table in registry
-    lua_newtable(L)
-    refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+        // Create ref table in registry
+        lua_newtable(L)
+        refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
 
-    // Register userdata metatable
-    luaL_newmetatable(L, USERDATA_TAG)
-    lua_pushvalue(L, -1)
-    lua_setfield(L, -2, "__index")
-    luaL_setfuncs(L, &cameraDeviceLib, 0)
-    lua_pop(L, 1)
+        // Register userdata metatable
+        luaL_newmetatable(L, USERDATA_TAG)
+        lua_pushvalue(L, -1)
+        lua_setfield(L, -2, "__index")
+        L.push(camera_uid)
+        lua_setfield(L, -2, "uid")
+        L.push(camera_cID)
+        lua_setfield(L, -2, "connectionID")
+        L.push(camera_name)
+        lua_setfield(L, -2, "name")
+        L.push(camera_isinuse)
+        lua_setfield(L, -2, "isInUse")
+        L.push(camera_propertyWatcherCallback)
+        lua_setfield(L, -2, "setPropertyWatcherCallback")
+        L.push(camera_startPropertyWatcher)
+        lua_setfield(L, -2, "startPropertyWatcher")
+        L.push(camera_stopPropertyWatcher)
+        lua_setfield(L, -2, "stopPropertyWatcher")
+        L.push(camera_isPropertyWatcherRunning)
+        lua_setfield(L, -2, "isPropertyWatcherRunning")
+        L.push(hsCamera_tostring)
+        lua_setfield(L, -2, "__tostring")
+        L.push(hsCamera_eq)
+        lua_setfield(L, -2, "__eq")
+        L.push(hsCamera_gc)
+        lua_setfield(L, -2, "__gc")
+        lua_pop(L, 1)
 
-    // Create module table
-    lua_createtable(L, 0, Int32(cameraLib.count - 1))
-    luaL_setfuncs(L, &cameraLib, 0)
+        // Create module table
+        lua_createtable(L, 0, 5)
+        L.push(allCameras)
+        lua_setfield(L, -2, "allCameras")
+        L.push(setWatcherCallback)
+        lua_setfield(L, -2, "setWatcherCallback")
+        L.push(startWatcher)
+        lua_setfield(L, -2, "startWatcher")
+        L.push(stopWatcher)
+        lua_setfield(L, -2, "stopWatcher")
+        L.push(isWatcherRunning)
+        lua_setfield(L, -2, "isWatcherRunning")
 
-    // Set module metatable (for __gc)
-    lua_createtable(L, 0, Int32(cameraLibMeta.count - 1))
-    luaL_setfuncs(L, &cameraLibMeta, 0)
-    lua_setmetatable(L, -2)
-
-    return 1
+        // Set module metatable (for __gc)
+        lua_createtable(L, 0, 1)
+        L.push(module_gc)
+        lua_setfield(L, -2, "__gc")
+        lua_setmetatable(L, -2)
+    }
 }

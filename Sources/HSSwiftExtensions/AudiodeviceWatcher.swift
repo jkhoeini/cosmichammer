@@ -1,5 +1,6 @@
 import Cocoa
 import CLua
+import Lua
 import Carbon
 import CoreAudio
 import AudioToolbox
@@ -90,7 +91,7 @@ private func audiodevicewatcher_callback(
 ///   * dev# - An audio device appeared or disappeared
 ///  * The callback will be called for each individual audio device event received from the OS, so you may receive multiple events for a single physical action (e.g. unplugging the default audio device will cause `dOut` and `dev#` events, and possibly `sOut` too)
 ///  * Passing nil will cause the watcher to stop if it is already running
-private func audiodevicewatcher_setCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func audiodevicewatcher_setCallback(_ L: LuaState) throws -> CInt {
 
     if theWatcher == nil {
         theWatcher = UnsafeMutablePointer<AudioDeviceWatcher>.allocate(capacity: 1)
@@ -109,7 +110,7 @@ private func audiodevicewatcher_setCallback(_ L: UnsafeMutablePointer<lua_State>
         lua_pushvalue(L, 1)
         theWatcher!.pointee.callback = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
     case LUA_TNIL:
-        _ = audiodevicewatcher_stop(L)
+        _ = try audiodevicewatcher_stop(L)
     default:
         break
     }
@@ -126,7 +127,7 @@ private func audiodevicewatcher_setCallback(_ L: UnsafeMutablePointer<lua_State>
 ///
 /// Returns:
 ///  * None
-private func audiodevicewatcher_start(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func audiodevicewatcher_start(_ L: LuaState) throws -> CInt {
     guard let watcher = theWatcher, watcher.pointee.callback != LUA_NOREF else {
         os_log(.error, "%{public}s", "You must call hs.audiodevice.watcher.setCallback() before hs.audiodevice.watcher.start()")
         return 0
@@ -161,7 +162,7 @@ private func audiodevicewatcher_start(_ L: UnsafeMutablePointer<lua_State>!) -> 
 ///
 /// Returns:
 ///  * The `hs.audiodevice.watcher` object
-private func audiodevicewatcher_stop(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func audiodevicewatcher_stop(_ L: LuaState) throws -> CInt {
     guard let watcher = theWatcher, watcher.pointee.running else {
         return 0
     }
@@ -191,7 +192,7 @@ private func audiodevicewatcher_stop(_ L: UnsafeMutablePointer<lua_State>!) -> I
 ///
 /// Returns:
 ///  * A boolean, true if the watcher is running, false if not
-private func audiodevicewatcher_isRunning(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func audiodevicewatcher_isRunning(_ L: LuaState) throws -> CInt {
 
     guard let watcher = theWatcher else {
         lua_pushboolean(L, 0)
@@ -202,10 +203,10 @@ private func audiodevicewatcher_isRunning(_ L: UnsafeMutablePointer<lua_State>!)
     return 1
 }
 
-private func audiodevicewatcher_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func audiodevicewatcher_gc(_ L: LuaState) throws -> CInt {
 
     if let watcher = theWatcher {
-        _ = audiodevicewatcher_stop(L)
+        _ = try audiodevicewatcher_stop(L)
         luaL_unref(L, LUA_REGISTRYINDEX_VALUE, watcher.pointee.callback)
 
         watcher.pointee.callback = LUA_NOREF
@@ -219,34 +220,28 @@ private func audiodevicewatcher_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int
 
 // MARK: - Library initialisation
 
-// Metatable for audiodevice watcher objects
-private var audiodevicewatcherLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("setCallback"),             func: audiodevicewatcher_setCallback),
-    luaL_Reg(name: strdup("start"),                   func: audiodevicewatcher_start),
-    luaL_Reg(name: strdup("stop"),                    func: audiodevicewatcher_stop),
-    luaL_Reg(name: strdup("isRunning"),               func: audiodevicewatcher_isRunning),
-    luaL_Reg(name: nil, func: nil),
-]
-
-private var watcherMetaLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("__gc"),                    func: audiodevicewatcher_gc),
-    luaL_Reg(name: nil, func: nil),
-]
-
 @_cdecl("luaopen_hs_libaudiodevicewatcher")
 public func luaopen_hs_libaudiodevicewatcher(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    // Create ref table in registry
-    lua_newtable(L)
-    watcherRefTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+    runEntryPoint(L) { L in
+        // Create ref table in registry
+        lua_newtable(L)
+        watcherRefTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
 
-    // Create module table
-    lua_createtable(L, 0, Int32(audiodevicewatcherLib.count - 1))
-    luaL_setfuncs(L, &audiodevicewatcherLib, 0)
+        // Create module table
+        lua_createtable(L, 0, 4)
+        L.push(audiodevicewatcher_setCallback)
+        lua_setfield(L, -2, "setCallback")
+        L.push(audiodevicewatcher_start)
+        lua_setfield(L, -2, "start")
+        L.push(audiodevicewatcher_stop)
+        lua_setfield(L, -2, "stop")
+        L.push(audiodevicewatcher_isRunning)
+        lua_setfield(L, -2, "isRunning")
 
-    // Set module metatable (for __gc)
-    lua_createtable(L, 0, Int32(watcherMetaLib.count - 1))
-    luaL_setfuncs(L, &watcherMetaLib, 0)
-    lua_setmetatable(L, -2)
-
-    return 1
+        // Set module metatable (for __gc)
+        lua_createtable(L, 0, 1)
+        L.push(audiodevicewatcher_gc)
+        lua_setfield(L, -2, "__gc")
+        lua_setmetatable(L, -2)
+    }
 }

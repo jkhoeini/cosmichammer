@@ -1,5 +1,6 @@
 import Cocoa
 import CLua
+import Lua
 import Foundation
 import os.log
 
@@ -179,7 +180,7 @@ private func create_task(_ userData: UnsafeMutablePointer<TaskUserdata>) {
 /// Notes:
 ///  * The arguments are not processed via a shell, so you do not need to do any quoting or escaping. They are passed to the executable exactly as provided.
 ///  * When using a stream callback, the callback may be invoked one last time after the termination callback has already been invoked. In this case, the `task` argument to the stream callback will be `nil` rather than the task userdata object and the return value of the stream callback will be ignored.
-private func task_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func task_new(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TSTRING)
 
     // Create our Lua userdata object
@@ -224,9 +225,7 @@ private func task_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
         lua_pushnil(L)
         while lua_next(L, argsIdx) != 0 {
             if lua_type(L, -1) != LUA_TSTRING {
-                luaL_error(L, "All arguments for hs.task.new must be strings")
-                lua_pushnil(L)
-                return 1
+                throw LuaCallError("All arguments for hs.task.new must be strings")
             }
             arr.add(String(cString: lua_tostring(L, -1)!))
             lua_pop(L, 1)
@@ -259,7 +258,7 @@ private func task_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * the hs.task object
-private func task_setCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func task_setCallback(_ L: LuaState) throws -> CInt {
     let userData = lua_touserdata(L, 1)!.assumingMemoryBound(to: TaskUserdata.self)
 
     lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(refTable))
@@ -287,7 +286,7 @@ private func task_setCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Notes:
 ///  * This method can be called before the task has been started, to prepare some input for it (particularly if it is not a streaming task)
 ///  * If this method is called multiple times, any input that has not been passed to the task already, is discarded (for streaming tasks, the data is generally consumed very quickly, but for now there is no way to synchronize this)
-private func task_setInput(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func task_setInput(_ L: LuaState) throws -> CInt {
     let userData = lua_touserdata(L, 1)!.assumingMemoryBound(to: TaskUserdata.self)
 
     if !userData.pointee.hasTerminated {
@@ -329,7 +328,7 @@ private func task_setInput(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Notes:
 ///  * This should only be called on tasks with a streaming callback - tasks without it will automatically close stdin when any data supplied via `hs.task:setInput()` has been written
 ///  * This is primarily useful for sending EOF to long-running tasks
-private func task_closeInput(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func task_closeInput(_ L: LuaState) throws -> CInt {
     let userData = lua_touserdata(L, 1)!.assumingMemoryBound(to: TaskUserdata.self)
     let task = userData.pointee.nsTask!.takeUnretainedValue() as! Process
 
@@ -354,7 +353,7 @@ private func task_closeInput(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Notes:
 ///  * For information about the requirements of the callback function, see `hs.task.new()`
 ///  * If a callback is removed without it previously having returned false, any further stdout/stderr output from the task will be silently discarded
-private func task_setStreamingCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func task_setStreamingCallback(_ L: LuaState) throws -> CInt {
     let userData = lua_touserdata(L, 1)!.assumingMemoryBound(to: TaskUserdata.self)
 
     lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(refTable))
@@ -381,7 +380,7 @@ private func task_setStreamingCallback(_ L: UnsafeMutablePointer<lua_State>!) ->
 ///
 /// Notes:
 ///  * This only returns the directory that the task starts in.  If the task changes the directory itself, this value will not reflect that change.
-private func task_getWorkingDirectory(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func task_getWorkingDirectory(_ L: LuaState) throws -> CInt {
     let userData = lua_touserdata(L, 1)!.assumingMemoryBound(to: TaskUserdata.self)
     let task = userData.pointee.nsTask!.takeUnretainedValue() as! Process
 
@@ -402,7 +401,7 @@ private func task_getWorkingDirectory(_ L: UnsafeMutablePointer<lua_State>!) -> 
 /// Notes:
 ///  * You can only set the working directory if the task has not already been started.
 ///  * This will only set the directory that the task starts in.  The task itself can change the directory while it is running.
-private func task_setWorkingDirectory(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func task_setWorkingDirectory(_ L: LuaState) throws -> CInt {
     let userData = lua_touserdata(L, 1)!.assumingMemoryBound(to: TaskUserdata.self)
     let task = userData.pointee.nsTask!.takeUnretainedValue() as! Process
     let thePath = String(cString: luaL_checkstring(L, 2))
@@ -425,7 +424,7 @@ private func task_setWorkingDirectory(_ L: UnsafeMutablePointer<lua_State>!) -> 
 ///
 /// Notes:
 ///  * The PID will still be returned if the task has already completed and the process terminated
-private func task_getPID(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func task_getPID(_ L: LuaState) throws -> CInt {
     let userData = lua_touserdata(L, 1)!.assumingMemoryBound(to: TaskUserdata.self)
     let task = userData.pointee.nsTask!.takeUnretainedValue() as! Process
 
@@ -445,7 +444,7 @@ private func task_getPID(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Notes:
 ///  * If the task does not start successfully, the error message will be printed to the Cosmic Hammer Console
-private func task_launch(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func task_launch(_ L: LuaState) throws -> CInt {
     let userData = lua_touserdata(L, 1)!.assumingMemoryBound(to: TaskUserdata.self)
     var result = false
 
@@ -496,7 +495,7 @@ private func task_launch(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Notes:
 ///  * This will send SIGTERM to the process
-private func task_SIGTERM(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func task_SIGTERM(_ L: LuaState) throws -> CInt {
     let userData = lua_touserdata(L, 1)!.assumingMemoryBound(to: TaskUserdata.self)
     let task = userData.pointee.nsTask!.takeUnretainedValue() as! Process
 
@@ -518,7 +517,7 @@ private func task_SIGTERM(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Notes:
 ///  * This will send SIGINT to the process
-private func task_SIGINT(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func task_SIGINT(_ L: LuaState) throws -> CInt {
     let userData = lua_touserdata(L, 1)!.assumingMemoryBound(to: TaskUserdata.self)
     let task = userData.pointee.nsTask!.takeUnretainedValue() as! Process
 
@@ -541,7 +540,7 @@ private func task_SIGINT(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Notes:
 ///  * If the task is not paused, the error message will be printed to the Cosmic Hammer Console
 ///  * This method can be called multiple times, but a matching number of `hs.task:resume()` calls will be required to allow the process to continue
-private func task_pause(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func task_pause(_ L: LuaState) throws -> CInt {
     let userData = lua_touserdata(L, 1)!.assumingMemoryBound(to: TaskUserdata.self)
     let task = userData.pointee.nsTask!.takeUnretainedValue() as! Process
     let result = task.suspend()
@@ -566,7 +565,7 @@ private func task_pause(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Notes:
 ///  * If the task is not resumed successfully, the error message will be printed to the Cosmic Hammer Console
-private func task_resumeTask(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func task_resumeTask(_ L: LuaState) throws -> CInt {
     let userData = lua_touserdata(L, 1)!.assumingMemoryBound(to: TaskUserdata.self)
     let task = userData.pointee.nsTask!.takeUnretainedValue() as! Process
     let result = task.resume()
@@ -591,7 +590,7 @@ private func task_resumeTask(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Notes:
 ///  * All Lua and Cosmic Hammer activity will be blocked by this method. Its use is highly discouraged.
-private func task_block(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func task_block(_ L: LuaState) throws -> CInt {
     let userData = lua_touserdata(L, 1)!.assumingMemoryBound(to: TaskUserdata.self)
     let task = userData.pointee.nsTask!.takeUnretainedValue() as! Process
 
@@ -610,7 +609,7 @@ private func task_block(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * the numeric exitCode of the task, or the boolean false if the task has not yet exited (either because it has not yet been started or because it is still running).
-private func task_terminationStatus(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func task_terminationStatus(_ L: LuaState) throws -> CInt {
     let userData = lua_touserdata(L, 1)!.assumingMemoryBound(to: TaskUserdata.self)
     let task = userData.pointee.nsTask!.takeUnretainedValue() as! Process
 
@@ -636,13 +635,13 @@ private func task_terminationStatus(_ L: UnsafeMutablePointer<lua_State>!) -> In
 ///
 /// Notes:
 ///  * A task which has not yet been started yet will also return false.
-private func task_isRunning(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func task_isRunning(_ L: LuaState) throws -> CInt {
     let userData = lua_touserdata(L, 1)!.assumingMemoryBound(to: TaskUserdata.self)
 
     if !userData.pointee.hasStarted {
         lua_pushboolean(L, 0)
     } else {
-        lua_pushcfunction(L, { task_terminationStatus($0) })
+        L.push(task_terminationStatus)
         lua_pushvalue(L, 1)
         lua_call(L, 1, 1)
         lua_pushboolean(L, (lua_type(L, -1) == LUA_TNUMBER) ? 0 : 1)
@@ -660,7 +659,7 @@ private func task_isRunning(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * a string value of "exit" if the process exited normally or "interrupt" if it was killed by a signal.  Returns false if the termination reason is unavailable (the task is still running, or has not yet been started).
-private func task_terminationReason(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func task_terminationReason(_ L: LuaState) throws -> CInt {
     let userData = lua_touserdata(L, 1)!.assumingMemoryBound(to: TaskUserdata.self)
     let task = userData.pointee.nsTask!.takeUnretainedValue() as! Process
 
@@ -691,7 +690,7 @@ private func task_terminationReason(_ L: UnsafeMutablePointer<lua_State>!) -> In
 ///
 /// Notes:
 ///  * if you have not yet set an environment table with the `hs.task:setEnvironment` method, this method will return a copy of the Cosmic Hammer environment table, as this is what the task will inherit by default.
-private func task_getEnvironment(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func task_getEnvironment(_ L: LuaState) throws -> CInt {
     let userData = lua_touserdata(L, 1)!.assumingMemoryBound(to: TaskUserdata.self)
     let task = userData.pointee.nsTask!.takeUnretainedValue() as! Process
 
@@ -715,7 +714,7 @@ private func task_getEnvironment(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 ///
 /// Notes:
 ///  * If you do not set an environment table with this method, the task will inherit the environment variables of the Cosmic Hammer application.  Set this to an empty table if you wish for no variables to be set for the task.
-private func task_setEnvironment(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func task_setEnvironment(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 2, LUA_TTABLE)
     let userData = lua_touserdata(L, 1)!.assumingMemoryBound(to: TaskUserdata.self)
     let task = userData.pointee.nsTask!.takeUnretainedValue() as! Process
@@ -731,7 +730,7 @@ private func task_setEnvironment(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
     return 1
 }
 
-private func task_toString(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func task_toString(_ L: LuaState) throws -> CInt {
     let userData = lua_touserdata(L, 1)!.assumingMemoryBound(to: TaskUserdata.self)
 
     let launchPath = userData.pointee.launchPath?.takeUnretainedValue() as String? ?? ""
@@ -740,7 +739,7 @@ private func task_toString(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 1
 }
 
-private func task_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func task_gc(_ L: LuaState) throws -> CInt {
     let userData = lua_touserdata(L, 1)!.assumingMemoryBound(to: TaskUserdata.self)
     let task = userData.pointee.nsTask!.takeRetainedValue() as! Process
     let pointerArray = pointerArrayFromNSTask(task)
@@ -778,7 +777,7 @@ private func task_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 0
 }
 
-private func task_metagc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func task_metagc(_ L: LuaState) throws -> CInt {
     tasks.removeAllObjects()
     if let observer = fileReadObserver {
         NotificationCenter.default.removeObserver(observer)
@@ -786,132 +785,115 @@ private func task_metagc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 0
 }
 
-// MARK: - luaL_Reg tables
-
-private var taskLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("new"), func: { task_new($0) }),
-    luaL_Reg(name: nil, func: nil),
-]
-
-private var taskMetaLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("__gc"), func: { task_metagc($0) }),
-    luaL_Reg(name: nil, func: nil),
-]
-
-private var taskObjectLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("environment"), func: { task_getEnvironment($0) }),
-    luaL_Reg(name: strdup("setEnvironment"), func: { task_setEnvironment($0) }),
-    luaL_Reg(name: strdup("pid"), func: { task_getPID($0) }),
-    luaL_Reg(name: strdup("start"), func: { task_launch($0) }),
-    luaL_Reg(name: strdup("terminate"), func: { task_SIGTERM($0) }),
-    luaL_Reg(name: strdup("interrupt"), func: { task_SIGINT($0) }),
-    luaL_Reg(name: strdup("pause"), func: { task_pause($0) }),
-    luaL_Reg(name: strdup("resume"), func: { task_resumeTask($0) }),
-    luaL_Reg(name: strdup("terminationStatus"), func: { task_terminationStatus($0) }),
-    luaL_Reg(name: strdup("terminationReason"), func: { task_terminationReason($0) }),
-    luaL_Reg(name: strdup("isRunning"), func: { task_isRunning($0) }),
-    luaL_Reg(name: strdup("setWorkingDirectory"), func: { task_setWorkingDirectory($0) }),
-    luaL_Reg(name: strdup("workingDirectory"), func: { task_getWorkingDirectory($0) }),
-    luaL_Reg(name: strdup("setCallback"), func: { task_setCallback($0) }),
-    luaL_Reg(name: strdup("setStreamingCallback"), func: { task_setStreamingCallback($0) }),
-    luaL_Reg(name: strdup("setInput"), func: { task_setInput($0) }),
-    luaL_Reg(name: strdup("closeInput"), func: { task_closeInput($0) }),
-    luaL_Reg(name: strdup("waitUntilExit"), func: { task_block($0) }),
-    luaL_Reg(name: strdup("__gc"), func: { task_gc($0) }),
-    luaL_Reg(name: strdup("__tostring"), func: { task_toString($0) }),
-    luaL_Reg(name: nil, func: nil),
-]
-
 // MARK: - Module entry point
 
 @_cdecl("luaopen_hs_libtask")
 public func luaopen_hs_libtask(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    // Create ref table in registry
-    lua_newtable(L)
-    refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+    runEntryPoint(L) { L in
+        // Create ref table in registry
+        lua_newtable(L)
+        refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
 
-    // Register userdata metatable
-    luaL_newmetatable(L, USERDATA_TAG)
-    lua_pushvalue(L, -1)
-    lua_setfield(L, -2, "__index")  // mt.__index = mt
-    luaL_setfuncs(L, &taskObjectLib, 0)
-    lua_pop(L, 1)
+        // Register userdata metatable
+        luaL_newmetatable(L, USERDATA_TAG)
+        lua_pushvalue(L, -1)
+        lua_setfield(L, -2, "__index")
+        L.push(task_getEnvironment);        lua_setfield(L, -2, "environment")
+        L.push(task_setEnvironment);        lua_setfield(L, -2, "setEnvironment")
+        L.push(task_getPID);                lua_setfield(L, -2, "pid")
+        L.push(task_launch);                lua_setfield(L, -2, "start")
+        L.push(task_SIGTERM);               lua_setfield(L, -2, "terminate")
+        L.push(task_SIGINT);                lua_setfield(L, -2, "interrupt")
+        L.push(task_pause);                 lua_setfield(L, -2, "pause")
+        L.push(task_resumeTask);            lua_setfield(L, -2, "resume")
+        L.push(task_terminationStatus);     lua_setfield(L, -2, "terminationStatus")
+        L.push(task_terminationReason);     lua_setfield(L, -2, "terminationReason")
+        L.push(task_isRunning);             lua_setfield(L, -2, "isRunning")
+        L.push(task_setWorkingDirectory);   lua_setfield(L, -2, "setWorkingDirectory")
+        L.push(task_getWorkingDirectory);   lua_setfield(L, -2, "workingDirectory")
+        L.push(task_setCallback);           lua_setfield(L, -2, "setCallback")
+        L.push(task_setStreamingCallback);  lua_setfield(L, -2, "setStreamingCallback")
+        L.push(task_setInput);              lua_setfield(L, -2, "setInput")
+        L.push(task_closeInput);            lua_setfield(L, -2, "closeInput")
+        L.push(task_block);                 lua_setfield(L, -2, "waitUntilExit")
+        L.push(task_gc);                    lua_setfield(L, -2, "__gc")
+        L.push(task_toString);              lua_setfield(L, -2, "__tostring")
+        lua_pop(L, 1)
 
-    // Create module table
-    lua_createtable(L, 0, Int32(taskLib.count - 1))
-    luaL_setfuncs(L, &taskLib, 0)
+        // Create module table
+        lua_createtable(L, 0, 1)
+        L.push(task_new);                   lua_setfield(L, -2, "new")
 
-    // Set module metatable (for __gc)
-    lua_createtable(L, 0, Int32(taskMetaLib.count - 1))
-    luaL_setfuncs(L, &taskMetaLib, 0)
-    lua_setmetatable(L, -2)
+        // Set module metatable (for __gc)
+        lua_createtable(L, 0, 1)
+        L.push(task_metagc);                lua_setfield(L, -2, "__gc")
+        lua_setmetatable(L, -2)
 
-    tasks = NSMutableArray()
+        tasks = NSMutableArray()
 
-    let nc = NotificationCenter.default
-    fileReadObserver = nc.addObserver(forName: FileHandle.readCompletionNotification, object: nil, queue: nil) { note in
-        guard let fh = note.object as? FileHandle,
-              let fhData = note.userInfo?[NSFileHandleNotificationDataItem] as? Data,
-              !fhData.isEmpty else {
-            return
-        }
-
-        let dataString = String(data: fhData, encoding: .utf8)
-
-        guard let userData = userDataFromNSFileHandle(fh) else {
-            os_log(.info, "hs.task received output data from an unknown task. This may be a bug")
-            return
-        }
-
-        if userData.pointee.luaStreamCallback != LUA_NOREF && userData.pointee.luaStreamCallback != LUA_REFNIL {
-            let _L = lua_getCurrentState()!
-
-            let task = userData.pointee.nsTask!.takeUnretainedValue() as! Process
-            let stdOutFH = (task.standardOutput as? Pipe)?.fileHandleForReading
-            let stdErrFH = (task.standardError as? Pipe)?.fileHandleForReading
-
-            var stdOutArg: String = ""
-            var stdErrArg: String = ""
-
-            if fh === stdOutFH {
-                stdOutArg = dataString ?? ""
-            } else if fh === stdErrFH {
-                stdErrArg = dataString ?? ""
-            } else {
-                os_log(.error, "hs.task:setStreamingCallback() Received data from an unknown file handle")
+        let nc = NotificationCenter.default
+        fileReadObserver = nc.addObserver(forName: FileHandle.readCompletionNotification, object: nil, queue: nil) { note in
+            guard let fh = note.object as? FileHandle,
+                  let fhData = note.userInfo?[NSFileHandleNotificationDataItem] as? Data,
+                  !fhData.isEmpty else {
                 return
             }
 
-            let notLastGasp = (userData.pointee.selfRef != LUA_NOREF && userData.pointee.selfRef != LUA_REFNIL)
-            lua_rawgeti(_L, LUA_REGISTRYINDEX_VALUE, lua_Integer(refTable))
-            lua_rawgeti(_L, -1, lua_Integer(userData.pointee.luaStreamCallback))
-            lua_remove(_L, -2)
-            if notLastGasp {
-                lua_rawgeti(_L, LUA_REGISTRYINDEX_VALUE, lua_Integer(refTable))
-                lua_rawgeti(_L, -1, lua_Integer(userData.pointee.selfRef))
-                lua_remove(_L, -2)
-            } else {
-                lua_pushnil(_L)
+            let dataString = String(data: fhData, encoding: .utf8)
+
+            guard let userData = userDataFromNSFileHandle(fh) else {
+                os_log(.info, "hs.task received output data from an unknown task. This may be a bug")
+                return
             }
-            lua_pushstring(_L, stdOutArg)
-            lua_pushstring(_L, stdErrArg)
 
-            if lua_pcall(_L, 3, 1, 0) != LUA_OK {
-                lua_pop(_L, 1)
-            } else {
-                if lua_type(_L, -1) != LUA_TBOOLEAN {
-                    os_log(.error, "hs.task:setStreamingCallback() callback did not return a boolean")
+            if userData.pointee.luaStreamCallback != LUA_NOREF && userData.pointee.luaStreamCallback != LUA_REFNIL {
+                let _L = lua_getCurrentState()!
+
+                let task = userData.pointee.nsTask!.takeUnretainedValue() as! Process
+                let stdOutFH = (task.standardOutput as? Pipe)?.fileHandleForReading
+                let stdErrFH = (task.standardError as? Pipe)?.fileHandleForReading
+
+                var stdOutArg: String = ""
+                var stdErrArg: String = ""
+
+                if fh === stdOutFH {
+                    stdOutArg = dataString ?? ""
+                } else if fh === stdErrFH {
+                    stdErrArg = dataString ?? ""
                 } else {
-                    let continueStreaming = lua_toboolean(_L, -1) != 0
-
-                    if continueStreaming && notLastGasp {
-                        fh.readInBackgroundAndNotify()
-                    }
+                    os_log(.error, "hs.task:setStreamingCallback() Received data from an unknown file handle")
+                    return
                 }
-                lua_pop(_L, 1) // result
+
+                let notLastGasp = (userData.pointee.selfRef != LUA_NOREF && userData.pointee.selfRef != LUA_REFNIL)
+                lua_rawgeti(_L, LUA_REGISTRYINDEX_VALUE, lua_Integer(refTable))
+                lua_rawgeti(_L, -1, lua_Integer(userData.pointee.luaStreamCallback))
+                lua_remove(_L, -2)
+                if notLastGasp {
+                    lua_rawgeti(_L, LUA_REGISTRYINDEX_VALUE, lua_Integer(refTable))
+                    lua_rawgeti(_L, -1, lua_Integer(userData.pointee.selfRef))
+                    lua_remove(_L, -2)
+                } else {
+                    lua_pushnil(_L)
+                }
+                lua_pushstring(_L, stdOutArg)
+                lua_pushstring(_L, stdErrArg)
+
+                if lua_pcall(_L, 3, 1, 0) != LUA_OK {
+                    lua_pop(_L, 1)
+                } else {
+                    if lua_type(_L, -1) != LUA_TBOOLEAN {
+                        os_log(.error, "hs.task:setStreamingCallback() callback did not return a boolean")
+                    } else {
+                        let continueStreaming = lua_toboolean(_L, -1) != 0
+
+                        if continueStreaming && notLastGasp {
+                            fh.readInBackgroundAndNotify()
+                        }
+                    }
+                    lua_pop(_L, 1) // result
+                }
             }
         }
     }
-
-    return 1
 }

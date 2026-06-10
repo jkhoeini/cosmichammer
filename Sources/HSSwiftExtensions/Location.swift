@@ -1,5 +1,6 @@
 import Cocoa
 import CLua
+import Lua
 import os.log
 import CoreLocation
 
@@ -150,7 +151,7 @@ private func checkLocationManager() -> Bool {
 // MARK: - Module Functions
 
 // internally used function
-private func location_registerCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func location_registerCallback(_ L: LuaState) throws -> CInt {
     luaL_unref(L, LUA_REGISTRYINDEX_VALUE, callbackRef)
 
     callbackRef = LUA_NOREF
@@ -171,7 +172,7 @@ private func location_registerCallback(_ L: UnsafeMutablePointer<lua_State>!) ->
 ///
 /// Returns:
 ///  * True if Location Services are enabled, otherwise false
-private func location_locationServicesEnabled(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func location_locationServicesEnabled(_ L: LuaState) throws -> CInt {
     // no args to validate
     lua_pushboolean(L, CLLocationManager.locationServicesEnabled() ? 1 : 0)
     return 1
@@ -193,7 +194,7 @@ private func location_locationServicesEnabled(_ L: UnsafeMutablePointer<lua_Stat
 ///
 /// Notes:
 ///  * The first time you use a function which requires Location Services, you will be prompted to grant Cosmic Hammer access. If you wish to change this permission after the initial prompt, you may do so from the Location Services section of the Security & Privacy section in the System Preferences application.
-private func location_authorizationStatus(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func location_authorizationStatus(_ L: LuaState) throws -> CInt {
 
     let status = CLLocationManager.authorizationStatus()
     let statusString: String
@@ -222,19 +223,19 @@ private func location_authorizationStatus(_ L: UnsafeMutablePointer<lua_State>!)
 ///
 /// Notes:
 ///  * This function does not require Location Services to be enabled for Cosmic Hammer.
-private func location_distanceBetween(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func location_distanceBetween(_ L: LuaState) throws -> CInt {
     guard let pointA = toCLLocation(L, at: 1) else {
-        return luaL_argerror(L, 1, "expected locationTable")
+        throw LuaCallError("bad argument #1 (expected locationTable)")
     }
     guard let pointB = toCLLocation(L, at: 2) else {
-        return luaL_argerror(L, 2, "expected locationTable")
+        throw LuaCallError("bad argument #2 (expected locationTable)")
     }
     lua_pushnumber(L, pointA.distance(from: pointB))
     return 1
 }
 
 // internally used function
-private func location_startWatching(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func location_startWatching(_ L: LuaState) throws -> CInt {
     // no args to validate
     lua_pushboolean(L, checkLocationManager() ? 1 : 0)
     if lua_toboolean(L, -1) != 0 { location?.manager.startUpdatingLocation() }
@@ -242,7 +243,7 @@ private func location_startWatching(_ L: UnsafeMutablePointer<lua_State>!) -> In
 }
 
 // internally used function
-private func location_stopWatching(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func location_stopWatching(_ L: LuaState) throws -> CInt {
     // no args to validate
     location?.manager.stopUpdatingLocation()
     return 0
@@ -262,7 +263,7 @@ private func location_stopWatching(_ L: UnsafeMutablePointer<lua_State>!) -> Int
 ///  * This function activates Location Services for Cosmic Hammer, so the first time you call this, you may be prompted to authorise Cosmic Hammer to use Location Services.
 ///  * If access to Location Services is enabled for Cosmic Hammer, this function will return the most recent cached data for the computer's location.
 ///    * Internally, the Location Services cache is updated whenever additional WiFi networks are detected or lost (not necessarily joined). When update tracking is enabled with the [hs.location.start](#start) function, calculations based upon the RSSI of all currently seen networks are preformed more often to provide a more precise fix, but it's still based on the WiFi networks near you.
-private func location_getLocation(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func location_getLocation(_ L: LuaState) throws -> CInt {
     if checkLocationManager() {
         pushCLLocation(L, location?.manager.location)
     } else {
@@ -283,7 +284,7 @@ private func location_getLocation(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
 ///
 /// Notes:
 ///  * This value is derived from the currently configured system timezone, it does not use Location Services
-private func location_dstOffset(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func location_dstOffset(_ L: LuaState) throws -> CInt {
 
     let tz = TimeZone.current
     var interval: TimeInterval = 0
@@ -296,7 +297,7 @@ private func location_dstOffset(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 }
 
 // internally used function
-private func location_monitoredRegions(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func location_monitoredRegions(_ L: LuaState) throws -> CInt {
     if let loc = location {
         pushCLRegionArray(L, Array(loc.manager.monitoredRegions))
     } else {
@@ -306,10 +307,10 @@ private func location_monitoredRegions(_ L: UnsafeMutablePointer<lua_State>!) ->
 }
 
 // internally used function
-private func location_addMonitoredRegion(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func location_addMonitoredRegion(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TTABLE)
     guard let region = toCLCircularRegion(L, at: 1) else {
-        return luaL_argerror(L, 1, "expected regionTable")
+        throw LuaCallError("bad argument #1 (expected regionTable)")
     }
     if checkLocationManager() {
         location?.manager.startMonitoring(for: region)
@@ -321,7 +322,7 @@ private func location_addMonitoredRegion(_ L: UnsafeMutablePointer<lua_State>!) 
 }
 
 // internally used function
-private func location_removeMonitoredRegion(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func location_removeMonitoredRegion(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TSTRING)
     let identifier = lua_tovalue(L, at: 1) as! String
 
@@ -346,7 +347,7 @@ private func location_removeMonitoredRegion(_ L: UnsafeMutablePointer<lua_State>
 }
 
 // internally used function, may document for testing purposes
-private func location_fakeLocationChange(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func location_fakeLocationChange(_ L: LuaState) throws -> CInt {
     let message = lua_tovalue(L, at: 1) as! String
 
     guard let loc = location else {
@@ -357,19 +358,19 @@ private func location_fakeLocationChange(_ L: UnsafeMutablePointer<lua_State>!) 
     switch message {
     case "didUpdateLocations":
         guard let clLoc = toCLLocation(L, at: 2) else {
-            return luaL_argerror(L, 2, "expected locationTable")
+            throw LuaCallError("bad argument #2 (expected locationTable)")
         }
         loc.locationManager(loc.manager, didUpdateLocations: [clLoc])
 
     case "didEnterRegion":
         guard let region = toCLCircularRegion(L, at: 2) else {
-            return luaL_argerror(L, 2, "expected regionTable")
+            throw LuaCallError("bad argument #2 (expected regionTable)")
         }
         loc.locationManager(loc.manager, didEnterRegion: region)
 
     case "didExitRegion":
         guard let region = toCLCircularRegion(L, at: 2) else {
-            return luaL_argerror(L, 2, "expected regionTable")
+            throw LuaCallError("bad argument #2 (expected regionTable)")
         }
         loc.locationManager(loc.manager, didExitRegion: region)
 
@@ -379,7 +380,7 @@ private func location_fakeLocationChange(_ L: UnsafeMutablePointer<lua_State>!) 
 
     case "monitoringDidFailForRegion":
         guard let region = toCLCircularRegion(L, at: 2) else {
-            return luaL_argerror(L, 2, "expected regionTable")
+            throw LuaCallError("bad argument #2 (expected regionTable)")
         }
         let error = NSError(domain: "fakeError", code: Int(lua_tointegerx(L, 3, nil)), userInfo: nil)
         loc.locationManager(loc.manager, monitoringDidFailFor: region, withError: error)
@@ -393,18 +394,18 @@ private func location_fakeLocationChange(_ L: UnsafeMutablePointer<lua_State>!) 
         case "denied":     statusCode = .denied
         case "authorized": statusCode = .authorized
         default:
-            return luaL_argerror(L, 2, "\(status) is not a recognized status")
+            throw LuaCallError("bad argument #2 (\(status) is not a recognized status)")
         }
         loc.locationManager(loc.manager, didChangeAuthorization: statusCode)
 
     case "didStartMonitoringForRegion":
         guard let region = toCLCircularRegion(L, at: 2) else {
-            return luaL_argerror(L, 2, "expected regionTable")
+            throw LuaCallError("bad argument #2 (expected regionTable)")
         }
         loc.locationManager(loc.manager, didStartMonitoringFor: region)
 
     default:
-        return luaL_argerror(L, 1, "\(message) is not a recognized message")
+        throw LuaCallError("bad argument #1 (\(message) is not a recognized message)")
     }
 
     lua_pushboolean(L, 1)
@@ -479,7 +480,7 @@ private func sunturns(_ L: UnsafeMutablePointer<lua_State>!) -> EDSunriseSet? {
 /// Notes:
 ///  * You can turn the return value into a more useful structure, with ```os.date("*t", returnvalue)```
 ///  * For compatibility with the locationTable object returned by [hs.location.get](#get), this function can also be invoked as `hs.location.sunrise(locationTable, offset[, date])`.
-private func location_sunrise(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func location_sunrise(_ L: LuaState) throws -> CInt {
     guard let suntimes = sunturns(L) else { return 0 }
     lua_pushinteger(L, lua_Integer(suntimes.sunrise.timeIntervalSince1970))
     return 1
@@ -501,7 +502,7 @@ private func location_sunrise(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Notes:
 ///  * You can turn the return value into a more useful structure, with ```os.date("*t", returnvalue)```
 ///  * For compatibility with the locationTable object returned by [hs.location.get](#get), this function can also be invoked as `hs.location.sunset(locationTable, offset[, date])`.
-private func location_sunset(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func location_sunset(_ L: LuaState) throws -> CInt {
     guard let suntimes = sunturns(L) else { return 0 }
     lua_pushinteger(L, lua_Integer(suntimes.sunset.timeIntervalSince1970))
     return 1
@@ -525,9 +526,9 @@ private func location_sunset(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Notes:
 ///  * This constructor requires internet access and the callback will be invoked with an error message if the internet is not currently accessible.
 ///  * This constructor does not require Location Services to be enabled for Cosmic Hammer.
-private func clgeocoder_lookupLocation(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func clgeocoder_lookupLocation(_ L: LuaState) throws -> CInt {
     guard let theLocation = toCLLocation(L, at: 1) else {
-        return luaL_argerror(L, 1, "expected locationTable")
+        throw LuaCallError("bad argument #1 (expected locationTable)")
     }
     lua_pushvalue(L, 2)
     let fnRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
@@ -569,7 +570,7 @@ private func clgeocoder_lookupLocation(_ L: UnsafeMutablePointer<lua_State>!) ->
 /// Notes:
 ///  * This constructor requires internet access and the callback will be invoked with an error message if the internet is not currently accessible.
 ///  * This constructor does not require Location Services to be enabled for Cosmic Hammer.
-private func clgeocoder_lookupAddress(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func clgeocoder_lookupAddress(_ L: LuaState) throws -> CInt {
     let searchString = lua_tovalue(L, at: 1) as! String
     lua_pushvalue(L, 2)
     let fnRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
@@ -613,7 +614,7 @@ private func clgeocoder_lookupAddress(_ L: UnsafeMutablePointer<lua_State>!) -> 
 ///  * This constructor requires internet access and the callback will be invoked with an error message if the internet is not currently accessible.
 ///  * This constructor does not require Location Services to be enabled for Cosmic Hammer.
 ///  * While a partial address can be given, the more information you provide, the more likely the results will be useful.  The `regionTable` only determines sort order if multiple entries are returned, it does not constrain the search.
-private func clgeocoder_lookupAddressNear(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func clgeocoder_lookupAddressNear(_ L: LuaState) throws -> CInt {
     let searchString = lua_tovalue(L, at: 1) as! String
     var theRegion: CLCircularRegion? = nil
 
@@ -657,10 +658,10 @@ private func clgeocoder_lookupAddressNear(_ L: UnsafeMutablePointer<lua_State>!)
 ///
 /// Returns:
 ///  * a boolean indicating if the geocoding process is still active.  If false, then the callback function either has already been called or will be as soon as the main thread of Cosmic Hammer becomes idle again.
-private func clgeocoder_isGeocoding(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func clgeocoder_isGeocoding(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, GEOCODE_UD_TAG)
     guard let geoItem = toCLGeocoder(L, at: 1) else {
-        return luaL_argerror(L, 1, "expected \(GEOCODE_UD_TAG) object")
+        throw LuaCallError("bad argument #1 (expected \(GEOCODE_UD_TAG) object)")
     }
     lua_pushboolean(L, geoItem.isGeocoding ? 1 : 0)
     return 1
@@ -678,10 +679,10 @@ private func clgeocoder_isGeocoding(_ L: UnsafeMutablePointer<lua_State>!) -> In
 ///
 /// Notes:
 ///  * This method has no effect if the geocoding process has already completed.
-private func clgeocoder_cancelGeocoding(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func clgeocoder_cancelGeocoding(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, GEOCODE_UD_TAG)
     guard let geoItem = toCLGeocoder(L, at: 1) else {
-        return luaL_argerror(L, 1, "expected \(GEOCODE_UD_TAG) object")
+        throw LuaCallError("bad argument #1 (expected \(GEOCODE_UD_TAG) object)")
     }
     geoItem.cancelGeocode()
     lua_pushnil(L)
@@ -914,9 +915,9 @@ private func pushCLPlacemarkArray(_ L: UnsafeMutablePointer<lua_State>!, _ place
 
 // MARK: - Cosmic Hammer/Lua Infrastructure
 
-private func clgeocoder_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func clgeocoder_tostring(_ L: LuaState) throws -> CInt {
     guard let obj = toCLGeocoder(L, at: 1) else {
-        return luaL_argerror(L, 1, "expected \(GEOCODE_UD_TAG) object")
+        throw LuaCallError("bad argument #1 (expected \(GEOCODE_UD_TAG) object)")
     }
     let title = obj.isGeocoding ? "geocoding" : "idle"
     let ptr = lua_topointer(L, 1)
@@ -924,7 +925,7 @@ private func clgeocoder_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
     return 1
 }
 
-private func clgeocoder_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func clgeocoder_eq(_ L: LuaState) throws -> CInt {
     if luaL_testudata(L, 1, GEOCODE_UD_TAG) != nil && luaL_testudata(L, 2, GEOCODE_UD_TAG) != nil {
         let obj1 = toCLGeocoder(L, at: 1)
         let obj2 = toCLGeocoder(L, at: 2)
@@ -935,7 +936,7 @@ private func clgeocoder_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 1
 }
 
-private func clgeocoder_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func clgeocoder_gc(_ L: LuaState) throws -> CInt {
     let ptr = luaL_checkudata(L, 1, GEOCODE_UD_TAG)!
     let obj = Unmanaged<CLGeocoder>.fromOpaque(ptr.load(as: UnsafeMutableRawPointer.self)).takeRetainedValue()
     obj.cancelGeocode()
@@ -945,7 +946,7 @@ private func clgeocoder_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 0
 }
 
-private func meta_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func meta_gc(_ L: LuaState) throws -> CInt {
     backgroundCallbacks.enumerateObjects { ref, _ in
         if let num = ref as? NSNumber {
             luaL_unref(L, LUA_REGISTRYINDEX_VALUE, num.int32Value)
@@ -971,88 +972,58 @@ private func meta_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 0
 }
 
-// MARK: - luaL_Reg tables
-
-private var clgeocode_moduleLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("lookupAddress"),     func: clgeocoder_lookupAddress),
-    luaL_Reg(name: strdup("lookupLocation"),    func: clgeocoder_lookupLocation),
-    luaL_Reg(name: strdup("lookupAddressNear"), func: clgeocoder_lookupAddressNear),
-    luaL_Reg(name: nil,                         func: nil),
-]
-
-private var clgeocoder_metaLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("geocoding"),  func: clgeocoder_isGeocoding),
-    luaL_Reg(name: strdup("cancel"),     func: clgeocoder_cancelGeocoding),
-    luaL_Reg(name: strdup("__tostring"), func: clgeocoder_tostring),
-    luaL_Reg(name: strdup("__eq"),       func: clgeocoder_eq),
-    luaL_Reg(name: strdup("__gc"),       func: clgeocoder_gc),
-    luaL_Reg(name: nil,                  func: nil),
-]
-
-private var moduleLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("servicesEnabled"),        func: location_locationServicesEnabled),
-    luaL_Reg(name: strdup("authorizationStatus"),    func: location_authorizationStatus),
-    luaL_Reg(name: strdup("distance"),               func: location_distanceBetween),
-    luaL_Reg(name: strdup("start"),                  func: location_startWatching),
-    luaL_Reg(name: strdup("stop"),                   func: location_stopWatching),
-    luaL_Reg(name: strdup("get"),                    func: location_getLocation),
-    luaL_Reg(name: strdup("dstOffset"),              func: location_dstOffset),
-    luaL_Reg(name: strdup("sunrise"),                func: location_sunrise),
-    luaL_Reg(name: strdup("sunset"),                 func: location_sunset),
-
-    luaL_Reg(name: strdup("_registerCallback"),      func: location_registerCallback),
-    luaL_Reg(name: strdup("_monitoredRegions"),      func: location_monitoredRegions),
-    luaL_Reg(name: strdup("_addMonitoredRegion"),    func: location_addMonitoredRegion),
-    luaL_Reg(name: strdup("_removeMonitoredRegion"), func: location_removeMonitoredRegion),
-    luaL_Reg(name: strdup("_fakeLocationChange"),    func: location_fakeLocationChange),
-
-    luaL_Reg(name: nil,                              func: nil),
-]
-
-private var module_metaLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("__gc"), func: meta_gc),
-    luaL_Reg(name: nil,            func: nil),
-]
-
-// MARK: - Compat helper
-
-// luaL_newlib is a macro in C; we replicate it in Swift
-private func luaL_newlib_compat(_ L: UnsafeMutablePointer<lua_State>!, _ lib: inout [luaL_Reg]) {
-    luaL_checkversion(L)
-    lua_createtable(L, 0, Int32(lib.count - 1))
-    luaL_setfuncs(L, &lib, 0)
-}
-
 // MARK: - Module entry point
 
 @_cdecl("luaopen_hs_liblocation")
 func luaopen_hs_liblocation(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    // in case a reload skipped meta_gc for some reason
-    if location != nil { location = nil }
+    runEntryPoint(L) { L in
+        // in case a reload skipped meta_gc for some reason
+        if location != nil { location = nil }
 
-    // Create ref table in registry
-    lua_newtable(L)
-    refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+        // Create ref table in registry
+        lua_newtable(L)
+        refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
 
-    // Create module table
-    lua_createtable(L, 0, Int32(moduleLib.count - 1))
-    luaL_setfuncs(L, &moduleLib, 0)
+        // Create module table
+        lua_createtable(L, 0, 14)
+        L.push(location_locationServicesEnabled);  lua_setfield(L, -2, "servicesEnabled")
+        L.push(location_authorizationStatus);      lua_setfield(L, -2, "authorizationStatus")
+        L.push(location_distanceBetween);          lua_setfield(L, -2, "distance")
+        L.push(location_startWatching);            lua_setfield(L, -2, "start")
+        L.push(location_stopWatching);             lua_setfield(L, -2, "stop")
+        L.push(location_getLocation);              lua_setfield(L, -2, "get")
+        L.push(location_dstOffset);                lua_setfield(L, -2, "dstOffset")
+        L.push(location_sunrise);                  lua_setfield(L, -2, "sunrise")
+        L.push(location_sunset);                   lua_setfield(L, -2, "sunset")
+        L.push(location_registerCallback);         lua_setfield(L, -2, "_registerCallback")
+        L.push(location_monitoredRegions);         lua_setfield(L, -2, "_monitoredRegions")
+        L.push(location_addMonitoredRegion);       lua_setfield(L, -2, "_addMonitoredRegion")
+        L.push(location_removeMonitoredRegion);    lua_setfield(L, -2, "_removeMonitoredRegion")
+        L.push(location_fakeLocationChange);       lua_setfield(L, -2, "_fakeLocationChange")
 
-    // Set module metatable (for __gc)
-    lua_createtable(L, 0, Int32(module_metaLib.count - 1))
-    luaL_setfuncs(L, &module_metaLib, 0)
-    lua_setmetatable(L, -2)
+        // Set module metatable (for __gc)
+        lua_createtable(L, 0, 1)
+        L.push(meta_gc);                           lua_setfield(L, -2, "__gc")
+        lua_setmetatable(L, -2)
 
-    // Register geocoder userdata metatable
-    luaL_newmetatable(L, GEOCODE_UD_TAG)
-    lua_pushvalue(L, -1)
-    lua_setfield(L, -2, "__index")
-    luaL_setfuncs(L, &clgeocoder_metaLib, 0)
-    lua_pop(L, 1)
+        // Register geocoder userdata metatable
+        luaL_newmetatable(L, GEOCODE_UD_TAG)
+        lua_pushvalue(L, -1)
+        lua_setfield(L, -2, "__index")
+        L.push(clgeocoder_isGeocoding);    lua_setfield(L, -2, "geocoding")
+        L.push(clgeocoder_cancelGeocoding); lua_setfield(L, -2, "cancel")
+        L.push(clgeocoder_tostring);       lua_setfield(L, -2, "__tostring")
+        L.push(clgeocoder_eq);             lua_setfield(L, -2, "__eq")
+        L.push(clgeocoder_gc);             lua_setfield(L, -2, "__gc")
+        lua_pop(L, 1)
 
-    // hs.location.geocoder submodule
-    luaL_newlib_compat(L, &clgeocode_moduleLib); lua_setfield(L, -2, "geocoder")
+        // hs.location.geocoder submodule
+        lua_createtable(L, 0, 3)
+        L.push(clgeocoder_lookupAddress);      lua_setfield(L, -2, "lookupAddress")
+        L.push(clgeocoder_lookupLocation);     lua_setfield(L, -2, "lookupLocation")
+        L.push(clgeocoder_lookupAddressNear);  lua_setfield(L, -2, "lookupAddressNear")
+        lua_setfield(L, -2, "geocoder")
 
-    backgroundCallbacks = NSMutableSet()
-    return 1
+        backgroundCallbacks = NSMutableSet()
+    }
 }

@@ -1,5 +1,6 @@
 import Foundation
 import CLua
+import Lua
 import Cocoa
 
 /// === hs.fs.volume ===
@@ -149,7 +150,7 @@ private func unregister_observer(_ observer: VolumeWatcher) {
 /// Returns:
 ///  * A boolean, true if the volume was ejected, otherwise false
 ///  * A string, empty if the volume was ejected, otherwise it will contain the error message
-private func volume_eject(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func volume_eject(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TSTRING)
     let path = String(cString: lua_tostring(L, 1)!)
 
@@ -179,7 +180,7 @@ private func volume_eject(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * An `hs.fs.volume` object
-private func volume_watcher_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func volume_watcher_new(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TFUNCTION)
 
     let watcher = lua_newuserdata(L, MemoryLayout<VolumeWatcher_t>.size)!
@@ -206,7 +207,7 @@ private func volume_watcher_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 ///
 /// Returns:
 ///  * An `hs.fs.volume` object
-private func volume_watcher_start(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func volume_watcher_start(_ L: LuaState) throws -> CInt {
     let watcher = luaL_checkudata(L, 1, USERDATA_TAG)!.assumingMemoryBound(to: VolumeWatcher_t.self)
     lua_settop(L, 1)
 
@@ -229,7 +230,7 @@ private func volume_watcher_start(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
 ///
 /// Returns:
 ///  * An `hs.fs.volume` object
-private func volume_watcher_stop(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func volume_watcher_stop(_ L: LuaState) throws -> CInt {
     let watcher = luaL_checkudata(L, 1, USERDATA_TAG)!.assumingMemoryBound(to: VolumeWatcher_t.self)
     lua_settop(L, 1)
 
@@ -244,10 +245,10 @@ private func volume_watcher_stop(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 }
 
 // Perform cleanup if the VolumeWatcher is not required anymore.
-private func volume_watcher_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func volume_watcher_gc(_ L: LuaState) throws -> CInt {
     let watcher = luaL_checkudata(L, 1, USERDATA_TAG)!.assumingMemoryBound(to: VolumeWatcher_t.self)
 
-    volume_watcher_stop(L)
+    _ = try volume_watcher_stop(L)
 
     luaL_unref(L, LUA_REGISTRYINDEX_VALUE, watcher.pointee.fn)
     watcher.pointee.fn = LUA_NOREF
@@ -259,13 +260,13 @@ private func volume_watcher_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 0
 }
 
-private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func userdata_tostring(_ L: LuaState) throws -> CInt {
     let desc = "\(USERDATA_TAG): (\(String(describing: lua_topointer(L, 1)!)))"
     lua_pushstring(L, desc)
     return 1
 }
 
-private func meta_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func meta_gc(_ L: LuaState) throws -> CInt {
     return 0
 }
 
@@ -283,51 +284,38 @@ private func add_event_enum(_ L: UnsafeMutablePointer<lua_State>!) {
     add_event_value(L, .didRename, "didRename")
 }
 
-// MARK: - Lua registration tables
-
-// Metatable for created objects when _new invoked
-private let metaLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("start"),      func: volume_watcher_start),
-    luaL_Reg(name: strdup("stop"),       func: volume_watcher_stop),
-    luaL_Reg(name: strdup("__gc"),       func: volume_watcher_gc),
-    luaL_Reg(name: strdup("__tostring"), func: userdata_tostring),
-    luaL_Reg(name: nil, func: nil),
-]
-
-// Functions for returned object when module loads
-private let appLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("new"),   func: volume_watcher_new),
-    luaL_Reg(name: strdup("eject"), func: volume_eject),
-    luaL_Reg(name: nil, func: nil),
-]
-
-// Metatable for returned object when module loads
-private let metaGcLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("__gc"), func: meta_gc),
-    luaL_Reg(name: nil, func: nil),
-]
-
 // MARK: - Module entry point
 
 @_cdecl("luaopen_hs_libfsvolume")
 public func luaopen_hs_libfsvolume(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    // Register userdata metatable
-    luaL_newmetatable(L, USERDATA_TAG)
-    lua_pushvalue(L, -1)
-    lua_setfield(L, -2, "__index")  // mt.__index = mt
-    luaL_setfuncs(L, metaLib, 0)
-    lua_pop(L, 1)
+    runEntryPoint(L) { L in
+        // Register userdata metatable
+        luaL_newmetatable(L, USERDATA_TAG)
+        lua_pushvalue(L, -1)
+        lua_setfield(L, -2, "__index")
+        L.push(volume_watcher_start)
+        lua_setfield(L, -2, "start")
+        L.push(volume_watcher_stop)
+        lua_setfield(L, -2, "stop")
+        L.push(volume_watcher_gc)
+        lua_setfield(L, -2, "__gc")
+        L.push(userdata_tostring)
+        lua_setfield(L, -2, "__tostring")
+        lua_pop(L, 1)
 
-    // Create module table
-    lua_createtable(L, 0, Int32(appLib.count - 1))
-    luaL_setfuncs(L, appLib, 0)
+        // Create module table
+        lua_createtable(L, 0, 2)
+        L.push(volume_watcher_new)
+        lua_setfield(L, -2, "new")
+        L.push(volume_eject)
+        lua_setfield(L, -2, "eject")
 
-    // Set module metatable for __gc
-    lua_createtable(L, 0, 1)
-    luaL_setfuncs(L, metaGcLib, 0)
-    lua_setmetatable(L, -2)
+        // Set module metatable for __gc
+        lua_createtable(L, 0, 1)
+        L.push(meta_gc)
+        lua_setfield(L, -2, "__gc")
+        lua_setmetatable(L, -2)
 
-    add_event_enum(L)
-
-    return 1
+        add_event_enum(L)
+    }
 }

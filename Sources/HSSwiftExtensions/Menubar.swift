@@ -1,5 +1,6 @@
 import Cocoa
 import CLua
+import Lua
 import Carbon
 import os.log
 
@@ -37,7 +38,7 @@ func mb_get_item_arg(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> Uns
 ///
 ///  * Calling this method with inMenuBar equal to false is equivalent to calling hs.menubar.new():removeFromMenuBar().
 ///  * A hidden menubaritem can be added to the system menubar by calling hs.menubar:returnToMenuBar() or used as a pop-up menu by calling hs.menubar:popupMenu().
-func menubarNew(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func menubarNew(_ L: LuaState) throws -> CInt {
 
     let statusBar = NSStatusBar.system
     var statusItem: NSStatusItem
@@ -92,7 +93,7 @@ func menubarNew(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * Either the menubar item, if its autosave name was changed, or the current value of the autosave name
-func menubar_autosaveName(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func menubar_autosaveName(_ L: LuaState) throws -> CInt {
     let menuBarItem = mb_get_item_arg(L, 1)
     let menuItem = Unmanaged<NSStatusItem>.fromOpaque(menuBarItem.pointee.menuBarItemObject!).takeUnretainedValue()
 
@@ -124,7 +125,7 @@ func menubar_autosaveName(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * Either the menubar item, if its image position was changed, or the current value of the image position
-func menubarImagePosition(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func menubarImagePosition(_ L: LuaState) throws -> CInt {
     let menuBarItem = mb_get_item_arg(L, 1)
     let menuItem = Unmanaged<NSStatusItem>.fromOpaque(menuBarItem.pointee.menuBarItemObject!).takeUnretainedValue()
     let button = menuItem.button!
@@ -151,7 +152,7 @@ func menubarImagePosition(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Notes:
 ///  * If you set an icon as well as a title, they will both be displayed next to each other
 ///  * Has no affect on the display of a pop-up menu, but changes will be be in effect if hs.menubar:returnToMenuBar() is called on the menubaritem.
-func menubarSetTitle(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func menubarSetTitle(_ L: LuaState) throws -> CInt {
     let menuBarItem = mb_get_item_arg(L, 1)
 
     var titleText: String? = nil
@@ -164,7 +165,7 @@ func menubarSetTitle(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     } else if luaL_testudata(L, 2, "hs.styledtext") != nil || argType == LUA_TTABLE {
         titleAText = lua_toNSAttributedString(L, at: 2) as? NSAttributedString
     } else if !lua_isnoneornil(L, 2) {
-        return luaL_error(L, "expected string, styled-text object, or nil")
+        throw LuaCallError("expected string, styled-text object, or nil")
     }
 
     let menuItem = Unmanaged<NSStatusItem>.fromOpaque(menuBarItem.pointee.menuBarItemObject!).takeUnretainedValue()
@@ -191,7 +192,7 @@ func menubarSetTitle(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * the menubaritem if the image was loaded and set, `nil` if it could not be found or loaded
 // NOTE: THIS FUNCTION IS WRAPPED IN init.lua
-func menubarSetIcon(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func menubarSetIcon(_ L: LuaState) throws -> CInt {
     let menuBarItem = mb_get_item_arg(L, 1)
     var iconImage: NSImage? = nil
 
@@ -229,7 +230,7 @@ func menubarSetIcon(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Notes:
 ///  * Has no affect on the display of a pop-up menu, but changes will be be in effect if hs.menubar:returnToMenuBar() is called on the menubaritem.
-func menubarSetTooltip(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func menubarSetTooltip(_ L: LuaState) throws -> CInt {
     let menuBarItem = mb_get_item_arg(L, 1)
     let toolTipText = lua_tovalue(L, at: 2) as! String
     Unmanaged<NSStatusItem>.fromOpaque(menuBarItem.pointee.menuBarItemObject!).takeUnretainedValue().button?.toolTip = toolTipText
@@ -256,7 +257,7 @@ func menubarSetTooltip(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Notes:
 ///  * If a menu has been attached to the menubar item, this callback will never be called
 ///  * Has no affect on the display of a pop-up menu, but changes will be be in effect if hs.menubar:returnToMenuBar() is called on the menubaritem.
-func menubarSetClickCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func menubarSetClickCallback(_ L: LuaState) throws -> CInt {
 
     let menuBarItem = mb_get_item_arg(L, 1)
     let statusItem = Unmanaged<NSStatusItem>.fromOpaque(menuBarItem.pointee.menuBarItemObject!).takeUnretainedValue()
@@ -298,7 +299,7 @@ func menubarSetClickCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * the menubaritem
-func menubarSetMenu(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func menubarSetMenu(_ L: LuaState) throws -> CInt {
 
     let menuBarItem = mb_get_item_arg(L, 1)
     let statusItem = Unmanaged<NSStatusItem>.fromOpaque(menuBarItem.pointee.menuBarItemObject!).takeUnretainedValue()
@@ -349,7 +350,7 @@ func menubarSetMenu(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * None
-func menubar_delete(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func menubar_delete(_ L: LuaState) throws -> CInt {
     let menuBarItem = mb_get_item_arg(L, 1)
 
     let statusBar = NSStatusBar.system
@@ -366,7 +367,7 @@ func menubar_delete(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     }
 
     // Remove any click callback the menubar item has
-    lua_pushcfunction(L, menubarSetClickCallback)
+    L.push(menubarSetClickCallback)
     lua_pushvalue(L, 1)
     lua_pushnil(L)
     lua_call(L, 2, 0)
@@ -399,7 +400,7 @@ func menubar_delete(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * Items which trigger hs.menubar:setClickCallback() will invoke the callback function, but we cannot control the positioning of any visual elements the function may create -- calling this method on such an object is the equivalent of invoking its callback function directly.
 ///  * This method is blocking. Cosmic Hammer will be unable to respond to any other activity while the pop-up menu is being displayed.
 ///  * `darkMode` uses an undocumented macOS API call, so may break in a future release.
-func menubar_render(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func menubar_render(_ L: LuaState) throws -> CInt {
     let menuBarItem = mb_get_item_arg(L, 1)
     let statusItem = Unmanaged<NSStatusItem>.fromOpaque(menuBarItem.pointee.menuBarItemObject!).takeUnretainedValue()
     let menu = statusItem.menu
@@ -464,7 +465,7 @@ func menubar_render(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * the menubaritem
-func menubar_removeFromMenuBar(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func menubar_removeFromMenuBar(_ L: LuaState) throws -> CInt {
     let menuBarItem = mb_get_item_arg(L, 1)
 
     if !menuBarItem.pointee.removed {
@@ -497,7 +498,7 @@ func menubar_removeFromMenuBar(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * the menubaritem
-func menubar_returnToMenuBar(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func menubar_returnToMenuBar(_ L: LuaState) throws -> CInt {
     let menuBarItem = mb_get_item_arg(L, 1)
 
     if menuBarItem.pointee.removed {
@@ -529,7 +530,7 @@ func menubar_returnToMenuBar(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * a boolean indicating whether or not the specified menu is currently in the OS X menubar
-func menubar_isInMenubar(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func menubar_isInMenubar(_ L: LuaState) throws -> CInt {
     let menuBarItem = mb_get_item_arg(L, 1)
     lua_pushboolean(L, !menuBarItem.pointee.removed ? 1 : 0)
     return 1
@@ -544,7 +545,7 @@ func menubar_isInMenubar(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * the menubar item title, or an empty string, if there isn't one.  If `styled` is not set or is false, then a string is returned; otherwise a styledtextObject will be returned.
-func menubarGetTitle(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func menubarGetTitle(_ L: LuaState) throws -> CInt {
     let menuBarItem = mb_get_item_arg(L, 1)
     let statusItem = Unmanaged<NSStatusItem>.fromOpaque(menuBarItem.pointee.menuBarItemObject!).takeUnretainedValue()
 
@@ -569,7 +570,7 @@ func menubarGetTitle(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * the menubar item icon as an hs.image object, or nil, if there isn't one.
-func menubarGetIcon(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func menubarGetIcon(_ L: LuaState) throws -> CInt {
     let menuBarItem = mb_get_item_arg(L, 1)
     let statusItem = Unmanaged<NSStatusItem>.fromOpaque(menuBarItem.pointee.menuBarItemObject!).takeUnretainedValue()
 
@@ -584,7 +585,7 @@ func menubarGetIcon(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 1
 }
 
-func menubarFrame(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func menubarFrame(_ L: LuaState) throws -> CInt {
     let menuBarItem = mb_get_item_arg(L, 1)
     let statusItem = Unmanaged<NSStatusItem>.fromOpaque(menuBarItem.pointee.menuBarItemObject!).takeUnretainedValue()
     if let statusBarWindow = statusItem.value(forKey: "window") as? NSWindow {
@@ -604,7 +605,7 @@ func menubarFrame(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * if a parameter is provided, returns the menubar item; otherwise returns the current value.
-func menubarStateImageSize(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func menubarStateImageSize(_ L: LuaState) throws -> CInt {
     let menuBarItem = mb_get_item_arg(L, 1)
     let statusItem = Unmanaged<NSStatusItem>.fromOpaque(menuBarItem.pointee.menuBarItemObject!).takeUnretainedValue()
 
@@ -643,7 +644,8 @@ func menubarStateImageSize(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * imageBelow    - show the image below the title
 ///  * imageAbove    - show the image above the title
 ///  * imageOverlaps - show the image on top of the title
-func pushImagePositionsTable(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+@discardableResult
+func pushImagePositionsTable(_ L: LuaState) -> CInt {
     lua_newtable(L)
     lua_pushinteger(L, lua_Integer(NSControl.ImagePosition.noImage.rawValue));       lua_setfield(L, -2, "none")
     lua_pushinteger(L, lua_Integer(NSControl.ImagePosition.imageOnly.rawValue));     lua_setfield(L, -2, "imageOnly")
@@ -663,20 +665,20 @@ func menubar_setup() {
     }
 }
 
-func menubar_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func menubar_gc(_ L: LuaState) throws -> CInt {
     mb_dynamicMenuDelegates?.removeAllObjects()
     mb_dynamicMenuDelegates = nil
     return 0
 }
 
-func menubaritem_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    lua_pushcfunction(L, menubar_delete)
+func menubaritem_gc(_ L: LuaState) throws -> CInt {
+    L.push(menubar_delete)
     lua_pushvalue(L, 1)
     lua_call(L, 1, 1)
     return 0
 }
 
-func mb_userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func mb_userdata_tostring(_ L: LuaState) throws -> CInt {
     let menuBarItem = mb_get_item_arg(L, 1)
     let statusItem = Unmanaged<NSStatusItem>.fromOpaque(menuBarItem.pointee.menuBarItemObject!).takeUnretainedValue()
     let title = statusItem.button?.title ?? ""
@@ -685,67 +687,50 @@ func mb_userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 1
 }
 
-// MARK: - luaL_Reg tables
-
-private var menubarlib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("new"), func: menubarNew),
-    luaL_Reg(name: nil,           func: nil),
-]
-
-private var menubar_metalib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("setTitle"),          func: menubarSetTitle),
-    luaL_Reg(name: strdup("_setIcon"),          func: menubarSetIcon),
-    luaL_Reg(name: strdup("title"),             func: menubarGetTitle),
-    luaL_Reg(name: strdup("icon"),              func: menubarGetIcon),
-    luaL_Reg(name: strdup("setTooltip"),        func: menubarSetTooltip),
-    luaL_Reg(name: strdup("setClickCallback"),  func: menubarSetClickCallback),
-    luaL_Reg(name: strdup("setMenu"),           func: menubarSetMenu),
-    luaL_Reg(name: strdup("popupMenu"),         func: menubar_render),
-    luaL_Reg(name: strdup("removeFromMenuBar"), func: menubar_removeFromMenuBar),
-    luaL_Reg(name: strdup("returnToMenuBar"),   func: menubar_returnToMenuBar),
-    luaL_Reg(name: strdup("delete"),            func: menubar_delete),
-    luaL_Reg(name: strdup("stateImageSize"),    func: menubarStateImageSize),
-    luaL_Reg(name: strdup("_frame"),            func: menubarFrame),
-    luaL_Reg(name: strdup("imagePosition"),     func: menubarImagePosition),
-    luaL_Reg(name: strdup("isInMenubar"),       func: menubar_isInMenubar),
-    luaL_Reg(name: strdup("isInMenuBar"),       func: menubar_isInMenubar),
-    luaL_Reg(name: strdup("autosaveName"),      func: menubar_autosaveName),
-
-    luaL_Reg(name: strdup("__tostring"),        func: mb_userdata_tostring),
-    luaL_Reg(name: strdup("__gc"),              func: menubaritem_gc),
-    luaL_Reg(name: nil,                         func: nil),
-]
-
-private var menubar_gclib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("__gc"), func: menubar_gc),
-    luaL_Reg(name: nil,            func: nil),
-]
 
 @_cdecl("luaopen_hs_libmenubar")
 func luaopen_hs_libmenubar(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    menubar_setup()
+    runEntryPoint(L) { L in
+        menubar_setup()
 
-    // Create ref table in registry
-    lua_newtable(L)
-    mb_refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+        // Create ref table in registry
+        lua_newtable(L)
+        mb_refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
 
-    // Register userdata metatable
-    luaL_newmetatable(L, mb_USERDATA_TAG)
-    lua_pushvalue(L, -1)
-    lua_setfield(L, -2, "__index")
-    luaL_setfuncs(L, &menubar_metalib, 0)
-    lua_pop(L, 1)
+        // Register userdata metatable
+        luaL_newmetatable(L, mb_USERDATA_TAG)
+        lua_pushvalue(L, -1)
+        lua_setfield(L, -2, "__index")
+        L.push(menubarSetTitle);            lua_setfield(L, -2, "setTitle")
+        L.push(menubarSetIcon);             lua_setfield(L, -2, "_setIcon")
+        L.push(menubarGetTitle);            lua_setfield(L, -2, "title")
+        L.push(menubarGetIcon);             lua_setfield(L, -2, "icon")
+        L.push(menubarSetTooltip);          lua_setfield(L, -2, "setTooltip")
+        L.push(menubarSetClickCallback);    lua_setfield(L, -2, "setClickCallback")
+        L.push(menubarSetMenu);             lua_setfield(L, -2, "setMenu")
+        L.push(menubar_render);             lua_setfield(L, -2, "popupMenu")
+        L.push(menubar_removeFromMenuBar);  lua_setfield(L, -2, "removeFromMenuBar")
+        L.push(menubar_returnToMenuBar);    lua_setfield(L, -2, "returnToMenuBar")
+        L.push(menubar_delete);             lua_setfield(L, -2, "delete")
+        L.push(menubarStateImageSize);      lua_setfield(L, -2, "stateImageSize")
+        L.push(menubarFrame);               lua_setfield(L, -2, "_frame")
+        L.push(menubarImagePosition);       lua_setfield(L, -2, "imagePosition")
+        L.push(menubar_isInMenubar);        lua_setfield(L, -2, "isInMenubar")
+        L.push(menubar_isInMenubar);        lua_setfield(L, -2, "isInMenuBar")
+        L.push(menubar_autosaveName);       lua_setfield(L, -2, "autosaveName")
+        L.push(mb_userdata_tostring);       lua_setfield(L, -2, "__tostring")
+        L.push(menubaritem_gc);             lua_setfield(L, -2, "__gc")
+        lua_pop(L, 1)
 
-    // Create module table
-    lua_createtable(L, 0, Int32(menubarlib.count - 1))
-    luaL_setfuncs(L, &menubarlib, 0)
+        // Create module table
+        lua_createtable(L, 0, 1)
+        L.push(menubarNew);                 lua_setfield(L, -2, "new")
 
-    // Set module metatable (for __gc)
-    lua_createtable(L, 0, Int32(menubar_gclib.count - 1))
-    luaL_setfuncs(L, &menubar_gclib, 0)
-    lua_setmetatable(L, -2)
+        // Set module metatable (for __gc)
+        lua_createtable(L, 0, 1)
+        L.push(menubar_gc);                 lua_setfield(L, -2, "__gc")
+        lua_setmetatable(L, -2)
 
-    pushImagePositionsTable(L); lua_setfield(L, -2, "imagePositions")
-
-    return 1
+        pushImagePositionsTable(L); lua_setfield(L, -2, "imagePositions")
+    }
 }

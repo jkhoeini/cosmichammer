@@ -1,5 +1,6 @@
 import Cocoa
 import CLua
+import Lua
 
 // MARK: axtextmarker.m — AXTextMarker / AXTextMarkerRange
 // MARK: ============================================================
@@ -33,7 +34,7 @@ public func pushAXTextMarkerRange(_ L: UnsafeMutablePointer<lua_State>!, _ theEl
 // MARK: - Module Functions
 
 /// hs.axuielement.axtextmarker.newMarker(string) -> axTextMarkerObject | nil, errorString
-private func axtextmarker_newMarker(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func axtextmarker_newMarker(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TSTRING)
 
     var len: Int = 0
@@ -50,7 +51,7 @@ private func axtextmarker_newMarker(_ L: UnsafeMutablePointer<lua_State>!) -> In
 }
 
 /// hs.axuielement.axtextmarker.newRange(startMarker, endMarker) -> axTextMarkerRangeObject | nil, errorString
-private func axtextmarker_newRange(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func axtextmarker_newRange(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, axuielement_AXTEXTMARKER_TAG)
     luaL_checkudata(L, 2, axuielement_AXTEXTMARKER_TAG)
     let startMarker = get_axtextmarkerref(L, 1, axuielement_AXTEXTMARKER_TAG)
@@ -66,18 +67,18 @@ private func axtextmarker_newRange(_ L: UnsafeMutablePointer<lua_State>!) -> Int
     return 1
 }
 
-private func axtextmarker_AXTextMarkerGetTypeID_fn(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func axtextmarker_AXTextMarkerGetTypeID_fn(_ L: LuaState) throws -> CInt {
     lua_pushinteger(L, lua_Integer(AXTextMarkerGetTypeID()))
     return 1
 }
 
-private func axtextmarker_AXTextMarkerRangeGetTypeID_fn(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func axtextmarker_AXTextMarkerRangeGetTypeID_fn(_ L: LuaState) throws -> CInt {
     lua_pushinteger(L, lua_Integer(AXTextMarkerRangeGetTypeID()))
     return 1
 }
 
 /// hs.axuielement.axtextmarker._functionCheck() -> table
-private func axtextmarker_availabilityCheck(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func axtextmarker_availabilityCheck(_ L: LuaState) throws -> CInt {
     lua_newtable(L)
     lua_pushboolean(L, 1); lua_setfield(L, -2, "AXTextMarkerGetTypeID")
     lua_pushboolean(L, 1); lua_setfield(L, -2, "AXTextMarkerCreate")
@@ -93,7 +94,7 @@ private func axtextmarker_availabilityCheck(_ L: UnsafeMutablePointer<lua_State>
 // MARK: - Module Methods
 
 /// hs.axuielement.axtextmarker:bytes() -> string
-private func axtextmarker_markerBytes(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func axtextmarker_markerBytes(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, axuielement_AXTEXTMARKER_TAG)
     let marker = get_axtextmarkerref(L, 1, axuielement_AXTEXTMARKER_TAG)
 
@@ -107,7 +108,7 @@ private func axtextmarker_markerBytes(_ L: UnsafeMutablePointer<lua_State>!) -> 
 }
 
 /// hs.axuielement.axtextmarker:length() -> integer
-private func axtextmarker_markerLength(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func axtextmarker_markerLength(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, axuielement_AXTEXTMARKER_TAG)
     let marker = get_axtextmarkerref(L, 1, axuielement_AXTEXTMARKER_TAG)
 
@@ -116,7 +117,7 @@ private func axtextmarker_markerLength(_ L: UnsafeMutablePointer<lua_State>!) ->
 }
 
 /// hs.axuielement.axtextmarker:startMarker() -> axTextMarkerObject | nil, errorString
-private func axtextmarker_rangeStartMarker(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func axtextmarker_rangeStartMarker(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, axuielement_AXTEXTMRKRNG_TAG)
     let range = get_axtextmarkerrangeref(L, 1, axuielement_AXTEXTMRKRNG_TAG)
 
@@ -131,7 +132,7 @@ private func axtextmarker_rangeStartMarker(_ L: UnsafeMutablePointer<lua_State>!
 }
 
 /// hs.axuielement.axtextmarker:endMarker() -> axTextMarkerObject | nil, errorString
-private func axtextmarker_rangeEndMarker(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func axtextmarker_rangeEndMarker(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, axuielement_AXTEXTMRKRNG_TAG)
     let range = get_axtextmarkerrangeref(L, 1, axuielement_AXTEXTMRKRNG_TAG)
 
@@ -147,7 +148,7 @@ private func axtextmarker_rangeEndMarker(_ L: UnsafeMutablePointer<lua_State>!) 
 
 // MARK: - Cosmic Hammer/Lua Infrastructure (textmarker)
 
-private func textmarker_userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func textmarker_userdata_tostring(_ L: LuaState) throws -> CInt {
     let tag = luaL_testudata(L, 1, axuielement_AXTEXTMARKER_TAG) != nil ? axuielement_AXTEXTMARKER_TAG : axuielement_AXTEXTMRKRNG_TAG
     let tagStr = String(cString: tag)
     let desc = "\(tagStr): (\(String(describing: lua_topointer(L, 1)!)))"
@@ -155,7 +156,7 @@ private func textmarker_userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!)
     return 1
 }
 
-private func textmarker_userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func textmarker_userdata_eq(_ L: LuaState) throws -> CInt {
     if (luaL_testudata(L, 1, axuielement_AXTEXTMARKER_TAG) != nil && luaL_testudata(L, 2, axuielement_AXTEXTMARKER_TAG) != nil) ||
        (luaL_testudata(L, 1, axuielement_AXTEXTMRKRNG_TAG) != nil && luaL_testudata(L, 2, axuielement_AXTEXTMRKRNG_TAG) != nil) {
         let ref1 = UnsafeRawPointer(lua_touserdata(L, 1))!.assumingMemoryBound(to: Unmanaged<CFTypeRef>.self).pointee.takeUnretainedValue()
@@ -167,7 +168,7 @@ private func textmarker_userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> In
     return 1
 }
 
-private func textmarker_userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func textmarker_userdata_gc(_ L: LuaState) throws -> CInt {
     let ptr = UnsafeMutableRawPointer(lua_touserdata(L, 1))!.assumingMemoryBound(to: Unmanaged<CFTypeRef>.self)
     ptr.pointee.release()
     lua_pushnil(L)
@@ -175,62 +176,59 @@ private func textmarker_userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> In
     return 0
 }
 
-// Metatable for marker userdata
-private var marker_userdata_metaLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("bytes"),      func: axtextmarker_markerBytes),
-    luaL_Reg(name: strdup("length"),     func: axtextmarker_markerLength),
-    luaL_Reg(name: strdup("__tostring"), func: textmarker_userdata_tostring),
-    luaL_Reg(name: strdup("__eq"),       func: textmarker_userdata_eq),
-    luaL_Reg(name: strdup("__gc"),       func: textmarker_userdata_gc),
-    luaL_Reg(name: nil,                  func: nil),
-]
-
-// Metatable for range userdata
-private var range_userdata_metaLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("startMarker"), func: axtextmarker_rangeStartMarker),
-    luaL_Reg(name: strdup("endMarker"),   func: axtextmarker_rangeEndMarker),
-    luaL_Reg(name: strdup("__tostring"),  func: textmarker_userdata_tostring),
-    luaL_Reg(name: strdup("__eq"),        func: textmarker_userdata_eq),
-    luaL_Reg(name: strdup("__gc"),        func: textmarker_userdata_gc),
-    luaL_Reg(name: nil,                   func: nil),
-]
-
-// Module functions
-private var textmarker_moduleLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("newMarker"),      func: axtextmarker_newMarker),
-    luaL_Reg(name: strdup("newRange"),       func: axtextmarker_newRange),
-    luaL_Reg(name: strdup("_markerID"),      func: axtextmarker_AXTextMarkerGetTypeID_fn),
-    luaL_Reg(name: strdup("_rangeID"),       func: axtextmarker_AXTextMarkerRangeGetTypeID_fn),
-    luaL_Reg(name: strdup("_functionCheck"), func: axtextmarker_availabilityCheck),
-    luaL_Reg(name: nil,                      func: nil),
-]
-
 @_cdecl("luaopen_hs_axuielement_axtextmarker")
 @discardableResult
 public func luaopen_hs_axuielement_axtextmarker(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    // Create ref table in registry
-    lua_newtable(L)
-    textmarkerRefTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+    runEntryPoint(L) { L in
+        // Create ref table in registry
+        lua_newtable(L)
+        textmarkerRefTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
 
-    // Register marker userdata metatable
-    luaL_newmetatable(L, axuielement_AXTEXTMARKER_TAG)
-    lua_pushvalue(L, -1)
-    lua_setfield(L, -2, "__index")
-    luaL_setfuncs(L, &marker_userdata_metaLib, 0)
-    lua_pop(L, 1)
+        // Register marker userdata metatable
+        luaL_newmetatable(L, axuielement_AXTEXTMARKER_TAG)
+        lua_pushvalue(L, -1)
+        lua_setfield(L, -2, "__index")
+        L.push(axtextmarker_markerBytes)
+        lua_setfield(L, -2, "bytes")
+        L.push(axtextmarker_markerLength)
+        lua_setfield(L, -2, "length")
+        L.push(textmarker_userdata_tostring)
+        lua_setfield(L, -2, "__tostring")
+        L.push(textmarker_userdata_eq)
+        lua_setfield(L, -2, "__eq")
+        L.push(textmarker_userdata_gc)
+        lua_setfield(L, -2, "__gc")
+        lua_pop(L, 1)
 
-    // Register range userdata metatable
-    luaL_newmetatable(L, axuielement_AXTEXTMRKRNG_TAG)
-    lua_pushvalue(L, -1)
-    lua_setfield(L, -2, "__index")
-    luaL_setfuncs(L, &range_userdata_metaLib, 0)
-    lua_pop(L, 1)
+        // Register range userdata metatable
+        luaL_newmetatable(L, axuielement_AXTEXTMRKRNG_TAG)
+        lua_pushvalue(L, -1)
+        lua_setfield(L, -2, "__index")
+        L.push(axtextmarker_rangeStartMarker)
+        lua_setfield(L, -2, "startMarker")
+        L.push(axtextmarker_rangeEndMarker)
+        lua_setfield(L, -2, "endMarker")
+        L.push(textmarker_userdata_tostring)
+        lua_setfield(L, -2, "__tostring")
+        L.push(textmarker_userdata_eq)
+        lua_setfield(L, -2, "__eq")
+        L.push(textmarker_userdata_gc)
+        lua_setfield(L, -2, "__gc")
+        lua_pop(L, 1)
 
-    // Create module table
-    lua_createtable(L, 0, Int32(textmarker_moduleLib.count - 1))
-    luaL_setfuncs(L, &textmarker_moduleLib, 0)
-
-    return 1
+        // Create module table
+        lua_createtable(L, 0, 5)
+        L.push(axtextmarker_newMarker)
+        lua_setfield(L, -2, "newMarker")
+        L.push(axtextmarker_newRange)
+        lua_setfield(L, -2, "newRange")
+        L.push(axtextmarker_AXTextMarkerGetTypeID_fn)
+        lua_setfield(L, -2, "_markerID")
+        L.push(axtextmarker_AXTextMarkerRangeGetTypeID_fn)
+        lua_setfield(L, -2, "_rangeID")
+        L.push(axtextmarker_availabilityCheck)
+        lua_setfield(L, -2, "_functionCheck")
+    }
 }
 
 // MARK: ============================================================

@@ -1,5 +1,6 @@
 import Cocoa
 import CLua
+import Lua
 import ScriptingBridge
 
 // MARK: - ScriptingBridge Protocol Declarations
@@ -33,7 +34,7 @@ extension SBApplication: ShortcutsEventsApplication {}
 ///   * id - A unique ID for the shortcut
 ///   * acceptsInput - A boolean indicating if the shortcut requires input
 ///   * actionCount - A number relating to how many actions are in the shortcut
-private func shortcuts_list(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func shortcuts_list(_ L: LuaState) throws -> CInt {
     guard let app: ShortcutsEventsApplication = SBApplication(bundleIdentifier: "com.apple.shortcuts.events") else {
         lua_pushnil(L)
         return 1
@@ -69,7 +70,7 @@ private func shortcuts_list(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * None
-private func shortcuts_run(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func shortcuts_run(_ L: LuaState) throws -> CInt {
     let name = String(cString: luaL_checkstring(L, 1))
 
     guard let app: ShortcutsEventsApplication = SBApplication(bundleIdentifier: "com.apple.shortcuts.events") else {
@@ -90,15 +91,13 @@ private func shortcuts_run(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 // MARK: - Module Registration
 
-private var moduleLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("list"), func: shortcuts_list),
-    luaL_Reg(name: strdup("run"), func: shortcuts_run),
-    luaL_Reg(name: nil, func: nil),
-]
-
 @_cdecl("luaopen_hs_libshortcuts")
 public func luaopen_hs_libshortcuts(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    lua_createtable(L, 0, Int32(moduleLib.count - 1))
-    luaL_setfuncs(L, &moduleLib, 0)
-    return 1
+    runEntryPoint(L) { L in
+        lua_createtable(L, 0, 2)
+        L.push(shortcuts_list)
+        lua_setfield(L, -2, "list")
+        L.push(shortcuts_run)
+        lua_setfield(L, -2, "run")
+    }
 }

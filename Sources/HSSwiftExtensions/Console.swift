@@ -1,5 +1,6 @@
 import Cocoa
 import CLua
+import Lua
 import os.log
 
 private var refTable: Int32 = LUA_NOREF
@@ -165,7 +166,7 @@ private func consoleHistoryFromLua(_ L: UnsafeMutablePointer<lua_State>!, at ind
 ///        hs.console.alpha(.8)
 ///    end
 ///.   ```
-private func consoleDarkMode(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func consoleDarkMode(_ L: LuaState) throws -> CInt {
     if lua_isboolean(L, 1) {
         consoleDarkModeSetEnabled(lua_toboolean(L, 1) != 0)
         let ctrl = consoleController()
@@ -189,13 +190,13 @@ private func consoleDarkMode(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Notes:
 ///  * See the `hs.drawing.color` entry in the Dash documentation, or type `help.hs.drawing.color` in the Cosmic Hammer console to get more information on how to specify a color.
 ///  * Note this only affects future output -- anything already in the console will remain its current color.
-private func console_consolePrintColor(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func console_consolePrintColor(_ L: LuaState) throws -> CInt {
     let ctrl = consoleController()
 
     if lua_type(L, 1) != LUA_TNONE {
         luaL_checktype(L, 1, LUA_TTABLE)
         guard let color = consoleColorFromLua(L, at: 1) else {
-            return luaL_argerror(L, 1, "expected color table")
+            throw LuaCallError("bad argument #1 (expected color table)")
         }
         ctrl.setValue(color, forKey: "MJColorForStdout")
     }
@@ -217,7 +218,7 @@ private func console_consolePrintColor(_ L: UnsafeMutablePointer<lua_State>!) ->
 /// Notes:
 ///  * A length value of zero will allow the history to grow infinitely
 ///  * The default console history is 100,000 characters
-private func console_maxOutputHistory(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func console_maxOutputHistory(_ L: LuaState) throws -> CInt {
 
     if lua_type(L, 1) != LUA_TNONE {
         let size = NSNumber(value: Int32(lua_tointeger(L, 1)))
@@ -241,11 +242,11 @@ private func console_maxOutputHistory(_ L: UnsafeMutablePointer<lua_State>!) -> 
 /// Notes:
 ///  * See the `hs.drawing.color` entry in the Dash documentation, or type `help.hs.drawing.color` in the Cosmic Hammer console to get more information on how to specify a color.
 ///  * Note this only affects future output -- anything already in the console will remain its current font.
-private func console_consoleFont(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func console_consoleFont(_ L: LuaState) throws -> CInt {
 
     if lua_type(L, 1) != LUA_TNONE {
         guard let newFont = tableToNSFont(L, at: 1) else {
-            return luaL_argerror(L, 1, "expected font name string or font table")
+            throw LuaCallError("bad argument #1 (expected font name string or font table)")
         }
         consoleController().setValue(newFont, forKey: "consoleFont")
     }
@@ -267,13 +268,13 @@ private func console_consoleFont(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 /// Notes:
 ///  * See the `hs.drawing.color` entry in the Dash documentation, or type `help.hs.drawing.color` in the Cosmic Hammer console to get more information on how to specify a color.
 ///  * Note this only affects future output -- anything already in the console will remain its current color.
-private func console_consoleCommandColor(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func console_consoleCommandColor(_ L: LuaState) throws -> CInt {
     let ctrl = consoleController()
 
     if lua_type(L, 1) != LUA_TNONE {
         luaL_checktype(L, 1, LUA_TTABLE)
         guard let color = consoleColorFromLua(L, at: 1) else {
-            return luaL_argerror(L, 1, "expected color table")
+            throw LuaCallError("bad argument #1 (expected color table)")
         }
         ctrl.setValue(color, forKey: "MJColorForCommand")
     }
@@ -295,13 +296,13 @@ private func console_consoleCommandColor(_ L: UnsafeMutablePointer<lua_State>!) 
 /// Notes:
 ///  * See the `hs.drawing.color` entry in the Dash documentation, or type `help.hs.drawing.color` in the Cosmic Hammer console to get more information on how to specify a color.
 ///  * Note this only affects future output -- anything already in the console will remain its current color.
-private func console_consoleResultColor(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func console_consoleResultColor(_ L: LuaState) throws -> CInt {
     let ctrl = consoleController()
 
     if lua_type(L, 1) != LUA_TNONE {
         luaL_checktype(L, 1, LUA_TTABLE)
         guard let color = consoleColorFromLua(L, at: 1) else {
-            return luaL_argerror(L, 1, "expected color table")
+            throw LuaCallError("bad argument #1 (expected color table)")
         }
         ctrl.setValue(color, forKey: "MJColorForResult")
     }
@@ -319,7 +320,7 @@ private func console_consoleResultColor(_ L: UnsafeMutablePointer<lua_State>!) -
 ///
 /// Returns:
 ///  * an hs.window object
-private func console_asWindow(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func console_asWindow(_ L: LuaState) throws -> CInt {
     let console = consoleWindow()
 
     let windowID = CGWindowID(console.windowNumber)
@@ -346,13 +347,13 @@ private func console_asWindow(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Notes:
 ///  * See the `hs.drawing.color` entry in the Dash documentation, or type `help.hs.drawing.color` in the Cosmic Hammer console to get more information on how to specify a color.
-private func console_backgroundColor(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func console_backgroundColor(_ L: LuaState) throws -> CInt {
     let console = consoleWindow()
 
     if lua_type(L, 1) != LUA_TNONE {
         luaL_checktype(L, 1, LUA_TTABLE)
         guard let color = consoleColorFromLua(L, at: 1) else {
-            return luaL_argerror(L, 1, "expected color table")
+            throw LuaCallError("bad argument #1 (expected color table)")
         }
         console.backgroundColor = color
     }
@@ -373,13 +374,13 @@ private func console_backgroundColor(_ L: UnsafeMutablePointer<lua_State>!) -> I
 ///
 /// Notes:
 ///  * See the `hs.drawing.color` entry in the Dash documentation, or type `help.hs.drawing.color` in the Cosmic Hammer console to get more information on how to specify a color.
-private func console_outputBackgroundColor(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func console_outputBackgroundColor(_ L: LuaState) throws -> CInt {
     let output = consoleOutputView()
 
     if lua_type(L, 1) != LUA_TNONE {
         luaL_checktype(L, 1, LUA_TTABLE)
         guard let color = consoleColorFromLua(L, at: 1) else {
-            return luaL_argerror(L, 1, "expected color table")
+            throw LuaCallError("bad argument #1 (expected color table)")
         }
         output.backgroundColor = color
     }
@@ -400,13 +401,13 @@ private func console_outputBackgroundColor(_ L: UnsafeMutablePointer<lua_State>!
 ///
 /// Notes:
 ///  * See the `hs.drawing.color` entry in the Dash documentation, or type `help.hs.drawing.color` in the Cosmic Hammer console to get more information on how to specify a color.
-private func console_inputBackgroundColor(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func console_inputBackgroundColor(_ L: LuaState) throws -> CInt {
     let input = consoleInputField()
 
     if lua_type(L, 1) != LUA_TNONE {
         luaL_checktype(L, 1, LUA_TTABLE)
         guard let color = consoleColorFromLua(L, at: 1) else {
-            return luaL_argerror(L, 1, "expected color table")
+            throw LuaCallError("bad argument #1 (expected color table)")
         }
         input.backgroundColor = color
     }
@@ -427,7 +428,7 @@ private func console_inputBackgroundColor(_ L: UnsafeMutablePointer<lua_State>!)
 ///
 /// Notes:
 ///  * this only applies to future copy operations from the Cosmic Hammer console -- anything already in the clipboard is not affected.
-private func console_smartInsertDeleteEnabled(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func console_smartInsertDeleteEnabled(_ L: LuaState) throws -> CInt {
     let output = consoleOutputView()
 
     if lua_type(L, 1) != LUA_TNONE {
@@ -447,7 +448,7 @@ private func console_smartInsertDeleteEnabled(_ L: UnsafeMutablePointer<lua_Stat
 ///
 /// Returns:
 ///  * an array containing the history of commands entered into the Cosmic Hammer console.
-private func console_getHistory(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func console_getHistory(_ L: LuaState) throws -> CInt {
 
     lua_pushany(L, consoleHistory())
     return 1
@@ -465,7 +466,7 @@ private func console_getHistory(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 ///
 /// Notes:
 ///  * You can specify the console content as a string or as an `hs.styledtext` object in either userdata or table format.
-private func console_setConsole(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func console_setConsole(_ L: LuaState) throws -> CInt {
     let ctrl = consoleController()
     let outputView = consoleOutputView()
 
@@ -483,7 +484,7 @@ private func console_setConsole(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
         let theStr: NSAttributedString
         if lua_type(L, 1) == LUA_TUSERDATA && luaL_testudata(L, 1, "hs.styledtext") != nil {
             guard let styledText = consoleStyledTextFromLua(L, at: 1) else {
-                return luaL_argerror(L, 1, "expected hs.styledtext userdata")
+                throw LuaCallError("bad argument #1 (expected hs.styledtext userdata)")
             }
             theStr = styledText
         } else {
@@ -525,7 +526,7 @@ private func console_setConsole(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 ///
 /// Notes:
 ///  * If the text of the console is retrieved as a string, no color or style information in the console output is retrieved - only the raw text.
-private func console_getConsole(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func console_getConsole(_ L: LuaState) throws -> CInt {
     let outputView = consoleOutputView()
     let styled = lua_isboolean(L, 1) ? (lua_toboolean(L, 1) != 0) : false
 
@@ -550,12 +551,12 @@ private func console_getConsole(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 ///
 /// Notes:
 ///  * You can clear the console history by using an empty array (e.g. `hs.console.setHistory({})`
-private func console_setHistory(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func console_setHistory(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TTABLE)
     let ctrl = consoleController()
 
     guard let newHistory = consoleHistoryFromLua(L, at: 1) else {
-        return luaL_argerror(L, 1, "expected array of history strings")
+        throw LuaCallError("bad argument #1 (expected array of history strings)")
     }
     ctrl.setValue(newHistory, forKey: "history")
     ctrl.setValue(newHistory.count, forKey: "historyIndex")
@@ -582,7 +583,7 @@ private func console_setHistory(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 ///        hs.console.printStyledtext(...)
 ///    end
 /// ~~~
-private func console_printStyledText(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func console_printStyledText(_ L: LuaState) throws -> CInt {
     let ctrl = consoleController()
     let outputView = consoleOutputView()
     let consoleAttrs: [NSAttributedString.Key: Any] = [
@@ -598,7 +599,7 @@ private func console_printStyledText(_ L: UnsafeMutablePointer<lua_State>!) -> I
         }
         if lua_type(L, i) == LUA_TUSERDATA && luaL_testudata(L, i, "hs.styledtext") != nil {
             guard let styledText = consoleStyledTextFromLua(L, at: i) else {
-                return luaL_argerror(L, i, "expected hs.styledtext userdata")
+                throw LuaCallError("bad argument #\(i) (expected hs.styledtext userdata)")
             }
             theStr.append(styledText)
         } else {
@@ -638,7 +639,7 @@ private func console_printStyledText(_ L: UnsafeMutablePointer<lua_State>!) -> I
 ///
 /// Notes:
 ///  * see the notes for `hs.drawing.windowLevels`
-private func console_level(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func console_level(_ L: LuaState) throws -> CInt {
     let console = consoleWindow()
 
     if lua_gettop(L) == 1 {
@@ -649,7 +650,7 @@ private func console_level(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
         if targetLevel >= minLevel && targetLevel <= maxLevel {
             console.level = NSWindow.Level(rawValue: Int(targetLevel))
         } else {
-            return luaL_error(L, "window level must be between \(minLevel) and \(maxLevel) inclusive")
+            throw LuaCallError("window level must be between \(minLevel) and \(maxLevel) inclusive")
         }
     }
     lua_pushinteger(L, lua_Integer(console.level.rawValue))
@@ -665,7 +666,7 @@ private func console_level(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * the current, possibly new, value.
-private func console_alpha(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func console_alpha(_ L: LuaState) throws -> CInt {
     let console = consoleWindow()
 
     if lua_gettop(L) == 1 {
@@ -688,7 +689,7 @@ private func console_alpha(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Notes:
 ///  * Window behaviors determine how the webview object is handled by Spaces and Exposé. See `hs.drawing.windowBehaviors` for more information.
-private func console_behavior(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func console_behavior(_ L: LuaState) throws -> CInt {
 
     let console = consoleWindow()
 
@@ -714,7 +715,7 @@ private func console_behavior(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * When a toolbar is attached to the Cosmic Hammer console (see the `hs.webview.toolbar` module documentation), this function can be used to specify whether the Toolbar appears underneath the console window's title ("visible") or in the window's title bar itself, as seen in applications like Safari ("hidden"). When the title is hidden, the toolbar will only display the toolbar items as icons without labels, and ignores changes made with `hs.webview.toolbar:displayMode`.
 ///
 ///  * If a toolbar is attached to the console, you can achieve the same effect as this function with `hs.console.toolbar():inTitleBar(boolean)`
-private func console_titleVisibility(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func console_titleVisibility(_ L: LuaState) throws -> CInt {
     let console = consoleWindow()
     let mapping: [String: NSWindow.TitleVisibility] = [
         "visible": .visible,
@@ -728,7 +729,7 @@ private func console_titleVisibility(_ L: UnsafeMutablePointer<lua_State>!) -> I
             lua_pushvalue(L, 1)
         } else {
             let keys = mapping.keys.joined(separator: "', '")
-            return luaL_argerror(L, 2, "must be one of '\(keys)'")
+            throw LuaCallError("bad argument #2 (must be one of '\(keys)')")
         }
     }
 
@@ -742,39 +743,54 @@ private func console_titleVisibility(_ L: UnsafeMutablePointer<lua_State>!) -> I
     return 1
 }
 
-private var extrasLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("darkMode"), func: consoleDarkMode),
-    luaL_Reg(name: strdup("hswindow"), func: console_asWindow),
-    luaL_Reg(name: strdup("windowBackgroundColor"), func: console_backgroundColor),
-    luaL_Reg(name: strdup("inputBackgroundColor"), func: console_inputBackgroundColor),
-    luaL_Reg(name: strdup("outputBackgroundColor"), func: console_outputBackgroundColor),
-    luaL_Reg(name: strdup("smartInsertDeleteEnabled"), func: console_smartInsertDeleteEnabled),
-    luaL_Reg(name: strdup("getHistory"), func: console_getHistory),
-    luaL_Reg(name: strdup("setHistory"), func: console_setHistory),
-    luaL_Reg(name: strdup("maxOutputHistory"), func: console_maxOutputHistory),
-    luaL_Reg(name: strdup("getConsole"), func: console_getConsole),
-    luaL_Reg(name: strdup("setConsole"), func: console_setConsole),
-    luaL_Reg(name: strdup("consoleCommandColor"), func: console_consoleCommandColor),
-    luaL_Reg(name: strdup("consoleResultColor"), func: console_consoleResultColor),
-    luaL_Reg(name: strdup("consolePrintColor"), func: console_consolePrintColor),
-    luaL_Reg(name: strdup("consoleFont"), func: console_consoleFont),
-    luaL_Reg(name: strdup("titleVisibility"), func: console_titleVisibility),
-    luaL_Reg(name: strdup("level"), func: console_level),
-    luaL_Reg(name: strdup("alpha"), func: console_alpha),
-    luaL_Reg(name: strdup("behavior"), func: console_behavior),
-    luaL_Reg(name: strdup("printStyledtext"), func: console_printStyledText),
-    luaL_Reg(name: nil, func: nil),
-]
-
 @_cdecl("luaopen_hs_libconsole")
 public func luaopen_hs_libconsole(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    // Create ref table in registry
-    lua_newtable(L)
-    refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+    runEntryPoint(L) { L in
+        // Create ref table in registry
+        lua_newtable(L)
+        refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
 
-    // Create module table
-    lua_createtable(L, 0, Int32(extrasLib.count - 1))
-    luaL_setfuncs(L, &extrasLib, 0)
-
-    return 1
+        // Create module table (20 functions)
+        lua_createtable(L, 0, 20)
+        L.push(consoleDarkMode)
+        lua_setfield(L, -2, "darkMode")
+        L.push(console_asWindow)
+        lua_setfield(L, -2, "hswindow")
+        L.push(console_backgroundColor)
+        lua_setfield(L, -2, "windowBackgroundColor")
+        L.push(console_inputBackgroundColor)
+        lua_setfield(L, -2, "inputBackgroundColor")
+        L.push(console_outputBackgroundColor)
+        lua_setfield(L, -2, "outputBackgroundColor")
+        L.push(console_smartInsertDeleteEnabled)
+        lua_setfield(L, -2, "smartInsertDeleteEnabled")
+        L.push(console_getHistory)
+        lua_setfield(L, -2, "getHistory")
+        L.push(console_setHistory)
+        lua_setfield(L, -2, "setHistory")
+        L.push(console_maxOutputHistory)
+        lua_setfield(L, -2, "maxOutputHistory")
+        L.push(console_getConsole)
+        lua_setfield(L, -2, "getConsole")
+        L.push(console_setConsole)
+        lua_setfield(L, -2, "setConsole")
+        L.push(console_consoleCommandColor)
+        lua_setfield(L, -2, "consoleCommandColor")
+        L.push(console_consoleResultColor)
+        lua_setfield(L, -2, "consoleResultColor")
+        L.push(console_consolePrintColor)
+        lua_setfield(L, -2, "consolePrintColor")
+        L.push(console_consoleFont)
+        lua_setfield(L, -2, "consoleFont")
+        L.push(console_titleVisibility)
+        lua_setfield(L, -2, "titleVisibility")
+        L.push(console_level)
+        lua_setfield(L, -2, "level")
+        L.push(console_alpha)
+        lua_setfield(L, -2, "alpha")
+        L.push(console_behavior)
+        lua_setfield(L, -2, "behavior")
+        L.push(console_printStyledText)
+        lua_setfield(L, -2, "printStyledtext")
+    }
 }

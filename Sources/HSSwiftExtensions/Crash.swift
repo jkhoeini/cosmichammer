@@ -1,5 +1,6 @@
 import Cocoa
 import CLua
+import Lua
 import os.log
 
 // ----------------------- API Implementation ---------------------
@@ -16,7 +17,7 @@ import os.log
 ///
 /// Notes:
 ///  * This is for testing purposes only, you are extremely unlikely to need this in normal Cosmic Hammer usage
-private func burnTheWorld(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func burnTheWorld(_ L: LuaState) throws -> CInt {
     let x = UnsafeMutablePointer<Int>.allocate(capacity: 0)
     x.deinitialize(count: 0)
     x.deallocate()
@@ -39,12 +40,12 @@ private func burnTheWorld(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Notes:
 ///  * Outside of a context of a Lua pcall() (or a C lua_pcall()), this will cause Cosmic Hammer to exit. We follow the safe behaviour of terminating the app on any unhandled Objective C exception.
-private func throwTheWorld(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func throwTheWorld(_ L: LuaState) throws -> CInt {
     guard lua_type(L, 1) == LUA_TSTRING else {
-        return luaL_error(L, "expected string for argument 1")
+        throw LuaCallError("expected string for argument 1")
     }
     guard lua_type(L, 2) == LUA_TSTRING else {
-        return luaL_error(L, "expected string for argument 2")
+        throw LuaCallError("expected string for argument 2")
     }
 
     let name = String(cString: lua_tostring(L, 1)!)
@@ -53,7 +54,7 @@ private func throwTheWorld(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     if let error = catchingObjCException({
         NSException(name: NSExceptionName(rawValue: name), reason: message, userInfo: nil).raise()
     }) {
-        return luaL_error(L, "ObjC exception: \(error)")
+        throw LuaCallError("ObjC exception: \(error)")
     }
 
     return 0
@@ -71,7 +72,7 @@ private func throwTheWorld(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Notes:
 ///  * This is probably only useful to extension developers.
-private func crashLog(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func crashLog(_ L: LuaState) throws -> CInt {
     let msg = String(cString: luaL_checkstring(L, 1))
     os_log(.info, "breadcrumb: %{public}s", msg)
 
@@ -88,12 +89,12 @@ private func crashLog(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * None
-private func crashKV(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func crashKV(_ L: LuaState) throws -> CInt {
     guard lua_type(L, 1) == LUA_TSTRING else {
-        return luaL_error(L, "expected string for argument 1")
+        throw LuaCallError("expected string for argument 1")
     }
     guard lua_type(L, 2) == LUA_TSTRING else {
-        return luaL_error(L, "expected string for argument 2")
+        throw LuaCallError("expected string for argument 2")
     }
 
     let _ = String(cString: lua_tostring(L, 1)!)
@@ -111,7 +112,7 @@ private func crashKV(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * An integer containing the amount of RAM in use by Cosmic Hammer (in bytes), or nil if an error occurred
-private func residentSize(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func residentSize(_ L: LuaState) throws -> CInt {
     var info = task_basic_info()
     var size = mach_msg_type_number_t(MemoryLayout<task_basic_info>.size) / 4
     let kerr = withUnsafeMutablePointer(to: &info) { infoPtr in
@@ -130,21 +131,22 @@ private func residentSize(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 1
 }
 
-private var crashlib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("crash"), func: burnTheWorld),
-    luaL_Reg(name: strdup("throwObjCException"), func: throwTheWorld),
-    luaL_Reg(name: strdup("crashLog"), func: crashLog),
-    luaL_Reg(name: strdup("crashKV"), func: crashKV),
-    luaL_Reg(name: strdup("residentSize"), func: residentSize),
-    luaL_Reg(name: nil, func: nil),
-]
-
 /* NOTE: The substring "hs_crash_internal" in the following function's name
          must match the require-path of this file, i.e. "hs.crash.internal". */
 
 @_cdecl("luaopen_hs_libcrash")
 public func luaopen_hs_libcrash(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    lua_createtable(L, 0, Int32(crashlib.count - 1))
-    luaL_setfuncs(L, &crashlib, 0)
-    return 1
+    runEntryPoint(L) { L in
+        lua_createtable(L, 0, 5)
+        L.push(burnTheWorld)
+        lua_setfield(L, -2, "crash")
+        L.push(throwTheWorld)
+        lua_setfield(L, -2, "throwObjCException")
+        L.push(crashLog)
+        lua_setfield(L, -2, "crashLog")
+        L.push(crashKV)
+        lua_setfield(L, -2, "crashKV")
+        L.push(residentSize)
+        lua_setfield(L, -2, "residentSize")
+    }
 }

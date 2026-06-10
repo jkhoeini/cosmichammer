@@ -22,6 +22,7 @@
 
 import Cocoa
 import CLua
+import Lua
 import os.log
 
 // MARK: - Constants
@@ -115,7 +116,7 @@ private func pusherror(_ L: UnsafeMutablePointer<lua_State>!, _ info: UnsafePoin
 ///
 /// Returns:
 ///  * If successful, returns true, otherwise returns nil and an error string
-private func change_dir(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func change_dir(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TSTRING)
     let path = path_at_index(L, 1)
 
@@ -140,7 +141,7 @@ private func change_dir(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * A string containing the current working directory, or if an error occurred, nil and an error string
-private func get_dir(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func get_dir(_ L: LuaState) throws -> CInt {
     var path: UnsafeMutablePointer<CChar>? = nil
     var size = LFS_MAXPATHLEN
     var result: Int32
@@ -231,7 +232,7 @@ private func _file_lock(_ L: UnsafeMutablePointer<lua_State>!, _ fh: OpaquePoint
 ///  * This is not a low level OS feature, the lock is actually a file created in the path, called `lockfile.lfs`, so the directory must be writable for this function to succeed
 ///  * The returned lock object can be freed with ```lock:free()```
 ///  * If the lock already exists and is not stale, the error string returned will be "File exists"
-private func lfs_lock_dir(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func lfs_lock_dir(_ L: LuaState) throws -> CInt {
     var pathl: Int = 0
     let lockfile = "/lockfile.lfs"
     let path = luaL_checklstring(L, 1, &pathl)!
@@ -268,7 +269,7 @@ private func lfs_unlock_dir(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
  ** @param #3 Number with start position (optional).
  ** @param #4 Number with length (optional).
  */
-private func file_lock(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func file_lock(_ L: LuaState) throws -> CInt {
     let fh = check_file(L, 1, "lock")!
     let mode = luaL_checkstring(L, 2)!
     let start = CLong(luaL_optinteger(L, 3, 0))
@@ -294,7 +295,7 @@ private func file_lock(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * True if the unlock succeeded, otherwise nil and an error string
-private func file_unlock(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func file_unlock(_ L: LuaState) throws -> CInt {
     let fh = check_file(L, 1, "unlock")!
     let start = CLong(luaL_optinteger(L, 2, 0))
     let len = CLong(luaL_optinteger(L, 3, 0))
@@ -319,7 +320,7 @@ private func file_unlock(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * True if the link was created, otherwise nil and an error string
-private func make_link(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func make_link(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TSTRING)
     luaL_checktype(L, 2, LUA_TSTRING)
     let oldpath = path_at_index(L, 1)
@@ -352,7 +353,7 @@ private func make_link(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * True if the directory was created, otherwise nil and an error string
-private func make_dir(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func make_dir(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TSTRING)
     let path = path_at_index(L, 1)
 
@@ -376,7 +377,7 @@ private func make_dir(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * True if the directory was removed, otherwise nil and an error string
-private func remove_dir(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func remove_dir(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TSTRING)
     let path = path_at_index(L, 1)
 
@@ -455,7 +456,7 @@ private func dir_close(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///       end
 ///       dirObj:close() -- necessary to make sure that the directory stream is closed
 ///    ```
-private func dir_iter_factory(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func dir_iter_factory(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TSTRING)
     let path = path_at_index(L, 1)
     lua_pushcfunction(L, dir_iter)
@@ -471,7 +472,7 @@ private func dir_iter_factory(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     if d.pointee.dir == nil {
         let pathStr = String(cString: path!)
         let errStr = String(cString: strerror(errno)!)
-        return luaL_error(L, "cannot open \(pathStr): \(errStr)")
+        throw LuaCallError("cannot open \(pathStr): \(errStr)")
     }
 
     // Lua 5.4: use __close to close dir if you break the iterator
@@ -544,7 +545,7 @@ private func makeCString(_ s: StaticString) -> UnsafePointer<CChar> {
 ///
 /// Returns:
 ///  * True if the operation was successful, otherwise nil and an error string
-private func file_utime(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func file_utime(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TSTRING)
     let file = path_at_index(L, 1)
 
@@ -741,11 +742,11 @@ private func _call_lstat(_ path: UnsafePointer<CChar>?, _ buf: UnsafeMutablePoin
     lstat(path!, buf!)
 }
 
-private func file_info(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func file_info(_ L: LuaState) throws -> CInt {
     return _file_info_(L, _call_stat)
 }
 
-private func link_info(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func link_info(_ L: LuaState) throws -> CInt {
     return _file_info_(L, _call_lstat)
 }
 
@@ -760,7 +761,7 @@ private func link_info(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * A table containing the list of the file's tags, or nil if the file has no tags assigned; throws a lua error if an error accessing the file occurs
-private func tagsGet(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func tagsGet(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TSTRING)
     let path = lua_tovalue(L, at: 1) as! NSString
 
@@ -791,7 +792,7 @@ private func tagsGet(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * true if the tags were updated; throws a lua error if an error occurs updating the tags
-private func tagsAdd(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func tagsAdd(_ L: LuaState) throws -> CInt {
     let path = lua_tovalue(L, at: 1) as! NSString
 
     let oldTags = NSMutableSet(array: (tags_from_file(L, path) as? [Any]) ?? [])
@@ -812,7 +813,7 @@ private func tagsAdd(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * true if the tags were set; throws a lua error if an error occurs setting the new tags
-private func tagsSet(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func tagsSet(_ L: LuaState) throws -> CInt {
     let path = lua_tovalue(L, at: 1) as! NSString
 
     let tags = tags_from_lua_stack(L)
@@ -831,7 +832,7 @@ private func tagsSet(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * true if the tags were updated; throws a lua error if an error occurs updating the tags
-private func tagsRemove(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func tagsRemove(_ L: LuaState) throws -> CInt {
     let path = lua_tovalue(L, at: 1) as! NSString
     let removeTags = NSMutableSet(array: tags_from_lua_stack(L) as [AnyObject])
 
@@ -853,7 +854,7 @@ private func tagsRemove(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * The path to the system designated temporary directory for the current user.
-private func hs_temporaryDirectory(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func hs_temporaryDirectory(_ L: LuaState) throws -> CInt {
     lua_pushstring(L, NSTemporaryDirectory().cString(using: .utf8))
     return 1
 }
@@ -867,7 +868,7 @@ private func hs_temporaryDirectory(_ L: UnsafeMutablePointer<lua_State>!) -> Int
 ///
 /// Returns:
 ///  * a string containing the Uniform Type Identifier for the file location specified or nil if an error occurred
-private func hs_fileuti(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func hs_fileuti(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TSTRING)
     let path = NSString(utf8String: path_at_index(L, 1)!)! as String
 
@@ -900,7 +901,7 @@ private func hs_fileuti(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * the file UTI in the alternate format or nil if the UTI does not have an alternate of the specified type.
-private func hs_fileUTIalternate(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func hs_fileUTIalternate(_ L: LuaState) throws -> CInt {
     let fileUTI = lua_tovalue(L, at: 1) as! NSString
     let format = lua_tovalue(L, at: 2) as! NSString
 
@@ -914,7 +915,7 @@ private func hs_fileUTIalternate(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
     } else if format.isEqual(to: "ostype") {
         convertTo = kUTTagClassOSType
     } else {
-        return luaL_error(L, "invalid alternate type \(format) specified")
+        throw LuaCallError("invalid alternate type \(format) specified")
     }
 
     let result = UTTypeCopyPreferredTagWithClass(fileUTI as CFString, convertTo)?.takeRetainedValue()
@@ -932,7 +933,7 @@ private func hs_fileUTIalternate(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 /// Returns:
 ///  * A string containing the absolute path of `filepath` (i.e. one that doesn't include `.`, `..` or symlinks)
 ///  * Note that symlinks will be resolved to their target file
-private func hs_pathToAbsolute(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func hs_pathToAbsolute(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TSTRING)
 
     let filePath = lua_tovalue(L, at: 1) as! NSString
@@ -957,7 +958,7 @@ private func hs_pathToAbsolute(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * a string containing the display name of the file or directory at a specified path; returns nil if no file with the specified path exists.
-private func fs_displayName(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func fs_displayName(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TSTRING)
     let filePath = lua_tovalue(L, at: 1) as! NSString
     if FileManager.default.fileExists(atPath: filePath.expandingTildeInPath) {
@@ -977,7 +978,7 @@ private func fs_displayName(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * Bookmark data in a binary encoded string or `nil` if path is invalid.
-private func fs_pathToBookmark(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func fs_pathToBookmark(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TSTRING)
 
     let filePath = lua_tovalue(L, at: 1) as! NSString
@@ -1013,7 +1014,7 @@ private func fs_pathToBookmark(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///    usually continues to work if the user moves or renames the resource, or if the
 ///    user relaunches your app or restarts the system.
 ///  * No volumes are mounted during the resolution of the bookmark data.
-private func fs_pathFromBookmark(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func fs_pathFromBookmark(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TSTRING)
 
     let data = lua_tostring(L, 1)
@@ -1055,7 +1056,7 @@ private func fs_pathFromBookmark(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 ///
 /// Returns:
 ///  * A string or `nil` if path is invalid.
-private func fs_urlFromPath(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func fs_urlFromPath(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TSTRING)
 
     let filePath = lua_tovalue(L, at: 1) as! NSString
@@ -1095,7 +1096,7 @@ private func fs_urlFromPath(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Notes:
 ///  * `ignore` and `except` options require the use of actual regular expressions, not the simplified pattern matching used by Lua. More details about the proper syntax for the strings to use in the tables of these options can be found at https://unicode-org.github.io/icu/userguide/strings/regexp.html.
 ///    * note that this function only checks to see if the regular expression returns a match for each filename found (not the path, just the filename component of the path). Any captures are ignored.
-private func fs_filesInPath(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func fs_filesInPath(_ L: LuaState) throws -> CInt {
 
     var path = lua_tovalue(L, at: 1) as! NSString
 
@@ -1114,22 +1115,22 @@ private func fs_filesInPath(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
                 switch keyName {
                 case "subdirs":
                     guard lua_type(L, -1) == LUA_TBOOLEAN else {
-                        return luaL_argerror(L, 2, "subdirs option expects boolean value")
+                        throw LuaCallError("bad argument #2 (subdirs option expects boolean value)")
                     }
                     subdirs = lua_toboolean(L, -1) != 0
                 case "followSymlinks":
                     guard lua_type(L, -1) == LUA_TBOOLEAN else {
-                        return luaL_argerror(L, 2, "followSymlinks option expects boolean value")
+                        throw LuaCallError("bad argument #2 (followSymlinks option expects boolean value)")
                     }
                     followSymlinks = lua_toboolean(L, -1) != 0
                 case "expandSymlinks":
                     guard lua_type(L, -1) == LUA_TBOOLEAN else {
-                        return luaL_argerror(L, 2, "expandSymlinks option expects boolean value")
+                        throw LuaCallError("bad argument #2 (expandSymlinks option expects boolean value)")
                     }
                     expandSymlinks = lua_toboolean(L, -1) != 0
                 case "relativePath":
                     guard lua_type(L, -1) == LUA_TBOOLEAN else {
-                        return luaL_argerror(L, 2, "relativePath option expects boolean value")
+                        throw LuaCallError("bad argument #2 (relativePath option expects boolean value)")
                     }
                     relativePath = lua_toboolean(L, -1) != 0
                 case "ignore":
@@ -1137,28 +1138,28 @@ private func fs_filesInPath(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
                     if let arr = ignore {
                         for entry in arr {
                             guard entry is NSString else {
-                                return luaL_argerror(L, 2, "ignore option table entries must be strings")
+                                throw LuaCallError("bad argument #2 (ignore option table entries must be strings)")
                             }
                         }
                     } else {
-                        return luaL_argerror(L, 2, "ignore option expects table value")
+                        throw LuaCallError("bad argument #2 (ignore option expects table value)")
                     }
                 case "except":
                     except = lua_tovalue(L, at: -1) as? NSArray
                     if let arr = except {
                         for entry in arr {
                             guard entry is NSString else {
-                                return luaL_argerror(L, 2, "except option table entries must be strings")
+                                throw LuaCallError("bad argument #2 (except option table entries must be strings)")
                             }
                         }
                     } else {
-                        return luaL_argerror(L, 2, "except option expects table value")
+                        throw LuaCallError("bad argument #2 (except option expects table value)")
                     }
                 default:
-                    return luaL_argerror(L, 2, "option \(keyName) not recognized")
+                    throw LuaCallError("bad argument #2 (option \(keyName) not recognized)")
                 }
             } else {
-                return luaL_argerror(L, 2, "option table keys must be strings")
+                throw LuaCallError("bad argument #2 (option table keys must be strings)")
             }
             lua_pop(L, 1)
         }
@@ -1186,7 +1187,7 @@ private func fs_filesInPath(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
                                             options: .useUnicodeWordBoundaries)
             excluders.append(p)
         } catch {
-            return luaL_argerror(L, 2, "invalid regex (\(error.localizedDescription)) at index \(i + 1) of ignore option")
+            throw LuaCallError("bad argument #2 (invalid regex (\(error.localizedDescription)) at index \(i + 1) of ignore option)")
         }
     }
     for i in 0..<(except?.count ?? 0) {
@@ -1195,7 +1196,7 @@ private func fs_filesInPath(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
                                             options: .useUnicodeWordBoundaries)
             exceptions.append(p)
         } catch {
-            return luaL_argerror(L, 2, "invalid regex (\(error.localizedDescription)) at index \(i + 1) of except option")
+            throw LuaCallError("bad argument #2 (invalid regex (\(error.localizedDescription)) at index \(i + 1) of except option)")
         }
     }
 
@@ -1207,7 +1208,7 @@ private func fs_filesInPath(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let fileExists = fileManager.fileExists(atPath: path as String, isDirectory: &isDirectory)
 
     if !fileExists {
-        return luaL_argerror(L, 1, "path does not specify a reachable file or directory")
+        throw LuaCallError("bad argument #1 (path does not specify a reachable file or directory)")
     } else if !isDirectory.boolValue {
         lua_pushany(L, NSArray(array: [path]))
         lua_pushinteger(L, 1)
@@ -1321,52 +1322,66 @@ private func fs_filesInPath(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 // MARK: - Module registration
 
-private let fslib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("attributes"),        func: file_info),
-    luaL_Reg(name: strdup("chdir"),             func: change_dir),
-    luaL_Reg(name: strdup("currentDir"),        func: get_dir),
-    luaL_Reg(name: strdup("dir"),               func: dir_iter_factory),
-    luaL_Reg(name: strdup("link"),              func: make_link),
-    luaL_Reg(name: strdup("lock"),              func: file_lock),
-    luaL_Reg(name: strdup("mkdir"),             func: make_dir),
-    luaL_Reg(name: strdup("rmdir"),             func: remove_dir),
-    luaL_Reg(name: strdup("symlinkAttributes"), func: link_info),
-    luaL_Reg(name: strdup("touch"),             func: file_utime),
-    luaL_Reg(name: strdup("unlock"),            func: file_unlock),
-    luaL_Reg(name: strdup("lockDir"),           func: lfs_lock_dir),
-    luaL_Reg(name: strdup("tagsAdd"),           func: tagsAdd),
-    luaL_Reg(name: strdup("tagsRemove"),        func: tagsRemove),
-    luaL_Reg(name: strdup("tagsSet"),           func: tagsSet),
-    luaL_Reg(name: strdup("tagsGet"),           func: tagsGet),
-    luaL_Reg(name: strdup("temporaryDirectory"), func: hs_temporaryDirectory),
-    luaL_Reg(name: strdup("fileUTI"),           func: hs_fileuti),
-    luaL_Reg(name: strdup("fileUTIalternate"),  func: hs_fileUTIalternate),
-    luaL_Reg(name: strdup("pathToAbsolute"),    func: hs_pathToAbsolute),
-    luaL_Reg(name: strdup("displayName"),       func: fs_displayName),
-    luaL_Reg(name: strdup("pathToBookmark"),    func: fs_pathToBookmark),
-    luaL_Reg(name: strdup("pathFromBookmark"),  func: fs_pathFromBookmark),
-    luaL_Reg(name: strdup("urlFromPath"),       func: fs_urlFromPath),
-    luaL_Reg(name: strdup("fileListForPath"),   func: fs_filesInPath),
-    luaL_Reg(name: nil, func: nil),
-]
-
 @_cdecl("luaopen_hs_libfs")
 public func luaopen_hs_libfs(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    dir_create_meta(L)
-    lock_create_meta(L)
-    luaL_newlib_compat(L, fslib)
-    lua_pushvalue(L, -1)
-    return 1
-}
+    runEntryPoint(L) { L in
+        dir_create_meta(L)
+        lock_create_meta(L)
 
-// MARK: - Compat helper
+        lua_createtable(L, 0, 24)
+        L.push(file_info)
+        lua_setfield(L, -2, "attributes")
+        L.push(change_dir)
+        lua_setfield(L, -2, "chdir")
+        L.push(get_dir)
+        lua_setfield(L, -2, "currentDir")
+        L.push(dir_iter_factory)
+        lua_setfield(L, -2, "dir")
+        L.push(make_link)
+        lua_setfield(L, -2, "link")
+        L.push(file_lock)
+        lua_setfield(L, -2, "lock")
+        L.push(make_dir)
+        lua_setfield(L, -2, "mkdir")
+        L.push(remove_dir)
+        lua_setfield(L, -2, "rmdir")
+        L.push(link_info)
+        lua_setfield(L, -2, "symlinkAttributes")
+        L.push(file_utime)
+        lua_setfield(L, -2, "touch")
+        L.push(file_unlock)
+        lua_setfield(L, -2, "unlock")
+        L.push(lfs_lock_dir)
+        lua_setfield(L, -2, "lockDir")
+        L.push(tagsAdd)
+        lua_setfield(L, -2, "tagsAdd")
+        L.push(tagsRemove)
+        lua_setfield(L, -2, "tagsRemove")
+        L.push(tagsSet)
+        lua_setfield(L, -2, "tagsSet")
+        L.push(tagsGet)
+        lua_setfield(L, -2, "tagsGet")
+        L.push(hs_temporaryDirectory)
+        lua_setfield(L, -2, "temporaryDirectory")
+        L.push(hs_fileuti)
+        lua_setfield(L, -2, "fileUTI")
+        L.push(hs_fileUTIalternate)
+        lua_setfield(L, -2, "fileUTIalternate")
+        L.push(hs_pathToAbsolute)
+        lua_setfield(L, -2, "pathToAbsolute")
+        L.push(fs_displayName)
+        lua_setfield(L, -2, "displayName")
+        L.push(fs_pathToBookmark)
+        lua_setfield(L, -2, "pathToBookmark")
+        L.push(fs_pathFromBookmark)
+        lua_setfield(L, -2, "pathFromBookmark")
+        L.push(fs_urlFromPath)
+        lua_setfield(L, -2, "urlFromPath")
+        L.push(fs_filesInPath)
+        lua_setfield(L, -2, "fileListForPath")
 
-// luaL_newlib is a macro in C; we replicate it in Swift
-private func luaL_newlib_compat(_ L: UnsafeMutablePointer<lua_State>!, _ lib: [luaL_Reg]) {
-    var mutableLib = lib
-    luaL_checkversion(L)
-    lua_createtable(L, 0, Int32(lib.count - 1))
-    luaL_setfuncs(L, &mutableLib, 0)
+        lua_pushvalue(L, -1)
+    }
 }
 
 // MARK: - String.expandingTildeInPath helper

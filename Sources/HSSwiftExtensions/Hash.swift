@@ -1,5 +1,6 @@
 import Cocoa
 import CLua
+import Lua
 import CommonCrypto
 import zlib
 
@@ -485,7 +486,7 @@ private class HSHashObjectNew: NSObject {
 ///
 /// Returns:
 ///  * the new hash object
-private func hash_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func hash_new(_ L: LuaState) throws -> CInt {
     guard let hashNameC = luaL_checkstring(L, 1) else { return 0 }
     let hashName = String(cString: hashNameC)
     var secret: Data? = nil
@@ -511,7 +512,7 @@ private func hash_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
         let object = HSHashObjectNew(hashType: hashType, secret: secret)
         pushHashObject(L, object)
     } else {
-        return luaL_argerror(L, 1, "unrecognized hash type")
+        throw LuaCallError("bad argument #1 (unrecognized hash type)")
     }
     return 1
 }
@@ -527,8 +528,8 @@ private func hash_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * the hash object, or if the hash has already been calculated (finished), nil and an error string
-private func hash_append(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    guard let object = toHashObject(L, at: 1) else { return luaL_argerror(L, 1, "expected \(USERDATA_TAG)") }
+private func hash_append(_ L: LuaState) throws -> CInt {
+    guard let object = toHashObject(L, at: 1) else { throw LuaCallError("bad argument #1 (expected \(USERDATA_TAG))") }
     var len: Int = 0
     guard let ptr = luaL_checklstring(L, 2, &len) else { return 0 }
     let data = Data(bytes: ptr, count: len)
@@ -554,8 +555,8 @@ private func hash_append(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * the hash object
-private func hash_appendFile(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    guard let object = toHashObject(L, at: 1) else { return luaL_argerror(L, 1, "expected \(USERDATA_TAG)") }
+private func hash_appendFile(_ L: LuaState) throws -> CInt {
+    guard let object = toHashObject(L, at: 1) else { throw LuaCallError("bad argument #1 (expected \(USERDATA_TAG))") }
     guard let pathC = luaL_checkstring(L, 2) else { return 0 }
     var path = String(cString: pathC)
 
@@ -592,8 +593,8 @@ private func hash_appendFile(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Notes:
 ///  * a hash that has been finished can no longer have data appended to it.
-private func hash_finish(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    guard let object = toHashObject(L, at: 1) else { return luaL_argerror(L, 1, "expected \(USERDATA_TAG)") }
+private func hash_finish(_ L: LuaState) throws -> CInt {
+    guard let object = toHashObject(L, at: 1) else { throw LuaCallError("bad argument #1 (expected \(USERDATA_TAG))") }
 
     if object.value == nil { object.finish() }
 
@@ -610,8 +611,8 @@ private func hash_finish(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * a string containing the hash value or nil if the hash has not been finished.
-private func hash_value(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    guard let object = toHashObject(L, at: 1) else { return luaL_argerror(L, 1, "expected \(USERDATA_TAG)") }
+private func hash_value(_ L: LuaState) throws -> CInt {
+    guard let object = toHashObject(L, at: 1) else { throw LuaCallError("bad argument #1 (expected \(USERDATA_TAG))") }
     let inBinary = (lua_gettop(L) == 2) ? (lua_toboolean(L, 2) != 0) : false
 
     if let val = object.value {
@@ -646,8 +647,8 @@ private func hash_value(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * a string containing the hash type name.
-private func hash_type(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    guard let object = toHashObject(L, at: 1) else { return luaL_argerror(L, 1, "expected \(USERDATA_TAG)") }
+private func hash_type(_ L: LuaState) throws -> CInt {
+    guard let object = toHashObject(L, at: 1) else { throw LuaCallError("bad argument #1 (expected \(USERDATA_TAG))") }
     lua_pushstring(L, hashLookupTable[object.hashType].hashName)
     return 1
 }
@@ -655,7 +656,7 @@ private func hash_type(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 // MARK: - Module Constants
 
 // documented in hash.lua
-private func hash_types(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func hash_types(_ L: LuaState) throws -> CInt {
     lua_newtable(L)
     for i in 0..<hashLookupTable.count {
         lua_pushstring(L, hashLookupTable[i].hashName)
@@ -683,7 +684,7 @@ private func toHashObject(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) 
 
 // MARK: - Cosmic Hammer/Lua Infrastructure
 
-private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func userdata_tostring(_ L: LuaState) throws -> CInt {
     guard let obj = toHashObject(L, at: 1) else { return 0 }
     var title = hashLookupTable[obj.hashType].hashName
     if obj.value == nil {
@@ -694,7 +695,7 @@ private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 1
 }
 
-private func userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func userdata_eq(_ L: LuaState) throws -> CInt {
     if let obj1 = toHashObject(L, at: 1), let obj2 = toHashObject(L, at: 2) {
         lua_pushboolean(L, obj1.isEqual(obj2) ? 1 : 0)
     } else {
@@ -703,7 +704,7 @@ private func userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 1
 }
 
-private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func userdata_gc(_ L: LuaState) throws -> CInt {
     guard let ptr = luaL_testudata(L, 1, USERDATA_TAG) else { return 0 }
     let raw = ptr.load(as: UnsafeRawPointer.self)
     let obj = Unmanaged<HSHashObjectNew>.fromOpaque(raw).takeUnretainedValue()
@@ -717,48 +718,39 @@ private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 0
 }
 
-// MARK: - Lua Registration Tables
-
-// Metatable for userdata objects
-private var userdata_metaLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("append"),     func: hash_append),
-    luaL_Reg(name: strdup("appendFile"), func: hash_appendFile),
-    luaL_Reg(name: strdup("finish"),     func: hash_finish),
-    luaL_Reg(name: strdup("value"),      func: hash_value),
-    luaL_Reg(name: strdup("type"),       func: hash_type),
-
-    luaL_Reg(name: strdup("__tostring"), func: userdata_tostring),
-    luaL_Reg(name: strdup("__eq"),       func: userdata_eq),
-    luaL_Reg(name: strdup("__gc"),       func: userdata_gc),
-    luaL_Reg(name: nil, func: nil),
-]
-
-// Functions for returned object when module loads
-private var moduleLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("new"), func: hash_new),
-    luaL_Reg(name: nil, func: nil),
-]
-
 // MARK: - Module Entry Point
 
 @_cdecl("luaopen_hs_libhash")
 public func luaopen_hs_libhash(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    // Create ref table in registry
-    lua_newtable(L)
-    refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+    runEntryPoint(L) { L in
+        lua_newtable(L)
+        refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
 
-    // Register userdata metatable
-    luaL_newmetatable(L, USERDATA_TAG)
-    lua_pushvalue(L, -1)
-    lua_setfield(L, -2, "__index")  // mt.__index = mt
-    luaL_setfuncs(L, &userdata_metaLib, 0)
-    lua_pop(L, 1)
+        luaL_newmetatable(L, USERDATA_TAG)
+        lua_pushvalue(L, -1)
+        lua_setfield(L, -2, "__index")
+        L.push(hash_append)
+        lua_setfield(L, -2, "append")
+        L.push(hash_appendFile)
+        lua_setfield(L, -2, "appendFile")
+        L.push(hash_finish)
+        lua_setfield(L, -2, "finish")
+        L.push(hash_value)
+        lua_setfield(L, -2, "value")
+        L.push(hash_type)
+        lua_setfield(L, -2, "type")
+        L.push(userdata_tostring)
+        lua_setfield(L, -2, "__tostring")
+        L.push(userdata_eq)
+        lua_setfield(L, -2, "__eq")
+        L.push(userdata_gc)
+        lua_setfield(L, -2, "__gc")
+        lua_pop(L, 1)
 
-    // Create module table
-    lua_createtable(L, 0, Int32(moduleLib.count - 1))
-    luaL_setfuncs(L, &moduleLib, 0)
+        lua_createtable(L, 0, 1)
+        L.push(hash_new)
+        lua_setfield(L, -2, "new")
 
-    _ = hash_types(L); lua_setfield(L, -2, "types")
-
-    return 1
+        _ = try hash_types(L); lua_setfield(L, -2, "types")
+    }
 }

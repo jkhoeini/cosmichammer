@@ -1,5 +1,6 @@
 import Cocoa
 import CLua
+import Lua
 import Carbon
 
 private let USERDATA_TAG = "hs.keycodes.callback"
@@ -236,7 +237,7 @@ class MJKeycodesObserver: NSObject {
 
 // MARK: - Callback Functions
 
-private func keycodes_newcallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func keycodes_newcallback(_ L: LuaState) throws -> CInt {
 
     luaL_checktype(L, 1, LUA_TFUNCTION)
 
@@ -257,14 +258,14 @@ private func keycodes_newcallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
     return 1
 }
 
-private func keycodes_userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func keycodes_userdata_tostring(_ L: LuaState) throws -> CInt {
     let ptr = lua_topointer(L, 1)
     let str = "\(USERDATA_TAG): (0x\(String(Int(bitPattern: ptr), radix: 16)))"
     lua_pushstring(L, str)
     return 1
 }
 
-private func keycodes_callback_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func keycodes_callback_gc(_ L: LuaState) throws -> CInt {
 
     let ptr = luaL_checkudata(L, 1, USERDATA_TAG)!.assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
     let observer = Unmanaged<MJKeycodesObserver>.fromOpaque(ptr.pointee!).takeRetainedValue()
@@ -279,7 +280,7 @@ private func keycodes_callback_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
     return 0
 }
 
-private func keycodes_callback_stop(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func keycodes_callback_stop(_ L: LuaState) throws -> CInt {
     let ptr = luaL_checkudata(L, 1, USERDATA_TAG)!.assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
     let observer = Unmanaged<MJKeycodesObserver>.fromOpaque(ptr.pointee!).takeUnretainedValue()
     observer.stop()
@@ -346,7 +347,7 @@ private func getAllInputMethods() -> [TISInputSource]? {
 ///
 /// Returns:
 ///  * If no parameter is provided, returns a string containing the source id for the current keyboard layout or input method; if a parameter is provided, returns true or false specifying whether or not the input source was able to be changed.
-private func keycodes_sourceID(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func keycodes_sourceID(_ L: LuaState) throws -> CInt {
 
     if lua_gettop(L) == 0 {
         let layout = TISCopyCurrentKeyboardInputSource()!.takeRetainedValue()
@@ -377,7 +378,7 @@ private func keycodes_sourceID(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * A string containing the name of the current keyboard layout
-private func keycodes_currentLayout(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func keycodes_currentLayout(_ L: LuaState) throws -> CInt {
     let layout = TISCopyCurrentKeyboardLayoutInputSource()!.takeRetainedValue()
     lua_pushany(L, getLayoutNameSwift(layout) as NSString?)
     return 1
@@ -392,7 +393,7 @@ private func keycodes_currentLayout(_ L: UnsafeMutablePointer<lua_State>!) -> In
 ///
 /// Returns:
 ///  * An hs.image object containing the icon, if available
-private func keycodes_currentLayoutIcon(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func keycodes_currentLayoutIcon(_ L: LuaState) throws -> CInt {
     let layout = TISCopyCurrentKeyboardInputSource()!.takeRetainedValue()
     pushSourceIcon(L, layout)
     return 1
@@ -410,7 +411,7 @@ private func keycodes_currentLayoutIcon(_ L: UnsafeMutablePointer<lua_State>!) -
 ///
 /// Notes:
 ///  * Only those layouts which can be explicitly switched to will be included in the table.  Keyboard layouts which are part of input methods are not included.  See `hs.keycodes.methods`.
-private func keycodes_layouts(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func keycodes_layouts(_ L: LuaState) throws -> CInt {
     let sourceIDsOnly = lua_gettop(L) == 1 ? (lua_toboolean(L, 1) != 0) : false
     let layouts = getAllLayouts()
 
@@ -441,7 +442,7 @@ private func keycodes_layouts(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Notes:
 ///  * Keyboard layouts which are not part of an input method are not included in this table.  See `hs.keycodes.layouts`.
-private func keycodes_methods(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func keycodes_methods(_ L: LuaState) throws -> CInt {
     let sourceIDsOnly = lua_gettop(L) == 1 ? (lua_toboolean(L, 1) != 0) : false
     let methods = getAllInputMethods()
 
@@ -469,7 +470,7 @@ private func keycodes_methods(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * Name of current input method, or nil
-private func keycodes_currentMethod(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func keycodes_currentMethod(_ L: LuaState) throws -> CInt {
     var currentMethod: String? = nil
 
     if let methods = getAllInputMethods() {
@@ -497,7 +498,7 @@ private func keycodes_currentMethod(_ L: UnsafeMutablePointer<lua_State>!) -> In
 ///
 /// Returns:
 ///  * A boolean, true if the layout was successfully changed, otherwise false
-private func keycodes_setLayout(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func keycodes_setLayout(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TSTRING)
     let desiredLayout = lua_tovalue(L, at: 1) as! String
     var found = false
@@ -524,7 +525,7 @@ private func keycodes_setLayout(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 ///
 /// Returns:
 ///  * A boolean, true if the method was successfully changed, otherwise false
-private func keycodes_setMethod(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func keycodes_setMethod(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TSTRING)
     let desiredLayout = lua_tovalue(L, at: 1) as! String
     var found = false
@@ -554,7 +555,7 @@ private func keycodes_setMethod(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 ///
 /// Notes:
 ///  * Not all layouts/methods have icons, so you should assume this will return nil at some point
-private func keycodes_getIcon(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func keycodes_getIcon(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TSTRING)
     let sourceName = lua_tovalue(L, at: 1) as! String
     let layouts = getAllLayouts()
@@ -589,66 +590,48 @@ private func keycodes_getIcon(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 1
 }
 
-// MARK: - C-callable wrappers
-
-private let keycodes_newcallback_wrapper: lua_CFunction = { L in keycodes_newcallback(L) }
-private let keycodes_userdata_tostring_wrapper: lua_CFunction = { L in keycodes_userdata_tostring(L) }
-private let keycodes_callback_gc_wrapper: lua_CFunction = { L in keycodes_callback_gc(L) }
-private let keycodes_callback_stop_wrapper: lua_CFunction = { L in keycodes_callback_stop(L) }
-private let keycodes_cachemap_wrapper: lua_CFunction = { L in keycodes_cachemap(L) }
-private let keycodes_currentLayout_wrapper: lua_CFunction = { L in keycodes_currentLayout(L) }
-private let keycodes_currentLayoutIcon_wrapper: lua_CFunction = { L in keycodes_currentLayoutIcon(L) }
-private let keycodes_currentMethod_wrapper: lua_CFunction = { L in keycodes_currentMethod(L) }
-private let keycodes_layouts_wrapper: lua_CFunction = { L in keycodes_layouts(L) }
-private let keycodes_methods_wrapper: lua_CFunction = { L in keycodes_methods(L) }
-private let keycodes_setLayout_wrapper: lua_CFunction = { L in keycodes_setLayout(L) }
-private let keycodes_setMethod_wrapper: lua_CFunction = { L in keycodes_setMethod(L) }
-private let keycodes_getIcon_wrapper: lua_CFunction = { L in keycodes_getIcon(L) }
-private let keycodes_sourceID_wrapper: lua_CFunction = { L in keycodes_sourceID(L) }
-
-// MARK: - Registration Tables
-
-private var callbacklib: [luaL_Reg] = [
-    // instance methods
-    luaL_Reg(name: strdup("_stop"), func: keycodes_callback_stop_wrapper),
-    // metamethods
-    luaL_Reg(name: strdup("__tostring"), func: keycodes_userdata_tostring_wrapper),
-    luaL_Reg(name: strdup("__gc"), func: keycodes_callback_gc_wrapper),
-    luaL_Reg(name: nil, func: nil),
-]
-
-private var keycodeslib: [luaL_Reg] = [
-    // module methods
-    luaL_Reg(name: strdup("_newcallback"), func: keycodes_newcallback_wrapper),
-    luaL_Reg(name: strdup("_cachemap"), func: keycodes_cachemap_wrapper),
-    luaL_Reg(name: strdup("currentLayout"), func: keycodes_currentLayout_wrapper),
-    luaL_Reg(name: strdup("currentLayoutIcon"), func: keycodes_currentLayoutIcon_wrapper),
-    luaL_Reg(name: strdup("currentMethod"), func: keycodes_currentMethod_wrapper),
-    luaL_Reg(name: strdup("layouts"), func: keycodes_layouts_wrapper),
-    luaL_Reg(name: strdup("methods"), func: keycodes_methods_wrapper),
-    luaL_Reg(name: strdup("setLayout"), func: keycodes_setLayout_wrapper),
-    luaL_Reg(name: strdup("setMethod"), func: keycodes_setMethod_wrapper),
-    luaL_Reg(name: strdup("iconForLayoutOrMethod"), func: keycodes_getIcon_wrapper),
-    luaL_Reg(name: strdup("currentSourceID"), func: keycodes_sourceID_wrapper),
-    luaL_Reg(name: nil, func: nil),
-]
-
 @_cdecl("luaopen_hs_libkeycodes")
 public func luaopen_hs_libkeycodes(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    // Create ref table in registry
-    lua_newtable(L)
-    refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+    runEntryPoint(L) { L in
+        // Create ref table in registry
+        lua_newtable(L)
+        refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
 
-    // Register userdata metatable
-    luaL_newmetatable(L, USERDATA_TAG)
-    lua_pushvalue(L, -1)
-    lua_setfield(L, -2, "__index")
-    luaL_setfuncs(L, &callbacklib, 0)
-    lua_pop(L, 1)
+        // Register userdata metatable
+        luaL_newmetatable(L, USERDATA_TAG)
+        lua_pushvalue(L, -1)
+        lua_setfield(L, -2, "__index")
+        L.push(keycodes_callback_stop)
+        lua_setfield(L, -2, "_stop")
+        L.push(keycodes_userdata_tostring)
+        lua_setfield(L, -2, "__tostring")
+        L.push(keycodes_callback_gc)
+        lua_setfield(L, -2, "__gc")
+        lua_pop(L, 1)
 
-    // Create module table
-    lua_createtable(L, 0, Int32(keycodeslib.count - 1))
-    luaL_setfuncs(L, &keycodeslib, 0)
-
-    return 1
+        // Create module table
+        lua_createtable(L, 0, 11)
+        L.push(keycodes_newcallback)
+        lua_setfield(L, -2, "_newcallback")
+        lua_pushcclosure(L, keycodes_cachemap, 0)
+        lua_setfield(L, -2, "_cachemap")
+        L.push(keycodes_currentLayout)
+        lua_setfield(L, -2, "currentLayout")
+        L.push(keycodes_currentLayoutIcon)
+        lua_setfield(L, -2, "currentLayoutIcon")
+        L.push(keycodes_currentMethod)
+        lua_setfield(L, -2, "currentMethod")
+        L.push(keycodes_layouts)
+        lua_setfield(L, -2, "layouts")
+        L.push(keycodes_methods)
+        lua_setfield(L, -2, "methods")
+        L.push(keycodes_setLayout)
+        lua_setfield(L, -2, "setLayout")
+        L.push(keycodes_setMethod)
+        lua_setfield(L, -2, "setMethod")
+        L.push(keycodes_getIcon)
+        lua_setfield(L, -2, "iconForLayoutOrMethod")
+        L.push(keycodes_sourceID)
+        lua_setfield(L, -2, "currentSourceID")
+    }
 }

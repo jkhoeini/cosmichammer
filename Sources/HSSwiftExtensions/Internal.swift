@@ -1,5 +1,6 @@
 import Cocoa
 import CLua
+import Lua
 import Carbon
 
 private let USERDATA_TAG = "hs.hints.hint"
@@ -162,7 +163,7 @@ private func new_hint(_ L: UnsafeMutablePointer<lua_State>!, _ win: HintWindow) 
 
 // MARK: - Module functions
 
-private func hint_close(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func hint_close(_ L: LuaState) throws -> CInt {
     let hint = get_hint_arg(L, 1)
     hint.close()
     lua_pushnil(L)
@@ -170,20 +171,20 @@ private func hint_close(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 0
 }
 
-private func hint_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func hint_gc(_ L: LuaState) throws -> CInt {
     guard let ptr = luaL_testudata(L, 1, USERDATA_TAG) else { return 0 }
     Unmanaged<HintWindow>.fromOpaque(ptr.load(as: UnsafeRawPointer.self)).release()
     return 0
 }
 
-private func hint_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func hint_eq(_ L: LuaState) throws -> CInt {
     let a = get_hint_arg(L, 1)
     let b = get_hint_arg(L, 2)
     lua_pushboolean(L, a === b ? 1 : 0)
     return 1
 }
 
-private func hints_test(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func hints_test(_ L: LuaState) throws -> CInt {
     let win = HintWindow(point: NSMakePoint(1000, 200), text: "J",
                          forApp: "com.kapeli.dash",
                          onScreen: NSScreen.main!,
@@ -192,7 +193,7 @@ private func hints_test(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 1
 }
 
-private func hints_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func hints_new(_ L: LuaState) throws -> CInt {
     var fontName: String? = nil
     var fontSize: CGFloat = 0.0
 
@@ -217,42 +218,35 @@ private func hints_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 1
 }
 
-private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func userdata_tostring(_ L: LuaState) throws -> CInt {
     let desc = "\(USERDATA_TAG): (\(String(describing: lua_topointer(L, 1)!)))"
     lua_pushstring(L, desc)
     return 1
 }
 
-// MARK: - Lua registration tables
-
-private var hintslib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("test"), func: hints_test),
-    luaL_Reg(name: strdup("new"), func: hints_new),
-    luaL_Reg(name: nil, func: nil),
-]
-
-private var hints_metalib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("__eq"), func: hint_eq),
-    luaL_Reg(name: strdup("__gc"), func: hint_gc),
-    luaL_Reg(name: strdup("__tostring"), func: userdata_tostring),
-    luaL_Reg(name: strdup("close"), func: hint_close),
-    luaL_Reg(name: nil, func: nil),
-]
-
 // MARK: - Entry point
 
 @_cdecl("luaopen_hs_libhints")
 public func luaopen_hs_libhints(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    // Register userdata metatable
-    luaL_newmetatable(L, USERDATA_TAG)
-    lua_pushvalue(L, -1)
-    lua_setfield(L, -2, "__index")  // mt.__index = mt
-    luaL_setfuncs(L, &hints_metalib, 0)
-    lua_pop(L, 1)
+    runEntryPoint(L) { L in
+        // Register userdata metatable
+        luaL_newmetatable(L, USERDATA_TAG)
+        lua_pushvalue(L, -1)
+        lua_setfield(L, -2, "__index")
+        L.push(hint_eq)
+        lua_setfield(L, -2, "__eq")
+        L.push(hint_gc)
+        lua_setfield(L, -2, "__gc")
+        L.push(userdata_tostring)
+        lua_setfield(L, -2, "__tostring")
+        L.push(hint_close)
+        lua_setfield(L, -2, "close")
+        lua_pop(L, 1)
 
-    // Create module table
-    lua_createtable(L, 0, Int32(hintslib.count - 1))
-    luaL_setfuncs(L, &hintslib, 0)
-
-    return 1
+        lua_createtable(L, 0, 2)
+        L.push(hints_test)
+        lua_setfield(L, -2, "test")
+        L.push(hints_new)
+        lua_setfield(L, -2, "new")
+    }
 }

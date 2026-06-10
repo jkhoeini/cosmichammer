@@ -1,5 +1,6 @@
 import Cocoa
 import CLua
+import Lua
 import os.log
 
 // MARK: - HSjson Helper Class
@@ -89,7 +90,7 @@ class HSjson {
 ///
 /// Notes:
 ///  * This is useful for storing some of the more complex lua table structures as a persistent setting (see `hs.settings`)
-private func json_encode(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func json_encode(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TTABLE)
 
     let jsonManager = HSjson()
@@ -118,7 +119,7 @@ private func json_encode(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Notes:
 ///  * This is useful for retrieving some of the more complex lua table structures as a persistent setting (see `hs.settings`)
-private func json_decode(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func json_decode(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TSTRING)
 
     let jsonManager = HSjson()
@@ -145,7 +146,7 @@ private func json_decode(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * `true` if successful otherwise `false` if an error has occurred
-private func json_write(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func json_write(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TTABLE)
     let pathStr = String(cString: luaL_checkstring(L, 2))
 
@@ -171,7 +172,7 @@ private func json_write(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * A table representing the supplied JSON data, or `nil` if an error occurs.
-private func json_read(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func json_read(_ L: LuaState) throws -> CInt {
     let pathStr = String(cString: luaL_checkstring(L, 1))
 
     let jsonManager = HSjson()
@@ -185,26 +186,17 @@ private func json_read(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 // MARK: - Module Registration
 
-// C-callable wrappers for luaL_Reg
-private let json_encode_wrapper: lua_CFunction = { L in json_encode(L) }
-private let json_decode_wrapper: lua_CFunction = { L in json_decode(L) }
-private let json_read_wrapper: lua_CFunction = { L in json_read(L) }
-private let json_write_wrapper: lua_CFunction = { L in json_write(L) }
-
-// Functions for returned object when module loads
-private var jsonLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("encode"), func: json_encode_wrapper),
-    luaL_Reg(name: strdup("decode"), func: json_decode_wrapper),
-    luaL_Reg(name: strdup("read"), func: json_read_wrapper),
-    luaL_Reg(name: strdup("write"), func: json_write_wrapper),
-    luaL_Reg(name: nil, func: nil),
-]
-
 @_cdecl("luaopen_hs_libjson")
 public func luaopen_hs_libjson(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    var lib = jsonLib
-    lua_createtable(L, 0, Int32(lib.count - 1))
-    luaL_setfuncs(L, &lib, 0)
-
-    return 1
+    runEntryPoint(L) { L in
+        lua_createtable(L, 0, 4)
+        L.push(json_encode)
+        lua_setfield(L, -2, "encode")
+        L.push(json_decode)
+        lua_setfield(L, -2, "decode")
+        L.push(json_read)
+        lua_setfield(L, -2, "read")
+        L.push(json_write)
+        lua_setfield(L, -2, "write")
+    }
 }

@@ -1,5 +1,6 @@
 import Cocoa
 import CLua
+import Lua
 
 // MARK: - Constants
 
@@ -169,7 +170,7 @@ private func pushNSLocale(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any) -> 
 ///
 /// Notes:
 ///  * these values can be used with [hs.host.locale.details](#details) to get details for a specific locale.
-private func locale_availableLocaleIdentifiers(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func locale_availableLocaleIdentifiers(_ L: LuaState) throws -> CInt {
     let locales = NSLocale.availableLocaleIdentifiers
     lua_pushany(L, locales)
     return 1
@@ -184,7 +185,7 @@ private func locale_availableLocaleIdentifiers(_ L: UnsafeMutablePointer<lua_Sta
 ///
 /// Returns:
 ///  * an array table of strings specifying the user's preferred languages as string identifiers.
-private func locale_preferredLanguages(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func locale_preferredLanguages(_ L: LuaState) throws -> CInt {
     let languages = NSLocale.preferredLanguages
     lua_pushany(L, languages)
     return 1
@@ -202,7 +203,7 @@ private func locale_preferredLanguages(_ L: UnsafeMutablePointer<lua_State>!) ->
 ///
 /// Notes:
 ///  * this value can be used with [hs.host.locale.details](#details) to get details for the returned locale.
-private func locale_currentIdentifier(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func locale_currentIdentifier(_ L: LuaState) throws -> CInt {
     lua_pushstring(L, NSLocale.current.identifier)
     return 1
 }
@@ -240,7 +241,7 @@ private func locale_currentIdentifier(_ L: UnsafeMutablePointer<lua_State>!) -> 
 ///
 /// Notes:
 ///  * If you specify a locale identifier as an argument, it should be based on one of the strings returned by [hs.host.locale.availableLocales](#availableLocales).
-private func locale_localeInformation(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func locale_localeInformation(_ L: LuaState) throws -> CInt {
     let theLocale: NSLocale
     if lua_gettop(L) == 0 || lua_type(L, 1) == LUA_TNIL {
         theLocale = NSLocale.current as NSLocale
@@ -267,7 +268,7 @@ private func locale_localeInformation(_ L: UnsafeMutablePointer<lua_State>!) -> 
 ///
 /// Notes:
 ///  * The `localeCode` and optional `baseLocaleCode` must be one of the strings returned by [hs.host.locale.availableLocales](#availableLocales).
-private func locale_localizedString(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func locale_localizedString(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TSTRING)
 
     let availableLocales = NSLocale.availableLocaleIdentifiers
@@ -298,7 +299,7 @@ private func locale_localizedString(_ L: UnsafeMutablePointer<lua_State>!) -> In
     return 2
 }
 
-private func locale_registerCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func locale_registerCallback(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TFUNCTION)
     luaL_unref(L, LUA_REGISTRYINDEX_VALUE, callbackRef) // should be unnecessary, but just in case
     callbackRef = LUA_NOREF
@@ -309,7 +310,7 @@ private func locale_registerCallback(_ L: UnsafeMutablePointer<lua_State>!) -> I
 
 // MARK: - Cosmic Hammer/Lua Infrastructure
 
-private func meta_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func meta_gc(_ L: LuaState) throws -> CInt {
     luaL_unref(L, LUA_REGISTRYINDEX_VALUE, callbackRef)
     callbackRef = LUA_NOREF
     observerOfChanges?.stop()
@@ -317,45 +318,33 @@ private func meta_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 0
 }
 
-// MARK: - C Callback Wrappers
-
-private let locale_availableLocaleIdentifiers_C: @convention(c) (UnsafeMutablePointer<lua_State>?) -> Int32 = { L in locale_availableLocaleIdentifiers(L) }
-private let locale_localeInformation_C: @convention(c) (UnsafeMutablePointer<lua_State>?) -> Int32 = { L in locale_localeInformation(L) }
-private let locale_currentIdentifier_C: @convention(c) (UnsafeMutablePointer<lua_State>?) -> Int32 = { L in locale_currentIdentifier(L) }
-private let locale_preferredLanguages_C: @convention(c) (UnsafeMutablePointer<lua_State>?) -> Int32 = { L in locale_preferredLanguages(L) }
-private let locale_localizedString_C: @convention(c) (UnsafeMutablePointer<lua_State>?) -> Int32 = { L in locale_localizedString(L) }
-private let locale_registerCallback_C: @convention(c) (UnsafeMutablePointer<lua_State>?) -> Int32 = { L in locale_registerCallback(L) }
-private let meta_gc_C: @convention(c) (UnsafeMutablePointer<lua_State>?) -> Int32 = { L in meta_gc(L) }
-
 // MARK: - Module Registration
-
-private var moduleLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("availableLocales"),   func: locale_availableLocaleIdentifiers_C),
-    luaL_Reg(name: strdup("details"),            func: locale_localeInformation_C),
-    luaL_Reg(name: strdup("current"),            func: locale_currentIdentifier_C),
-    luaL_Reg(name: strdup("preferredLanguages"), func: locale_preferredLanguages_C),
-    luaL_Reg(name: strdup("localizedString"),    func: locale_localizedString_C),
-    luaL_Reg(name: strdup("_registerCallback"),  func: locale_registerCallback_C),
-    luaL_Reg(name: nil, func: nil),
-]
-
-private var module_metaLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("__gc"), func: meta_gc_C),
-    luaL_Reg(name: nil, func: nil),
-]
 
 @_cdecl("luaopen_hs_libhost_locale")
 public func luaopen_hs_libhost_locale(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    // Create module table
-    lua_createtable(L, 0, Int32(moduleLib.count - 1))
-    luaL_setfuncs(L, &moduleLib, 0)
+    runEntryPoint(L) { L in
+        // Create module table
+        lua_createtable(L, 0, 6)
+        L.push(locale_availableLocaleIdentifiers)
+        lua_setfield(L, -2, "availableLocales")
+        L.push(locale_localeInformation)
+        lua_setfield(L, -2, "details")
+        L.push(locale_currentIdentifier)
+        lua_setfield(L, -2, "current")
+        L.push(locale_preferredLanguages)
+        lua_setfield(L, -2, "preferredLanguages")
+        L.push(locale_localizedString)
+        lua_setfield(L, -2, "localizedString")
+        L.push(locale_registerCallback)
+        lua_setfield(L, -2, "_registerCallback")
 
-    // Set module metatable for __gc
-    lua_createtable(L, 0, 1)
-    luaL_setfuncs(L, &module_metaLib, 0)
-    lua_setmetatable(L, -2)
+        // Set module metatable for __gc
+        lua_createtable(L, 0, 1)
+        L.push(meta_gc)
+        lua_setfield(L, -2, "__gc")
+        lua_setmetatable(L, -2)
 
-    observerOfChanges = HSLocaleChangeObserver()
-    observerOfChanges?.start()
-    return 1
+        observerOfChanges = HSLocaleChangeObserver()
+        observerOfChanges?.start()
+    }
 }

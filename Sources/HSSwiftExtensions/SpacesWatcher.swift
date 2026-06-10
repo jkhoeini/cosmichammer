@@ -1,5 +1,6 @@
 import Foundation
 import CLua
+import Lua
 import Cocoa
 import CoreGraphics
 
@@ -61,7 +62,7 @@ private class SpaceWatcher: NSObject {
 ///
 /// Returns:
 ///  * An `hs.spaces.watcher` object
-private func space_watcher_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func space_watcher_new(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TFUNCTION)
 
     let spaceWatcher = lua_newuserdata(L, MemoryLayout<SpaceWatcherData>.size)!
@@ -89,7 +90,7 @@ private func space_watcher_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * The watcher object
-private func space_watcher_start(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func space_watcher_start(_ L: LuaState) throws -> CInt {
     let spaceWatcher = luaL_checkudata(L, 1, USERDATA_TAG)!
         .assumingMemoryBound(to: SpaceWatcherData.self)
     lua_settop(L, 1)
@@ -124,7 +125,7 @@ private func space_watcher_start(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 ///
 /// Returns:
 ///  * The watcher object
-private func space_watcher_stop(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func space_watcher_stop(_ L: LuaState) throws -> CInt {
     let spaceWatcher = luaL_checkudata(L, 1, USERDATA_TAG)!
         .assumingMemoryBound(to: SpaceWatcherData.self)
     lua_settop(L, 1)
@@ -142,11 +143,11 @@ private func space_watcher_stop(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
     return 1
 }
 
-private func space_watcher_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func space_watcher_gc(_ L: LuaState) throws -> CInt {
     let spaceWatcher = luaL_checkudata(L, 1, USERDATA_TAG)!
         .assumingMemoryBound(to: SpaceWatcherData.self)
 
-    _ = space_watcher_stop(L)
+    _ = try space_watcher_stop(L)
     lua_pop(L, 1)  // pop stop's self-return
 
     luaL_unref(L, LUA_REGISTRYINDEX_VALUE, spaceWatcher.pointee.fn)
@@ -157,38 +158,33 @@ private func space_watcher_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 0
 }
 
-private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func userdata_tostring(_ L: LuaState) throws -> CInt {
     lua_pushstring(L, "\(USERDATA_TAG): (\(lua_topointer(L, 1)!))")
     return 1
 }
 
 // MARK: - Module Registration
 
-private var watcherlib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("new"), func: space_watcher_new),
-    luaL_Reg(name: nil, func: nil),
-]
-
-private var watcher_objectlib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("start"), func: space_watcher_start),
-    luaL_Reg(name: strdup("stop"), func: space_watcher_stop),
-    luaL_Reg(name: strdup("__tostring"), func: userdata_tostring),
-    luaL_Reg(name: strdup("__gc"), func: space_watcher_gc),
-    luaL_Reg(name: nil, func: nil),
-]
-
 @_cdecl("luaopen_hs_libspaces_watcher")
 public func luaopen_hs_libspaces_watcher(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    // Register userdata metatable
-    luaL_newmetatable(L, USERDATA_TAG)
-    lua_pushvalue(L, -1)
-    lua_setfield(L, -2, "__index")  // mt.__index = mt
-    luaL_setfuncs(L, &watcher_objectlib, 0)
-    lua_pop(L, 1)
+    runEntryPoint(L) { L in
+        // Register userdata metatable
+        luaL_newmetatable(L, USERDATA_TAG)
+        lua_pushvalue(L, -1)
+        lua_setfield(L, -2, "__index")  // mt.__index = mt
+        L.push(space_watcher_start)
+        lua_setfield(L, -2, "start")
+        L.push(space_watcher_stop)
+        lua_setfield(L, -2, "stop")
+        L.push(userdata_tostring)
+        lua_setfield(L, -2, "__tostring")
+        L.push(space_watcher_gc)
+        lua_setfield(L, -2, "__gc")
+        lua_pop(L, 1)
 
-    // Create module table
-    lua_createtable(L, 0, Int32(watcherlib.count - 1))
-    luaL_setfuncs(L, &watcherlib, 0)
-
-    return 1
+        // Create module table
+        lua_createtable(L, 0, 1)
+        L.push(space_watcher_new)
+        lua_setfield(L, -2, "new")
+    }
 }

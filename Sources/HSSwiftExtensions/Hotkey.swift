@@ -1,5 +1,6 @@
 import Cocoa
 import CLua
+import Lua
 import Carbon
 import os.log
 
@@ -77,7 +78,7 @@ private struct hotkey_t {
 
 // MARK: - Hotkey Functions
 
-private func hotkey_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func hotkey_new(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TTABLE)
     let keycode = UInt32(luaL_checkinteger(L, 2))
     let hasDown = !lua_isnoneornil(L, 3)
@@ -154,7 +155,7 @@ private func hotkey_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 1
 }
 
-private func hotkey_systemAssigned(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func hotkey_systemAssigned(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TTABLE)
     let keycode = UInt32(luaL_checkinteger(L, 2))
     var mods: UInt32 = 0
@@ -202,7 +203,7 @@ private func hotkey_systemAssigned(_ L: UnsafeMutablePointer<lua_State>!) -> Int
     return 1
 }
 
-private func hotkey_enable(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func hotkey_enable(_ L: LuaState) throws -> CInt {
     let hotkey = luaL_checkudata(L, 1, USERDATA_TAG)!.bindMemory(to: hotkey_t.self, capacity: 1)
     lua_settop(L, 1)
 
@@ -250,14 +251,14 @@ private func stop(_ L: UnsafeMutablePointer<lua_State>!, _ hotkey: UnsafeMutable
     keyRepeatManager?.stopTimer()
 }
 
-private func hotkey_disable(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func hotkey_disable(_ L: LuaState) throws -> CInt {
     let hotkey = luaL_checkudata(L, 1, USERDATA_TAG)!.bindMemory(to: hotkey_t.self, capacity: 1)
     stop(L, hotkey)
     lua_pushvalue(L, 1)
     return 1
 }
 
-private func hotkey_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func hotkey_gc(_ L: LuaState) throws -> CInt {
     let hotkey = luaL_checkudata(L, 1, USERDATA_TAG)!.bindMemory(to: hotkey_t.self, capacity: 1)
 
     stop(L, hotkey)
@@ -341,7 +342,7 @@ private let hotkey_callback: EventHandlerProcPtr = { (inHandlerCallRef, inEvent,
 
 // MARK: - Meta Functions
 
-private func meta_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func meta_gc(_ L: LuaState) throws -> CInt {
     if let handler = eventhandler {
         RemoveEventHandler(handler)
     }
@@ -351,7 +352,7 @@ private func meta_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 0
 }
 
-private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func userdata_tostring(_ L: LuaState) throws -> CInt {
     let hotkey = luaL_checkudata(L, 1, USERDATA_TAG)!.bindMemory(to: hotkey_t.self, capacity: 1)
     let ptrStr = String(describing: lua_topointer(L, 1)!)
     let str = "\(USERDATA_TAG): keycode: \(hotkey.pointee.keycode), mods: 0x\(String(format: "%04x", hotkey.pointee.mods)) (\(ptrStr))"
@@ -359,78 +360,60 @@ private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 1
 }
 
-// MARK: - C Callback Wrappers
-
-private let hotkey_new_C: @convention(c) (UnsafeMutablePointer<lua_State>?) -> Int32 = { L in hotkey_new(L) }
-private let hotkey_systemAssigned_C: @convention(c) (UnsafeMutablePointer<lua_State>?) -> Int32 = { L in hotkey_systemAssigned(L) }
-private let hotkey_enable_C: @convention(c) (UnsafeMutablePointer<lua_State>?) -> Int32 = { L in hotkey_enable(L) }
-private let hotkey_disable_C: @convention(c) (UnsafeMutablePointer<lua_State>?) -> Int32 = { L in hotkey_disable(L) }
-private let hotkey_gc_C: @convention(c) (UnsafeMutablePointer<lua_State>?) -> Int32 = { L in hotkey_gc(L) }
-private let meta_gc_C: @convention(c) (UnsafeMutablePointer<lua_State>?) -> Int32 = { L in meta_gc(L) }
-private let userdata_tostring_C: @convention(c) (UnsafeMutablePointer<lua_State>?) -> Int32 = { L in userdata_tostring(L) }
-
 // MARK: - Module Registration
-
-private var hotkeylib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("_new"), func: hotkey_new_C),
-    luaL_Reg(name: strdup("systemAssigned"), func: hotkey_systemAssigned_C),
-    luaL_Reg(name: nil, func: nil),
-]
-
-private var metalib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("__gc"), func: meta_gc_C),
-    luaL_Reg(name: nil, func: nil),
-]
-
-private var hotkey_objectlib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("enable"), func: hotkey_enable_C),
-    luaL_Reg(name: strdup("disable"), func: hotkey_disable_C),
-    luaL_Reg(name: strdup("__tostring"), func: userdata_tostring_C),
-    luaL_Reg(name: strdup("__gc"), func: hotkey_gc_C),
-    luaL_Reg(name: nil, func: nil),
-]
 
 @_cdecl("luaopen_hs_libhotkey")
 public func luaopen_hs_libhotkey(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    if hotkeys == nil {
-        hotkeys = NSMutableDictionary()
+    runEntryPoint(L) { L in
+        if hotkeys == nil {
+            hotkeys = NSMutableDictionary()
+        }
+        keyRepeatManager = HSKeyRepeatManager()
+
+        // Create ref table in registry
+        lua_newtable(L)
+        refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+
+        // Register userdata metatable
+        luaL_newmetatable(L, USERDATA_TAG)
+        lua_pushvalue(L, -1)
+        lua_setfield(L, -2, "__index")
+        L.push(hotkey_enable)
+        lua_setfield(L, -2, "enable")
+        L.push(hotkey_disable)
+        lua_setfield(L, -2, "disable")
+        L.push(userdata_tostring)
+        lua_setfield(L, -2, "__tostring")
+        L.push(hotkey_gc)
+        lua_setfield(L, -2, "__gc")
+        lua_pop(L, 1)
+
+        // Create module table
+        lua_createtable(L, 0, 2)
+        L.push(hotkey_new)
+        lua_setfield(L, -2, "_new")
+        L.push(hotkey_systemAssigned)
+        lua_setfield(L, -2, "systemAssigned")
+
+        // Set module metatable (for __gc)
+        lua_createtable(L, 0, 1)
+        L.push(meta_gc)
+        lua_setfield(L, -2, "__gc")
+        lua_setmetatable(L, -2)
+
+        // watch for hotkey events
+        var hotKeyPressedSpec: [EventTypeSpec] = [
+            EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed)),
+            EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyReleased)),
+        ]
+
+        InstallEventHandler(
+            GetEventDispatcherTarget(),
+            hotkey_callback,
+            hotKeyPressedSpec.count,
+            &hotKeyPressedSpec,
+            nil,
+            &eventhandler
+        )
     }
-    keyRepeatManager = HSKeyRepeatManager()
-
-    // Create ref table in registry
-    lua_newtable(L)
-    refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
-
-    // Register userdata metatable
-    luaL_newmetatable(L, USERDATA_TAG)
-    lua_pushvalue(L, -1)
-    lua_setfield(L, -2, "__index")  // mt.__index = mt
-    luaL_setfuncs(L, &hotkey_objectlib, 0)
-    lua_pop(L, 1)
-
-    // Create module table
-    lua_createtable(L, 0, Int32(hotkeylib.count - 1))
-    luaL_setfuncs(L, &hotkeylib, 0)
-
-    // Set module metatable (for __gc)
-    lua_createtable(L, 0, Int32(metalib.count - 1))
-    luaL_setfuncs(L, &metalib, 0)
-    lua_setmetatable(L, -2)
-
-    // watch for hotkey events
-    var hotKeyPressedSpec: [EventTypeSpec] = [
-        EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed)),
-        EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyReleased)),
-    ]
-
-    InstallEventHandler(
-        GetEventDispatcherTarget(),
-        hotkey_callback,
-        hotKeyPressedSpec.count,
-        &hotKeyPressedSpec,
-        nil,
-        &eventhandler
-    )
-
-    return 1
 }

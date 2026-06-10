@@ -294,14 +294,14 @@ class HSWebViewView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                 lua_pop(L, 1)
                 os_log(.error, "%{public}s", "hs.webview:policyCallback() newWindow callback error: \(errorMsg)")
 
-                lua_pushcfunction(L, wv_userdata_gc)
+                L.push(wv_userdata_gc)
                 wv_pushAny(L, newWindow)
                 if lua_pcall(L, 1, 0, 0) != LUA_OK { lua_pop(L, 1) }
                 return nil
             } else {
                 if lua_toboolean(L, -1) == 0 {
                     lua_pop(L, 1)
-                    lua_pushcfunction(L, wv_userdata_gc)
+                    L.push(wv_userdata_gc)
                     wv_pushAny(L, newWindow)
                     if lua_pcall(L, 1, 0, 0) != LUA_OK { lua_pop(L, 1) }
                     return nil

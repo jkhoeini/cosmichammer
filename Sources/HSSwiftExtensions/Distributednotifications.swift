@@ -1,5 +1,6 @@
 import Foundation
 import CLua
+import Lua
 import Cocoa
 
 private let USERDATA_TAG = "hs.distributednotifications"
@@ -41,7 +42,7 @@ private class HSDistNotWatcher: NSObject {
 ///
 /// Notes:
 ///  * On Catalina and above, it is no longer possible to observe all notifications - the `name` parameter is effectively now required. See https://mjtsai.com/blog/2019/10/04/nsdistributednotificationcenter-no-longer-supports-nil-names/
-private func distnot_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func distnot_new(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TFUNCTION)
 
     let name: String? = lua_isnoneornil(L, 2) ? nil : (lua_type(L, 2) == LUA_TSTRING ? String(cString: lua_tostring(L, 2)!) : nil)
@@ -79,9 +80,9 @@ private func distnot_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * None
-private func distnot_post(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func distnot_post(_ L: LuaState) throws -> CInt {
     guard lua_type(L, 1) == LUA_TSTRING else {
-        return luaL_error(L, "expected string for argument 1")
+        throw LuaCallError("expected string for argument 1")
     }
 
     let noteName = String(cString: lua_tostring(L, 1)!)
@@ -108,7 +109,7 @@ private func distnot_post(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * The `hs.distributednotifications` object
-private func distnot_start(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func distnot_start(_ L: LuaState) throws -> CInt {
     let userData = luaL_checkudata(L, 1, USERDATA_TAG)!.assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
     let watcher = Unmanaged<HSDistNotWatcher>.fromOpaque(userData.pointee!).takeUnretainedValue()
 
@@ -135,7 +136,7 @@ private func distnot_start(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * The `hs.distributednotifications` object
-private func distnot_stop(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func distnot_stop(_ L: LuaState) throws -> CInt {
     let userData = luaL_checkudata(L, 1, USERDATA_TAG)!.assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
     let watcher = Unmanaged<HSDistNotWatcher>.fromOpaque(userData.pointee!).takeUnretainedValue()
 
@@ -149,7 +150,7 @@ private func distnot_stop(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 // MARK: - Cosmic Hammer Infrastructure
 
-private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func userdata_tostring(_ L: LuaState) throws -> CInt {
     let userData = luaL_checkudata(L, 1, USERDATA_TAG)!.assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
     let watcher = Unmanaged<HSDistNotWatcher>.fromOpaque(userData.pointee!).takeUnretainedValue()
 
@@ -158,7 +159,7 @@ private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 1
 }
 
-private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func userdata_gc(_ L: LuaState) throws -> CInt {
     let userData = luaL_checkudata(L, 1, USERDATA_TAG)!.assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
     let watcher = Unmanaged<HSDistNotWatcher>.fromOpaque(userData.pointee!).takeRetainedValue()
 
@@ -176,33 +177,28 @@ private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 0
 }
 
-private var distributednotificationslib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("new"), func: distnot_new),
-    luaL_Reg(name: strdup("post"), func: distnot_post),
-    luaL_Reg(name: nil, func: nil),
-]
-
-// Metatable for userdata objects
-private var userdata_metaLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("start"), func: distnot_start),
-    luaL_Reg(name: strdup("stop"), func: distnot_stop),
-    luaL_Reg(name: strdup("__tostring"), func: userdata_tostring),
-    luaL_Reg(name: strdup("__gc"), func: userdata_gc),
-    luaL_Reg(name: nil, func: nil),
-]
-
 @_cdecl("luaopen_hs_libdistributednotifications")
 public func luaopen_hs_libdistributednotifications(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    // Register userdata metatable
-    luaL_newmetatable(L, USERDATA_TAG)
-    lua_pushvalue(L, -1)
-    lua_setfield(L, -2, "__index")  // mt.__index = mt
-    luaL_setfuncs(L, &userdata_metaLib, 0)
-    lua_pop(L, 1)
+    runEntryPoint(L) { L in
+        // Register userdata metatable
+        luaL_newmetatable(L, USERDATA_TAG)
+        lua_pushvalue(L, -1)
+        lua_setfield(L, -2, "__index")  // mt.__index = mt
+        L.push(distnot_start)
+        lua_setfield(L, -2, "start")
+        L.push(distnot_stop)
+        lua_setfield(L, -2, "stop")
+        L.push(userdata_tostring)
+        lua_setfield(L, -2, "__tostring")
+        L.push(userdata_gc)
+        lua_setfield(L, -2, "__gc")
+        lua_pop(L, 1)
 
-    // Create module table
-    lua_createtable(L, 0, Int32(distributednotificationslib.count - 1))
-    luaL_setfuncs(L, &distributednotificationslib, 0)
-
-    return 1
+        // Create module table
+        lua_createtable(L, 0, 2)
+        L.push(distnot_new)
+        lua_setfield(L, -2, "new")
+        L.push(distnot_post)
+        lua_setfield(L, -2, "post")
+    }
 }

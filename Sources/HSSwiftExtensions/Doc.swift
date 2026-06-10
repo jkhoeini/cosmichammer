@@ -1,5 +1,6 @@
 import Cocoa
 import CLua
+import Lua
 import os.log
 
 private let USERDATA_TAG = "hs.doc" // we're using it as a module tag for console messages
@@ -233,7 +234,7 @@ func getPosInTreeFor(_ target: NSString) -> NSMutableDictionary? {
 // MARK: - Module Functions
 
 // documented in init.lua
-private func doc_help(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func doc_help(_ L: LuaState) throws -> CInt {
     var identifier: NSString = ""
     if lua_gettop(L) == 1 && lua_type(L, 1) == LUA_TSTRING {
         identifier = lua_tovalue(L, at: 1) as! NSString
@@ -311,7 +312,7 @@ private func doc_help(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Notes:
 ///  * this function just registers the documentation file; it won't actually be loaded and parsed until [hs.doc.help](#help) is invoked.
-private func doc_registerJSONFile(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func doc_registerJSONFile(_ L: LuaState) throws -> CInt {
     var path = String(cString: luaL_checkstring(L, 1)) as NSString
 
     // some tricks used to figure out if the docs.json file exists duplicate final "/" before "docs.json"
@@ -345,7 +346,7 @@ private func doc_registerJSONFile(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
 ///
 /// Notes:
 ///  * This function requires the rebuilding of the entire documentation tree for all remaining registered files, so the next time help is queried with [hs.doc.help](#help), there may be a slight one-time delay.
-private func doc_unregisterJSONFile(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func doc_unregisterJSONFile(_ L: LuaState) throws -> CInt {
     let path = String(cString: luaL_checkstring(L, 1)) as NSString
 
     if registeredFiles[path] == nil {
@@ -372,7 +373,7 @@ private func doc_unregisterJSONFile(_ L: UnsafeMutablePointer<lua_State>!) -> In
 }
 
 // documented in init.lua
-private func doc_registeredFiles(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func doc_registeredFiles(_ L: LuaState) throws -> CInt {
 
     let sortedPaths = (registeredFiles.allKeys as! [String]).sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
     lua_pushany(L, sortedPaths as NSArray)
@@ -382,7 +383,7 @@ private func doc_registeredFiles(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 // MARK: - Internal Use Functions
 
 // returns list of children in documentTree for __index and __pairs of helper table for `help`
-private func internal_arrayOfChildren(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func internal_arrayOfChildren(_ L: LuaState) throws -> CInt {
     var identifier: NSString = ""
     if lua_gettop(L) == 1 && lua_type(L, 1) == LUA_TSTRING {
         identifier = lua_tovalue(L, at: 1) as! NSString
@@ -403,14 +404,14 @@ private func internal_arrayOfChildren(_ L: UnsafeMutablePointer<lua_State>!) -> 
 }
 
 // used by doc_help and when json being rebuilt for hsdocs
-private func internal_loadRegisteredFiles(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func internal_loadRegisteredFiles(_ L: LuaState) throws -> CInt {
 
     findUnloadedDocumentationFiles(L)
     return 0
 }
 
 // used to register lua function to trigger `hs.watchable` change counter so hsdocs knows when doc files have been updated
-private func internal_registerTriggerFunction(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func internal_registerTriggerFunction(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TFUNCTION)
 
     if refTriggerFn != LUA_NOREF && refTriggerFn != LUA_REFNIL {
@@ -426,20 +427,20 @@ private func internal_registerTriggerFunction(_ L: UnsafeMutablePointer<lua_Stat
 // MARK: - objectWrapper Constructors
 
 // returns objectWrapper for registeredFiles
-private func internal_registeredFiles(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func internal_registeredFiles(_ L: LuaState) throws -> CInt {
     lua_pushany(L, registeredFiles)
     return 1
 }
 
 // returns objectWrapper for documentationTree
-private func internal_documentationTree(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func internal_documentationTree(_ L: LuaState) throws -> CInt {
     lua_pushany(L, documentationTree)
     return 1
 }
 
 // MARK: - Cosmic Hammer/Lua Infrastructure
 
-private func meta_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func meta_gc(_ L: LuaState) throws -> CInt {
     luaL_unref(L, LUA_REGISTRYINDEX_VALUE, refTriggerFn)
 
     refTriggerFn = LUA_NOREF
@@ -452,46 +453,43 @@ private func meta_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 0
 }
 
-// Functions for returned object when module loads
-private var moduleLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("help"),               func: doc_help),
-    luaL_Reg(name: strdup("registerJSONFile"),   func: doc_registerJSONFile),
-    luaL_Reg(name: strdup("registeredFiles"),    func: doc_registeredFiles),
-    luaL_Reg(name: strdup("unregisterJSONFile"), func: doc_unregisterJSONFile),
-    luaL_Reg(name: nil, func: nil),
-]
-
-// Metatable for module, if needed
-private var module_metaLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("_children"),                func: internal_arrayOfChildren),
-    luaL_Reg(name: strdup("_loadRegisteredFiles"),     func: internal_loadRegisteredFiles),
-    luaL_Reg(name: strdup("_registerTriggerFunction"), func: internal_registerTriggerFunction),
-    luaL_Reg(name: strdup("_registeredFilesObject"),   func: internal_registeredFiles),
-    luaL_Reg(name: strdup("_documentationTreeObject"), func: internal_documentationTree),
-    luaL_Reg(name: strdup("__gc"),                     func: meta_gc),
-    luaL_Reg(name: nil, func: nil),
-]
-
 @_cdecl("luaopen_hs_libdoc")
 public func luaopen_hs_libdoc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    // Create ref table in registry
-    lua_newtable(L)
-    refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+    runEntryPoint(L) { L in
+        // Create ref table in registry
+        lua_newtable(L)
+        refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
 
-    // Create module table
-    lua_createtable(L, 0, Int32(moduleLib.count - 1))
-    luaL_setfuncs(L, &moduleLib, 0)
+        // Create module table (4 functions)
+        lua_createtable(L, 0, 4)
+        L.push(doc_help)
+        lua_setfield(L, -2, "help")
+        L.push(doc_registerJSONFile)
+        lua_setfield(L, -2, "registerJSONFile")
+        L.push(doc_registeredFiles)
+        lua_setfield(L, -2, "registeredFiles")
+        L.push(doc_unregisterJSONFile)
+        lua_setfield(L, -2, "unregisterJSONFile")
 
-    // Set module metatable (for __gc)
-    lua_createtable(L, 0, Int32(module_metaLib.count - 1))
-    luaL_setfuncs(L, &module_metaLib, 0)
-    lua_setmetatable(L, -2)
+        // Set module metatable (6 functions)
+        lua_createtable(L, 0, 6)
+        L.push(internal_arrayOfChildren)
+        lua_setfield(L, -2, "_children")
+        L.push(internal_loadRegisteredFiles)
+        lua_setfield(L, -2, "_loadRegisteredFiles")
+        L.push(internal_registerTriggerFunction)
+        lua_setfield(L, -2, "_registerTriggerFunction")
+        L.push(internal_registeredFiles)
+        lua_setfield(L, -2, "_registeredFilesObject")
+        L.push(internal_documentationTree)
+        lua_setfield(L, -2, "_documentationTreeObject")
+        L.push(meta_gc)
+        lua_setfield(L, -2, "__gc")
+        lua_setmetatable(L, -2)
 
-    registeredFiles = NSMutableDictionary()
-    // if you change this, also change it in doc_unregisterJSONFile
-    documentationTree = NSMutableDictionary(dictionary: [
-        "__type__": "root",
-    ])
-
-    return 1
+        registeredFiles = NSMutableDictionary()
+        documentationTree = NSMutableDictionary(dictionary: [
+            "__type__": "root",
+        ])
+    }
 }

@@ -1,30 +1,27 @@
 import Foundation
 import CLua
+import Lua
 import Cocoa
 
 private let USERDATA_TAG = "hs.midi"
 
-private func midi_removed(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    return luaL_error(L, "hs.midi has been removed (MIKMIDI dependency dropped)")
+private func midi_removed(_ L: LuaState) throws -> CInt {
+    throw LuaCallError("hs.midi has been removed (MIKMIDI dependency dropped)")
 }
-
-private var moduleLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("new"),              func: midi_removed),
-    luaL_Reg(name: strdup("newVirtualSource"), func: midi_removed),
-    luaL_Reg(name: strdup("devices"),          func: midi_removed),
-    luaL_Reg(name: strdup("virtualSources"),   func: midi_removed),
-    luaL_Reg(name: strdup("deviceCallback"),   func: midi_removed),
-    luaL_Reg(name: nil,                        func: nil),
-]
-
-private var module_metaLib: [luaL_Reg] = [
-    luaL_Reg(name: nil, func: nil),
-]
 
 @_cdecl("luaopen_hs_libmidi")
 func luaopen_hs_libmidi(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    // Create module table
-    lua_createtable(L, 0, Int32(moduleLib.count - 1))
-    luaL_setfuncs(L, &moduleLib, 0)
-    return 1
+    runEntryPoint(L) { L in
+        lua_createtable(L, 0, 5)
+        L.push(midi_removed)
+        lua_setfield(L, -2, "new")
+        L.push(midi_removed)
+        lua_setfield(L, -2, "newVirtualSource")
+        L.push(midi_removed)
+        lua_setfield(L, -2, "devices")
+        L.push(midi_removed)
+        lua_setfield(L, -2, "virtualSources")
+        L.push(midi_removed)
+        lua_setfield(L, -2, "deviceCallback")
+    }
 }

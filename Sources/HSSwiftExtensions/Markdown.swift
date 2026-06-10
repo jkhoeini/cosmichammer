@@ -8,6 +8,7 @@
 
 import Foundation
 import CLua
+import Lua
 import Markdown
 
 // MARK: - Mode Enum
@@ -407,10 +408,10 @@ private func convertMarkdown(_ input: String, mode: ModeType) -> String {
 ///  * The "gfm" type also includes the following extensions:
 ///   * HARD_WRAP     - line breaks are replaced with <br> entities
 ///   * SPACE_HEADERS - require a space between the `#` and the name of a header (prevents collisions with the Issues filter)
-private func markdown_convert(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func markdown_convert(_ L: LuaState) throws -> CInt {
     let t1 = lua_type(L, 1)
     guard t1 == LUA_TSTRING else {
-        return luaL_argerror(L, 1, "expected string")
+        throw LuaCallError("bad argument #1 (expected string)")
     }
 
     var mode: ModeType = .gfm
@@ -423,7 +424,7 @@ private func markdown_convert(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
         } else if modeString == "plaintext" {
             mode = .plaintext
         } else {
-            return luaL_argerror(L, 2, "invalid mode, \(modeString), specified")
+            throw LuaCallError("bad argument #2 (invalid mode, \(modeString), specified)")
         }
     }
 
@@ -450,14 +451,11 @@ private func markdown_convert(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 // MARK: - Cosmic Hammer/Lua Infrastructure
 
-private var moduleLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("convert"), func: markdown_convert),
-    luaL_Reg(name: nil, func: nil),
-]
-
 @_cdecl("luaopen_hs_libmarkdown")
 public func luaopen_hs_libmarkdown(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    lua_createtable(L, 0, Int32(moduleLib.count - 1))
-    luaL_setfuncs(L, &moduleLib, 0)
-    return 1
+    runEntryPoint(L) { L in
+        lua_createtable(L, 0, 1)
+        L.push(markdown_convert)
+        lua_setfield(L, -2, "convert")
+    }
 }

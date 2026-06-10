@@ -1,5 +1,6 @@
 import Cocoa
 import CLua
+import Lua
 
 // Establish a unique context for identifying our observers
 private var myKVOContext: Int = 0 // See http://nshipster.com/key-value-observing/
@@ -55,13 +56,13 @@ private var watcherManager: HSUserDefaultKVOWatcher!
 ///  * If no val parameter is provided, it is assumed to be nil
 ///  * This function cannot set dates or raw data types, see `hs.settings.setDate()` and `hs.settings.setData()`
 ///  * Assigning a nil value is equivalent to clearing the value with `hs.settings.clear`
-private func target_set(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func target_set(_ L: LuaState) throws -> CInt {
     guard lua_type(L, 1) == LUA_TSTRING else {
-        return luaL_error(L, "expected string for argument 1")
+        throw LuaCallError("expected string for argument 1")
     }
 
     guard let key = String(validatingUTF8: luaL_checkstring(L, 1)) else {
-        return luaL_error(L, "key must be a valid UTF8 string")
+        throw LuaCallError("key must be a valid UTF8 string")
     }
 
     // Allow for missing second argument for backwards compatibility
@@ -70,9 +71,7 @@ private func target_set(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
         val = lua_tovalue(L, at: 2)
     }
 
-    do {
-        UserDefaults.standard.set(val, forKey: key)
-    }
+    UserDefaults.standard.set(val, forKey: key)
     return 0
 }
 
@@ -86,12 +85,12 @@ private func target_set(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * None
-private func target_setData(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func target_setData(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TSTRING)
     luaL_checktype(L, 2, LUA_TSTRING)
 
     guard let key = String(validatingUTF8: luaL_checkstring(L, 1)) else {
-        return luaL_error(L, "key must be a valid UTF8 string")
+        throw LuaCallError("key must be a valid UTF8 string")
     }
 
     if lua_type(L, 2) == LUA_TSTRING {
@@ -100,7 +99,7 @@ private func target_setData(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
         let data = Data(bytes: dataPtr, count: sz)
         UserDefaults.standard.set(data, forKey: key)
     } else {
-        luaL_error(L, "second argument not (binary data encapsulated as) a string")
+        throw LuaCallError("second argument not (binary data encapsulated as) a string")
     }
 
     return 0
@@ -127,11 +126,11 @@ private func date_from_string(_ dateString: String) -> Date? {
 ///
 /// Notes:
 ///  * See `hs.settings.dateFormat` for a convenient representation of the RFC3339 format, to use with other time/date related functions
-private func target_setDate(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func target_setDate(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TSTRING)
 
     guard let key = String(validatingUTF8: luaL_checkstring(L, 1)) else {
-        return luaL_error(L, "key must be a valid UTF8 string")
+        throw LuaCallError("key must be a valid UTF8 string")
     }
 
     let myDate: Date?
@@ -146,7 +145,7 @@ private func target_setDate(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     if let date = myDate {
         UserDefaults.standard.set(date, forKey: key)
     } else {
-        luaL_error(L, "Not a date type -- Number: # of seconds since 1970-01-01 00:00:00Z or String: in the format of 'YYYY-MM-DD[T]HH:MM:SS[Z]' (rfc3339)")
+        throw LuaCallError("Not a date type -- Number: # of seconds since 1970-01-01 00:00:00Z or String: in the format of 'YYYY-MM-DD[T]HH:MM:SS[Z]' (rfc3339)")
     }
     return 0
 }
@@ -163,11 +162,11 @@ private func target_setDate(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Notes:
 ///  * This function can load all of the datatypes supported by `hs.settings.set()`, `hs.settings.setData()` and `hs.settings.setDate()`
-private func target_get(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func target_get(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TSTRING)
 
     guard let key = String(validatingUTF8: luaL_checkstring(L, 1)) else {
-        return luaL_error(L, "key must be a valid UTF8 string")
+        throw LuaCallError("key must be a valid UTF8 string")
     }
 
     let val = UserDefaults.standard.object(forKey: key)
@@ -184,11 +183,11 @@ private func target_get(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * A boolean, true if the setting was deleted, otherwise false
-private func target_clear(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func target_clear(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TSTRING)
 
     guard let key = String(validatingUTF8: luaL_checkstring(L, 1)) else {
-        return luaL_error(L, "key must be a valid UTF8 string")
+        throw LuaCallError("key must be a valid UTF8 string")
     }
 
     let defaults = UserDefaults.standard
@@ -214,7 +213,7 @@ private func target_clear(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Notes:
 ///  * Use `ipairs(hs.settings.getKeys())` to iterate over all available settings
 ///  * Use `hs.settings.getKeys()["someKey"]` to test for the existence of a particular key
-private func target_getKeys(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func target_getKeys(_ L: LuaState) throws -> CInt {
     let mainID = Bundle.main.bundleIdentifier ?? ""
     let keys = UserDefaults.standard.persistentDomain(forName: mainID)?.keys.sorted() ?? []
 
@@ -246,7 +245,7 @@ private func target_getKeys(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Notes:
 ///  * the identifier is required so that multiple callbacks for the same key can be registered by separate modules; it's value doesn't affect what is being watched but does need to be unique between multiple watchers of the same key.
 ///  * Does not work with keys that include a period (.) in the key name because KVO uses dot notation to specify a sequence of properties.  If you know of a way to escape periods so that they are watchable as NSUSerDefault key names, please file an issue and share!
-private func target_watchKey(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func target_watchKey(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TSTRING)
     luaL_checktype(L, 2, LUA_TSTRING)
 
@@ -285,12 +284,12 @@ private func target_watchKey(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 }
 
 // For debugging
-private func output_watchers(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func output_watchers(_ L: LuaState) throws -> CInt {
     lua_pushany(L, watcherManager.watchedKeys)
     return 1
 }
 
-private func meta_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func meta_gc(_ L: LuaState) throws -> CInt {
     watcherManager.watchedKeys.enumerateKeysAndObjects { keyPath, watchers, _ in
         _ = catchingObjCException {
             UserDefaults.standard.removeObserver(watcherManager!, forKeyPath: keyPath as! String, context: &myKVOContext)
@@ -304,51 +303,47 @@ private func meta_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 0
 }
 
-// MARK: - luaL_Reg tables
-
-private var settingslib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("set"), func: target_set),
-    luaL_Reg(name: strdup("setData"), func: target_setData),
-    luaL_Reg(name: strdup("setDate"), func: target_setDate),
-    luaL_Reg(name: strdup("get"), func: target_get),
-    luaL_Reg(name: strdup("clear"), func: target_clear),
-    luaL_Reg(name: strdup("getKeys"), func: target_getKeys),
-    luaL_Reg(name: strdup("watchKey"), func: target_watchKey),
-    luaL_Reg(name: strdup("_watchers"), func: output_watchers),
-    luaL_Reg(name: nil, func: nil),
-]
-
-private var module_metaLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("__gc"), func: meta_gc),
-    luaL_Reg(name: nil, func: nil),
-]
-
 // MARK: - Module entry point
 
 @_cdecl("luaopen_hs_libsettings")
 public func luaopen_hs_libsettings(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    // Create module table with module-level __gc metatable
-    lua_createtable(L, 0, Int32(settingslib.count - 1))
-    luaL_setfuncs(L, &settingslib, 0)
+    runEntryPoint(L) { L in
+        lua_createtable(L, 0, 10)
+        L.push( target_set)
+        lua_setfield(L, -2, "set")
+        L.push( target_setData)
+        lua_setfield(L, -2, "setData")
+        L.push( target_setDate)
+        lua_setfield(L, -2, "setDate")
+        L.push( target_get)
+        lua_setfield(L, -2, "get")
+        L.push( target_clear)
+        lua_setfield(L, -2, "clear")
+        L.push( target_getKeys)
+        lua_setfield(L, -2, "getKeys")
+        L.push( target_watchKey)
+        lua_setfield(L, -2, "watchKey")
+        L.push( output_watchers)
+        lua_setfield(L, -2, "_watchers")
 
-    // Set module metatable for __gc
-    lua_createtable(L, 0, 1)
-    luaL_setfuncs(L, &module_metaLib, 0)
-    lua_setmetatable(L, -2)
+        // Module metatable for __gc
+        lua_createtable(L, 0, 1)
+        L.push( meta_gc)
+        lua_setfield(L, -2, "__gc")
+        lua_setmetatable(L, -2)
 
-    watcherManager = HSUserDefaultKVOWatcher()
+        watcherManager = HSUserDefaultKVOWatcher()
 
-    /// hs.settings.dateFormat
-    /// Constant
-    /// A string representing the expected format of date and time when presenting the date and time as a string to `hs.setDate()`.  e.g. `os.date(hs.settings.dateFormat)`
-    lua_pushstring(L, "!%Y-%m-%dT%H:%M:%SZ")
-    lua_setfield(L, -2, "dateFormat")
+        /// hs.settings.dateFormat
+        /// Constant
+        /// A string representing the expected format of date and time when presenting the date and time as a string to `hs.setDate()`.  e.g. `os.date(hs.settings.dateFormat)`
+        lua_pushstring(L, "!%Y-%m-%dT%H:%M:%SZ")
+        lua_setfield(L, -2, "dateFormat")
 
-    /// hs.settings.bundleID
-    /// Constant
-    /// A string representing the ID of the bundle Cosmic Hammer's settings are stored in . You can use this with the command line tool `defaults` or other tools which allow access to the `User Defaults` of applications, to access these outside of Cosmic Hammer
-    lua_pushstring(L, Bundle.main.bundleIdentifier ?? "")
-    lua_setfield(L, -2, "bundleID")
-
-    return 1
+        /// hs.settings.bundleID
+        /// Constant
+        /// A string representing the ID of the bundle Cosmic Hammer's settings are stored in . You can use this with the command line tool `defaults` or other tools which allow access to the `User Defaults` of applications, to access these outside of Cosmic Hammer
+        lua_pushstring(L, Bundle.main.bundleIdentifier ?? "")
+        lua_setfield(L, -2, "bundleID")
+    }
 }

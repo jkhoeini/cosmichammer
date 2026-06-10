@@ -1,55 +1,70 @@
 import Cocoa
 import CLua
+import Lua
 
 private func transformDataWithFunction(
     _ inputData: NSData,
     _ function: (CFTypeRef, UnsafeMutablePointer<Unmanaged<CFError>?>?) -> SecTransform?
-) -> NSData {
-    let transformRef = function(kSecBase64Encoding, nil)!
+) -> NSData? {
+    guard let transformRef = function(kSecBase64Encoding, nil) else { return nil }
     SecTransformSetAttribute(transformRef, kSecTransformInputAttributeName, inputData as CFTypeRef, nil)
-    let outputDataRef = SecTransformExecute(transformRef, nil) as! CFData
-    return NSData(data: outputDataRef as Data)
+    let outputDataRef = SecTransformExecute(transformRef, nil)
+    return NSData(data: outputDataRef as! CFData as Data)
 }
 
-private func base64_encode(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let t = lua_type(L, 1)
-    guard t == LUA_TNUMBER || t == LUA_TSTRING else {
-        return luaL_error(L, "expected string or number for argument 1")
+/// Read a binary-safe Lua string (or number coerced to string) from the given
+/// stack index. Throws a Lua error for any other type.
+private func checkBinaryArg(_ L: LuaState, _ arg: CInt) throws -> [UInt8] {
+    let t = lua_type(L, arg)
+    switch t {
+    case LUA_TSTRING:
+        return L.todata(arg)!
+    case LUA_TNUMBER:
+        // Coerce number to its string representation via Lua, preserving
+        // legacy behavior (e.g. 42 -> "42", 3.14 -> "3.14").
+        var sz: Int = 0
+        let ptr = luaL_tolstring(L, arg, &sz)!
+        let bytes: [UInt8] = ptr.withMemoryRebound(to: UInt8.self, capacity: sz) { reboundPtr in
+            Array(UnsafeBufferPointer(start: reboundPtr, count: sz))
+        }
+        lua_pop(L, 1)  // pop the coerced string pushed by luaL_tolstring
+        return bytes
+    default:
+        throw L.error("expected string or number for argument \(arg)")
     }
-    var sz: Int = 0
-    let data = luaL_tolstring(L, 1, &sz)!
-    let decodedStr = NSData(bytes: data, length: sz)
-    lua_pop(L, 1)
+}
 
-    let encodedStr = transformDataWithFunction(decodedStr, SecEncodeTransformCreate)
-    lua_pushlstring(L, encodedStr.bytes.assumingMemoryBound(to: CChar.self), encodedStr.length)
+private let base64_encode: LuaClosure = { L in
+    let input = try checkBinaryArg(L, 1)
+    let inputData = NSData(bytes: input, length: input.count)
+    guard let encoded = transformDataWithFunction(inputData, SecEncodeTransformCreate) else {
+        throw L.error("base64 encode failed")
+    }
+    L.push(Array(UnsafeBufferPointer(
+        start: encoded.bytes.assumingMemoryBound(to: UInt8.self),
+        count: encoded.length)))
     return 1
 }
 
-private func base64_decode(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let t = lua_type(L, 1)
-    guard t == LUA_TNUMBER || t == LUA_TSTRING else {
-        return luaL_error(L, "expected string or number for argument 1")
+private let base64_decode: LuaClosure = { L in
+    let input = try checkBinaryArg(L, 1)
+    let inputData = NSData(bytes: input, length: input.count)
+    guard let decoded = transformDataWithFunction(inputData, SecDecodeTransformCreate) else {
+        throw L.error("base64 decode failed")
     }
-    var sz: Int = 0
-    let data = luaL_tolstring(L, 1, &sz)!
-    let encodedStr = NSData(bytes: data, length: sz)
-    lua_pop(L, 1)
-
-    let decodedStr = transformDataWithFunction(encodedStr, SecDecodeTransformCreate)
-    lua_pushlstring(L, decodedStr.bytes.assumingMemoryBound(to: CChar.self), decodedStr.length)
+    L.push(Array(UnsafeBufferPointer(
+        start: decoded.bytes.assumingMemoryBound(to: UInt8.self),
+        count: decoded.length)))
     return 1
 }
-
-private var base64_lib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("_encode"), func: base64_encode),
-    luaL_Reg(name: strdup("_decode"), func: base64_decode),
-    luaL_Reg(name: nil, func: nil),
-]
 
 @_cdecl("luaopen_hs_libbase64")
 public func luaopen_hs_libbase64(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    lua_createtable(L, 0, Int32(base64_lib.count - 1))
-    luaL_setfuncs(L, &base64_lib, 0)
-    return 1
+    runEntryPoint(L) { L in
+        lua_createtable(L, 0, 2)
+        L.push(base64_encode)
+        lua_setfield(L, -2, "_encode")
+        L.push(base64_decode)
+        lua_setfield(L, -2, "_decode")
+    }
 }

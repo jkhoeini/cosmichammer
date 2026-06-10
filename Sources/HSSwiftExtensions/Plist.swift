@@ -1,5 +1,6 @@
 import Cocoa
 import CLua
+import Lua
 import os.log
 
 /// hs.plist.read(filepath) -> table
@@ -11,7 +12,7 @@ import os.log
 ///
 /// Returns:
 ///  * The contents of the plist as a Lua table
-private func plist_read(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func plist_read(_ L: LuaState) throws -> CInt {
     let filePath = (String(cString: luaL_checkstring(L, 1)) as NSString).expandingTildeInPath
     let plist = NSDictionary(contentsOfFile: filePath)
     lua_pushany(L, plist)
@@ -29,7 +30,7 @@ private func plist_read(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * The contents of the property list as a Lua table or `nil` if an error occurs
-private func plist_readString(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func plist_readString(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TSTRING)
 
     // Get raw bytes from the Lua string
@@ -78,7 +79,7 @@ private func plist_readString(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * A string representing the data as a plist or nil if there was a problem with the date or serialization.
-private func plist_writeString(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func plist_writeString(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TTABLE)
 
     let data = lua_tovalue(L, at: 1)!
@@ -124,7 +125,7 @@ private func plist_writeString(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///   * Booleans
 ///   * Tables
 ///  * You should be careful when reading a plist, modifying and writing it - Cosmic Hammer may not be able to preserve all of the datatypes via Lua
-private func plist_write(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func plist_write(_ L: LuaState) throws -> CInt {
     let filePath = (String(cString: luaL_checkstring(L, 1)) as NSString).expandingTildeInPath
     luaL_checktype(L, 2, LUA_TTABLE)
     let data = lua_tovalue(L, at: 2)!
@@ -153,18 +154,17 @@ private func plist_write(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 1
 }
 
-private let plistlib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("read"),        func: { L in plist_read(L) }),
-    luaL_Reg(name: strdup("readString"),  func: { L in plist_readString(L) }),
-    luaL_Reg(name: strdup("writeString"), func: { L in plist_writeString(L) }),
-    luaL_Reg(name: strdup("write"),       func: { L in plist_write(L) }),
-    luaL_Reg(name: nil, func: nil),
-]
-
 @_cdecl("luaopen_hs_libplist")
 public func luaopen_hs_libplist(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    var lib = plistlib
-    lua_createtable(L, 0, Int32(lib.count - 1))
-    luaL_setfuncs(L, &lib, 0)
-    return 1
+    runEntryPoint(L) { L in
+        lua_createtable(L, 0, 4)
+        L.push( plist_read)
+        lua_setfield(L, -2, "read")
+        L.push( plist_readString)
+        lua_setfield(L, -2, "readString")
+        L.push( plist_writeString)
+        lua_setfield(L, -2, "writeString")
+        L.push( plist_write)
+        lua_setfield(L, -2, "write")
+    }
 }

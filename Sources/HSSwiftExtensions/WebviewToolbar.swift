@@ -1,5 +1,6 @@
 import Cocoa
 import CLua
+import Lua
 import os.log
 
 private let USERDATA_TB_TAG = "hs.webview.toolbar"
@@ -684,13 +685,13 @@ private func isBoolNumber(_ value: Any?) -> Bool {
 
 // MARK: - Module Functions
 
-private func toolbar_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func toolbar_new(_ L: LuaState) throws -> CInt {
     let identifier = lua_tovalue(L, at: 1) as! String
 
     let idx: Int32 = (lua_gettop(L) == 2) ? 2 : LUA_NOREF
 
     if identifiersInUse.contains(identifier) {
-        return luaL_argerror(L, 1, "identifier already in use")
+        throw LuaCallError("bad argument #1: identifier already in use")
     }
 
     if let toolbar = HSToolbar(identifier: identifier, itemTableIndex: idx, state: L) {
@@ -701,14 +702,14 @@ private func toolbar_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 1
 }
 
-private func toolbar_uniqueName(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func toolbar_uniqueName(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TSTRING)
     let identifier = lua_tovalue(L, at: 1) as! String
     lua_pushboolean(L, !identifiersInUse.contains(identifier) ? 1 : 0)
     return 1
 }
 
-private func toolbar_attachToolbar(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func toolbar_attachToolbar(_ L: LuaState) throws -> CInt {
     var theWindow: NSWindow?
     var newToolbar: HSToolbar?
     var setToolbar = true
@@ -748,7 +749,7 @@ private func toolbar_attachToolbar(_ L: UnsafeMutablePointer<lua_State>!) -> Int
         newToolbar = getToolbar(L, 2)
         isChooser = true
     } else {
-        return luaL_error(L, "\(USERDATA_TB_TAG):attachToolbar requires an optional window target object and an \(USERDATA_TB_TAG) object or nil")
+        throw LuaCallError("\(USERDATA_TB_TAG):attachToolbar requires an optional window target object and an \(USERDATA_TB_TAG) object or nil")
     }
 
     let oldToolbar = theWindow?.toolbar as? HSToolbar
@@ -788,7 +789,7 @@ private func toolbar_attachToolbar(_ L: UnsafeMutablePointer<lua_State>!) -> Int
 
 // MARK: - Userdata Methods
 
-private func toolbar_inTitleBar(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func toolbar_inTitleBar(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TB_TAG)
     let toolbar = getToolbar(L, 1)
     let theWindow = toolbar.windowUsingToolbar
@@ -805,14 +806,14 @@ private func toolbar_inTitleBar(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
     return 1
 }
 
-private func toolbar_isAttached(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func toolbar_isAttached(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TB_TAG)
     let toolbar = getToolbar(L, 1)
     lua_pushboolean(L, toolbar.isAttached ? 1 : 0)
     return 1
 }
 
-private func toolbar_copy(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func toolbar_copy(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TB_TAG)
     let oldToolbar = getToolbar(L, 1)
     if let newToolbar = HSToolbar(copy: oldToolbar, state: L) {
@@ -823,7 +824,7 @@ private func toolbar_copy(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 1
 }
 
-private func toolbar_setCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func toolbar_setCallback(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TB_TAG)
     let toolbar = getToolbar(L, 1)
     luaL_unref(L, LUA_REGISTRYINDEX_VALUE, toolbar.callbackRef)
@@ -837,14 +838,14 @@ private func toolbar_setCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
     return 1
 }
 
-private func toolbar_savedSettings(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func toolbar_savedSettings(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TB_TAG)
     let toolbar = getToolbar(L, 1)
     lua_pushany(L, toolbar.configuration)
     return 1
 }
 
-private func toolbar_separator(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func toolbar_separator(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TB_TAG)
     let toolbar = getToolbar(L, 1)
     if lua_gettop(L) != 1 {
@@ -856,7 +857,7 @@ private func toolbar_separator(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 1
 }
 
-private func toolbar_visible(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func toolbar_visible(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TB_TAG)
     let toolbar = getToolbar(L, 1)
     if lua_gettop(L) != 1 {
@@ -868,7 +869,7 @@ private func toolbar_visible(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 1
 }
 
-private func toolbar_notifyOnChange(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func toolbar_notifyOnChange(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TB_TAG)
     let toolbar = getToolbar(L, 1)
     if lua_gettop(L) != 1 {
@@ -880,19 +881,19 @@ private func toolbar_notifyOnChange(_ L: UnsafeMutablePointer<lua_State>!) -> In
     return 1
 }
 
-private func toolbar_insertItem(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func toolbar_insertItem(_ L: LuaState) throws -> CInt {
     let toolbar = getToolbar(L, 1)
     let identifier = lua_tovalue(L, at: 2) as! String
     var index = lua_tointeger(L, 3)
 
     guard toolbar.itemDefDictionary[identifier] != nil else {
-        return luaL_error(L, "toolbar item \(identifier) does not exist")
+        throw LuaCallError("toolbar item \(identifier) does not exist")
     }
     guard index >= 1 && index <= Int64(toolbar.items.count + 1) else {
-        return luaL_error(L, "index out of bounds")
+        throw LuaCallError("index out of bounds")
     }
     guard toolbar.allowedIdentifiers_.contains(identifier) else {
-        return luaL_error(L, "\(identifier) is not allowed outside of its group")
+        throw LuaCallError("\(identifier) is not allowed outside of its group")
     }
 
     let ids = toolbar.items.map { $0.itemIdentifier.rawValue }
@@ -908,21 +909,21 @@ private func toolbar_insertItem(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
     return 1
 }
 
-private func toolbar_removeItem(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func toolbar_removeItem(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TB_TAG)
 
     luaL_checktype(L, 2, LUA_TNUMBER)
     let toolbar = getToolbar(L, 1)
     let index = luaL_checkinteger(L, 2)
     guard index >= 1 && index <= Int64(toolbar.items.count + 1) else {
-        return luaL_error(L, "index out of bounds")
+        throw LuaCallError("index out of bounds")
     }
     toolbar.removeItem(at: Int(index - 1))
     lua_pushvalue(L, 1)
     return 1
 }
 
-private func toolbar_sizeMode(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func toolbar_sizeMode(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TB_TAG)
     let toolbar = getToolbar(L, 1)
     if lua_gettop(L) == 2 {
@@ -931,7 +932,7 @@ private func toolbar_sizeMode(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
         case "default": toolbar.sizeMode = .default
         case "regular": toolbar.sizeMode = .regular
         case "small":   toolbar.sizeMode = .small
-        default: return luaL_error(L, "invalid sizeMode:\(size)")
+        default: throw LuaCallError("invalid sizeMode:\(size)")
         }
         lua_pushvalue(L, 1)
     } else {
@@ -945,7 +946,7 @@ private func toolbar_sizeMode(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 1
 }
 
-private func toolbar_displayMode(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func toolbar_displayMode(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TB_TAG)
     let toolbar = getToolbar(L, 1)
     if lua_gettop(L) == 2 {
@@ -955,7 +956,7 @@ private func toolbar_displayMode(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
         case "label":   toolbar.displayMode = .labelOnly
         case "icon":    toolbar.displayMode = .iconOnly
         case "both":    toolbar.displayMode = .iconAndLabel
-        default: return luaL_error(L, "invalid displayMode:\(mode)")
+        default: throw LuaCallError("invalid displayMode:\(mode)")
         }
         lua_pushvalue(L, 1)
     } else {
@@ -970,7 +971,7 @@ private func toolbar_displayMode(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
     return 1
 }
 
-private func toolbar_toolbarStyle(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func toolbar_toolbarStyle(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TB_TAG)
     let toolbar = getToolbar(L, 1)
     if lua_gettop(L) == 2 {
@@ -981,7 +982,7 @@ private func toolbar_toolbarStyle(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
         case "preference":     toolbar.toolbarStyle_ = NSInteger(NSWindow.ToolbarStyle.preference.rawValue)
         case "unified":        toolbar.toolbarStyle_ = NSInteger(NSWindow.ToolbarStyle.unified.rawValue)
         case "unifiedCompact": toolbar.toolbarStyle_ = NSInteger(NSWindow.ToolbarStyle.unifiedCompact.rawValue)
-        default: return luaL_error(L, "invalid toolbarStyle: '\(style)'")
+        default: throw LuaCallError("invalid toolbarStyle: '\(style)'")
         }
         if let win = toolbar.windowUsingToolbar {
             win.toolbarStyle = NSWindow.ToolbarStyle(rawValue: Int(toolbar.toolbarStyle_)) ?? .automatic
@@ -1001,7 +1002,7 @@ private func toolbar_toolbarStyle(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
     return 1
 }
 
-private func toolbar_modifyItem(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func toolbar_modifyItem(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TB_TAG)
 
     luaL_checktype(L, 2, LUA_TTABLE)
@@ -1009,16 +1010,16 @@ private func toolbar_modifyItem(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 
     guard lua_getfield(L, 2, "id") == LUA_TSTRING else {
         lua_pop(L, 1)
-        return luaL_error(L, "id must be present, and it must be a string")
+        throw LuaCallError("id must be present, and it must be a string")
     }
     let identifier = lua_tovalue(L, at: -1) as! String
     lua_pop(L, 1)
 
     guard toolbar.itemDefDictionary[identifier] != nil else {
-        return luaL_error(L, "toolbar item \(identifier) does not exist")
+        throw LuaCallError("toolbar item \(identifier) does not exist")
     }
     if builtinToolbarItems.contains(identifier) {
-        return luaL_error(L, "cannot modify a built-in toolbar item definition")
+        throw LuaCallError("cannot modify a built-in toolbar item definition")
     }
 
     if lua_getfield(L, 2, "selectable") == LUA_TBOOLEAN {
@@ -1067,7 +1068,7 @@ private func toolbar_modifyItem(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
                 }
             }
         } else {
-            return luaL_error(L, "non-string keys not allowed in toolbar item definition \(identifier)")
+            throw LuaCallError("non-string keys not allowed in toolbar item definition \(identifier)")
         }
         lua_pop(L, 1)
     }
@@ -1103,7 +1104,7 @@ private func toolbar_modifyItem(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
     return 1
 }
 
-private func toolbar_addItems(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func toolbar_addItems(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TB_TAG)
 
     luaL_checktype(L, 2, LUA_TTABLE)
@@ -1125,13 +1126,13 @@ private func toolbar_addItems(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     }
 
     if !isGood {
-        return luaL_error(L, "\(USERDATA_TB_TAG):addItems - malformed toolbar items encountered")
+        throw LuaCallError("\(USERDATA_TB_TAG):addItems - malformed toolbar items encountered")
     }
     lua_pushvalue(L, 1)
     return 1
 }
 
-private func toolbar_deleteItem(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func toolbar_deleteItem(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TB_TAG)
 
     luaL_checktype(L, 2, LUA_TSTRING)
@@ -1139,7 +1140,7 @@ private func toolbar_deleteItem(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
     let identifier = lua_tovalue(L, at: 2) as! String
 
     guard toolbar.itemDefDictionary[identifier] != nil else {
-        return luaL_error(L, "toolbar item \(identifier) does not exist")
+        throw LuaCallError("toolbar item \(identifier) does not exist")
     }
 
     if let itemIndex = toolbar.items.firstIndex(where: { $0.itemIdentifier.rawValue == identifier }) {
@@ -1155,7 +1156,7 @@ private func toolbar_deleteItem(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
     return 1
 }
 
-private func toolbar_itemDetails(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func toolbar_itemDetails(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TB_TAG)
 
     luaL_checktype(L, 2, LUA_TSTRING)
@@ -1163,7 +1164,7 @@ private func toolbar_itemDetails(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
     let identifier = lua_tovalue(L, at: 2) as! String
 
     guard toolbar.itemDefDictionary[identifier] != nil else {
-        return luaL_error(L, "toolbar item \(identifier) does not exist")
+        throw LuaCallError("toolbar item \(identifier) does not exist")
     }
 
     var ourItem: NSToolbarItem?
@@ -1203,34 +1204,34 @@ private func toolbar_itemDetails(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
     return 1
 }
 
-private func toolbar_allowedItems(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func toolbar_allowedItems(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TB_TAG)
     let toolbar = getToolbar(L, 1)
     lua_pushany(L, toolbar.allowedIdentifiers_.array)
     return 1
 }
 
-private func toolbar_items(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func toolbar_items(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TB_TAG)
     let toolbar = getToolbar(L, 1)
     lua_pushany(L, toolbar.items.map { $0.itemIdentifier.rawValue })
     return 1
 }
 
-private func toolbar_visibleItems(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func toolbar_visibleItems(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TB_TAG)
     let toolbar = getToolbar(L, 1)
     lua_pushany(L, toolbar.visibleItems?.map { $0.itemIdentifier.rawValue })
     return 1
 }
 
-private func toolbar_selectedItem(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func toolbar_selectedItem(_ L: LuaState) throws -> CInt {
     let toolbar = getToolbar(L, 1)
     if lua_gettop(L) == 2 {
         if lua_type(L, 2) == LUA_TSTRING {
             let identifier = lua_tovalue(L, at: 2) as! String
             guard toolbar.itemDefDictionary[identifier] != nil else {
-                return luaL_error(L, "toolbar item \(identifier) does not exist")
+                throw LuaCallError("toolbar item \(identifier) does not exist")
             }
             toolbar.selectedItemIdentifier = NSToolbarItem.Identifier(identifier)
         } else {
@@ -1243,7 +1244,7 @@ private func toolbar_selectedItem(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
     return 1
 }
 
-private func toolbar_selectSearchField(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func toolbar_selectSearchField(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TB_TAG)
     let toolbar = getToolbar(L, 1)
     let targetID = (lua_gettop(L) == 2) ? (lua_tovalue(L, at: 2) as? String) : nil
@@ -1265,14 +1266,14 @@ private func toolbar_selectSearchField(_ L: UnsafeMutablePointer<lua_State>!) ->
     return 1
 }
 
-private func toolbar_identifier(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func toolbar_identifier(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TB_TAG)
     let toolbar = getToolbar(L, 1)
     lua_pushany(L, toolbar.identifier)
     return 1
 }
 
-private func toolbar_customizePanel(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func toolbar_customizePanel(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TB_TAG)
     let toolbar = getToolbar(L, 1)
     toolbar.runCustomizationPalette(toolbar)
@@ -1280,14 +1281,14 @@ private func toolbar_customizePanel(_ L: UnsafeMutablePointer<lua_State>!) -> In
     return 1
 }
 
-private func toolbar_isCustomizing(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func toolbar_isCustomizing(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TB_TAG)
     let toolbar = getToolbar(L, 1)
     lua_pushboolean(L, toolbar.customizationPaletteIsRunning ? 1 : 0)
     return 1
 }
 
-private func toolbar_canCustomize(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func toolbar_canCustomize(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TB_TAG)
     let toolbar = getToolbar(L, 1)
     if lua_gettop(L) == 1 {
@@ -1299,7 +1300,7 @@ private func toolbar_canCustomize(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
     return 1
 }
 
-private func toolbar_autosaves(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func toolbar_autosaves(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TB_TAG)
     let toolbar = getToolbar(L, 1)
     if lua_gettop(L) == 1 {
@@ -1313,12 +1314,12 @@ private func toolbar_autosaves(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 // MARK: - Constants
 
-private func toolbar_systemItems(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func toolbar_systemItems(_ L: LuaState) throws -> CInt {
     lua_pushany(L, automaticallyIncluded)
     return 1
 }
 
-private func toolbar_itemPriorities(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func toolbar_itemPriorities(_ L: LuaState) throws -> CInt {
     lua_newtable(L)
     lua_pushinteger(L, lua_Integer(NSToolbarItem.VisibilityPriority.standard.rawValue))
     lua_setfield(L, -2, "standard")
@@ -1424,14 +1425,14 @@ func wv_NSToolbarItem_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) 
 
 // MARK: - Infrastructure
 
-private func toolbar_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func toolbar_tostring(_ L: LuaState) throws -> CInt {
     let toolbar = getToolbar(L, 1)
     let desc = "\(USERDATA_TB_TAG): \(toolbar.identifier) (\(String(describing: lua_topointer(L, 1)!)))"
     lua_pushstring(L, desc)
     return 1
 }
 
-private func toolbar_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func toolbar_eq(_ L: LuaState) throws -> CInt {
     if luaL_testudata(L, 1, USERDATA_TB_TAG) != nil && luaL_testudata(L, 2, USERDATA_TB_TAG) != nil {
         let obj1 = getToolbar(L, 1)
         let obj2 = getToolbar(L, 2)
@@ -1442,7 +1443,7 @@ private func toolbar_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 1
 }
 
-private func toolbar_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func toolbar_gc(_ L: LuaState) throws -> CInt {
     let ptr = luaL_checkudata(L, 1, USERDATA_TB_TAG)!
         .assumingMemoryBound(to: UnsafeMutableRawPointer.self)
     let toolbar = Unmanaged<HSToolbar>.fromOpaque(ptr.pointee).takeRetainedValue()
@@ -1474,103 +1475,86 @@ private func toolbar_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 0
 }
 
-private func meta_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func meta_gc(_ L: LuaState) throws -> CInt {
     identifiersInUse.removeAllObjects()
     return 0
 }
-
-// MARK: - Lua registration tables
-
-private var moduleLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("new"), func: toolbar_new),
-    luaL_Reg(name: strdup("attachToolbar"), func: toolbar_attachToolbar),
-    luaL_Reg(name: strdup("uniqueName"), func: toolbar_uniqueName),
-    luaL_Reg(name: nil, func: nil),
-]
-
-private var userdataLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("_addItems"), func: toolbar_addItems),
-    luaL_Reg(name: strdup("_removeItemAtIndex"), func: toolbar_removeItem),
-    luaL_Reg(name: strdup("deleteItem"), func: toolbar_deleteItem),
-    luaL_Reg(name: strdup("delete"), func: toolbar_gc),
-    luaL_Reg(name: strdup("copyToolbar"), func: toolbar_copy),
-    luaL_Reg(name: strdup("isAttached"), func: toolbar_isAttached),
-    luaL_Reg(name: strdup("savedSettings"), func: toolbar_savedSettings),
-    luaL_Reg(name: strdup("inTitleBar"), func: toolbar_inTitleBar),
-    luaL_Reg(name: strdup("identifier"), func: toolbar_identifier),
-    luaL_Reg(name: strdup("setCallback"), func: toolbar_setCallback),
-    luaL_Reg(name: strdup("displayMode"), func: toolbar_displayMode),
-    luaL_Reg(name: strdup("toolbarStyle"), func: toolbar_toolbarStyle),
-    luaL_Reg(name: strdup("sizeMode"), func: toolbar_sizeMode),
-    luaL_Reg(name: strdup("visible"), func: toolbar_visible),
-    luaL_Reg(name: strdup("autosaves"), func: toolbar_autosaves),
-    luaL_Reg(name: strdup("separator"), func: toolbar_separator),
-    luaL_Reg(name: strdup("modifyItem"), func: toolbar_modifyItem),
-    luaL_Reg(name: strdup("insertItem"), func: toolbar_insertItem),
-    luaL_Reg(name: strdup("selectSearchField"), func: toolbar_selectSearchField),
-    luaL_Reg(name: strdup("items"), func: toolbar_items),
-    luaL_Reg(name: strdup("visibleItems"), func: toolbar_visibleItems),
-    luaL_Reg(name: strdup("selectedItem"), func: toolbar_selectedItem),
-    luaL_Reg(name: strdup("allowedItems"), func: toolbar_allowedItems),
-    luaL_Reg(name: strdup("itemDetails"), func: toolbar_itemDetails),
-    luaL_Reg(name: strdup("notifyOnChange"), func: toolbar_notifyOnChange),
-    luaL_Reg(name: strdup("customizePanel"), func: toolbar_customizePanel),
-    luaL_Reg(name: strdup("isCustomizing"), func: toolbar_isCustomizing),
-    luaL_Reg(name: strdup("canCustomize"), func: toolbar_canCustomize),
-    luaL_Reg(name: strdup("__tostring"), func: toolbar_tostring),
-    luaL_Reg(name: strdup("__eq"), func: toolbar_eq),
-    luaL_Reg(name: strdup("__gc"), func: toolbar_gc),
-    luaL_Reg(name: nil, func: nil),
-]
-
-private var metaLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("__gc"), func: meta_gc),
-    luaL_Reg(name: nil, func: nil),
-]
 
 // MARK: - Entry point
 
 @_cdecl("luaopen_hs_libwebviewtoolbar")
 public func luaopen_hs_libwebviewtoolbar(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    // Create ref table in registry
-    lua_newtable(L)
-    refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+    runEntryPoint(L) { L in
+        // Create ref table in registry
+        lua_newtable(L)
+        refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
 
-    // Register userdata metatable
-    luaL_newmetatable(L, USERDATA_TB_TAG)
-    lua_pushvalue(L, -1)
-    lua_setfield(L, -2, "__index")
-    luaL_setfuncs(L, &userdataLib, 0)
-    lua_pop(L, 1)
+        // Register userdata metatable
+        luaL_newmetatable(L, USERDATA_TB_TAG)
+        lua_pushvalue(L, -1)
+        lua_setfield(L, -2, "__index")
+        L.push(toolbar_addItems); lua_setfield(L, -2, "_addItems")
+        L.push(toolbar_removeItem); lua_setfield(L, -2, "_removeItemAtIndex")
+        L.push(toolbar_deleteItem); lua_setfield(L, -2, "deleteItem")
+        L.push(toolbar_gc); lua_setfield(L, -2, "delete")
+        L.push(toolbar_copy); lua_setfield(L, -2, "copyToolbar")
+        L.push(toolbar_isAttached); lua_setfield(L, -2, "isAttached")
+        L.push(toolbar_savedSettings); lua_setfield(L, -2, "savedSettings")
+        L.push(toolbar_inTitleBar); lua_setfield(L, -2, "inTitleBar")
+        L.push(toolbar_identifier); lua_setfield(L, -2, "identifier")
+        L.push(toolbar_setCallback); lua_setfield(L, -2, "setCallback")
+        L.push(toolbar_displayMode); lua_setfield(L, -2, "displayMode")
+        L.push(toolbar_toolbarStyle); lua_setfield(L, -2, "toolbarStyle")
+        L.push(toolbar_sizeMode); lua_setfield(L, -2, "sizeMode")
+        L.push(toolbar_visible); lua_setfield(L, -2, "visible")
+        L.push(toolbar_autosaves); lua_setfield(L, -2, "autosaves")
+        L.push(toolbar_separator); lua_setfield(L, -2, "separator")
+        L.push(toolbar_modifyItem); lua_setfield(L, -2, "modifyItem")
+        L.push(toolbar_insertItem); lua_setfield(L, -2, "insertItem")
+        L.push(toolbar_selectSearchField); lua_setfield(L, -2, "selectSearchField")
+        L.push(toolbar_items); lua_setfield(L, -2, "items")
+        L.push(toolbar_visibleItems); lua_setfield(L, -2, "visibleItems")
+        L.push(toolbar_selectedItem); lua_setfield(L, -2, "selectedItem")
+        L.push(toolbar_allowedItems); lua_setfield(L, -2, "allowedItems")
+        L.push(toolbar_itemDetails); lua_setfield(L, -2, "itemDetails")
+        L.push(toolbar_notifyOnChange); lua_setfield(L, -2, "notifyOnChange")
+        L.push(toolbar_customizePanel); lua_setfield(L, -2, "customizePanel")
+        L.push(toolbar_isCustomizing); lua_setfield(L, -2, "isCustomizing")
+        L.push(toolbar_canCustomize); lua_setfield(L, -2, "canCustomize")
+        L.push(toolbar_tostring); lua_setfield(L, -2, "__tostring")
+        L.push(toolbar_eq); lua_setfield(L, -2, "__eq")
+        L.push(toolbar_gc); lua_setfield(L, -2, "__gc")
+        lua_pop(L, 1)
 
-    // Create module table
-    lua_createtable(L, 0, Int32(moduleLib.count - 1))
-    luaL_setfuncs(L, &moduleLib, 0)
+        // Create module table
+        lua_createtable(L, 0, 3)
+        L.push(toolbar_new); lua_setfield(L, -2, "new")
+        L.push(toolbar_attachToolbar); lua_setfield(L, -2, "attachToolbar")
+        L.push(toolbar_uniqueName); lua_setfield(L, -2, "uniqueName")
 
-    // Set module metatable (for __gc)
-    lua_createtable(L, 0, Int32(metaLib.count - 1))
-    luaL_setfuncs(L, &metaLib, 0)
-    lua_setmetatable(L, -2)
+        // Set module metatable (for __gc)
+        lua_createtable(L, 0, 1)
+        L.push(meta_gc); lua_setfield(L, -2, "__gc")
+        lua_setmetatable(L, -2)
 
-    boolEncodingType = (true as NSNumber).objCType
+        boolEncodingType = (true as NSNumber).objCType
 
-    builtinToolbarItems = [
-        NSToolbarItem.Identifier.space.rawValue,
-        NSToolbarItem.Identifier.flexibleSpace.rawValue,
-        NSToolbarItem.Identifier.showColors.rawValue,
-        NSToolbarItem.Identifier.showFonts.rawValue,
-        NSToolbarItem.Identifier.print.rawValue,
-        NSToolbarItem.Identifier.separator.rawValue,
-        NSToolbarItem.Identifier.toggleSidebar.rawValue,
-    ]
-    automaticallyIncluded = [
-        NSToolbarItem.Identifier.space.rawValue,
-        NSToolbarItem.Identifier.flexibleSpace.rawValue,
-    ]
-    keysToKeepFromDefinitionDictionary = ["id", "default", "selectable", "allowedAlone"]
+        builtinToolbarItems = [
+            NSToolbarItem.Identifier.space.rawValue,
+            NSToolbarItem.Identifier.flexibleSpace.rawValue,
+            NSToolbarItem.Identifier.showColors.rawValue,
+            NSToolbarItem.Identifier.showFonts.rawValue,
+            NSToolbarItem.Identifier.print.rawValue,
+            NSToolbarItem.Identifier.separator.rawValue,
+            NSToolbarItem.Identifier.toggleSidebar.rawValue,
+        ]
+        automaticallyIncluded = [
+            NSToolbarItem.Identifier.space.rawValue,
+            NSToolbarItem.Identifier.flexibleSpace.rawValue,
+        ]
+        keysToKeepFromDefinitionDictionary = ["id", "default", "selectable", "allowedAlone"]
 
-    toolbar_systemItems(L); lua_setfield(L, -2, "systemToolbarItems")
-    toolbar_itemPriorities(L); lua_setfield(L, -2, "itemPriorities")
-
-    return 1
+        try toolbar_systemItems(L); lua_setfield(L, -2, "systemToolbarItems")
+        try toolbar_itemPriorities(L); lua_setfield(L, -2, "itemPriorities")
+    }
 }

@@ -1,5 +1,6 @@
 import Cocoa
 import CLua
+import Lua
 import os.log
 
 // MARK: - Module metadata
@@ -27,7 +28,7 @@ private var refTable: Int32 = LUA_NOREF
 ///
 /// Notes:
 ///  * As of macOS Sierra and later, if you want a `hs.chooser` object to appear above full-screen windows you must hide the Cosmic Hammer Dock icon first using: `hs.dockicon.hide()`
-private let chooserNew: lua_CFunction = { L in
+private let chooserNew: LuaClosure = { L in
     luaL_checktype(L, 1, LUA_TFUNCTION)
 
     // Parse function arguments
@@ -52,7 +53,7 @@ private let chooserNew: lua_CFunction = { L in
 ///
 /// Returns:
 ///  * The hs.chooser object
-private let chooserShow: lua_CFunction = { L in
+private let chooserShow: LuaClosure = { L in
 
     let chooser: HSChooser = toHSChooserFromLua(L, 1) as! HSChooser
 
@@ -78,7 +79,7 @@ private let chooserShow: lua_CFunction = { L in
 ///
 /// Returns:
 ///  * The `hs.chooser` object
-private let chooserHide: lua_CFunction = { L in
+private let chooserHide: LuaClosure = { L in
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let chooser: HSChooser = toHSChooserFromLua(L, 1) as! HSChooser
@@ -97,7 +98,7 @@ private let chooserHide: lua_CFunction = { L in
 ///
 /// Returns:
 ///  * A boolean, true if the chooser is displayed on screen, false if not
-private let chooserIsVisible: lua_CFunction = { L in
+private let chooserIsVisible: LuaClosure = { L in
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let chooser: HSChooser = toHSChooserFromLua(L, 1) as! HSChooser
@@ -125,7 +126,7 @@ private let chooserIsVisible: lua_CFunction = { L in
 ///  * Any other keys/values in each choice table will be retained by the chooser and returned to the completion callback when a choice is made. This is useful for storing UUIDs or other non-user-facing information, however, it is important to note that you should not store userdata objects in the table - it is run through internal conversion functions, so only basic Lua types should be stored.
 ///  * If a function is given, it will be called once, when the chooser window is displayed. The results are then cached until this method is called again, or `hs.chooser:refreshChoicesCallback()` is called.
 ///  * If you're using a hs.styledtext object for text or subText choices, make sure you specify a color, otherwise your text could appear transparent depending on the bgDark setting.
-private let chooserSetChoices: lua_CFunction = { L in
+private let chooserSetChoices: LuaClosure = { L in
 
     let chooser: HSChooser = toHSChooserFromLua(L, 1) as! HSChooser
 
@@ -189,7 +190,7 @@ private let chooserSetChoices: lua_CFunction = { L in
 /// Notes:
 ///  * This callback is called *after* the chooser is hidden.
 ///  * This callback is called *after* hs.chooser.globalCallback.
-private let chooserHideCallback: lua_CFunction = { L in
+private let chooserHideCallback: LuaClosure = { L in
 
     let chooser: HSChooser = toHSChooserFromLua(L, 1) as! HSChooser
 
@@ -220,7 +221,7 @@ private let chooserHideCallback: lua_CFunction = { L in
 ///
 /// Notes:
 ///  * This callback is called *after* the chooser is shown. To execute code just before it's shown (and/or after it's removed) see `hs.chooser.globalCallback`
-private let chooserShowCallback: lua_CFunction = { L in
+private let chooserShowCallback: LuaClosure = { L in
 
     let chooser: HSChooser = toHSChooserFromLua(L, 1) as! HSChooser
 
@@ -251,7 +252,7 @@ private let chooserShowCallback: lua_CFunction = { L in
 ///
 /// Notes:
 ///  * This method will do nothing if you have not set a function with `hs.chooser:choices()`
-private let chooserRefreshChoicesCallback: lua_CFunction = { L in
+private let chooserRefreshChoicesCallback: LuaClosure = { L in
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let chooser: HSChooser = toHSChooserFromLua(L, 1) as! HSChooser
@@ -283,7 +284,7 @@ private let chooserRefreshChoicesCallback: lua_CFunction = { L in
 ///
 /// Notes:
 ///  * You can provide an explicit nil or empty string to clear the current query string.
-private let chooserSetQuery: lua_CFunction = { L in
+private let chooserSetQuery: LuaClosure = { L in
 
     let chooser: HSChooser = toHSChooserFromLua(L, 1) as! HSChooser
 
@@ -316,7 +317,7 @@ private let chooserSetQuery: lua_CFunction = { L in
 ///
 /// Returns:
 ///  * The hs.chooser object, or the existing placeholder text
-private let chooserPlaceholder: lua_CFunction = { L in
+private let chooserPlaceholder: LuaClosure = { L in
 
     let chooser: HSChooser = toHSChooserFromLua(L, 1) as! HSChooser
 
@@ -344,7 +345,7 @@ private let chooserPlaceholder: lua_CFunction = { L in
 ///  * As the user is typing, the callback function will be called for every keypress. You may wish to do filtering on each call, or you may wish to use a delayed `hs.timer` object to only react when they have finished typing.
 ///  * The callback function should accept a single argument:
 ///   * A string containing the new search query
-private let chooserQueryCallback: lua_CFunction = { L in
+private let chooserQueryCallback: LuaClosure = { L in
 
     let chooser: HSChooser = toHSChooserFromLua(L, 1) as! HSChooser
 
@@ -376,7 +377,7 @@ private let chooserQueryCallback: lua_CFunction = { L in
 /// Notes:
 ///   * The callback may accept one argument, the row the right click occurred in or 0 if there is currently no selectable row where the right click occurred. To determine the location of the mouse pointer at the right click, see `hs.mouse`.
 ///   * To display a context menu, see `hs.menubar`, specifically the `:popupMenu()` method
-private let chooserRightClickCallback: lua_CFunction = { L in
+private let chooserRightClickCallback: LuaClosure = { L in
 
     let chooser: HSChooser = toHSChooserFromLua(L, 1) as! HSChooser
 
@@ -408,7 +409,7 @@ private let chooserRightClickCallback: lua_CFunction = { L in
 /// Notes:
 ///   * The callback may accept one argument, it will be a table containing whatever information you supplied for the item the user chose.
 ///   * To display a context menu, see `hs.menubar`, specifically the `:popupMenu()` method
-private let chooserInvalidCallback: lua_CFunction = { L in
+private let chooserInvalidCallback: LuaClosure = { L in
 
     let chooser: HSChooser = toHSChooserFromLua(L, 1) as! HSChooser
 
@@ -436,11 +437,11 @@ private let chooserInvalidCallback: lua_CFunction = { L in
 ///
 /// Returns:
 ///  * None
-private let chooserDelete: lua_CFunction = { L in
+private let chooserDelete: LuaClosure = { L in
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     // FIXME: Should we force the selfRefCount to 1 here, so the _gc call definitely deletes the ObjC object?
-    return userdata_gc(L!)
+    return try userdata_gc(L)
 }
 
 /// hs.chooser:fgColor(color) -> hs.chooser object
@@ -452,7 +453,7 @@ private let chooserDelete: lua_CFunction = { L in
 ///
 /// Returns:
 ///  * The `hs.chooser` object or a color table
-private let chooserSetFgColor: lua_CFunction = { L in
+private let chooserSetFgColor: LuaClosure = { L in
 
     let chooser: HSChooser = toHSChooserFromLua(L, 1) as! HSChooser
 
@@ -485,7 +486,7 @@ private let chooserSetFgColor: lua_CFunction = { L in
 ///
 /// Returns:
 ///  * The `hs.chooser` object or a color table
-private let chooserSetSubTextColor: lua_CFunction = { L in
+private let chooserSetSubTextColor: LuaClosure = { L in
 
     let chooser: HSChooser = toHSChooserFromLua(L, 1) as! HSChooser
 
@@ -521,7 +522,7 @@ private let chooserSetSubTextColor: lua_CFunction = { L in
 ///
 /// Notes:
 ///  * The text colors will not automatically change when you toggle the darkness of the chooser window, you should also set appropriate colors with `hs.chooser:fgColor()` and `hs.chooser:subTextColor()`
-private let chooserSetBgDark: lua_CFunction = { L in
+private let chooserSetBgDark: LuaClosure = { L in
 
     let chooser: HSChooser = toHSChooserFromLua(L, 1) as! HSChooser
 
@@ -558,7 +559,7 @@ private let chooserSetBgDark: lua_CFunction = { L in
 ///
 /// Notes:
 ///  * This should be used before a chooser has been displayed
-private let chooserSetEnableDefaultForQuery: lua_CFunction = { L in
+private let chooserSetEnableDefaultForQuery: LuaClosure = { L in
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let chooser: HSChooser = toHSChooserFromLua(L, 1) as! HSChooser
@@ -592,7 +593,7 @@ private let chooserSetEnableDefaultForQuery: lua_CFunction = { L in
 ///
 /// Notes:
 ///  * This should be used before a chooser has been displayed
-private let chooserSetSearchSubText: lua_CFunction = { L in
+private let chooserSetSearchSubText: LuaClosure = { L in
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let chooser: HSChooser = toHSChooserFromLua(L, 1) as! HSChooser
@@ -626,7 +627,7 @@ private let chooserSetSearchSubText: lua_CFunction = { L in
 ///
 /// Notes:
 ///  * This should be used before a chooser has been displayed
-private let chooserSetWidth: lua_CFunction = { L in
+private let chooserSetWidth: LuaClosure = { L in
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let chooser: HSChooser = toHSChooserFromLua(L, 1) as! HSChooser
@@ -656,7 +657,7 @@ private let chooserSetWidth: lua_CFunction = { L in
 ///
 /// Returns:
 ///  * The `hs.chooser` object or a number
-private let chooserSetNumRows: lua_CFunction = { L in
+private let chooserSetNumRows: LuaClosure = { L in
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let chooser: HSChooser = toHSChooserFromLua(L, 1) as! HSChooser
@@ -686,7 +687,7 @@ private let chooserSetNumRows: lua_CFunction = { L in
 ///
 /// Returns:
 ///  * If an argument is provided, returns the hs.chooser object; otherwise returns a number containing the row currently selected (i.e. the one highlighted in the UI)
-private let chooserSelectedRow: lua_CFunction = { L in
+private let chooserSelectedRow: LuaClosure = { L in
 
     let chooser: HSChooser = toHSChooserFromLua(L, 1) as! HSChooser
 
@@ -713,7 +714,7 @@ private let chooserSelectedRow: lua_CFunction = { L in
 ///
 /// Returns:
 ///  * a table containing whatever information was supplied for the row currently selected or an empty table if no row is selected or the specified row does not exist.
-private let chooserSelectedRowContents: lua_CFunction = { L in
+private let chooserSelectedRowContents: LuaClosure = { L in
     luaL_checkudata(L, 1, USERDATA_TAG)
     let chooser: HSChooser = toHSChooserFromLua(L, 1) as! HSChooser
 
@@ -735,12 +736,12 @@ private let chooserSelectedRowContents: lua_CFunction = { L in
 ///
 /// Returns:
 ///  * The `hs.chooser` object
-private let chooserSelect: lua_CFunction = { L in
+private let chooserSelect: LuaClosure = { L in
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let chooser: HSChooser = toHSChooserFromLua(L, 1) as! HSChooser
 
-    _ = chooserSelectedRow(L!)
+    _ = try chooserSelectedRow(L)
     lua_pop(L, 1)
 
     chooser.queryDidPressEnter(nil)
@@ -758,7 +759,7 @@ private let chooserSelect: lua_CFunction = { L in
 ///
 /// Returns:
 ///  * The `hs.chooser` object
-private let chooserCancel: lua_CFunction = { L in
+private let chooserCancel: LuaClosure = { L in
     luaL_checkudata(L, 1, USERDATA_TAG)
     let chooser: HSChooser = toHSChooserFromLua(L, 1) as! HSChooser
 
@@ -880,13 +881,13 @@ func pushChooserChoice(_ L: UnsafeMutablePointer<lua_State>!, _ choice: Any?) {
 
 // MARK: - Cosmic Hammer Infrastructure
 
-private let userdata_tostring: lua_CFunction = { L in
+private let userdata_tostring: LuaClosure = { L in
     let chooser: HSChooser = toHSChooserFromLua(L, 1) as! HSChooser
     lua_pushany(L, String(format: "%@: (%@)", USERDATA_TAG, chooser) as NSString)
     return 1
 }
 
-private let userdata_eq: lua_CFunction = { L in
+private let userdata_eq: LuaClosure = { L in
     // can't get here if at least one of us isn't a userdata type, and we only care if both types are ours,
     // so use luaL_testudata before the macro causes a lua error
     if luaL_testudata(L, 1, USERDATA_TAG) != nil && luaL_testudata(L, 2, USERDATA_TAG) != nil {
@@ -899,7 +900,7 @@ private let userdata_eq: lua_CFunction = { L in
     return 1
 }
 
-private let userdata_gc: lua_CFunction = { L in
+private let userdata_gc: LuaClosure = { L in
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let ptr = luaL_checkudata(L, 1, USERDATA_TAG)!
@@ -945,61 +946,76 @@ private let userdata_gc: lua_CFunction = { L in
     return 0
 }
 
-// MARK: - Module registration tables
-
-private var chooserLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("new"), func: chooserNew),
-    luaL_Reg(name: nil, func: nil),
-]
-
-private var userdataLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("show"), func: chooserShow),
-    luaL_Reg(name: strdup("hide"), func: chooserHide),
-    luaL_Reg(name: strdup("isVisible"), func: chooserIsVisible),
-    luaL_Reg(name: strdup("choices"), func: chooserSetChoices),
-    luaL_Reg(name: strdup("hideCallback"), func: chooserHideCallback),
-    luaL_Reg(name: strdup("showCallback"), func: chooserShowCallback),
-    luaL_Reg(name: strdup("queryChangedCallback"), func: chooserQueryCallback),
-    luaL_Reg(name: strdup("query"), func: chooserSetQuery),
-    luaL_Reg(name: strdup("delete"), func: chooserDelete),
-    luaL_Reg(name: strdup("refreshChoicesCallback"), func: chooserRefreshChoicesCallback),
-    luaL_Reg(name: strdup("rightClickCallback"), func: chooserRightClickCallback),
-    luaL_Reg(name: strdup("invalidCallback"), func: chooserInvalidCallback),
-    luaL_Reg(name: strdup("selectedRow"), func: chooserSelectedRow),
-    luaL_Reg(name: strdup("selectedRowContents"), func: chooserSelectedRowContents),
-    luaL_Reg(name: strdup("select"), func: chooserSelect),
-    luaL_Reg(name: strdup("cancel"), func: chooserCancel),
-    luaL_Reg(name: strdup("fgColor"), func: chooserSetFgColor),
-    luaL_Reg(name: strdup("subTextColor"), func: chooserSetSubTextColor),
-    luaL_Reg(name: strdup("bgDark"), func: chooserSetBgDark),
-    luaL_Reg(name: strdup("placeholderText"), func: chooserPlaceholder),
-    luaL_Reg(name: strdup("searchSubText"), func: chooserSetSearchSubText),
-    luaL_Reg(name: strdup("enableDefaultForQuery"), func: chooserSetEnableDefaultForQuery),
-    luaL_Reg(name: strdup("width"), func: chooserSetWidth),
-    luaL_Reg(name: strdup("rows"), func: chooserSetNumRows),
-
-    luaL_Reg(name: strdup("__tostring"), func: userdata_tostring),
-    luaL_Reg(name: strdup("__eq"), func: userdata_eq),
-    luaL_Reg(name: strdup("__gc"), func: userdata_gc),
-    luaL_Reg(name: nil, func: nil),
-]
-
 @_cdecl("luaopen_hs_libchooser")
 public func luaopen_hs_libchooser(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    // Create ref table in registry
-    lua_newtable(L)
-    refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+    runEntryPoint(L) { L in
+        // Create ref table in registry
+        lua_newtable(L)
+        refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
 
-    // Register userdata metatable
-    luaL_newmetatable(L, USERDATA_TAG)
-    lua_pushvalue(L, -1)
-    lua_setfield(L, -2, "__index")
-    luaL_setfuncs(L, &userdataLib, 0)
-    lua_pop(L, 1)
+        // Register userdata metatable
+        luaL_newmetatable(L, USERDATA_TAG)
+        lua_pushvalue(L, -1)
+        lua_setfield(L, -2, "__index")
+        L.push(chooserShow)
+        lua_setfield(L, -2, "show")
+        L.push(chooserHide)
+        lua_setfield(L, -2, "hide")
+        L.push(chooserIsVisible)
+        lua_setfield(L, -2, "isVisible")
+        L.push(chooserSetChoices)
+        lua_setfield(L, -2, "choices")
+        L.push(chooserHideCallback)
+        lua_setfield(L, -2, "hideCallback")
+        L.push(chooserShowCallback)
+        lua_setfield(L, -2, "showCallback")
+        L.push(chooserQueryCallback)
+        lua_setfield(L, -2, "queryChangedCallback")
+        L.push(chooserSetQuery)
+        lua_setfield(L, -2, "query")
+        L.push(chooserDelete)
+        lua_setfield(L, -2, "delete")
+        L.push(chooserRefreshChoicesCallback)
+        lua_setfield(L, -2, "refreshChoicesCallback")
+        L.push(chooserRightClickCallback)
+        lua_setfield(L, -2, "rightClickCallback")
+        L.push(chooserInvalidCallback)
+        lua_setfield(L, -2, "invalidCallback")
+        L.push(chooserSelectedRow)
+        lua_setfield(L, -2, "selectedRow")
+        L.push(chooserSelectedRowContents)
+        lua_setfield(L, -2, "selectedRowContents")
+        L.push(chooserSelect)
+        lua_setfield(L, -2, "select")
+        L.push(chooserCancel)
+        lua_setfield(L, -2, "cancel")
+        L.push(chooserSetFgColor)
+        lua_setfield(L, -2, "fgColor")
+        L.push(chooserSetSubTextColor)
+        lua_setfield(L, -2, "subTextColor")
+        L.push(chooserSetBgDark)
+        lua_setfield(L, -2, "bgDark")
+        L.push(chooserPlaceholder)
+        lua_setfield(L, -2, "placeholderText")
+        L.push(chooserSetSearchSubText)
+        lua_setfield(L, -2, "searchSubText")
+        L.push(chooserSetEnableDefaultForQuery)
+        lua_setfield(L, -2, "enableDefaultForQuery")
+        L.push(chooserSetWidth)
+        lua_setfield(L, -2, "width")
+        L.push(chooserSetNumRows)
+        lua_setfield(L, -2, "rows")
+        L.push(userdata_tostring)
+        lua_setfield(L, -2, "__tostring")
+        L.push(userdata_eq)
+        lua_setfield(L, -2, "__eq")
+        L.push(userdata_gc)
+        lua_setfield(L, -2, "__gc")
+        lua_pop(L, 1)
 
-    // Create module table
-    lua_createtable(L, 0, Int32(chooserLib.count - 1))
-    luaL_setfuncs(L, &chooserLib, 0)
-
-    return 1
+        // Create module table
+        lua_createtable(L, 0, 1)
+        L.push(chooserNew)
+        lua_setfield(L, -2, "new")
+    }
 }

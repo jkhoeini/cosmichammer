@@ -1,5 +1,6 @@
 import Cocoa
 import CLua
+import Lua
 import IOKit.ps
 
 /// === hs.battery.watcher ===
@@ -50,7 +51,7 @@ private func callback(_ info: UnsafeMutableRawPointer?) {
 ///
 /// Notes:
 ///  * Because the callback function accepts no arguments, tracking of state of changing battery attributes is the responsibility of the user (see https://github.com/jkhoeini/cosmichammer/issues/166 for discussion)
-private func battery_watcher_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func battery_watcher_new(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TFUNCTION)
 
     let watcherPtr = lua_newuserdata(L, MemoryLayout<BatteryWatcher>.size)!
@@ -78,7 +79,7 @@ private func battery_watcher_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 ///
 /// Returns:
 ///  * The `hs.battery.watcher` object
-private func battery_watcher_start(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func battery_watcher_start(_ L: LuaState) throws -> CInt {
     let watcher = luaL_checkudata(L, 1, USERDATA_TAG)!
         .assumingMemoryBound(to: BatteryWatcher.self)
 
@@ -101,7 +102,7 @@ private func battery_watcher_start(_ L: UnsafeMutablePointer<lua_State>!) -> Int
 ///
 /// Returns:
 ///  * The `hs.battery.watcher` object
-private func battery_watcher_stop(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func battery_watcher_stop(_ L: LuaState) throws -> CInt {
     let watcher = luaL_checkudata(L, 1, USERDATA_TAG)!
         .assumingMemoryBound(to: BatteryWatcher.self)
     lua_settop(L, 1)
@@ -113,13 +114,11 @@ private func battery_watcher_stop(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
     return 1
 }
 
-private func battery_watcher_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func battery_watcher_gc(_ L: LuaState) throws -> CInt {
     let watcher = luaL_checkudata(L, 1, USERDATA_TAG)!
         .assumingMemoryBound(to: BatteryWatcher.self)
 
-    lua_pushcfunction(L, battery_watcher_stop)
-    lua_pushvalue(L, 1)
-    lua_call(L, 1, 1)
+    _ = try battery_watcher_stop(L)
 
     luaL_unref(L, LUA_REGISTRYINDEX_VALUE, watcher.pointee.fn)
     watcher.pointee.fn = Int32(LUA_NOREF)
@@ -128,58 +127,46 @@ private func battery_watcher_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
     return 0
 }
 
-private func meta_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func meta_gc(_ L: LuaState) throws -> CInt {
     return 0
 }
 
-private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func userdata_tostring(_ L: LuaState) throws -> CInt {
     let ptr = lua_topointer(L, 1)
     lua_pushstring(L, "\(USERDATA_TAG): (\(String(describing: ptr)))")
     return 1
 }
 
-// Metatable for created objects when _new invoked
-private var battery_metalib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("start"),      func: battery_watcher_start),
-    luaL_Reg(name: strdup("stop"),       func: battery_watcher_stop),
-    luaL_Reg(name: strdup("__gc"),       func: battery_watcher_gc),
-    luaL_Reg(name: strdup("__tostring"), func: userdata_tostring),
-    luaL_Reg(name: nil, func: nil),
-]
-
-// Functions for returned object when module loads
-private var batteryLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("new"), func: battery_watcher_new),
-    luaL_Reg(name: nil, func: nil),
-]
-
-// Metatable for returned object when module loads
-private var meta_gcLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("__gc"), func: meta_gc),
-    luaL_Reg(name: nil, func: nil),
-]
-
 @_cdecl("luaopen_hs_libbatterywatcher")
 public func luaopen_hs_libbatterywatcher(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    // Create ref table in registry
-    lua_newtable(L)
-    refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+    runEntryPoint(L) { L in
+        // Create ref table in registry
+        lua_newtable(L)
+        refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
 
-    // Register userdata metatable
-    luaL_newmetatable(L, USERDATA_TAG)
-    lua_pushvalue(L, -1)
-    lua_setfield(L, -2, "__index")
-    luaL_setfuncs(L, &battery_metalib, 0)
-    lua_pop(L, 1)
+        // Register userdata metatable
+        luaL_newmetatable(L, USERDATA_TAG)
+        lua_pushvalue(L, -1)
+        lua_setfield(L, -2, "__index")
+        L.push(battery_watcher_start)
+        lua_setfield(L, -2, "start")
+        L.push(battery_watcher_stop)
+        lua_setfield(L, -2, "stop")
+        L.push(battery_watcher_gc)
+        lua_setfield(L, -2, "__gc")
+        L.push(userdata_tostring)
+        lua_setfield(L, -2, "__tostring")
+        lua_pop(L, 1)
 
-    // Create module table
-    lua_createtable(L, 0, Int32(batteryLib.count - 1))
-    luaL_setfuncs(L, &batteryLib, 0)
+        // Create module table
+        lua_createtable(L, 0, 1)
+        L.push(battery_watcher_new)
+        lua_setfield(L, -2, "new")
 
-    // Set module metatable (for __gc)
-    lua_createtable(L, 0, Int32(meta_gcLib.count - 1))
-    luaL_setfuncs(L, &meta_gcLib, 0)
-    lua_setmetatable(L, -2)
-
-    return 1
+        // Set module metatable (for __gc)
+        lua_createtable(L, 0, 1)
+        L.push(meta_gc)
+        lua_setfield(L, -2, "__gc")
+        lua_setmetatable(L, -2)
+    }
 }

@@ -1,5 +1,6 @@
 import Cocoa
 import CLua
+import Lua
 import os.log
 
 private let USERDATA_TAG = "hs.dialog"
@@ -76,7 +77,7 @@ private var cpReceiverObject: HSColorPanel?
 /// Notes:
 ///  * Example:
 ///      `hs.dialog.color.callback(function(a,b) print("COLOR CALLBACK:\nSelected Color: " .. hs.inspect(a) .. "\nPanel Closed: " .. hs.inspect(b)) end)`
-private func colorPanelCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func colorPanelCallback(_ L: LuaState) throws -> CInt {
 
     if cpReceiverObject!.callbackRef != LUA_NOREF {
         lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(cpReceiverObject!.callbackRef))
@@ -110,7 +111,7 @@ private func colorPanelCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 /// Notes:
 ///  * Example:
 ///      `hs.dialog.color.continuous(true)`
-private func colorPanelContinuous(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func colorPanelContinuous(_ L: LuaState) throws -> CInt {
     let cp = NSColorPanel.shared
     if lua_gettop(L) == 1 {
         cp.isContinuous = lua_toboolean(L, 1) != 0
@@ -132,7 +133,7 @@ private func colorPanelContinuous(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
 /// Notes:
 ///  * Example:
 ///      `hs.dialog.color.showsAlpha(true)`
-private func colorPanelShowsAlpha(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func colorPanelShowsAlpha(_ L: LuaState) throws -> CInt {
     let cp = NSColorPanel.shared
     if lua_gettop(L) == 1 {
         cp.showsAlpha = lua_toboolean(L, 1) != 0
@@ -154,11 +155,11 @@ private func colorPanelShowsAlpha(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
 /// Notes:
 ///  * Example:
 ///      `hs.dialog.color.color(hs.drawing.color.blue)`
-private func colorPanelColor(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func colorPanelColor(_ L: LuaState) throws -> CInt {
     let cp = NSColorPanel.shared
     if lua_gettop(L) == 1 {
         guard let theColor = table_toNSColor(L, 1) as? NSColor else {
-            return luaL_argerror(L, 1, "expected color table")
+            throw LuaCallError("bad argument #1 (expected color table)")
         }
         cp.color = theColor
     }
@@ -188,7 +189,7 @@ private func colorPanelColor(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Notes:
 ///  * Example:
 ///      `hs.dialog.color.mode("RGB")`
-private func colorPanelMode(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func colorPanelMode(_ L: LuaState) throws -> CInt {
     let cp = NSColorPanel.shared
     if lua_gettop(L) == 1 {
         let theMode = lua_tovalue(L, at: 1) as! String
@@ -203,7 +204,7 @@ private func colorPanelMode(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
         case "wheel":  cp.mode = .wheel
         case "crayon": cp.mode = .crayon
         default:
-            return luaL_error(L, "unknown color panel mode")
+            throw LuaCallError("unknown color panel mode")
         }
     }
 
@@ -236,7 +237,7 @@ private func colorPanelMode(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Notes:
 ///  * Example:
 ///      `hs.dialog.color.alpha(0.5)`
-private func colorPanelAlpha(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func colorPanelAlpha(_ L: LuaState) throws -> CInt {
 
     let cp = NSColorPanel.shared
     if lua_gettop(L) == 1 {
@@ -262,7 +263,7 @@ private func colorPanelAlpha(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Notes:
 ///  * Example:
 ///      `hs.dialog.color.show()`
-private func colorPanelShow(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func colorPanelShow(_ L: LuaState) throws -> CInt {
     NSApp.orderFrontColorPanel(nil)
     return 0
 }
@@ -280,7 +281,7 @@ private func colorPanelShow(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Notes:
 ///  * Example:
 ///      `hs.dialog.color.hide()`
-private func colorPanelHide(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func colorPanelHide(_ L: LuaState) throws -> CInt {
     NSColorPanel.shared.close()
     return 0
 }
@@ -307,7 +308,7 @@ private func colorPanelHide(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * The optional values must be entered in order (i.e. you can't supply `allowsMultipleSelection` without also supplying `canChooseFiles` and `canChooseDirectories`).
 ///  * Example:
 ///      `hs.inspect(hs.dialog.chooseFileOrFolder("Please select a file:", "~/Desktop", true, false, true, {"jpeg", "pdf"}, true))`
-private func chooseFileOrFolder(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func chooseFileOrFolder(_ L: LuaState) throws -> CInt {
     // Check the Parameters:
     //              [message],                 [defaultPath],             [canChooseFiles],           [canChooseDirectories],     [allowsMultipleSelection],  [allowedFileTypes],       [resolvesAliases]
 
@@ -400,14 +401,14 @@ func dialog_webviewWindowFromLua(L: UnsafeMutablePointer<lua_State>!, at idx: In
 ///      testWebviewB = hs.webview.newBrowser(hs.geometry.rect(450, 450, 450, 450)):show()
 ///      hs.dialog.webviewAlert(testWebviewA, testCallbackFn, "Message", "Informative Text", "Button One", "Button Two", "warning")
 ///      hs.dialog.webviewAlert(testWebviewB, testCallbackFn, "Message", "Informative Text", "Single Button")```
-private func webviewAlert(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func webviewAlert(_ L: LuaState) throws -> CInt {
     let defaultButton = "OK"
     let defaultAlertStyle = NSAlert.Style.informational
 
     //                            webview,      callbackFn,   message,    [informativeText],         [buttonOne],               [buttonTwo],                         [style]
 
     guard let webview = dialog_webviewWindowFromLua(L: L, at: 1) else {
-        return luaL_argerror(L, 1, "expected hs.webview object")
+        throw LuaCallError("bad argument #1 (expected hs.webview object)")
     }
 
     lua_pushvalue(L, 2) // Copy the callback function to the top of the stack
@@ -490,7 +491,7 @@ private func webviewAlert(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///  * [style] can be "warning", "informational" or "critical". If something other than these string values is given, it will use "warning".
 ///  * Example:
 ///      `hs.dialog.blockAlert("Message", "Informative Text", "Button One", "Button Two", "critical")`
-private func blockAlert(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func blockAlert(_ L: LuaState) throws -> CInt {
     let defaultButton = "OK"
 
     //              message,    informativeText,
@@ -567,7 +568,7 @@ private func blockAlert(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///      `hs.dialog.textPrompt("Main message.", "Please enter something:", "Default Value", "OK")`
 ///      `hs.dialog.textPrompt("Main message.", "Please enter something:", "Default Value", "OK", "Cancel")`
 ///      `hs.dialog.textPrompt("Main message.", "Please enter something:", "", "OK", "Cancel", true)`
-private func textPrompt(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func textPrompt(_ L: LuaState) throws -> CInt {
     let defaultButton = "OK"
 
     //              message,    informativeText,
@@ -636,7 +637,7 @@ private func textPrompt(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 // MARK: - Cosmic Hammer/Lua Infrastructure
 
-private func releaseReceivers(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func releaseReceivers(_ L: LuaState) throws -> CInt {
     let cp = NSColorPanel.shared
     NotificationCenter.default.removeObserver(
         cpReceiverObject!,
@@ -655,52 +656,50 @@ private func releaseReceivers(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 0
 }
 
-// Functions for returned object when module loads:
-private var moduleLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("webviewAlert"), func: webviewAlert),
-    luaL_Reg(name: strdup("blockAlert"), func: blockAlert),
-    luaL_Reg(name: strdup("textPrompt"), func: textPrompt),
-    luaL_Reg(name: strdup("chooseFileOrFolder"), func: chooseFileOrFolder),
-    luaL_Reg(name: nil, func: nil),
-]
-
-private var colorPanelLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("alpha"), func: colorPanelAlpha),
-    luaL_Reg(name: strdup("callback"), func: colorPanelCallback),
-    luaL_Reg(name: strdup("color"), func: colorPanelColor),
-    luaL_Reg(name: strdup("continuous"), func: colorPanelContinuous),
-    luaL_Reg(name: strdup("mode"), func: colorPanelMode),
-    luaL_Reg(name: strdup("showsAlpha"), func: colorPanelShowsAlpha),
-    luaL_Reg(name: strdup("show"), func: colorPanelShow),
-    luaL_Reg(name: strdup("hide"), func: colorPanelHide),
-    luaL_Reg(name: nil, func: nil),
-]
-
-private var module_metaLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("__gc"), func: releaseReceivers),
-    luaL_Reg(name: nil, func: nil),
-]
-
 @_cdecl("luaopen_hs_libdialog")
 public func luaopen_hs_libdialog(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    // Create ref table in registry
-    lua_newtable(L)
-    refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+    runEntryPoint(L) { L in
+        // Create ref table in registry
+        lua_newtable(L)
+        refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
 
-    // Create module table
-    lua_createtable(L, 0, Int32(moduleLib.count - 1))
-    luaL_setfuncs(L, &moduleLib, 0)
+        // Create module table (4 functions)
+        lua_createtable(L, 0, 4)
+        L.push(webviewAlert)
+        lua_setfield(L, -2, "webviewAlert")
+        L.push(blockAlert)
+        lua_setfield(L, -2, "blockAlert")
+        L.push(textPrompt)
+        lua_setfield(L, -2, "textPrompt")
+        L.push(chooseFileOrFolder)
+        lua_setfield(L, -2, "chooseFileOrFolder")
 
-    // Set module metatable (for __gc)
-    lua_createtable(L, 0, Int32(module_metaLib.count - 1))
-    luaL_setfuncs(L, &module_metaLib, 0)
-    lua_setmetatable(L, -2)
+        // Set module metatable (for __gc)
+        lua_createtable(L, 0, 1)
+        L.push(releaseReceivers)
+        lua_setfield(L, -2, "__gc")
+        lua_setmetatable(L, -2)
 
-    lua_newtable(L)
-    luaL_setfuncs(L, &colorPanelLib, 0)
-    lua_setfield(L, -2, "color")
-    NSColorPanel.setPickerMask(NSColorPanel.Options(rawValue: 0xFFFF))
-    cpReceiverObject = HSColorPanel()
-
-    return 1
+        // Color panel sub-table (8 functions)
+        lua_createtable(L, 0, 8)
+        L.push(colorPanelAlpha)
+        lua_setfield(L, -2, "alpha")
+        L.push(colorPanelCallback)
+        lua_setfield(L, -2, "callback")
+        L.push(colorPanelColor)
+        lua_setfield(L, -2, "color")
+        L.push(colorPanelContinuous)
+        lua_setfield(L, -2, "continuous")
+        L.push(colorPanelMode)
+        lua_setfield(L, -2, "mode")
+        L.push(colorPanelShowsAlpha)
+        lua_setfield(L, -2, "showsAlpha")
+        L.push(colorPanelShow)
+        lua_setfield(L, -2, "show")
+        L.push(colorPanelHide)
+        lua_setfield(L, -2, "hide")
+        lua_setfield(L, -2, "color")
+        NSColorPanel.setPickerMask(NSColorPanel.Options(rawValue: 0xFFFF))
+        cpReceiverObject = HSColorPanel()
+    }
 }

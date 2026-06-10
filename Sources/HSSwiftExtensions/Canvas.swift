@@ -1,5 +1,6 @@
 import Cocoa
 import CLua
+import Lua
 import os.log
 
 // MARK: - HSGifAnimator stub
@@ -942,7 +943,7 @@ func canvas_toHSCanvasViewFromLua(_ L: UnsafeMutablePointer<lua_State>!, idx: In
 
 // MARK: - Cosmic Hammer/Lua Infrastructure
 
-func canvas_userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func canvas_userdata_tostring(_ L: LuaState) throws -> CInt {
     let obj = canvas_toHSCanvasViewFromLua(L, idx: 1) as! HSCanvasView
     let title: String
     if canvas_parentIsWindow(obj) {
@@ -954,7 +955,7 @@ func canvas_userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 1
 }
 
-func canvas_userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func canvas_userdata_eq(_ L: LuaState) throws -> CInt {
     if luaL_testudata(L, 1, canvas_USERDATA_TAG) != nil && luaL_testudata(L, 2, canvas_USERDATA_TAG) != nil {
         let obj1 = canvas_toHSCanvasViewFromLua(L, idx: 1) as! HSCanvasView
         let obj2 = canvas_toHSCanvasViewFromLua(L, idx: 2) as! HSCanvasView
@@ -965,7 +966,7 @@ func canvas_userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 1
 }
 
-func canvas_userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+func canvas_userdata_gc(_ L: LuaState) throws -> CInt {
     let ptr = luaL_checkudata(L, 1, canvas_USERDATA_TAG)!
     let opaque = ptr.assumingMemoryBound(to: UnsafeMutableRawPointer.self).pointee
     let theView = Unmanaged<HSCanvasView>.fromOpaque(opaque).takeRetainedValue()
@@ -994,82 +995,70 @@ func canvas_userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 0
 }
 
-// Metatable for userdata objects
-private var userdata_metaLib: [luaL_Reg] = [
-    // affects drawing elements
-    luaL_Reg(name: strdup("assignElement"),          func: canvas_assignElementAtIndex),
-    luaL_Reg(name: strdup("canvasElements"),         func: canvas_canvasElements),
-    luaL_Reg(name: strdup("canvasDefaults"),         func: canvas_canvasDefaults),
-    luaL_Reg(name: strdup("canvasMouseEvents"),      func: canvas_canvasMouseEvents),
-    luaL_Reg(name: strdup("canvasDefaultKeys"),      func: canvas_canvasDefaultKeys),
-    luaL_Reg(name: strdup("canvasDefaultFor"),       func: canvas_canvasDefaultFor),
-    luaL_Reg(name: strdup("elementAttribute"),       func: canvas_elementAttributeAtIndex),
-    luaL_Reg(name: strdup("elementBounds"),          func: canvas_elementBoundsAtIndex),
-    luaL_Reg(name: strdup("elementCount"),           func: canvas_elementCount),
-    luaL_Reg(name: strdup("elementKeys"),            func: canvas_elementKeysAtIndex),
-    luaL_Reg(name: strdup("imageFromCanvas"),        func: canvas_canvasAsImage),
-    luaL_Reg(name: strdup("insertElement"),          func: canvas_insertElementAtIndex),
-    luaL_Reg(name: strdup("minimumTextSize"),        func: canvas_getTextElementSize),
-    luaL_Reg(name: strdup("removeElement"),          func: canvas_removeElementAtIndex),
-    // affects whole canvas
-    luaL_Reg(name: strdup("alpha"),                  func: canvas_alpha),
-    luaL_Reg(name: strdup("behavior"),               func: canvas_behavior),
-    luaL_Reg(name: strdup("clickActivating"),        func: canvas_clickActivating),
-    luaL_Reg(name: strdup("delete"),                 func: canvas_delete),
-    luaL_Reg(name: strdup("hide"),                   func: canvas_hide),
-    luaL_Reg(name: strdup("isOccluded"),             func: canvas_isOccluded),
-    luaL_Reg(name: strdup("isShowing"),              func: canvas_isShowing),
-    luaL_Reg(name: strdup("level"),                  func: canvas_level),
-    luaL_Reg(name: strdup("mouseCallback"),          func: canvas_mouseCallback),
-    luaL_Reg(name: strdup("orderAbove"),             func: canvas_orderAbove),
-    luaL_Reg(name: strdup("orderBelow"),             func: canvas_orderBelow),
-    luaL_Reg(name: strdup("show"),                   func: canvas_show),
-    luaL_Reg(name: strdup("size"),                   func: canvas_size),
-    luaL_Reg(name: strdup("topLeft"),                func: canvas_topLeft),
-    luaL_Reg(name: strdup("transformation"),         func: canvas_canvasTransformation),
-    luaL_Reg(name: strdup("wantsLayer"),             func: canvas_wantsLayer),
-    luaL_Reg(name: strdup("draggingCallback"),       func: canvas_draggingCallback),
-    luaL_Reg(name: strdup("_accessibilitySubrole"),  func: canvas_accessibilitySubrole),
-    luaL_Reg(name: strdup("__tostring"),             func: canvas_userdata_tostring),
-    luaL_Reg(name: strdup("__eq"),                   func: canvas_userdata_eq),
-    luaL_Reg(name: strdup("__gc"),                   func: canvas_userdata_gc),
-    luaL_Reg(name: nil, func: nil),
-]
-
-// Functions for returned object when module loads
-private var moduleLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("defaultTextStyle"), func: default_textAttributes),
-    luaL_Reg(name: strdup("elementSpec"),      func: dumpLanguageDictionary),
-    luaL_Reg(name: strdup("new"),              func: canvas_new),
-    luaL_Reg(name: strdup("useCustomAccessibilitySubrole"), func: canvas_useCustomAccessibilitySubrole),
-    luaL_Reg(name: nil, func: nil),
-]
-
 @_cdecl("luaopen_hs_libcanvas")
 public func luaopen_hs_libcanvas(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    // Create ref table in registry
-    lua_newtable(L)
-    canvas_refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+    runEntryPoint(L) { L in
+        // Create ref table in registry
+        lua_newtable(L)
+        canvas_refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
 
-    // Register userdata metatable
-    luaL_newmetatable(L, canvas_USERDATA_TAG)
-    lua_pushvalue(L, -1)
-    lua_setfield(L, -2, "__index")
-    luaL_setfuncs(L, &userdata_metaLib, 0)
-    lua_pop(L, 1)
+        // Register userdata metatable
+        luaL_newmetatable(L, canvas_USERDATA_TAG)
+        lua_pushvalue(L, -1)
+        lua_setfield(L, -2, "__index")
+        // affects drawing elements
+        L.push(canvas_assignElementAtIndex);    lua_setfield(L, -2, "assignElement")
+        L.push(canvas_canvasElements);          lua_setfield(L, -2, "canvasElements")
+        L.push(canvas_canvasDefaults);          lua_setfield(L, -2, "canvasDefaults")
+        L.push(canvas_canvasMouseEvents);       lua_setfield(L, -2, "canvasMouseEvents")
+        L.push(canvas_canvasDefaultKeys);       lua_setfield(L, -2, "canvasDefaultKeys")
+        L.push(canvas_canvasDefaultFor);        lua_setfield(L, -2, "canvasDefaultFor")
+        L.push(canvas_elementAttributeAtIndex); lua_setfield(L, -2, "elementAttribute")
+        L.push(canvas_elementBoundsAtIndex);    lua_setfield(L, -2, "elementBounds")
+        L.push(canvas_elementCount);            lua_setfield(L, -2, "elementCount")
+        L.push(canvas_elementKeysAtIndex);      lua_setfield(L, -2, "elementKeys")
+        L.push(canvas_canvasAsImage);           lua_setfield(L, -2, "imageFromCanvas")
+        L.push(canvas_insertElementAtIndex);    lua_setfield(L, -2, "insertElement")
+        L.push(canvas_getTextElementSize);      lua_setfield(L, -2, "minimumTextSize")
+        L.push(canvas_removeElementAtIndex);    lua_setfield(L, -2, "removeElement")
+        // affects whole canvas
+        L.push(canvas_alpha);                   lua_setfield(L, -2, "alpha")
+        L.push(canvas_behavior);                lua_setfield(L, -2, "behavior")
+        L.push(canvas_clickActivating);         lua_setfield(L, -2, "clickActivating")
+        L.push(canvas_delete);                  lua_setfield(L, -2, "delete")
+        L.push(canvas_hide);                    lua_setfield(L, -2, "hide")
+        L.push(canvas_isOccluded);              lua_setfield(L, -2, "isOccluded")
+        L.push(canvas_isShowing);               lua_setfield(L, -2, "isShowing")
+        L.push(canvas_level);                   lua_setfield(L, -2, "level")
+        L.push(canvas_mouseCallback);           lua_setfield(L, -2, "mouseCallback")
+        L.push(canvas_orderAbove);              lua_setfield(L, -2, "orderAbove")
+        L.push(canvas_orderBelow);              lua_setfield(L, -2, "orderBelow")
+        L.push(canvas_show);                    lua_setfield(L, -2, "show")
+        L.push(canvas_size);                    lua_setfield(L, -2, "size")
+        L.push(canvas_topLeft);                 lua_setfield(L, -2, "topLeft")
+        L.push(canvas_canvasTransformation);    lua_setfield(L, -2, "transformation")
+        L.push(canvas_wantsLayer);              lua_setfield(L, -2, "wantsLayer")
+        L.push(canvas_draggingCallback);        lua_setfield(L, -2, "draggingCallback")
+        L.push(canvas_accessibilitySubrole);    lua_setfield(L, -2, "_accessibilitySubrole")
+        L.push(canvas_userdata_tostring);       lua_setfield(L, -2, "__tostring")
+        L.push(canvas_userdata_eq);             lua_setfield(L, -2, "__eq")
+        L.push(canvas_userdata_gc);             lua_setfield(L, -2, "__gc")
+        lua_pop(L, 1)
 
-    // Create module table
-    lua_createtable(L, 0, Int32(moduleLib.count - 1))
-    luaL_setfuncs(L, &moduleLib, 0)
+        // Create module table
+        lua_createtable(L, 0, 4)
+        L.push(default_textAttributes);                lua_setfield(L, -2, "defaultTextStyle")
+        L.push(dumpLanguageDictionary);                lua_setfield(L, -2, "elementSpec")
+        L.push(canvas_new);                            lua_setfield(L, -2, "new")
+        L.push(canvas_useCustomAccessibilitySubrole);  lua_setfield(L, -2, "useCustomAccessibilitySubrole")
 
-    if canvas_languageDictionary == nil { canvas_languageDictionary = canvas_defineLanguageDictionary() }
+        if canvas_languageDictionary == nil { canvas_languageDictionary = canvas_defineLanguageDictionary() }
 
-    canvas_pushCompositeTypes(L);      lua_setfield(L, -2, "compositeTypes")
-    canvas_pushCollectionTypeTable(L); lua_setfield(L, -2, "windowBehaviors")
-    canvas_cg_windowLevels(L);         lua_setfield(L, -2, "windowLevels")
+        canvas_pushCompositeTypes(L);      lua_setfield(L, -2, "compositeTypes")
+        canvas_pushCollectionTypeTable(L); lua_setfield(L, -2, "windowBehaviors")
+        canvas_cg_windowLevels(L);         lua_setfield(L, -2, "windowLevels")
 
-    // in case we're reloaded, return to default state
-    canvas_defaultCustomSubRole = true
-
-    return 1
+        // in case we're reloaded, return to default state
+        canvas_defaultCustomSubRole = true
+    }
 }

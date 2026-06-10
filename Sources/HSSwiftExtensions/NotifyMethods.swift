@@ -1,5 +1,6 @@
 import Cocoa
 import CLua
+import Lua
 import os.log
 
 // MARK: - Module Methods
@@ -28,12 +29,12 @@ private func nt_pushNSImageOrNil(_ L: UnsafeMutablePointer<lua_State>!, _ image:
 ///  * See also hs.notify:schedule()
 ///  * If a notification has been modified, then this will resend it.
 ///  * You can invoke this multiple times if you wish to repeat the same notification.
-let notification_send: lua_CFunction = { L in
+func notification_send(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, nt_USERDATA_TAG)
     let notification = nt_getNotification(L, 1)
 
     guard let gus = notification.userInfo?[KEY_ID] as? String else {
-        return luaL_error(L, "notification was not created by this module")
+        throw L.error("notification was not created by this module")
     }
     let userInfo = nt_specifics[gus] as! NSMutableDictionary
     userInfo[KEY_DELIVERED] = false
@@ -58,7 +59,7 @@ let notification_send: lua_CFunction = { L in
 /// Notes:
 ///  * See also hs.notify:send()
 ///  * hs.settings.dateFormat specifies a lua format string which can be used with `os.date()` to properly present the date and time as a string for use with this method.
-let notification_scheduleNotification: lua_CFunction = { L in
+func notification_scheduleNotification(_ L: LuaState) throws -> CInt {
     let notification = nt_getNotification(L, 1)
 
     let myDate: Date?
@@ -71,12 +72,12 @@ let notification_scheduleNotification: lua_CFunction = { L in
     }
 
     guard let date = myDate else {
-        return luaL_error(L, "-- \(nt_USERDATA_TAG):schedule: improper date specified: must be a number (# of seconds since 1970-01-01 00:00:00Z) or string in the format of 'YYYY-MM-DD[T]HH:MM:SS[Z]' (rfc3339)")
+        throw L.error("-- \(nt_USERDATA_TAG):schedule: improper date specified: must be a number (# of seconds since 1970-01-01 00:00:00Z) or string in the format of 'YYYY-MM-DD[T]HH:MM:SS[Z]' (rfc3339)")
     }
     notification.deliveryDate = date
 
     guard let gus = notification.userInfo?[KEY_ID] as? String else {
-        return luaL_error(L, "notification was not created by this module")
+        throw L.error("notification was not created by this module")
     }
     let userInfo = nt_specifics[gus] as! NSMutableDictionary
     userInfo[KEY_DELIVERED] = false
@@ -99,7 +100,7 @@ let notification_scheduleNotification: lua_CFunction = { L in
 ///  * The notification object
 ///  * This method allows you to unlock a dispatched notification so that it can be modified and resent.
 ///  * if the notification was not created by this module, it will still be withdrawn if possible
-let notification_withdraw: lua_CFunction = { L in
+func notification_withdraw(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, nt_USERDATA_TAG)
     let notification = nt_getNotification(L, 1)
 
@@ -115,7 +116,7 @@ let notification_withdraw: lua_CFunction = { L in
             userInfo[KEY_LOCKED] = false
             notification.userInfo = [KEY_ID: gus]
         } else {
-            return luaL_error(L, "notification has not yet been dispatched and cannot be withdrawn")
+            throw L.error("notification has not yet been dispatched and cannot be withdrawn")
         }
     } else { // not ours, but withdraw anyways
         NSUserNotificationCenter.default.removeDeliveredNotification(notification)
@@ -133,7 +134,7 @@ let notification_withdraw: lua_CFunction = { L in
 ///
 /// Returns:
 ///  * The notification object, if titleText is present; otherwise the current setting.
-let notification_title: lua_CFunction = { L in
+func notification_title(_ L: LuaState) throws -> CInt {
     let notification = nt_getNotification(L, 1)
 
     let gus = notification.userInfo?[KEY_ID] as? String
@@ -151,10 +152,10 @@ let notification_title: lua_CFunction = { L in
             }
             lua_pushvalue(L, 1)
         } else {
-            return luaL_error(L, "notification has been dispatched and can no longer be modified")
+            throw L.error("notification has been dispatched and can no longer be modified")
         }
     } else {
-        return luaL_error(L, "notification was not created by this module")
+        throw L.error("notification was not created by this module")
     }
     return 1
 }
@@ -168,7 +169,7 @@ let notification_title: lua_CFunction = { L in
 ///
 /// Returns:
 ///  * The notification object, if subtitleText is present; otherwise the current setting.
-let notification_subtitle: lua_CFunction = { L in
+func notification_subtitle(_ L: LuaState) throws -> CInt {
     let notification = nt_getNotification(L, 1)
 
     let gus = notification.userInfo?[KEY_ID] as? String
@@ -186,10 +187,10 @@ let notification_subtitle: lua_CFunction = { L in
             }
             lua_pushvalue(L, 1)
         } else {
-            return luaL_error(L, "notification has been dispatched and can no longer be modified")
+            throw L.error("notification has been dispatched and can no longer be modified")
         }
     } else {
-        return luaL_error(L, "notification was not created by this module")
+        throw L.error("notification was not created by this module")
     }
     return 1
 }
@@ -203,7 +204,7 @@ let notification_subtitle: lua_CFunction = { L in
 ///
 /// Returns:
 ///  * The notification object, if informativeText is present; otherwise the current setting.
-let notification_informativeText: lua_CFunction = { L in
+func notification_informativeText(_ L: LuaState) throws -> CInt {
     let notification = nt_getNotification(L, 1)
 
     let gus = notification.userInfo?[KEY_ID] as? String
@@ -221,10 +222,10 @@ let notification_informativeText: lua_CFunction = { L in
             }
             lua_pushvalue(L, 1)
         } else {
-            return luaL_error(L, "notification has been dispatched and can no longer be modified")
+            throw L.error("notification has been dispatched and can no longer be modified")
         }
     } else {
-        return luaL_error(L, "notification was not created by this module")
+        throw L.error("notification was not created by this module")
     }
     return 1
 }
@@ -242,7 +243,7 @@ let notification_informativeText: lua_CFunction = { L in
 /// Notes:
 ///  * The affects of this method only apply if the user has set Cosmic Hammer notifications to `Alert` in the Notification Center pane of System Preferences
 ///  * This value is ignored if [hs.notify:hasReplyButton](#hasReplyButton) is true.
-let notification_actionButtonTitle: lua_CFunction = { L in
+func notification_actionButtonTitle(_ L: LuaState) throws -> CInt {
     let notification = nt_getNotification(L, 1)
 
     let gus = notification.userInfo?[KEY_ID] as? String
@@ -260,10 +261,10 @@ let notification_actionButtonTitle: lua_CFunction = { L in
             }
             lua_pushvalue(L, 1)
         } else {
-            return luaL_error(L, "notification has been dispatched and can no longer be modified")
+            throw L.error("notification has been dispatched and can no longer be modified")
         }
     } else {
-        return luaL_error(L, "notification was not created by this module")
+        throw L.error("notification was not created by this module")
     }
     return 1
 }
@@ -281,7 +282,7 @@ let notification_actionButtonTitle: lua_CFunction = { L in
 /// Notes:
 ///  * The affects of this method only apply if the user has set Cosmic Hammer notifications to `Alert` in the Notification Center pane of System Preferences
 ///  * Due to OSX limitations, it is NOT possible to get a callback for this button.
-let notification_otherButtonTitle: lua_CFunction = { L in
+func notification_otherButtonTitle(_ L: LuaState) throws -> CInt {
     let notification = nt_getNotification(L, 1)
 
     let gus = notification.userInfo?[KEY_ID] as? String
@@ -299,10 +300,10 @@ let notification_otherButtonTitle: lua_CFunction = { L in
             }
             lua_pushvalue(L, 1)
         } else {
-            return luaL_error(L, "notification has been dispatched and can no longer be modified")
+            throw L.error("notification has been dispatched and can no longer be modified")
         }
     } else {
-        return luaL_error(L, "notification was not created by this module")
+        throw L.error("notification was not created by this module")
     }
     return 1
 }
@@ -319,7 +320,7 @@ let notification_otherButtonTitle: lua_CFunction = { L in
 ///
 /// Notes:
 ///  * The affects of this method only apply if the user has set Cosmic Hammer notifications to `Alert` in the Notification Center pane of System Preferences
-let notification_hasActionButton: lua_CFunction = { L in
+func notification_hasActionButton(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, nt_USERDATA_TAG)
     let notification = nt_getNotification(L, 1)
 
@@ -334,10 +335,10 @@ let notification_hasActionButton: lua_CFunction = { L in
             notification.hasActionButton = lua_toboolean(L, 2) != 0
             lua_pushvalue(L, 1)
         } else {
-            return luaL_error(L, "notification has been dispatched and can no longer be modified")
+            throw L.error("notification has been dispatched and can no longer be modified")
         }
     } else {
-        return luaL_error(L, "notification was not created by this module")
+        throw L.error("notification was not created by this module")
     }
     return 1
 }
@@ -357,7 +358,7 @@ let notification_hasActionButton: lua_CFunction = { L in
 ///  * Examples of why the users Notification Center would choose not to display a notification would be if Cosmic Hammer is the currently focussed application, being attached to a projector, or the user having set Do Not Disturb.
 ///
 ///  * if the notification was not created by this module, this method will return nil
-let notification_alwaysPresent: lua_CFunction = { L in
+func notification_alwaysPresent(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, nt_USERDATA_TAG)
     let notification = nt_getNotification(L, 1)
 
@@ -377,10 +378,10 @@ let notification_alwaysPresent: lua_CFunction = { L in
             userInfo![KEY_ALWAYSPRESENT] = lua_toboolean(L, 2)
             lua_pushvalue(L, 1)
         } else {
-            return luaL_error(L, "notification has been dispatched and can no longer be modified")
+            throw L.error("notification has been dispatched and can no longer be modified")
         }
     } else {
-        return luaL_error(L, "notification was not created by this module")
+        throw L.error("notification was not created by this module")
     }
     return 1
 }
@@ -399,7 +400,7 @@ let notification_alwaysPresent: lua_CFunction = { L in
 ///  * This tag should correspond to a function in [hs.notify.registry](#registry) and can be used to either add a replacement with `hs.notify.register(...)` or remove it with `hs.notify.unregister(...)`
 ///
 ///  * if the notification was not created by this module, this method will return nil
-let notification_getFunctionTag: lua_CFunction = { L in
+func notification_getFunctionTag(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, nt_USERDATA_TAG)
     let notification = nt_getNotification(L, 1)
 
@@ -427,7 +428,7 @@ let notification_getFunctionTag: lua_CFunction = { L in
 ///  * If a notification which was created before your last reload (or restart) of Cosmic Hammer and is clicked upon before hs.notify has been loaded into memory, this setting will not be honored because the initial application delegate is not aware of this option and is set to automatically withdraw all notifications which are acted upon.
 ///
 ///  * if the notification was not created by this module, this method will return nil
-let notification_autoWithdraw: lua_CFunction = { L in
+func notification_autoWithdraw(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, nt_USERDATA_TAG)
     let notification = nt_getNotification(L, 1)
 
@@ -447,10 +448,10 @@ let notification_autoWithdraw: lua_CFunction = { L in
             userInfo![KEY_AUTOWITHDRAW] = lua_toboolean(L, 2)
             lua_pushvalue(L, 1)
         } else {
-            return luaL_error(L, "notification has been dispatched and can no longer be modified")
+            throw L.error("notification has been dispatched and can no longer be modified")
         }
     } else {
-        return luaL_error(L, "notification was not created by this module")
+        throw L.error("notification was not created by this module")
     }
     return 1
 }
@@ -471,7 +472,7 @@ let notification_autoWithdraw: lua_CFunction = { L in
 ///   * `/Library/Sounds`
 ///   * `/Network/Sounds`
 ///   * `/System/Library/Sounds`
-let notification_soundName: lua_CFunction = { L in
+func notification_soundName(_ L: LuaState) throws -> CInt {
     let notification = nt_getNotification(L, 1)
 
     let gus = notification.userInfo?[KEY_ID] as? String
@@ -489,16 +490,16 @@ let notification_soundName: lua_CFunction = { L in
             }
             lua_pushvalue(L, 1)
         } else {
-            return luaL_error(L, "notification has been dispatched and can no longer be modified")
+            throw L.error("notification has been dispatched and can no longer be modified")
         }
     } else {
-        return luaL_error(L, "notification was not created by this module")
+        throw L.error("notification was not created by this module")
     }
     return 1
 }
 
 // NOTE: THIS FUNCTION IS WRAPPED IN init.lua
-let notification_contentImage: lua_CFunction = { L in
+func notification_contentImage(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, nt_USERDATA_TAG)
     let notification = nt_getNotification(L, 1)
 
@@ -513,16 +514,16 @@ let notification_contentImage: lua_CFunction = { L in
             notification.contentImage = lua_isnil(L, 2) ? nil : toNSImage(L, at: 2)
             lua_pushvalue(L, 1)
         } else {
-            return luaL_error(L, "notification has been dispatched and can no longer be modified")
+            throw L.error("notification has been dispatched and can no longer be modified")
         }
     } else {
-        return luaL_error(L, "notification was not created by this module")
+        throw L.error("notification was not created by this module")
     }
     return 1
 }
 
 // NOTE: THIS FUNCTION IS WRAPPED IN init.lua
-let notification_setIdImage: lua_CFunction = { L in
+func notification_setIdImage(_ L: LuaState) throws -> CInt {
     let notification = nt_getNotification(L, 1)
 
     let gus = notification.userInfo?[KEY_ID] as? String
@@ -532,7 +533,7 @@ let notification_setIdImage: lua_CFunction = { L in
     if let _ = gus {
         if !isLocked {
             guard let idImage = toNSImage(L, at: 2) else {
-                return luaL_argerror(L, 2, "expected hs.image userdata")
+                throw L.error("expected hs.image userdata for argument 2")
             }
             let hasBorder = lua_toboolean(L, 3)
 
@@ -548,10 +549,10 @@ let notification_setIdImage: lua_CFunction = { L in
             }
             lua_pushvalue(L, 1)
         } else {
-            return luaL_error(L, "notification has been dispatched and can no longer be modified")
+            throw L.error("notification has been dispatched and can no longer be modified")
         }
     } else {
-        return luaL_error(L, "notification was not created by this module")
+        throw L.error("notification was not created by this module")
     }
     return 1
 }
@@ -570,7 +571,7 @@ let notification_setIdImage: lua_CFunction = { L in
 ///  * This method has no effect unless the user has set Cosmic Hammer notifications to `Alert` in the Notification Center pane of System Preferences.
 ///  * [hs.notify:hasActionButton](#hasActionButton) must also be true or the "Reply" button will not be displayed.
 ///  * If this is set to true, the action button will be "Reply" even if you have set another one with [hs.notify:actionButtonTitle](#actionButtonTitle).
-let notification_hasReplyButton: lua_CFunction = { L in
+func notification_hasReplyButton(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, nt_USERDATA_TAG)
     let notification = nt_getNotification(L, 1)
 
@@ -585,10 +586,10 @@ let notification_hasReplyButton: lua_CFunction = { L in
             notification.hasReplyButton = lua_toboolean(L, 2) != 0
             lua_pushvalue(L, 1)
         } else {
-            return luaL_error(L, "notification has been dispatched and can no longer be modified")
+            throw L.error("notification has been dispatched and can no longer be modified")
         }
     } else {
-        return luaL_error(L, "notification was not created by this module")
+        throw L.error("notification was not created by this module")
     }
     return 1
 }
@@ -607,7 +608,7 @@ let notification_hasReplyButton: lua_CFunction = { L in
 ///  * This method has no effect unless the user has set Cosmic Hammer notifications to `Alert` in the Notification Center pane of System Preferences.
 ///  * [hs.notify:additionalActions](#additionalActions) must also be used for this method to have any effect.
 ///  * **WARNING:** This method uses a private API. It could break at any time. Please file an issue if it does.
-let notification_alwaysShowAdditionalActions: lua_CFunction = { L in
+func notification_alwaysShowAdditionalActions(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, nt_USERDATA_TAG)
     let notification = nt_getNotification(L, 1)
 
@@ -624,10 +625,10 @@ let notification_alwaysShowAdditionalActions: lua_CFunction = { L in
                 notification.setValue(lua_toboolean(L, 2), forKey: "_alwaysShowAlternateActionMenu")
                 lua_pushvalue(L, 1)
             } else {
-                return luaL_error(L, "notification has been dispatched and can no longer be modified")
+                throw L.error("notification has been dispatched and can no longer be modified")
             }
         } else {
-            return luaL_error(L, "notification was not created by this module")
+            throw L.error("notification was not created by this module")
         }
     } else {
         os_log(.info, "%{public}s", "\(nt_USERDATA_TAG):alwaysShowAdditionalActions() is not supported on this machine or macOS version. Please file an issue")
@@ -650,7 +651,7 @@ let notification_alwaysShowAdditionalActions: lua_CFunction = { L in
 ///  * A value of 0 will disable auto-withdrawal
 ///
 ///  * if the notification was not created by this module, this method will return nil
-let notification_withdrawAfter: lua_CFunction = { L in
+func notification_withdrawAfter(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, nt_USERDATA_TAG)
     let notification = nt_getNotification(L, 1)
 
@@ -669,10 +670,10 @@ let notification_withdrawAfter: lua_CFunction = { L in
             userInfo![KEY_WITHDRAWAFTER] = lua_tovalue(L, at: 2)
             lua_pushvalue(L, 1)
         } else {
-            return luaL_error(L, "notification has been dispatched and can no longer be modified")
+            throw L.error("notification has been dispatched and can no longer be modified")
         }
     } else {
-        return luaL_error(L, "notification was not created by this module")
+        throw L.error("notification was not created by this module")
     }
     return 1
 }
@@ -690,7 +691,7 @@ let notification_withdrawAfter: lua_CFunction = { L in
 /// Notes:
 ///  * In macOS 10.13, this text appears so light that it is almost unreadable; so far no workaround has been found.
 ///  * See also [hs.notify:hasReplyButton](#hasReplyButton)
-let notification_responsePlaceholder: lua_CFunction = { L in
+func notification_responsePlaceholder(_ L: LuaState) throws -> CInt {
     let notification = nt_getNotification(L, 1)
 
     let gus = notification.userInfo?[KEY_ID] as? String
@@ -708,10 +709,10 @@ let notification_responsePlaceholder: lua_CFunction = { L in
             }
             lua_pushvalue(L, 1)
         } else {
-            return luaL_error(L, "notification has been dispatched and can no longer be modified")
+            throw L.error("notification has been dispatched and can no longer be modified")
         }
     } else {
-        return luaL_error(L, "notification was not created by this module")
+        throw L.error("notification was not created by this module")
     }
     return 1
 }
@@ -729,7 +730,7 @@ let notification_responsePlaceholder: lua_CFunction = { L in
 /// Notes:
 ///  * [hs.notify:activationType](#activationType) will equal `hs.notify.activationTypes.replied` if the user clicked on the Reply button and then clicks on Send.
 ///  * See also [hs.notify:hasReplyButton](#hasReplyButton)
-let notification_response: lua_CFunction = { L in
+func notification_response(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, nt_USERDATA_TAG)
     let notification = nt_getNotification(L, 1)
 
@@ -756,7 +757,7 @@ let notification_response: lua_CFunction = { L in
 ///  * The additional items will be listed in a pop-up menu when the user clicks and holds down the mouse button in the action button of the alert.
 ///  * If the user selects one of the additional actions, [hs.notify:activationType](#activationType) will equal `hs.notify.activationTypes.additionalActionClicked`
 ///  * See also [hs.notify:additionalActivationAction](#additionalActivationAction)
-let notification_additionalActions: lua_CFunction = { L in
+func notification_additionalActions(_ L: LuaState) throws -> CInt {
     let notification = nt_getNotification(L, 1)
 
     let gus = notification.userInfo?[KEY_ID] as? String
@@ -790,15 +791,15 @@ let notification_additionalActions: lua_CFunction = { L in
                 errorMsg = "expected a table containing an array of strings"
             }
             if let errorMsg = errorMsg {
-                return luaL_argerror(L, 2, errorMsg)
+                throw L.error("bad argument #2: \(errorMsg)")
             }
             notification.additionalActions = newActions
             lua_pushvalue(L, 1)
         } else {
-            return luaL_error(L, "notification has been dispatched and can no longer be modified")
+            throw L.error("notification has been dispatched and can no longer be modified")
         }
     } else {
-        return luaL_error(L, "notification was not created by this module")
+        throw L.error("notification was not created by this module")
     }
     return 1
 }
@@ -816,7 +817,7 @@ let notification_additionalActions: lua_CFunction = { L in
 /// Notes:
 ///  * If the user selects one of the additional actions, [hs.notify:activationType](#activationType) will equal `hs.notify.activationTypes.additionalActionClicked`
 ///  * See also [hs.notify:additionalActions](#additionalActions)
-let notification_additionalActivationAction: lua_CFunction = { L in
+func notification_additionalActivationAction(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, nt_USERDATA_TAG)
     let notification = nt_getNotification(L, 1)
 
@@ -840,7 +841,7 @@ let notification_additionalActivationAction: lua_CFunction = { L in
 ///
 /// Notes:
 ///  * Examples of why the users Notification Center would choose not to display a notification would be if Cosmic Hammer is the currently focussed application, being attached to a projector, or the user having set Do Not Disturb.
-let notification_presented: lua_CFunction = { L in
+func notification_presented(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, nt_USERDATA_TAG)
     let notification = nt_getNotification(L, 1)
 
@@ -857,7 +858,7 @@ let notification_presented: lua_CFunction = { L in
 ///
 /// Returns:
 ///  * A boolean indicating whether the notification has been delivered to the users Notification Center
-let notification_delivered: lua_CFunction = { L in
+func notification_delivered(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, nt_USERDATA_TAG)
     let notification = nt_getNotification(L, 1)
 
@@ -881,7 +882,7 @@ let notification_delivered: lua_CFunction = { L in
 ///
 /// Returns:
 ///  * the integer value corresponding to how the notification was activated by the user.  See the table `hs.notify.activationTypes[]` for more information.
-let notification_activationType: lua_CFunction = { L in
+func notification_activationType(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, nt_USERDATA_TAG)
     let notification = nt_getNotification(L, 1)
 
@@ -901,7 +902,7 @@ let notification_activationType: lua_CFunction = { L in
 ///
 /// Notes:
 ///  * You can turn epoch times into a human readable string or a table of date elements with the `os.date()` function.
-let notification_actualDeliveryDate: lua_CFunction = { L in
+func notification_actualDeliveryDate(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, nt_USERDATA_TAG)
     let notification = nt_getNotification(L, 1)
 
@@ -910,7 +911,7 @@ let notification_actualDeliveryDate: lua_CFunction = { L in
 }
 
 #if DEBUG
-let showMyDict: lua_CFunction = { L in
+func showMyDict(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, nt_USERDATA_TAG)
     let notification = nt_getNotification(L, 1)
 

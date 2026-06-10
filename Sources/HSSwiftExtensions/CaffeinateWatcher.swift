@@ -1,5 +1,6 @@
 import Foundation
 import CLua
+import Lua
 import Cocoa
 
 /// === hs.caffeinate.watcher ===
@@ -229,7 +230,7 @@ private func unregister_observer(_ observer: CaffeinateWatcher) {
 ///
 /// Returns:
 ///  * An `hs.caffeinate.watcher` object
-private func caffeinate_watcher_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func caffeinate_watcher_new(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TFUNCTION)
 
     let watcherPtr = lua_newuserdata(L, MemoryLayout<CaffeinateWatcherData>.size)!
@@ -258,7 +259,7 @@ private func caffeinate_watcher_new(_ L: UnsafeMutablePointer<lua_State>!) -> In
 ///
 /// Returns:
 ///  * An `hs.caffeinate.watcher` object
-private func caffeinate_watcher_start(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func caffeinate_watcher_start(_ L: LuaState) throws -> CInt {
     let watcherPtr = luaL_checkudata(L, 1, USERDATA_TAG)!.assumingMemoryBound(to: CaffeinateWatcherData.self)
     lua_settop(L, 1)
 
@@ -279,7 +280,7 @@ private func caffeinate_watcher_start(_ L: UnsafeMutablePointer<lua_State>!) -> 
 ///
 /// Returns:
 ///  * An `hs.caffeinate.watcher` object
-private func caffeinate_watcher_stop(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func caffeinate_watcher_stop(_ L: LuaState) throws -> CInt {
     let watcherPtr = luaL_checkudata(L, 1, USERDATA_TAG)!.assumingMemoryBound(to: CaffeinateWatcherData.self)
     lua_settop(L, 1)
 
@@ -292,10 +293,10 @@ private func caffeinate_watcher_stop(_ L: UnsafeMutablePointer<lua_State>!) -> I
 }
 
 // Perform cleanup if the CaffeinateWatcher is not required anymore.
-private func caffeinate_watcher_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func caffeinate_watcher_gc(_ L: LuaState) throws -> CInt {
     let watcherPtr = luaL_checkudata(L, 1, USERDATA_TAG)!.assumingMemoryBound(to: CaffeinateWatcherData.self)
 
-    _ = caffeinate_watcher_stop(L)
+    _ = try caffeinate_watcher_stop(L)
 
     luaL_unref(L, LUA_REGISTRYINDEX_VALUE, watcherPtr.pointee.fn)
     watcherPtr.pointee.fn = Int32(LUA_NOREF)
@@ -309,14 +310,14 @@ private func caffeinate_watcher_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int
     return 0
 }
 
-private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func userdata_tostring(_ L: LuaState) throws -> CInt {
     let ptr = lua_topointer(L, 1)
     let desc = "\(USERDATA_TAG): (\(String(describing: ptr)))"
     lua_pushstring(L, desc)
     return 1
 }
 
-private func meta_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func meta_gc(_ L: LuaState) throws -> CInt {
     return 0
 }
 
@@ -344,51 +345,39 @@ private func add_event_enum(_ L: UnsafeMutablePointer<lua_State>!) {
 
 // MARK: - Module registration
 
-// Metatable for created objects when _new invoked
-private var metaLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("start"), func: caffeinate_watcher_start),
-    luaL_Reg(name: strdup("stop"), func: caffeinate_watcher_stop),
-    luaL_Reg(name: strdup("__gc"), func: caffeinate_watcher_gc),
-    luaL_Reg(name: strdup("__tostring"), func: userdata_tostring),
-    luaL_Reg(name: nil, func: nil),
-]
-
-// Functions for returned object when module loads
-private var caffeinateLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("new"), func: caffeinate_watcher_new),
-    luaL_Reg(name: nil, func: nil),
-]
-
-// Metatable for returned object when module loads
-private var metaGcLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("__gc"), func: meta_gc),
-    luaL_Reg(name: nil, func: nil),
-]
-
 // Called when loading the module. All necessary tables need to be registered here.
 @_cdecl("luaopen_hs_libcaffeinatewatcher")
 public func luaopen_hs_libcaffeinatewatcher(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    // Create ref table in registry
-    lua_newtable(L)
-    refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+    runEntryPoint(L) { L in
+        // Create ref table in registry
+        lua_newtable(L)
+        refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
 
-    // Register userdata metatable
-    luaL_newmetatable(L, USERDATA_TAG)
-    lua_pushvalue(L, -1)
-    lua_setfield(L, -2, "__index")
-    luaL_setfuncs(L, &metaLib, 0)
-    lua_pop(L, 1)
+        // Register userdata metatable
+        luaL_newmetatable(L, USERDATA_TAG)
+        lua_pushvalue(L, -1)
+        lua_setfield(L, -2, "__index")
+        L.push(caffeinate_watcher_start)
+        lua_setfield(L, -2, "start")
+        L.push(caffeinate_watcher_stop)
+        lua_setfield(L, -2, "stop")
+        L.push(caffeinate_watcher_gc)
+        lua_setfield(L, -2, "__gc")
+        L.push(userdata_tostring)
+        lua_setfield(L, -2, "__tostring")
+        lua_pop(L, 1)
 
-    // Create module table
-    lua_createtable(L, 0, Int32(caffeinateLib.count - 1))
-    luaL_setfuncs(L, &caffeinateLib, 0)
+        // Create module table
+        lua_createtable(L, 0, 1)
+        L.push(caffeinate_watcher_new)
+        lua_setfield(L, -2, "new")
 
-    // Set module metatable (for __gc)
-    lua_createtable(L, 0, Int32(metaGcLib.count - 1))
-    luaL_setfuncs(L, &metaGcLib, 0)
-    lua_setmetatable(L, -2)
+        // Set module metatable (for __gc)
+        lua_createtable(L, 0, 1)
+        L.push(meta_gc)
+        lua_setfield(L, -2, "__gc")
+        lua_setmetatable(L, -2)
 
-    add_event_enum(L)
-
-    return 1
+        add_event_enum(L)
+    }
 }

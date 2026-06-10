@@ -1,5 +1,6 @@
 import Cocoa
 import CLua
+import Lua
 import os.log
 
 // MARK: - Support Functions
@@ -86,7 +87,7 @@ private func pushPasteboardValue(_ L: UnsafeMutablePointer<lua_State>!, _ value:
 ///
 /// Returns:
 ///  * A string containing the contents of the pasteboard, or nil if an error occurred
-private func pasteboard_getContents(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func pasteboard_getContents(_ L: LuaState) throws -> CInt {
     let str = lua_to_pasteboard(L, 1).string(forType: .string)
     if let cStr = str?.utf8CString {
         cStr.withUnsafeBufferPointer { buf in
@@ -108,7 +109,7 @@ private func pasteboard_getContents(_ L: UnsafeMutablePointer<lua_State>!) -> In
 ///
 /// Returns:
 ///  * True if the operation succeeded, otherwise false
-private func pasteboard_setContents(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func pasteboard_setContents(_ L: LuaState) throws -> CInt {
     let thePasteboard = lua_to_pasteboard(L, 2)
 
     luaL_tolstring(L, 1, nil)
@@ -138,7 +139,7 @@ private func pasteboard_setContents(_ L: UnsafeMutablePointer<lua_State>!) -> In
 ///
 /// Returns:
 ///  * None
-private func pasteboard_clearContents(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func pasteboard_clearContents(_ L: LuaState) throws -> CInt {
     let thePasteboard = lua_to_pasteboard(L, 1)
     thePasteboard.clearContents()
     return 0
@@ -153,7 +154,7 @@ private func pasteboard_clearContents(_ L: UnsafeMutablePointer<lua_State>!) -> 
 ///
 /// Returns:
 ///  * a table containing the pasteboard type identifier strings
-private func pasteboard_pasteboardTypes(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func pasteboard_pasteboardTypes(_ L: LuaState) throws -> CInt {
     let thePasteboard = lua_to_pasteboard(L, 1)
 
     lua_newtable(L)
@@ -176,7 +177,7 @@ private func pasteboard_pasteboardTypes(_ L: UnsafeMutablePointer<lua_State>!) -
 ///
 /// Returns:
 ///  * a table containing the UTI strings of the data types for the first pasteboard item.
-private func pasteboard_pasteboardItemTypes(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func pasteboard_pasteboardItemTypes(_ L: LuaState) throws -> CInt {
     let thePasteboard = lua_to_pasteboard(L, 1)
 
     lua_newtable(L)
@@ -203,7 +204,7 @@ private func pasteboard_pasteboardItemTypes(_ L: UnsafeMutablePointer<lua_State>
 ///
 /// Notes:
 ///  * This is useful for seeing if the pasteboard has been updated by another process
-private func pasteboard_changeCount(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func pasteboard_changeCount(_ L: LuaState) throws -> CInt {
     lua_pushinteger(L, lua_Integer(lua_to_pasteboard(L, 1).changeCount))
     return 1
 }
@@ -220,14 +221,14 @@ private func pasteboard_changeCount(_ L: UnsafeMutablePointer<lua_State>!) -> In
 ///
 /// Notes:
 ///  * You can not delete the system pasteboard, this function should only be called on custom pasteboards you have created
-private func pasteboard_delete(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func pasteboard_delete(_ L: LuaState) throws -> CInt {
 // prevents nil from being specified
     _ = luaL_checkstring(L, 1) // coerce number to string
     let pbName = lua_tostringValue(L, at: 1) ?? ""
     let systemNames: [NSPasteboard.Name] = [.general, .font, .ruler, .find, .drag]
     for sysName in systemNames {
         if pbName == sysName.rawValue {
-            return Int32(luaL_error(L, "cannot delete a system pasteboard"))
+            throw LuaCallError("cannot delete a system pasteboard")
         }
     }
 
@@ -247,7 +248,7 @@ private func pasteboard_delete(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * an array with each index representing an object on the pasteboard.  If the pasteboard contains only one element, this is equivalent to `{ hs.pasteboard.contentTypes(name) }`.
-private func allPBItemTypes(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func allPBItemTypes(_ L: LuaState) throws -> CInt {
     let thePasteboard = lua_to_pasteboard(L, 1)
     lua_newtable(L)
     if let items = thePasteboard.pasteboardItems {
@@ -276,7 +277,7 @@ private func allPBItemTypes(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Notes:
 ///  * almost all string and styledText objects are internally convertible and will be available with this method as well as [hs.pasteboard.readStyledText](#readStyledText). If the item is actually an `hs.styledtext` object, the string will be just the text of the object.
-private func readStringObjects(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func readStringObjects(_ L: LuaState) throws -> CInt {
 
     var pb: NSPasteboard
     var getAll = false
@@ -287,7 +288,7 @@ private func readStringObjects(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     }
     if lua_gettop(L) >= 1 {
         if lua_isboolean(L, 1) {
-            return Int32(luaL_argerror(L, 1, "string or nil expected"))
+            throw LuaCallError("bad argument #1 (string or nil expected)")
         }
         pb = lua_to_pasteboard(L, 1)
     } else {
@@ -320,7 +321,7 @@ private func readStringObjects(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Notes:
 ///  * The UTI's of the items on the pasteboard can be determined with the [hs.pasteboard.allContentTypes](#allContentTypes) and [hs.pasteboard.contentTypes](#contentTypes) functions.
-private func readItemForType(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func readItemForType(_ L: LuaState) throws -> CInt {
     var pb: NSPasteboard
     var type: String
     if lua_gettop(L) == 1 {
@@ -354,7 +355,7 @@ private func readItemForType(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Notes:
 ///  * The UTI's of the items on the pasteboard can be determined with the [hs.pasteboard.allContentTypes](#allContentTypes) and [hs.pasteboard.contentTypes](#contentTypes) functions.
 ///  * Property lists consist only of certain types of data: tables, strings, numbers, dates, binary data, and Boolean values.
-private func readPropertyListForType(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func readPropertyListForType(_ L: LuaState) throws -> CInt {
     var pb: NSPasteboard
     var type: String
     if lua_gettop(L) == 1 {
@@ -389,7 +390,7 @@ private func readPropertyListForType(_ L: UnsafeMutablePointer<lua_State>!) -> I
 ///  * NSKeyedArchiver specifies an architecture-independent format that is often used in OS X applications to store and transmit objects between applications and when storing data to a file. It works by recording information about the object types and key-value pairs which make up the objects being stored.
 ///  * Only objects which have conversion functions built into Cosmic Hammer can be converted. A string representation describing unrecognized types wil be returned. If you find a common data type that you believe may be of interest to Cosmic Hammer users, feel free to contribute a conversion function or make a request in the Cosmic Hammer Google group or GitHub site.
 ///  * Some applications may define their own classes which can be archived.  Cosmic Hammer will be unable to recognize these types if the application does not make the object type available in one of its frameworks.  You *may* be able to load the necessary framework with `package.loadlib("/Applications/appname.app/Contents/Frameworks/frameworkname.framework/frameworkname", "*")` before retrieving the data, but a full representation of the data in Cosmic Hammer is probably not possible without support from the Application's developers.
-private func readArchivedDataForType(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func readArchivedDataForType(_ L: LuaState) throws -> CInt {
     var pb: NSPasteboard
     var type: String
     if lua_gettop(L) == 1 {
@@ -402,7 +403,7 @@ private func readArchivedDataForType(_ L: UnsafeMutablePointer<lua_State>!) -> I
     }
     let pasteboardType = NSPasteboard.PasteboardType(rawValue: type)
     guard let holding = pb.data(forType: pasteboardType) else {
-        return Int32(luaL_error(L, "unable to get data for specified type"))
+        throw LuaCallError("unable to get data for specified type")
     }
     let allowedClasses: [AnyClass] = [
         NSString.self,
@@ -424,7 +425,7 @@ private func readArchivedDataForType(_ L: UnsafeMutablePointer<lua_State>!) -> I
         )
         pushPasteboardValue(L, realItem)
     } catch {
-        return Int32(luaL_error(L, error.localizedDescription))
+        throw LuaCallError(error.localizedDescription)
     }
     return 1
 }
@@ -446,7 +447,7 @@ private func readArchivedDataForType(_ L: UnsafeMutablePointer<lua_State>!) -> I
 ///  * NSKeyedArchiver specifies an architecture-independent format that is often used in OS X applications to store and transmit objects between applications and when storing data to a file. It works by recording information about the object types and key-value pairs which make up the objects being stored.
 ///  * Only objects which have conversion functions built into Cosmic Hammer can be converted.
 ///  * A full list of NSObjects supported directly by Cosmic Hammer is planned in a future Wiki article.
-private func writeArchivedDataForType(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func writeArchivedDataForType(_ L: LuaState) throws -> CInt {
     var pb: NSPasteboard
     var add = false
     var type: String
@@ -470,7 +471,7 @@ private func writeArchivedDataForType(_ L: UnsafeMutablePointer<lua_State>!) -> 
         data = lua_toArchivableObject(L, at: 3)
     }
     guard let data = data else {
-        return Int32(luaL_error(L, "unable to evaluate data string"))
+        throw LuaCallError("unable to evaluate data string")
     }
     let pasteboardType = NSPasteboard.PasteboardType(rawValue: type)
     do {
@@ -480,7 +481,7 @@ private func writeArchivedDataForType(_ L: UnsafeMutablePointer<lua_State>!) -> 
         }
         lua_pushboolean(L, pb.setData(encoded, forType: pasteboardType) ? 1 : 0)
     } catch {
-        return Int32(luaL_error(L, error.localizedDescription))
+        throw LuaCallError(error.localizedDescription)
     }
     return 1
 }
@@ -500,7 +501,7 @@ private func writeArchivedDataForType(_ L: UnsafeMutablePointer<lua_State>!) -> 
 ///
 /// Notes:
 ///  * The UTI's of the items on the pasteboard can be determined with the [hs.pasteboard.allContentTypes](#allContentTypes) and [hs.pasteboard.contentTypes](#contentTypes) functions.
-private func writeItemForType(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func writeItemForType(_ L: LuaState) throws -> CInt {
     var pb: NSPasteboard
     var add = false
     var type: String
@@ -524,7 +525,7 @@ private func writeItemForType(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
         data = lua_todata(L, at: 3)
     }
     guard let data = data else {
-        return Int32(luaL_error(L, "unable to evaluate data string"))
+        throw LuaCallError("unable to evaluate data string")
     }
     let pasteboardType = NSPasteboard.PasteboardType(rawValue: type)
     if !add {
@@ -550,7 +551,7 @@ private func writeItemForType(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Notes:
 ///  * The UTI's of the items on the pasteboard can be determined with the [hs.pasteboard.allContentTypes](#allContentTypes) and [hs.pasteboard.contentTypes](#contentTypes) functions.
 ///  * Property lists consist only of certain types of data: tables, strings, numbers, dates, binary data, and Boolean values.
-private func writePropertyListForType(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func writePropertyListForType(_ L: LuaState) throws -> CInt {
     var pb: NSPasteboard
     var add = false
     var type: String
@@ -574,7 +575,7 @@ private func writePropertyListForType(_ L: UnsafeMutablePointer<lua_State>!) -> 
         data = lua_tovalue(L, at: 3)
     }
     guard let data = data else {
-        return Int32(luaL_error(L, "unable to evaluate data string"))
+        throw LuaCallError("unable to evaluate data string")
     }
     let pasteboardType = NSPasteboard.PasteboardType(rawValue: type)
     if !add {
@@ -597,7 +598,7 @@ private func writePropertyListForType(_ L: UnsafeMutablePointer<lua_State>!) -> 
 ///
 /// Notes:
 ///  * almost all string and styledText objects are internally convertible and will be available with this method as well as [hs.pasteboard.readString](#readString). If the item on the clipboard is actually just a string, the `hs.styledtext` object representation will have no attributes set
-private func readAttributedStringObjects(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func readAttributedStringObjects(_ L: LuaState) throws -> CInt {
 
     var pb: NSPasteboard
     var getAll = false
@@ -608,7 +609,7 @@ private func readAttributedStringObjects(_ L: UnsafeMutablePointer<lua_State>!) 
     }
     if lua_gettop(L) >= 1 {
         if lua_isboolean(L, 1) {
-            return Int32(luaL_argerror(L, 1, "string or nil expected"))
+            throw LuaCallError("bad argument #1 (string or nil expected)")
         }
         pb = lua_to_pasteboard(L, 1)
     } else {
@@ -638,7 +639,7 @@ private func readAttributedStringObjects(_ L: UnsafeMutablePointer<lua_State>!) 
 ///
 /// Returns:
 ///  * By default the first sound on the clipboard, or a table of all sounds on the clipboard if the `all` parameter is provided and set to true.  Returns nil if no sounds are present.
-private func readSoundObjects(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func readSoundObjects(_ L: LuaState) throws -> CInt {
 
     var pb: NSPasteboard
     var getAll = false
@@ -649,7 +650,7 @@ private func readSoundObjects(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     }
     if lua_gettop(L) >= 1 {
         if lua_isboolean(L, 1) {
-            return Int32(luaL_argerror(L, 1, "string or nil expected"))
+            throw LuaCallError("bad argument #1 (string or nil expected)")
         }
         pb = lua_to_pasteboard(L, 1)
     } else {
@@ -679,7 +680,7 @@ private func readSoundObjects(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * By default the first image on the clipboard, or a table of all images on the clipboard if the `all` parameter is provided and set to true.  Returns nil if no images are present.
-private func readImageObjects(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func readImageObjects(_ L: LuaState) throws -> CInt {
 
     var pb: NSPasteboard
     var getAll = false
@@ -690,7 +691,7 @@ private func readImageObjects(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     }
     if lua_gettop(L) >= 1 {
         if lua_isboolean(L, 1) {
-            return Int32(luaL_argerror(L, 1, "string or nil expected"))
+            throw LuaCallError("bad argument #1 (string or nil expected)")
         }
         pb = lua_to_pasteboard(L, 1)
     } else {
@@ -720,7 +721,7 @@ private func readImageObjects(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * By default the first url on the clipboard, or a table of all urls on the clipboard if the `all` parameter is provided and set to true.  Returns nil if no urls are present.
-private func readURLObjects(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func readURLObjects(_ L: LuaState) throws -> CInt {
 
     var pb: NSPasteboard
     var getAll = false
@@ -731,7 +732,7 @@ private func readURLObjects(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     }
     if lua_gettop(L) >= 1 {
         if lua_isboolean(L, 1) {
-            return Int32(luaL_argerror(L, 1, "string or nil expected"))
+            throw LuaCallError("bad argument #1 (string or nil expected)")
         }
         pb = lua_to_pasteboard(L, 1)
     } else {
@@ -761,7 +762,7 @@ private func readURLObjects(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * By default the first color on the clipboard, or a table of all colors on the clipboard if the `all` parameter is provided and set to true.  Returns nil if no colors are present.
-private func readColorObjects(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func readColorObjects(_ L: LuaState) throws -> CInt {
 
     var pb: NSPasteboard
     var getAll = false
@@ -772,7 +773,7 @@ private func readColorObjects(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     }
     if lua_gettop(L) >= 1 {
         if lua_isboolean(L, 1) {
-            return Int32(luaL_argerror(L, 1, "string or nil expected"))
+            throw LuaCallError("bad argument #1 (string or nil expected)")
         }
         pb = lua_to_pasteboard(L, 1)
     } else {
@@ -854,7 +855,7 @@ private func convertToPasteboardWritableObject(_ L: UnsafeMutablePointer<lua_Sta
 ///
 /// Notes:
 ///  * Most applications can only receive the first item on the clipboard.  Multiple items on a clipboard are most often used for intra-application communication where the sender and receiver are specifically written with multiple objects in mind.
-private func writeObjects(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func writeObjects(_ L: LuaState) throws -> CInt {
     var pboard: NSPasteboard
     if lua_gettop(L) == 1 {        pboard = NSPasteboard.general
     } else {
@@ -865,7 +866,7 @@ private func writeObjects(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     if lua_type(L, 1) != LUA_TTABLE ||
        (lua_type(L, 1) == LUA_TTABLE && luaL_len(L, 1) == 0) {
         guard let obj = convertToPasteboardWritableObject(L, 1) else {
-            return Int32(luaL_error(L, "writeObjects error"))
+            throw LuaCallError("writeObjects error")
         }
         objects.append(obj)
     } else {
@@ -874,7 +875,7 @@ private func writeObjects(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
             lua_rawgeti(L, 1, lua_Integer(i + 1))
             guard let obj = convertToPasteboardWritableObject(L, -1) else {
                 lua_pop(L, 1)
-                return Int32(luaL_error(L, "writeObjects error at index \(i + 1)"))
+                throw LuaCallError("writeObjects error at index \(i + 1)")
             }
             lua_pop(L, 1)
             objects.append(obj)
@@ -898,7 +899,7 @@ private func writeObjects(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Notes:
 ///  * to properly manage system resources, you should release the created pasteboard with [hs.pasteboard.deletePasteboard](#deletePasteboard) when you are certain that it is no longer necessary.
-private func newUniquePasteboard(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func newUniquePasteboard(_ L: LuaState) throws -> CInt {
     let name = NSPasteboard.withUniqueName().name
     lua_pushany(L, name.rawValue as NSString)
     return 1
@@ -924,7 +925,7 @@ private func newUniquePasteboard(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 ///  * almost all string and styledText objects are internally convertible and will return true for both keys
 ///    * if the item on the clipboard is actually just a string, the `hs.styledtext` object representation will have no attributes set
 ///    * if the item is actually an `hs.styledtext` object, the string representation will be the text without any attributes.
-private func typesOnPasteboard(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func typesOnPasteboard(_ L: LuaState) throws -> CInt {
     let pboard = lua_to_pasteboard(L, 1)
     lua_newtable(L)
     if pboard.canReadObject(forClasses: [NSString.self], options: [:]) {
@@ -948,46 +949,57 @@ private func typesOnPasteboard(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 1
 }
 
-// MARK: - Cosmic Hammer/Lua Infrastructure
-
-private var pasteboardLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("changeCount"),      func: { L in pasteboard_changeCount(L) }),
-    luaL_Reg(name: strdup("clearContents"),     func: { L in pasteboard_clearContents(L) }),
-    luaL_Reg(name: strdup("deletePasteboard"),  func: { L in pasteboard_delete(L) }),
-
-    luaL_Reg(name: strdup("getContents"),       func: { L in pasteboard_getContents(L) }),
-    luaL_Reg(name: strdup("setContents"),       func: { L in pasteboard_setContents(L) }),
-
-    luaL_Reg(name: strdup("pasteboardTypes"),   func: { L in pasteboard_pasteboardTypes(L) }),
-    luaL_Reg(name: strdup("contentTypes"),      func: { L in pasteboard_pasteboardItemTypes(L) }),
-
-    luaL_Reg(name: strdup("allContentTypes"),   func: { L in allPBItemTypes(L) }),
-    luaL_Reg(name: strdup("uniquePasteboard"),  func: { L in newUniquePasteboard(L) }),
-    luaL_Reg(name: strdup("typesAvailable"),    func: { L in typesOnPasteboard(L) }),
-    luaL_Reg(name: strdup("readString"),        func: { L in readStringObjects(L) }),
-    luaL_Reg(name: strdup("readStyledText"),    func: { L in readAttributedStringObjects(L) }),
-    luaL_Reg(name: strdup("readSound"),         func: { L in readSoundObjects(L) }),
-    luaL_Reg(name: strdup("readImage"),         func: { L in readImageObjects(L) }),
-    luaL_Reg(name: strdup("readURL"),           func: { L in readURLObjects(L) }),
-    luaL_Reg(name: strdup("readColor"),         func: { L in readColorObjects(L) }),
-    luaL_Reg(name: strdup("writeObjects"),      func: { L in writeObjects(L) }),
-
-    luaL_Reg(name: strdup("readDataForUTI"),    func: { L in readItemForType(L) }),
-    luaL_Reg(name: strdup("writeDataForUTI"),   func: { L in writeItemForType(L) }),
-
-    luaL_Reg(name: strdup("readPListForUTI"),   func: { L in readPropertyListForType(L) }),
-    luaL_Reg(name: strdup("writePListForUTI"),  func: { L in writePropertyListForType(L) }),
-
-    luaL_Reg(name: strdup("readArchiverDataForUTI"),  func: { L in readArchivedDataForType(L) }),
-    luaL_Reg(name: strdup("writeArchiverDataForUTI"), func: { L in writeArchivedDataForType(L) }),
-
-    luaL_Reg(name: nil, func: nil),
-]
+// MARK: - Module Registration
 
 @_cdecl("luaopen_hs_libpasteboard")
 public func luaopen_hs_libpasteboard(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    // Create module table
-    lua_createtable(L, 0, Int32(pasteboardLib.count - 1))
-    luaL_setfuncs(L, &pasteboardLib, 0)
-    return 1
+    runEntryPoint(L) { L in
+        lua_createtable(L, 0, 22)
+        L.push( pasteboard_changeCount)
+        lua_setfield(L, -2, "changeCount")
+        L.push( pasteboard_clearContents)
+        lua_setfield(L, -2, "clearContents")
+        L.push( pasteboard_delete)
+        lua_setfield(L, -2, "deletePasteboard")
+        L.push( pasteboard_getContents)
+        lua_setfield(L, -2, "getContents")
+        L.push( pasteboard_setContents)
+        lua_setfield(L, -2, "setContents")
+        L.push( pasteboard_pasteboardTypes)
+        lua_setfield(L, -2, "pasteboardTypes")
+        L.push( pasteboard_pasteboardItemTypes)
+        lua_setfield(L, -2, "contentTypes")
+        L.push( allPBItemTypes)
+        lua_setfield(L, -2, "allContentTypes")
+        L.push( newUniquePasteboard)
+        lua_setfield(L, -2, "uniquePasteboard")
+        L.push( typesOnPasteboard)
+        lua_setfield(L, -2, "typesAvailable")
+        L.push( readStringObjects)
+        lua_setfield(L, -2, "readString")
+        L.push( readAttributedStringObjects)
+        lua_setfield(L, -2, "readStyledText")
+        L.push( readSoundObjects)
+        lua_setfield(L, -2, "readSound")
+        L.push( readImageObjects)
+        lua_setfield(L, -2, "readImage")
+        L.push( readURLObjects)
+        lua_setfield(L, -2, "readURL")
+        L.push( readColorObjects)
+        lua_setfield(L, -2, "readColor")
+        L.push( writeObjects)
+        lua_setfield(L, -2, "writeObjects")
+        L.push( readItemForType)
+        lua_setfield(L, -2, "readDataForUTI")
+        L.push( writeItemForType)
+        lua_setfield(L, -2, "writeDataForUTI")
+        L.push( readPropertyListForType)
+        lua_setfield(L, -2, "readPListForUTI")
+        L.push( writePropertyListForType)
+        lua_setfield(L, -2, "writePListForUTI")
+        L.push( readArchivedDataForType)
+        lua_setfield(L, -2, "readArchiverDataForUTI")
+        L.push( writeArchivedDataForType)
+        lua_setfield(L, -2, "writeArchiverDataForUTI")
+    }
 }

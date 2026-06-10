@@ -1,5 +1,6 @@
 import Cocoa
 import CLua
+import Lua
 import Carbon
 import os.log
 
@@ -13,7 +14,7 @@ private func getWatcher(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) ->
     return Unmanaged<NSObject>.fromOpaque(rawPtr).takeUnretainedValue() as? NSObject & HSuielementWatcherProtocol
 }
 
-private func watcher_start(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func watcher_start(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     luaL_checktype(L, 2, LUA_TTABLE)
@@ -28,7 +29,7 @@ private func watcher_start(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 1
 }
 
-private func watcher_stop(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func watcher_stop(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     guard let watcher = getWatcher(L, at: 1) else { return 0 }
     watcher.stop()
@@ -42,7 +43,7 @@ private func watcher_stop(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.uielement.watcher:pid() -> number
 /// Method
 /// Returns the PID of the element being watched
-private func watcher_pid(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func watcher_pid(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     guard let watcher = getWatcher(L, at: 1) else { return 0 }
     lua_pushnumber(L, lua_Number(watcher.pid))
@@ -52,7 +53,7 @@ private func watcher_pid(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// hs.uielement.watcher:element() -> object
 /// Method
 /// Returns the element the watcher is watching.
-private func watcher_element(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func watcher_element(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     guard let watcher = getWatcher(L, at: 1) else { return 0 }
 
@@ -71,7 +72,7 @@ private func watcher_element(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 1
 }
 
-private func watcher_watchDestroyed(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func watcher_watchDestroyed(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     guard let watcher = getWatcher(L, at: 1) else { return 0 }
 
@@ -118,14 +119,14 @@ private func toHSuielementWatcherFromLua(_ L: UnsafeMutablePointer<lua_State>!, 
 
 // MARK: - Infrastructure
 
-private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func userdata_tostring(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let desc = "\(USERDATA_TAG): (\(String(describing: lua_topointer(L, 1)!)))"
     lua_pushstring(L, desc)
     return 1
 }
 
-private func userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func userdata_eq(_ L: LuaState) throws -> CInt {
     var isEqual = false
     if luaL_testudata(L, 1, USERDATA_TAG) != nil && luaL_testudata(L, 2, USERDATA_TAG) != nil {
         if let w1 = toHSuielementWatcherFromLua(L, 1) as? NSObject,
@@ -137,7 +138,7 @@ private func userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 1
 }
 
-private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func userdata_gc(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let ptr = luaL_checkudata(L, 1, USERDATA_TAG)!
         .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
@@ -165,47 +166,40 @@ private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 // MARK: - Registration
 
-private var moduleLib: [luaL_Reg] = [
-    luaL_Reg(name: nil, func: nil),
-]
-
-private var module_metaLib: [luaL_Reg] = [
-    luaL_Reg(name: nil, func: nil),
-]
-
-private var userdata_metaLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("_start"),          func: watcher_start),
-    luaL_Reg(name: strdup("_stop"),           func: watcher_stop),
-    luaL_Reg(name: strdup("pid"),             func: watcher_pid),
-    luaL_Reg(name: strdup("element"),         func: watcher_element),
-    luaL_Reg(name: strdup("watchDestroyed"),  func: watcher_watchDestroyed),
-    luaL_Reg(name: strdup("__tostring"),      func: userdata_tostring),
-    luaL_Reg(name: strdup("__eq"),            func: userdata_eq),
-    luaL_Reg(name: strdup("__gc"),            func: userdata_gc),
-    luaL_Reg(name: nil, func: nil),
-]
-
 @_cdecl("luaopen_hs_libuielementwatcher")
 public func luaopen_hs_libuielementwatcher(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    // Create ref table in registry
-    lua_newtable(L)
-    refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+    runEntryPoint(L) { L in
+        // Create ref table in registry
+        lua_newtable(L)
+        refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
 
-    // Register userdata metatable
-    luaL_newmetatable(L, USERDATA_TAG)
-    lua_pushvalue(L, -1)
-    lua_setfield(L, -2, "__index")
-    luaL_setfuncs(L, &userdata_metaLib, 0)
-    lua_pop(L, 1)
+        // Register userdata metatable
+        luaL_newmetatable(L, USERDATA_TAG)
+        lua_pushvalue(L, -1)
+        lua_setfield(L, -2, "__index")
+        L.push(watcher_start)
+        lua_setfield(L, -2, "_start")
+        L.push(watcher_stop)
+        lua_setfield(L, -2, "_stop")
+        L.push(watcher_pid)
+        lua_setfield(L, -2, "pid")
+        L.push(watcher_element)
+        lua_setfield(L, -2, "element")
+        L.push(watcher_watchDestroyed)
+        lua_setfield(L, -2, "watchDestroyed")
+        L.push(userdata_tostring)
+        lua_setfield(L, -2, "__tostring")
+        L.push(userdata_eq)
+        lua_setfield(L, -2, "__eq")
+        L.push(userdata_gc)
+        lua_setfield(L, -2, "__gc")
+        lua_pop(L, 1)
 
-    // Create module table
-    lua_createtable(L, 0, Int32(moduleLib.count - 1))
-    luaL_setfuncs(L, &moduleLib, 0)
+        // Create module table
+        lua_createtable(L, 0, 0)
 
-    // Set module metatable (for __gc)
-    lua_createtable(L, 0, Int32(module_metaLib.count - 1))
-    luaL_setfuncs(L, &module_metaLib, 0)
-    lua_setmetatable(L, -2)
-
-    return 1
+        // Set module metatable (empty)
+        lua_createtable(L, 0, 0)
+        lua_setmetatable(L, -2)
+    }
 }

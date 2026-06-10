@@ -1,5 +1,6 @@
 import Cocoa
 import CLua
+import Lua
 import CFNetwork
 import SystemConfiguration
 
@@ -259,7 +260,7 @@ private func commonForAddress(_ L: UnsafeMutablePointer<lua_State>!, _ resolveTy
 ///  * If no callback function is provided, the resolution occurs in a blocking manner which may be noticeable when network access is slow or erratic.
 ///  * If a callback function is provided, this function acts as a constructor, returning a host object and the callback function will be invoked when resolution is complete.  The callback function should take two parameters: the string "addresses", indicating that an address resolution occurred, and a table containing the IP addresses identified.
 ///  * Generates an error if network access is currently disabled or the hostname is invalid.
-private func getAddressesForHostName(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func getAddressesForHostName(_ L: LuaState) throws -> CInt {
     return commonForHostName(L, .addresses)
 }
 
@@ -278,7 +279,7 @@ private func getAddressesForHostName(_ L: UnsafeMutablePointer<lua_State>!) -> I
 ///  * If no callback function is provided, the resolution occurs in a blocking manner which may be noticeable when network access is slow or erratic.
 ///  * If a callback function is provided, this function acts as a constructor, returning a host object and the callback function will be invoked when resolution is complete.  The callback function should take two parameters: the string "names", indicating that hostname resolution occurred, and a table containing the hostnames identified.
 ///  * Generates an error if network access is currently disabled or the IP address is invalid.
-private func getNamesForAddress(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func getNamesForAddress(_ L: LuaState) throws -> CInt {
     return commonForAddress(L, .names)
 }
 
@@ -299,7 +300,7 @@ private func getNamesForAddress(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 ///  * Generates an error if network access is currently disabled or the IP address is invalid.
 ///  * The numeric representation is made up from a combination of the flags defined in `hs.network.reachability.flags`.
 ///  * Performs the same reachability test as `hs.network.reachability.forAddress`.
-private func getReachabilityForAddress(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func getReachabilityForAddress(_ L: LuaState) throws -> CInt {
     return commonForAddress(L, .reachability)
 }
 
@@ -320,7 +321,7 @@ private func getReachabilityForAddress(_ L: UnsafeMutablePointer<lua_State>!) ->
 ///  * Generates an error if network access is currently disabled or the IP address is invalid.
 ///  * The numeric representation is made up from a combination of the flags defined in `hs.network.reachability.flags`.
 ///  * Performs the same reachability test as `hs.network.reachability.forHostName`.
-private func getReachabilityForHostName(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func getReachabilityForHostName(_ L: LuaState) throws -> CInt {
     return commonForHostName(L, .reachability)
 }
 
@@ -335,7 +336,7 @@ private func getReachabilityForHostName(_ L: UnsafeMutablePointer<lua_State>!) -
 ///
 /// Returns:
 ///  * true, if resolution is still in progress, or false if resolution has already completed.
-private func resolutionIsRunning(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func resolutionIsRunning(_ L: LuaState) throws -> CInt {
     let theRef = getPtr(L, 1)
     lua_pushboolean(L, theRef.pointee.running ? 1 : 0)
     return 1
@@ -353,7 +354,7 @@ private func resolutionIsRunning(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 ///
 /// Notes:
 ///  * This method has no effect if the resolution has already completed.
-private func cancelResolution(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func cancelResolution(_ L: LuaState) throws -> CInt {
     let theRef = getPtr(L, 1)
     if theRef.pointee.running {
         CFHostSetClient(theRef.pointee.theHostObj!, nil, nil)
@@ -370,13 +371,13 @@ private func cancelResolution(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 // MARK: - Cosmic Hammer/Lua Infrastructure
 
-private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func userdata_tostring(_ L: LuaState) throws -> CInt {
     let ptr = lua_topointer(L, 1)
     lua_pushstring(L, "\(USERDATA_TAG): (\(String(describing: ptr)))")
     return 1
 }
 
-private func userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func userdata_eq(_ L: LuaState) throws -> CInt {
     if luaL_testudata(L, 1, USERDATA_TAG) != nil && luaL_testudata(L, 2, USERDATA_TAG) != nil {
         let theHost1 = getPtr(L, 1).pointee.theHostObj!
         let theHost2 = getPtr(L, 2).pointee.theHostObj!
@@ -387,7 +388,7 @@ private func userdata_eq(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 1
 }
 
-private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func userdata_gc(_ L: LuaState) throws -> CInt {
     let theRef = getPtr(L, 1)
     luaL_unref(L, LUA_REGISTRYINDEX_VALUE, theRef.pointee.callbackRef)
     theRef.pointee.callbackRef = LUA_NOREF
@@ -395,7 +396,7 @@ private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     luaL_unref(L, LUA_REGISTRYINDEX_VALUE, theRef.pointee.selfRef)
     theRef.pointee.selfRef = LUA_NOREF
 
-    lua_pushcfunction(L, cancelResolution)
+    L.push(cancelResolution)
     lua_pushvalue(L, 1)
     lua_pcall(L, 1, 1, 0)
     lua_pop(L, 1)
@@ -406,42 +407,36 @@ private func userdata_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 0
 }
 
-// Metatable for userdata objects
-private var userdata_metaLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("isRunning"), func: resolutionIsRunning),
-    luaL_Reg(name: strdup("cancel"), func: cancelResolution),
-
-    luaL_Reg(name: strdup("__tostring"), func: userdata_tostring),
-    luaL_Reg(name: strdup("__eq"), func: userdata_eq),
-    luaL_Reg(name: strdup("__gc"), func: userdata_gc),
-    luaL_Reg(name: nil, func: nil),
-]
-
-// Functions for returned object when module loads
-private var moduleLib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("addressesForHostname"), func: getAddressesForHostName),
-    luaL_Reg(name: strdup("hostnamesForAddress"), func: getNamesForAddress),
-    luaL_Reg(name: strdup("reachabilityForHostname"), func: getReachabilityForHostName),
-    luaL_Reg(name: strdup("reachabilityForAddress"), func: getReachabilityForAddress),
-    luaL_Reg(name: nil, func: nil),
-]
 
 @_cdecl("luaopen_hs_libnetworkhost")
 public func luaopen_hs_libnetworkhost(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    // Create ref table in registry
-    lua_newtable(L)
-    refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+    runEntryPoint(L) { L in
+        lua_newtable(L)
+        refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
 
-    // Register userdata metatable
-    luaL_newmetatable(L, USERDATA_TAG)
-    lua_pushvalue(L, -1)
-    lua_setfield(L, -2, "__index")
-    luaL_setfuncs(L, &userdata_metaLib, 0)
-    lua_pop(L, 1)
+        luaL_newmetatable(L, USERDATA_TAG)
+        lua_pushvalue(L, -1)
+        lua_setfield(L, -2, "__index")
+        L.push(resolutionIsRunning)
+        lua_setfield(L, -2, "isRunning")
+        L.push(cancelResolution)
+        lua_setfield(L, -2, "cancel")
+        L.push(userdata_tostring)
+        lua_setfield(L, -2, "__tostring")
+        L.push(userdata_eq)
+        lua_setfield(L, -2, "__eq")
+        L.push(userdata_gc)
+        lua_setfield(L, -2, "__gc")
+        lua_pop(L, 1)
 
-    // Create module table
-    lua_createtable(L, 0, Int32(moduleLib.count - 1))
-    luaL_setfuncs(L, &moduleLib, 0)
-
-    return 1
+        lua_createtable(L, 0, 4)
+        L.push(getAddressesForHostName)
+        lua_setfield(L, -2, "addressesForHostname")
+        L.push(getNamesForAddress)
+        lua_setfield(L, -2, "hostnamesForAddress")
+        L.push(getReachabilityForHostName)
+        lua_setfield(L, -2, "reachabilityForHostname")
+        L.push(getReachabilityForAddress)
+        lua_setfield(L, -2, "reachabilityForAddress")
+    }
 }

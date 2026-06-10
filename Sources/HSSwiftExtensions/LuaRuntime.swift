@@ -8,6 +8,7 @@
 
 import Cocoa
 import CLua
+import Lua
 import AVFoundation
 import os.log
 
@@ -155,7 +156,7 @@ func MJLuaSetupLogHandler(_ blk: @escaping @convention(block) (NSString) -> Void
     loghandler = blk
 }
 
-// MARK: - Core Lua functions (each maps to an entry in the corelib luaL_Reg array)
+// MARK: - Core Lua functions
 
 /// hs.autoLaunch([state]) -> bool
 /// Function
@@ -166,7 +167,7 @@ func MJLuaSetupLogHandler(_ blk: @escaping @convention(block) (NSString) -> Void
 ///
 /// Returns:
 ///  * True if Cosmic Hammer is currently (or has just been) set to launch on login or False if Cosmic Hammer is not.
-private func core_autolaunch(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func core_autolaunch(_ L: LuaState) throws -> CInt {
     if lua_isboolean(L, 1) { MJAutoLaunchSet(lua_toboolean(L, 1) != 0) }
     lua_pushboolean(L, MJAutoLaunchGet() ? 1 : 0)
     return 1
@@ -181,7 +182,7 @@ private func core_autolaunch(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * True if the icon is currently set (or has just been) to be visible or False if it is not.
-private func core_menuicon(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func core_menuicon(_ L: LuaState) throws -> CInt {
     if lua_isboolean(L, 1) { MJMenuIconSetVisible(lua_toboolean(L, 1) != 0) }
     lua_pushboolean(L, MJMenuIconVisible() ? 1 : 0)
     return 1
@@ -196,7 +197,7 @@ private func core_menuicon(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * True if the console is currently set (or has just been) to be always on top when visible or False if it is not.
-private func core_consoleontop(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func core_consoleontop(_ L: LuaState) throws -> CInt {
     if lua_isboolean(L, 1) { MJConsoleWindowSetAlwaysOnTop(lua_toboolean(L, 1) != 0) }
     lua_pushboolean(L, MJConsoleWindowAlwaysOnTop() ? 1 : 0)
     return 1
@@ -211,7 +212,7 @@ private func core_consoleontop(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * None
-private func core_openabout(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func core_openabout(_ L: LuaState) throws -> CInt {
     NSApplication.shared.activate()
     NSApplication.shared.orderFrontStandardAboutPanel(nil)
     return 0
@@ -226,7 +227,7 @@ private func core_openabout(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * None
-private func core_openpreferences(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func core_openpreferences(_ L: LuaState) throws -> CInt {
     NSApplication.shared.activate()
     MJPreferencesWindowController.singleton().showWindow(nil)
     return 0
@@ -241,7 +242,7 @@ private func core_openpreferences(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
 ///
 /// Returns:
 ///  * None
-private func core_closepreferences(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func core_closepreferences(_ L: LuaState) throws -> CInt {
     MJPreferencesWindowController.singleton().window?.orderOut(nil)
     return 0
 }
@@ -255,7 +256,7 @@ private func core_closepreferences(_ L: UnsafeMutablePointer<lua_State>!) -> Int
 ///
 /// Returns:
 ///  * None
-private func core_openconsole(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func core_openconsole(_ L: LuaState) throws -> CInt {
     if !(lua_isboolean(L, 1) && lua_toboolean(L, 1) == 0) {
         NSApplication.shared.activate()
     }
@@ -272,7 +273,7 @@ private func core_openconsole(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * None
-private func core_closeconsole(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func core_closeconsole(_ L: LuaState) throws -> CInt {
     MJConsoleWindowController.singleton().window?.orderOut(nil)
     return 0
 }
@@ -286,7 +287,7 @@ private func core_closeconsole(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * A boolean, true if the file was opened successfully, otherwise false
-private func core_open(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func core_open(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TSTRING)
 
     guard let cStr = lua_tostring(L, 1) else {
@@ -310,7 +311,7 @@ private func core_open(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * None
-private func core_reload(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func core_reload(_ L: LuaState) throws -> CInt {
     DispatchQueue.main.async {
         MJLuaReplace()
     }
@@ -381,7 +382,7 @@ private func push_hammerAppInfo(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 ///
 /// Notes:
 ///  * Since this check is done automatically when Cosmic Hammer loads, it is probably of limited use except for skipping things that are known to fail when Accessibility is not enabled.  Evettaps which try to capture keyUp and keyDown events, for example, will fail until Accessibility is enabled and the Cosmic Hammer application is relaunched.
-private func core_accessibilityState(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func core_accessibilityState(_ L: LuaState) throws -> CInt {
     let shouldprompt = lua_toboolean(L, 1) != 0
     let enabled = MJAccessibilityIsEnabled()
     if shouldprompt { MJAccessibilityOpenPanel() }
@@ -439,7 +440,7 @@ private func isScreenRecordingEnabled() -> Bool {
 ///
 /// Notes:
 ///  * If you trigger the prompt and the user denies it, you cannot bring up the prompt again - the user must manually enable it in System Preferences.
-private func core_screenRecordingState(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func core_screenRecordingState(_ L: LuaState) throws -> CInt {
     let shouldprompt = lua_toboolean(L, 1) != 0
     let enabled = isScreenRecordingEnabled()
     if shouldprompt {
@@ -477,7 +478,7 @@ private func core_screenRecordingState(_ L: UnsafeMutablePointer<lua_State>!) ->
 ///
 /// Notes:
 ///  * Will always return `true` on macOS 10.13 or earlier.
-private func core_microphoneState(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func core_microphoneState(_ L: LuaState) throws -> CInt {
     let shouldprompt = lua_toboolean(L, 1) != 0
 
     switch AVCaptureDevice.authorizationStatus(for: .audio) {
@@ -512,7 +513,7 @@ private func core_microphoneState(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
 ///
 /// Notes:
 ///  * Will always return `true` on macOS 10.13 or earlier.
-private func core_cameraState(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func core_cameraState(_ L: LuaState) throws -> CInt {
     let shouldprompt = lua_toboolean(L, 1) != 0
 
     switch AVCaptureDevice.authorizationStatus(for: .video) {
@@ -544,7 +545,7 @@ private func core_cameraState(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * A boolean, true if dark mode is enabled otherwise false.
-private func preferencesDarkMode(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func preferencesDarkMode(_ L: LuaState) throws -> CInt {
     if lua_isboolean(L, 1) {
         PreferencesDarkModeSetEnabled(lua_toboolean(L, 1) != 0)
         MJPreferencesWindowController.singleton().reflectDefaults()
@@ -578,7 +579,7 @@ private func preferencesDarkMode(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 ///    tell application "Cosmic Hammer"
 ///      execute lua code "hs.alert([[Hello from AppleScript]])"
 ///    end tell```
-private func core_appleScript(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func core_appleScript(_ L: LuaState) throws -> CInt {
     if lua_isboolean(L, 1) {
         HSAppleScriptSetEnabled(lua_toboolean(L, 1) != 0)
     }
@@ -599,7 +600,7 @@ private func core_appleScript(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Notes:
 ///  * This only refers to dock icon clicks while Cosmic Hammer is already running. The console window is not opened by launching the app
-private func core_openConsoleOnDockClick(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func core_openConsoleOnDockClick(_ L: LuaState) throws -> CInt {
     if lua_isboolean(L, 1) {
         HSOpenConsoleOnDockClickSetEnabled(lua_toboolean(L, 1) != 0)
     }
@@ -617,7 +618,7 @@ private func core_openConsoleOnDockClick(_ L: UnsafeMutablePointer<lua_State>!) 
 ///
 /// Returns:
 ///  * None
-private func core_focus(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func core_focus(_ L: LuaState) throws -> CInt {
     NSApplication.shared.activate()
     return 0
 }
@@ -631,7 +632,7 @@ private func core_focus(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 ///
 /// Returns:
 ///  * The extension's object metatable, or nil if an error occurred
-private func core_getObjectMetatable(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func core_getObjectMetatable(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TSTRING)
     let name = lua_tostring(L, 1)
     luaL_getmetatable(L, name)
@@ -673,12 +674,12 @@ private func core_cleanUTF8(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 1
 }
 
-private func core_exit(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func core_exit(_ L: LuaState) throws -> CInt {
     NSApplication.shared.terminate(nil)
     return 0
 }
 
-private func core_logmessage(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func core_logmessage(_ L: LuaState) throws -> CInt {
     var len: Int = 0
     let s = lua_tolstring(L, 1, &len)
     var str: String?
@@ -697,7 +698,7 @@ private func core_logmessage(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 0
 }
 
-private func core_notify(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+private func core_notify(_ L: LuaState) throws -> CInt {
     var len: Int = 0
     let s = lua_tolstring(L, 1, &len)
     var str = ""
@@ -710,34 +711,7 @@ private func core_notify(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 0
 }
 
-// MARK: - Core library registration table
-
-private var corelib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("preferencesDarkMode"), func: preferencesDarkMode),
-    luaL_Reg(name: strdup("openConsoleOnDockClick"), func: core_openConsoleOnDockClick),
-    luaL_Reg(name: strdup("openConsole"), func: core_openconsole),
-    luaL_Reg(name: strdup("closeConsole"), func: core_closeconsole),
-    luaL_Reg(name: strdup("consoleOnTop"), func: core_consoleontop),
-    luaL_Reg(name: strdup("openAbout"), func: core_openabout),
-    luaL_Reg(name: strdup("menuIcon"), func: core_menuicon),
-    luaL_Reg(name: strdup("openPreferences"), func: core_openpreferences),
-    luaL_Reg(name: strdup("closePreferences"), func: core_closepreferences),
-    luaL_Reg(name: strdup("open"), func: core_open),
-    luaL_Reg(name: strdup("autoLaunch"), func: core_autolaunch),
-    luaL_Reg(name: strdup("allowAppleScript"), func: core_appleScript),
-    luaL_Reg(name: strdup("reload"), func: core_reload),
-    luaL_Reg(name: strdup("focus"), func: core_focus),
-    luaL_Reg(name: strdup("accessibilityState"), func: core_accessibilityState),
-    luaL_Reg(name: strdup("screenRecordingState"), func: core_screenRecordingState),
-    luaL_Reg(name: strdup("microphoneState"), func: core_microphoneState),
-    luaL_Reg(name: strdup("cameraState"), func: core_cameraState),
-    luaL_Reg(name: strdup("getObjectMetatable"), func: core_getObjectMetatable),
-    luaL_Reg(name: strdup("cleanUTF8forConsole"), func: core_cleanUTF8),
-    luaL_Reg(name: strdup("_exit"), func: core_exit),
-    luaL_Reg(name: strdup("_logmessage"), func: core_logmessage),
-    luaL_Reg(name: strdup("_notify"), func: core_notify),
-    luaL_Reg(name: nil, func: nil),
-]
+// MARK: - Core library registration
 
 // MARK: - UTF-8 validation helper
 
@@ -846,8 +820,53 @@ func MJLuaInit() {
     let L = lua_getCurrentState()!
 
     // Register the core library as the "hs" global table
-    lua_createtable(L, 0, Int32(corelib.count))
-    luaL_setfuncs(L, &corelib, 0)
+    lua_createtable(L, 0, 23)
+    L.push(preferencesDarkMode)
+    lua_setfield(L, -2, "preferencesDarkMode")
+    L.push(core_openConsoleOnDockClick)
+    lua_setfield(L, -2, "openConsoleOnDockClick")
+    L.push(core_openconsole)
+    lua_setfield(L, -2, "openConsole")
+    L.push(core_closeconsole)
+    lua_setfield(L, -2, "closeConsole")
+    L.push(core_consoleontop)
+    lua_setfield(L, -2, "consoleOnTop")
+    L.push(core_openabout)
+    lua_setfield(L, -2, "openAbout")
+    L.push(core_menuicon)
+    lua_setfield(L, -2, "menuIcon")
+    L.push(core_openpreferences)
+    lua_setfield(L, -2, "openPreferences")
+    L.push(core_closepreferences)
+    lua_setfield(L, -2, "closePreferences")
+    L.push(core_open)
+    lua_setfield(L, -2, "open")
+    L.push(core_autolaunch)
+    lua_setfield(L, -2, "autoLaunch")
+    L.push(core_appleScript)
+    lua_setfield(L, -2, "allowAppleScript")
+    L.push(core_reload)
+    lua_setfield(L, -2, "reload")
+    L.push(core_focus)
+    lua_setfield(L, -2, "focus")
+    L.push(core_accessibilityState)
+    lua_setfield(L, -2, "accessibilityState")
+    L.push(core_screenRecordingState)
+    lua_setfield(L, -2, "screenRecordingState")
+    L.push(core_microphoneState)
+    lua_setfield(L, -2, "microphoneState")
+    L.push(core_cameraState)
+    lua_setfield(L, -2, "cameraState")
+    L.push(core_getObjectMetatable)
+    lua_setfield(L, -2, "getObjectMetatable")
+    L.push(core_cleanUTF8)
+    lua_setfield(L, -2, "cleanUTF8forConsole")
+    L.push(core_exit)
+    lua_setfield(L, -2, "_exit")
+    L.push(core_logmessage)
+    lua_setfield(L, -2, "_logmessage")
+    L.push(core_notify)
+    lua_setfield(L, -2, "_notify")
     push_hammerAppInfo(L)
     lua_setfield(L, -2, "processInfo")
 
