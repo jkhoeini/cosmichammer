@@ -17,7 +17,7 @@ private let USERDATA_TAG = "hs.screen.watcher"
 // MARK: - MJScreenWatcher
 
 private class MJScreenWatcher: NSObject {
-    var fn: Int32 = LUA_NOREF
+    var callback: LuaValue?
     var includeActive: Bool = false
 
     @objc func _screensChanged(_ note: Notification) {
@@ -25,13 +25,13 @@ private class MJScreenWatcher: NSObject {
     }
 
     @objc func screensChanged(_ note: Notification) {
-        guard fn != LUA_NOREF else { return }
+        guard let cb = callback else { return }
 
         let L = lua_getCurrentState()!
 
         let argCount: Int32 = includeActive ? 1 : 0
 
-        lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(fn))
+        cb.push(onto: L)
         if includeActive {
             if note.name.rawValue == "NSWorkspaceActiveDisplayDidChangeNotification" {
                 lua_pushboolean(L, 1)
@@ -49,7 +49,6 @@ private class MJScreenWatcher: NSObject {
 
 private struct ScreenWatcherData {
     var running: Bool
-    var fn: Int32
     var obj: UnsafeMutableRawPointer?
 }
 
@@ -74,14 +73,12 @@ private func screen_watcher_new(_ L: LuaState) throws -> CInt {
     let watcher = ptr.assumingMemoryBound(to: ScreenWatcherData.self)
     memset(ptr, 0, MemoryLayout<ScreenWatcherData>.size)
 
-    lua_pushvalue(L, 1)
-    let fnRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+    let cb = L.ref(index: 1)
 
     let object = MJScreenWatcher()
-    object.fn = Int32(fnRef)
+    object.callback = cb
     object.includeActive = false
 
-    watcher.pointee.fn = Int32(fnRef)
     watcher.pointee.obj = Unmanaged.passRetained(object).toOpaque()
     watcher.pointee.running = false
 
@@ -188,11 +185,10 @@ private func screen_watcher_gc(_ L: LuaState) throws -> CInt {
 
     _ = try screen_watcher_stop(L)
 
-    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, ptr.pointee.fn)
-    ptr.pointee.fn = LUA_NOREF
-
+    // Release the retained MJScreenWatcher (and its LuaValue callback via ARC)
     if let obj = ptr.pointee.obj {
-        let _ = Unmanaged<MJScreenWatcher>.fromOpaque(obj).takeRetainedValue()
+        let watcher = Unmanaged<MJScreenWatcher>.fromOpaque(obj).takeRetainedValue()
+        watcher.callback = nil
         ptr.pointee.obj = nil
     }
 

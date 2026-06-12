@@ -29,7 +29,7 @@ private func get_objectFromUserdata_transfer<T: AnyObject>(_ L: UnsafeMutablePoi
 class HSPasteboardTimer: NSObject {
     var t: Timer?
     var pbName: String?
-    var fnRef: Int32 = LUA_NOREF
+    var callback: LuaValue?
     var changeCount: Int = 0
     var isRunning: Bool = false
 
@@ -59,19 +59,21 @@ class HSPasteboardTimer: NSObject {
         changeCount = currentChangeCount
 
         // Trigger Lua Callback Function:
-        let L = lua_getCurrentState()!
+        if let cb = callback {
+            let L = lua_getCurrentState()!
 
-        lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(fnRef))
+            cb.push(onto: L)
 
-        let result = pb.string(forType: .string)
-        if let result = result {
-            lua_pushany(L, result)
-        } else {
-            lua_pushnil(L)
-        }
+            let result = pb.string(forType: .string)
+            if let result = result {
+                lua_pushany(L, result)
+            } else {
+                lua_pushnil(L)
+            }
 
-        if lua_pcall(L, 1, 0, 0) != LUA_OK {
-            lua_pop(L, 1)
+            if lua_pcall(L, 1, 0, 0) != LUA_OK {
+                lua_pop(L, 1)
+            }
         }
     }
 
@@ -169,12 +171,11 @@ private func pasteboardwatcher_new(_ L: LuaState) throws -> CInt {
 
     let pbName: String? = (lua_type(L, 2) == LUA_TSTRING) ? String(cString: lua_tostring(L, 2)!) : nil
 
-    lua_pushvalue(L, 1)
-    let callbackRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+    let cb = L.ref(index: 1)
 
     // Create the timer object:
     let timer = HSPasteboardTimer()
-    timer.fnRef = callbackRef
+    timer.callback = cb
     timer.pbName = pbName
 
     // Start the timer:
@@ -271,8 +272,7 @@ private func pasteboardwatcher_gc(_ L: LuaState) throws -> CInt {
 
     if let timer = timer {
         timer.stop()
-        luaL_unref(L, LUA_REGISTRYINDEX_VALUE, timer.fnRef)
-        timer.fnRef = LUA_NOREF
+        timer.callback = nil
         timer.t = nil
         timer.pbName = nil
     }

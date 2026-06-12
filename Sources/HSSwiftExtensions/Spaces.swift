@@ -38,7 +38,6 @@ func SLSGetActiveSpace(_ cid: Int32) -> UInt64
 // MARK: - Module State
 
 private let USERDATA_TAG = "hs.spaces"
-private var refTable: Int32 = LUA_NOREF
 private var regEx_UUID: NSRegularExpression?
 private var g_connection: Int32 = 0
 
@@ -266,10 +265,6 @@ private func spaces_coreDesktopSendNotification(_ L: LuaState) throws -> CInt {
 @_cdecl("luaopen_hs_libspaces")
 public func luaopen_hs_libspaces(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     runEntryPoint(L) { L in
-        // Create ref table in registry
-        lua_newtable(L)
-        refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
-
         // Create module table
         lua_createtable(L, 0, 7)
         L.push(spaces_screensHaveSeparateSpaces)

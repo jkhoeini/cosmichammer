@@ -4,7 +4,6 @@ import Lua
 import os.log
 
 private let USERDATA_TAG = "hs.speech"
-private var refTable: Int32 = LUA_NOREF
 
 // MARK: - Support Functions
 
@@ -55,27 +54,41 @@ private func getVoiceShortCut(_ theVoice: String?) -> String? {
 // MARK: - HSSpeechSynthesizer Definition
 
 private class HSSpeechSynthesizer: NSSpeechSynthesizer, NSSpeechSynthesizerDelegate {
-    var callbackRef: Int32 = LUA_NOREF
-    var selfRef: Int32 = LUA_NOREF
-    var udReferenceCount: Int32 = 0
+    var callback: LuaValue?
+    /// Self-reference kept alive during speech to prevent GC while speaking.
+    var selfRefValue: LuaValue?
+    var generation: UInt64 = 0
+    private var tornDown = false
 
     override init?(voice: NSSpeechSynthesizer.VoiceName?) {
         super.init(voice: voice)
-        self.callbackRef = LUA_NOREF
-        self.selfRef = LUA_NOREF
-        self.udReferenceCount = 0
         self.delegate = self
+    }
+
+    /// Idempotent teardown: stop speaking, drop Lua refs, clear delegate.
+    func teardown() {
+        guard !tornDown else { return }
+        tornDown = true
+        stopSpeaking()
+        callback = nil
+        selfRefValue = nil
+        delegate = nil
     }
 
     // MARK: - NSSpeechSynthesizerDelegate
 
     func speechSynthesizer(_ sender: NSSpeechSynthesizer, willSpeakWord wordToSpeak: NSRange, of text: String) {
-        guard let synth = sender as? HSSpeechSynthesizer, synth.callbackRef != LUA_NOREF else { return }
+        guard let synth = sender as? HSSpeechSynthesizer, !synth.tornDown else { return }
+        guard lua_isStateGenerationValid(synth.generation) else {
+            synth.teardown()
+            return
+        }
+        guard let cb = synth.callback else { return }
         let _L = lua_getCurrentState()!
         let charMap = luaByteToObjCharMap(text)
 
-        lua_rawgeti(_L, LUA_REGISTRYINDEX_VALUE, lua_Integer(synth.callbackRef))
-        pushHSSpeechSynthesizerCallbackSelf(_L, synth)
+        cb.push(onto: _L)
+        _L.push(userdata: synth)
         lua_pushstring(_L, "willSpeakWord")
 
         let luaStart = charMap.allKeys(for: NSNumber(value: wordToSpeak.location))
@@ -90,11 +103,16 @@ private class HSSpeechSynthesizer: NSSpeechSynthesizer, NSSpeechSynthesizerDeleg
     }
 
     func speechSynthesizer(_ sender: NSSpeechSynthesizer, willSpeakPhoneme phonemeOpcode: Int16) {
-        guard let synth = sender as? HSSpeechSynthesizer, synth.callbackRef != LUA_NOREF else { return }
+        guard let synth = sender as? HSSpeechSynthesizer, !synth.tornDown else { return }
+        guard lua_isStateGenerationValid(synth.generation) else {
+            synth.teardown()
+            return
+        }
+        guard let cb = synth.callback else { return }
         let _L = lua_getCurrentState()!
 
-        lua_rawgeti(_L, LUA_REGISTRYINDEX_VALUE, lua_Integer(synth.callbackRef))
-        pushHSSpeechSynthesizerCallbackSelf(_L, synth)
+        cb.push(onto: _L)
+        _L.push(userdata: synth)
         lua_pushstring(_L, "willSpeakPhoneme")
         lua_pushinteger(_L, lua_Integer(phonemeOpcode))
         if lua_pcall(_L, 3, 0, 0) != LUA_OK { lua_pop(_L, 1) }
@@ -102,12 +120,17 @@ private class HSSpeechSynthesizer: NSSpeechSynthesizer, NSSpeechSynthesizerDeleg
 
     func speechSynthesizer(_ sender: NSSpeechSynthesizer, didEncounterErrorAt characterIndex: Int, of text: String, message errorMessage: String) {
         os_log(.error, "In error delegate")
-        guard let synth = sender as? HSSpeechSynthesizer, synth.callbackRef != LUA_NOREF else { return }
+        guard let synth = sender as? HSSpeechSynthesizer, !synth.tornDown else { return }
+        guard lua_isStateGenerationValid(synth.generation) else {
+            synth.teardown()
+            return
+        }
+        guard let cb = synth.callback else { return }
         let _L = lua_getCurrentState()!
         let charMap = luaByteToObjCharMap(text)
 
-        lua_rawgeti(_L, LUA_REGISTRYINDEX_VALUE, lua_Integer(synth.callbackRef))
-        pushHSSpeechSynthesizerCallbackSelf(_L, synth)
+        cb.push(onto: _L)
+        _L.push(userdata: synth)
         lua_pushstring(_L, "didEncounterError")
 
         let index = charMap.allKeys(for: NSNumber(value: characterIndex))
@@ -120,10 +143,15 @@ private class HSSpeechSynthesizer: NSSpeechSynthesizer, NSSpeechSynthesizerDeleg
     }
 
     func speechSynthesizer(_ sender: NSSpeechSynthesizer, didEncounterSyncMessage errorMessage: String) {
-        guard let synth = sender as? HSSpeechSynthesizer, synth.callbackRef != LUA_NOREF else { return }
+        guard let synth = sender as? HSSpeechSynthesizer, !synth.tornDown else { return }
+        guard lua_isStateGenerationValid(synth.generation) else {
+            synth.teardown()
+            return
+        }
+        guard let cb = synth.callback else { return }
         let _L = lua_getCurrentState()!
-        lua_rawgeti(_L, LUA_REGISTRYINDEX_VALUE, lua_Integer(synth.callbackRef))
-        pushHSSpeechSynthesizerCallbackSelf(_L, synth)
+        cb.push(onto: _L)
+        _L.push(userdata: synth)
         lua_pushstring(_L, "didEncounterSync")
         // "errorMessage" as a string seems to be broken or at least odd since at least as far back as 10.5:
         //      see https://openradar.appspot.com/6524554
@@ -139,35 +167,37 @@ private class HSSpeechSynthesizer: NSSpeechSynthesizer, NSSpeechSynthesizerDeleg
     }
 
     func speechSynthesizer(_ sender: NSSpeechSynthesizer, didFinishSpeaking success: Bool) {
-        let _L = lua_getCurrentState()!
         let synth = sender as! HSSpeechSynthesizer
 
-        if synth.callbackRef != LUA_NOREF {
-            lua_rawgeti(_L, LUA_REGISTRYINDEX_VALUE, lua_Integer(synth.callbackRef))
-            pushHSSpeechSynthesizerCallbackSelf(_L, synth)
-            lua_pushstring(_L, "didFinish")
-            lua_pushboolean(_L, success ? 1 : 0)
-            if lua_pcall(_L, 3, 0, 0) != LUA_OK { lua_pop(_L, 1) }
+        if !synth.tornDown, lua_isStateGenerationValid(synth.generation) {
+            let _L = lua_getCurrentState()!
+            if let cb = synth.callback {
+                cb.push(onto: _L)
+                _L.push(userdata: synth)
+                lua_pushstring(_L, "didFinish")
+                lua_pushboolean(_L, success ? 1 : 0)
+                if lua_pcall(_L, 3, 0, 0) != LUA_OK { lua_pop(_L, 1) }
+            }
         }
-        if synth.selfRef != LUA_NOREF {
-            synth.udReferenceCount -= 1
-            luaL_unref(_L, LUA_REGISTRYINDEX_VALUE, synth.selfRef)
-
-            synth.selfRef = LUA_NOREF
-        }
+        // Release the self-reference that was keeping us alive during speech
+        synth.selfRefValue = nil
     }
 }
 
-// MARK: - Helpers
-
-private func get_synthFromUserdata(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> HSSpeechSynthesizer {
-    let ptr = luaL_checkudata(L, idx, USERDATA_TAG)!
-    return Unmanaged<HSSpeechSynthesizer>.fromOpaque(ptr.load(as: UnsafeRawPointer.self)).takeUnretainedValue()
-}
-
-private func get_synthFromUserdata_transfer(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> HSSpeechSynthesizer {
-    let ptr = luaL_checkudata(L, idx, USERDATA_TAG)!
-    return Unmanaged<HSSpeechSynthesizer>.fromOpaque(ptr.load(as: UnsafeRawPointer.self)).takeRetainedValue()
+private func parseBoundary(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32, label: String) -> NSSpeechSynthesizer.Boundary {
+    var boundary = NSSpeechSynthesizer.Boundary.immediateBoundary
+    if lua_gettop(L) >= idx {
+        _ = luaL_checkstring(L, idx)
+        if let where_ = lua_tovalue(L, at: idx) as? String {
+            switch where_ {
+            case "immediate": boundary = .immediateBoundary
+            case "word":      boundary = .wordBoundary
+            case "sentence":  boundary = .sentenceBoundary
+            default: os_log(.info, "%{public}s", "invalid boundary; \(label) immediately")
+            }
+        }
+    }
+    return boundary
 }
 
 // MARK: - Module Functions
@@ -184,7 +214,7 @@ private func get_synthFromUserdata_transfer(_ L: UnsafeMutablePointer<lua_State>
 ///
 /// Notes:
 ///  * All of the names that have been encountered thus far follow this pattern for their full name:  `com.apple.speech.synthesis.voice.*name*`.  This prefix is normally suppressed unless you pass in true.
-private func availableVoices(_ L: LuaState) throws -> CInt {
+private func availableVoices(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let displayFullName = lua_isboolean(L, 1) ? (lua_toboolean(L, 1) != 0) : false
 
     lua_newtable(L)
@@ -212,8 +242,7 @@ private func availableVoices(_ L: LuaState) throws -> CInt {
 ///
 /// Notes:
 ///  * All of the names that have been encountered thus far follow this pattern for their full name:  `com.apple.speech.synthesis.voice.*name*`.  You can provide this suffix or not as you prefer when specifying a voice name.
-private func attributesForVoice(_ L: LuaState) throws -> CInt {
-
+private func attributesForVoice(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     if lua_type(L, 1) != LUA_TNIL { _ = luaL_checkstring(L, 1) }
     let voiceName = lua_tovalue(L, at: 1) as? String
     let corrected = correctForVoiceShortCut(voiceName)
@@ -234,7 +263,7 @@ private func attributesForVoice(_ L: LuaState) throws -> CInt {
 ///
 /// Notes:
 ///  * All of the names that have been encountered thus far follow this pattern for their full name:  `com.apple.speech.synthesis.voice.*name*`.  This prefix is normally suppressed unless you pass in true.
-private func defaultVoice(_ L: LuaState) throws -> CInt {
+private func defaultVoice(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let displayFullName = lua_isboolean(L, 1) ? (lua_toboolean(L, 1) != 0) : false
 
     let voiceName = NSSpeechSynthesizer.defaultVoice.rawValue
@@ -258,8 +287,7 @@ private func defaultVoice(_ L: LuaState) throws -> CInt {
 ///
 /// Notes:
 ///  * See also `hs.speech:speaking`.
-private func isAnyApplicationSpeaking(_ L: LuaState) throws -> CInt {
-
+private func isAnyApplicationSpeaking(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     lua_pushboolean(L, NSSpeechSynthesizer.isAnyApplicationSpeaking ? 1 : 0)
     return 1
 }
@@ -277,8 +305,7 @@ private func isAnyApplicationSpeaking(_ L: LuaState) throws -> CInt {
 /// Notes:
 ///  * All of the names that have been encountered thus far follow this pattern for their full name:  `com.apple.speech.synthesis.voice.*name*`.  You can provide this suffix or not as you prefer when specifying a voice name.
 ///  * You can change the voice later with the `hs.speech:voice` method.
-private func newSpeechSynthesizer(_ L: LuaState) throws -> CInt {
-
+private func newSpeechSynthesizer(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     var voiceName: NSSpeechSynthesizer.VoiceName? = nil
     if lua_gettop(L) == 1 {
         _ = luaL_checkstring(L, 1)
@@ -292,7 +319,8 @@ private func newSpeechSynthesizer(_ L: LuaState) throws -> CInt {
     }
 
     if let synth = HSSpeechSynthesizer(voice: voiceName) {
-        pushHSSpeechSynthesizer(L, obj: synth)
+        synth.generation = lua_currentStateGeneration()
+        L.push(userdata: synth)
     } else {
         os_log(.debug, "%{public}s", "unable to create synthesizer, returning nil")
         lua_pushnil(L)
@@ -300,518 +328,317 @@ private func newSpeechSynthesizer(_ L: LuaState) throws -> CInt {
     return 1
 }
 
-// MARK: - Module Object Methods
-
-/// hs.speech:usesFeedbackWindow([flag]) -> synthesizerObject | boolean
-/// Method
-/// Gets or sets whether or not the synthesizer uses the speech feedback window.
-private func usesFeedbackWindow(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
-    let synth = get_synthFromUserdata(L, at: 1)
-
-    if lua_gettop(L) == 2 {
-        synth.usesFeedbackWindow = lua_toboolean(L, 2) != 0
-        lua_pushvalue(L, 1)
-    } else {
-        lua_pushboolean(L, synth.usesFeedbackWindow ? 1 : 0)
-    }
-    return 1
-}
-
-/// hs.speech:voice([full] | [voice]) -> synthesizerObject | voice
-/// Method
-/// Gets or sets the active voice for a synthesizer.
-private func voice(_ L: LuaState) throws -> CInt {
-    let synth = get_synthFromUserdata(L, at: 1)
-
-    if lua_gettop(L) == 2 && lua_type(L, 2) != LUA_TBOOLEAN {
-        var voiceName: NSSpeechSynthesizer.VoiceName? = nil
-        if lua_type(L, 2) != LUA_TNIL {
-            _ = luaL_checkstring(L, 2)
-            if let str = lua_tovalue(L, at: 2) as? String {
-                if let corrected = correctForVoiceShortCut(str) {
-                    voiceName = NSSpeechSynthesizer.VoiceName(rawValue: corrected)
-                } else {
-                    os_log(.info, "%{public}s", "unable to identify voice from string, defaulting to system voice")
-                }
-            }
-        }
-        if synth.setVoice(voiceName) {
-            lua_pushvalue(L, 1)
-        } else {
-            lua_pushnil(L)
-        }
-    } else {
-        let displayFullName = lua_isboolean(L, 2) ? (lua_toboolean(L, 2) != 0) : false
-        let currentVoice = synth.voice()?.rawValue
-        if displayFullName {
-            lua_pushany(L, currentVoice as NSString?)
-        } else {
-            lua_pushany(L, getVoiceShortCut(currentVoice) as NSString?)
-        }
-    }
-    return 1
-}
-
-/// hs.speech:rate([rate]) -> synthesizerObject | rate
-/// Method
-/// Gets or sets the synthesizers speaking rate (words per minute).
-private func rate(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
-    let synth = get_synthFromUserdata(L, at: 1)
-
-    if lua_gettop(L) == 2 {
-        synth.rate = Float(lua_tonumber(L, 2))
-        lua_pushvalue(L, 1)
-    } else {
-        lua_pushnumber(L, lua_Number(synth.rate))
-    }
-    return 1
-}
-
-/// hs.speech:volume([volume]) -> synthesizerObject | volume
-/// Method
-/// Gets or sets the synthesizers speaking volume.
-private func volume(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
-    let synth = get_synthFromUserdata(L, at: 1)
-
-    if lua_gettop(L) == 2 {
-        let vol = Float(lua_tonumber(L, 2))
-        if vol < 0.0 || vol > 1.0 {
-            throw LuaCallError("bad argument #2 (must be between 0.0 and 1.0 inclusive)")
-        }
-        synth.volume = vol
-        lua_pushvalue(L, 1)
-    } else {
-        lua_pushnumber(L, lua_Number(synth.volume))
-    }
-    return 1
-}
-
-/// hs.speech:speaking() -> boolean
-/// Method
-/// Returns whether or not this synthesizer is currently generating speech.
-private func speaking(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
-    let synth = get_synthFromUserdata(L, at: 1)
-
-    lua_pushboolean(L, synth.isSpeaking ? 1 : 0)
-    return 1
-}
-
-/// hs.speech:setCallback(fn) -> synthesizerObject
-/// Method
-/// Sets or removes a callback function for the synthesizer.
-private func setCallback(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
-    let synth = get_synthFromUserdata(L, at: 1)
-
-    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, synth.callbackRef)
-
-
-    synth.callbackRef = LUA_NOREF
-    if lua_type(L, 2) == LUA_TFUNCTION {
-        lua_pushvalue(L, 2)
-        synth.callbackRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
-    }
-    lua_pushvalue(L, 1)
-    return 1
-}
-
-/// hs.speech:speak(textToSpeak) -> synthesizerObject
-/// Method
-/// Starts speaking the provided text through the system's current audio device.
-private func startSpeakingString(_ L: LuaState) throws -> CInt {
-    let synth = get_synthFromUserdata(L, at: 1)
-
-    _ = luaL_checkstring(L, 2)
-    guard let theText = lua_tovalue(L, at: 2) as? String else {
-        throw LuaCallError("invalid speech text, evaluates to nil")
-    }
-
-    if synth.startSpeaking(theText) {
-        if synth.selfRef == LUA_NOREF {
-            lua_pushvalue(L, 1)
-            synth.udReferenceCount += 1
-            synth.selfRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
-        }
-        lua_pushvalue(L, 1)
-    } else {
-        lua_pushnil(L)
-    }
-    return 1
-}
-
-/// hs.speech:speakToFile(textToSpeak, destination) -> synthesizerObject
-/// Method
-/// Starts speaking the provided text and saves the audio as an AIFF file.
-private func startSpeakingStringToURL(_ L: LuaState) throws -> CInt {
-    let synth = get_synthFromUserdata(L, at: 1)
-
-    _ = luaL_checkstring(L, 2)
-    _ = luaL_checkstring(L, 3)
-    guard let theText = lua_tovalue(L, at: 2) as? String else {
-        throw LuaCallError("invalid speech text, evaluates to nil")
-    }
-    guard let theFile = lua_tovalue(L, at: 3) as? String else {
-        throw LuaCallError("invalid file name, evaluates to nil")
-    }
-
-    let url = URL(fileURLWithPath: (theFile as NSString).expandingTildeInPath, isDirectory: false)
-    if synth.startSpeaking(theText, to: url) {
-        if synth.selfRef == LUA_NOREF {
-            lua_pushvalue(L, 1)
-            synth.udReferenceCount += 1
-            synth.selfRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
-        }
-        lua_pushvalue(L, 1)
-    } else {
-        lua_pushnil(L)
-    }
-    return 1
-}
-
-private func parseBoundary(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32, label: String) -> NSSpeechSynthesizer.Boundary {
-    var boundary = NSSpeechSynthesizer.Boundary.immediateBoundary
-    if lua_gettop(L) >= idx {
-        _ = luaL_checkstring(L, idx)
-        if let where_ = lua_tovalue(L, at: idx) as? String {
-            switch where_ {
-            case "immediate": boundary = .immediateBoundary
-            case "word":      boundary = .wordBoundary
-            case "sentence":  boundary = .sentenceBoundary
-            default: os_log(.info, "%{public}s", "invalid boundary; \(label) immediately")
-            }
-        }
-    }
-    return boundary
-}
-
-/// hs.speech:pause([where]) -> synthesizerObject
-/// Method
-/// Pauses the output of the speech synthesizer.
-private func pauseSpeakingAtBoundary(_ L: LuaState) throws -> CInt {
-    let synth = get_synthFromUserdata(L, at: 1)
-
-    let boundary = parseBoundary(L, at: 2, label: "pausing")
-    synth.pauseSpeaking(at: boundary)
-    lua_pushvalue(L, 1)
-    return 1
-}
-
-/// hs.speech:stop([where]) -> synthesizerObject
-/// Method
-/// Stops the output of the speech synthesizer.
-private func stopSpeakingAtBoundary(_ L: LuaState) throws -> CInt {
-    let synth = get_synthFromUserdata(L, at: 1)
-
-    let boundary = parseBoundary(L, at: 2, label: "stopping")
-    synth.stopSpeaking(at: boundary)
-    if synth.selfRef != LUA_NOREF {
-        synth.udReferenceCount -= 1
-        luaL_unref(L, LUA_REGISTRYINDEX_VALUE, synth.selfRef)
-
-        synth.selfRef = LUA_NOREF
-    }
-    lua_pushvalue(L, 1)
-    return 1
-}
-
-/// hs.speech:continue() -> synthesizerObject
-/// Method
-/// Resumes a paused speech synthesizer.
-private func continueSpeaking(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
-    let synth = get_synthFromUserdata(L, at: 1)
-
-    synth.continueSpeaking()
-    lua_pushvalue(L, 1)
-    return 1
-}
-
-/// hs.speech:phonemes(text) -> string
-/// Method
-/// Returns the phonemes which would be spoken if the text were to be synthesized.
-private func phonemesFromText(_ L: LuaState) throws -> CInt {
-    let synth = get_synthFromUserdata(L, at: 1)
-
-    _ = luaL_checkstring(L, 2)
-    guard let theText = lua_tovalue(L, at: 2) as? String else {
-        throw LuaCallError("invalid speech text, evaluates to nil")
-    }
-    lua_pushany(L, synth.phonemes(from: theText) as NSString)
-    return 1
-}
-
-/// hs.speech:isSpeaking() -> boolean | nil
-/// Method
-/// Returns whether or not the synthesizer is currently speaking, either to an audio device or to a file.
-private func isSpeaking(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
-    let synth = get_synthFromUserdata(L, at: 1)
-
-    do {
-        let status = try synth.object(forProperty: .status) as? NSDictionary
-        if let result = status?[NSSpeechSynthesizer.SpeechPropertyKey.StatusKey.outputBusy] as? NSNumber {
-            lua_pushboolean(L, result.boolValue ? 1 : 0)
-        } else {
-            os_log(.info, "%{public}s", "Key \"\(NSSpeechSynthesizer.SpeechPropertyKey.StatusKey.outputBusy)\" missing from synthesizer status")
-            lua_pushnil(L)
-        }
-    } catch {
-        os_log(.info, "%{public}s", "Unable to query synthesizer status -> \(error.localizedDescription)")
-        lua_pushnil(L)
-    }
-    return 1
-}
-
-/// hs.speech:isPaused() -> boolean | nil
-/// Method
-/// Returns whether or not the synthesizer is currently paused.
-private func isPaused(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
-    let synth = get_synthFromUserdata(L, at: 1)
-
-    do {
-        let status = try synth.object(forProperty: .status) as? NSDictionary
-        if let result = status?[NSSpeechSynthesizer.SpeechPropertyKey.StatusKey.outputPaused] as? NSNumber {
-            lua_pushboolean(L, result.boolValue ? 1 : 0)
-        } else {
-            os_log(.info, "%{public}s", "Key \"\(NSSpeechSynthesizer.SpeechPropertyKey.StatusKey.outputPaused)\" missing from synthesizer status")
-            lua_pushnil(L)
-        }
-    } catch {
-        os_log(.info, "%{public}s", "Unable to query synthesizer status -> \(error.localizedDescription)")
-        lua_pushnil(L)
-    }
-    return 1
-}
-
-/// hs.speech:phoneticSymbols() -> array | nil
-/// Method
-/// Returns an array of the phonetic symbols recognized by the synthesizer for the current voice.
-private func phoneticSymbols(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
-    let synth = get_synthFromUserdata(L, at: 1)
-
-    do {
-        let phoneticList = try synth.object(forProperty: .phonemeSymbols)
-        lua_pushany(L, phoneticList as? NSObject)
-    } catch {
-        os_log(.info, "%{public}s", "Unable to query synthesizer for phonetic symbols -> \(error.localizedDescription)")
-        lua_pushnil(L)
-    }
-    return 1
-}
-
-/// hs.speech:pitch([pitch]) -> synthesizerObject | pitch | nil
-/// Method
-/// Gets or sets the base pitch for the synthesizer's voice.
-private func pitchBase(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
-    let synth = get_synthFromUserdata(L, at: 1)
-
-    if lua_gettop(L) == 2 {
-        do {
-            try synth.setObject(NSNumber(value: lua_tonumber(L, 2)), forProperty: .pitchBase)
-            lua_pushvalue(L, 1)
-        } catch {
-            os_log(.info, "%{public}s", "Error setting pitchBase -> \(error.localizedDescription)")
-            lua_pushnil(L)
-        }
-    } else {
-        do {
-            let value = try synth.object(forProperty: .pitchBase)
-            lua_pushany(L, value as? NSObject)
-        } catch {
-            lua_pushany(L, nil as NSObject?)
-            os_log(.info, "%{public}s", "Error getting pitchBase -> \(error.localizedDescription)")
-        }
-    }
-    return 1
-}
-
-/// hs.speech:modulation([modulation]) -> synthesizerObject | modulation | nil
-/// Method
-/// Gets or sets the pitch modulation for the synthesizer's voice.
-private func pitchMod(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
-    let synth = get_synthFromUserdata(L, at: 1)
-
-    if lua_gettop(L) == 2 {
-        do {
-            try synth.setObject(NSNumber(value: lua_tonumber(L, 2)), forProperty: .pitchMod)
-            lua_pushvalue(L, 1)
-        } catch {
-            os_log(.info, "%{public}s", "Error setting pitchMod -> \(error.localizedDescription)")
-            lua_pushnil(L)
-        }
-    } else {
-        do {
-            let value = try synth.object(forProperty: .pitchMod)
-            lua_pushany(L, value as? NSObject)
-        } catch {
-            lua_pushany(L, nil as NSObject?)
-            os_log(.info, "%{public}s", "Error getting pitchMod -> \(error.localizedDescription)")
-        }
-    }
-    return 1
-}
-
-/// hs.speech:reset() -> synthesizerObject | nil
-/// Method
-/// Reset a synthesizer back to its default state.
-private func reset(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
-    let synth = get_synthFromUserdata(L, at: 1)
-
-    do {
-        try synth.setObject(nil, forProperty: .reset)
-        lua_pushvalue(L, 1)
-    } catch {
-        os_log(.info, "%{public}s", "Error resetting synthesizer -> \(error.localizedDescription)")
-        lua_pushnil(L)
-    }
-    return 1
-}
-
-// MARK: - Lua<->NSObject Conversion Functions
-
-@discardableResult
-private func pushHSSpeechSynthesizer(_ L: UnsafeMutablePointer<lua_State>!, obj: Any!) -> Int32 {
-    let synth = obj as! HSSpeechSynthesizer
-    synth.udReferenceCount += 1
-    let synthPtr = lua_newuserdata(L, MemoryLayout<UnsafeRawPointer>.size)!
-    synthPtr.storeBytes(of: Unmanaged.passRetained(synth).toOpaque(), as: UnsafeRawPointer.self)
-    luaL_getmetatable(L, USERDATA_TAG)
-    lua_setmetatable(L, -2)
-    return 1
-}
-
-private func pushHSSpeechSynthesizerCallbackSelf(_ L: UnsafeMutablePointer<lua_State>!, _ synth: HSSpeechSynthesizer) {
-    if synth.selfRef != LUA_NOREF && synth.selfRef != LUA_REFNIL {
-        lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(synth.selfRef))
-        if lua_type(L, -1) != LUA_TNIL {
-            return
-        }
-        lua_pop(L, 1)
-    }
-    pushHSSpeechSynthesizer(L, obj: synth)
-}
-
-// MARK: - Cosmic Hammer Infrastructure
-
-private func userdata_tostring(_ L: LuaState) throws -> CInt {
-    let synth = get_synthFromUserdata(L, at: 1)
-    let voiceName = synth.voice()?.rawValue ?? "unknown"
-    let ptr = Unmanaged.passUnretained(synth).toOpaque()
-    lua_pushstring(L, "\(USERDATA_TAG): \(voiceName) (\(ptr))")
-    return 1
-}
-
-private func userdata_eq(_ L: LuaState) throws -> CInt {
-    if luaL_testudata(L, 1, USERDATA_TAG) != nil && luaL_testudata(L, 2, USERDATA_TAG) != nil {
-        let synth1 = get_synthFromUserdata(L, at: 1)
-        let synth2 = get_synthFromUserdata(L, at: 2)
-        lua_pushboolean(L, synth1.isEqual(to: synth2) ? 1 : 0)
-    } else {
-        lua_pushboolean(L, 0)
-    }
-    return 1
-}
-
-private func userdata_gc(_ L: LuaState) throws -> CInt {
-    let synth = get_synthFromUserdata_transfer(L, at: 1)
-    synth.udReferenceCount -= 1
-
-    if synth.udReferenceCount == 0 {
-        luaL_unref(L, LUA_REGISTRYINDEX_VALUE, synth.callbackRef)
-
-        synth.callbackRef = LUA_NOREF
-        if synth.selfRef != LUA_NOREF {
-            luaL_unref(L, LUA_REGISTRYINDEX_VALUE, synth.selfRef)
-
-            synth.selfRef = LUA_NOREF
-        }
-        synth.delegate = nil
-    }
-
-    lua_pushnil(L)
-    lua_setmetatable(L, 1)
-    return 0
-}
-
 // MARK: - Module Entry Point
 
 @_cdecl("luaopen_hs_libspeech")
 public func luaopen_hs_libspeech(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    runEntryPoint(L) { L in
-        // Create ref table in registry
-        lua_newtable(L)
-        refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+    // Register idiomatic Metatable<HSSpeechSynthesizer>
+    L.register(Metatable<HSSpeechSynthesizer>(
+        fields: [
+            "usesFeedbackWindow": .closure { L in
+                let synth: HSSpeechSynthesizer = try L.checkArgument(1)
+                if lua_gettop(L) == 2 {
+                    synth.usesFeedbackWindow = lua_toboolean(L, 2) != 0
+                    lua_pushvalue(L, 1)
+                } else {
+                    lua_pushboolean(L, synth.usesFeedbackWindow ? 1 : 0)
+                }
+                return 1
+            },
+            "voice": .closure { L in
+                let synth: HSSpeechSynthesizer = try L.checkArgument(1)
+                if lua_gettop(L) == 2 && lua_type(L, 2) != LUA_TBOOLEAN {
+                    var voiceName: NSSpeechSynthesizer.VoiceName? = nil
+                    if lua_type(L, 2) != LUA_TNIL {
+                        _ = luaL_checkstring(L, 2)
+                        if let str = lua_tovalue(L, at: 2) as? String {
+                            if let corrected = correctForVoiceShortCut(str) {
+                                voiceName = NSSpeechSynthesizer.VoiceName(rawValue: corrected)
+                            } else {
+                                os_log(.info, "%{public}s", "unable to identify voice from string, defaulting to system voice")
+                            }
+                        }
+                    }
+                    if synth.setVoice(voiceName) {
+                        lua_pushvalue(L, 1)
+                    } else {
+                        lua_pushnil(L)
+                    }
+                } else {
+                    let displayFullName = lua_isboolean(L, 2) ? (lua_toboolean(L, 2) != 0) : false
+                    let currentVoice = synth.voice()?.rawValue
+                    if displayFullName {
+                        lua_pushany(L, currentVoice as NSString?)
+                    } else {
+                        lua_pushany(L, getVoiceShortCut(currentVoice) as NSString?)
+                    }
+                }
+                return 1
+            },
+            "rate": .closure { L in
+                let synth: HSSpeechSynthesizer = try L.checkArgument(1)
+                if lua_gettop(L) == 2 {
+                    synth.rate = Float(lua_tonumber(L, 2))
+                    lua_pushvalue(L, 1)
+                } else {
+                    lua_pushnumber(L, lua_Number(synth.rate))
+                }
+                return 1
+            },
+            "volume": .closure { L in
+                let synth: HSSpeechSynthesizer = try L.checkArgument(1)
+                if lua_gettop(L) == 2 {
+                    let vol = Float(lua_tonumber(L, 2))
+                    if vol < 0.0 || vol > 1.0 {
+                        throw LuaCallError("bad argument #2 (must be between 0.0 and 1.0 inclusive)")
+                    }
+                    synth.volume = vol
+                    lua_pushvalue(L, 1)
+                } else {
+                    lua_pushnumber(L, lua_Number(synth.volume))
+                }
+                return 1
+            },
+            "speaking": .closure { L in
+                let synth: HSSpeechSynthesizer = try L.checkArgument(1)
+                lua_pushboolean(L, synth.isSpeaking ? 1 : 0)
+                return 1
+            },
+            "setCallback": .closure { L in
+                let synth: HSSpeechSynthesizer = try L.checkArgument(1)
+                if lua_type(L, 2) == LUA_TFUNCTION {
+                    synth.callback = L.ref(index: 2)
+                } else {
+                    synth.callback = nil
+                }
+                lua_pushvalue(L, 1)
+                return 1
+            },
+            "speak": .closure { L in
+                let synth: HSSpeechSynthesizer = try L.checkArgument(1)
+                _ = luaL_checkstring(L, 2)
+                guard let theText = lua_tovalue(L, at: 2) as? String else {
+                    throw LuaCallError("invalid speech text, evaluates to nil")
+                }
+                if synth.startSpeaking(theText) {
+                    // Keep a self-reference to prevent GC during speech
+                    if synth.selfRefValue == nil {
+                        lua_pushvalue(L, 1)
+                        synth.selfRefValue = L.ref(index: -1)
+                    }
+                    lua_pushvalue(L, 1)
+                } else {
+                    lua_pushnil(L)
+                }
+                return 1
+            },
+            "speakToFile": .closure { L in
+                let synth: HSSpeechSynthesizer = try L.checkArgument(1)
+                _ = luaL_checkstring(L, 2)
+                _ = luaL_checkstring(L, 3)
+                guard let theText = lua_tovalue(L, at: 2) as? String else {
+                    throw LuaCallError("invalid speech text, evaluates to nil")
+                }
+                guard let theFile = lua_tovalue(L, at: 3) as? String else {
+                    throw LuaCallError("invalid file name, evaluates to nil")
+                }
+                let url = URL(fileURLWithPath: (theFile as NSString).expandingTildeInPath, isDirectory: false)
+                if synth.startSpeaking(theText, to: url) {
+                    if synth.selfRefValue == nil {
+                        lua_pushvalue(L, 1)
+                        synth.selfRefValue = L.ref(index: -1)
+                    }
+                    lua_pushvalue(L, 1)
+                } else {
+                    lua_pushnil(L)
+                }
+                return 1
+            },
+            "pause": .closure { L in
+                let synth: HSSpeechSynthesizer = try L.checkArgument(1)
+                let boundary = parseBoundary(L, at: 2, label: "pausing")
+                synth.pauseSpeaking(at: boundary)
+                lua_pushvalue(L, 1)
+                return 1
+            },
+            "continue": .closure { L in
+                let synth: HSSpeechSynthesizer = try L.checkArgument(1)
+                synth.continueSpeaking()
+                lua_pushvalue(L, 1)
+                return 1
+            },
+            "stop": .closure { L in
+                let synth: HSSpeechSynthesizer = try L.checkArgument(1)
+                let boundary = parseBoundary(L, at: 2, label: "stopping")
+                synth.stopSpeaking(at: boundary)
+                synth.selfRefValue = nil
+                lua_pushvalue(L, 1)
+                return 1
+            },
+            "phonemes": .closure { L in
+                let synth: HSSpeechSynthesizer = try L.checkArgument(1)
+                _ = luaL_checkstring(L, 2)
+                guard let theText = lua_tovalue(L, at: 2) as? String else {
+                    throw LuaCallError("invalid speech text, evaluates to nil")
+                }
+                lua_pushany(L, synth.phonemes(from: theText) as NSString)
+                return 1
+            },
+            "isSpeaking": .closure { L in
+                let synth: HSSpeechSynthesizer = try L.checkArgument(1)
+                do {
+                    let status = try synth.object(forProperty: .status) as? NSDictionary
+                    if let result = status?[NSSpeechSynthesizer.SpeechPropertyKey.StatusKey.outputBusy] as? NSNumber {
+                        lua_pushboolean(L, result.boolValue ? 1 : 0)
+                    } else {
+                        os_log(.info, "%{public}s", "Key \"\(NSSpeechSynthesizer.SpeechPropertyKey.StatusKey.outputBusy)\" missing from synthesizer status")
+                        lua_pushnil(L)
+                    }
+                } catch {
+                    os_log(.info, "%{public}s", "Unable to query synthesizer status -> \(error.localizedDescription)")
+                    lua_pushnil(L)
+                }
+                return 1
+            },
+            "isPaused": .closure { L in
+                let synth: HSSpeechSynthesizer = try L.checkArgument(1)
+                do {
+                    let status = try synth.object(forProperty: .status) as? NSDictionary
+                    if let result = status?[NSSpeechSynthesizer.SpeechPropertyKey.StatusKey.outputPaused] as? NSNumber {
+                        lua_pushboolean(L, result.boolValue ? 1 : 0)
+                    } else {
+                        os_log(.info, "%{public}s", "Key \"\(NSSpeechSynthesizer.SpeechPropertyKey.StatusKey.outputPaused)\" missing from synthesizer status")
+                        lua_pushnil(L)
+                    }
+                } catch {
+                    os_log(.info, "%{public}s", "Unable to query synthesizer status -> \(error.localizedDescription)")
+                    lua_pushnil(L)
+                }
+                return 1
+            },
+            "phoneticSymbols": .closure { L in
+                let synth: HSSpeechSynthesizer = try L.checkArgument(1)
+                do {
+                    let phoneticList = try synth.object(forProperty: .phonemeSymbols)
+                    lua_pushany(L, phoneticList as? NSObject)
+                } catch {
+                    os_log(.info, "%{public}s", "Unable to query synthesizer for phonetic symbols -> \(error.localizedDescription)")
+                    lua_pushnil(L)
+                }
+                return 1
+            },
+            "pitch": .closure { L in
+                let synth: HSSpeechSynthesizer = try L.checkArgument(1)
+                if lua_gettop(L) == 2 {
+                    do {
+                        try synth.setObject(NSNumber(value: lua_tonumber(L, 2)), forProperty: .pitchBase)
+                        lua_pushvalue(L, 1)
+                    } catch {
+                        os_log(.info, "%{public}s", "Error setting pitchBase -> \(error.localizedDescription)")
+                        lua_pushnil(L)
+                    }
+                } else {
+                    do {
+                        let value = try synth.object(forProperty: .pitchBase)
+                        lua_pushany(L, value as? NSObject)
+                    } catch {
+                        lua_pushany(L, nil as NSObject?)
+                        os_log(.info, "%{public}s", "Error getting pitchBase -> \(error.localizedDescription)")
+                    }
+                }
+                return 1
+            },
+            "modulation": .closure { L in
+                let synth: HSSpeechSynthesizer = try L.checkArgument(1)
+                if lua_gettop(L) == 2 {
+                    do {
+                        try synth.setObject(NSNumber(value: lua_tonumber(L, 2)), forProperty: .pitchMod)
+                        lua_pushvalue(L, 1)
+                    } catch {
+                        os_log(.info, "%{public}s", "Error setting pitchMod -> \(error.localizedDescription)")
+                        lua_pushnil(L)
+                    }
+                } else {
+                    do {
+                        let value = try synth.object(forProperty: .pitchMod)
+                        lua_pushany(L, value as? NSObject)
+                    } catch {
+                        lua_pushany(L, nil as NSObject?)
+                        os_log(.info, "%{public}s", "Error getting pitchMod -> \(error.localizedDescription)")
+                    }
+                }
+                return 1
+            },
+            "reset": .closure { L in
+                let synth: HSSpeechSynthesizer = try L.checkArgument(1)
+                do {
+                    try synth.setObject(nil, forProperty: .reset)
+                    lua_pushvalue(L, 1)
+                } catch {
+                    os_log(.info, "%{public}s", "Error resetting synthesizer -> \(error.localizedDescription)")
+                    lua_pushnil(L)
+                }
+                return 1
+            },
+        ],
+        tostring: .closure { L in
+            let synth: HSSpeechSynthesizer = try L.checkArgument(1)
+            let voiceName = synth.voice()?.rawValue ?? "unknown"
+            lua_pushstring(L, "\(USERDATA_TAG): \(voiceName) (\(lua_topointer(L, 1)!))")
+            return 1
+        }
+    ))
 
-        // Register userdata metatable
-        luaL_newmetatable(L, USERDATA_TAG)
-        lua_pushvalue(L, -1)
-        lua_setfield(L, -2, "__index")
-        L.push(usesFeedbackWindow)
-        lua_setfield(L, -2, "usesFeedbackWindow")
-        L.push(voice)
-        lua_setfield(L, -2, "voice")
-        L.push(rate)
-        lua_setfield(L, -2, "rate")
-        L.push(volume)
-        lua_setfield(L, -2, "volume")
-        L.push(speaking)
-        lua_setfield(L, -2, "speaking")
-        L.push(setCallback)
-        lua_setfield(L, -2, "setCallback")
-        L.push(startSpeakingString)
-        lua_setfield(L, -2, "speak")
-        L.push(startSpeakingStringToURL)
-        lua_setfield(L, -2, "speakToFile")
-        L.push(pauseSpeakingAtBoundary)
-        lua_setfield(L, -2, "pause")
-        L.push(continueSpeaking)
-        lua_setfield(L, -2, "continue")
-        L.push(stopSpeakingAtBoundary)
-        lua_setfield(L, -2, "stop")
-        L.push(phonemesFromText)
-        lua_setfield(L, -2, "phonemes")
-        L.push(isSpeaking)
-        lua_setfield(L, -2, "isSpeaking")
-        L.push(isPaused)
-        lua_setfield(L, -2, "isPaused")
-        L.push(phoneticSymbols)
-        lua_setfield(L, -2, "phoneticSymbols")
-        L.push(pitchBase)
-        lua_setfield(L, -2, "pitch")
-        L.push(pitchMod)
-        lua_setfield(L, -2, "modulation")
-        L.push(reset)
-        lua_setfield(L, -2, "reset")
-        L.push(userdata_tostring)
-        lua_setfield(L, -2, "__tostring")
-        L.push(userdata_eq)
-        lua_setfield(L, -2, "__eq")
-        L.push(userdata_gc)
-        lua_setfield(L, -2, "__gc")
-        lua_pop(L, 1)
+    // Post-registration metatable patching
+    L.pushMetatable(for: HSSpeechSynthesizer.self)
 
-        // Create module table
-        lua_createtable(L, 0, 5)
-        L.push(availableVoices)
-        lua_setfield(L, -2, "availableVoices")
-        L.push(attributesForVoice)
-        lua_setfield(L, -2, "attributesForVoice")
-        L.push(defaultVoice)
-        lua_setfield(L, -2, "defaultVoice")
-        L.push(isAnyApplicationSpeaking)
-        lua_setfield(L, -2, "isAnyApplicationSpeaking")
-        L.push(newSpeechSynthesizer)
-        lua_setfield(L, -2, "new")
-    }
+    // Replace __gc with explicit teardown + deinitialize
+    lua_pushcclosure(L, { (L: LuaState!) -> CInt in
+        if let synth: HSSpeechSynthesizer = L.touserdata(1) {
+            synth.teardown()
+        }
+        let rawptr = lua_touserdata(L, 1)!
+        let anyPtr = rawptr.assumingMemoryBound(to: Any.self)
+        anyPtr.deinitialize(count: 1)
+        return 0
+    }, 0)
+    lua_setfield(L, -2, "__gc")
+
+    // __eq: compare the underlying objects
+    lua_pushcclosure(L, { (L: LuaState!) -> CInt in
+        if let synth1: HSSpeechSynthesizer = L.touserdata(1),
+           let synth2: HSSpeechSynthesizer = L.touserdata(2) {
+            lua_pushboolean(L, synth1.isEqual(to: synth2) ? 1 : 0)
+        } else {
+            lua_pushboolean(L, 0)
+        }
+        return 1
+    }, 0)
+    lua_setfield(L, -2, "__eq")
+
+    // Set __type and __name
+    lua_pushstring(L, USERDATA_TAG)
+    lua_setfield(L, -2, "__type")
+    lua_pushstring(L, USERDATA_TAG)
+    lua_setfield(L, -2, "__name")
+
+    // Alias the metatable under the legacy registry name
+    lua_setfield(L, LUA_REGISTRYINDEX_VALUE, USERDATA_TAG)
+
+    // Create module table
+    lua_createtable(L, 0, 5)
+    L.push(availableVoices)
+    lua_setfield(L, -2, "availableVoices")
+    L.push(attributesForVoice)
+    lua_setfield(L, -2, "attributesForVoice")
+    L.push(defaultVoice)
+    lua_setfield(L, -2, "defaultVoice")
+    L.push(isAnyApplicationSpeaking)
+    lua_setfield(L, -2, "isAnyApplicationSpeaking")
+    L.push(newSpeechSynthesizer)
+    lua_setfield(L, -2, "new")
+
+    return 1
 }
 
 // MARK: - Dictionary helper for allKeys(for:)

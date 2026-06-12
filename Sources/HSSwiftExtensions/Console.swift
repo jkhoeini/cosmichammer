@@ -3,8 +3,6 @@ import CLua
 import Lua
 import os.log
 
-private var refTable: Int32 = LUA_NOREF
-
 // MARK: - Runtime access to MJConsoleWindowController (lives in HSExtensions, not visible at compile time)
 
 private let HSConsoleDarkModeKey = "HSConsoleDarkModeKey"
@@ -746,10 +744,6 @@ private func console_titleVisibility(_ L: LuaState) throws -> CInt {
 @_cdecl("luaopen_hs_libconsole")
 public func luaopen_hs_libconsole(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     runEntryPoint(L) { L in
-        // Create ref table in registry
-        lua_newtable(L)
-        refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
-
         // Create module table (20 functions)
         lua_createtable(L, 0, 20)
         L.push(consoleDarkMode)

@@ -3,9 +3,7 @@ import CLua
 import Lua
 import os.log
 
-private let USERDATA_TAG: StaticString = "hs.bonjour"
-private var USERDATA_TAG_STR: String { "\(USERDATA_TAG)" }
-private var refTable: Int32 = Int32(LUA_NOREF)
+private let USERDATA_TAG = "hs.bonjour"
 
 // MARK: - Support Functions and Classes
 
@@ -46,42 +44,52 @@ private func pushBonjourCallbackArgument(_ L: UnsafeMutablePointer<lua_State>!, 
 }
 
 @objc private class HSNetServiceBrowser: NetServiceBrowser, NetServiceBrowserDelegate {
-    var callbackRef: Int32 = Int32(LUA_NOREF)
-    var selfRefCount: Int = 0
+    var callback: LuaValue?
+    var generation: UInt64 = 0
+    private var tornDown = false
 
     override init() {
         super.init()
         self.delegate = self
     }
 
-    func stop(withState L: UnsafeMutablePointer<lua_State>!) {
+    /// Idempotent teardown: stop browsing, drop the Lua callback reference,
+    /// clear delegate.  Called from the explicit __gc closure while the
+    /// lua_State is still alive, AND from performCallback when the generation
+    /// canary fires.
+    func teardown() {
+        guard !tornDown else { return }
+        tornDown = true
         super.stop()
-        luaL_unref(L, LUA_REGISTRYINDEX_VALUE, callbackRef)
-
-        callbackRef = LUA_NOREF
+        callback = nil
+        delegate = nil
     }
 
     func performCallback(with argument: Any?) {
-        if callbackRef != Int32(LUA_NOREF) {
-            let L = lua_getCurrentState()!
-            var argCount: Int32 = 1
-            lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(callbackRef))
-            pushHSNetServiceBrowser(L, self)
-            if let argument = argument {
-                if let args = argument as? [Any] {
-                    for obj in args {
-                        pushBonjourCallbackArgument(L, obj)
-                    }
-                    argCount += Int32(args.count)
-                } else {
-                    pushBonjourCallbackArgument(L, argument)
-                    argCount += 1
+        guard lua_isStateGenerationValid(generation) else {
+            teardown()
+            return
+        }
+        guard callback != nil else { return }
+
+        let L = lua_getCurrentState()!
+        var argCount: Int32 = 1
+        callback?.push(onto: L)
+        L.push(userdata: self)
+        if let argument = argument {
+            if let args = argument as? [Any] {
+                for obj in args {
+                    pushBonjourCallbackArgument(L, obj)
                 }
+                argCount += Int32(args.count)
+            } else {
+                pushBonjourCallbackArgument(L, argument)
+                argCount += 1
             }
-            if lua_pcall(L, argCount, 0, 0) != LUA_OK {
-                os_log(.error, "%{public}s", "\(USERDATA_TAG):callback error:\(String(cString: lua_tostring(L, -1)!))")
-                lua_pop(L, -1)
-            }
+        }
+        if lua_pcall(L, argCount, 0, 0) != LUA_OK {
+            os_log(.error, "%{public}s", "\(USERDATA_TAG):callback error:\(String(cString: lua_tostring(L, -1)!))")
+            lua_pop(L, -1)
         }
     }
 
@@ -128,254 +136,210 @@ private func pushBonjourCallbackArgument(_ L: UnsafeMutablePointer<lua_State>!, 
 ///
 /// Returns:
 ///  * a new browserObject or nil if an error occurs
-private func browser_new(_ L: LuaState) throws -> CInt {
+private func browser_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let browser = HSNetServiceBrowser()
-    pushHSNetServiceBrowser(L, browser)
+    browser.generation = lua_currentStateGeneration()
+    L.push(userdata: browser)
     return 1
 }
 
-// MARK: - Module Methods
-
-/// hs.bonjour:includesPeerToPeer([value]) -> current value | browserObject
-/// Method
-/// Get or set whether to also browse over peer-to-peer Bluetooth and Wi-Fi, if available.
-///
-/// Parameters:
-///  * `value` - an optional boolean, default false, value specifying whether to also browse over peer-to-peer Bluetooth and Wi-Fi, if available.
-///
-/// Returns:
-///  * if `value` is provided, returns the browserObject; otherwise returns the current value for this property
-///
-/// Notes:
-///  * This property must be set before initiating a search to have an effect.
-private func browser_includesPeerToPeer(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG.utf8Start)
-    let browser: HSNetServiceBrowser = toHSNetServiceBrowserFromLua(L, 1) as! HSNetServiceBrowser
-    if lua_gettop(L) == 1 {
-        lua_pushboolean(L, browser.includesPeerToPeer ? 1 : 0)
-    } else {
-        browser.includesPeerToPeer = lua_toboolean(L, 2) != 0
-        lua_pushvalue(L, 1)
-    }
-    return 1
-}
-
-/// hs.bonjour:findBrowsableDomains(callback) -> browserObject
-/// Method
-/// Return a list of zero-conf and bonjour domains visible to the users computer.
-///
-/// Parameters:
-///  * `callback` - a function which will be invoked as visible domains are discovered. The function should accept the following parameters and return none:
-///    * `browserObject`    - the userdata object for the browserObject which initiated the search
-///    * `type`             - a string which will be 'domain' or 'error'
-///      * if `type` == 'domain', the remaining arguments will be:
-///        * `added`        - a boolean value indicating whether this callback invocation represents a newly discovered or added domain (true) or that the domain has been removed from the network (false)
-///        * `domain`       - a string specifying the name of the domain discovered or removed
-///        * `moreExpected` - a boolean value indicating whether or not the browser expects to discover additional domains or not.
-///      * if `type` == 'error', the remaining arguments will be:
-///        * `errorString`  - a string specifying the error which has occurred
-///
-/// Returns:
-///  * the browserObject
-///
-/// Notes:
-///  * This method returns domains which are visible to your machine; however, your machine may or may not be able to access or publish records within the returned domains. See  [hs.bonjour:findRegistrationDomains](#findRegistrationDomains)
-///
-///  * For most non-corporate network users, it is likely that the callback will only be invoked once for the `local` domain. This is normal. Corporate networks or networks including Linux machines using additional domains defined with Avahi may see additional domains as well, though most Avahi installations now use only 'local' by default unless specifically configured to do otherwise.
-///
-///  * When `moreExpected` becomes false, it is the macOS's best guess as to whether additional records are available.
-///    * Generally macOS is fairly accurate in this regard concerning domain searches, so to reduce the impact on system resources, it is recommended that you use [hs.bonjour:stop](#stop) when this parameter is false
-private func browser_searchForBrowsableDomains(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG.utf8Start)
-
-    luaL_checktype(L, 2, LUA_TFUNCTION)
-    let browser: HSNetServiceBrowser = toHSNetServiceBrowserFromLua(L, 1) as! HSNetServiceBrowser
-    if browser.callbackRef != Int32(LUA_NOREF) { browser.stop(withState: L) }
-    lua_pushvalue(L, 2)
-    browser.callbackRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
-    browser.searchForBrowsableDomains()
-    lua_pushvalue(L, 1)
-    return 1
-}
-
-/// hs.bonjour:findRegistrationDomains(callback) -> browserObject
-/// Method
-/// Return a list of zero-conf and bonjour domains this computer can register services in.
-///
-/// Parameters:
-///  * `callback` - a function which will be invoked as domains are discovered. The function should accept the following parameters and return none:
-///    * `browserObject`    - the userdata object for the browserObject which initiated the search
-///    * `type`             - a string which will be 'domain' or 'error'
-///      * if `type` == 'domain', the remaining arguments will be:
-///        * `added`        - a boolean value indicating whether this callback invocation represents a newly discovered or added domain (true) or that the domain has been removed from the network (false)
-///        * `domain`       - a string specifying the name of the domain discovered or removed
-///        * `moreExpected` - a boolean value indicating whether or not the browser expects to discover additional domains or not.
-///      * if `type` == 'error', the remaining arguments will be:
-///        * `errorString`  - a string specifying the error which has occurred
-///
-/// Returns:
-///  * the browserObject
-///
-/// Notes:
-///  * This is the preferred method for accessing domains as it guarantees that the host machine can connect to services in the returned domains. Access to domains outside this list may be more limited. See also [hs.bonjour:findBrowsableDomains](#findBrowsableDomains)
-///
-///  * For most non-corporate network users, it is likely that the callback will only be invoked once for the `local` domain. This is normal. Corporate networks or networks including Linux machines using additional domains defined with Avahi may see additional domains as well, though most Avahi installations now use only 'local' by default unless specifically configured to do otherwise.
-///
-///  * When `moreExpected` becomes false, it is the macOS's best guess as to whether additional records are available.
-///    * Generally macOS is fairly accurate in this regard concerning domain searches, so to reduce the impact on system resources, it is recommended that you use [hs.bonjour:stop](#stop) when this parameter is false
-private func browser_searchForRegistrationDomains(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG.utf8Start)
-
-    luaL_checktype(L, 2, LUA_TFUNCTION)
-    let browser: HSNetServiceBrowser = toHSNetServiceBrowserFromLua(L, 1) as! HSNetServiceBrowser
-    if browser.callbackRef != Int32(LUA_NOREF) { browser.stop(withState: L) }
-    lua_pushvalue(L, 2)
-    browser.callbackRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
-    browser.searchForRegistrationDomains()
-    lua_pushvalue(L, 1)
-    return 1
-}
-
-// hs.bonjour:findServices is documented with its wrapper in init.lua
-private func browser_searchForServices(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG.utf8Start)
-    let browser: HSNetServiceBrowser = toHSNetServiceBrowserFromLua(L, 1) as! HSNetServiceBrowser
-    var service = "_services._dns-sd._udp."
-    var domain = ""
-    switch lua_gettop(L) {
-    case 2:
-        luaL_checkudata(L, 1, USERDATA_TAG.utf8Start)
-
-        luaL_checktype(L, 2, LUA_TFUNCTION)
-    case 3:
-        service = lua_tovalue(L, at: 2) as! String
-    default:
-        service = lua_tovalue(L, at: 2) as! String
-        domain = lua_tovalue(L, at: 3) as! String
-    }
-    if browser.callbackRef != Int32(LUA_NOREF) { browser.stop(withState: L) }
-    lua_pushvalue(L, -1)
-    browser.callbackRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
-    browser.searchForServices(ofType: service, inDomain: domain)
-    lua_pushvalue(L, 1)
-    return 1
-}
-
-/// hs.bonjour:stop() -> browserObject
-/// Method
-/// Stops a currently running search or resolution for the browser object
-///
-/// Parameters:
-///  * None
-///
-/// Returns:
-///  * the browserObject
-///
-/// Notes:
-///  * This method should be invoked when you have identified the services or hosts you require to reduce the consumption of system resources.
-///  * Invoking this method on an already idle browser will do nothing
-///
-///  * In general, when your callback function for [hs.bonjour:findBrowsableDomains](#findBrowsableDomains), [hs.bonjour:findRegistrationDomains](#findRegistrationDomains), or [hs.bonjour:findServices](#findServices) receives false for the `moreExpected` parameter, you should invoke this method on the browserObject unless there are specific reasons not to. Possible reasons you might want to extend the life of the browserObject are documented within each method.
-private func browser_stop(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG.utf8Start)
-    let browser: HSNetServiceBrowser = toHSNetServiceBrowserFromLua(L, 1) as! HSNetServiceBrowser
-    browser.stop(withState: L)
-    lua_pushvalue(L, 1)
-    return 1
-}
-
-// MARK: - Lua<->NSObject Conversion Functions
-// These must not throw a lua error to ensure LuaSkin can safely be used from Objective-C
-// delegates and blocks.
-
-@discardableResult
-private func pushHSNetServiceBrowser(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any?) -> Int32 {
-    guard let value = obj as? HSNetServiceBrowser else { return 0 }
-    value.selfRefCount += 1
-    let valuePtr = lua_newuserdata(L, MemoryLayout<UnsafeMutableRawPointer>.size)!
-        .assumingMemoryBound(to: UnsafeMutableRawPointer.self)
-    valuePtr.pointee = Unmanaged.passRetained(value).toOpaque()
-    luaL_getmetatable(L, USERDATA_TAG_STR)
-    lua_setmetatable(L, -2)
-    return 1
-}
-
-private func toHSNetServiceBrowserFromLua(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> Any? {
-    if luaL_testudata(L, idx, USERDATA_TAG_STR) != nil {
-        let ptr = luaL_checkudata(L, idx, USERDATA_TAG_STR)!
-            .assumingMemoryBound(to: UnsafeMutableRawPointer.self)
-        return Unmanaged<HSNetServiceBrowser>.fromOpaque(ptr.pointee).takeUnretainedValue()
-    } else {
-        os_log(.error, "%{public}s", "expected \(USERDATA_TAG) object, found \(String(cString: lua_typename(L, lua_type(L, idx))))")
-    }
-    return nil
-}
-
-// MARK: - Cosmic Hammer/Lua Infrastructure
-
-private func userdata_tostring(_ L: LuaState) throws -> CInt {
-    lua_pushany(L, "\(USERDATA_TAG): (\(String(describing: lua_topointer(L, 1))))" as NSString)
-    return 1
-}
-
-private func userdata_eq(_ L: LuaState) throws -> CInt {
-    // can't get here if at least one of us isn't a userdata type, and we only care if both types are ours,
-    // so use luaL_testudata before the macro causes a lua error
-    if luaL_testudata(L, 1, USERDATA_TAG_STR) != nil && luaL_testudata(L, 2, USERDATA_TAG_STR) != nil {
-        let obj1 = toHSNetServiceBrowserFromLua(L, 1) as! HSNetServiceBrowser
-        let obj2 = toHSNetServiceBrowserFromLua(L, 2) as! HSNetServiceBrowser
-        lua_pushboolean(L, obj1.isEqual(to: obj2) ? 1 : 0)
-    } else {
-        lua_pushboolean(L, 0)
-    }
-    return 1
-}
-
-private func userdata_gc(_ L: LuaState) throws -> CInt {
-    guard luaL_testudata(L, 1, USERDATA_TAG_STR) != nil else { return 0 }
-    let ptr = luaL_checkudata(L, 1, USERDATA_TAG_STR)!
-        .assumingMemoryBound(to: UnsafeMutableRawPointer.self)
-    let obj = Unmanaged<HSNetServiceBrowser>.fromOpaque(ptr.pointee).takeRetainedValue()
-    obj.selfRefCount -= 1
-    if obj.selfRefCount == 0 {
-        obj.delegate = nil
-        obj.stop(withState: L)
-    }
-    // Remove the Metatable so future use of the variable in Lua won't think its valid
-    lua_pushnil(L)
-    lua_setmetatable(L, 1)
-    return 0
-}
+// MARK: - Module entry point
 
 @_cdecl("luaopen_hs_libbonjour")
 public func luaopen_hs_libbonjour(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    runEntryPoint(L) { L in
-        lua_newtable(L)
-        refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+    L.register(Metatable<HSNetServiceBrowser>(
+        fields: [
+            /// hs.bonjour:includesPeerToPeer([value]) -> current value | browserObject
+            /// Method
+            /// Get or set whether to also browse over peer-to-peer Bluetooth and Wi-Fi, if available.
+            ///
+            /// Parameters:
+            ///  * `value` - an optional boolean, default false, value specifying whether to also browse over peer-to-peer Bluetooth and Wi-Fi, if available.
+            ///
+            /// Returns:
+            ///  * if `value` is provided, returns the browserObject; otherwise returns the current value for this property
+            ///
+            /// Notes:
+            ///  * This property must be set before initiating a search to have an effect.
+            "includesPeerToPeer": .closure { L in
+                let browser: HSNetServiceBrowser = try L.checkArgument(1)
+                if lua_gettop(L) == 1 {
+                    lua_pushboolean(L, browser.includesPeerToPeer ? 1 : 0)
+                } else {
+                    browser.includesPeerToPeer = lua_toboolean(L, 2) != 0
+                    lua_pushvalue(L, 1)
+                }
+                return 1
+            },
+            /// hs.bonjour:findBrowsableDomains(callback) -> browserObject
+            /// Method
+            /// Return a list of zero-conf and bonjour domains visible to the users computer.
+            ///
+            /// Parameters:
+            ///  * `callback` - a function which will be invoked as visible domains are discovered. The function should accept the following parameters and return none:
+            ///    * `browserObject`    - the userdata object for the browserObject which initiated the search
+            ///    * `type`             - a string which will be 'domain' or 'error'
+            ///      * if `type` == 'domain', the remaining arguments will be:
+            ///        * `added`        - a boolean value indicating whether this callback invocation represents a newly discovered or added domain (true) or that the domain has been removed from the network (false)
+            ///        * `domain`       - a string specifying the name of the domain discovered or removed
+            ///        * `moreExpected` - a boolean value indicating whether or not the browser expects to discover additional domains or not.
+            ///      * if `type` == 'error', the remaining arguments will be:
+            ///        * `errorString`  - a string specifying the error which has occurred
+            ///
+            /// Returns:
+            ///  * the browserObject
+            ///
+            /// Notes:
+            ///  * This method returns domains which are visible to your machine; however, your machine may or may not be able to access or publish records within the returned domains. See  [hs.bonjour:findRegistrationDomains](#findRegistrationDomains)
+            ///
+            ///  * For most non-corporate network users, it is likely that the callback will only be invoked once for the `local` domain. This is normal. Corporate networks or networks including Linux machines using additional domains defined with Avahi may see additional domains as well, though most Avahi installations now use only 'local' by default unless specifically configured to do otherwise.
+            ///
+            ///  * When `moreExpected` becomes false, it is the macOS's best guess as to whether additional records are available.
+            ///    * Generally macOS is fairly accurate in this regard concerning domain searches, so to reduce the impact on system resources, it is recommended that you use [hs.bonjour:stop](#stop) when this parameter is false
+            "findBrowsableDomains": .closure { L in
+                let browser: HSNetServiceBrowser = try L.checkArgument(1)
+                luaL_checktype(L, 2, LUA_TFUNCTION)
+                if browser.callback != nil {
+                    browser.stop()
+                    browser.callback = nil
+                }
+                browser.callback = L.ref(index: 2)
+                browser.searchForBrowsableDomains()
+                lua_pushvalue(L, 1)
+                return 1
+            },
+            /// hs.bonjour:findRegistrationDomains(callback) -> browserObject
+            /// Method
+            /// Return a list of zero-conf and bonjour domains this computer can register services in.
+            ///
+            /// Parameters:
+            ///  * `callback` - a function which will be invoked as domains are discovered. The function should accept the following parameters and return none:
+            ///    * `browserObject`    - the userdata object for the browserObject which initiated the search
+            ///    * `type`             - a string which will be 'domain' or 'error'
+            ///      * if `type` == 'domain', the remaining arguments will be:
+            ///        * `added`        - a boolean value indicating whether this callback invocation represents a newly discovered or added domain (true) or that the domain has been removed from the network (false)
+            ///        * `domain`       - a string specifying the name of the domain discovered or removed
+            ///        * `moreExpected` - a boolean value indicating whether or not the browser expects to discover additional domains or not.
+            ///      * if `type` == 'error', the remaining arguments will be:
+            ///        * `errorString`  - a string specifying the error which has occurred
+            ///
+            /// Returns:
+            ///  * the browserObject
+            ///
+            /// Notes:
+            ///  * This is the preferred method for accessing domains as it guarantees that the host machine can connect to services in the returned domains. Access to domains outside this list may be more limited. See also [hs.bonjour:findBrowsableDomains](#findBrowsableDomains)
+            ///
+            ///  * For most non-corporate network users, it is likely that the callback will only be invoked once for the `local` domain. This is normal. Corporate networks or networks including Linux machines using additional domains defined with Avahi may see additional domains as well, though most Avahi installations now use only 'local' by default unless specifically configured to do otherwise.
+            ///
+            ///  * When `moreExpected` becomes false, it is the macOS's best guess as to whether additional records are available.
+            ///    * Generally macOS is fairly accurate in this regard concerning domain searches, so to reduce the impact on system resources, it is recommended that you use [hs.bonjour:stop](#stop) when this parameter is false
+            "findRegistrationDomains": .closure { L in
+                let browser: HSNetServiceBrowser = try L.checkArgument(1)
+                luaL_checktype(L, 2, LUA_TFUNCTION)
+                if browser.callback != nil {
+                    browser.stop()
+                    browser.callback = nil
+                }
+                browser.callback = L.ref(index: 2)
+                browser.searchForRegistrationDomains()
+                lua_pushvalue(L, 1)
+                return 1
+            },
+            // hs.bonjour:findServices is documented with its wrapper in init.lua
+            "findServices": .closure { L in
+                let browser: HSNetServiceBrowser = try L.checkArgument(1)
+                var service = "_services._dns-sd._udp."
+                var domain = ""
+                switch lua_gettop(L) {
+                case 2:
+                    luaL_checktype(L, 2, LUA_TFUNCTION)
+                case 3:
+                    service = lua_tovalue(L, at: 2) as! String
+                default:
+                    service = lua_tovalue(L, at: 2) as! String
+                    domain = lua_tovalue(L, at: 3) as! String
+                }
+                if browser.callback != nil {
+                    browser.stop()
+                    browser.callback = nil
+                }
+                browser.callback = L.ref(index: lua_gettop(L))
+                browser.searchForServices(ofType: service, inDomain: domain)
+                lua_pushvalue(L, 1)
+                return 1
+            },
+            /// hs.bonjour:stop() -> browserObject
+            /// Method
+            /// Stops a currently running search or resolution for the browser object
+            ///
+            /// Parameters:
+            ///  * None
+            ///
+            /// Returns:
+            ///  * the browserObject
+            ///
+            /// Notes:
+            ///  * This method should be invoked when you have identified the services or hosts you require to reduce the consumption of system resources.
+            ///  * Invoking this method on an already idle browser will do nothing
+            ///
+            ///  * In general, when your callback function for [hs.bonjour:findBrowsableDomains](#findBrowsableDomains), [hs.bonjour:findRegistrationDomains](#findRegistrationDomains), or [hs.bonjour:findServices](#findServices) receives false for the `moreExpected` parameter, you should invoke this method on the browserObject unless there are specific reasons not to. Possible reasons you might want to extend the life of the browserObject are documented within each method.
+            "stop": .closure { L in
+                let browser: HSNetServiceBrowser = try L.checkArgument(1)
+                browser.stop()
+                browser.callback = nil
+                lua_pushvalue(L, 1)
+                return 1
+            },
+        ],
+        eq: .closure { L in
+            if let obj1: HSNetServiceBrowser = L.touserdata(1),
+               let obj2: HSNetServiceBrowser = L.touserdata(2) {
+                lua_pushboolean(L, obj1.isEqual(to: obj2) ? 1 : 0)
+            } else {
+                lua_pushboolean(L, 0)
+            }
+            return 1
+        },
+        tostring: .closure { L in
+            lua_pushstring(L, "\(USERDATA_TAG): (\(String(describing: lua_topointer(L, 1))))")
+            return 1
+        }
+    ))
 
-        luaL_newmetatable(L, USERDATA_TAG_STR)
-        lua_pushvalue(L, -1)
-        lua_setfield(L, -2, "__index")
-        L.push(browser_includesPeerToPeer)
-        lua_setfield(L, -2, "includesPeerToPeer")
-        L.push(browser_searchForBrowsableDomains)
-        lua_setfield(L, -2, "findBrowsableDomains")
-        L.push(browser_searchForRegistrationDomains)
-        lua_setfield(L, -2, "findRegistrationDomains")
-        L.push(browser_searchForServices)
-        lua_setfield(L, -2, "findServices")
-        L.push(browser_stop)
-        lua_setfield(L, -2, "stop")
-        L.push(userdata_tostring)
-        lua_setfield(L, -2, "__tostring")
-        L.push(userdata_eq)
-        lua_setfield(L, -2, "__eq")
-        L.push(userdata_gc)
-        lua_setfield(L, -2, "__gc")
-        lua_pop(L, 1)
+    // -- Post-registration metatable patching --
+    // LuaSwift's register() always installs its own gcUserdata as __gc, which
+    // only deinitializes the Any box. We MUST replace it with a custom __gc
+    // that first calls teardown() (stop browsing, drop the LuaValue callback)
+    // and THEN deinitializes the Any box.
+    L.pushMetatable(for: HSNetServiceBrowser.self)
 
-        lua_createtable(L, 0, 1)
-        L.push(browser_new)
-        lua_setfield(L, -2, "new")
-    }
+    // Replace __gc with our explicit teardown + deinitialize
+    lua_pushcclosure(L, { (L: LuaState!) -> CInt in
+        if let browser: HSNetServiceBrowser = L.touserdata(1) {
+            browser.teardown()
+        }
+        // Now deinitialize the Any box (same as LuaSwift's gcUserdata)
+        let rawptr = lua_touserdata(L, 1)!
+        let anyPtr = rawptr.assumingMemoryBound(to: Any.self)
+        anyPtr.deinitialize(count: 1)
+        return 0
+    }, 0)
+    lua_setfield(L, -2, "__gc")
+
+    // Set __type and __name for lsunit.lua assertIsUserdataOfType and tostring
+    lua_pushstring(L, USERDATA_TAG)
+    lua_setfield(L, -2, "__type")
+    lua_pushstring(L, USERDATA_TAG)
+    lua_setfield(L, -2, "__name")
+
+    // Alias the metatable under the legacy registry name so that
+    // core_getObjectMetatable("hs.bonjour") still resolves.
+    lua_setfield(L, LUA_REGISTRYINDEX_VALUE, USERDATA_TAG)
+
+    // Module table
+    lua_createtable(L, 0, 1)
+    L.push(browser_new)
+    lua_setfield(L, -2, "new")
+
+    return 1
 }

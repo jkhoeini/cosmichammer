@@ -67,7 +67,6 @@ private var refTable: Int32 = 0
 
 private struct CaffeinateWatcherData {
     var running: Bool
-    var fn: Int32
     var obj: UnsafeMutableRawPointer?  // Retained reference to CaffeinateWatcher
     var generation: UInt64
 }
@@ -93,20 +92,22 @@ private enum CaffeinateEvent: Int {
 
 private class CaffeinateWatcher: NSObject {
     var object: UnsafeMutablePointer<CaffeinateWatcherData>
+    var callback: LuaValue?
 
-    init(object: UnsafeMutablePointer<CaffeinateWatcherData>) {
+    init(object: UnsafeMutablePointer<CaffeinateWatcherData>, callback: LuaValue?) {
         self.object = object
+        self.callback = callback
         super.init()
     }
 
     // Call the lua callback function and pass the event type.
-    func callback(dict: [AnyHashable: Any]?, event: CaffeinateEvent) {
-        guard object.pointee.fn != LUA_NOREF else { return }
+    func callbackFired(dict: [AnyHashable: Any]?, event: CaffeinateEvent) {
+        guard let cb = callback else { return }
         guard lua_isStateGenerationValid(object.pointee.generation) else { return }
 
         let L = lua_getCurrentState()!
 
-        lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(object.pointee.fn))
+        cb.push(onto: L)
         lua_pushinteger(L, lua_Integer(event.rawValue))
 
         if lua_pcall(L, 1, 0, 0) != LUA_OK {
@@ -115,51 +116,51 @@ private class CaffeinateWatcher: NSObject {
     }
 
     @objc func caffeinateDidWake(_ notification: Notification) {
-        callback(dict: notification.userInfo, event: .didWake)
+        callbackFired(dict: notification.userInfo, event: .didWake)
     }
 
     @objc func caffeinateWillSleep(_ notification: Notification) {
-        callback(dict: notification.userInfo, event: .willSleep)
+        callbackFired(dict: notification.userInfo, event: .willSleep)
     }
 
     @objc func caffeinateWillPowerOff(_ notification: Notification) {
-        callback(dict: notification.userInfo, event: .willPowerOff)
+        callbackFired(dict: notification.userInfo, event: .willPowerOff)
     }
 
     @objc func caffeinateScreensDidSleep(_ notification: Notification) {
-        callback(dict: notification.userInfo, event: .screensDidSleep)
+        callbackFired(dict: notification.userInfo, event: .screensDidSleep)
     }
 
     @objc func caffeinateScreensDidWake(_ notification: Notification) {
-        callback(dict: notification.userInfo, event: .screensDidWake)
+        callbackFired(dict: notification.userInfo, event: .screensDidWake)
     }
 
     @objc func caffeinateSessionDidResignActive(_ notification: Notification) {
-        callback(dict: notification.userInfo, event: .sessionDidResignActive)
+        callbackFired(dict: notification.userInfo, event: .sessionDidResignActive)
     }
 
     @objc func caffeinateSessionDidBecomeActive(_ notification: Notification) {
-        callback(dict: notification.userInfo, event: .sessionDidBecomeActive)
+        callbackFired(dict: notification.userInfo, event: .sessionDidBecomeActive)
     }
 
     @objc func caffeinateScreensaverDidStart(_ notification: Notification) {
-        callback(dict: notification.userInfo, event: .screensaverDidStart)
+        callbackFired(dict: notification.userInfo, event: .screensaverDidStart)
     }
 
     @objc func caffeinateScreensaverWillStop(_ notification: Notification) {
-        callback(dict: notification.userInfo, event: .screensaverWillStop)
+        callbackFired(dict: notification.userInfo, event: .screensaverWillStop)
     }
 
     @objc func caffeinateScreensaverDidStop(_ notification: Notification) {
-        callback(dict: notification.userInfo, event: .screensaverDidStop)
+        callbackFired(dict: notification.userInfo, event: .screensaverDidStop)
     }
 
     @objc func caffeinateScreensDidLock(_ notification: Notification) {
-        callback(dict: notification.userInfo, event: .screensDidLock)
+        callbackFired(dict: notification.userInfo, event: .screensDidLock)
     }
 
     @objc func caffeinateScreensDidUnlock(_ notification: Notification) {
-        callback(dict: notification.userInfo, event: .screensDidUnlock)
+        callbackFired(dict: notification.userInfo, event: .screensDidUnlock)
     }
 }
 
@@ -237,11 +238,10 @@ private func caffeinate_watcher_new(_ L: LuaState) throws -> CInt {
         .assumingMemoryBound(to: CaffeinateWatcherData.self)
     memset(watcherPtr, 0, MemoryLayout<CaffeinateWatcherData>.size)
 
-    lua_pushvalue(L, 1)
-    watcherPtr.pointee.fn = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+    let cb = L.ref(index: 1)
     watcherPtr.pointee.running = false
 
-    let watcher = CaffeinateWatcher(object: watcherPtr)
+    let watcher = CaffeinateWatcher(object: watcherPtr, callback: cb)
     watcherPtr.pointee.obj = Unmanaged.passRetained(watcher).toOpaque()
     watcherPtr.pointee.generation = lua_currentStateGeneration()
 
@@ -298,12 +298,10 @@ private func caffeinate_watcher_gc(_ L: LuaState) throws -> CInt {
 
     _ = try caffeinate_watcher_stop(L)
 
-    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, watcherPtr.pointee.fn)
-    watcherPtr.pointee.fn = Int32(LUA_NOREF)
-
-    // Release the retained CaffeinateWatcher
+    // Release the retained CaffeinateWatcher (and its LuaValue callback via ARC)
     if let obj = watcherPtr.pointee.obj {
-        Unmanaged<CaffeinateWatcher>.fromOpaque(obj).release()
+        let watcher = Unmanaged<CaffeinateWatcher>.fromOpaque(obj).takeRetainedValue()
+        watcher.callback = nil
         watcherPtr.pointee.obj = nil
     }
 

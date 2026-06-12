@@ -65,7 +65,7 @@ public class MJConsoleWindowController: NSWindowController, NSTextFieldDelegate 
 
     // MARK: Singleton
 
-    @objc public class func singleton() -> MJConsoleWindowController {
+    public class func singleton() -> MJConsoleWindowController {
         return _shared
     }
 
@@ -219,7 +219,7 @@ public class MJConsoleWindowController: NSWindowController, NSTextFieldDelegate 
 
     // MARK: - Public API
 
-    @objc public func initializeConsoleColorsAndFont() {
+    public func initializeConsoleColorsAndFont() {
         MJColorForStdout  = NSColor(calibratedHue: 0.88, saturation: 1.0, brightness: 0.6, alpha: 1.0)
         MJColorForCommand = .black
         MJColorForResult  = NSColor(calibratedHue: 0.54, saturation: 1.0, brightness: 0.7, alpha: 1.0)
@@ -227,7 +227,7 @@ public class MJConsoleWindowController: NSWindowController, NSTextFieldDelegate 
         maxConsoleOutputHistory = NSNumber(value: 100000)
     }
 
-    @objc public func setup() {
+    public func setup() {
         preshownStdouts = []
         MJLuaSetupLogHandler { [weak self] str in
             guard let self = self else { return }
@@ -241,7 +241,7 @@ public class MJConsoleWindowController: NSWindowController, NSTextFieldDelegate 
         reflectDefaults()
     }
 
-    @objc public func reflectDefaults() {
+    public func reflectDefaults() {
         if ConsoleDarkModeEnabled() {
             window?.appearance = NSAppearance(named: .vibrantDark)
             window?.titlebarAppearsTransparent = true

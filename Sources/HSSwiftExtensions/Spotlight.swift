@@ -7,19 +7,19 @@ private let USERDATA_TAG = "hs.spotlight"
 private let ITEM_UD_TAG  = "hs.spotlight.item"
 private let GROUP_UD_TAG = "hs.spotlight.group"
 
-private var refTable: Int32 = LUA_NOREF
 private var moduleSearchQueue: OperationQueue?
 
 // MARK: - Support Functions and Classes
 
 private class HSMetadataQuery: NSObject {
     var metadataSearch: NSMetadataQuery
-    var callbackRef: Int32 = LUA_NOREF
-    var selfPushCount: Int32 = 0
+    var callback: LuaValue?
+    var generation: UInt64 = 0
     var wantComplete: Bool = true
     var wantProgress: Bool = false
     var wantStart: Bool = false
     var wantUpdate: Bool = false
+    private var tornDown = false
 
     override init() {
         metadataSearch = NSMetadataQuery()
@@ -39,50 +39,52 @@ private class HSMetadataQuery: NSObject {
                        name: .NSMetadataQueryGatheringProgress, object: metadataSearch)
     }
 
+    /// Idempotent teardown: remove notification observers, stop query, drop the
+    /// Lua callback reference. Called from __gc while the lua_State is still
+    /// alive, and from doCallback when the generation canary fires.
+    func teardown() {
+        guard !tornDown else { return }
+        tornDown = true
+        let nc = NotificationCenter.default
+        nc.removeObserver(self, name: .NSMetadataQueryDidFinishGathering, object: metadataSearch)
+        nc.removeObserver(self, name: .NSMetadataQueryDidStartGathering, object: metadataSearch)
+        nc.removeObserver(self, name: .NSMetadataQueryDidUpdate, object: metadataSearch)
+        nc.removeObserver(self, name: .NSMetadataQueryGatheringProgress, object: metadataSearch)
+        if !metadataSearch.isStopped { metadataSearch.stop() }
+        callback = nil
+    }
+
     @objc func queryDidFinish(_ notification: Notification) {
-        if callbackRef != LUA_NOREF && wantComplete { doCallback(for: "didFinish", with: notification) }
+        if callback != nil && wantComplete { doCallback(for: "didFinish", with: notification) }
     }
 
     @objc func queryDidStart(_ notification: Notification) {
-        if callbackRef != LUA_NOREF && wantStart { doCallback(for: "didStart", with: notification) }
+        if callback != nil && wantStart { doCallback(for: "didStart", with: notification) }
     }
 
     @objc func queryDidUpdate(_ notification: Notification) {
-        if callbackRef != LUA_NOREF && wantUpdate { doCallback(for: "didUpdate", with: notification) }
+        if callback != nil && wantUpdate { doCallback(for: "didUpdate", with: notification) }
     }
 
     @objc func queryProgress(_ notification: Notification) {
-        if callbackRef != LUA_NOREF && wantProgress { doCallback(for: "inProgress", with: notification) }
+        if callback != nil && wantProgress { doCallback(for: "inProgress", with: notification) }
     }
 
     func doCallback(for message: String, with notification: Notification) {
         DispatchQueue.main.async { [weak self] in
-            guard let self = self, self.callbackRef != LUA_NOREF else { return }
+            guard let self = self, let cb = self.callback else { return }
+            if !lua_isStateGenerationValid(self.generation) {
+                self.teardown()
+                return
+            }
             let L = lua_getCurrentState()!
-            lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(self.callbackRef))
-            pushHSMetadataQuery(L, obj: self)
+            cb.push(onto: L)
+            L.push(userdata: self)
             lua_pushany(L, message as NSString)
             lua_pushany(L, notification.userInfo as NSDictionary?)
             if lua_pcall(L, 3, 0, 0) != LUA_OK { lua_pop(L, 1) }
         }
     }
-}
-
-// MARK: - Helpers
-
-private func get_queryFromUserdata(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> HSMetadataQuery {
-    let ptr = luaL_checkudata(L, idx, USERDATA_TAG)!
-    return Unmanaged<HSMetadataQuery>.fromOpaque(ptr.load(as: UnsafeRawPointer.self)).takeUnretainedValue()
-}
-
-private func get_groupFromUserdata(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> NSMetadataQueryResultGroup {
-    let ptr = luaL_checkudata(L, idx, GROUP_UD_TAG)!
-    return Unmanaged<NSMetadataQueryResultGroup>.fromOpaque(ptr.load(as: UnsafeRawPointer.self)).takeUnretainedValue()
-}
-
-private func get_itemFromUserdata(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> NSMetadataItem {
-    let ptr = luaL_checkudata(L, idx, ITEM_UD_TAG)!
-    return Unmanaged<NSMetadataItem>.fromOpaque(ptr.load(as: UnsafeRawPointer.self)).takeUnretainedValue()
 }
 
 // MARK: - Module Functions
@@ -91,7 +93,9 @@ private func get_itemFromUserdata(_ L: UnsafeMutablePointer<lua_State>!, at idx:
 /// Constructor
 /// Creates a new spotlightObject to use for Spotlight searches.
 private func spotlight_new(_ L: LuaState) throws -> CInt {
-    pushHSMetadataQuery(L, obj: HSMetadataQuery())
+    let query = HSMetadataQuery()
+    query.generation = lua_currentStateGeneration()
+    L.push(userdata: query)
     return 1
 }
 
@@ -99,15 +103,15 @@ private func spotlight_new(_ L: LuaState) throws -> CInt {
 /// Constructor
 /// Creates a new spotlightObject that limits its searches to the current results of another spotlightObject.
 private func spotlight_searchWithin(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
-    let query = get_queryFromUserdata(L, at: 1)
+    let query: HSMetadataQuery = try L.checkArgument(1)
 
     let newQuery = HSMetadataQuery()
+    newQuery.generation = lua_currentStateGeneration()
     query.metadataSearch.disableUpdates()
     newQuery.metadataSearch.searchItems = query.metadataSearch.results
     query.metadataSearch.enableUpdates()
 
-    pushHSMetadataQuery(L, obj: newQuery)
+    L.push(userdata: newQuery)
     return 1
 }
 
@@ -115,7 +119,7 @@ private func spotlight_searchWithin(_ L: LuaState) throws -> CInt {
 
 // wrapped in init.lua
 private func spotlight_searchScopes(_ L: LuaState) throws -> CInt {
-    let query = get_queryFromUserdata(L, at: 1)
+    let query: HSMetadataQuery = try L.checkArgument(1)
 
     if lua_gettop(L) == 1 {
         pushSpotlightValue(L, query.metadataSearch.searchScopes as NSArray)
@@ -165,16 +169,11 @@ private func spotlight_searchScopes(_ L: LuaState) throws -> CInt {
 /// Method
 /// Set or remove the callback function for the Spotlight search object.
 private func spotlight_callback(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
-    let query = get_queryFromUserdata(L, at: 1)
+    let query: HSMetadataQuery = try L.checkArgument(1)
 
-    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, query.callbackRef)
-
-
-    query.callbackRef = LUA_NOREF
+    query.callback = nil
     if lua_type(L, 2) == LUA_TFUNCTION {
-        lua_pushvalue(L, 2)
-        query.callbackRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+        query.callback = L.ref(index: 2)
     }
     lua_pushvalue(L, 1)
     return 1
@@ -182,7 +181,7 @@ private func spotlight_callback(_ L: LuaState) throws -> CInt {
 
 // wrapped in init.lua
 private func spotlight_callbackMessages(_ L: LuaState) throws -> CInt {
-    let query = get_queryFromUserdata(L, at: 1)
+    let query: HSMetadataQuery = try L.checkArgument(1)
 
     if lua_gettop(L) == 1 {
         lua_newtable(L)
@@ -222,8 +221,7 @@ private func spotlight_callbackMessages(_ L: LuaState) throws -> CInt {
 /// Method
 /// Get or set the time interval at which the spotlightObject will send "didUpdate" messages during the initial gathering phase.
 private func spotlight_updateInterval(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
-    let query = get_queryFromUserdata(L, at: 1)
+    let query: HSMetadataQuery = try L.checkArgument(1)
 
     if lua_gettop(L) == 1 {
         lua_pushnumber(L, query.metadataSearch.notificationBatchingInterval)
@@ -236,7 +234,7 @@ private func spotlight_updateInterval(_ L: LuaState) throws -> CInt {
 
 // wrapped in init.lua
 private func spotlight_sortDescriptors(_ L: LuaState) throws -> CInt {
-    let query = get_queryFromUserdata(L, at: 1)
+    let query: HSMetadataQuery = try L.checkArgument(1)
 
     if lua_gettop(L) == 1 {
         pushSpotlightValue(L, query.metadataSearch.sortDescriptors as NSArray)
@@ -272,7 +270,7 @@ private func spotlight_sortDescriptors(_ L: LuaState) throws -> CInt {
 
 // wrapped in init.lua
 private func spotlight_valueListAttributes(_ L: LuaState) throws -> CInt {
-    let query = get_queryFromUserdata(L, at: 1)
+    let query: HSMetadataQuery = try L.checkArgument(1)
 
     if lua_gettop(L) == 1 {
         pushSpotlightValue(L, query.metadataSearch.valueListAttributes as NSArray)
@@ -293,7 +291,7 @@ private func spotlight_valueListAttributes(_ L: LuaState) throws -> CInt {
 
 // wrapped in init.lua
 private func spotlight_groupingAttributes(_ L: LuaState) throws -> CInt {
-    let query = get_queryFromUserdata(L, at: 1)
+    let query: HSMetadataQuery = try L.checkArgument(1)
 
     if lua_gettop(L) == 1 {
         pushSpotlightValue(L, query.metadataSearch.groupingAttributes as NSArray?)
@@ -316,8 +314,7 @@ private func spotlight_groupingAttributes(_ L: LuaState) throws -> CInt {
 /// Method
 /// Begin the gathering phase of a Spotlight query.
 private func spotlight_start(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
-    let query = get_queryFromUserdata(L, at: 1)
+    let query: HSMetadataQuery = try L.checkArgument(1)
 
     if query.metadataSearch.isStarted && !query.metadataSearch.isStopped {
         os_log(.info, "%{public}s", "query already started")
@@ -338,8 +335,7 @@ private func spotlight_start(_ L: LuaState) throws -> CInt {
 /// Method
 /// Stop the Spotlight query.
 private func spotlight_stop(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
-    let query = get_queryFromUserdata(L, at: 1)
+    let query: HSMetadataQuery = try L.checkArgument(1)
 
     if query.metadataSearch.isStarted && !query.metadataSearch.isStopped {
         query.metadataSearch.stop()
@@ -354,8 +350,7 @@ private func spotlight_stop(_ L: LuaState) throws -> CInt {
 /// Method
 /// Returns a boolean specifying if the query is active or inactive.
 private func spotlight_isRunning(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
-    let query = get_queryFromUserdata(L, at: 1)
+    let query: HSMetadataQuery = try L.checkArgument(1)
 
     lua_pushboolean(L, (query.metadataSearch.isStarted && !query.metadataSearch.isStopped) ? 1 : 0)
     return 1
@@ -365,8 +360,7 @@ private func spotlight_isRunning(_ L: LuaState) throws -> CInt {
 /// Method
 /// Returns a boolean specifying whether or not the query is in the active gathering phase.
 private func spotlight_isGathering(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
-    let query = get_queryFromUserdata(L, at: 1)
+    let query: HSMetadataQuery = try L.checkArgument(1)
 
     lua_pushboolean(L, query.metadataSearch.isGathering ? 1 : 0)
     return 1
@@ -376,7 +370,7 @@ private func spotlight_isGathering(_ L: LuaState) throws -> CInt {
 /// Method
 /// Specify the query string for the spotlightObject
 private func spotlight_predicate(_ L: LuaState) throws -> CInt {
-    let query = get_queryFromUserdata(L, at: 1)
+    let query: HSMetadataQuery = try L.checkArgument(1)
 
     if lua_gettop(L) == 1 {
         if let pred = query.metadataSearch.predicate {
@@ -401,8 +395,7 @@ private func spotlight_predicate(_ L: LuaState) throws -> CInt {
 /// Method
 /// Returns the number of results for the spotlightObject's query
 private func spotlight_resultCount(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
-    let query = get_queryFromUserdata(L, at: 1)
+    let query: HSMetadataQuery = try L.checkArgument(1)
 
     lua_pushinteger(L, lua_Integer(query.metadataSearch.resultCount))
     return 1
@@ -412,7 +405,7 @@ private func spotlight_resultCount(_ L: LuaState) throws -> CInt {
 /// Method
 /// Returns the spotlightItemObject at the specified index of the spotlightObject
 private func spotlight_resultAtIndex(_ L: LuaState) throws -> CInt {
-    let query = get_queryFromUserdata(L, at: 1)
+    let query: HSMetadataQuery = try L.checkArgument(1)
 
     let index = lua_tointeger(L, 2)
     let count = query.metadataSearch.resultCount
@@ -426,7 +419,7 @@ private func spotlight_resultAtIndex(_ L: LuaState) throws -> CInt {
     query.metadataSearch.disableUpdates()
     let item = query.metadataSearch.result(at: Int(index - 1)) as! NSMetadataItem
     query.metadataSearch.enableUpdates()
-    pushNSMetadataItem(L, obj: item)
+    L.push(userdata: item)
     return 1
 }
 
@@ -434,8 +427,7 @@ private func spotlight_resultAtIndex(_ L: LuaState) throws -> CInt {
 /// Method
 /// Returns the value list summaries for the Spotlight query
 private func spotlight_valueLists(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
-    let query = get_queryFromUserdata(L, at: 1)
+    let query: HSMetadataQuery = try L.checkArgument(1)
 
     pushSpotlightValue(L, query.metadataSearch.valueLists as NSDictionary)
     return 1
@@ -445,8 +437,7 @@ private func spotlight_valueLists(_ L: LuaState) throws -> CInt {
 /// Method
 /// Returns the grouped results for a Spotlight query.
 private func spotlight_groupedResults(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
-    let query = get_queryFromUserdata(L, at: 1)
+    let query: HSMetadataQuery = try L.checkArgument(1)
 
     pushSpotlightValue(L, query.metadataSearch.groupedResults as NSArray)
     return 1
@@ -456,31 +447,28 @@ private func spotlight_groupedResults(_ L: LuaState) throws -> CInt {
 
 /// hs.spotlight.group:attribute() -> string
 private func group_attribute(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, GROUP_UD_TAG)
-    let resultGroup = get_groupFromUserdata(L, at: 1)
+    let resultGroup: NSMetadataQueryResultGroup = try L.checkArgument(1)
     lua_pushany(L, resultGroup.attribute as NSString)
     return 1
 }
 
 /// hs.spotlight.group:value() -> value
 private func group_value(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, GROUP_UD_TAG)
-    let resultGroup = get_groupFromUserdata(L, at: 1)
+    let resultGroup: NSMetadataQueryResultGroup = try L.checkArgument(1)
     pushSpotlightValue(L, resultGroup.value as? NSObject)
     return 1
 }
 
 /// hs.spotlight.group:count() -> integer
 private func group_resultCount(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, GROUP_UD_TAG)
-    let resultGroup = get_groupFromUserdata(L, at: 1)
+    let resultGroup: NSMetadataQueryResultGroup = try L.checkArgument(1)
     lua_pushinteger(L, lua_Integer(resultGroup.resultCount))
     return 1
 }
 
 /// hs.spotlight.group:resultAtIndex(index) -> spotlightItemObject
 private func group_resultAtIndex(_ L: LuaState) throws -> CInt {
-    let resultGroup = get_groupFromUserdata(L, at: 1)
+    let resultGroup: NSMetadataQueryResultGroup = try L.checkArgument(1)
 
     let index = lua_tointeger(L, 2)
     let count = resultGroup.resultCount
@@ -497,8 +485,7 @@ private func group_resultAtIndex(_ L: LuaState) throws -> CInt {
 
 /// hs.spotlight.group:subgroups() -> table
 private func group_subgroups(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, GROUP_UD_TAG)
-    let resultGroup = get_groupFromUserdata(L, at: 1)
+    let resultGroup: NSMetadataQueryResultGroup = try L.checkArgument(1)
     pushSpotlightValue(L, resultGroup.subgroups as NSArray?)
     return 1
 }
@@ -507,18 +494,16 @@ private func group_subgroups(_ L: LuaState) throws -> CInt {
 
 /// hs.spotlight.item:attributes() -> table
 private func item_attributes(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, ITEM_UD_TAG)
-    let item = get_itemFromUserdata(L, at: 1)
+    let item: NSMetadataItem = try L.checkArgument(1)
     pushSpotlightValue(L, item.attributes as NSArray)
     return 1
 }
 
 /// hs.spotlight.item:valueForAttribute(attribute) -> value
 private func item_valueForAttribute(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, ITEM_UD_TAG)
+    let item: NSMetadataItem = try L.checkArgument(1)
 
     luaL_checktype(L, 2, LUA_TSTRING)
-    let item = get_itemFromUserdata(L, at: 1)
     let attribute = lua_tovalue(L, at: 2) as! String
     pushSpotlightValue(L, item.value(forAttribute: attribute) as? NSObject)
     return 1
@@ -670,11 +655,11 @@ private func pushSpotlightValue(_ L: UnsafeMutablePointer<lua_State>!, _ value: 
     }
 
     if let query = value as? HSMetadataQuery {
-        pushHSMetadataQuery(L, obj: query)
+        L.push(userdata: query)
     } else if let group = value as? NSMetadataQueryResultGroup {
-        pushNSMetadataQueryResultGroup(L, obj: group)
+        L.push(userdata: group)
     } else if let item = value as? NSMetadataItem {
-        pushNSMetadataItem(L, obj: item)
+        L.push(userdata: item)
     } else if let descriptor = value as? NSSortDescriptor {
         pushNSSortDescriptor(L, obj: descriptor)
     } else if let tuple = value as? NSMetadataQueryAttributeValueTuple {
@@ -708,61 +693,6 @@ private func pushSpotlightValue(_ L: UnsafeMutablePointer<lua_State>!, _ value: 
     } else {
         lua_pushany(L, value)
     }
-}
-
-@discardableResult
-private func pushHSMetadataQuery(_ L: UnsafeMutablePointer<lua_State>!, obj: Any!) -> Int32 {
-    let value = obj as! HSMetadataQuery
-    value.selfPushCount += 1
-    let valuePtr = lua_newuserdata(L, MemoryLayout<UnsafeRawPointer>.size)!
-    valuePtr.storeBytes(of: Unmanaged.passRetained(value).toOpaque(), as: UnsafeRawPointer.self)
-    luaL_getmetatable(L, USERDATA_TAG)
-    lua_setmetatable(L, -2)
-    return 1
-}
-
-private func toHSMetadataQueryFromLua(_ L: UnsafeMutablePointer<lua_State>!, idx: Int32) -> Any! {
-    if luaL_testudata(L, idx, USERDATA_TAG) != nil {
-        return get_queryFromUserdata(L, at: idx)
-    }
-    os_log(.error, "%{public}s", "expected \(USERDATA_TAG) object, found \(String(cString: lua_typename(L, lua_type(L, idx))))")
-    return nil
-}
-
-@discardableResult
-private func pushNSMetadataQueryResultGroup(_ L: UnsafeMutablePointer<lua_State>!, obj: Any!) -> Int32 {
-    let value = obj as! NSMetadataQueryResultGroup
-    let valuePtr = lua_newuserdata(L, MemoryLayout<UnsafeRawPointer>.size)!
-    valuePtr.storeBytes(of: Unmanaged.passRetained(value).toOpaque(), as: UnsafeRawPointer.self)
-    luaL_getmetatable(L, GROUP_UD_TAG)
-    lua_setmetatable(L, -2)
-    return 1
-}
-
-private func toNSMetadataQueryResultGroupFromLua(_ L: UnsafeMutablePointer<lua_State>!, idx: Int32) -> Any! {
-    if luaL_testudata(L, idx, GROUP_UD_TAG) != nil {
-        return get_groupFromUserdata(L, at: idx)
-    }
-    os_log(.error, "%{public}s", "expected \(GROUP_UD_TAG) object, found \(String(cString: lua_typename(L, lua_type(L, idx))))")
-    return nil
-}
-
-@discardableResult
-private func pushNSMetadataItem(_ L: UnsafeMutablePointer<lua_State>!, obj: Any!) -> Int32 {
-    let value = obj as! NSMetadataItem
-    let valuePtr = lua_newuserdata(L, MemoryLayout<UnsafeRawPointer>.size)!
-    valuePtr.storeBytes(of: Unmanaged.passRetained(value).toOpaque(), as: UnsafeRawPointer.self)
-    luaL_getmetatable(L, ITEM_UD_TAG)
-    lua_setmetatable(L, -2)
-    return 1
-}
-
-private func toNSMetadataItemFromLua(_ L: UnsafeMutablePointer<lua_State>!, idx: Int32) -> Any! {
-    if luaL_testudata(L, idx, ITEM_UD_TAG) != nil {
-        return get_itemFromUserdata(L, at: idx)
-    }
-    os_log(.error, "%{public}s", "expected \(ITEM_UD_TAG) object, found \(String(cString: lua_typename(L, lua_type(L, idx))))")
-    return nil
 }
 
 @discardableResult
@@ -823,96 +753,6 @@ func pushSpotlightAttributeValueTupleFieldsForTesting(_ L: UnsafeMutablePointer<
 
 // MARK: - Cosmic Hammer/Lua Infrastructure
 
-private func userdata_tostring(_ L: LuaState) throws -> CInt {
-    let obj = get_queryFromUserdata(L, at: 1)
-    let title = obj.metadataSearch.predicate?.predicateFormat ?? "<undefined>"
-    lua_pushany(L, "\(USERDATA_TAG): \(title) (\(String(describing: Unmanaged.passUnretained(obj).toOpaque())))" as NSString)
-    return 1
-}
-
-private func userdata_eq(_ L: LuaState) throws -> CInt {
-    if luaL_testudata(L, 1, USERDATA_TAG) != nil && luaL_testudata(L, 2, USERDATA_TAG) != nil {
-        let obj1 = get_queryFromUserdata(L, at: 1)
-        let obj2 = get_queryFromUserdata(L, at: 2)
-        lua_pushboolean(L, obj1.isEqual(to: obj2) ? 1 : 0)
-    } else {
-        lua_pushboolean(L, 0)
-    }
-    return 1
-}
-
-private func userdata_gc(_ L: LuaState) throws -> CInt {
-    let ptr = luaL_checkudata(L, 1, USERDATA_TAG)!
-    let obj = Unmanaged<HSMetadataQuery>.fromOpaque(ptr.load(as: UnsafeRawPointer.self)).takeRetainedValue()
-    obj.selfPushCount -= 1
-    if obj.selfPushCount == 0 {
-        luaL_unref(L, LUA_REGISTRYINDEX_VALUE, obj.callbackRef)
-
-        obj.callbackRef = LUA_NOREF
-        let nc = NotificationCenter.default
-        nc.removeObserver(obj, name: .NSMetadataQueryDidFinishGathering, object: obj.metadataSearch)
-        nc.removeObserver(obj, name: .NSMetadataQueryDidStartGathering, object: obj.metadataSearch)
-        nc.removeObserver(obj, name: .NSMetadataQueryDidUpdate, object: obj.metadataSearch)
-        nc.removeObserver(obj, name: .NSMetadataQueryGatheringProgress, object: obj.metadataSearch)
-        if !obj.metadataSearch.isStopped { obj.metadataSearch.stop() }
-    }
-    lua_pushnil(L)
-    lua_setmetatable(L, 1)
-    return 0
-}
-
-private func group_userdata_tostring(_ L: LuaState) throws -> CInt {
-    let obj = get_groupFromUserdata(L, at: 1)
-    let title = obj.attribute
-    lua_pushany(L, "\(GROUP_UD_TAG): \(title) (\(String(describing: lua_topointer(L, 1)!)))" as NSString)
-    return 1
-}
-
-private func group_userdata_eq(_ L: LuaState) throws -> CInt {
-    if luaL_testudata(L, 1, GROUP_UD_TAG) != nil && luaL_testudata(L, 2, GROUP_UD_TAG) != nil {
-        let obj1 = get_groupFromUserdata(L, at: 1)
-        let obj2 = get_groupFromUserdata(L, at: 2)
-        lua_pushboolean(L, obj1.isEqual(to: obj2) ? 1 : 0)
-    } else {
-        lua_pushboolean(L, 0)
-    }
-    return 1
-}
-
-private func group_userdata_gc(_ L: LuaState) throws -> CInt {
-    let ptr = luaL_checkudata(L, 1, GROUP_UD_TAG)!
-    let _ = Unmanaged<NSMetadataQueryResultGroup>.fromOpaque(ptr.load(as: UnsafeRawPointer.self)).takeRetainedValue()
-    lua_pushnil(L)
-    lua_setmetatable(L, 1)
-    return 0
-}
-
-private func item_userdata_tostring(_ L: LuaState) throws -> CInt {
-    let obj = get_itemFromUserdata(L, at: 1)
-    let title = obj.value(forAttribute: NSMetadataItemFSNameKey) as? String ?? "<undefined>"
-    lua_pushany(L, "\(ITEM_UD_TAG): \(title) (\(String(describing: lua_topointer(L, 1)!)))" as NSString)
-    return 1
-}
-
-private func item_userdata_eq(_ L: LuaState) throws -> CInt {
-    if luaL_testudata(L, 1, ITEM_UD_TAG) != nil && luaL_testudata(L, 2, ITEM_UD_TAG) != nil {
-        let obj1 = get_itemFromUserdata(L, at: 1)
-        let obj2 = get_itemFromUserdata(L, at: 2)
-        lua_pushboolean(L, obj1.isEqual(to: obj2) ? 1 : 0)
-    } else {
-        lua_pushboolean(L, 0)
-    }
-    return 1
-}
-
-private func item_userdata_gc(_ L: LuaState) throws -> CInt {
-    let ptr = luaL_checkudata(L, 1, ITEM_UD_TAG)!
-    let _ = Unmanaged<NSMetadataItem>.fromOpaque(ptr.load(as: UnsafeRawPointer.self)).takeRetainedValue()
-    lua_pushnil(L)
-    lua_setmetatable(L, 1)
-    return 0
-}
-
 private func meta_gc(_ L: LuaState) throws -> CInt {
     if let queue = moduleSearchQueue {
         queue.cancelAllOperations()
@@ -926,107 +766,166 @@ private func meta_gc(_ L: LuaState) throws -> CInt {
 
 @_cdecl("luaopen_hs_libspotlight")
 public func luaopen_hs_libspotlight(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    runEntryPoint(L) { L in
-        // Create ref table in registry
-        lua_newtable(L)
-        refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+    // 1. Register HSMetadataQuery metatable
+    L.register(Metatable<HSMetadataQuery>(
+        fields: [
+            "searchScopes": .closure { L in try spotlight_searchScopes(L) },
+            "setCallback": .closure { L in try spotlight_callback(L) },
+            "callbackMessages": .closure { L in try spotlight_callbackMessages(L) },
+            "updateInterval": .closure { L in try spotlight_updateInterval(L) },
+            "sortDescriptors": .closure { L in try spotlight_sortDescriptors(L) },
+            "groupingAttributes": .closure { L in try spotlight_groupingAttributes(L) },
+            "valueListAttributes": .closure { L in try spotlight_valueListAttributes(L) },
+            "start": .closure { L in try spotlight_start(L) },
+            "stop": .closure { L in try spotlight_stop(L) },
+            "isRunning": .closure { L in try spotlight_isRunning(L) },
+            "isGathering": .closure { L in try spotlight_isGathering(L) },
+            "queryString": .closure { L in try spotlight_predicate(L) },
+            "count": .closure { L in try spotlight_resultCount(L) },
+            "resultAtIndex": .closure { L in try spotlight_resultAtIndex(L) },
+            "valueLists": .closure { L in try spotlight_valueLists(L) },
+            "groupedResults": .closure { L in try spotlight_groupedResults(L) },
+        ],
+        tostring: .closure { L in
+            let obj: HSMetadataQuery = try L.checkArgument(1)
+            let title = obj.metadataSearch.predicate?.predicateFormat ?? "<undefined>"
+            lua_pushstring(L, "\(USERDATA_TAG): \(title) (\(String(describing: Unmanaged.passUnretained(obj).toOpaque())))")
+            return 1
+        }
+    ))
 
-        // Register userdata metatables
-        luaL_newmetatable(L, USERDATA_TAG)
-        lua_pushvalue(L, -1)
-        lua_setfield(L, -2, "__index")
-        L.push(spotlight_searchScopes)
-        lua_setfield(L, -2, "searchScopes")
-        L.push(spotlight_callback)
-        lua_setfield(L, -2, "setCallback")
-        L.push(spotlight_callbackMessages)
-        lua_setfield(L, -2, "callbackMessages")
-        L.push(spotlight_updateInterval)
-        lua_setfield(L, -2, "updateInterval")
-        L.push(spotlight_sortDescriptors)
-        lua_setfield(L, -2, "sortDescriptors")
-        L.push(spotlight_groupingAttributes)
-        lua_setfield(L, -2, "groupingAttributes")
-        L.push(spotlight_valueListAttributes)
-        lua_setfield(L, -2, "valueListAttributes")
-        L.push(spotlight_start)
-        lua_setfield(L, -2, "start")
-        L.push(spotlight_stop)
-        lua_setfield(L, -2, "stop")
-        L.push(spotlight_isRunning)
-        lua_setfield(L, -2, "isRunning")
-        L.push(spotlight_isGathering)
-        lua_setfield(L, -2, "isGathering")
-        L.push(spotlight_predicate)
-        lua_setfield(L, -2, "queryString")
-        L.push(spotlight_resultCount)
-        lua_setfield(L, -2, "count")
-        L.push(spotlight_resultAtIndex)
-        lua_setfield(L, -2, "resultAtIndex")
-        L.push(spotlight_valueLists)
-        lua_setfield(L, -2, "valueLists")
-        L.push(spotlight_groupedResults)
-        lua_setfield(L, -2, "groupedResults")
-        L.push(userdata_tostring)
-        lua_setfield(L, -2, "__tostring")
-        L.push(userdata_eq)
-        lua_setfield(L, -2, "__eq")
-        L.push(userdata_gc)
-        lua_setfield(L, -2, "__gc")
-        lua_pop(L, 1)
+    // Post-registration __gc patch for HSMetadataQuery
+    L.pushMetatable(for: HSMetadataQuery.self)
 
-        luaL_newmetatable(L, ITEM_UD_TAG)
-        lua_pushvalue(L, -1)
-        lua_setfield(L, -2, "__index")
-        L.push(item_attributes)
-        lua_setfield(L, -2, "attributes")
-        L.push(item_valueForAttribute)
-        lua_setfield(L, -2, "valueForAttribute")
-        L.push(item_userdata_tostring)
-        lua_setfield(L, -2, "__tostring")
-        L.push(item_userdata_eq)
-        lua_setfield(L, -2, "__eq")
-        L.push(item_userdata_gc)
-        lua_setfield(L, -2, "__gc")
-        lua_pop(L, 1)
+    // Replace __gc with teardown + deinitialize
+    lua_pushcclosure(L, { (L: LuaState!) -> CInt in
+        if let query: HSMetadataQuery = L.touserdata(1) {
+            query.teardown()
+        }
+        let rawptr = lua_touserdata(L, 1)!
+        let anyPtr = rawptr.assumingMemoryBound(to: Any.self)
+        anyPtr.deinitialize(count: 1)
+        return 0
+    }, 0)
+    lua_setfield(L, -2, "__gc")
 
-        luaL_newmetatable(L, GROUP_UD_TAG)
-        lua_pushvalue(L, -1)
-        lua_setfield(L, -2, "__index")
-        L.push(group_attribute)
-        lua_setfield(L, -2, "attribute")
-        L.push(group_value)
-        lua_setfield(L, -2, "value")
-        L.push(group_resultCount)
-        lua_setfield(L, -2, "count")
-        L.push(group_resultAtIndex)
-        lua_setfield(L, -2, "resultAtIndex")
-        L.push(group_subgroups)
-        lua_setfield(L, -2, "subgroups")
-        L.push(group_userdata_tostring)
-        lua_setfield(L, -2, "__tostring")
-        L.push(group_userdata_eq)
-        lua_setfield(L, -2, "__eq")
-        L.push(group_userdata_gc)
-        lua_setfield(L, -2, "__gc")
-        lua_pop(L, 1)
+    // __eq for HSMetadataQuery
+    lua_pushcclosure(L, { (L: LuaState!) -> CInt in
+        if let obj1: HSMetadataQuery = L.touserdata(1),
+           let obj2: HSMetadataQuery = L.touserdata(2) {
+            lua_pushboolean(L, obj1.isEqual(obj2) ? 1 : 0)
+        } else {
+            lua_pushboolean(L, 0)
+        }
+        return 1
+    }, 0)
+    lua_setfield(L, -2, "__eq")
 
-        // Create module table
-        lua_createtable(L, 0, 2)
-        L.push(spotlight_new)
-        lua_setfield(L, -2, "new")
-        L.push(spotlight_searchWithin)
-        lua_setfield(L, -2, "newWithin")
+    // Set __type and __name
+    lua_pushstring(L, USERDATA_TAG)
+    lua_setfield(L, -2, "__type")
+    lua_pushstring(L, USERDATA_TAG)
+    lua_setfield(L, -2, "__name")
 
-        // Set module metatable (for __gc)
-        lua_createtable(L, 0, 1)
-        L.push(meta_gc)
-        lua_setfield(L, -2, "__gc")
-        lua_setmetatable(L, -2)
+    // Registry alias so core_getObjectMetatable("hs.spotlight") resolves
+    lua_setfield(L, LUA_REGISTRYINDEX_VALUE, USERDATA_TAG)
 
-        let _ = push_searchScopes(L)
-        lua_setfield(L, -2, "definedSearchScopes")
-        let _ = push_commonAttributeKeys(L)
-        lua_setfield(L, -2, "commonAttributeKeys")
-    }
+    // 2. Register NSMetadataItem metatable
+    L.register(Metatable<NSMetadataItem>(
+        fields: [
+            "attributes": .closure { L in try item_attributes(L) },
+            "valueForAttribute": .closure { L in try item_valueForAttribute(L) },
+        ],
+        tostring: .closure { L in
+            let obj: NSMetadataItem = try L.checkArgument(1)
+            let title = obj.value(forAttribute: NSMetadataItemFSNameKey) as? String ?? "<undefined>"
+            lua_pushstring(L, "\(ITEM_UD_TAG): \(title) (\(String(describing: lua_topointer(L, 1)!)))")
+            return 1
+        }
+    ))
+
+    // Post-registration patch for NSMetadataItem
+    L.pushMetatable(for: NSMetadataItem.self)
+
+    // __eq for NSMetadataItem
+    lua_pushcclosure(L, { (L: LuaState!) -> CInt in
+        if let obj1: NSMetadataItem = L.touserdata(1),
+           let obj2: NSMetadataItem = L.touserdata(2) {
+            lua_pushboolean(L, obj1.isEqual(obj2) ? 1 : 0)
+        } else {
+            lua_pushboolean(L, 0)
+        }
+        return 1
+    }, 0)
+    lua_setfield(L, -2, "__eq")
+
+    // Set __type and __name
+    lua_pushstring(L, ITEM_UD_TAG)
+    lua_setfield(L, -2, "__type")
+    lua_pushstring(L, ITEM_UD_TAG)
+    lua_setfield(L, -2, "__name")
+
+    // Registry alias
+    lua_setfield(L, LUA_REGISTRYINDEX_VALUE, ITEM_UD_TAG)
+
+    // 3. Register NSMetadataQueryResultGroup metatable
+    L.register(Metatable<NSMetadataQueryResultGroup>(
+        fields: [
+            "attribute": .closure { L in try group_attribute(L) },
+            "value": .closure { L in try group_value(L) },
+            "count": .closure { L in try group_resultCount(L) },
+            "resultAtIndex": .closure { L in try group_resultAtIndex(L) },
+            "subgroups": .closure { L in try group_subgroups(L) },
+        ],
+        tostring: .closure { L in
+            let obj: NSMetadataQueryResultGroup = try L.checkArgument(1)
+            let title = obj.attribute
+            lua_pushstring(L, "\(GROUP_UD_TAG): \(title) (\(String(describing: lua_topointer(L, 1)!)))")
+            return 1
+        }
+    ))
+
+    // Post-registration patch for NSMetadataQueryResultGroup
+    L.pushMetatable(for: NSMetadataQueryResultGroup.self)
+
+    // __eq for NSMetadataQueryResultGroup
+    lua_pushcclosure(L, { (L: LuaState!) -> CInt in
+        if let obj1: NSMetadataQueryResultGroup = L.touserdata(1),
+           let obj2: NSMetadataQueryResultGroup = L.touserdata(2) {
+            lua_pushboolean(L, obj1.isEqual(obj2) ? 1 : 0)
+        } else {
+            lua_pushboolean(L, 0)
+        }
+        return 1
+    }, 0)
+    lua_setfield(L, -2, "__eq")
+
+    // Set __type and __name
+    lua_pushstring(L, GROUP_UD_TAG)
+    lua_setfield(L, -2, "__type")
+    lua_pushstring(L, GROUP_UD_TAG)
+    lua_setfield(L, -2, "__name")
+
+    // Registry alias
+    lua_setfield(L, LUA_REGISTRYINDEX_VALUE, GROUP_UD_TAG)
+
+    // 4. Build module table
+    lua_createtable(L, 0, 4)
+    L.push(spotlight_new)
+    lua_setfield(L, -2, "new")
+    L.push(spotlight_searchWithin)
+    lua_setfield(L, -2, "newWithin")
+
+    // Set module metatable (for __gc)
+    lua_createtable(L, 0, 1)
+    L.push(meta_gc)
+    lua_setfield(L, -2, "__gc")
+    lua_setmetatable(L, -2)
+
+    let _ = push_searchScopes(L)
+    lua_setfield(L, -2, "definedSearchScopes")
+    let _ = push_commonAttributeKeys(L)
+    lua_setfield(L, -2, "commonAttributeKeys")
+
+    return 1
 }

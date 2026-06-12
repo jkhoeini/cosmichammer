@@ -11,11 +11,11 @@ import Cocoa
 
 extension NSImage {
 
-    @objc func jpegData() -> Data? {
+    func jpegData() -> Data? {
         return jpegData(withCompressionFactor: 100.0)
     }
 
-    @objc func jpegData(withCompressionFactor compressionFactor: CGFloat) -> Data? {
+    func jpegData(withCompressionFactor compressionFactor: CGFloat) -> Data? {
         let pixelsWide = Int(self.size.width)
         let pixelsHigh = Int(self.size.height)
 

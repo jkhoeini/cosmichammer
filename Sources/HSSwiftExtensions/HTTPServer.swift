@@ -6,32 +6,14 @@ import os.log
 // MARK: - Constants
 
 private let USERDATA_TAG = "hs.httpserver"
-private var refTable: Int32 = LUA_NOREF
-
-// MARK: - Helper Functions
-
-private func get_item_arg(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> UnsafeMutablePointer<httpserver_t> {
-    return luaL_checkudata(L, idx, USERDATA_TAG)!.bindMemory(to: httpserver_t.self, capacity: 1)
-}
-
-private func getUserData(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> HSHTTPServer {
-    let httpServer = get_item_arg(L, idx)
-    return Unmanaged<HSHTTPServer>.fromOpaque(httpServer.pointee.server!).takeUnretainedValue()
-}
-
-// MARK: - Userdata Struct
-
-private struct httpserver_t {
-    var server: UnsafeMutableRawPointer?
-}
 
 // MARK: - HSHTTPServer — wraps NWHTTPServer for Lua
 
 private class HSHTTPServer {
     let nwServer = NWHTTPServer()
 
-    var fn: Int32 = LUA_NOREF
-    var wsCallback: Int32 = LUA_NOREF
+    var fn: LuaValue?
+    var wsCallback: LuaValue?
     var wsPath: String?
     var wsServer: NWWebSocketServer?
 
@@ -53,6 +35,19 @@ private class HSHTTPServer {
     var httpPassword: String? {
         get { nwServer.password }
         set { nwServer.password = newValue }
+    }
+
+    private var tornDown = false
+
+    /// Idempotent teardown: stop the server, drop Lua callback references,
+    /// mark as torn down.  Called from the explicit __gc closure while the
+    /// lua_State is still alive.
+    func teardown() {
+        guard !tornDown else { return }
+        tornDown = true
+        stop()
+        fn = nil
+        wsCallback = nil
     }
 
     func start() throws {
@@ -130,13 +125,11 @@ private class HSHTTPServer {
         var responseBody = Data("An error occurred during hs.httpserver callback handling".utf8)
 
         let responseCallbackBlock = { [self] in
-            guard self.fn != LUA_NOREF else { return }
+            guard let cb = self.fn else { return }
 
             let L = lua_getCurrentState()!
 
-            lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(refTable))
-            lua_rawgeti(L, -1, lua_Integer(self.fn))
-            lua_remove(L, -2)
+            cb.push(onto: L)
             lua_pushstring(L, method)
             lua_pushstring(L, path)
             lua_pushany(L, headers as NSDictionary)
@@ -201,12 +194,10 @@ private class HSHTTPServer {
         var response: String? = nil
 
         let responseCallbackBlock = { [self] in
-            guard self.wsCallback != LUA_NOREF else { return }
+            guard let cb = self.wsCallback else { return }
 
             let L = lua_getCurrentState()!
-            lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(refTable))
-            lua_rawgeti(L, -1, lua_Integer(self.wsCallback))
-            lua_remove(L, -2)
+            cb.push(onto: L)
             lua_pushstring(L, message)
 
             if lua_pcall(L, 1, 1, 0) != LUA_OK {
@@ -257,353 +248,14 @@ private func httpserver_new(_ L: LuaState) throws -> CInt {
     let useSSL = (lua_type(L, 1) == LUA_TBOOLEAN) ? (lua_toboolean(L, 1) != 0) : false
     let useBonjour = (lua_type(L, 2) == LUA_TBOOLEAN) ? (lua_toboolean(L, 2) != 0) : true
 
-    let ptr = lua_newuserdata(L, MemoryLayout<httpserver_t>.size)!
-    let httpServer = ptr.bindMemory(to: httpserver_t.self, capacity: 1)
-    httpServer.pointee = httpserver_t()
-
     let server = HSHTTPServer()
     server.useSSL = useSSL
     server.useBonjour = useBonjour
     if useBonjour {
         server.setType("_http._tcp.")
     }
-    server.fn = LUA_NOREF
 
-    httpServer.pointee.server = Unmanaged.passRetained(server).toOpaque()
-
-    luaL_getmetatable(L, USERDATA_TAG)
-    lua_setmetatable(L, -2)
-    return 1
-}
-
-/// hs.httpserver:websocket(path, callback) -> object
-/// Method
-/// Enables a websocket endpoint on the HTTP server
-///
-/// Parameters:
-///  * path - A string containing the websocket path such as '/ws'
-///  * callback - A function returning a string for each received websocket message
-///
-/// Returns:
-///  * The `hs.httpserver` object
-///
-/// Notes:
-///  * The callback is passed one string parameter containing the received message
-///  * The callback must return a string containing the response message
-///  * Given a path '/mysock' and a port of 8000, the websocket URL is as follows:
-///   * ws://localhost:8000/mysock
-///   * wss://localhost:8000/mysock (if SSL enabled)
-private func httpserver_websocket(_ L: LuaState) throws -> CInt {
-    let server = getUserData(L, 1)
-
-    server.wsPath = String(cString: luaL_checkstring(L, 2))
-    lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(refTable))
-    luaL_unref(L, -1, server.wsCallback); server.wsCallback = LUA_NOREF
-    lua_pushvalue(L, 3)
-    server.wsCallback = luaL_ref(L, -2)
-    lua_pop(L, 1)
-
-    lua_pushvalue(L, 1)
-    return 1
-}
-
-/// hs.httpserver:send(message) -> object
-/// Method
-/// Sends a message to the websocket client
-///
-/// Parameters:
-///  * message - A string containing the message to send
-///
-/// Returns:
-///  * The `hs.httpserver` object
-private func httpserver_send(_ L: LuaState) throws -> CInt {
-    let server = getUserData(L, 1)
-
-    if lua_type(L, 2) == LUA_TSTRING {
-        let msg = String(cString: lua_tostring(L, 2)!)
-        server.wsServer?.send(msg)
-    }
-
-    lua_pushvalue(L, 1)
-    return 1
-}
-
-/// hs.httpserver:setCallback([callback]) -> object
-/// Method
-/// Sets the request handling callback for an HTTP server object
-///
-/// Parameters:
-///  * callback - An optional function that will be called to process each incoming HTTP request, or nil to remove an existing callback. See the notes section below for more information about this callback
-///
-/// Returns:
-///  * The `hs.httpserver` object
-///
-/// Notes:
-///  * The callback will be passed four arguments:
-///   * A string containing the type of request (i.e. `GET`/`POST`/`DELETE`/etc)
-///   * A string containing the path element of the request (e.g. `/index.html`)
-///   * A table containing the request headers
-///   * A string containing the raw contents of the request body, or the empty string if no body is included in the request.
-///  * The callback *must* return three values:
-///   * A string containing the body of the response
-///   * An integer containing the response code (e.g. 200 for a successful request)
-///   * A table containing additional HTTP headers to set (or an empty table, `{}`, if no extra headers are required)
-///
-/// Notes:
-///  * A POST request, often used by HTML forms, will store the contents of the form in the body of the request.
-private func httpserver_setCallback(_ L: LuaState) throws -> CInt {
-    let server = getUserData(L, 1)
-
-    lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(refTable))
-    switch lua_type(L, 2) {
-    case LUA_TFUNCTION:
-        luaL_unref(L, -1, server.fn); server.fn = LUA_NOREF
-        lua_pushvalue(L, 2)
-        server.fn = luaL_ref(L, -2)
-    case LUA_TNIL, LUA_TNONE:
-        luaL_unref(L, -1, server.fn); server.fn = LUA_NOREF
-    default:
-        os_log(.error, "Unknown type passed to hs.httpserver:setCallback(). Argument must be a function or nil")
-    }
-    lua_pop(L, 1)
-
-    lua_pushvalue(L, 1)
-    return 1
-}
-
-/// hs.httpserver:maxBodySize([size]) -> object | current-value
-/// Method
-/// Get or set the maximum allowed body size for an incoming HTTP request.
-///
-/// Parameters:
-///  * size - An optional integer value specifying the maximum body size allowed for an incoming HTTP request in bytes.  Defaults to 10485760 (10 MB).
-///
-/// Returns:
-///  * If a new size is specified, returns the `hs.httpserver` object; otherwise the current value.
-///
-/// Notes:
-///  * Because the Cosmic Hammer http server processes incoming requests completely in memory, this method puts a limit on the maximum size for a POST or PUT request.
-private func httpserver_maxBodySize(_ L: LuaState) throws -> CInt {
-    let server = getUserData(L, 1)
-    if lua_gettop(L) == 2 {
-        server.maxBodySize = Int(lua_tointeger(L, 2))
-        lua_pushvalue(L, 1)
-    } else {
-        lua_pushinteger(L, lua_Integer(server.maxBodySize))
-    }
-    return 1
-}
-
-/// hs.httpserver:setPassword([password]) -> object
-/// Method
-/// Sets a password for an HTTP server object
-///
-/// Parameters:
-///  * password - An optional string that contains the server password, or nil to remove an existing password
-///
-/// Returns:
-///  * The `hs.httpserver` object
-///
-/// Notes:
-///  * It is not currently possible to set multiple passwords for different users, or passwords only on specific paths
-private func httpserver_setPassword(_ L: LuaState) throws -> CInt {
-    let server = getUserData(L, 1)
-
-    switch lua_type(L, 2) {
-    case LUA_TNIL, LUA_TNONE:
-        server.httpPassword = nil
-    case LUA_TSTRING:
-        server.httpPassword = String(cString: lua_tostring(L, 2)!)
-    default:
-        os_log(.error, "Unknown type passed to hs.httpserver:setPassword(). Argument must be a string or nil")
-    }
-
-    lua_pushvalue(L, 1)
-    return 1
-}
-
-/// hs.httpserver:start() -> object
-/// Method
-/// Starts an HTTP server object
-///
-/// Parameters:
-///  * None
-///
-/// Returns:
-///  * The `hs.httpserver` object
-private func httpserver_start(_ L: LuaState) throws -> CInt {
-    let server = getUserData(L, 1)
-
-    if server.fn == LUA_NOREF && server.wsCallback == LUA_NOREF {
-        os_log(.error, "hs.httpserver:start() called with no callback set. You must call hs.httpserver:setCallback() or hs.httpserver:websocket() first.")
-    } else {
-        do {
-            try server.start()
-        } catch {
-            os_log(.error, "hs.httpserver:start() Unable to start object: %{public}s", "\(error)")
-        }
-    }
-
-    lua_pushvalue(L, 1)
-    return 1
-}
-
-/// hs.httpserver:stop() -> object
-/// Method
-/// Stops an HTTP server object
-///
-/// Parameters:
-///  * None
-///
-/// Returns:
-///  * The `hs.httpserver` object
-private func httpserver_stop(_ L: LuaState) throws -> CInt {
-    let server = getUserData(L, 1)
-    server.stop()
-
-    lua_pushvalue(L, 1)
-    return 1
-}
-
-/// hs.httpserver:getPort() -> number
-/// Method
-/// Gets the TCP port the server is configured to listen on
-///
-/// Parameters:
-///  * None
-///
-/// Returns:
-///  * A number containing the TCP port
-private func httpserver_getPort(_ L: LuaState) throws -> CInt {
-    let server = getUserData(L, 1)
-    lua_pushinteger(L, lua_Integer(server.listeningPort()))
-    return 1
-}
-
-/// hs.httpserver:setPort(port) -> object
-/// Method
-/// Sets the TCP port the server is configured to listen on
-///
-/// Parameters:
-///  * port - An integer containing a TCP port to listen on
-///
-/// Returns:
-///  * The `hs.httpserver` object
-private func httpserver_setPort(_ L: LuaState) throws -> CInt {
-    let server = getUserData(L, 1)
-    server.setPort(UInt16(luaL_checkinteger(L, 2)))
-    lua_pushvalue(L, 1)
-    return 1
-}
-
-/// hs.httpserver:getInterface() -> string or nil
-/// Method
-/// Gets the network interface the server is configured to listen on
-///
-/// Parameters:
-///  * None
-///
-/// Returns:
-///  * A string containing the network interface name, or nil if the server will listen on all interfaces
-private func httpserver_getInterface(_ L: LuaState) throws -> CInt {
-    let server = getUserData(L, 1)
-    if let iface = server.interface() {
-        lua_pushstring(L, iface)
-    } else {
-        lua_pushnil(L)
-    }
-    return 1
-}
-
-/// hs.httpserver:setInterface(interface) -> object
-/// Method
-/// Sets the network interface the server is configured to listen on
-///
-/// Parameters:
-///  * interface - A string containing an interface name
-///
-/// Returns:
-///  * The `hs.httpserver` object
-///
-/// Notes:
-///  * As well as real interface names (e.g. `en0`) the following values are valid:
-///   * An IP address of one of your interfaces
-///   * localhost
-///   * loopback
-///   * nil (which means all interfaces, and is the default)
-private func httpserver_setInterface(_ L: LuaState) throws -> CInt {
-    let server = getUserData(L, 1)
-    if lua_isnoneornil(L, 2) {
-        server.setInterface(nil)
-    } else {
-        server.setInterface(String(cString: luaL_checkstring(L, 2)))
-    }
-    lua_pushvalue(L, 1)
-    return 1
-}
-
-/// hs.httpserver:getName() -> string
-/// Method
-/// Gets the Bonjour name the server is configured to advertise itself as
-///
-/// Parameters:
-///  * None
-///
-/// Returns:
-///  * A string containing the Bonjour name of this server
-///
-/// Notes:
-///  * This is not the hostname of the server, just its name in Bonjour service lists (e.g. Safari's Bonjour bookmarks menu)
-private func httpserver_getName(_ L: LuaState) throws -> CInt {
-    let server = getUserData(L, 1)
-    if let name = server.name() {
-        lua_pushstring(L, name)
-    } else {
-        lua_pushnil(L)
-    }
-    return 1
-}
-
-/// hs.httpserver:setName(name) -> object
-/// Method
-/// Sets the Bonjour name the server should advertise itself as
-///
-/// Parameters:
-///  * name - A string containing the Bonjour name for the server
-///
-/// Returns:
-///  * The `hs.httpserver` object
-///
-/// Notes:
-///  * This is not the hostname of the server, just its name in Bonjour service lists (e.g. Safari's Bonjour bookmarks menu)
-private func httpserver_setName(_ L: LuaState) throws -> CInt {
-    let server = getUserData(L, 1)
-    server.setName(String(cString: luaL_checkstring(L, 2)))
-    lua_pushvalue(L, 1)
-    return 1
-}
-
-// MARK: - GC / Meta
-
-private func httpserver_objectGC(_ L: LuaState) throws -> CInt {
-    let httpServer = get_item_arg(L, 1)
-    let server = Unmanaged<HSHTTPServer>.fromOpaque(httpServer.pointee.server!).takeRetainedValue()
-    server.stop()
-
-    lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(refTable))
-    luaL_unref(L, -1, server.fn); server.fn = LUA_NOREF
-    luaL_unref(L, -1, server.wsCallback); server.wsCallback = LUA_NOREF
-    lua_pop(L, 1)
-    return 0
-}
-
-private func userdata_tostring(_ L: LuaState) throws -> CInt {
-    let server = getUserData(L, 1)
-    let theName = server.name() ?? "unnamed"
-    let thePort = server.listeningPort()
-
-    let str = "\(USERDATA_TAG): \(theName):\(thePort) (\(String(describing: lua_topointer(L, 1)!)))"
-    lua_pushstring(L, str)
+    L.push(userdata: server)
     return 1
 }
 
@@ -611,50 +263,170 @@ private func userdata_tostring(_ L: LuaState) throws -> CInt {
 
 @_cdecl("luaopen_hs_libhttpserver")
 public func luaopen_hs_libhttpserver(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    runEntryPoint(L) { L in
-        // Create ref table in registry
-        lua_newtable(L)
-        refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+    L.register(Metatable<HSHTTPServer>(
+        fields: [
+            "start": .closure { L in
+                let server: HSHTTPServer = try L.checkArgument(1)
+                lua_settop(L, 1)
+                if server.fn == nil && server.wsCallback == nil {
+                    os_log(.error, "hs.httpserver:start() called with no callback set. You must call hs.httpserver:setCallback() or hs.httpserver:websocket() first.")
+                } else {
+                    do {
+                        try server.start()
+                    } catch {
+                        os_log(.error, "hs.httpserver:start() Unable to start object: %{public}s", "\(error)")
+                    }
+                }
+                return 1
+            },
+            "stop": .closure { L in
+                let server: HSHTTPServer = try L.checkArgument(1)
+                lua_settop(L, 1)
+                server.stop()
+                return 1
+            },
+            "getPort": .closure { L in
+                let server: HSHTTPServer = try L.checkArgument(1)
+                lua_pushinteger(L, lua_Integer(server.listeningPort()))
+                return 1
+            },
+            "setPort": .closure { L in
+                let server: HSHTTPServer = try L.checkArgument(1)
+                server.setPort(UInt16(luaL_checkinteger(L, 2)))
+                lua_pushvalue(L, 1)
+                return 1
+            },
+            "getInterface": .closure { L in
+                let server: HSHTTPServer = try L.checkArgument(1)
+                if let iface = server.interface() {
+                    lua_pushstring(L, iface)
+                } else {
+                    lua_pushnil(L)
+                }
+                return 1
+            },
+            "setInterface": .closure { L in
+                let server: HSHTTPServer = try L.checkArgument(1)
+                if lua_isnoneornil(L, 2) {
+                    server.setInterface(nil)
+                } else {
+                    server.setInterface(String(cString: luaL_checkstring(L, 2)))
+                }
+                lua_pushvalue(L, 1)
+                return 1
+            },
+            "getName": .closure { L in
+                let server: HSHTTPServer = try L.checkArgument(1)
+                if let name = server.name() {
+                    lua_pushstring(L, name)
+                } else {
+                    lua_pushnil(L)
+                }
+                return 1
+            },
+            "setName": .closure { L in
+                let server: HSHTTPServer = try L.checkArgument(1)
+                server.setName(String(cString: luaL_checkstring(L, 2)))
+                lua_pushvalue(L, 1)
+                return 1
+            },
+            "setCallback": .closure { L in
+                let server: HSHTTPServer = try L.checkArgument(1)
+                switch lua_type(L, 2) {
+                case LUA_TFUNCTION:
+                    server.fn = L.ref(index: 2)
+                case LUA_TNIL, LUA_TNONE:
+                    server.fn = nil
+                default:
+                    os_log(.error, "Unknown type passed to hs.httpserver:setCallback(). Argument must be a function or nil")
+                }
+                lua_pushvalue(L, 1)
+                return 1
+            },
+            "setPassword": .closure { L in
+                let server: HSHTTPServer = try L.checkArgument(1)
+                switch lua_type(L, 2) {
+                case LUA_TNIL, LUA_TNONE:
+                    server.httpPassword = nil
+                case LUA_TSTRING:
+                    server.httpPassword = String(cString: lua_tostring(L, 2)!)
+                default:
+                    os_log(.error, "Unknown type passed to hs.httpserver:setPassword(). Argument must be a string or nil")
+                }
+                lua_pushvalue(L, 1)
+                return 1
+            },
+            "maxBodySize": .closure { L in
+                let server: HSHTTPServer = try L.checkArgument(1)
+                if lua_gettop(L) == 2 {
+                    server.maxBodySize = Int(lua_tointeger(L, 2))
+                    lua_pushvalue(L, 1)
+                } else {
+                    lua_pushinteger(L, lua_Integer(server.maxBodySize))
+                }
+                return 1
+            },
+            "websocket": .closure { L in
+                let server: HSHTTPServer = try L.checkArgument(1)
+                server.wsPath = String(cString: luaL_checkstring(L, 2))
+                luaL_checktype(L, 3, LUA_TFUNCTION)
+                server.wsCallback = L.ref(index: 3)
+                lua_pushvalue(L, 1)
+                return 1
+            },
+            "send": .closure { L in
+                let server: HSHTTPServer = try L.checkArgument(1)
+                if lua_type(L, 2) == LUA_TSTRING {
+                    let msg = String(cString: lua_tostring(L, 2)!)
+                    server.wsServer?.send(msg)
+                }
+                lua_pushvalue(L, 1)
+                return 1
+            },
+        ],
+        tostring: .closure { L in
+            let server: HSHTTPServer = try L.checkArgument(1)
+            let theName = server.name() ?? "unnamed"
+            let thePort = server.listeningPort()
+            let str = "\(USERDATA_TAG): \(theName):\(thePort) (\(String(describing: lua_topointer(L, 1)!)))"
+            lua_pushstring(L, str)
+            return 1
+        }
+    ))
 
-        // Register userdata metatable
-        luaL_newmetatable(L, USERDATA_TAG)
-        lua_pushvalue(L, -1)
-        lua_setfield(L, -2, "__index")  // mt.__index = mt
-        L.push(httpserver_websocket)
-        lua_setfield(L, -2, "websocket")
-        L.push(httpserver_send)
-        lua_setfield(L, -2, "send")
-        L.push(httpserver_start)
-        lua_setfield(L, -2, "start")
-        L.push(httpserver_stop)
-        lua_setfield(L, -2, "stop")
-        L.push(httpserver_getPort)
-        lua_setfield(L, -2, "getPort")
-        L.push(httpserver_setPort)
-        lua_setfield(L, -2, "setPort")
-        L.push(httpserver_getInterface)
-        lua_setfield(L, -2, "getInterface")
-        L.push(httpserver_setInterface)
-        lua_setfield(L, -2, "setInterface")
-        L.push(httpserver_getName)
-        lua_setfield(L, -2, "getName")
-        L.push(httpserver_setName)
-        lua_setfield(L, -2, "setName")
-        L.push(httpserver_setCallback)
-        lua_setfield(L, -2, "setCallback")
-        L.push(httpserver_setPassword)
-        lua_setfield(L, -2, "setPassword")
-        L.push(httpserver_maxBodySize)
-        lua_setfield(L, -2, "maxBodySize")
-        L.push(userdata_tostring)
-        lua_setfield(L, -2, "__tostring")
-        L.push(httpserver_objectGC)
-        lua_setfield(L, -2, "__gc")
-        lua_pop(L, 1)
+    // -- Post-registration metatable patching --
+    // LuaSwift's register() always installs its own gcUserdata as __gc, which
+    // only deinitializes the Any box. We MUST replace it with a custom __gc
+    // that first calls teardown() (stop the server, drop LuaValue callbacks)
+    // and THEN deinitializes the Any box.
+    L.pushMetatable(for: HSHTTPServer.self)
 
-        // Create module table
-        lua_createtable(L, 0, 1)
-        L.push(httpserver_new)
-        lua_setfield(L, -2, "new")
-    }
+    // Replace __gc with our explicit teardown + deinitialize
+    lua_pushcclosure(L, { (L: LuaState!) -> CInt in
+        if let server: HSHTTPServer = L.touserdata(1) {
+            server.teardown()
+        }
+        let rawptr = lua_touserdata(L, 1)!
+        let anyPtr = rawptr.assumingMemoryBound(to: Any.self)
+        anyPtr.deinitialize(count: 1)
+        return 0
+    }, 0)
+    lua_setfield(L, -2, "__gc")
+
+    // Set __type and __name for lsunit.lua assertIsUserdataOfType and tostring
+    lua_pushstring(L, USERDATA_TAG)
+    lua_setfield(L, -2, "__type")
+    lua_pushstring(L, USERDATA_TAG)
+    lua_setfield(L, -2, "__name")
+
+    // Alias the metatable under the legacy registry name so that
+    // core_getObjectMetatable("hs.httpserver") still resolves.
+    lua_setfield(L, LUA_REGISTRYINDEX_VALUE, USERDATA_TAG)
+
+    // Create module table
+    lua_createtable(L, 0, 1)
+    L.push(httpserver_new)
+    lua_setfield(L, -2, "new")
+
+    return 1
 }

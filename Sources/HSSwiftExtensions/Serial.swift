@@ -10,7 +10,7 @@ private var refTable: Int32 = LUA_NOREF
 // MARK: - ORSSerialPort Attributes Extension
 
 extension ORSSerialPort {
-    @objc var ioDeviceAttributes: NSDictionary? {
+    var ioDeviceAttributes: NSDictionary? {
         var result: NSDictionary? = nil
 
         var iterator: io_iterator_t = 0

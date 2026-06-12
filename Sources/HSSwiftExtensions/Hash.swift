@@ -447,10 +447,8 @@ private let hashLookupTable: [HashEntry] = [
 // MARK: - HSHashObject
 
 private let USERDATA_TAG = "hs.hash"
-private var refTable: Int32 = LUA_NOREF
 
 private class HSHashObjectNew: NSObject {
-    var selfRefCount: Int = 0
     let hashType: Int
     let secret: Data?
     var context: UnsafeMutableRawPointer?
@@ -472,9 +470,14 @@ private class HSHashObjectNew: NSObject {
         value = hashLookupTable[hashType].finishFn(context!)
         context = nil // freed in finish function
     }
+
+    /// Idempotent teardown: finalize the hash context if still in progress.
+    func teardown() {
+        if context != nil { finish() }
+    }
 }
 
-// MARK: - Module Functions
+// MARK: - Module Constructor
 
 /// hs.hash.new(hash, [secret]) -> hashObject
 /// Constructor
@@ -510,247 +513,152 @@ private func hash_new(_ L: LuaState) throws -> CInt {
 
     if hashFound {
         let object = HSHashObjectNew(hashType: hashType, secret: secret)
-        pushHashObject(L, object)
+        L.push(userdata: object)
     } else {
         throw LuaCallError("bad argument #1 (unrecognized hash type)")
     }
     return 1
 }
 
-// MARK: - Module Methods
+// MARK: - Module Entry Point
 
-/// hs.hash:append(data) -> hashObject | nil, error
-/// Method
-/// Adds the provided data to the input of the hash function currently in progress for the hashObject.
-///
-/// Parameters:
-///  * `data` - a string containing the data to add to the hash functions input.
-///
-/// Returns:
-///  * the hash object, or if the hash has already been calculated (finished), nil and an error string
-private func hash_append(_ L: LuaState) throws -> CInt {
-    guard let object = toHashObject(L, at: 1) else { throw LuaCallError("bad argument #1 (expected \(USERDATA_TAG))") }
-    var len: Int = 0
-    guard let ptr = luaL_checklstring(L, 2, &len) else { return 0 }
-    let data = Data(bytes: ptr, count: len)
+@_cdecl("luaopen_hs_libhash")
+public func luaopen_hs_libhash(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    // Register idiomatic Metatable<HSHashObjectNew> with LuaSwift.
+    L.register(Metatable<HSHashObjectNew>(
+        fields: [
+            "append": .closure { L in
+                let object: HSHashObjectNew = try L.checkArgument(1)
+                var len: Int = 0
+                guard let ptr = luaL_checklstring(L, 2, &len) else { return 0 }
+                let data = Data(bytes: ptr, count: len)
 
-    if object.value == nil {
-        object.append(data)
-    } else {
-        lua_pushnil(L)
-        lua_pushstring(L, "hash calculation completed")
-        return 2
-    }
-
-    lua_pushvalue(L, 1)
-    return 1
-}
-
-/// hs.hash:appendFile(path) -> hashObject | nil, error
-/// Method
-/// Adds the contents of the file at the specified path to the input of the hash function currently in progress for the hashObject.
-///
-/// Parameters:
-///  * `path` - a string containing the path of the file to add to the hash functions input.
-///
-/// Returns:
-///  * the hash object
-private func hash_appendFile(_ L: LuaState) throws -> CInt {
-    guard let object = toHashObject(L, at: 1) else { throw LuaCallError("bad argument #1 (expected \(USERDATA_TAG))") }
-    guard let pathC = luaL_checkstring(L, 2) else { return 0 }
-    var path = String(cString: pathC)
-
-    if object.value == nil {
-        path = (path as NSString).expandingTildeInPath
-        path = (path as NSString).resolvingSymlinksInPath
-        do {
-            let data = try Data(contentsOf: URL(fileURLWithPath: path), options: .uncached)
-            object.append(data)
-        } catch {
-            lua_pushnil(L)
-            lua_pushstring(L, "error reading contents of \(path): \(error.localizedDescription)")
-            return 2
-        }
-    } else {
-        lua_pushnil(L)
-        lua_pushstring(L, "hash calculation completed")
-        return 2
-    }
-
-    lua_pushvalue(L, 1)
-    return 1
-}
-
-/// hs.hash:finish() -> hashObject
-/// Method
-/// Finalizes the hash and computes the resulting value.
-///
-/// Parameters:
-///  * None
-///
-/// Returns:
-///  * the hash object
-///
-/// Notes:
-///  * a hash that has been finished can no longer have data appended to it.
-private func hash_finish(_ L: LuaState) throws -> CInt {
-    guard let object = toHashObject(L, at: 1) else { throw LuaCallError("bad argument #1 (expected \(USERDATA_TAG))") }
-
-    if object.value == nil { object.finish() }
-
-    lua_pushvalue(L, 1)
-    return 1
-}
-
-/// hs.hash:value([binary]) -> string | nil
-/// Method
-/// Returns the value of a completed hash, or nil if it is still in progress.
-///
-/// Parameters:
-///  * `binary` - an optional boolean, default false, specifying whether or not the value should be provided as raw binary bytes (true) or as a string of hexadecimal numbers (false).
-///
-/// Returns:
-///  * a string containing the hash value or nil if the hash has not been finished.
-private func hash_value(_ L: LuaState) throws -> CInt {
-    guard let object = toHashObject(L, at: 1) else { throw LuaCallError("bad argument #1 (expected \(USERDATA_TAG))") }
-    let inBinary = (lua_gettop(L) == 2) ? (lua_toboolean(L, 2) != 0) : false
-
-    if let val = object.value {
-        if inBinary {
-            val.withUnsafeBytes { ptr in
-                if let base = ptr.baseAddress {
-                    lua_pushlstring(L, base.assumingMemoryBound(to: CChar.self), val.count)
+                if object.value == nil {
+                    object.append(data)
                 } else {
-                    lua_pushlstring(L, "", 0)
+                    lua_pushnil(L)
+                    lua_pushstring(L, "hash calculation completed")
+                    return 2
                 }
+
+                lua_pushvalue(L, 1)
+                return 1
+            },
+            "appendFile": .closure { L in
+                let object: HSHashObjectNew = try L.checkArgument(1)
+                guard let pathC = luaL_checkstring(L, 2) else { return 0 }
+                var path = String(cString: pathC)
+
+                if object.value == nil {
+                    path = (path as NSString).expandingTildeInPath
+                    path = (path as NSString).resolvingSymlinksInPath
+                    do {
+                        let data = try Data(contentsOf: URL(fileURLWithPath: path), options: .uncached)
+                        object.append(data)
+                    } catch {
+                        lua_pushnil(L)
+                        lua_pushstring(L, "error reading contents of \(path): \(error.localizedDescription)")
+                        return 2
+                    }
+                } else {
+                    lua_pushnil(L)
+                    lua_pushstring(L, "hash calculation completed")
+                    return 2
+                }
+
+                lua_pushvalue(L, 1)
+                return 1
+            },
+            "finish": .closure { L in
+                let object: HSHashObjectNew = try L.checkArgument(1)
+                if object.value == nil { object.finish() }
+                lua_pushvalue(L, 1)
+                return 1
+            },
+            "value": .closure { L in
+                let object: HSHashObjectNew = try L.checkArgument(1)
+                let inBinary = (lua_gettop(L) == 2) ? (lua_toboolean(L, 2) != 0) : false
+
+                if let val = object.value {
+                    if inBinary {
+                        val.withUnsafeBytes { ptr in
+                            if let base = ptr.baseAddress {
+                                lua_pushlstring(L, base.assumingMemoryBound(to: CChar.self), val.count)
+                            } else {
+                                lua_pushlstring(L, "", 0)
+                            }
+                        }
+                    } else {
+                        var hex = ""
+                        hex.reserveCapacity(val.count * 2)
+                        for byte in val {
+                            hex += String(format: "%02x", byte)
+                        }
+                        lua_pushstring(L, hex)
+                    }
+                } else {
+                    lua_pushnil(L)
+                }
+                return 1
+            },
+            "type": .closure { L in
+                let object: HSHashObjectNew = try L.checkArgument(1)
+                lua_pushstring(L, hashLookupTable[object.hashType].hashName)
+                return 1
+            },
+        ],
+        eq: .closure { L in
+            let obj1: HSHashObjectNew = try L.checkArgument(1)
+            let obj2: HSHashObjectNew = try L.checkArgument(2)
+            lua_pushboolean(L, obj1.isEqual(obj2) ? 1 : 0)
+            return 1
+        },
+        tostring: .closure { L in
+            let obj: HSHashObjectNew = try L.checkArgument(1)
+            var title = hashLookupTable[obj.hashType].hashName
+            if obj.value == nil {
+                title = "\(title) <in-progress>"
             }
-        } else {
-            var hex = ""
-            hex.reserveCapacity(val.count * 2)
-            for byte in val {
-                hex += String(format: "%02x", byte)
-            }
-            lua_pushstring(L, hex)
+            lua_pushstring(L, "\(USERDATA_TAG): \(title) (\(String(describing: lua_topointer(L, 1))))")
+            return 1
         }
-    } else {
-        lua_pushnil(L)
-    }
-    return 1
-}
+    ))
 
-/// hs.hash:type() -> string
-/// Method
-/// Returns the name of the hash type the object refers to
-///
-/// Parameters:
-///  * None
-///
-/// Returns:
-///  * a string containing the hash type name.
-private func hash_type(_ L: LuaState) throws -> CInt {
-    guard let object = toHashObject(L, at: 1) else { throw LuaCallError("bad argument #1 (expected \(USERDATA_TAG))") }
-    lua_pushstring(L, hashLookupTable[object.hashType].hashName)
-    return 1
-}
+    // -- Post-registration metatable patching --
+    // Replace LuaSwift's default __gc with custom teardown + deinitialize
+    L.pushMetatable(for: HSHashObjectNew.self)
 
-// MARK: - Module Constants
+    lua_pushcclosure(L, { (L: LuaState!) -> CInt in
+        if let obj: HSHashObjectNew = L.touserdata(1) {
+            obj.teardown()
+        }
+        let rawptr = lua_touserdata(L, 1)!
+        rawptr.assumingMemoryBound(to: Any.self).deinitialize(count: 1)
+        return 0
+    }, 0)
+    lua_setfield(L, -2, "__gc")
 
-// documented in hash.lua
-private func hash_types(_ L: LuaState) throws -> CInt {
+    // Set __type and __name for lsunit.lua assertions
+    lua_pushstring(L, USERDATA_TAG)
+    lua_setfield(L, -2, "__type")
+    lua_pushstring(L, USERDATA_TAG)
+    lua_setfield(L, -2, "__name")
+
+    // Registry alias so core_getObjectMetatable("hs.hash") resolves
+    lua_setfield(L, LUA_REGISTRYINDEX_VALUE, USERDATA_TAG)
+
+    // Create module table
+    lua_createtable(L, 0, 2)
+    L.push(hash_new)
+    lua_setfield(L, -2, "new")
+
+    // Push types constant
     lua_newtable(L)
     for i in 0..<hashLookupTable.count {
         lua_pushstring(L, hashLookupTable[i].hashName)
         lua_rawseti(L, -2, luaL_len(L, -2) + 1)
     }
+    lua_setfield(L, -2, "types")
+
     return 1
-}
-
-// MARK: - Userdata Push/Pull Helpers
-
-/// Push an HSHashObjectNew as a Lua userdata with the correct metatable.
-private func pushHashObject(_ L: UnsafeMutablePointer<lua_State>!, _ obj: HSHashObjectNew) {
-    obj.selfRefCount += 1
-    let ptr = lua_newuserdata(L, MemoryLayout<UnsafeRawPointer>.size)!
-    ptr.storeBytes(of: Unmanaged.passRetained(obj).toOpaque(), as: UnsafeRawPointer.self)
-    luaL_getmetatable(L, USERDATA_TAG)
-    lua_setmetatable(L, -2)
-}
-
-/// Extract an HSHashObjectNew from userdata at a given stack index.
-private func toHashObject(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> HSHashObjectNew? {
-    guard let ptr = luaL_testudata(L, idx, USERDATA_TAG) else { return nil }
-    return Unmanaged<HSHashObjectNew>.fromOpaque(ptr.load(as: UnsafeRawPointer.self)).takeUnretainedValue()
-}
-
-// MARK: - Cosmic Hammer/Lua Infrastructure
-
-private func userdata_tostring(_ L: LuaState) throws -> CInt {
-    guard let obj = toHashObject(L, at: 1) else { return 0 }
-    var title = hashLookupTable[obj.hashType].hashName
-    if obj.value == nil {
-        title = "\(title) <in-progress>"
-    }
-    let desc = "\(USERDATA_TAG): \(title) (\(String(describing: lua_topointer(L, 1))))"
-    lua_pushstring(L, desc)
-    return 1
-}
-
-private func userdata_eq(_ L: LuaState) throws -> CInt {
-    if let obj1 = toHashObject(L, at: 1), let obj2 = toHashObject(L, at: 2) {
-        lua_pushboolean(L, obj1.isEqual(obj2) ? 1 : 0)
-    } else {
-        lua_pushboolean(L, 0)
-    }
-    return 1
-}
-
-private func userdata_gc(_ L: LuaState) throws -> CInt {
-    guard let ptr = luaL_testudata(L, 1, USERDATA_TAG) else { return 0 }
-    let raw = ptr.load(as: UnsafeRawPointer.self)
-    let obj = Unmanaged<HSHashObjectNew>.fromOpaque(raw).takeUnretainedValue()
-    obj.selfRefCount -= 1
-    if obj.selfRefCount == 0 {
-        if obj.context != nil { obj.finish() }
-    }
-    lua_pushnil(L)
-    lua_setmetatable(L, 1)
-    Unmanaged<HSHashObjectNew>.fromOpaque(raw).release()
-    return 0
-}
-
-// MARK: - Module Entry Point
-
-@_cdecl("luaopen_hs_libhash")
-public func luaopen_hs_libhash(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    runEntryPoint(L) { L in
-        lua_newtable(L)
-        refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
-
-        luaL_newmetatable(L, USERDATA_TAG)
-        lua_pushvalue(L, -1)
-        lua_setfield(L, -2, "__index")
-        L.push(hash_append)
-        lua_setfield(L, -2, "append")
-        L.push(hash_appendFile)
-        lua_setfield(L, -2, "appendFile")
-        L.push(hash_finish)
-        lua_setfield(L, -2, "finish")
-        L.push(hash_value)
-        lua_setfield(L, -2, "value")
-        L.push(hash_type)
-        lua_setfield(L, -2, "type")
-        L.push(userdata_tostring)
-        lua_setfield(L, -2, "__tostring")
-        L.push(userdata_eq)
-        lua_setfield(L, -2, "__eq")
-        L.push(userdata_gc)
-        lua_setfield(L, -2, "__gc")
-        lua_pop(L, 1)
-
-        lua_createtable(L, 0, 1)
-        L.push(hash_new)
-        lua_setfield(L, -2, "new")
-
-        _ = try hash_types(L); lua_setfield(L, -2, "types")
-    }
 }

@@ -5,7 +5,6 @@ import Carbon
 import os.log
 
 private let USERDATA_TAG = "hs.eventtap"
-private var refTable: Int32 = LUA_NOREF
 
 // Shared with libeventtap_event_new.swift (same module)
 let EVENTTAP_EVENT_USERDATA_TAG = "hs.eventtap.event"
@@ -25,37 +24,52 @@ func getEventtapEvent(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> C
     return Unmanaged<CGEvent>.fromOpaque(rawPtr).takeUnretainedValue()
 }
 
-// MARK: - Eventtap State
+// MARK: - HSEventtap class
 
-private class Eventtap {
-    var fn: Int32 = LUA_NOREF
+private class HSEventtap {
+    var fn: LuaValue?
     var mask: CGEventMask = 0
     var tap: CFMachPort?
     var runloopsrc: CFRunLoopSource?
     var lsCanary: UInt64 = UInt64()
-}
+    private var tornDown = false
 
-private func getEventtap(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> Eventtap? {
-    guard let ud = luaL_checkudata(L, idx, USERDATA_TAG) else { return nil }
-    let ptr = ud.assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
-    guard let rawPtr = ptr.pointee else { return nil }
-    return Unmanaged<Eventtap>.fromOpaque(rawPtr).takeUnretainedValue()
+    /// Idempotent teardown: stop the event tap, drop the Lua callback reference.
+    func teardown() {
+        guard !tornDown else { return }
+        tornDown = true
+        stopTap()
+        fn = nil    // drops the LuaValue ref while L is still open
+    }
+
+    func stopTap() {
+        if let tap = tap {
+            if CGEvent.tapIsEnabled(tap: tap) { CGEvent.tapEnable(tap: tap, enable: false) }
+            CFMachPortInvalidate(tap)
+            if let src = runloopsrc {
+                CFRunLoopRemoveSource(CFRunLoopGetMain(), src, .commonModes)
+            }
+            self.tap = nil
+            runloopsrc = nil
+        }
+    }
 }
 
 // MARK: - CGEventTap Callback
 
 private let eventtapCallback: CGEventTapCallBack = { proxy, type, event, userInfo in
     guard let userInfo = userInfo else { return Unmanaged.passUnretained(event) }
-    let e = Unmanaged<Eventtap>.fromOpaque(userInfo).takeUnretainedValue()
+    let e = Unmanaged<HSEventtap>.fromOpaque(userInfo).takeUnretainedValue()
 
     let L = lua_getCurrentState()!
 
     if !lua_isStateGenerationValid(e.lsCanary) {
+        e.teardown()
         return Unmanaged.passUnretained(event)
     }
 
-    if e.fn == LUA_NOREF || e.fn == LUA_REFNIL {
-        os_log(.debug, "%{public}s", "eventtap_callback called with LUA_NOREF/LUA_REFNIL")
+    guard let cb = e.fn else {
+        os_log(.debug, "%{public}s", "eventtap_callback called with nil callback")
         return Unmanaged.passUnretained(event)
     }
 
@@ -65,7 +79,7 @@ private let eventtapCallback: CGEventTapCallBack = { proxy, type, event, userInf
         return Unmanaged.passUnretained(event)
     }
 
-    lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(e.fn))
+    cb.push(onto: L)
     newEventtapEvent(L, event)
 
     if lua_pcall(L, 1, 2, 0) != LUA_OK {
@@ -145,12 +159,12 @@ private func eventtap_keyStrokes(_ L: LuaState) throws -> CInt {
 /// hs.eventtap.new(types, fn) -> eventtap
 /// Constructor
 /// Create a new event tap object
-private func eventtap_new(_ L: LuaState) throws -> CInt {
+private func eventtap_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
     luaL_checktype(L, 1, LUA_TTABLE)
     luaL_checktype(L, 2, LUA_TFUNCTION)
 
-    let eventtap = Eventtap()
+    let eventtap = HSEventtap()
     eventtap.lsCanary = lua_currentStateGeneration()
 
     lua_pushnil(L)
@@ -163,96 +177,20 @@ private func eventtap_new(_ L: LuaState) throws -> CInt {
             if label == "all" {
                 eventtap.mask = CGEventMask(UInt64.max)
             } else {
-                throw LuaCallError("Invalid event type specified. Must be a table of numbers or {\"all\"}.")
+                luaL_error(L, "Invalid event type specified. Must be a table of numbers or {\"all\"}.")
+                return 0
             }
         } else {
-            throw LuaCallError("Invalid event types specified. Must be a table of numbers.")
+            luaL_error(L, "Invalid event types specified. Must be a table of numbers.")
+            return 0
         }
         lua_pop(L, 1)
     }
 
-    lua_pushvalue(L, 2)
-    eventtap.fn = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+    eventtap.fn = L.ref(index: 2)
 
-    let ud = lua_newuserdata(L, MemoryLayout<UnsafeMutableRawPointer>.size)!
-        .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
-    ud.pointee = Unmanaged.passRetained(eventtap).toOpaque()
-    luaL_getmetatable(L, USERDATA_TAG)
-    lua_setmetatable(L, -2)
+    L.push(userdata: eventtap)
 
-    return 1
-}
-
-/// hs.eventtap:start()
-/// Method
-/// Starts an event tap
-private func eventtap_start(_ L: LuaState) throws -> CInt {
-    guard let e = getEventtap(L, at: 1) else { return 0 }
-
-    let tapEnabled = e.tap.map { CGEvent.tapIsEnabled(tap: $0) } ?? false
-
-    if !tapEnabled {
-        if let oldTap = e.tap {
-            CFMachPortInvalidate(oldTap)
-            if let src = e.runloopsrc {
-                CFRunLoopRemoveSource(CFRunLoopGetMain(), src, .commonModes)
-                // CFRelease handled by Swift ARC for CFRunLoopSource
-            }
-        }
-
-        let userInfo = Unmanaged.passUnretained(e).toOpaque()
-        e.tap = CGEvent.tapCreate(
-            tap: .cgSessionEventTap,
-            place: .headInsertEventTap,
-            options: .defaultTap,
-            eventsOfInterest: e.mask,
-            callback: eventtapCallback,
-            userInfo: userInfo
-        )
-
-        if let tap = e.tap {
-            CGEvent.tapEnable(tap: tap, enable: true)
-            e.runloopsrc = CFMachPortCreateRunLoopSource(nil, tap, 0)
-            if let src = e.runloopsrc {
-                CFRunLoopAddSource(CFRunLoopGetMain(), src, .commonModes)
-            }
-        } else {
-            os_log(.error, "%{public}s", "hs.eventtap:start() Unable to create eventtap. Is Accessibility enabled?")
-        }
-    }
-    lua_settop(L, 1)
-    return 1
-}
-
-/// hs.eventtap:stop()
-/// Method
-/// Stops an event tap
-private func eventtap_stop(_ L: LuaState) throws -> CInt {
-    guard let e = getEventtap(L, at: 1) else { return 0 }
-
-    if let tap = e.tap {
-        if CGEvent.tapIsEnabled(tap: tap) { CGEvent.tapEnable(tap: tap, enable: false) }
-        CFMachPortInvalidate(tap)
-        if let src = e.runloopsrc {
-            CFRunLoopRemoveSource(CFRunLoopGetMain(), src, .commonModes)
-        }
-        e.tap = nil
-        e.runloopsrc = nil
-    }
-    lua_settop(L, 1)
-    return 1
-}
-
-/// hs.eventtap:isEnabled() -> bool
-/// Method
-/// Determine whether or not an event tap object is enabled.
-private func eventtap_isEnabled(_ L: LuaState) throws -> CInt {
-    guard let e = getEventtap(L, at: 1) else {
-        lua_pushboolean(L, 0)
-        return 1
-    }
-    let enabled = e.tap.map { CGEvent.tapIsEnabled(tap: $0) } ?? false
-    lua_pushboolean(L, enabled ? 1 : 0)
     return 1
 }
 
@@ -271,19 +209,19 @@ private func checkKeyboardModifiers(_ L: LuaState) throws -> CInt {
 
     if theFlags.contains(.command) {
         lua_pushboolean(L, 1); lua_setfield(L, -2, "cmd")
-        lua_pushboolean(L, 1); lua_setfield(L, -2, "⌘")
+        lua_pushboolean(L, 1); lua_setfield(L, -2, "\u{2318}")
     }
     if theFlags.contains(.shift) {
         lua_pushboolean(L, 1); lua_setfield(L, -2, "shift")
-        lua_pushboolean(L, 1); lua_setfield(L, -2, "⇧")
+        lua_pushboolean(L, 1); lua_setfield(L, -2, "\u{21E7}")
     }
     if theFlags.contains(.option) {
         lua_pushboolean(L, 1); lua_setfield(L, -2, "alt")
-        lua_pushboolean(L, 1); lua_setfield(L, -2, "⌥")
+        lua_pushboolean(L, 1); lua_setfield(L, -2, "\u{2325}")
     }
     if theFlags.contains(.control) {
         lua_pushboolean(L, 1); lua_setfield(L, -2, "ctrl")
-        lua_pushboolean(L, 1); lua_setfield(L, -2, "⌃")
+        lua_pushboolean(L, 1); lua_setfield(L, -2, "\u{2303}")
     }
     if theFlags.contains(.function) {
         lua_pushboolean(L, 1); lua_setfield(L, -2, "fn")
@@ -355,96 +293,119 @@ private func eventtap_doubleClickInterval(_ L: LuaState) throws -> CInt {
     return 1
 }
 
-// MARK: - Infrastructure
-
-private func eventtap_gc(_ L: LuaState) throws -> CInt {
-    let ud = luaL_checkudata(L, 1, USERDATA_TAG)!
-        .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
-    if let rawPtr = ud.pointee {
-        let e = Unmanaged<Eventtap>.fromOpaque(rawPtr).takeRetainedValue()
-
-        if let tap = e.tap {
-            if CGEvent.tapIsEnabled(tap: tap) { CGEvent.tapEnable(tap: tap, enable: false) }
-            CFMachPortInvalidate(tap)
-            if let src = e.runloopsrc {
-                CFRunLoopRemoveSource(CFRunLoopGetMain(), src, .commonModes)
-            }
-            e.tap = nil
-            e.runloopsrc = nil
-        }
-
-        luaL_unref(L, LUA_REGISTRYINDEX_VALUE, e.fn)
-
-
-        e.fn = LUA_NOREF
-        var canary = e.lsCanary
-        e.lsCanary = canary
-
-        ud.pointee = nil
-    }
-    lua_pushnil(L)
-    lua_setmetatable(L, 1)
-    return 0
-}
-
-private func meta_gc(_ L: LuaState) throws -> CInt {
-    return 0
-}
-
-private func userdata_tostring(_ L: LuaState) throws -> CInt {
-    guard let e = getEventtap(L, at: 1) else {
-        lua_pushstring(L, "\(USERDATA_TAG): (nil)")
-        return 1
-    }
-    lua_pushstring(L, "\(USERDATA_TAG): Eventtap Mask: 0x\(String(e.mask, radix: 16)) (\(String(describing: lua_topointer(L, 1)!)))")
-    return 1
-}
-
 // MARK: - Registration
 
 @_cdecl("luaopen_hs_libeventtap")
 public func luaopen_hs_libeventtap(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    runEntryPoint(L) { L in
-        lua_newtable(L)
-        refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+    // Register idiomatic Metatable<HSEventtap> with LuaSwift.
+    L.register(Metatable<HSEventtap>(
+        fields: [
+            "start": .closure { L in
+                let e: HSEventtap = try L.checkArgument(1)
 
-        luaL_newmetatable(L, USERDATA_TAG)
-        lua_pushvalue(L, -1)
-        lua_setfield(L, -2, "__index")
-        L.push(eventtap_start)
-        lua_setfield(L, -2, "start")
-        L.push(eventtap_stop)
-        lua_setfield(L, -2, "stop")
-        L.push(eventtap_isEnabled)
-        lua_setfield(L, -2, "isEnabled")
-        L.push(userdata_tostring)
-        lua_setfield(L, -2, "__tostring")
-        L.push(eventtap_gc)
-        lua_setfield(L, -2, "__gc")
-        lua_pop(L, 1)
+                let tapEnabled = e.tap.map { CGEvent.tapIsEnabled(tap: $0) } ?? false
 
-        lua_createtable(L, 0, 8)
-        L.push(eventtap_new)
-        lua_setfield(L, -2, "new")
-        L.push(eventtap_keyStrokes)
-        lua_setfield(L, -2, "keyStrokes")
-        L.push(checkKeyboardModifiers)
-        lua_setfield(L, -2, "checkKeyboardModifiers")
-        L.push(checkMouseButtons)
-        lua_setfield(L, -2, "checkMouseButtons")
-        L.push(eventtap_keyRepeatDelay)
-        lua_setfield(L, -2, "keyRepeatDelay")
-        L.push(eventtap_keyRepeatInterval)
-        lua_setfield(L, -2, "keyRepeatInterval")
-        L.push(eventtap_doubleClickInterval)
-        lua_setfield(L, -2, "doubleClickInterval")
-        L.push(secureInputEnabled)
-        lua_setfield(L, -2, "isSecureInputEnabled")
+                if !tapEnabled {
+                    if let oldTap = e.tap {
+                        CFMachPortInvalidate(oldTap)
+                        if let src = e.runloopsrc {
+                            CFRunLoopRemoveSource(CFRunLoopGetMain(), src, .commonModes)
+                        }
+                    }
 
-        // Set module metatable (for __gc)
-        lua_createtable(L, 0, 1)
-        L.push(meta_gc)
-        lua_setfield(L, -2, "__gc")
-        lua_setmetatable(L, -2)
-    }
+                    let userInfo = Unmanaged.passUnretained(e).toOpaque()
+                    e.tap = CGEvent.tapCreate(
+                        tap: .cgSessionEventTap,
+                        place: .headInsertEventTap,
+                        options: .defaultTap,
+                        eventsOfInterest: e.mask,
+                        callback: eventtapCallback,
+                        userInfo: userInfo
+                    )
+
+                    if let tap = e.tap {
+                        CGEvent.tapEnable(tap: tap, enable: true)
+                        e.runloopsrc = CFMachPortCreateRunLoopSource(nil, tap, 0)
+                        if let src = e.runloopsrc {
+                            CFRunLoopAddSource(CFRunLoopGetMain(), src, .commonModes)
+                        }
+                    } else {
+                        os_log(.error, "%{public}s", "hs.eventtap:start() Unable to create eventtap. Is Accessibility enabled?")
+                    }
+                }
+                lua_settop(L, 1)
+                return 1
+            },
+            "stop": .closure { L in
+                let e: HSEventtap = try L.checkArgument(1)
+                e.stopTap()
+                lua_settop(L, 1)
+                return 1
+            },
+            "isEnabled": .closure { L in
+                let e: HSEventtap = try L.checkArgument(1)
+                let enabled = e.tap.map { CGEvent.tapIsEnabled(tap: $0) } ?? false
+                lua_pushboolean(L, enabled ? 1 : 0)
+                return 1
+            },
+        ],
+        tostring: .closure { L in
+            let e: HSEventtap = try L.checkArgument(1)
+            lua_pushstring(L, "\(USERDATA_TAG): Eventtap Mask: 0x\(String(e.mask, radix: 16)) (\(String(describing: lua_topointer(L, 1)!)))")
+            return 1
+        }
+    ))
+
+    // -- Post-registration metatable patching --
+    // Replace __gc with our explicit teardown + deinitialize
+    L.pushMetatable(for: HSEventtap.self)
+
+    lua_pushcclosure(L, { (L: LuaState!) -> CInt in
+        if let e: HSEventtap = L.touserdata(1) {
+            e.teardown()
+        }
+        let rawptr = lua_touserdata(L, 1)!
+        rawptr.assumingMemoryBound(to: Any.self).deinitialize(count: 1)
+        return 0
+    }, 0)
+    lua_setfield(L, -2, "__gc")
+
+    // Set __type and __name for lsunit.lua assertIsUserdataOfType and tostring
+    lua_pushstring(L, USERDATA_TAG)
+    lua_setfield(L, -2, "__type")
+    lua_pushstring(L, USERDATA_TAG)
+    lua_setfield(L, -2, "__name")
+
+    // Alias the metatable under the legacy registry name so that
+    // core_getObjectMetatable("hs.eventtap") still resolves.
+    lua_setfield(L, LUA_REGISTRYINDEX_VALUE, USERDATA_TAG)
+
+    // Create module table
+    lua_createtable(L, 0, 8)
+    L.push(eventtap_new)
+    lua_setfield(L, -2, "new")
+    L.push(eventtap_keyStrokes)
+    lua_setfield(L, -2, "keyStrokes")
+    L.push(checkKeyboardModifiers)
+    lua_setfield(L, -2, "checkKeyboardModifiers")
+    L.push(checkMouseButtons)
+    lua_setfield(L, -2, "checkMouseButtons")
+    L.push(eventtap_keyRepeatDelay)
+    lua_setfield(L, -2, "keyRepeatDelay")
+    L.push(eventtap_keyRepeatInterval)
+    lua_setfield(L, -2, "keyRepeatInterval")
+    L.push(eventtap_doubleClickInterval)
+    lua_setfield(L, -2, "doubleClickInterval")
+    L.push(secureInputEnabled)
+    lua_setfield(L, -2, "isSecureInputEnabled")
+
+    // Set module metatable (for __gc)
+    lua_createtable(L, 0, 1)
+    lua_pushcclosure(L, { (L: LuaState!) -> CInt in
+        return 0
+    }, 0)
+    lua_setfield(L, -2, "__gc")
+    lua_setmetatable(L, -2)
+
+    return 1
 }

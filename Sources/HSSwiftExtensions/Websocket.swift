@@ -2,25 +2,13 @@ import Foundation
 import CLua
 import Lua
 import Cocoa
-import Carbon
-
-private struct WebSocketUserData {
-    var selfRef: Int32
-    var ws: UnsafeMutableRawPointer?
-}
 
 private let WS_USERDATA_TAG = "hs.websocket"
-private var refTable: Int32 = LUA_NOREF
-
-private func getWsUserData(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> HSWebSocketDelegate {
-    let ud = lua_touserdata(L, idx)!.assumingMemoryBound(to: WebSocketUserData.self)
-    return Unmanaged<HSWebSocketDelegate>.fromOpaque(ud.pointee.ws!).takeUnretainedValue()
-}
 
 // MARK: - HSWebSocketDelegate
 
 private class HSWebSocketDelegate: NSObject, URLSessionWebSocketDelegate {
-    var fn: Int32 = LUA_NOREF
+    var callback: LuaValue?
     var webSocket: URLSessionWebSocketTask?
     var session: URLSession?
     // Lua state and websocket lifecycle flags are owned by the main run loop.
@@ -28,6 +16,7 @@ private class HSWebSocketDelegate: NSObject, URLSessionWebSocketDelegate {
     var isOpen: Bool = false
     var isExplicitlyClosing: Bool = false
     var stateGeneration: UInt64 = 0
+    private var tornDown = false
     private let delegateQueue: OperationQueue = {
         let queue = OperationQueue()
         queue.maxConcurrentOperationCount = 1
@@ -40,6 +29,19 @@ private class HSWebSocketDelegate: NSObject, URLSessionWebSocketDelegate {
         session = URLSession(configuration: config, delegate: self, delegateQueue: delegateQueue)
         webSocket = session?.webSocketTask(with: url)
         isOpen = false
+    }
+
+    /// Idempotent teardown: cancel the websocket, invalidate the session,
+    /// drop the Lua callback reference.  Called from __gc while the
+    /// lua_State is still alive.
+    func teardown() {
+        guard !tornDown else { return }
+        tornDown = true
+        close()
+        webSocket = nil
+        session?.invalidateAndCancel()
+        session = nil
+        callback = nil
     }
 
     func open() {
@@ -96,12 +98,10 @@ private class HSWebSocketDelegate: NSObject, URLSessionWebSocketDelegate {
     }
 
     private func invokeLuaCallback(pushArguments: (UnsafeMutablePointer<lua_State>) -> Int32) {
-        guard fn != LUA_NOREF else { return }
+        guard let cb = callback else { return }
         guard lua_isStateGenerationValid(stateGeneration) else { return }
         guard let L = lua_getCurrentState() else { return }
-        lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(refTable))
-        lua_rawgeti(L, -1, lua_Integer(fn))
-        lua_remove(L, -2)
+        cb.push(onto: L)
         let argumentCount = pushArguments(L)
         if lua_pcall(L, argumentCount, 0, 0) != LUA_OK { lua_pop(L, 1) }
     }
@@ -170,167 +170,131 @@ private func websocket_new(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 2, LUA_TFUNCTION)
     let ws = HSWebSocketDelegate(url: URL(string: urlString)!)
     ws.stateGeneration = lua_currentStateGeneration()
-
-    lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(refTable))
-    lua_pushvalue(L, 2)
-    ws.fn = luaL_ref(L, -2)
-    lua_pop(L, 1)
-
+    ws.callback = L.ref(index: 2)
     ws.open()
-
-    let userData = lua_newuserdata(L, MemoryLayout<WebSocketUserData>.size)!
-        .assumingMemoryBound(to: WebSocketUserData.self)
-    memset(userData, 0, MemoryLayout<WebSocketUserData>.size)
-    userData.pointee.ws = Unmanaged.passRetained(ws).toOpaque()
-    luaL_getmetatable(L, WS_USERDATA_TAG)
-    lua_setmetatable(L, -2)
-
+    L.push(userdata: ws)
     return 1
 }
 
-/// hs.websocket:send(message[, isData]) -> object
-/// Method
-/// Sends a message to the websocket client.
-///
-/// Parameters:
-///  * message - A string containing the message to send.
-///  * isData - An optional boolean that sends the message as binary data (defaults to true).
-///
-/// Returns:
-///  * The `hs.websocket` object
-///
-/// Notes:
-///  * Forcing a text representation by setting isData to `false` may alter the data if it
-///   contains invalid UTF8 character sequences (the default string behavior is to make
-///   sure everything is "printable" by converting invalid sequences into the Unicode
-///   Invalid Character sequence).
-private func websocket_send(_ L: LuaState) throws -> CInt {
-    let ws = getWsUserData(L, 1)
-    luaL_checktype(L, 2, LUA_TSTRING)
-
-    let isData: Bool = (lua_gettop(L) > 2) ? (lua_toboolean(L, 3) != 0) : true
-
-    let message: URLSessionWebSocketTask.Message
-    if isData {
-        var len: Int = 0
-        let ptr = lua_tolstring(L, 2, &len)!
-        let data = Data(bytes: ptr, count: len)
-        message = .data(data)
-    } else {
-        let str = String(cString: lua_tostring(L, 2)!)
-        message = .string(str)
-    }
-    ws.webSocket?.send(message) { _ in }
-
-    lua_pushvalue(L, 1)
-    return 1
-}
-
-/// hs.websocket:status() -> string
-/// Method
-/// Gets the status of a websocket.
-///
-/// Parameters:
-///  * None
-///
-/// Returns:
-///  * A string containing one of the following options:
-///   * connecting
-///   * open
-///   * closing
-///   * closed
-///   * unknown
-private func websocket_status(_ L: LuaState) throws -> CInt {
-    let ws = getWsUserData(L, 1)
-
-    switch ws.webSocket?.state {
-    case .running:
-        lua_pushstring(L, ws.isOpen ? "open" : "connecting")
-    case .canceling:
-        lua_pushstring(L, "closing")
-    case .completed:
-        lua_pushstring(L, "closed")
-    default:
-        lua_pushstring(L, "unknown")
-    }
-    return 1
-}
-
-/// hs.websocket:close() -> object
-/// Method
-/// Closes a websocket connection.
-///
-/// Parameters:
-///  * None
-///
-/// Returns:
-///  * The `hs.websocket` object
-private func websocket_close(_ L: LuaState) throws -> CInt {
-    let ws = getWsUserData(L, 1)
-
-    ws.close()
-
-    lua_pushvalue(L, 1)
-    return 1
-}
-
-private func websocket_gc(_ L: LuaState) throws -> CInt {
-    let userData = lua_touserdata(L, 1)!.assumingMemoryBound(to: WebSocketUserData.self)
-    let ws = Unmanaged<HSWebSocketDelegate>.fromOpaque(userData.pointee.ws!).takeRetainedValue()
-    userData.pointee.ws = nil
-
-    ws.close()
-    ws.webSocket = nil
-    ws.session?.invalidateAndCancel()
-    ws.session = nil
-    lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(refTable))
-    luaL_unref(L, -1, ws.fn); ws.fn = LUA_NOREF
-    lua_pop(L, 1)
-
-    return 0
-}
-
-private func websocket_tostring(_ L: LuaState) throws -> CInt {
-    let ws = getWsUserData(L, 1)
-    let host = ws.isOpen ? "connected" : "disconnected"
-    let str = "\(WS_USERDATA_TAG): \(host) (\(String(describing: lua_topointer(L, 1)!)))"
-    lua_pushstring(L, str)
-    return 1
-}
-
+// MARK: - Module entry point
 
 @_cdecl("luaopen_hs_libwebsocket")
 public func luaopen_hs_libwebsocket(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    runEntryPoint(L) { L in
-        // Create ref table in registry
-        lua_newtable(L)
-        refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+    L.register(Metatable<HSWebSocketDelegate>(
+        fields: [
+            /// hs.websocket:send(message[, isData]) -> object
+            /// Method
+            /// Sends a message to the websocket client.
+            ///
+            /// Parameters:
+            ///  * message - A string containing the message to send.
+            ///  * isData - An optional boolean that sends the message as binary data (defaults to true).
+            ///
+            /// Returns:
+            ///  * The `hs.websocket` object
+            ///
+            /// Notes:
+            ///  * Forcing a text representation by setting isData to `false` may alter the data if it
+            ///   contains invalid UTF8 character sequences (the default string behavior is to make
+            ///   sure everything is "printable" by converting invalid sequences into the Unicode
+            ///   Invalid Character sequence).
+            "send": .closure { L in
+                let ws: HSWebSocketDelegate = try L.checkArgument(1)
+                luaL_checktype(L, 2, LUA_TSTRING)
+                let isData: Bool = (lua_gettop(L) > 2) ? (lua_toboolean(L, 3) != 0) : true
+                let message: URLSessionWebSocketTask.Message
+                if isData {
+                    var len: Int = 0
+                    let ptr = lua_tolstring(L, 2, &len)!
+                    let data = Data(bytes: ptr, count: len)
+                    message = .data(data)
+                } else {
+                    let str = String(cString: lua_tostring(L, 2)!)
+                    message = .string(str)
+                }
+                ws.webSocket?.send(message) { _ in }
+                lua_settop(L, 1)
+                return 1
+            },
+            /// hs.websocket:close() -> object
+            /// Method
+            /// Closes a websocket connection.
+            ///
+            /// Parameters:
+            ///  * None
+            ///
+            /// Returns:
+            ///  * The `hs.websocket` object
+            "close": .closure { L in
+                let ws: HSWebSocketDelegate = try L.checkArgument(1)
+                ws.close()
+                lua_settop(L, 1)
+                return 1
+            },
+            /// hs.websocket:status() -> string
+            /// Method
+            /// Gets the status of a websocket.
+            ///
+            /// Parameters:
+            ///  * None
+            ///
+            /// Returns:
+            ///  * A string containing one of the following options:
+            ///   * connecting
+            ///   * open
+            ///   * closing
+            ///   * closed
+            ///   * unknown
+            "status": .closure { L in
+                let ws: HSWebSocketDelegate = try L.checkArgument(1)
+                switch ws.webSocket?.state {
+                case .running:
+                    lua_pushstring(L, ws.isOpen ? "open" : "connecting")
+                case .canceling:
+                    lua_pushstring(L, "closing")
+                case .completed:
+                    lua_pushstring(L, "closed")
+                default:
+                    lua_pushstring(L, "unknown")
+                }
+                return 1
+            },
+        ],
+        tostring: .closure { L in
+            let ws: HSWebSocketDelegate = try L.checkArgument(1)
+            let host = ws.isOpen ? "connected" : "disconnected"
+            lua_pushstring(L, "\(WS_USERDATA_TAG): \(host) (\(lua_topointer(L, 1)!))")
+            return 1
+        }
+    ))
 
-        // Register userdata metatable
-        luaL_newmetatable(L, WS_USERDATA_TAG)
-        lua_pushvalue(L, -1)
-        lua_setfield(L, -2, "__index")
-        lua_pushstring(L, WS_USERDATA_TAG)
-        lua_setfield(L, -2, "__type")
-        L.push(websocket_send)
-        lua_setfield(L, -2, "send")
-        L.push(websocket_close)
-        lua_setfield(L, -2, "close")
-        L.push(websocket_status)
-        lua_setfield(L, -2, "status")
-        L.push(websocket_tostring)
-        lua_setfield(L, -2, "__tostring")
-        L.push(websocket_gc)
-        lua_setfield(L, -2, "__gc")
-        lua_pop(L, 1)
+    // Post-registration: custom __gc that calls teardown() before deinitializing the Any box
+    L.pushMetatable(for: HSWebSocketDelegate.self)
+    lua_pushcclosure(L, { (L: LuaState!) -> CInt in
+        if let ws: HSWebSocketDelegate = L.touserdata(1) {
+            ws.teardown()
+        }
+        let rawptr = lua_touserdata(L, 1)!
+        let anyPtr = rawptr.assumingMemoryBound(to: Any.self)
+        anyPtr.deinitialize(count: 1)
+        return 0
+    }, 0)
+    lua_setfield(L, -2, "__gc")
 
-        // Create module table
-        lua_createtable(L, 0, 1)
-        L.push(websocket_new)
-        lua_setfield(L, -2, "new")
+    // Set __type and __name for lsunit.lua assertIsUserdataOfType and tostring
+    lua_pushstring(L, WS_USERDATA_TAG)
+    lua_setfield(L, -2, "__type")
+    lua_pushstring(L, WS_USERDATA_TAG)
+    lua_setfield(L, -2, "__name")
 
-        // Set module metatable (empty, for __gc pattern)
-        lua_createtable(L, 0, 0)
-        lua_setmetatable(L, -2)
-    }
+    // Alias the metatable under the legacy registry name so that
+    // core_getObjectMetatable("hs.websocket") still resolves.
+    lua_setfield(L, LUA_REGISTRYINDEX_VALUE, WS_USERDATA_TAG)
+
+    // Module table
+    lua_createtable(L, 0, 1)
+    L.push(websocket_new)
+    lua_setfield(L, -2, "new")
+
+    return 1
 }

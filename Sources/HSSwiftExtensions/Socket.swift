@@ -4,18 +4,10 @@ import Lua
 import os.log
 import Network
 
-// socket.h shared definitions are duplicated here since Swift can't import the C header directly.
-// The refTable, asyncSocketUserData struct, and constants are defined in socket.h and shared
-// between libsocket.m and libsocket_udp.m. In Swift each file gets its own copy.
+// MARK: - Common Code
 
 private func mainThreadDispatch(_ block: @escaping () -> Void) {
     DispatchQueue.main.async { autoreleasepool { block() } }
-}
-
-// Userdata struct matching socket.h's asyncSocketUserData
-private struct AsyncSocketUserData {
-    var selfRef: Int32 = 0
-    var asyncSocket: UnsafeMutableRawPointer? = nil
 }
 
 private enum SocketRole: String {
@@ -24,7 +16,6 @@ private enum SocketRole: String {
     case client = "CLIENT"
 }
 
-private var refTable: Int32 = LUA_NOREF
 private let USERDATA_TAG = "hs.socket"
 
 private func socketCheckPort(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> UInt16 {
@@ -39,22 +30,20 @@ private func socketCheckByteCount(_ L: UnsafeMutablePointer<lua_State>!, at idx:
     return UInt(count)
 }
 
-// Helper to extract the HSAsyncTcpSocket from userdata
-private func getUserData(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> HSAsyncTcpSocket {
-    let ud = lua_checkUserdataPointer(AsyncSocketUserData.self, L, at: idx, metatableName: USERDATA_TAG)
-    return Unmanaged<HSAsyncTcpSocket>.fromOpaque(ud.pointee.asyncSocket!).takeUnretainedValue()
-}
-
 // MARK: - Lua Callbacks
 
 private func tcpConnectCallback(_ asyncSocket: HSAsyncTcpSocket) {
     mainThreadDispatch {
-        if asyncSocket.readCallbackRef != LUA_NOREF || asyncSocket.connectCallbackRef != LUA_NOREF {
+        guard lua_isStateGenerationValid(asyncSocket.generation) else {
+            asyncSocket.teardown()
+            return
+        }
+        if asyncSocket.readCallback != nil || asyncSocket.connectCallback != nil {
             // Only fire if connectCallback is set
-            guard asyncSocket.connectCallbackRef != LUA_NOREF else { return }
+            guard asyncSocket.connectCallback != nil else { return }
             let L = lua_getCurrentState()!
-            lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(asyncSocket.connectCallbackRef))
-            lua_unrefRegistryRef(L, &asyncSocket.connectCallbackRef)
+            asyncSocket.connectCallback?.push(onto: L)
+            asyncSocket.connectCallback = nil  // single-use
             if lua_pcall(L, 0, 0, 0) != LUA_OK { lua_pop(L, 1) }
         }
     }
@@ -62,11 +51,15 @@ private func tcpConnectCallback(_ asyncSocket: HSAsyncTcpSocket) {
 
 private func tcpWriteCallback(_ asyncSocket: HSAsyncTcpSocket, tag: Int) {
     mainThreadDispatch {
-        if asyncSocket.writeCallbackRef != LUA_NOREF {
+        guard lua_isStateGenerationValid(asyncSocket.generation) else {
+            asyncSocket.teardown()
+            return
+        }
+        if asyncSocket.writeCallback != nil {
             let L = lua_getCurrentState()!
-            lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(asyncSocket.writeCallbackRef))
+            asyncSocket.writeCallback?.push(onto: L)
             lua_pushinteger(L, lua_Integer(tag))
-            lua_unrefRegistryRef(L, &asyncSocket.writeCallbackRef)
+            asyncSocket.writeCallback = nil  // single-use
             if lua_pcall(L, 1, 0, 0) != LUA_OK { lua_pop(L, 1) }
         }
     }
@@ -74,9 +67,13 @@ private func tcpWriteCallback(_ asyncSocket: HSAsyncTcpSocket, tag: Int) {
 
 private func tcpReadCallback(_ asyncSocket: HSAsyncTcpSocket, data: Data, tag: Int) {
     mainThreadDispatch {
-        if asyncSocket.readCallbackRef != LUA_NOREF {
+        guard lua_isStateGenerationValid(asyncSocket.generation) else {
+            asyncSocket.teardown()
+            return
+        }
+        if asyncSocket.readCallback != nil {
             let L = lua_getCurrentState()!
-            lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(asyncSocket.readCallbackRef))
+            asyncSocket.readCallback?.push(onto: L)
             lua_pushdata(L, data)
             lua_pushinteger(L, lua_Integer(tag))
             if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
@@ -87,11 +84,24 @@ private func tcpReadCallback(_ asyncSocket: HSAsyncTcpSocket, data: Data, tag: I
 // MARK: - TCP Socket Class (Network.framework)
 
 private class HSAsyncTcpSocket {
-    var readCallbackRef: Int32 = LUA_NOREF
-    var writeCallbackRef: Int32 = LUA_NOREF
-    var connectCallbackRef: Int32 = LUA_NOREF
+    var readCallback: LuaValue?
+    var writeCallback: LuaValue?
+    var connectCallback: LuaValue?
+    var generation: UInt64 = 0
     var socketTimeout: TimeInterval = -1
     var unixSocketPath: String?
+
+    private var tornDown = false
+
+    /// Idempotent teardown: disconnect, drop all Lua callback references.
+    func teardown() {
+        guard !tornDown else { return }
+        tornDown = true
+        disconnect()
+        readCallback = nil
+        writeCallback = nil
+        connectCallback = nil
+    }
 
     /// Role: default (not yet connected), server (listening), client (accepted by server).
     var role: SocketRole = .default
@@ -187,7 +197,7 @@ private class HSAsyncTcpSocket {
                 self.role = .default
                 self.cacheConnectionInfo(conn)
                 os_log(.debug,"TCP socket connected")
-                if self.connectCallbackRef != LUA_NOREF {
+                if self.connectCallback != nil {
                     tcpConnectCallback(self)
                 }
             case .failed(let err):
@@ -238,7 +248,7 @@ private class HSAsyncTcpSocket {
                 self.unixSocketPath = path
                 self.cacheConnectionInfo(conn)
                 os_log(.debug,"TCP Unix domain socket connected")
-                if self.connectCallbackRef != LUA_NOREF {
+                if self.connectCallback != nil {
                     tcpConnectCallback(self)
                 }
             case .failed(let err):
@@ -672,7 +682,7 @@ private class HSAsyncTcpSocket {
         guard let conn = connection else { return }
         sendData(data, on: conn, timeout: timeout) { [weak self] in
             guard let self = self else { return }
-            if self.writeCallbackRef != LUA_NOREF {
+            if self.writeCallback != nil {
                 tcpWriteCallback(self, tag: tag)
             }
         }
@@ -685,7 +695,7 @@ private class HSAsyncTcpSocket {
 
         var remaining = clients.count
         guard remaining > 0 else {
-            if self.writeCallbackRef != LUA_NOREF {
+            if self.writeCallback != nil {
                 tcpWriteCallback(self, tag: tag)
             }
             return
@@ -695,7 +705,7 @@ private class HSAsyncTcpSocket {
             sendData(data, on: client, timeout: timeout) { [weak self] in
                 guard let self = self else { return }
                 remaining -= 1
-                if remaining <= 0 && self.writeCallbackRef != LUA_NOREF {
+                if remaining <= 0 && self.writeCallback != nil {
                     tcpWriteCallback(self, tag: tag)
                 }
             }
@@ -864,7 +874,7 @@ private func socket_new(_ L: LuaState) throws -> CInt {
     let asyncSocket = HSAsyncTcpSocket()
 
     if lua_type(L, 1) == LUA_TFUNCTION {
-        lua_replaceRegistryFunctionRef(L, &asyncSocket.readCallbackRef, at: 1)
+        asyncSocket.readCallback = L.ref(index: 1)
     }
 
     lua_getglobal(L, "require")
@@ -877,12 +887,8 @@ private func socket_new(_ L: LuaState) throws -> CInt {
     lua_getfield(L, -1, "timeout")
     asyncSocket.socketTimeout = lua_tonumber(L, -1)
 
-    let userData = lua_newuserdata(L, MemoryLayout<AsyncSocketUserData>.size)!
-        .assumingMemoryBound(to: AsyncSocketUserData.self)
-    userData.pointee = AsyncSocketUserData()
-    userData.pointee.asyncSocket = Unmanaged.passRetained(asyncSocket).toOpaque()
-    luaL_getmetatable(L, USERDATA_TAG)
-    lua_setmetatable(L, -2)
+    asyncSocket.generation = lua_currentStateGeneration()
+    L.push(userdata: asyncSocket)
 
     return 1
 }
@@ -994,19 +1000,19 @@ private func socket_parseAddress(_ L: LuaState) throws -> CInt {
 ///  * Either a host/port pair OR a Unix domain socket path must be supplied. If no port is passed, the first parameter is assumed to be a path to the socket file.
 ///
 private func socket_connect(_ L: LuaState) throws -> CInt {
-    let asyncSocket = getUserData(L, 1)
+    let asyncSocket: HSAsyncTcpSocket = try L.checkArgument(1)
 
     if lua_type(L, 3) == LUA_TNUMBER {
         let theHost = lua_tovalue(L, at: 2) as! String
         let thePort = socketCheckPort(L, at: 3)
         if lua_type(L, 4) == LUA_TFUNCTION {
-            lua_replaceRegistryFunctionRef(L, &asyncSocket.connectCallbackRef, at: 4)
+            asyncSocket.connectCallback = L.ref(index: 4)
         }
 
         do {
             try asyncSocket.connect(toHost: theHost, onPort: thePort, withTimeout: asyncSocket.socketTimeout)
         } catch {
-            lua_unrefRegistryRef(L, &asyncSocket.connectCallbackRef)
+            asyncSocket.connectCallback = nil
             os_log(.error, "%{public}s", "Unable to connect to host/port: \(error.localizedDescription)")
             lua_pushnil(L)
             return 1
@@ -1014,14 +1020,14 @@ private func socket_connect(_ L: LuaState) throws -> CInt {
     } else {
         let thePath = (lua_tovalue(L, at: 2) as! NSString).expandingTildeInPath
         if lua_type(L, 3) == LUA_TFUNCTION {
-            lua_replaceRegistryFunctionRef(L, &asyncSocket.connectCallbackRef, at: 3)
+            asyncSocket.connectCallback = L.ref(index: 3)
         }
 
         if let connectURL = URL(string: thePath) {
             do {
                 try asyncSocket.connect(toURL: connectURL, withTimeout: asyncSocket.socketTimeout)
             } catch {
-                lua_unrefRegistryRef(L, &asyncSocket.connectCallbackRef)
+                asyncSocket.connectCallback = nil
                 os_log(.error, "%{public}s", "Unable to connect to Unix domain socket: \(error.localizedDescription)")
                 lua_pushnil(L)
                 return 1
@@ -1045,7 +1051,7 @@ private func socket_connect(_ L: LuaState) throws -> CInt {
 ///  * The [`hs.socket`](#new) object, or `nil` if an error occurred.
 ///
 private func socket_listen(_ L: LuaState) throws -> CInt {
-    let asyncSocket = getUserData(L, 1)
+    let asyncSocket: HSAsyncTcpSocket = try L.checkArgument(1)
 
     if lua_type(L, 2) == LUA_TNUMBER {
         let thePort = socketCheckPort(L, at: 2)
@@ -1088,8 +1094,7 @@ private func socket_listen(_ L: LuaState) throws -> CInt {
 ///  * If called on a listening socket with multiple connections, each client is disconnected.
 ///
 private func socket_disconnect(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
-    let asyncSocket = getUserData(L, 1)
+    let asyncSocket: HSAsyncTcpSocket = try L.checkArgument(1)
 
     asyncSocket.disconnect()
 
@@ -1113,10 +1118,10 @@ private func socket_disconnect(_ L: LuaState) throws -> CInt {
 ///  * If called on a listening socket with multiple connections, data is read from each of them.
 ///
 private func socket_read(_ L: LuaState) throws -> CInt {
-    let asyncSocket = getUserData(L, 1)
+    let asyncSocket: HSAsyncTcpSocket = try L.checkArgument(1)
     let tag: Int = lua_type(L, 3) == LUA_TNUMBER ? Int(lua_tointeger(L, 3)) : -1
 
-    if asyncSocket.readCallbackRef == LUA_NOREF {
+    if asyncSocket.readCallback == nil {
         os_log(.error, "%{public}s", "No callback defined!")
         lua_pushnil(L)
         return 1
@@ -1159,15 +1164,15 @@ private func socket_read(_ L: LuaState) throws -> CInt {
 ///  * If called on a listening socket with multiple connections, data is broadcast to all connected sockets.
 ///
 private func socket_write(_ L: LuaState) throws -> CInt {
-    let asyncSocket = getUserData(L, 1)
+    let asyncSocket: HSAsyncTcpSocket = try L.checkArgument(1)
     let message = lua_checkdata(L, at: 2)
     let tag: Int = lua_type(L, 3) == LUA_TNUMBER ? Int(lua_tointeger(L, 3)) : -1
 
     if lua_type(L, 3) == LUA_TFUNCTION {
-        lua_replaceRegistryFunctionRef(L, &asyncSocket.writeCallbackRef, at: 3)
+        asyncSocket.writeCallback = L.ref(index: 3)
     }
     if lua_type(L, 3) != LUA_TFUNCTION && lua_type(L, 4) == LUA_TFUNCTION {
-        lua_replaceRegistryFunctionRef(L, &asyncSocket.writeCallbackRef, at: 4)
+        asyncSocket.writeCallback = L.ref(index: 4)
     }
 
     if asyncSocket.role == .server {
@@ -1196,8 +1201,13 @@ private func socket_write(_ L: LuaState) throws -> CInt {
 ///  * A callback must be set in order to read data from the socket.
 ///
 private func socket_setCallback(_ L: LuaState) throws -> CInt {
-    let asyncSocket = getUserData(L, 1)
-    lua_replaceRegistryFunctionRef(L, &asyncSocket.readCallbackRef, at: 2)
+    let asyncSocket: HSAsyncTcpSocket = try L.checkArgument(1)
+
+    if lua_type(L, 2) == LUA_TFUNCTION {
+        asyncSocket.readCallback = L.ref(index: 2)
+    } else {
+        asyncSocket.readCallback = nil
+    }
 
     lua_pushvalue(L, 1)
     return 1
@@ -1217,10 +1227,9 @@ private func socket_setCallback(_ L: LuaState) throws -> CInt {
 ///  *  If the timeout value is negative, the operations will not use a timeout, which is the default.
 ///
 private func socket_setTimeout(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
+    let asyncSocket: HSAsyncTcpSocket = try L.checkArgument(1)
 
     luaL_checktype(L, 2, LUA_TNUMBER)
-    let asyncSocket = getUserData(L, 1)
     asyncSocket.socketTimeout = lua_tonumber(L, 2)
 
     lua_pushvalue(L, 1)
@@ -1243,7 +1252,7 @@ private func socket_setTimeout(_ L: LuaState) throws -> CInt {
 ///  * **IMPORTANT SECURITY NOTE**: The default settings will check to make sure the remote party's certificate is signed by a trusted 3rd party certificate agency (e.g. verisign) and that the certificate is not expired.  However it will not verify the name on the certificate unless you give it a name to verify against via `peerName`.  The security implications of this are important to understand.  Imagine you are attempting to create a secure connection to MySecureServer.com, but your socket gets directed to MaliciousServer.com because of a hacked DNS server.  If you simply use the default settings, and MaliciousServer.com has a valid certificate, the default settings will not detect any problems since the certificate is valid.  To properly secure your connection in this particular scenario you should set `peerName` to "MySecureServer.com".
 ///
 private func socket_startTLS(_ L: LuaState) throws -> CInt {
-    let asyncSocket = getUserData(L, 1)
+    let asyncSocket: HSAsyncTcpSocket = try L.checkArgument(1)
 
     var verify = true
     var peerName: String? = nil
@@ -1282,8 +1291,7 @@ private func get_socket_connections(_ asyncSocket: HSAsyncTcpSocket) -> Int {
 ///  * If the socket is bound for listening, this method returns `true` if there is at least one connection.
 ///
 private func socket_connected(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
-    let asyncSocket = getUserData(L, 1)
+    let asyncSocket: HSAsyncTcpSocket = try L.checkArgument(1)
 
     lua_pushboolean(L, get_socket_connections(asyncSocket) != 0 ? 1 : 0)
     return 1
@@ -1303,8 +1311,7 @@ private func socket_connected(_ L: LuaState) throws -> CInt {
 ///  * This method returns at most 1 for default (non-listening) sockets.
 ///
 private func socket_connections(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
-    let asyncSocket = getUserData(L, 1)
+    let asyncSocket: HSAsyncTcpSocket = try L.checkArgument(1)
 
     lua_pushinteger(L, lua_Integer(get_socket_connections(asyncSocket)))
     return 1
@@ -1340,8 +1347,7 @@ private func socket_connections(_ L: LuaState) throws -> CInt {
 ///    * userData - `string`
 ///
 private func socket_info(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
-    let asyncSocket = getUserData(L, 1)
+    let asyncSocket: HSAsyncTcpSocket = try L.checkArgument(1)
 
     let info: NSDictionary = [
         "connectedAddress": asyncSocket.connectedAddress ?? Data(),
@@ -1369,88 +1375,93 @@ private func socket_info(_ L: LuaState) throws -> CInt {
     return 1
 }
 
-// MARK: - Library Registration Functions
-
-private func userdata_tostring(_ L: LuaState) throws -> CInt {
-    let asyncSocket = getUserData(L, 1)
-
-    let isServer = asyncSocket.role == .server
-    let theHost = isServer ? asyncSocket.localHost : asyncSocket.connectedHost
-    let thePort = isServer ? asyncSocket.localPort : asyncSocket.connectedPort
-    let theAddress = asyncSocket.unixSocketPath ?? "\(theHost ?? ""):\(thePort)"
-    let udTag = isServer ? "\(USERDATA_TAG)(server)" : USERDATA_TAG
-
-    lua_pushstring(L, "\(udTag): \(theAddress) (\(lua_topointer(L, 1)!))")
-    return 1
-}
-
-private func userdata_gc(_ L: LuaState) throws -> CInt {
-    let userData = lua_touserdata(L, 1)!.assumingMemoryBound(to: AsyncSocketUserData.self)
-    let asyncSocket: HSAsyncTcpSocket = Unmanaged.fromOpaque(userData.pointee.asyncSocket!).takeRetainedValue()
-    userData.pointee.asyncSocket = nil
-
-    asyncSocket.disconnect()
-    lua_unrefRegistryRef(L, &asyncSocket.readCallbackRef)
-    lua_unrefRegistryRef(L, &asyncSocket.writeCallbackRef)
-    lua_unrefRegistryRef(L, &asyncSocket.connectCallbackRef)
-
-    return 0
-}
-
-private func meta_gc(_ L: LuaState) throws -> CInt {
-    return 0
-}
+// MARK: - Library Registration
 
 @_cdecl("luaopen_hs_libsocket")
 public func luaopen_hs_libsocket(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    runEntryPoint(L) { L in
-        // Create ref table in registry
-        lua_newtable(L)
-        refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+    // Register idiomatic Metatable<HSAsyncTcpSocket> with LuaSwift.
+    L.register(Metatable<HSAsyncTcpSocket>(
+        fields: [
+            "connect": .closure { L in
+                return try socket_connect(L)
+            },
+            "listen": .closure { L in
+                return try socket_listen(L)
+            },
+            "disconnect": .closure { L in
+                return try socket_disconnect(L)
+            },
+            "read": .closure { L in
+                return try socket_read(L)
+            },
+            "write": .closure { L in
+                return try socket_write(L)
+            },
+            "setCallback": .closure { L in
+                return try socket_setCallback(L)
+            },
+            "setTimeout": .closure { L in
+                return try socket_setTimeout(L)
+            },
+            "startTLS": .closure { L in
+                return try socket_startTLS(L)
+            },
+            "connected": .closure { L in
+                return try socket_connected(L)
+            },
+            "connections": .closure { L in
+                return try socket_connections(L)
+            },
+            "info": .closure { L in
+                return try socket_info(L)
+            },
+        ],
+        tostring: .closure { L in
+            let asyncSocket: HSAsyncTcpSocket = try L.checkArgument(1)
 
-        // Register userdata metatable
-        luaL_newmetatable(L, USERDATA_TAG)
-        lua_pushvalue(L, -1)
-        lua_setfield(L, -2, "__index")
-        L.push(socket_connect)
-        lua_setfield(L, -2, "connect")
-        L.push(socket_listen)
-        lua_setfield(L, -2, "listen")
-        L.push(socket_disconnect)
-        lua_setfield(L, -2, "disconnect")
-        L.push(socket_read)
-        lua_setfield(L, -2, "read")
-        L.push(socket_write)
-        lua_setfield(L, -2, "write")
-        L.push(socket_setCallback)
-        lua_setfield(L, -2, "setCallback")
-        L.push(socket_setTimeout)
-        lua_setfield(L, -2, "setTimeout")
-        L.push(socket_startTLS)
-        lua_setfield(L, -2, "startTLS")
-        L.push(socket_connected)
-        lua_setfield(L, -2, "connected")
-        L.push(socket_connections)
-        lua_setfield(L, -2, "connections")
-        L.push(socket_info)
-        lua_setfield(L, -2, "info")
-        L.push(userdata_tostring)
-        lua_setfield(L, -2, "__tostring")
-        L.push(userdata_gc)
-        lua_setfield(L, -2, "__gc")
-        lua_pop(L, 1)
+            let isServer = asyncSocket.role == .server
+            let theHost = isServer ? asyncSocket.localHost : asyncSocket.connectedHost
+            let thePort = isServer ? asyncSocket.localPort : asyncSocket.connectedPort
+            let theAddress = asyncSocket.unixSocketPath ?? "\(theHost ?? ""):\(thePort)"
+            let udTag = isServer ? "\(USERDATA_TAG)(server)" : USERDATA_TAG
 
-        // Create module table
-        lua_createtable(L, 0, 2)
-        L.push(socket_new)
-        lua_setfield(L, -2, "new")
-        L.push(socket_parseAddress)
-        lua_setfield(L, -2, "parseAddress")
+            lua_pushstring(L, "\(udTag): \(theAddress) (\(lua_topointer(L, 1)!))")
+            return 1
+        }
+    ))
 
-        // Set module metatable (for __gc)
-        lua_createtable(L, 0, 1)
-        L.push(meta_gc)
-        lua_setfield(L, -2, "__gc")
-        lua_setmetatable(L, -2)
-    }
+    // -- Post-registration metatable patching --
+    // Replace __gc with our explicit teardown + deinitialize
+    L.pushMetatable(for: HSAsyncTcpSocket.self)
+
+    lua_pushcclosure(L, { (L: LuaState!) -> CInt in
+        if let asyncSocket: HSAsyncTcpSocket = L.touserdata(1) {
+            asyncSocket.teardown()
+        }
+        // Deinitialize the Any box (same as LuaSwift's gcUserdata)
+        let rawptr = lua_touserdata(L, 1)!
+        let anyPtr = rawptr.assumingMemoryBound(to: Any.self)
+        anyPtr.deinitialize(count: 1)
+        return 0
+    }, 0)
+    lua_setfield(L, -2, "__gc")
+
+    // Set __type and __name for lsunit.lua assertIsUserdataOfType and tostring
+    lua_pushstring(L, USERDATA_TAG)
+    lua_setfield(L, -2, "__type")
+    lua_pushstring(L, USERDATA_TAG)
+    lua_setfield(L, -2, "__name")
+
+    // Alias the metatable under the legacy registry name "hs.socket" so that
+    // core_getObjectMetatable("hs.socket") still resolves.
+    lua_setfield(L, LUA_REGISTRYINDEX_VALUE, USERDATA_TAG)
+
+    // Create module table
+    lua_createtable(L, 0, 2)
+    L.push(socket_new)
+    lua_setfield(L, -2, "new")
+    L.push(socket_parseAddress)
+    lua_setfield(L, -2, "parseAddress")
+
+    return 1
 }

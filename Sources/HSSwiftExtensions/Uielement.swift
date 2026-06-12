@@ -5,7 +5,6 @@ import Carbon
 import os.log
 
 private let USERDATA_TAG = "hs.uielement"
-private var refTable: Int32 = LUA_NOREF
 
 private func getObject(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> (NSObject & HSuielementProtocol)? {
     return toHSuielementFromLua(L, idx) as? NSObject & HSuielementProtocol
@@ -146,10 +145,6 @@ private func uielement_gc(_ L: LuaState) throws -> CInt {
 @_cdecl("luaopen_hs_libuielement")
 public func luaopen_hs_libuielement(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     runEntryPoint(L) { L in
-        // Create ref table in registry
-        lua_newtable(L)
-        refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
-
         // Register userdata metatable
         luaL_newmetatable(L, USERDATA_TAG)
         lua_pushvalue(L, -1)
@@ -166,7 +161,16 @@ public func luaopen_hs_libuielement(_ L: UnsafeMutablePointer<lua_State>!) -> In
         lua_setfield(L, -2, "__eq")
         L.push(uielement_gc)
         lua_setfield(L, -2, "__gc")
-        lua_pop(L, 1)
+
+        // Set __type and __name for type identification
+        lua_pushstring(L, USERDATA_TAG)
+        lua_setfield(L, -2, "__type")
+        lua_pushstring(L, USERDATA_TAG)
+        lua_setfield(L, -2, "__name")
+
+        // Alias the metatable under the registry name so that
+        // core_getObjectMetatable("hs.uielement") still resolves.
+        lua_setfield(L, LUA_REGISTRYINDEX_VALUE, USERDATA_TAG)
 
         // Create module table
         lua_createtable(L, 0, 1)

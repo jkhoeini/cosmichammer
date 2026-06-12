@@ -54,7 +54,9 @@ extension CosmicHammerTests {
 
         @Test func testToolbarWindowContextPreservesChooserUserdata() throws {
             try withBootstrappedLua(requiring: ["hs.chooser", "hs.webview.toolbar"]) { L in
-                let chooser = HSChooser(refTable: LUA_NOREF, completionCallbackRef: LUA_NOREF)
+                lua_pushboolean(L, 0)
+                let dummyRef = L.ref(index: -1)
+                let chooser = HSChooser(completionCallback: dummyRef)
                 let window = try #require(chooser.window)
 
                 #expect(toolbar_pushWindowContext(L, window) == 1)

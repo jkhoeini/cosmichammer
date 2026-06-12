@@ -5,7 +5,6 @@ import Carbon
 import CoreServices
 import os.log
 
-private var refTable: Int32 = 0
 private var defaultContentTypes: [String]?
 
 // MARK: - ObjC bridge protocol
@@ -30,7 +29,7 @@ private var defaultContentTypes: [String]?
 
 private class HSURLEventHandler: NSObject, HSOpenFileDelegate {
     var appleEventManager: NSAppleEventManager?
-    var fnCallback: Int32 = LUA_NOREF
+    var fnCallback: LuaValue?
     var restoreHandlers: NSMutableDictionary = NSMutableDictionary()
     weak var appDelegate: (any HSAppDelegateURLAccess)?
 
@@ -55,10 +54,7 @@ private class HSURLEventHandler: NSObject, HSOpenFileDelegate {
 
         appDelegate?.openFileDelegate = nil
 
-        luaL_unref(L, LUA_REGISTRYINDEX_VALUE, fnCallback)
-
-
-        fnCallback = LUA_NOREF
+        fnCallback = nil
 
         for key in restoreHandlers.allKeys {
             guard let scheme = key as? NSString,
@@ -116,7 +112,7 @@ private class HSURLEventHandler: NSObject, HSOpenFileDelegate {
     func callback(withURL openUrl: String, senderPID pid: pid_t) {
         let L = lua_getCurrentState()!
 
-        if fnCallback == LUA_NOREF || fnCallback == LUA_REFNIL {
+        guard let cb = fnCallback else {
             os_log(.info, "%{public}s", "hs.urlevent callbackWithURL received a URL with no callback set: \(openUrl)")
             return
         }
@@ -145,7 +141,7 @@ private class HSURLEventHandler: NSObject, HSOpenFileDelegate {
             pairs[key] = value
         }
 
-        lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(fnCallback))
+        cb.push(onto: L)
         lua_pushany(L, url.scheme?.lowercased() as NSString?)
         lua_pushany(L, url.host?.lowercased() as NSString?)
         lua_pushany(L, pairs)
@@ -163,8 +159,7 @@ private var eventHandler: HSURLEventHandler?
 private func urleventSetCallback(_ L: LuaState) throws -> CInt {
 
     luaL_checktype(L, 1, LUA_TFUNCTION)
-    lua_pushvalue(L, 1)
-    eventHandler?.fnCallback = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+    eventHandler?.fnCallback = L.ref(index: 1)
 
     return 0
 }
@@ -343,10 +338,6 @@ private func urlevent_gc(_ L: LuaState) throws -> CInt {
 public func luaopen_hs_liburlevent(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     runEntryPoint(L) { L in
         urlevent_setup()
-
-        // Create ref table in registry
-        lua_newtable(L)
-        refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
 
         // Create module table
         lua_createtable(L, 0, 6)

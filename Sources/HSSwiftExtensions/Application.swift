@@ -6,7 +6,6 @@ import Carbon.HIToolbox
 import os.log
 
 private let USERDATA_TAG = "hs.application"
-private var refTable: Int32 = LUA_NOREF
 
 // Carbon enum constants not bridged to Swift
 private let kAXMenuItemModifierNone: Int      = 0
@@ -15,7 +14,13 @@ private let kAXMenuItemModifierOption: Int    = 1 << 1
 private let kAXMenuItemModifierControl: Int   = 1 << 2
 private let kAXMenuItemModifierNoCommand: Int = 1 << 3
 
-private var backgroundCallbacks = NSMutableSet()
+private var backgroundCallbacks = [Int32: LuaValue]()
+/// Monotonic key generator for backgroundCallbacks dictionary.
+private var backgroundCallbackNextKey: Int32 = 0
+private func nextBackgroundKey() -> Int32 {
+    backgroundCallbackNextKey += 1
+    return backgroundCallbackNextKey
+}
 
 // MARK: - Helper
 
@@ -37,12 +42,7 @@ private func appClassMethod(_ sel: String, with arg1: Any? = nil) -> Any? {
 // MARK: - Module functions
 
 private func application_gc(_ L: LuaState) throws -> CInt {
-    backgroundCallbacks.enumerateObjects { obj, _ in
-        if let ref = obj as? NSNumber {
-            luaL_unref(L, LUA_REGISTRYINDEX_VALUE, ref.int32Value)
-        }
-    }
-    backgroundCallbacks.removeAllObjects()
+    backgroundCallbacks.removeAll()
     return 0
 }
 
@@ -1018,14 +1018,14 @@ private func application_getMenus(_ L: LuaState) throws -> CInt {
 
         lua_pushany(L, menus)
     } else {
-        lua_pushvalue(L, 2)
-        let fnRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
-        backgroundCallbacks.add(NSNumber(value: fnRef))
+        let fnRef = L.ref(index: 2)
+        let fnKey = nextBackgroundKey()
+        backgroundCallbacks[fnKey] = fnRef
 
         let elementRef = app.elementRef
 
         DispatchQueue.main.async {
-            if backgroundCallbacks.contains(NSNumber(value: fnRef)) {
+            if backgroundCallbacks[fnKey] != nil {
                 var menus: NSMutableDictionary? = nil
                 var menuBarRef: CFTypeRef?
 
@@ -1034,11 +1034,11 @@ private func application_getMenus(_ L: LuaState) throws -> CInt {
                     menus = _getMenuStructure(menuBar) as? NSMutableDictionary
                 }
 
-                lua_rawgeti(lua_getCurrentState()!, LUA_REGISTRYINDEX_VALUE, lua_Integer(fnRef))
+                let L = lua_getCurrentState()!
+                backgroundCallbacks[fnKey]!.push(onto: L)
                 lua_pushany(L, menus)
                 if lua_pcall(L, 1, 0, 0) != LUA_OK { lua_pop(L, 1) }
-                luaL_unref(lua_getCurrentState()!, LUA_REGISTRYINDEX_VALUE, fnRef)
-                backgroundCallbacks.remove(NSNumber(value: fnRef))
+                backgroundCallbacks.removeValue(forKey: fnKey)
             }
         }
         lua_pushvalue(L, 1)
@@ -1244,11 +1244,8 @@ private func userdata_gc(_ L: LuaState) throws -> CInt {
 @_cdecl("luaopen_hs_libapplication")
 public func luaopen_hs_libapplication_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     runEntryPoint(L) { L in
-        backgroundCallbacks = NSMutableSet()
-
-        // Create ref table in registry
-        lua_newtable(L)
-        refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+        backgroundCallbacks = [Int32: LuaValue]()
+        backgroundCallbackNextKey = 0
 
         // Register userdata metatable
         luaL_newmetatable(L, USERDATA_TAG)
@@ -1285,6 +1282,12 @@ public func luaopen_hs_libapplication_new(_ L: UnsafeMutablePointer<lua_State>!)
         L.push(userdata_tostring); lua_setfield(L, -2, "__tostring")
         L.push(userdata_eq); lua_setfield(L, -2, "__eq")
         L.push(userdata_gc); lua_setfield(L, -2, "__gc")
+
+        // Set __type and __name for lsunit.lua assertIsUserdataOfType and tostring
+        lua_pushstring(L, USERDATA_TAG)
+        lua_setfield(L, -2, "__type")
+        lua_pushstring(L, USERDATA_TAG)
+        lua_setfield(L, -2, "__name")
         lua_pop(L, 1)
 
         // Create module table

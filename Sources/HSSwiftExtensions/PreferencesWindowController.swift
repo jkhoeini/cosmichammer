@@ -43,14 +43,14 @@ class MJPreferencesWindowController: NSWindowController {
 
     // MARK: Singleton
 
-    @objc class func singleton() -> MJPreferencesWindowController {
+    class func singleton() -> MJPreferencesWindowController {
         struct S { static let instance = MJPreferencesWindowController() }
         return S.instance
     }
 
     // MARK: Init
 
-    @objc override init(window: NSWindow?) {
+    override init(window: NSWindow?) {
         super.init(window: window)
         loadWindow()
     }
@@ -61,13 +61,13 @@ class MJPreferencesWindowController: NSWindowController {
 
     // MARK: - Setup
 
-    @objc func setup() {
+    func setup() {
         reflectDefaults()
     }
 
     // MARK: - reflectDefaults
 
-    @objc func reflectDefaults() {
+    func reflectDefaults() {
         if PreferencesDarkModeEnabled() {
             window?.appearance = NSAppearance(named: .vibrantDark)
             window?.titlebarAppearsTransparent = true
@@ -79,7 +79,7 @@ class MJPreferencesWindowController: NSWindowController {
 
     // MARK: - showWindow
 
-    @objc override func showWindow(_ sender: Any?) {
+    override func showWindow(_ sender: Any?) {
         if window?.isVisible == false {
             window?.center()
         }
@@ -277,7 +277,7 @@ class MJPreferencesWindowController: NSWindowController {
 
     // MARK: - Accessibility helpers
 
-    @objc func cacheIsAccessibilityEnabled() {
+    func cacheIsAccessibilityEnabled() {
         isAccessibilityEnabled = MJAccessibilityIsEnabled()
     }
 

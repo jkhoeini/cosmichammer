@@ -5,12 +5,12 @@ import Lua
 // MARK: - Constants
 
 private let USERDATA_TAG = "hs.host.locale"
-private var callbackRef: Int32 = LUA_NOREF
+private var callbackRef: LuaValue?
 
 // MARK: - Support Functions and Classes
 
 extension NSLocale {
-    @objc var timeIs24HourFormat: Bool {
+    var timeIs24HourFormat: Bool {
         let formatter = DateFormatter()
         formatter.locale = self as Locale
         formatter.dateStyle = .none
@@ -22,12 +22,12 @@ extension NSLocale {
     }
 }
 
-@objc private class HSLocaleChangeObserver: NSObject {
+private class HSLocaleChangeObserver: NSObject {
     @objc func localeChanged(_ notification: Notification) {
         DispatchQueue.main.async {
-            if callbackRef != LUA_NOREF {
+            if let cb = callbackRef {
                 let L = lua_getCurrentState()!
-                lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(callbackRef))
+                cb.push(onto: L)
                 if lua_pcall(L, 0, 0, 0) != LUA_OK {
                     lua_pop(L, 1)
                 }
@@ -301,18 +301,14 @@ private func locale_localizedString(_ L: LuaState) throws -> CInt {
 
 private func locale_registerCallback(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TFUNCTION)
-    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, callbackRef) // should be unnecessary, but just in case
-    callbackRef = LUA_NOREF
-    lua_pushvalue(L, 1)
-    callbackRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+    callbackRef = L.ref(index: 1)
     return 0
 }
 
 // MARK: - Cosmic Hammer/Lua Infrastructure
 
 private func meta_gc(_ L: LuaState) throws -> CInt {
-    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, callbackRef)
-    callbackRef = LUA_NOREF
+    callbackRef = nil
     observerOfChanges?.stop()
     observerOfChanges = nil
     return 0

@@ -1,5 +1,6 @@
 import Cocoa
 import CLua
+import Lua
 import os.log
 
 // MARK: - HSChooserTableView delegate protocol
@@ -11,32 +12,32 @@ import os.log
 
 // MARK: - HSChooserWindow
 
-@objc class HSChooserWindow: NSPanel {
+class HSChooserWindow: NSPanel {
     override var canBecomeMain: Bool { true }
     override var canBecomeKey: Bool { true }
 }
 
 // MARK: - HSChooserRootView
 
-@objc class HSChooserRootView: NSView {
+class HSChooserRootView: NSView {
     override var allowsVibrancy: Bool { true }
 }
 
 // MARK: - HSChooserCell
 
-@objc class HSChooserCell: NSTableCellView {
-    @objc var text: NSTextField!
-    @objc var subText: NSTextField!
-    @objc var shortcutText: NSTextField!
+class HSChooserCell: NSTableCellView {
+    var text: NSTextField!
+    var subText: NSTextField!
+    var shortcutText: NSTextField!
     // Note: 'image' property shadows NSTableCellView.imageView; we use a separate NSImageView reference.
-    @objc var iconView: NSImageView!
+    var iconView: NSImageView!
 
     override var allowsVibrancy: Bool { false }
 }
 
 // MARK: - HSChooserVerticallyCenteringTextFieldCell
 
-@objc class HSChooserVerticallyCenteringTextFieldCell: NSTextFieldCell {
+class HSChooserVerticallyCenteringTextFieldCell: NSTextFieldCell {
     override func drawInterior(withFrame cellFrame: NSRect, in controlView: NSView) {
         var attrString = attributedStringValue
 
@@ -69,8 +70,8 @@ import os.log
 
 // MARK: - HSChooserTableView
 
-@objc class HSChooserTableView: NSTableView {
-    @objc weak var extendedDelegate: HSChooserTableViewDelegate?
+class HSChooserTableView: NSTableView {
+    weak var extendedDelegate: HSChooserTableViewDelegate?
     var mouseTrackingArea: NSTrackingArea?
 
     override init(frame frameRect: NSRect) {
@@ -135,23 +136,23 @@ import os.log
 @objc class HSChooser: NSWindowController, NSWindowDelegate, NSTextFieldDelegate,
                        NSTableViewDataSource, NSTableViewDelegate, HSChooserTableViewDelegate {
 
-    @objc var queryField: NSTextField!
-    @objc var choicesTableView: HSChooserTableView!
-    @objc var effectView: NSVisualEffectView!
+    var queryField: NSTextField!
+    var choicesTableView: HSChooserTableView!
+    var effectView: NSVisualEffectView!
 
-    @objc var eventMonitors: NSMutableArray = NSMutableArray()
-    @objc var hasChosen: Bool = false
-    @objc var reloadWhenVisible: Bool = false
+    var eventMonitors: NSMutableArray = NSMutableArray()
+    var hasChosen: Bool = false
+    var reloadWhenVisible: Bool = false
 
     // Customisable options
-    @objc var numRows: Int = 10
-    @objc var width: CGFloat = 40
-    @objc var fontName: String?
-    @objc var fontSize: CGFloat = 0
-    @objc var searchSubText: Bool = false
-    @objc var enableDefaultForQuery: Bool = false
+    var numRows: Int = 10
+    var width: CGFloat = 40
+    var fontName: String?
+    var fontSize: CGFloat = 0
+    var searchSubText: Bool = false
+    var enableDefaultForQuery: Bool = false
 
-    @objc var fgColor: NSColor? {
+    var fgColor: NSColor? {
         didSet {
             queryField?.textColor = fgColor
             let numTableRows = choicesTableView?.numberOfRows ?? 0
@@ -164,7 +165,7 @@ import os.log
         }
     }
 
-    @objc var subTextColor: NSColor? {
+    var subTextColor: NSColor? {
         didSet {
             let numTableRows = choicesTableView?.numberOfRows ?? 0
             for x in 0..<numTableRows {
@@ -175,7 +176,7 @@ import os.log
         }
     }
 
-    @objc var font: NSFont!
+    var font: NSFont!
 
     // Size information we calculate for ourselves
     var winRect: NSRect = .zero
@@ -184,27 +185,45 @@ import os.log
     var dividerRect: NSRect = .zero
 
     // Storage for different types of choice
-    @objc var currentStaticChoices: NSArray?
-    @objc var currentCallbackChoices: NSArray?
-    @objc var filteredChoices: NSArray?
+    var currentStaticChoices: NSArray?
+    var currentCallbackChoices: NSArray?
+    var filteredChoices: NSArray?
 
-    // Lua callback references
-    @objc var hideCallbackRef: Int32 = LUA_NOREF
-    @objc var showCallbackRef: Int32 = LUA_NOREF
-    @objc var choicesCallbackRef: Int32 = LUA_NOREF
-    @objc var queryChangedCallbackRef: Int32 = LUA_NOREF
-    @objc var completionCallbackRef: Int32 = LUA_NOREF
-    @objc var rightClickCallbackRef: Int32 = LUA_NOREF
-    @objc var invalidCallbackRef: Int32 = LUA_NOREF
-
-    // A pointer to the hs.chooser module's references table
-    @objc var refTable: Int32 = LUA_NOREF
+    // Lua callback references (LuaValue wraps a registry ref)
+    var hideCallback: LuaValue?
+    var showCallback: LuaValue?
+    var choicesCallback: LuaValue?
+    var queryChangedCallback: LuaValue?
+    var completionCallback: LuaValue?
+    var rightClickCallback: LuaValue?
+    var invalidCallback: LuaValue?
 
     // Our self-ref count
-    @objc var selfRefCount: Int32 = 0
+    var selfRefCount: Int32 = 0
+
+    private var tornDown = false
+
+    func teardown() {
+        guard !tornDown else { return }
+        tornDown = true
+        hideCallback = nil
+        showCallback = nil
+        choicesCallback = nil
+        queryChangedCallback = nil
+        completionCallback = nil
+        rightClickCallback = nil
+        invalidCallback = nil
+        isObservingThemeChanges = false
+        if let theWindow = window {
+            if theWindow.toolbar != nil {
+                theWindow.toolbar?.isVisible = false
+                theWindow.toolbar = nil
+            }
+        }
+    }
 
     // Keep track of whether we are observing macOS interface theme (light/dark)
-    @objc var isObservingThemeChanges: Bool = false {
+    var isObservingThemeChanges: Bool = false {
         didSet {
             guard oldValue != isObservingThemeChanges else { return }
             if isObservingThemeChanges {
@@ -224,11 +243,10 @@ import os.log
 
     // MARK: - Initialiser
 
-    @objc init(refTable: Int32, completionCallbackRef: Int32) {
+    init(completionCallback: LuaValue) {
         let panel = HSChooser.createChooserWindow()
         super.init(window: panel)
 
-        self.refTable = refTable
         self.selfRefCount = 0
 
         self.eventMonitors = NSMutableArray()
@@ -249,13 +267,7 @@ import os.log
         self.filteredChoices = nil
         self.enableDefaultForQuery = false
 
-        self.hideCallbackRef = LUA_NOREF
-        self.showCallbackRef = LUA_NOREF
-        self.choicesCallbackRef = LUA_NOREF
-        self.queryChangedCallbackRef = LUA_NOREF
-        self.rightClickCallbackRef = LUA_NOREF
-        self.invalidCallbackRef = LUA_NOREF
-        self.completionCallbackRef = completionCallbackRef
+        self.completionCallback = completionCallback
 
         self.hasChosen = false
         self.reloadWhenVisible = false
@@ -471,7 +483,7 @@ import os.log
         }
     }
 
-    @objc func calculateRects() {
+    func calculateRects() {
         var winR = NSRect(x: 0, y: 0, width: 100, height: 100)
         let contentViewRect = winR.insetBy(dx: 10, dy: 10)
 
@@ -492,7 +504,7 @@ import os.log
         self.dividerRect = dividerR
     }
 
-    @objc func setupWindow() -> Bool {
+    func setupWindow() -> Bool {
         guard window != nil else {
             os_log(.error, "ERROR: Unable to create hs.chooser window")
             return false
@@ -530,7 +542,7 @@ import os.log
         return false
     }
 
-    @objc func resizeWindow() {
+    func resizeWindow() {
         guard let screen = NSScreen.main else { return }
         let screenFrame = screen.visibleFrame
 
@@ -565,15 +577,15 @@ import os.log
                                              height: choicesTableView.frame.height))
     }
 
-    @objc func showAtPoint(_ topLeft: NSPoint) {
+    func showAtPoint(_ topLeft: NSPoint) {
         showWithHints(false, atPoint: topLeft)
     }
 
-    @objc func show() {
+    func show() {
         showWithHints(true, atPoint: .zero)
     }
 
-    @objc func showWithHints(_ center: Bool, atPoint topLeft: NSPoint) {
+    func showWithHints(_ center: Bool, atPoint topLeft: NSPoint) {
         hasChosen = false
 
         // Call hs.chooser.globalCallback("willShow")
@@ -615,13 +627,13 @@ import os.log
 
         controlTextDidChange(Notification(name: Notification.Name("Unused"), object: nil))
 
-        if showCallbackRef != LUA_NOREF && showCallbackRef != LUA_REFNIL {
-            lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(showCallbackRef))
+        if let cb = showCallback {
+            cb.push(onto: L)
             if lua_pcall(L, 0, 0, 0) != LUA_OK { lua_pop(L, 1) }
         }
     }
 
-    @objc func hide() {
+    func hide() {
         window?.orderOut(nil)
 
         // Call hs.chooser.globalCallback("didClose")
@@ -647,13 +659,13 @@ import os.log
         }
 
         // Call hs.chooser:hideCallback()
-        if hideCallbackRef != LUA_NOREF && hideCallbackRef != LUA_REFNIL {
-            lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(hideCallbackRef))
+        if let cb = hideCallback {
+            cb.push(onto: L)
             if lua_pcall(L, 0, 0, 0) != LUA_OK { lua_pop(L, 1) }
         }
     }
 
-    @objc var isVisible: Bool {
+    var isVisible: Bool {
         return window?.isVisible ?? false
     }
 
@@ -922,32 +934,32 @@ import os.log
             let choice = choices![row] as! NSDictionary
 
             if let valid = choice["valid"], !(valid as AnyObject).boolValue,
-               invalidCallbackRef != LUA_NOREF && invalidCallbackRef != LUA_REFNIL {
-                lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(invalidCallbackRef))
+               let cb = invalidCallback {
+                cb.push(onto: L)
                 pushChooserChoice(L, choice)
                 if lua_pcall(L, 1, 0, 0) != LUA_OK { lua_pop(L, 1) }
-            } else if completionCallbackRef != LUA_NOREF && completionCallbackRef != LUA_REFNIL {
+            } else if let cb = completionCallback {
                 hide()
-                lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(completionCallbackRef))
+                cb.push(onto: L)
                 pushChooserChoice(L, choice)
                 if lua_pcall(L, 1, 0, 0) != LUA_OK { lua_pop(L, 1) }
             }
-        } else if enableDefaultForQuery && completionCallbackRef != LUA_NOREF && completionCallbackRef != LUA_REFNIL {
+        } else if enableDefaultForQuery, let cb = completionCallback {
             // No row remaining in choices, return just query
             hasChosen = true
             let L = lua_getCurrentState()!
             let choice: NSDictionary = ["text": queryField.stringValue]
             hide()
-            lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(completionCallbackRef))
+            cb.push(onto: L)
             pushChooserChoice(L, choice)
             if lua_pcall(L, 1, 0, 0) != LUA_OK { lua_pop(L, 1) }
         }
     }
 
     @objc func didRightClick(atRow row: Int) {
-        if rightClickCallbackRef != LUA_NOREF && rightClickCallbackRef != LUA_REFNIL {
+        if let cb = rightClickCallback {
             let L = lua_getCurrentState()!
-            lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(rightClickCallbackRef))
+            cb.push(onto: L)
             lua_pushinteger(L, lua_Integer(row + 1))
             if lua_pcall(L, 1, 0, 0) != LUA_OK { lua_pop(L, 1) }
         }
@@ -959,27 +971,27 @@ import os.log
         hide()
         let L = lua_getCurrentState()!
 
-        if completionCallbackRef == LUA_NOREF || completionCallbackRef == LUA_REFNIL {
+        guard let cb = completionCallback else {
             os_log(.info, "%{public}s", "Unable to call hs.chooser:completionCallback, reference is no longer valid")
             return
         }
 
-        lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(completionCallbackRef))
+        cb.push(onto: L)
         lua_pushnil(L)
         if lua_pcall(L, 1, 0, 0) != LUA_OK { lua_pop(L, 1) }
     }
 
-    @IBAction @objc func queryDidPressEnter(_ sender: Any?) {
+    @IBAction func queryDidPressEnter(_ sender: Any?) {
         tableView(choicesTableView, didClickedRow: choicesTableView.selectedRow)
     }
 
     @objc func controlTextDidChange(_ aNotification: Notification) {
         let queryString = queryField.stringValue
 
-        if queryChangedCallbackRef != LUA_NOREF && queryChangedCallbackRef != LUA_REFNIL {
+        if let cb = queryChangedCallback {
             // We have a query callback set
             let L = lua_getCurrentState()!
-            lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(queryChangedCallbackRef))
+            cb.push(onto: L)
             lua_pushany(L, queryString as NSString)
             if lua_pcall(L, 1, 0, 0) != LUA_OK { lua_pop(L, 1) }
         } else {
@@ -1015,7 +1027,7 @@ import os.log
         }
     }
 
-    @objc func selectChoice(_ row: Int) {
+    func selectChoice(_ row: Int) {
         let numRows = getChoices()?.count ?? 0
         if row < 0 || row > numRows - 1 {
             os_log(.error, "%{public}s","ERROR: unable to select row \(row) of \(numRows)")
@@ -1025,7 +1037,7 @@ import os.log
         choicesTableView.scrollRowToVisible(row)
     }
 
-    @objc func selectNextChoice() {
+    func selectNextChoice() {
         var currentRow = choicesTableView.selectedRow
         let count = getChoices()?.count ?? 0
         if currentRow == count - 1 {
@@ -1034,7 +1046,7 @@ import os.log
         selectChoice(currentRow + 1)
     }
 
-    @objc func selectPreviousChoice() {
+    func selectPreviousChoice() {
         var currentRow = choicesTableView.selectedRow
         let count = getChoices()?.count ?? 0
         if currentRow == 0 {
@@ -1043,7 +1055,7 @@ import os.log
         selectChoice(currentRow - 1)
     }
 
-    @objc func selectNextPage() {
+    func selectNextPage() {
         let currentRow = choicesTableView.selectedRow
         let count = getChoices()?.count ?? 0
         if currentRow == count - 1 {
@@ -1055,7 +1067,7 @@ import os.log
         }
     }
 
-    @objc func selectPreviousPage() {
+    func selectPreviousPage() {
         let currentRow = choicesTableView.selectedRow
         let count = getChoices()?.count ?? 0
         if currentRow == 0 {
@@ -1069,7 +1081,7 @@ import os.log
 
     // MARK: - Choice management methods
 
-    @objc func updateChoices() {
+    func updateChoices() {
         if window?.isVisible == true {
             choicesTableView.reloadData()
         } else {
@@ -1077,30 +1089,30 @@ import os.log
         }
     }
 
-    @objc func clearChoices() {
+    func clearChoices() {
         currentStaticChoices = nil
         currentCallbackChoices = nil
         filteredChoices = nil
     }
 
-    @objc func clearChoicesAndUpdate() {
+    func clearChoicesAndUpdate() {
         clearChoices()
         updateChoices()
     }
 
-    @objc func getChoices() -> NSArray? {
+    func getChoices() -> NSArray? {
         return getChoicesWithOptions(true)
     }
 
-    @objc func getChoicesWithOptions(_ includeFiltered: Bool) -> NSArray? {
+    func getChoicesWithOptions(_ includeFiltered: Bool) -> NSArray? {
         if includeFiltered, let filtered = filteredChoices {
             return filtered
-        } else if choicesCallbackRef == LUA_NOREF {
+        } else if choicesCallback == nil {
             return currentStaticChoices
-        } else if choicesCallbackRef != LUA_NOREF {
+        } else if let cb = choicesCallback {
             if currentCallbackChoices == nil {
                 let L = lua_getCurrentState()!
-                lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(choicesCallbackRef))
+                cb.push(onto: L)
                 if lua_pcall(L, 0, 1, 0) == LUA_OK {
                     currentCallbackChoices = lua_toChooserChoices(L, at: -1)
 
@@ -1133,14 +1145,14 @@ import os.log
 
     // MARK: - UI customisation methods
 
-    @objc func applyDarkSetting(_ beDark: Bool) {
+    func applyDarkSetting(_ beDark: Bool) {
         let appearance = beDark
             ? NSAppearance(named: .vibrantDark)
             : NSAppearance(named: .vibrantLight)
         window?.appearance = appearance
     }
 
-    @objc func setAutoBgLightDark() {
+    func setAutoBgLightDark() {
         let interfaceStyle = UserDefaults.standard.string(forKey: "AppleInterfaceStyle")
         let isDark = interfaceStyle?.lowercased() == "dark"
         applyDarkSetting(isDark)
@@ -1158,7 +1170,7 @@ import os.log
         }
     }
 
-    @objc func isBgLightDark() -> Bool {
+    func isBgLightDark() -> Bool {
         return window?.appearance?.name == .vibrantDark
     }
 

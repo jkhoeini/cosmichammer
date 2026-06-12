@@ -15,10 +15,15 @@ private let USERDATA_DATASOURCE_TAG = "hs.audiodevice.datasource"
 // Define a datatype for hs.audiodevice objects
 struct AudioDeviceUserData {
     var deviceId: AudioDeviceID
-    var callback: Int32
     var watcherRunning: Bool
     var lsCanary: UInt64
 }
+
+/// Side-table mapping each userdata pointer to its per-device watcher callback.
+/// We cannot store a LuaValue (ARC-managed) inside the raw C struct allocated by
+/// lua_newuserdata, so we keep callbacks in a separate dictionary keyed by the
+/// userdata address.
+private var deviceCallbacks: [UnsafeMutableRawPointer: LuaValue] = [:]
 
 // Define a datatype for hs.audiodevice.datasource objects
 struct DataSourceUserData {
@@ -43,7 +48,6 @@ private let watchSelectors: [AudioObjectPropertySelector] = [
     kAudioDevicePropertyDeviceIsRunningSomewhere,
 ]
 
-private var refTable: Int32 = 0
 
 // MARK: - Function forward declarations (not needed in Swift, but noting for parity)
 
@@ -90,23 +94,23 @@ private func audiodevice_callback(
         if !lua_isStateGenerationValid(userData.pointee.lsCanary) {
             return
         }
-        if userData.pointee.callback == LUA_NOREF {
-            os_log(.error, "%{public}s", "hs.audiodevice.watcher callback fired, but no function has been set with hs.audiodevice.watcher.setCallback()")
-        } else {
-            for event in events {
-                lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(userData.pointee.callback))
+        guard let cb = deviceCallbacks[clientData] else {
+            os_log(.error, "%{public}s", "hs.audiodevice.watcher callback fired, but no function has been set with hs.audiodevice:watcherCallback()")
+            return
+        }
+        for event in events {
+            cb.push(onto: L)
 
-                if let uid = deviceUIDNS {
-                    lua_pushstring(L, uid)
-                } else {
-                    lua_pushnil(L)
-                }
-
-                lua_pushany(L, event["mSelector"] as? String)
-                lua_pushany(L, event["mScope"] as? String)
-                lua_pushany(L, event["mElement"])
-                if lua_pcall(L, 4, 0, 0) != LUA_OK { lua_pop(L, 1) }
+            if let uid = deviceUIDNS {
+                lua_pushstring(L, uid)
+            } else {
+                lua_pushnil(L)
             }
+
+            lua_pushany(L, event["mSelector"] as? String)
+            lua_pushany(L, event["mScope"] as? String)
+            lua_pushany(L, event["mElement"])
+            if lua_pcall(L, 4, 0, 0) != LUA_OK { lua_pop(L, 1) }
         }
     }
     return noErr
@@ -144,9 +148,7 @@ func new_device(_ L: UnsafeMutablePointer<lua_State>!, _ deviceId: AudioDeviceID
     let ptr = lua_newuserdata(L, MemoryLayout<AudioDeviceUserData>.size)!
     let audioDevice = ptr.assumingMemoryBound(to: AudioDeviceUserData.self)
     audioDevice.pointee.deviceId = deviceId
-    audioDevice.pointee.callback = LUA_NOREF
     audioDevice.pointee.watcherRunning = false
-
     audioDevice.pointee.lsCanary = lua_currentStateGeneration()
 
     luaL_getmetatable(L, USERDATA_TAG)
@@ -1474,19 +1476,16 @@ private func audiodevice_allInputDataSources(_ L: LuaState) throws -> CInt {
 ///  * You will receive many events to your callback, so filtering on the name/scope/element arguments is vital. For example, on a stereo device, it is not uncommon to receive a `volm` event for each audio channel when the volume changes, or multiple `mute` events for channels. Dragging a volume slider in the system Sound preferences will produce a large number of `volm` events. Plugging/unplugging headphones may trigger `volm` events in addition to `jack` ones, etc.
 ///  * If you need to use the `hs.audiodevice` object in your callback, use `hs.audiodevice.findDeviceByUID()` to obtain it fro the first callback argument
 private func audiodevice_watcherSetCallback(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
+    let udPtr = luaL_checkudata(L, 1, USERDATA_TAG)!
 
     let audioDevice = userdataToAudioDevice(L, 1)
 
-    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, audioDevice.pointee.callback)
-
-
-    audioDevice.pointee.callback = LUA_NOREF
+    // Drop any previous callback
+    deviceCallbacks[udPtr] = nil
 
     switch lua_type(L, 2) {
     case LUA_TFUNCTION:
-        lua_pushvalue(L, 2)
-        audioDevice.pointee.callback = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+        deviceCallbacks[udPtr] = L.ref(index: 2)
     case LUA_TNIL:
         watcherStop(audioDevice)
     default:
@@ -1508,12 +1507,12 @@ private func audiodevice_watcherSetCallback(_ L: LuaState) throws -> CInt {
 /// Returns:
 ///  * The `hs.audiodevice` object, or nil if an error occurred
 private func audiodevice_watcherStart(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
+    let udPtr = luaL_checkudata(L, 1, USERDATA_TAG)!
 
     let audioDevice = userdataToAudioDevice(L, 1)
 
-    if audioDevice.pointee.callback == LUA_NOREF {
-        os_log(.error, "%{public}s", "You must call hs.audiodevice:setCallback() before hs.audiodevice:start()")
+    if deviceCallbacks[udPtr] == nil {
+        os_log(.error, "%{public}s", "You must call hs.audiodevice:watcherCallback() before hs.audiodevice:watcherStart()")
         lua_pushnil(L)
         return 1
     }
@@ -1639,16 +1638,12 @@ private func audiodevice_eq(_ L: LuaState) throws -> CInt {
 }
 
 private func audiodevice_gc(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
-
-    let audioDevice = userdataToAudioDevice(L, 1)
+    let udPtr = luaL_checkudata(L, 1, USERDATA_TAG)!
 
     _ = try audiodevice_watcherStop(L)
 
-    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, audioDevice.pointee.callback)
-
-
-    audioDevice.pointee.callback = LUA_NOREF
+    // Drop the callback LuaValue (releases the registry ref via ARC)
+    deviceCallbacks.removeValue(forKey: udPtr)
 
     return 0
 }
@@ -1777,10 +1772,6 @@ private func datasource_eq(_ L: LuaState) throws -> CInt {
 @_cdecl("luaopen_hs_libaudiodevice")
 public func luaopen_hs_libaudiodevice(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     runEntryPoint(L) { L in
-        // Create ref table in registry
-        lua_newtable(L)
-        refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
-
         // Register audiodevice userdata metatable
         luaL_newmetatable(L, USERDATA_TAG)
         lua_pushvalue(L, -1)

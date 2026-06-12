@@ -46,7 +46,7 @@ private var deckManager: HSStreamDeckManager?
 
 // MARK: - HSStreamDeckDevice (base class)
 
-@objc class HSStreamDeckDevice: NSObject, LuaUserdataConvertible {
+class HSStreamDeckDevice: NSObject, LuaUserdataConvertible {
     var device: IOHIDDevice
     weak var manager: HSStreamDeckManager?
     var selfRefCount: Int32 = 0
@@ -919,7 +919,7 @@ class HSStreamDeckDevicePedal: HSStreamDeckDevice {
 
 // MARK: - HSStreamDeckManager
 
-@objc class HSStreamDeckManager: NSObject {
+class HSStreamDeckManager: NSObject {
     var ioHIDManager: IOHIDManager?
     var devices: [HSStreamDeckDevice] = []
     var discoveryCallbackRef: Int32 = LUA_NOREF

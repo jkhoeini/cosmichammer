@@ -5,39 +5,49 @@ import CFNetwork
 import SystemConfiguration
 
 private let USERDATA_TAG = "hs.network.host"
-private var refTable: Int32 = LUA_NOREF
-
-private func getPtr(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> UnsafeMutablePointer<HSHostData> {
-    return luaL_checkudata(L, idx, USERDATA_TAG)!.assumingMemoryBound(to: HSHostData.self)
-}
 
 // MARK: - Support Functions and Classes
 
-private struct HSHostData {
+private class HSHost: NSObject {
     var theHostObj: CFHost?
-    var callbackRef: Int32
+    var callback: LuaValue?
     var resolveType: CFHostInfoType
-    var selfRef: Int32
-    var running: Bool
-    var generation: UInt64
+    var selfRefValue: LuaValue?
+    var running: Bool = false
+    var generation: UInt64 = 0
+    private var tornDown = false
+
+    init(host: CFHost, resolveType: CFHostInfoType) {
+        self.theHostObj = host
+        self.resolveType = resolveType
+        super.init()
+        self.generation = lua_currentStateGeneration()
+    }
+
+    /// Idempotent teardown: cancel resolution, drop callback and self-ref,
+    /// release CFHost resources.
+    func teardown() {
+        guard !tornDown else { return }
+        tornDown = true
+        if running, let host = theHostObj {
+            CFHostSetClient(host, nil, nil)
+            CFHostCancelInfoResolution(host, resolveType)
+            CFHostUnscheduleFromRunLoop(host, CFRunLoopGetCurrent(), CFRunLoopMode.defaultMode!.rawValue)
+            running = false
+        }
+        callback = nil
+        selfRefValue = nil
+        theHostObj = nil
+    }
 }
 
 private func pushCFHost(_ L: UnsafeMutablePointer<lua_State>!, _ theHost: CFHost, _ resolveType: CFHostInfoType) -> Int32 {
-    let thePtr = lua_newuserdata(L, MemoryLayout<HSHostData>.size)!.assumingMemoryBound(to: HSHostData.self)
-    memset(thePtr, 0, MemoryLayout<HSHostData>.size)
+    let obj = HSHost(host: theHost, resolveType: resolveType)
+    L.push(userdata: obj)
 
-    thePtr.pointee.theHostObj = theHost
-    thePtr.pointee.callbackRef = LUA_NOREF
-    thePtr.pointee.resolveType = resolveType
-    thePtr.pointee.selfRef = LUA_NOREF
-    thePtr.pointee.running = false
-    thePtr.pointee.generation = lua_currentStateGeneration()
-
-    luaL_getmetatable(L, USERDATA_TAG)
-    lua_setmetatable(L, -2)
-    // capture reference so __gc doesn't accidentally collect before callback if they don't save a reference to the object
-    lua_pushvalue(L, -1)
-    thePtr.pointee.selfRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+    // Capture a self-ref in the registry so __gc doesn't collect the userdata
+    // before the async callback fires (if the caller doesn't save a reference).
+    obj.selfRefValue = L.ref(index: -1)
     return 1
 }
 
@@ -122,7 +132,8 @@ private func expandCFStreamError(domain: CFIndex, errorNum: Int32) -> String {
 
 private let handleCallback: CFHostClientCallBack = { theHost, typeInfo, error, info in
     guard let info = info else { return }
-    let theRef = info.assumingMemoryBound(to: HSHostData.self)
+    // Recover the HSHost object from the Unmanaged pointer stored in the CFHost context.
+    let obj = Unmanaged<HSHost>.fromOpaque(info).takeUnretainedValue()
     var domain: CFIndex = 0
     var errorNum: Int32 = 0
     if let error = error {
@@ -132,12 +143,12 @@ private let handleCallback: CFHostClientCallBack = { theHost, typeInfo, error, i
 
     DispatchQueue.main.async {
         let L = lua_getCurrentState()!
-        if theRef.pointee.callbackRef != LUA_NOREF {
-            guard lua_isStateGenerationValid(theRef.pointee.generation) else { return }
+        if let cb = obj.callback {
+            guard lua_isStateGenerationValid(obj.generation) else { return }
             var argCount: Int32
-            lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(theRef.pointee.callbackRef))
+            cb.push(onto: L)
             if domain == 0 && errorNum == 0 {
-                argCount = pushQueryResults(L, synchronous: false, theHost: theRef.pointee.theHostObj!, typeInfo: theRef.pointee.resolveType)
+                argCount = pushQueryResults(L, synchronous: false, theHost: obj.theHostObj!, typeInfo: obj.resolveType)
             } else {
                 lua_pushstring(L, "resolution error:\(expandCFStreamError(domain: domain, errorNum: errorNum))")
                 argCount = 1
@@ -146,50 +157,54 @@ private let handleCallback: CFHostClientCallBack = { theHost, typeInfo, error, i
                 lua_pop(L, 1)
             }
         }
-        CFHostSetClient(theRef.pointee.theHostObj!, nil, nil)
-        CFHostUnscheduleFromRunLoop(theRef.pointee.theHostObj!, CFRunLoopGetCurrent(), CFRunLoopMode.defaultMode!.rawValue)
-        CFHostCancelInfoResolution(theRef.pointee.theHostObj!, theRef.pointee.resolveType)
-        theRef.pointee.running = false
-        // allow __gc when their stored version goes away
-        if theRef.pointee.selfRef != LUA_NOREF {
-            luaL_unref(L, LUA_REGISTRYINDEX_VALUE, theRef.pointee.selfRef)
-            theRef.pointee.selfRef = LUA_NOREF
+        if let host = obj.theHostObj {
+            CFHostSetClient(host, nil, nil)
+            CFHostUnscheduleFromRunLoop(host, CFRunLoopGetCurrent(), CFRunLoopMode.defaultMode!.rawValue)
+            CFHostCancelInfoResolution(host, obj.resolveType)
         }
+        obj.running = false
+        // Allow __gc when their stored version goes away
+        obj.selfRefValue = nil
     }
 }
 
 private func commonConstructor(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    let theRef = getPtr(L, 1)
+    guard let obj: HSHost = L.touserdata(1) else {
+        lua_pushstring(L, "\(USERDATA_TAG): internal error - could not extract host object")
+        return lua_error(L)
+    }
     var streamError = CFStreamError()
-    var argCount: Int32 = 1
     if lua_type(L, 2) == LUA_TNIL {
-        luaL_unref(L, LUA_REGISTRYINDEX_VALUE, theRef.pointee.selfRef)
-        theRef.pointee.selfRef = LUA_NOREF
-        if CFHostStartInfoResolution(theRef.pointee.theHostObj!, theRef.pointee.resolveType, &streamError) {
-            argCount = pushQueryResults(L, synchronous: true, theHost: theRef.pointee.theHostObj!, typeInfo: theRef.pointee.resolveType)
+        // Synchronous resolution -- release self-ref since caller gets the result directly
+        obj.selfRefValue = nil
+        if CFHostStartInfoResolution(obj.theHostObj!, obj.resolveType, &streamError) {
+            let argCount = pushQueryResults(L, synchronous: true, theHost: obj.theHostObj!, typeInfo: obj.resolveType)
+            return argCount
         } else {
             lua_pushstring(L, "resolution error:" + expandCFStreamError(domain: streamError.domain, errorNum: streamError.error))
             return lua_error(L)
         }
     } else {
-        lua_pushvalue(L, 2)
-        theRef.pointee.callbackRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
-        var context = CFHostClientContext(version: 0, info: theRef, retain: nil, release: nil, copyDescription: nil)
-        if CFHostSetClient(theRef.pointee.theHostObj!, handleCallback, &context) {
-            CFHostScheduleWithRunLoop(theRef.pointee.theHostObj!, CFRunLoopGetCurrent(), CFRunLoopMode.defaultMode!.rawValue)
-            if CFHostStartInfoResolution(theRef.pointee.theHostObj!, theRef.pointee.resolveType, &streamError) {
-                theRef.pointee.running = true
+        // Async resolution -- store callback and set up CFHost client
+        obj.callback = L.ref(index: 2)
+        // Use Unmanaged to pass a stable pointer to the HSHost (an NSObject) as
+        // the info context for CFHostSetClient. passUnretained is correct because
+        // selfRefValue keeps the Lua userdata (and thus the HSHost) alive.
+        let infoPtr = Unmanaged.passUnretained(obj).toOpaque()
+        var context = CFHostClientContext(version: 0, info: infoPtr, retain: nil, release: nil, copyDescription: nil)
+        if CFHostSetClient(obj.theHostObj!, handleCallback, &context) {
+            CFHostScheduleWithRunLoop(obj.theHostObj!, CFRunLoopGetCurrent(), CFRunLoopMode.defaultMode!.rawValue)
+            if CFHostStartInfoResolution(obj.theHostObj!, obj.resolveType, &streamError) {
+                obj.running = true
                 lua_pushvalue(L, 1)
             } else {
-                CFHostUnscheduleFromRunLoop(theRef.pointee.theHostObj!, CFRunLoopGetCurrent(), CFRunLoopMode.defaultMode!.rawValue)
-                luaL_unref(L, LUA_REGISTRYINDEX_VALUE, theRef.pointee.selfRef)
-                theRef.pointee.selfRef = LUA_NOREF
+                CFHostUnscheduleFromRunLoop(obj.theHostObj!, CFRunLoopGetCurrent(), CFRunLoopMode.defaultMode!.rawValue)
+                obj.selfRefValue = nil
                 lua_pushstring(L, "resolution error:" + expandCFStreamError(domain: streamError.domain, errorNum: streamError.error))
                 return lua_error(L)
             }
         } else {
-            luaL_unref(L, LUA_REGISTRYINDEX_VALUE, theRef.pointee.selfRef)
-            theRef.pointee.selfRef = LUA_NOREF
+            obj.selfRefValue = nil
             lua_pushnil(L)
         }
     }
@@ -325,110 +340,96 @@ private func getReachabilityForHostName(_ L: LuaState) throws -> CInt {
     return commonForHostName(L, .reachability)
 }
 
-// MARK: - Module Methods
-
-/// hs.network.host:isRunning() -> boolean
-/// Method
-/// Returns whether or not resolution is still in progress for an asynchronous query.
-///
-/// Parameters:
-///  * None
-///
-/// Returns:
-///  * true, if resolution is still in progress, or false if resolution has already completed.
-private func resolutionIsRunning(_ L: LuaState) throws -> CInt {
-    let theRef = getPtr(L, 1)
-    lua_pushboolean(L, theRef.pointee.running ? 1 : 0)
-    return 1
-}
-
-/// hs.network.host:cancel() -> hostObject
-/// Method
-/// Cancels an in-progress asynchronous host resolution.
-///
-/// Parameters:
-///  * None
-///
-/// Returns:
-///  * the hostObject
-///
-/// Notes:
-///  * This method has no effect if the resolution has already completed.
-private func cancelResolution(_ L: LuaState) throws -> CInt {
-    let theRef = getPtr(L, 1)
-    if theRef.pointee.running {
-        CFHostSetClient(theRef.pointee.theHostObj!, nil, nil)
-        CFHostCancelInfoResolution(theRef.pointee.theHostObj!, theRef.pointee.resolveType)
-        CFHostUnscheduleFromRunLoop(theRef.pointee.theHostObj!, CFRunLoopGetCurrent(), CFRunLoopMode.defaultMode!.rawValue)
-        theRef.pointee.running = false
-    }
-    // allow __gc when their stored version goes away
-    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, theRef.pointee.selfRef)
-    theRef.pointee.selfRef = LUA_NOREF
-    lua_settop(L, 1)
-    return 1
-}
-
 // MARK: - Cosmic Hammer/Lua Infrastructure
-
-private func userdata_tostring(_ L: LuaState) throws -> CInt {
-    let ptr = lua_topointer(L, 1)
-    lua_pushstring(L, "\(USERDATA_TAG): (\(String(describing: ptr)))")
-    return 1
-}
-
-private func userdata_eq(_ L: LuaState) throws -> CInt {
-    if luaL_testudata(L, 1, USERDATA_TAG) != nil && luaL_testudata(L, 2, USERDATA_TAG) != nil {
-        let theHost1 = getPtr(L, 1).pointee.theHostObj!
-        let theHost2 = getPtr(L, 2).pointee.theHostObj!
-        lua_pushboolean(L, CFEqual(theHost1, theHost2) ? 1 : 0)
-    } else {
-        lua_pushboolean(L, 0)
-    }
-    return 1
-}
-
-private func userdata_gc(_ L: LuaState) throws -> CInt {
-    let theRef = getPtr(L, 1)
-    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, theRef.pointee.callbackRef)
-    theRef.pointee.callbackRef = LUA_NOREF
-    // in case __gc forced by reload
-    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, theRef.pointee.selfRef)
-    theRef.pointee.selfRef = LUA_NOREF
-
-    L.push(cancelResolution)
-    lua_pushvalue(L, 1)
-    lua_pcall(L, 1, 1, 0)
-    lua_pop(L, 1)
-
-    theRef.pointee.theHostObj = nil
-    lua_pushnil(L)
-    lua_setmetatable(L, 1)
-    return 0
-}
-
 
 @_cdecl("luaopen_hs_libnetworkhost")
 public func luaopen_hs_libnetworkhost(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     runEntryPoint(L) { L in
-        lua_newtable(L)
-        refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+        L.register(Metatable<HSHost>(
+            fields: [
+                /// hs.network.host:isRunning() -> boolean
+                /// Method
+                /// Returns whether or not resolution is still in progress for an asynchronous query.
+                ///
+                /// Parameters:
+                ///  * None
+                ///
+                /// Returns:
+                ///  * true, if resolution is still in progress, or false if resolution has already completed.
+                "isRunning": .closure { L in
+                    let obj: HSHost = try L.checkArgument(1)
+                    lua_pushboolean(L, obj.running ? 1 : 0)
+                    return 1
+                },
+                /// hs.network.host:cancel() -> hostObject
+                /// Method
+                /// Cancels an in-progress asynchronous host resolution.
+                ///
+                /// Parameters:
+                ///  * None
+                ///
+                /// Returns:
+                ///  * the hostObject
+                ///
+                /// Notes:
+                ///  * This method has no effect if the resolution has already completed.
+                "cancel": .closure { L in
+                    let obj: HSHost = try L.checkArgument(1)
+                    if obj.running, let host = obj.theHostObj {
+                        CFHostSetClient(host, nil, nil)
+                        CFHostCancelInfoResolution(host, obj.resolveType)
+                        CFHostUnscheduleFromRunLoop(host, CFRunLoopGetCurrent(), CFRunLoopMode.defaultMode!.rawValue)
+                        obj.running = false
+                    }
+                    // Allow __gc when their stored version goes away
+                    obj.selfRefValue = nil
+                    lua_settop(L, 1)
+                    return 1
+                },
+            ],
+            tostring: .closure { L in
+                let ptr = lua_topointer(L, 1)
+                lua_pushstring(L, "\(USERDATA_TAG): (\(String(describing: ptr)))")
+                return 1
+            }
+        ))
 
-        luaL_newmetatable(L, USERDATA_TAG)
-        lua_pushvalue(L, -1)
-        lua_setfield(L, -2, "__index")
-        L.push(resolutionIsRunning)
-        lua_setfield(L, -2, "isRunning")
-        L.push(cancelResolution)
-        lua_setfield(L, -2, "cancel")
-        L.push(userdata_tostring)
-        lua_setfield(L, -2, "__tostring")
-        L.push(userdata_eq)
-        lua_setfield(L, -2, "__eq")
-        L.push(userdata_gc)
+        // Post-registration: replace __gc with teardown + deinitialize
+        L.pushMetatable(for: HSHost.self)
+
+        lua_pushcclosure(L, { (L: LuaState!) -> CInt in
+            if let obj: HSHost = L.touserdata(1) {
+                obj.teardown()
+            }
+            let rawptr = lua_touserdata(L, 1)!
+            let anyPtr = rawptr.assumingMemoryBound(to: Any.self)
+            anyPtr.deinitialize(count: 1)
+            return 0
+        }, 0)
         lua_setfield(L, -2, "__gc")
-        lua_pop(L, 1)
 
+        // __eq: compare underlying CFHost objects
+        lua_pushcclosure(L, { (L: LuaState!) -> CInt in
+            if let obj1: HSHost = L.touserdata(1), let obj2: HSHost = L.touserdata(2),
+               let host1 = obj1.theHostObj, let host2 = obj2.theHostObj {
+                lua_pushboolean(L, CFEqual(host1, host2) ? 1 : 0)
+            } else {
+                lua_pushboolean(L, 0)
+            }
+            return 1
+        }, 0)
+        lua_setfield(L, -2, "__eq")
+
+        // Set __type and __name for compatibility
+        lua_pushstring(L, USERDATA_TAG)
+        lua_setfield(L, -2, "__type")
+        lua_pushstring(L, USERDATA_TAG)
+        lua_setfield(L, -2, "__name")
+
+        // Alias the metatable under the legacy registry name
+        lua_setfield(L, LUA_REGISTRYINDEX_VALUE, USERDATA_TAG)
+
+        // Create module table
         lua_createtable(L, 0, 4)
         L.push(getAddressesForHostName)
         lua_setfield(L, -2, "addressesForHostname")

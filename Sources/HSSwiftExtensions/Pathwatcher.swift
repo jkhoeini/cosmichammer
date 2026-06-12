@@ -5,16 +5,51 @@ import Lua
 // Common Code
 
 private let USERDATA_TAG = "hs.pathwatcher"
-private var refTable: Int32 = 0
 
-// Not so common code
+// MARK: - HSPathWatcher class
 
-private struct WatcherPath {
-    var closureref: Int32
+class HSPathWatcher: NSObject {
+    var callback: LuaValue?
     var stream: FSEventStreamRef?
-    var started: Bool
-    var generation: UInt64
+    var started: Bool = false
+    var generation: UInt64 = 0
+    private var tornDown = false
+
+    /// Idempotent teardown: stop the FSEventStream, drop the Lua callback
+    /// reference, mark as torn down.  Called from the explicit __gc closure
+    /// while the lua_State is still alive.
+    func teardown() {
+        guard !tornDown else { return }
+        tornDown = true
+        if started, let stream = stream {
+            FSEventStreamStop(stream)
+            FSEventStreamUnscheduleFromRunLoop(stream, CFRunLoopGetCurrent(), CFRunLoopMode.defaultMode.rawValue)
+        }
+        started = false
+        if let stream = stream {
+            FSEventStreamInvalidate(stream)
+            FSEventStreamRelease(stream)
+        }
+        stream = nil
+        callback = nil   // drops the LuaValue ref while L is still open
+    }
+
+    func start() {
+        guard !started, let stream = stream else { return }
+        started = true
+        FSEventStreamScheduleWithRunLoop(stream, CFRunLoopGetCurrent(), CFRunLoopMode.defaultMode.rawValue)
+        FSEventStreamStart(stream)
+    }
+
+    func stop() {
+        guard started, let stream = stream else { return }
+        started = false
+        FSEventStreamStop(stream)
+        FSEventStreamUnscheduleFromRunLoop(stream, CFRunLoopGetCurrent(), CFRunLoopMode.defaultMode.rawValue)
+    }
 }
+
+// MARK: - FSEvent helpers
 
 private func pusheventflagstable(_ L: UnsafeMutablePointer<lua_State>!, _ flags: FSEventStreamEventFlags) {
     lua_newtable(L)
@@ -42,6 +77,8 @@ private func pusheventflagstable(_ L: UnsafeMutablePointer<lua_State>!, _ flags:
     if (flags & UInt32(kFSEventStreamEventFlagItemIsLastHardlink)) != 0 { lua_pushboolean(L, 1); lua_setfield(L, -2, "itemIsLastHardlink") }
 }
 
+// The FSEventStream callback must be a C function pointer. We pass the
+// HSPathWatcher as the retained `info` pointer in the FSEventStreamContext.
 private let event_callback: FSEventStreamCallback = {
     (streamRef: ConstFSEventStreamRef,
      clientCallBackInfo: UnsafeMutableRawPointer?,
@@ -51,18 +88,23 @@ private let event_callback: FSEventStreamCallback = {
      eventIds: UnsafePointer<FSEventStreamEventId>) in
 
     guard let clientCallBackInfo = clientCallBackInfo else { return }
-    let pw = clientCallBackInfo.assumingMemoryBound(to: WatcherPath.self)
+    let watcher = Unmanaged<HSPathWatcher>.fromOpaque(clientCallBackInfo).takeUnretainedValue()
+
+    guard lua_isStateGenerationValid(watcher.generation) else {
+        watcher.teardown()
+        return
+    }
 
     let L = lua_getCurrentState()!
-
-    guard lua_isStateGenerationValid(pw.pointee.generation) else { return }
 
     guard let changedFiles = Unmanaged<CFArray>.fromOpaque(eventPaths).takeUnretainedValue() as? [String],
           changedFiles.count >= numEvents else {
         return
     }
 
-    lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(pw.pointee.closureref))
+    guard let cb = watcher.callback else { return }
+
+    cb.push(onto: L)
 
     lua_newtable(L)
     for i in 0..<numEvents {
@@ -117,26 +159,23 @@ private let event_callback: FSEventStreamCallback = {
 ///
 /// Notes:
 ///  * For more information about the event flags, see [the official documentation](https://developer.apple.com/reference/coreservices/1455361-fseventstreameventflags/)
-private func watcher_path_new(_ L: LuaState) throws -> CInt {
+private func watcher_path_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     luaL_checktype(L, 1, LUA_TSTRING)
     luaL_checktype(L, 2, LUA_TFUNCTION)
 
     let path = String(cString: lua_tostring(L, 1)!)
+    let cb = L.ref(index: 2)
 
-    let watcherPtr = lua_newuserdata(L, MemoryLayout<WatcherPath>.size)!
-        .assumingMemoryBound(to: WatcherPath.self)
-    watcherPtr.pointee.started = false
-    watcherPtr.pointee.generation = lua_currentStateGeneration()
+    let watcher = HSPathWatcher()
+    watcher.callback = cb
+    watcher.generation = lua_currentStateGeneration()
 
-    luaL_getmetatable(L, USERDATA_TAG)
-    lua_setmetatable(L, -2)
-
-    lua_pushvalue(L, 2)
-    watcherPtr.pointee.closureref = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
-
+    // The FSEventStreamContext retains the HSPathWatcher so the C callback
+    // can reach it.  We use Unmanaged to bridge the pointer.
+    let unmanaged = Unmanaged.passRetained(watcher)
     var context = FSEventStreamContext(
         version: 0,
-        info: watcherPtr,
+        info: unmanaged.toOpaque(),
         retain: nil,
         release: nil,
         copyDescription: nil
@@ -145,7 +184,7 @@ private func watcher_path_new(_ L: LuaState) throws -> CInt {
     let standardized = (path as NSString).standardizingPath
     let resolved = (standardized as NSString).resolvingSymlinksInPath
 
-    watcherPtr.pointee.stream = FSEventStreamCreate(
+    watcher.stream = FSEventStreamCreate(
         nil,
         event_callback,
         &context,
@@ -155,127 +194,83 @@ private func watcher_path_new(_ L: LuaState) throws -> CInt {
         UInt32(kFSEventStreamCreateFlagWatchRoot | kFSEventStreamCreateFlagNoDefer | kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagUseCFTypes)
     )
 
+    L.push(userdata: watcher)
     return 1
 }
 
-/// hs.pathwatcher:start()
-/// Method
-/// Starts a path watcher
-///
-/// Parameters:
-///  * None
-///
-/// Returns:
-///  * The `hs.pathwatcher` object
-private func watcher_path_start(_ L: LuaState) throws -> CInt {
-    let watcherPtr = luaL_checkudata(L, 1, USERDATA_TAG)!
-        .assumingMemoryBound(to: WatcherPath.self)
-    lua_settop(L, 1)
-
-    if watcherPtr.pointee.started { return 1 }
-    watcherPtr.pointee.started = true
-
-    if let stream = watcherPtr.pointee.stream {
-        FSEventStreamScheduleWithRunLoop(stream, CFRunLoopGetCurrent(), CFRunLoopMode.defaultMode.rawValue)
-        FSEventStreamStart(stream)
-    }
-
-    return 1
-}
-
-/// hs.pathwatcher:stop()
-/// Method
-/// Stops a path watcher
-///
-/// Parameters:
-///  * None
-///
-/// Returns:
-///  * None
-private func watcher_path_stop(_ L: LuaState) throws -> CInt {
-    let watcherPtr = luaL_checkudata(L, 1, USERDATA_TAG)!
-        .assumingMemoryBound(to: WatcherPath.self)
-    lua_settop(L, 1)
-
-    if !watcherPtr.pointee.started { return 1 }
-
-    watcherPtr.pointee.started = false
-    if let stream = watcherPtr.pointee.stream {
-        FSEventStreamStop(stream)
-        FSEventStreamUnscheduleFromRunLoop(stream, CFRunLoopGetCurrent(), CFRunLoopMode.defaultMode.rawValue)
-    }
-
-    return 1
-}
-
-private func watcher_path_gc(_ L: LuaState) throws -> CInt {
-    let watcherPtr = luaL_checkudata(L, 1, USERDATA_TAG)!
-        .assumingMemoryBound(to: WatcherPath.self)
-
-    // Stop the watcher
-    _ = try watcher_path_stop(L)
-
-    if let stream = watcherPtr.pointee.stream {
-        FSEventStreamInvalidate(stream)
-        FSEventStreamRelease(stream)
-    }
-
-    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, watcherPtr.pointee.closureref)
-    watcherPtr.pointee.closureref = Int32(LUA_NOREF)
-
-    return 0
-}
-
-private func meta_gc(_ L: LuaState) throws -> CInt {
-    return 0
-}
-
-private func userdata_tostring(_ L: LuaState) throws -> CInt {
-    let watcherPtr = luaL_checkudata(L, 1, USERDATA_TAG)!
-        .assumingMemoryBound(to: WatcherPath.self)
-    var thePath = "(unknown path)"
-    if let stream = watcherPtr.pointee.stream {
-        if let thePaths = FSEventStreamCopyPathsBeingWatched(stream) as? [String],
-           !thePaths.isEmpty {
-            thePath = thePaths[0]
-        }
-    }
-
-    let str = "\(USERDATA_TAG): \(thePath) (\(lua_topointer(L, 1)!))"
-    lua_pushstring(L, str)
-    return 1
-}
+// MARK: - Module entry point
 
 @_cdecl("luaopen_hs_libpathwatcher")
 public func luaopen_hs_libpathwatcher(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    runEntryPoint(L) { L in
-        // Create ref table in registry
-        lua_newtable(L)
-        refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+    // Register idiomatic Metatable<HSPathWatcher> with LuaSwift.
+    L.register(Metatable<HSPathWatcher>(
+        fields: [
+            "start": .closure { L in
+                let watcher: HSPathWatcher = try L.checkArgument(1)
+                lua_settop(L, 1)
+                watcher.start()
+                return 1  // return self
+            },
+            "stop": .closure { L in
+                let watcher: HSPathWatcher = try L.checkArgument(1)
+                lua_settop(L, 1)
+                watcher.stop()
+                return 1  // return self
+            },
+        ],
+        tostring: .closure { L in
+            let watcher: HSPathWatcher = try L.checkArgument(1)
+            var thePath = "(unknown path)"
+            if let stream = watcher.stream {
+                if let thePaths = FSEventStreamCopyPathsBeingWatched(stream) as? [String],
+                   !thePaths.isEmpty {
+                    thePath = thePaths[0]
+                }
+            }
+            lua_pushstring(L, "\(USERDATA_TAG): \(thePath) (\(lua_topointer(L, 1)!))")
+            return 1
+        }
+    ))
 
-        // Register userdata metatable
-        luaL_newmetatable(L, USERDATA_TAG)
-        lua_pushvalue(L, -1)
-        lua_setfield(L, -2, "__index")
-        L.push(watcher_path_start)
-        lua_setfield(L, -2, "start")
-        L.push(watcher_path_stop)
-        lua_setfield(L, -2, "stop")
-        L.push(watcher_path_gc)
-        lua_setfield(L, -2, "__gc")
-        L.push(userdata_tostring)
-        lua_setfield(L, -2, "__tostring")
-        lua_pop(L, 1)
+    // -- Post-registration metatable patching --
+    // LuaSwift's register() always installs its own gcUserdata as __gc, which
+    // only deinitializes the Any box. We MUST replace it with a custom __gc
+    // that first calls teardown() (stop the FSEventStream, drop the LuaValue
+    // callback) and THEN deinitializes the Any box. Without this, the retained
+    // Unmanaged reference keeps HSPathWatcher alive after the box is
+    // deinitialized, leaking the callback ref and letting the watcher fire.
+    L.pushMetatable(for: HSPathWatcher.self)
 
-        // Create module table
-        lua_createtable(L, 0, 1)
-        L.push(watcher_path_new)
-        lua_setfield(L, -2, "new")
+    // Replace __gc with our explicit teardown + deinitialize
+    lua_pushcclosure(L, { (L: LuaState!) -> CInt in
+        // Extract the HSPathWatcher from the Any box BEFORE deinitializing
+        if let watcher: HSPathWatcher = L.touserdata(1) {
+            watcher.teardown()
+            // Balance the Unmanaged.passRetained from watcher_path_new
+            Unmanaged.passUnretained(watcher).release()
+        }
+        // Now deinitialize the Any box (same as LuaSwift's gcUserdata)
+        let rawptr = lua_touserdata(L, 1)!
+        let anyPtr = rawptr.assumingMemoryBound(to: Any.self)
+        anyPtr.deinitialize(count: 1)
+        return 0
+    }, 0)
+    lua_setfield(L, -2, "__gc")
 
-        // Set module metatable (for __gc)
-        lua_createtable(L, 0, 1)
-        L.push(meta_gc)
-        lua_setfield(L, -2, "__gc")
-        lua_setmetatable(L, -2)
-    }
+    // Set __type and __name for lsunit.lua assertIsUserdataOfType and tostring
+    lua_pushstring(L, USERDATA_TAG)
+    lua_setfield(L, -2, "__type")
+    lua_pushstring(L, USERDATA_TAG)
+    lua_setfield(L, -2, "__name")
+
+    // Alias the metatable under the legacy registry name "hs.pathwatcher" so that
+    // core_getObjectMetatable("hs.pathwatcher") still resolves.
+    lua_setfield(L, LUA_REGISTRYINDEX_VALUE, USERDATA_TAG)
+
+    // Create module table
+    lua_createtable(L, 0, 1)
+    L.push(watcher_path_new)
+    lua_setfield(L, -2, "new")
+
+    return 1
 }

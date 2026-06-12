@@ -24,20 +24,20 @@ class HSLogger: NSObject {
 
     private var _L: UnsafeMutablePointer<lua_State>?
 
-    @objc var L: UnsafeMutablePointer<lua_State>? { return _L }
+    var L: UnsafeMutablePointer<lua_State>? { return _L }
 
-    @objc init(lua L: UnsafeMutablePointer<lua_State>?) {
+    init(lua L: UnsafeMutablePointer<lua_State>?) {
         self._L = L
         super.init()
     }
 
-    @objc func setLuaState(_ L: UnsafeMutablePointer<lua_State>?) {
+    func setLuaState(_ L: UnsafeMutablePointer<lua_State>?) {
         _L = L
     }
 
     // VERY IMPORTANT NOTE: DO NOT CALL NSLog (i.e. logBreadcrumb) IN THIS METHOD
     // indirectly — the breadcrumb path calls NSLog directly.
-    @objc func logForLuaSkin(atLevel level: Int32, withMessage theMessage: String) {
+    func logForLuaSkin(atLevel level: Int32, withMessage theMessage: String) {
         guard let L = _L else {
             logBreadcrumb(theMessage)
             return
@@ -69,7 +69,7 @@ class HSLogger: NSObject {
         }
     }
 
-    @objc func handleCatastrophe(_ message: String) {
+    func handleCatastrophe(_ message: String) {
         let alert = NSAlert()
         alert.messageText = message
         alert.informativeText = "Cosmic Hammer critical error."

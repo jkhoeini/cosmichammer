@@ -4,7 +4,6 @@ import Lua
 import os.log
 
 private let USERDATA_TAG = "hs.styledtext"
-private var refTable: Int32 = LUA_NOREF
 
 // MARK: - Helpers
 
@@ -1729,10 +1728,6 @@ private func userdata_gc(_ L: LuaState) throws -> CInt {
 @_cdecl("luaopen_hs_libstyledtext")
 public func luaopen_hs_libstyledtext(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     runEntryPoint(L) { L in
-        // Create ref table in registry
-        lua_newtable(L)
-        refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
-
         // Register userdata metatable
         luaL_newmetatable(L, USERDATA_TAG)
         lua_pushvalue(L, -1)
@@ -1775,6 +1770,13 @@ public func luaopen_hs_libstyledtext(_ L: UnsafeMutablePointer<lua_State>!) -> I
         lua_setfield(L, -2, "__le")
         L.push(userdata_gc)
         lua_setfield(L, -2, "__gc")
+
+        // Set __type and __name for consistency with idiomatic modules
+        lua_pushstring(L, USERDATA_TAG)
+        lua_setfield(L, -2, "__type")
+        lua_pushstring(L, USERDATA_TAG)
+        lua_setfield(L, -2, "__name")
+
         lua_pop(L, 1)
 
         // Create module table

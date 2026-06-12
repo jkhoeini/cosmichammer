@@ -4,12 +4,6 @@ import Lua
 import os.log
 
 private let USERDATA_TAG = "hs.sharing"
-private var refTable: Int32 = LUA_NOREF
-
-private func get_objectFromUserdata<T: AnyObject>(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32, _ tag: UnsafePointer<CChar>) -> T {
-    let ptr = luaL_checkudata(L, idx, tag)!.assumingMemoryBound(to: UnsafeMutableRawPointer.self)
-    return Unmanaged<T>.fromOpaque(ptr.pointee).takeUnretainedValue()
-}
 
 // MARK: - Support Functions and Classes
 
@@ -130,8 +124,9 @@ func pushSharingURLs(_ L: UnsafeMutablePointer<lua_State>!, _ urls: [URL]?) {
 
 class HSSharingService: NSObject, NSSharingServiceDelegate {
     var sharingService: NSSharingService?
-    var callbackRef: Int32 = LUA_NOREF
-    var selfRefCount: Int = 0
+    var callback: LuaValue?
+    var generation: UInt64 = 0
+    private var tornDown = false
 
     init(serviceName: String) {
         super.init()
@@ -141,13 +136,27 @@ class HSSharingService: NSObject, NSSharingServiceDelegate {
         }
     }
 
+    /// Idempotent teardown: drop the Lua callback reference, clear the delegate,
+    /// and nil out the sharing service.
+    func teardown() {
+        guard !tornDown else { return }
+        tornDown = true
+        callback = nil
+        sharingService?.delegate = nil
+        sharingService = nil
+    }
+
     // MARK: NSSharingServiceDelegate
 
     func sharingService(_ sharingService: NSSharingService, didFailToShareItems items: [Any], error: Error) {
-        guard callbackRef != LUA_NOREF else { return }
+        guard callback != nil else { return }
+        if !lua_isStateGenerationValid(generation) {
+            teardown()
+            return
+        }
         let L = lua_getCurrentState()!
-        lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(callbackRef))
-        pushHSSharingService(L, obj: self)
+        callback!.push(onto: L)
+        L.push(userdata: self)
         lua_pushany(L, "didFail" as NSString)
         pushSharingItems(L, items)
         lua_pushany(L, error.localizedDescription as NSString)
@@ -155,472 +164,32 @@ class HSSharingService: NSObject, NSSharingServiceDelegate {
     }
 
     func sharingService(_ sharingService: NSSharingService, didShareItems items: [Any]) {
-        guard callbackRef != LUA_NOREF else { return }
+        guard callback != nil else { return }
+        if !lua_isStateGenerationValid(generation) {
+            teardown()
+            return
+        }
         let L = lua_getCurrentState()!
-        lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(callbackRef))
-        pushHSSharingService(L, obj: self)
+        callback!.push(onto: L)
+        L.push(userdata: self)
         lua_pushany(L, "didShare" as NSString)
         pushSharingItems(L, items)
         if lua_pcall(L, 3, 0, 0) != LUA_OK { lua_pop(L, 1) }
     }
 
     func sharingService(_ sharingService: NSSharingService, willShareItems items: [Any]) {
-        guard callbackRef != LUA_NOREF else { return }
+        guard callback != nil else { return }
+        if !lua_isStateGenerationValid(generation) {
+            teardown()
+            return
+        }
         let L = lua_getCurrentState()!
-        lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(callbackRef))
-        pushHSSharingService(L, obj: self)
+        callback!.push(onto: L)
+        L.push(userdata: self)
         lua_pushany(L, "willShare" as NSString)
         pushSharingItems(L, items)
         if lua_pcall(L, 3, 0, 0) != LUA_OK { lua_pop(L, 1) }
     }
-}
-
-// MARK: - Module Functions
-
-/// hs.sharing.newShare(type) -> sharingObject
-/// Constructor
-/// Creates a new sharing object of the type specified by the identifier provided.
-///
-/// Parameters:
-///  * type - a string specifying a sharing type identifier as listed in the [hs.sharing.builtinSharingServices](#builtinSharingServices) table or returned by the [hs.sharing.shareTypesFor](#shareTypesFor).
-///
-/// Returns:
-///  * a sharingObject or nil if the type identifier cannot be created on this system
-private func sharing_new(_ L: LuaState) throws -> CInt {
-    luaL_checktype(L, 1, LUA_TSTRING)
-
-    let serviceName = lua_tovalue(L, at: 1) as! String
-    let wrapper = HSSharingService(serviceName: serviceName)
-
-    if wrapper.sharingService != nil {
-        pushHSSharingService(L, obj: wrapper)
-    } else {
-        lua_pushnil(L)
-    }
-    return 1
-}
-
-/// hs.sharing.shareTypesFor(items) -> identifiersTable
-/// Function
-/// Returns a table containing the sharing service identifiers which can share the items specified.
-///
-/// Parameters:
-///  * items - an array (table) or list of items separated by commas which you wish to share with this module.
-///
-/// Returns:
-///  * an array (table) containing strings which identify sharing service identifiers which may be used by the [hs.sharing.newShare](#newShare) constructor to share the specified data.
-///
-/// Notes:
-///  * this function is intended to be used to determine the identifiers for sharing services available on your computer and that may not be included in the [hs.sharing.builtinSharingServices](#builtinSharingServices) table.
-private func sharing_servicesForItems(_ L: LuaState) throws -> CInt {
-
-    var items: [Any]?
-    if lua_gettop(L) == 1 {
-        guard let arr = sharingItemsFromLua(L, 1) else {
-            throw LuaCallError("bad argument #1 (unrecognized element in array)")
-        }
-        items = arr
-    }
-
-    lua_newtable(L)
-    let services = NSSharingService.sharingServices(forItems: items ?? [])
-    for aService in services {
-        var label: String?
-        // The internal "name" property can be used with sharingServiceNamed: but Apple hid it
-        if aService.responds(to: NSSelectorFromString("name")) {
-            label = catchingObjCException {
-                aService.perform(NSSelectorFromString("name"))?.takeUnretainedValue() as? String
-            }
-        }
-        if label == nil { label = aService.title }
-        lua_pushany(L, (label ?? "") as NSString)
-        lua_rawseti(L, -2, luaL_len(L, -2) + 1)
-    }
-    return 1
-}
-
-/// hs.sharing.URL(URL, [fileURL]) -> table
-/// Function
-/// Returns a table representing the URL specified.
-///
-/// Parameters:
-///  * URL     - a string or table specifying the URL.
-///  * fileURL - an optional boolean, default `false`, specifying whether or not the URL is supposed to represent a file on the local computer.
-///
-/// Returns:
-///  * a table containing the necessary labels for representing the specified URL as required by the macOS APIs.
-///
-/// Notes:
-///  * If the URL is specified as a table, it is expected to contain a `url` key with a string value specifying a proper schema and resource locator.
-///
-///  * Because macOS requires URLs to be represented as a specific object type which has no exact equivalent in Lua, Cosmic Hammer uses a table with specific keys to allow proper identification of a URL when included as an argument or result type.  Use this function or the [hs.sharing.fileURL](#fileURL) wrapper function when specifying a URL to ensure that the proper keys are defined.
-///  * At present, the following keys are defined for a URL table (additional keys may be added in the future if future Cosmic Hammer modules require them to more completely utilize the macOS NSURL class, but these will not change):
-///    * url           - a string containing the URL with a proper schema and resource locator
-///    * filePath      = a string specifying the actual path to the file in case the url is a file reference URL.  Note that setting this field with this method will be silently ignored; the field is automatically inserted if appropriate when returning an NSURL object to lua.
-///    * __luaSkinType - a string specifying the macOS type this table represents when converted into an Objective-C type
-private func sharing_makeURL(_ L: LuaState) throws -> CInt {
-
-    let shouldBeFileURL = lua_gettop(L) == 2 ? (lua_toboolean(L, 2) != 0) : false
-
-    var theURL: NSURL?
-    if shouldBeFileURL && lua_type(L, 1) == LUA_TSTRING {
-        let path = lua_tovalue(L, at: 1) as! String
-        if !path.hasPrefix("file:") && !path.hasPrefix("FILE:") {
-            theURL = NSURL(fileURLWithPath: NSString(string: path).expandingTildeInPath)
-        }
-    }
-
-    if theURL == nil {
-        theURL = toNSURLFromLua(L, 1)
-    }
-
-    if let url = theURL {
-        pushNSURL(L, obj: url)
-    } else {
-        lua_pushnil(L)
-    }
-    return 1
-}
-
-// MARK: - Module Methods
-
-/// hs.sharing:shareItems(items) -> sharingObject
-/// Method
-/// Shares the items specified with the sharing service represented by the sharingObject.
-///
-/// Parameters:
-///  * items - an array (table) or list of items separated by commas which are to be shared by the sharing service
-///
-/// Returns:
-///  * the sharingObject, or nil if one or more of the items cannot be shared with the sharing service represented by the sharingObject.
-///
-/// Notes:
-///  * You can check to see if all of your items can be shared with the [hs.sharing:canShareItems](#canShareItems) method.
-private func sharing_performWith(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
-
-    luaL_checktype(L, 2, LUA_TTABLE)
-
-    let wrapper: HSSharingService = toHSSharingServiceFromLua(L, idx: 1) as! HSSharingService
-
-    guard let items = sharingItemsFromLua(L, 2) else {
-        throw LuaCallError("bad argument #2 (unrecognized element in array)")
-    }
-
-    if wrapper.sharingService?.canPerform(withItems:items) ?? false {
-        if let error: String = catchingObjCException({
-            wrapper.sharingService?.perform(withItems: items)
-        }) {
-            os_log(.error, "caught ObjC exception in NSSharingService.perform: \(error, privacy: .public)")
-            lua_pushnil(L)
-        } else {
-            lua_pushvalue(L, 1)
-        }
-    } else {
-        lua_pushnil(L)
-    }
-    return 1
-}
-
-/// hs.sharing:canShareItems(items) -> boolean
-/// Method
-/// Returns a boolean specifying whether or not all of the items specified can be shared with the sharing service represented by the sharingObject.
-///
-/// Parameters:
-///  * items - an array (table) or list of items separated by commas which are to be shared by the sharing service
-///
-/// Returns:
-///  * a boolean value indicating whether or not all of the specified items can be shared with the sharing service represented by the sharingObject.
-private func sharing_canPerformWith(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
-
-    luaL_checktype(L, 2, LUA_TTABLE)
-
-    let wrapper: HSSharingService = toHSSharingServiceFromLua(L, idx: 1) as! HSSharingService
-
-    guard let items = sharingItemsFromLua(L, 2) else {
-        throw LuaCallError("bad argument #2 (unrecognized element in array)")
-    }
-
-    lua_pushboolean(L, (wrapper.sharingService?.canPerform(withItems:items) ?? false) ? 1 : 0)
-    return 1
-}
-
-/// hs.sharing:callback(fn) -> sharingObject
-/// Method
-/// Set or clear the callback for the sharingObject.
-///
-/// Parameters:
-///  * fn - A function, or nil, to set or remove the callback for the sharingObject
-///
-/// Returns:
-///  * the sharingObject
-///
-/// Notes:
-///  * the callback should expect 3 or 4 arguments and return no results.  The arguments will be as follows:
-///    * the sharingObject itself
-///    * the callback message, which will be a string equal to one of the following:
-///      * "didFail"   - an error occurred while attempting to share the items
-///      * "didShare"  - the sharing service has finished sharing the items
-///      * "willShare" - the sharing service is about to start sharing the items; occurs before sharing actually begins
-///    * an array (table) containing the items being shared; if the message is "didFail" or "didShare", the items may be in a different order or converted to a different internal type to facilitate sharing.
-///    * if the message is "didFail", the fourth argument will be a localized description of the error that occurred.
-private func sharing_callback(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
-
-    let wrapper: HSSharingService = toHSSharingServiceFromLua(L, idx: 1) as! HSSharingService
-
-    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, wrapper.callbackRef)
-
-
-    wrapper.callbackRef = LUA_NOREF
-    if lua_type(L, 2) == LUA_TFUNCTION {
-        lua_pushvalue(L, 2)
-        wrapper.callbackRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
-    }
-    lua_pushvalue(L, 1)
-    return 1
-}
-
-/// hs.sharing:recipients([recipients]) -> current value | sharingObject
-/// Method
-/// Get or set the subject to be used when the sharing service performs its sharing method.
-///
-/// Parameters:
-///  * recipients - an optional array (table) or list of recipient strings separated by commas which specify the recipients of the shared items.
-///
-/// Returns:
-///  * if an argument is provided, returns the sharingObject; otherwise returns the current value.
-///
-/// Notes:
-///  * not all sharing services will make use of the value set by this method.
-///  * the individual recipients should be specified as strings in the format expected by the sharing service; e.g. for items being shared in an email, the recipients should be email address, etc.
-private func sharing_recipients(_ L: LuaState) throws -> CInt {
-
-    let wrapper: HSSharingService = toHSSharingServiceFromLua(L, idx: 1) as! HSSharingService
-
-    if lua_gettop(L) == 1 {
-        lua_pushany(L, wrapper.sharingService?.recipients as NSArray?)
-    } else {
-        guard let recipients = lua_tovalue(L, at: 2) as? [Any] else {
-            throw LuaCallError("bad argument #2 (expected table of strings)")
-        }
-
-        var errorMessage: String?
-        for (idx, obj) in recipients.enumerated() {
-            if !(obj is String) {
-                errorMessage = "expected string at index \(idx + 1)"
-                break
-            }
-        }
-
-        if let msg = errorMessage {
-            throw LuaCallError("bad argument #2 (\(msg))")
-        } else {
-            wrapper.sharingService?.recipients = recipients as? [String]
-            lua_pushvalue(L, 1)
-        }
-    }
-    return 1
-}
-
-/// hs.sharing:subject([subject]) -> current value | sharingObject
-/// Method
-/// Get or set the subject to be used when the sharing service performs its sharing method.
-///
-/// Parameters:
-///  * subject - an optional string specifying the subject for the posting of the shared content
-///
-/// Returns:
-///  * if an argument is provided, returns the sharingObject; otherwise returns the current value.
-///
-/// Notes:
-///  * not all sharing services will make use of the value set by this method.
-private func sharing_subject(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
-
-    let wrapper: HSSharingService = toHSSharingServiceFromLua(L, idx: 1) as! HSSharingService
-
-    if lua_gettop(L) == 1 {
-        if let subject = wrapper.sharingService?.subject {
-            lua_pushany(L, subject as NSString)
-        } else {
-            lua_pushnil(L)
-        }
-    } else {
-        wrapper.sharingService?.subject = lua_tovalue(L, at: 2) as? String
-        lua_pushvalue(L, 1)
-    }
-    return 1
-}
-
-/// hs.sharing:attachments() -> table | nil
-/// Method
-/// If the sharing service provides an array of the attachments included when the data was posted, this method will return an array of file URL tables of the attachments.
-///
-/// Parameters:
-///  * None
-///
-/// Returns:
-///  * an array (table) containing the attachment file URLs, or nil if the sharing service selected does not provide this.
-///
-/// Notes:
-///  * not all sharing services will set a value for this property.
-private func sharing_attachmentURLs(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
-    let wrapper: HSSharingService = toHSSharingServiceFromLua(L, idx: 1) as! HSSharingService
-    pushSharingURLs(L, wrapper.sharingService?.attachmentFileURLs)
-    return 1
-}
-
-/// hs.sharing:accountName() -> string | nil
-/// Method
-/// The account name used by the sharing service when posting on Twitter or Sina Weibo.
-///
-/// Parameters:
-///  * None
-///
-/// Returns:
-///  * a string containing the account name used by the sharing service, or nil if the sharing service does not provide this.
-///
-/// Notes:
-///  * According to the Apple API documentation, only the Twitter and Sina Weibo sharing services will set this property, but this has not been fully tested.
-private func sharing_accountName(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
-    let wrapper: HSSharingService = toHSSharingServiceFromLua(L, idx: 1) as! HSSharingService
-    if let name = wrapper.sharingService?.accountName {
-        lua_pushany(L, name as NSString)
-    } else {
-        lua_pushnil(L)
-    }
-    return 1
-}
-
-/// hs.sharing:messageBody() -> string | nil
-/// Method
-/// If the sharing service provides the message body that was posted when sharing has completed, this method will return the message body as a string.
-///
-/// Parameters:
-///  * None
-///
-/// Returns:
-///  * a string containing the message body, or nil if the sharing service selected does not provide this.
-///
-/// Notes:
-///  * not all sharing services will set a value for this property.
-private func sharing_messageBody(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
-    let wrapper: HSSharingService = toHSSharingServiceFromLua(L, idx: 1) as! HSSharingService
-    if let body = wrapper.sharingService?.messageBody {
-        lua_pushany(L, body as NSString)
-    } else {
-        lua_pushnil(L)
-    }
-    return 1
-}
-
-/// hs.sharing:title() -> string
-/// Method
-/// The title for the sharing service represented by the sharingObject.
-///
-/// Parameters:
-///  * None
-///
-/// Returns:
-///  * a string containing the title of the sharing service.
-///
-/// Notes:
-///  * this string differs from the identifier used to create the sharing service object with [hs.sharing.newShare](#newShare) and is intended to provide a more friendly label for the service if you need to list or refer to it elsewhere.
-private func sharing_title(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
-    let wrapper: HSSharingService = toHSSharingServiceFromLua(L, idx: 1) as! HSSharingService
-    lua_pushany(L, wrapper.sharingService?.title as NSString?)
-    return 1
-}
-
-/// hs.sharing:serviceName() -> string
-/// Method
-/// The service identifier for the sharing service represented by the sharingObject.
-///
-/// Parameters:
-///  * None
-///
-/// Returns:
-///  * a string containing the identifier for the sharing service.
-///
-/// Notes:
-///  * this string will match the identifier used to create the sharing service object with [hs.sharing.newShare](#newShare)
-private func sharing_serviceName(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
-    let wrapper: HSSharingService = toHSSharingServiceFromLua(L, idx: 1) as! HSSharingService
-
-    var label: String?
-    // Apple hid the "name" property, but it returns the identifier usable with sharingServiceNamed:
-    if let service = wrapper.sharingService, service.responds(to: NSSelectorFromString("name")) {
-        label = service.perform(NSSelectorFromString("name"))?.takeUnretainedValue() as? String
-    }
-
-    if let l = label {
-        lua_pushany(L, l as NSString)
-    } else {
-        lua_pushnil(L)
-    }
-    return 1
-}
-
-/// hs.sharing:permanentLink() -> URL table | nil
-/// Method
-/// If the sharing service provides a permanent link to the post when sharing has completed, this method will return the corresponding URL.
-///
-/// Parameters:
-///  * None
-///
-/// Returns:
-///  * the URL for the permanent link, or nil if the sharing service selected does not provide this.
-///
-/// Notes:
-///  * not all sharing services will set a value for this property.
-private func sharing_permanentLink(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
-    let wrapper: HSSharingService = toHSSharingServiceFromLua(L, idx: 1) as! HSSharingService
-    if let url = wrapper.sharingService?.permanentLink {
-        pushNSURL(L, obj: url)
-    } else {
-        lua_pushnil(L)
-    }
-    return 1
-}
-
-/// hs.sharing:alternateImage() -> hs.image object | nil
-/// Method
-/// Returns an alternate image, if one exists, representing the sharing service provided by this sharing object.
-///
-/// Parameters:
-///  * None
-///
-/// Returns:
-///  * an hs.image object or nil, if no alternate image representation for the sharing service is defined.
-private func sharing_alternateImage(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
-    let wrapper: HSSharingService = toHSSharingServiceFromLua(L, idx: 1) as! HSSharingService
-    pushSharingImageOrNil(L, wrapper.sharingService?.alternateImage)
-    return 1
-}
-
-/// hs.sharing:image() -> hs.image object | nil
-/// Method
-/// Returns an image, if one exists, representing the sharing service provided by this sharing object.
-///
-/// Parameters:
-///  * None
-///
-/// Returns:
-///  * an hs.image object or nil, if no image representation for the sharing service is defined.
-private func sharing_image(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
-    let wrapper: HSSharingService = toHSSharingServiceFromLua(L, idx: 1) as! HSSharingService
-    pushSharingImageOrNil(L, wrapper.sharingService?.image)
-    return 1
 }
 
 // MARK: - Module Constants
@@ -638,26 +207,6 @@ private func pushBuiltinSharingServices(_ L: UnsafeMutablePointer<lua_State>!) -
 }
 
 // MARK: - Lua<->NSObject Conversion
-
-@discardableResult
-private func pushHSSharingService(_ L: UnsafeMutablePointer<lua_State>!, obj: Any!) -> Int32 {
-    let value = obj as! HSSharingService
-    value.selfRefCount += 1
-    let ptr = lua_newuserdata(L, MemoryLayout<UnsafeMutableRawPointer>.size)!.assumingMemoryBound(to: UnsafeMutableRawPointer.self)
-    ptr.pointee = Unmanaged.passRetained(value).toOpaque()
-    luaL_getmetatable(L, USERDATA_TAG)
-    lua_setmetatable(L, -2)
-    return 1
-}
-
-private func toHSSharingServiceFromLua(_ L: UnsafeMutablePointer<lua_State>!, idx: Int32) -> Any! {
-    if luaL_testudata(L, idx, USERDATA_TAG) != nil {
-        return get_objectFromUserdata(L, idx, USERDATA_TAG) as HSSharingService
-    } else {
-        os_log(.error, "%{public}s", "expected \(USERDATA_TAG) object, found \(String(cString: lua_typename(L, lua_type(L, idx))))")
-        return nil
-    }
-}
 
 @discardableResult
 private func pushNSURL(_ L: UnsafeMutablePointer<lua_State>!, obj: Any!) -> Int32 {
@@ -678,97 +227,289 @@ private func toNSURLFromLuaHelper(_ L: UnsafeMutablePointer<lua_State>!, idx: In
     return toNSURLFromLua(L, idx)
 }
 
-// MARK: - Cosmic Hammer/Lua Infrastructure
-
-private func userdata_tostring(_ L: LuaState) throws -> CInt {
-    let obj = toHSSharingServiceFromLua(L, idx: 1) as! HSSharingService
-    let title = obj.sharingService?.title ?? "unknown"
-    lua_pushany(L, "\(USERDATA_TAG): \(title) (\(String(describing: lua_topointer(L, 1)!)))" as NSString)
-    return 1
-}
-
-private func userdata_eq(_ L: LuaState) throws -> CInt {
-    if luaL_testudata(L, 1, USERDATA_TAG) != nil && luaL_testudata(L, 2, USERDATA_TAG) != nil {
-        let obj1 = toHSSharingServiceFromLua(L, idx: 1) as! HSSharingService
-        let obj2 = toHSSharingServiceFromLua(L, idx: 2) as! HSSharingService
-        lua_pushboolean(L, obj1.isEqual(obj2) ? 1 : 0)
-    } else {
-        lua_pushboolean(L, 0)
-    }
-    return 1
-}
-
-private func userdata_gc(_ L: LuaState) throws -> CInt {
-    let ptr = luaL_checkudata(L, 1, USERDATA_TAG)!.assumingMemoryBound(to: UnsafeMutableRawPointer.self)
-    let obj = Unmanaged<HSSharingService>.fromOpaque(ptr.pointee).takeRetainedValue()
-
-    obj.selfRefCount -= 1
-    if obj.selfRefCount == 0 {
-        luaL_unref(L, LUA_REGISTRYINDEX_VALUE, obj.callbackRef)
-
-        obj.callbackRef = LUA_NOREF
-        obj.sharingService = nil
-    }
-
-    lua_pushnil(L)
-    lua_setmetatable(L, 1)
-    return 0
-}
-
 // MARK: - Module entry point
 
 @_cdecl("luaopen_hs_libsharing")
 public func luaopen_hs_libsharing(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    runEntryPoint(L) { L in
+    L.register(Metatable<HSSharingService>(
+        fields: [
+            // hs.sharing:shareItems(items) -> sharingObject
+            "shareItems": .closure { L in
+                let wrapper: HSSharingService = try L.checkArgument(1)
+                luaL_checktype(L, 2, LUA_TTABLE)
+
+                guard let items = sharingItemsFromLua(L, 2) else {
+                    throw LuaCallError("bad argument #2 (unrecognized element in array)")
+                }
+
+                if wrapper.sharingService?.canPerform(withItems: items) ?? false {
+                    if let error: String = catchingObjCException({
+                        wrapper.sharingService?.perform(withItems: items)
+                    }) {
+                        os_log(.error, "caught ObjC exception in NSSharingService.perform: \(error, privacy: .public)")
+                        lua_pushnil(L)
+                    } else {
+                        lua_pushvalue(L, 1)
+                    }
+                } else {
+                    lua_pushnil(L)
+                }
+                return 1
+            },
+
+            // hs.sharing:canShareItems(items) -> boolean
+            "canShareItems": .closure { L in
+                let wrapper: HSSharingService = try L.checkArgument(1)
+                luaL_checktype(L, 2, LUA_TTABLE)
+
+                guard let items = sharingItemsFromLua(L, 2) else {
+                    throw LuaCallError("bad argument #2 (unrecognized element in array)")
+                }
+
+                lua_pushboolean(L, (wrapper.sharingService?.canPerform(withItems: items) ?? false) ? 1 : 0)
+                return 1
+            },
+
+            // hs.sharing:callback(fn) -> sharingObject
+            "callback": .closure { L in
+                let wrapper: HSSharingService = try L.checkArgument(1)
+
+                wrapper.callback = nil
+                if lua_type(L, 2) == LUA_TFUNCTION {
+                    wrapper.callback = L.ref(index: 2)
+                }
+                lua_pushvalue(L, 1)
+                return 1
+            },
+
+            // hs.sharing:recipients([recipients]) -> current value | sharingObject
+            "recipients": .closure { L in
+                let wrapper: HSSharingService = try L.checkArgument(1)
+
+                if lua_gettop(L) == 1 {
+                    lua_pushany(L, wrapper.sharingService?.recipients as NSArray?)
+                } else {
+                    guard let recipients = lua_tovalue(L, at: 2) as? [Any] else {
+                        throw LuaCallError("bad argument #2 (expected table of strings)")
+                    }
+
+                    for (idx, obj) in recipients.enumerated() {
+                        if !(obj is String) {
+                            throw LuaCallError("bad argument #2 (expected string at index \(idx + 1))")
+                        }
+                    }
+
+                    wrapper.sharingService?.recipients = recipients as? [String]
+                    lua_pushvalue(L, 1)
+                }
+                return 1
+            },
+
+            // hs.sharing:subject([subject]) -> current value | sharingObject
+            "subject": .closure { L in
+                let wrapper: HSSharingService = try L.checkArgument(1)
+
+                if lua_gettop(L) == 1 {
+                    if let subject = wrapper.sharingService?.subject {
+                        lua_pushany(L, subject as NSString)
+                    } else {
+                        lua_pushnil(L)
+                    }
+                } else {
+                    wrapper.sharingService?.subject = lua_tovalue(L, at: 2) as? String
+                    lua_pushvalue(L, 1)
+                }
+                return 1
+            },
+
+            // hs.sharing:attachments() -> table | nil
+            "attachments": .closure { L in
+                let wrapper: HSSharingService = try L.checkArgument(1)
+                pushSharingURLs(L, wrapper.sharingService?.attachmentFileURLs)
+                return 1
+            },
+
+            // hs.sharing:accountName() -> string | nil
+            "accountName": .closure { L in
+                let wrapper: HSSharingService = try L.checkArgument(1)
+                if let name = wrapper.sharingService?.accountName {
+                    lua_pushany(L, name as NSString)
+                } else {
+                    lua_pushnil(L)
+                }
+                return 1
+            },
+
+            // hs.sharing:messageBody() -> string | nil
+            "messageBody": .closure { L in
+                let wrapper: HSSharingService = try L.checkArgument(1)
+                if let body = wrapper.sharingService?.messageBody {
+                    lua_pushany(L, body as NSString)
+                } else {
+                    lua_pushnil(L)
+                }
+                return 1
+            },
+
+            // hs.sharing:title() -> string
+            "title": .closure { L in
+                let wrapper: HSSharingService = try L.checkArgument(1)
+                lua_pushany(L, wrapper.sharingService?.title as NSString?)
+                return 1
+            },
+
+            // hs.sharing:serviceName() -> string
+            "serviceName": .closure { L in
+                let wrapper: HSSharingService = try L.checkArgument(1)
+
+                var label: String?
+                if let service = wrapper.sharingService, service.responds(to: NSSelectorFromString("name")) {
+                    label = service.perform(NSSelectorFromString("name"))?.takeUnretainedValue() as? String
+                }
+
+                if let l = label {
+                    lua_pushany(L, l as NSString)
+                } else {
+                    lua_pushnil(L)
+                }
+                return 1
+            },
+
+            // hs.sharing:permanentLink() -> URL table | nil
+            "permanentLink": .closure { L in
+                let wrapper: HSSharingService = try L.checkArgument(1)
+                if let url = wrapper.sharingService?.permanentLink {
+                    pushNSURL(L, obj: url)
+                } else {
+                    lua_pushnil(L)
+                }
+                return 1
+            },
+
+            // hs.sharing:alternateImage() -> hs.image object | nil
+            "alternateImage": .closure { L in
+                let wrapper: HSSharingService = try L.checkArgument(1)
+                pushSharingImageOrNil(L, wrapper.sharingService?.alternateImage)
+                return 1
+            },
+
+            // hs.sharing:image() -> hs.image object | nil
+            "image": .closure { L in
+                let wrapper: HSSharingService = try L.checkArgument(1)
+                pushSharingImageOrNil(L, wrapper.sharingService?.image)
+                return 1
+            },
+        ],
+        eq: .closure { L in
+            let obj1: HSSharingService = try L.checkArgument(1)
+            let obj2: HSSharingService = try L.checkArgument(2)
+            lua_pushboolean(L, obj1.isEqual(obj2) ? 1 : 0)
+            return 1
+        },
+        tostring: .closure { L in
+            let obj: HSSharingService = try L.checkArgument(1)
+            let title = obj.sharingService?.title ?? "unknown"
+            lua_pushstring(L, "\(USERDATA_TAG): \(title) (\(String(describing: lua_topointer(L, 1)!)))")
+            return 1
+        }
+    ))
+
+    // -- Post-registration metatable patching --
+    // Replace __gc with custom teardown + deinitialize
+    L.pushMetatable(for: HSSharingService.self)
+
+    lua_pushcclosure(L, { (L: LuaState!) -> CInt in
+        if let obj: HSSharingService = L.touserdata(1) {
+            obj.teardown()
+        }
+        let rawptr = lua_touserdata(L, 1)!
+        rawptr.assumingMemoryBound(to: Any.self).deinitialize(count: 1)
+        return 0
+    }, 0)
+    lua_setfield(L, -2, "__gc")
+
+    // Set __type and __name for compat
+    lua_pushstring(L, USERDATA_TAG)
+    lua_setfield(L, -2, "__type")
+    lua_pushstring(L, USERDATA_TAG)
+    lua_setfield(L, -2, "__name")
+
+    // Alias the metatable under the legacy registry name
+    lua_setfield(L, LUA_REGISTRYINDEX_VALUE, USERDATA_TAG)
+
+    // Create module table
+    lua_createtable(L, 0, 4)
+
+    // hs.sharing.newShare(type) -> sharingObject
+    L.push({ (L: LuaState) throws -> CInt in
+        luaL_checktype(L, 1, LUA_TSTRING)
+        let serviceName = lua_tovalue(L, at: 1) as! String
+        let wrapper = HSSharingService(serviceName: serviceName)
+
+        if wrapper.sharingService != nil {
+            wrapper.generation = lua_currentStateGeneration()
+            L.push(userdata: wrapper)
+        } else {
+            lua_pushnil(L)
+        }
+        return 1
+    })
+    lua_setfield(L, -2, "newShare")
+
+    // hs.sharing.shareTypesFor(items) -> identifiersTable
+    L.push({ (L: LuaState) throws -> CInt in
+        var items: [Any]?
+        if lua_gettop(L) == 1 {
+            guard let arr = sharingItemsFromLua(L, 1) else {
+                throw LuaCallError("bad argument #1 (unrecognized element in array)")
+            }
+            items = arr
+        }
+
         lua_newtable(L)
-        refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+        let services = NSSharingService.sharingServices(forItems: items ?? [])
+        for aService in services {
+            var label: String?
+            if aService.responds(to: NSSelectorFromString("name")) {
+                label = catchingObjCException {
+                    aService.perform(NSSelectorFromString("name"))?.takeUnretainedValue() as? String
+                }
+            }
+            if label == nil { label = aService.title }
+            lua_pushany(L, (label ?? "") as NSString)
+            lua_rawseti(L, -2, luaL_len(L, -2) + 1)
+        }
+        return 1
+    })
+    lua_setfield(L, -2, "shareTypesFor")
 
-        luaL_newmetatable(L, USERDATA_TAG)
-        lua_pushvalue(L, -1)
-        lua_setfield(L, -2, "__index")
-        L.push(sharing_callback)
-        lua_setfield(L, -2, "callback")
-        L.push(sharing_recipients)
-        lua_setfield(L, -2, "recipients")
-        L.push(sharing_subject)
-        lua_setfield(L, -2, "subject")
-        L.push(sharing_performWith)
-        lua_setfield(L, -2, "shareItems")
-        L.push(sharing_canPerformWith)
-        lua_setfield(L, -2, "canShareItems")
-        L.push(sharing_attachmentURLs)
-        lua_setfield(L, -2, "attachments")
-        L.push(sharing_accountName)
-        lua_setfield(L, -2, "accountName")
-        L.push(sharing_messageBody)
-        lua_setfield(L, -2, "messageBody")
-        L.push(sharing_title)
-        lua_setfield(L, -2, "title")
-        L.push(sharing_permanentLink)
-        lua_setfield(L, -2, "permanentLink")
-        L.push(sharing_alternateImage)
-        lua_setfield(L, -2, "alternateImage")
-        L.push(sharing_image)
-        lua_setfield(L, -2, "image")
-        L.push(sharing_serviceName)
-        lua_setfield(L, -2, "serviceName")
-        L.push(userdata_tostring)
-        lua_setfield(L, -2, "__tostring")
-        L.push(userdata_eq)
-        lua_setfield(L, -2, "__eq")
-        L.push(userdata_gc)
-        lua_setfield(L, -2, "__gc")
-        lua_pop(L, 1)
+    // hs.sharing.URL(URL, [fileURL]) -> table
+    L.push({ (L: LuaState) throws -> CInt in
+        let shouldBeFileURL = lua_gettop(L) == 2 ? (lua_toboolean(L, 2) != 0) : false
 
-        lua_createtable(L, 0, 4)
-        L.push(sharing_new)
-        lua_setfield(L, -2, "newShare")
-        L.push(sharing_servicesForItems)
-        lua_setfield(L, -2, "shareTypesFor")
-        L.push(sharing_makeURL)
-        lua_setfield(L, -2, "URL")
+        var theURL: NSURL?
+        if shouldBeFileURL && lua_type(L, 1) == LUA_TSTRING {
+            let path = lua_tovalue(L, at: 1) as! String
+            if !path.hasPrefix("file:") && !path.hasPrefix("FILE:") {
+                theURL = NSURL(fileURLWithPath: NSString(string: path).expandingTildeInPath)
+            }
+        }
 
-        _ = pushBuiltinSharingServices(L)
-        lua_setfield(L, -2, "builtinSharingServices")
-    }
+        if theURL == nil {
+            theURL = toNSURLFromLua(L, 1)
+        }
+
+        if let url = theURL {
+            pushNSURL(L, obj: url)
+        } else {
+            lua_pushnil(L)
+        }
+        return 1
+    })
+    lua_setfield(L, -2, "URL")
+
+    _ = pushBuiltinSharingServices(L)
+    lua_setfield(L, -2, "builtinSharingServices")
+
+    return 1
 }

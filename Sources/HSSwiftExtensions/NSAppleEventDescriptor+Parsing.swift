@@ -16,7 +16,7 @@ import os.log
 
 extension NSDictionary {
     /// AppleEvent record descriptor (typeAERecord) with arbitrary keys
-    @objc static func scriptingUserDefinedRecord(with desc: NSAppleEventDescriptor) -> NSDictionary {
+    static func scriptingUserDefinedRecord(with desc: NSAppleEventDescriptor) -> NSDictionary {
         let dict = NSMutableDictionary(capacity: 0)
 
         // keyASUserRecordFields has a list of alternating keys and values
@@ -50,7 +50,7 @@ extension NSDictionary {
 
 extension NSArray {
     /// AppleEvent list descriptor (typeAEList)
-    @objc static func scriptingUserList(with desc: NSAppleEventDescriptor) -> NSArray {
+    static func scriptingUserList(with desc: NSAppleEventDescriptor) -> NSArray {
         let array = NSMutableArray(capacity: 0)
         let numItems = desc.numberOfItems
 
@@ -72,7 +72,7 @@ extension NSArray {
 extension NSAppleEventDescriptor {
     /// AppleEvent descriptor that may be a record, a list, or other object
     /// This is necessary to handle a list or a record contained in another list or record
-    @objc var objectValue: Any? {
+    var objectValue: Any? {
         let descType = self.descriptorType
 
         var object: Any? = nil

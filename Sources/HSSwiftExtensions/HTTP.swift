@@ -2,13 +2,11 @@ import Foundation
 import CLua
 import Lua
 import Cocoa
-import Carbon
 import os.log
 import WebKit
 
 // MARK: - Module State
 
-private var refTable: Int32 = 0
 private var delegates: NSMutableArray = NSMutableArray()
 
 // MARK: - Helper Functions
@@ -30,7 +28,7 @@ private func responseBodyToId(_ httpResponse: HTTPURLResponse?, _ bodyData: Data
 
 /// Definition of the connection delegate to receive callbacks from NSURLConnection
 @objc private class ConnectionDelegate: NSObject, NSURLConnectionDelegate, NSURLConnectionDataDelegate {
-    var fn: Int32 = LUA_NOREF
+    var fn: LuaValue?
     var enableRedirect: Bool = true
     var receivedData: NSMutableData = NSMutableData()
     var httpResponse: HTTPURLResponse?
@@ -46,43 +44,43 @@ private func responseBodyToId(_ httpResponse: HTTPURLResponse?, _ bodyData: Data
     }
 
     func connectionDidFinishLoading(_ connection: NSURLConnection) {
-        if fn == LUA_NOREF { return }
+        guard let fn = fn else { return }
         let L = lua_getCurrentState()!
 
-        lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(fn))
+        fn.push(onto: L)
         lua_pushinteger(L, lua_Integer(httpResponse?.statusCode ?? 0))
         lua_pushany(L, responseBodyToId(httpResponse, receivedData as Data) as? NSObject)
         lua_pushany(L, httpResponse?.allHeaderFields as? NSDictionary)
         if lua_pcall(L, 3, 0, 0) != LUA_OK { lua_pop(L, 1) }
 
-        remove_delegate(L, self)
+        remove_delegate(self)
     }
 
     func connection(_ connection: NSURLConnection, didFailWithError error: Error) {
-        if fn == LUA_NOREF { return }
+        guard let fn = fn else { return }
         let L = lua_getCurrentState()!
 
         let errorMessage = "Connection failed: \(error.localizedDescription) - \((error as NSError).userInfo[NSURLErrorFailingURLStringErrorKey] ?? "")"
-        lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(fn))
+        fn.push(onto: L)
         lua_pushinteger(L, -1)
         lua_pushany(L, errorMessage as NSString)
         if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
-        remove_delegate(L, self)
+        remove_delegate(self)
     }
 
     func connection(_ connection: NSURLConnection, willSend request: URLRequest, redirectResponse response: URLResponse?) -> URLRequest? {
-        if fn == LUA_NOREF { return nil }
+        guard let fn = fn else { return nil }
 
         if let httpResp = response as? HTTPURLResponse, !enableRedirect {
             let L = lua_getCurrentState()!
 
-            lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(fn))
+            fn.push(onto: L)
             lua_pushinteger(L, lua_Integer(httpResp.statusCode))
             lua_pushany(L, responseBodyToId(httpResponse, receivedData as Data) as? NSObject)
             lua_pushany(L, httpResp.allHeaderFields as NSDictionary)
             if lua_pcall(L, 3, 0, 0) != LUA_OK { lua_pop(L, 1) }
 
-            remove_delegate(L, self)
+            remove_delegate(self)
 
             connection.cancel()
             return nil
@@ -100,11 +98,9 @@ private func store_delegate(_ delegate: ConnectionDelegate) {
 }
 
 /// Remove a delegate either if loading has finished or if it needs to be garbage collected.
-private func remove_delegate(_ L: UnsafeMutablePointer<lua_State>!, _ delegate: ConnectionDelegate) {
+private func remove_delegate(_ delegate: ConnectionDelegate) {
     delegate.connection?.cancel()
-    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, delegate.fn)
-
-    delegate.fn = LUA_NOREF
+    delegate.fn = nil
     delegates.remove(delegate)
 }
 
@@ -217,12 +213,11 @@ private func http_doAsyncRequest(_ L: LuaState) throws -> CInt {
     extractHeadersFromStack(L, 4, request)
 
     luaL_checktype(L, 5, LUA_TFUNCTION)
-    lua_pushvalue(L, 5)
 
     let delegate = ConnectionDelegate()
     delegate.enableRedirect = enableRedirect
     delegate.receivedData = NSMutableData()
-    delegate.fn = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+    delegate.fn = L.ref(index: 5)
 
     store_delegate(delegate)
 
@@ -560,7 +555,7 @@ private func table_toNSURLRequest(_ L: UnsafeMutablePointer<lua_State>!, _ idx: 
 private func http_gc(_ L: LuaState) throws -> CInt {
     let delegatesCopy = NSMutableArray(array: delegates)
     for delegate in delegatesCopy {
-        remove_delegate(L, delegate as! ConnectionDelegate)
+        remove_delegate(delegate as! ConnectionDelegate)
     }
     return 0
 }
@@ -569,28 +564,24 @@ private func http_gc(_ L: LuaState) throws -> CInt {
 
 @_cdecl("luaopen_hs_libhttp")
 public func luaopen_hs_libhttp(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    runEntryPoint(L) { L in
-        delegates = NSMutableArray()
+    delegates = NSMutableArray()
 
-        // Create ref table in registry
-        lua_newtable(L)
-        refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+    // Create module table
+    lua_createtable(L, 0, 4)
+    L.push(http_doRequest)
+    lua_setfield(L, -2, "doRequest")
+    L.push(http_doAsyncRequest)
+    lua_setfield(L, -2, "doAsyncRequest")
+    L.push(http_urlParts)
+    lua_setfield(L, -2, "urlParts")
+    L.push(http_encodeForQuery)
+    lua_setfield(L, -2, "encodeForQuery")
 
-        // Create module table
-        lua_createtable(L, 0, 4)
-        L.push(http_doRequest)
-        lua_setfield(L, -2, "doRequest")
-        L.push(http_doAsyncRequest)
-        lua_setfield(L, -2, "doAsyncRequest")
-        L.push(http_urlParts)
-        lua_setfield(L, -2, "urlParts")
-        L.push(http_encodeForQuery)
-        lua_setfield(L, -2, "encodeForQuery")
+    // Set module metatable (for __gc)
+    lua_createtable(L, 0, 1)
+    L.push(http_gc)
+    lua_setfield(L, -2, "__gc")
+    lua_setmetatable(L, -2)
 
-        // Set module metatable (for __gc)
-        lua_createtable(L, 0, 1)
-        L.push(http_gc)
-        lua_setfield(L, -2, "__gc")
-        lua_setmetatable(L, -2)
-    }
+    return 1
 }

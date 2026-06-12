@@ -747,14 +747,10 @@ func canvas_draggingCallback(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, canvas_USERDATA_TAG)
     let canvasView = canvas_toHSCanvasViewFromLua(L, idx: 1) as! HSCanvasView
 
-    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, canvasView.draggingCallbackRef)
-
-
-    canvasView.draggingCallbackRef = LUA_NOREF
+    canvasView.draggingCallbackFn = nil
     canvasView.unregisterDraggedTypes()
     if lua_type(L, 2) == LUA_TFUNCTION {
-        lua_pushvalue(L, 2)
-        canvasView.draggingCallbackRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+        canvasView.draggingCallbackFn = L.ref(index: 2)
         canvasView.registerForDraggedTypes([.fileURL])
     }
 
@@ -828,16 +824,12 @@ func canvas_mouseCallback(_ L: LuaState) throws -> CInt {
     let canvasView = canvas_toHSCanvasViewFromLua(L, idx: 1) as! HSCanvasView
     let canvasWindow = canvasView.wrapperWindow
 
-    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, canvasView.mouseCallbackRef)
-
-
-    canvasView.mouseCallbackRef = LUA_NOREF
+    canvasView.mouseCallbackFn = nil
     canvasView.previousTrackedIndex = UInt(NSNotFound)
     canvasWindow?.ignoresMouseEvents = true
 
     if lua_type(L, 2) == LUA_TFUNCTION {
-        lua_pushvalue(L, 2)
-        canvasView.mouseCallbackRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+        canvasView.mouseCallbackFn = L.ref(index: 2)
         canvasWindow?.ignoresMouseEvents = false
     }
 

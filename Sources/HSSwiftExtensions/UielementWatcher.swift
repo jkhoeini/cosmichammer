@@ -5,7 +5,6 @@ import Carbon
 import os.log
 
 private let USERDATA_TAG = "hs.uielement.watcher"
-private var refTable: Int32 = LUA_NOREF
 
 private func getWatcher(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> (NSObject & HSuielementWatcherProtocol)? {
     let ptr = luaL_checkudata(L, idx, USERDATA_TAG)!
@@ -16,12 +15,11 @@ private func getWatcher(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) ->
 
 private func watcher_start(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
-
     luaL_checktype(L, 2, LUA_TTABLE)
     guard let watcher = getWatcher(L, at: 1) else { return 0 }
-    lua_pushvalue(L, 1)
-
-    watcher.watcherRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+    if let concreteWatcher = watcher as? HSuielementWatcher {
+        concreteWatcher.watcherSelfRef = L.ref(index: 1)
+    }
     if let events = lua_tovalue(L, at: 2) as? [String] {
         watcher.start(events, withState: L)
     }
@@ -33,9 +31,9 @@ private func watcher_stop(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     guard let watcher = getWatcher(L, at: 1) else { return 0 }
     watcher.stop()
-    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, watcher.watcherRef)
-
-    watcher.watcherRef = LUA_NOREF
+    if let concreteWatcher = watcher as? HSuielementWatcher {
+        concreteWatcher.watcherSelfRef = nil
+    }
     lua_pushvalue(L, 1)
     return 1
 }
@@ -145,16 +143,13 @@ private func userdata_gc(_ L: LuaState) throws -> CInt {
     if let rawPtr = ptr.pointee {
         let watcher = Unmanaged<NSObject>.fromOpaque(rawPtr).takeRetainedValue()
         if let w = watcher as? HSuielementWatcherProtocol {
-            var tmplsCanary = w.lsCanary
-            w.lsCanary = tmplsCanary
-
             w.selfRefCount -= 1
             if w.selfRefCount == 0 {
-                w.stop()
-                luaL_unref(L, LUA_REGISTRYINDEX_VALUE, w.handlerRef)
-                w.handlerRef = LUA_NOREF
-                luaL_unref(L, LUA_REGISTRYINDEX_VALUE, w.userDataRef)
-                w.userDataRef = LUA_NOREF
+                if let concreteWatcher = watcher as? HSuielementWatcher {
+                    concreteWatcher.teardown()
+                } else {
+                    w.stop()
+                }
             }
         }
         ptr.pointee = nil
@@ -169,10 +164,6 @@ private func userdata_gc(_ L: LuaState) throws -> CInt {
 @_cdecl("luaopen_hs_libuielementwatcher")
 public func luaopen_hs_libuielementwatcher(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     runEntryPoint(L) { L in
-        // Create ref table in registry
-        lua_newtable(L)
-        refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
-
         // Register userdata metatable
         luaL_newmetatable(L, USERDATA_TAG)
         lua_pushvalue(L, -1)
@@ -193,7 +184,15 @@ public func luaopen_hs_libuielementwatcher(_ L: UnsafeMutablePointer<lua_State>!
         lua_setfield(L, -2, "__eq")
         L.push(userdata_gc)
         lua_setfield(L, -2, "__gc")
-        lua_pop(L, 1)
+
+        // Set __type and __name for type identification
+        lua_pushstring(L, USERDATA_TAG)
+        lua_setfield(L, -2, "__type")
+        lua_pushstring(L, USERDATA_TAG)
+        lua_setfield(L, -2, "__name")
+
+        // Alias the metatable under the registry name
+        lua_setfield(L, LUA_REGISTRYINDEX_VALUE, USERDATA_TAG)
 
         // Create module table
         lua_createtable(L, 0, 0)

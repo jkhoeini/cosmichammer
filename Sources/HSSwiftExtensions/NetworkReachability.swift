@@ -5,51 +5,47 @@ import CFNetwork
 import SystemConfiguration
 
 private let USERDATA_TAG = "hs.network.reachability"
-private var refTable: Int32 = LUA_NOREF
 private var reachabilityQueue: DispatchQueue! = nil
-
-private func getPtr(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> UnsafeMutablePointer<ReachabilityData> {
-    return luaL_checkudata(L, idx, USERDATA_TAG)!.assumingMemoryBound(to: ReachabilityData.self)
-}
 
 // MARK: - Support Functions and Classes
 
-private struct ReachabilityData {
+private class HSReachability: NSObject {
     var reachabilityObj: SCNetworkReachability?
-    var callbackRef: Int32
-    var selfRef: Int32
-    var watcherEnabled: Bool
-    var generation: UInt64
-}
+    var callback: LuaValue?
+    var selfRefValue: LuaValue?
+    var watcherEnabled: Bool = false
+    var generation: UInt64 = 0
+    private var tornDown = false
 
-private func pushSCNetworkReachability(_ L: UnsafeMutablePointer<lua_State>!, _ theRef: SCNetworkReachability) -> Int32 {
-    let thePtr = lua_newuserdata(L, MemoryLayout<ReachabilityData>.size)!.assumingMemoryBound(to: ReachabilityData.self)
-    memset(thePtr, 0, MemoryLayout<ReachabilityData>.size)
-
-    thePtr.pointee.reachabilityObj = theRef
-    thePtr.pointee.callbackRef = LUA_NOREF
-    thePtr.pointee.selfRef = LUA_NOREF
-    thePtr.pointee.watcherEnabled = false
-    thePtr.pointee.generation = lua_currentStateGeneration()
-
-    luaL_getmetatable(L, USERDATA_TAG)
-    lua_setmetatable(L, -2)
-    return 1
+    /// Idempotent teardown: stop the watcher, drop the Lua callback and self
+    /// references, mark as torn down.  Called from __gc while the lua_State is
+    /// still alive.
+    func teardown() {
+        guard !tornDown else { return }
+        tornDown = true
+        if watcherEnabled, let r = reachabilityObj {
+            SCNetworkReachabilitySetCallback(r, nil, nil)
+            SCNetworkReachabilitySetDispatchQueue(r, nil)
+            watcherEnabled = false
+        }
+        callback = nil
+        selfRefValue = nil
+        reachabilityObj = nil
+    }
 }
 
 private let doReachabilityCallback: SCNetworkReachabilityCallBack = { target, flags, info in
     guard let info = info else { return }
-    let theRef = info.assumingMemoryBound(to: ReachabilityData.self)
+    let obj = Unmanaged<HSReachability>.fromOpaque(info).takeUnretainedValue()
     DispatchQueue.main.async {
-        if theRef.pointee.callbackRef != LUA_NOREF && theRef.pointee.selfRef != LUA_NOREF {
-            let L = lua_getCurrentState()!
-            guard lua_isStateGenerationValid(theRef.pointee.generation) else { return }
-            lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(theRef.pointee.callbackRef))
-            lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(theRef.pointee.selfRef))
-            lua_pushinteger(L, lua_Integer(flags.rawValue))
-            if lua_pcall(L, 2, 0, 0) != LUA_OK {
-                lua_pop(L, 1)
-            }
+        guard let cb = obj.callback else { return }
+        let L = lua_getCurrentState()!
+        guard lua_isStateGenerationValid(obj.generation) else { return }
+        cb.push(onto: L)
+        L.push(userdata: obj)
+        lua_pushinteger(L, lua_Integer(flags.rawValue))
+        if lua_pcall(L, 2, 0, 0) != LUA_OK {
+            lua_pop(L, 1)
         }
     }
 }
@@ -92,8 +88,11 @@ private func reachabilityForAddress(_ L: LuaState) throws -> CInt {
         if results != nil { freeaddrinfo(results) }
         throw LuaCallError("address parse error: \(String(cString: gai_strerror(ecode)!))")
     }
-    let theRef = SCNetworkReachabilityCreateWithAddress(kCFAllocatorDefault, results!.pointee.ai_addr)!
-    _ = pushSCNetworkReachability(L, theRef)
+    let scRef = SCNetworkReachabilityCreateWithAddress(kCFAllocatorDefault, results!.pointee.ai_addr)!
+    let obj = HSReachability()
+    obj.reachabilityObj = scRef
+    obj.generation = lua_currentStateGeneration()
+    L.push(userdata: obj)
     if results != nil { freeaddrinfo(results) }
     return 1
 }
@@ -135,8 +134,11 @@ private func reachabilityForAddressPair(_ L: LuaState) throws -> CInt {
         throw LuaCallError("remote address parse error: \(String(cString: gai_strerror(ecode2)!))")
     }
 
-    let theRef = SCNetworkReachabilityCreateWithAddressPair(kCFAllocatorDefault, results1!.pointee.ai_addr, results2!.pointee.ai_addr)!
-    _ = pushSCNetworkReachability(L, theRef)
+    let scRef = SCNetworkReachabilityCreateWithAddressPair(kCFAllocatorDefault, results1!.pointee.ai_addr, results2!.pointee.ai_addr)!
+    let obj = HSReachability()
+    obj.reachabilityObj = scRef
+    obj.generation = lua_currentStateGeneration()
+    L.push(userdata: obj)
 
     if results1 != nil { freeaddrinfo(results1) }
     if results2 != nil { freeaddrinfo(results2) }
@@ -158,155 +160,11 @@ private func reachabilityForAddressPair(_ L: LuaState) throws -> CInt {
 ///  * this constructor relies on the hostname being resolvable, possibly through DNS, Bonjour, locally defined, etc.
 private func reachabilityForHostName(_ L: LuaState) throws -> CInt {
     let internalName = luaL_checkstring(L, 1)!
-    let theRef = SCNetworkReachabilityCreateWithName(kCFAllocatorDefault, internalName)!
-    _ = pushSCNetworkReachability(L, theRef)
-    return 1
-}
-
-// MARK: - Module Methods
-
-/// hs.network.reachability:status() -> number
-/// Method
-/// Returns the reachability status for the object
-///
-/// Parameters:
-///  * None
-///
-/// Returns:
-///  * a numeric representation of the reachability status
-///
-/// Notes:
-///  * The numeric representation is made up from a combination of the flags defined in [hs.network.reachability.flags](#flags).
-private func reachabilityStatus(_ L: LuaState) throws -> CInt {
-    let theRef = getPtr(L, 1).pointee.reachabilityObj!
-    var flags = SCNetworkReachabilityFlags()
-    let valid = SCNetworkReachabilityGetFlags(theRef, &flags)
-    if valid {
-        lua_pushinteger(L, lua_Integer(flags.rawValue))
-    } else {
-        throw LuaCallError("unable to get reachability flags:\(String(cString: SCErrorString(SCError())))")
-    }
-    return 1
-}
-
-/// hs.network.reachability:statusString() -> string
-/// Method
-/// Returns a string representation of the reachability status for the object
-///
-/// Parameters:
-///  * None
-///
-/// Returns:
-///  * a string representation of the reachability status for the object
-///
-/// Notes:
-///  * This is included primarily for debugging, but may be more useful when you just want a quick look at the reachability status for display or testing.
-///  * The string will be made up of the following flags:
-///    * 't'|'-' indicates if the destination is reachable through a transient connection
-///    * 'R'|'-' indicates if the destination is reachable
-///    * 'c'|'-' indicates that a connection of some sort is required for the destination to be reachable
-///    * 'C'|'-' indicates if the destination requires a connection which will be initiated when traffic to the destination is present
-///    * 'i'|'-' indicates if the destination requires a connection which will require user activity to initiate
-///    * 'D'|'-' indicates if the destination requires a connection which will be initiated on demand through the CFSocketStream interface
-///    * 'l'|'-' indicates if the destination is actually a local address
-///    * 'd'|'-' indicates if the destination is directly connected
-private func reachabilityStatusString(_ L: LuaState) throws -> CInt {
-    let theRef = getPtr(L, 1).pointee.reachabilityObj!
-    var flags = SCNetworkReachabilityFlags()
-    let valid = SCNetworkReachabilityGetFlags(theRef, &flags)
-    if valid {
-        lua_pushstring(L, statusString(flags))
-    } else {
-        throw LuaCallError("unable to get reachability flags:\(String(cString: SCErrorString(SCError())))")
-    }
-    return 1
-}
-
-/// hs.network.reachability:setCallback(function) -> reachabilityObject
-/// Method
-/// Set or remove the callback function for a reachability object
-///
-/// Parameters:
-///  * a function or nil to set or remove the reachability object callback function
-///
-/// Returns:
-///  * the reachability object
-///
-/// Notes:
-///  * The callback function will be invoked each time the status for the given reachability object changes.  The callback function should expect 2 arguments, the reachability object itself and a numeric representation of the reachability flags, and should not return anything.
-///  * This method just sets the callback function.  You can start or stop the watcher with [hs.network.reachability:start](#start) or [hs.network.reachability:stop](#stop)
-private func reachabilityCallback(_ L: LuaState) throws -> CInt {
-    let theRef = getPtr(L, 1)
-    let argType = lua_type(L, 2)
-    guard argType == LUA_TFUNCTION || argType == LUA_TNIL else {
-        throw LuaCallError("expected function or nil for argument 2")
-    }
-
-    // in either case, we need to remove an existing callback, so...
-    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, theRef.pointee.callbackRef)
-    theRef.pointee.callbackRef = LUA_NOREF
-    if argType == LUA_TFUNCTION {
-        lua_pushvalue(L, 2)
-        theRef.pointee.callbackRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
-        if theRef.pointee.selfRef == LUA_NOREF {
-            lua_pushvalue(L, 1)
-            theRef.pointee.selfRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
-        }
-    } else {
-        luaL_unref(L, LUA_REGISTRYINDEX_VALUE, theRef.pointee.selfRef)
-        theRef.pointee.selfRef = LUA_NOREF
-    }
-
-    lua_pushvalue(L, 1)
-    return 1
-}
-
-/// hs.network.reachability:start() -> reachabilityObject
-/// Method
-/// Starts watching the reachability object for changes and invokes the callback function (if any) when a change occurs.
-///
-/// Parameters:
-///  * None
-///
-/// Returns:
-///  * the reachability object
-///
-/// Notes:
-///  * The callback function should be specified with [hs.network.reachability:setCallback](#setCallback).
-private func reachabilityStartWatcher(_ L: LuaState) throws -> CInt {
-    let theRef = getPtr(L, 1)
-    if !theRef.pointee.watcherEnabled {
-        var context = SCNetworkReachabilityContext(version: 0, info: theRef, retain: nil, release: nil, copyDescription: nil)
-        if SCNetworkReachabilitySetCallback(theRef.pointee.reachabilityObj!, doReachabilityCallback, &context) {
-            if SCNetworkReachabilitySetDispatchQueue(theRef.pointee.reachabilityObj!, reachabilityQueue) {
-                theRef.pointee.watcherEnabled = true
-            } else {
-                SCNetworkReachabilitySetCallback(theRef.pointee.reachabilityObj!, nil, nil)
-                throw LuaCallError("unable to set watcher dispatch queue:\(String(cString: SCErrorString(SCError())))")
-            }
-        } else {
-            throw LuaCallError("unable to set watcher callback:\(String(cString: SCErrorString(SCError())))")
-        }
-    }
-    lua_pushvalue(L, 1)
-    return 1
-}
-
-/// hs.network.reachability:stop() -> reachabilityObject
-/// Method
-/// Stops watching the reachability object for changes.
-///
-/// Parameters:
-///  * None
-///
-/// Returns:
-///  * the reachability object
-private func reachabilityStopWatcher(_ L: LuaState) throws -> CInt {
-    let theRef = getPtr(L, 1)
-    SCNetworkReachabilitySetCallback(theRef.pointee.reachabilityObj!, nil, nil)
-    SCNetworkReachabilitySetDispatchQueue(theRef.pointee.reachabilityObj!, nil)
-    theRef.pointee.watcherEnabled = false
-    lua_pushvalue(L, 1)
+    let scRef = SCNetworkReachabilityCreateWithName(kCFAllocatorDefault, internalName)!
+    let obj = HSReachability()
+    obj.reachabilityObj = scRef
+    obj.generation = lua_currentStateGeneration()
+    L.push(userdata: obj)
     return 1
 }
 
@@ -347,82 +205,219 @@ private func pushReachabilityFlags(_ L: LuaState) throws -> CInt {
 
 // MARK: - Cosmic Hammer/Lua Infrastructure
 
-private func userdata_tostring(_ L: LuaState) throws -> CInt {
-    let theRef = getPtr(L, 1).pointee.reachabilityObj!
-    var flags = SCNetworkReachabilityFlags()
-    let valid = SCNetworkReachabilityGetFlags(theRef, &flags)
-    let flagString: String
-    if valid {
-        flagString = statusString(flags)
-    } else {
-        flagString = "** unable to get reachability flags*"
-    }
-    let ptr = lua_topointer(L, 1)
-    lua_pushstring(L, "\(USERDATA_TAG): \(flagString) (\(String(describing: ptr)))")
-    return 1
-}
-
-private func userdata_eq(_ L: LuaState) throws -> CInt {
-    if luaL_testudata(L, 1, USERDATA_TAG) != nil && luaL_testudata(L, 2, USERDATA_TAG) != nil {
-        let theRef1 = getPtr(L, 1).pointee.reachabilityObj!
-        let theRef2 = getPtr(L, 2).pointee.reachabilityObj!
-        lua_pushboolean(L, CFEqual(theRef1, theRef2) ? 1 : 0)
-    } else {
-        lua_pushboolean(L, 0)
-    }
-    return 1
-}
-
-private func userdata_gc(_ L: LuaState) throws -> CInt {
-    let theRef = getPtr(L, 1)
-    if theRef.pointee.callbackRef != LUA_NOREF {
-        luaL_unref(L, LUA_REGISTRYINDEX_VALUE, theRef.pointee.callbackRef)
-        theRef.pointee.callbackRef = LUA_NOREF
-        SCNetworkReachabilitySetCallback(theRef.pointee.reachabilityObj!, nil, nil)
-        SCNetworkReachabilitySetDispatchQueue(theRef.pointee.reachabilityObj!, nil)
-    }
-    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, theRef.pointee.selfRef)
-    theRef.pointee.selfRef = LUA_NOREF
-
-    theRef.pointee.reachabilityObj = nil
-    lua_pushnil(L)
-    lua_setmetatable(L, 1)
-    return 0
-}
-
-private func meta_gc(_ L: LuaState) throws -> CInt {
-    reachabilityQueue = nil
-    return 0
-}
-
 @_cdecl("luaopen_hs_libnetworkreachability")
 public func luaopen_hs_libnetworkreachability(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     runEntryPoint(L) { L in
-        lua_newtable(L)
-        refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+        // Register idiomatic Metatable<HSReachability> with LuaSwift.
+        L.register(Metatable<HSReachability>(
+            fields: [
+                /// hs.network.reachability:status() -> number
+                /// Method
+                /// Returns the reachability status for the object
+                ///
+                /// Parameters:
+                ///  * None
+                ///
+                /// Returns:
+                ///  * a numeric representation of the reachability status
+                ///
+                /// Notes:
+                ///  * The numeric representation is made up from a combination of the flags defined in [hs.network.reachability.flags](#flags).
+                "status": .closure { L in
+                    let obj: HSReachability = try L.checkArgument(1)
+                    var flags = SCNetworkReachabilityFlags()
+                    guard let r = obj.reachabilityObj, SCNetworkReachabilityGetFlags(r, &flags) else {
+                        throw LuaCallError("unable to get reachability flags:\(String(cString: SCErrorString(SCError())))")
+                    }
+                    lua_pushinteger(L, lua_Integer(flags.rawValue))
+                    return 1
+                },
+                /// hs.network.reachability:statusString() -> string
+                /// Method
+                /// Returns a string representation of the reachability status for the object
+                ///
+                /// Parameters:
+                ///  * None
+                ///
+                /// Returns:
+                ///  * a string representation of the reachability status for the object
+                ///
+                /// Notes:
+                ///  * This is included primarily for debugging, but may be more useful when you just want a quick look at the reachability status for display or testing.
+                ///  * The string will be made up of the following flags:
+                ///    * 't'|'-' indicates if the destination is reachable through a transient connection
+                ///    * 'R'|'-' indicates if the destination is reachable
+                ///    * 'c'|'-' indicates that a connection of some sort is required for the destination to be reachable
+                ///    * 'C'|'-' indicates if the destination requires a connection which will be initiated when traffic to the destination is present
+                ///    * 'i'|'-' indicates if the destination requires a connection which will require user activity to initiate
+                ///    * 'D'|'-' indicates if the destination requires a connection which will be initiated on demand through the CFSocketStream interface
+                ///    * 'l'|'-' indicates if the destination is actually a local address
+                ///    * 'd'|'-' indicates if the destination is directly connected
+                "statusString": .closure { L in
+                    let obj: HSReachability = try L.checkArgument(1)
+                    var flags = SCNetworkReachabilityFlags()
+                    guard let r = obj.reachabilityObj, SCNetworkReachabilityGetFlags(r, &flags) else {
+                        throw LuaCallError("unable to get reachability flags:\(String(cString: SCErrorString(SCError())))")
+                    }
+                    lua_pushstring(L, statusString(flags))
+                    return 1
+                },
+                /// hs.network.reachability:setCallback(function) -> reachabilityObject
+                /// Method
+                /// Set or remove the callback function for a reachability object
+                ///
+                /// Parameters:
+                ///  * a function or nil to set or remove the reachability object callback function
+                ///
+                /// Returns:
+                ///  * the reachability object
+                ///
+                /// Notes:
+                ///  * The callback function will be invoked each time the status for the given reachability object changes.  The callback function should expect 2 arguments, the reachability object itself and a numeric representation of the reachability flags, and should not return anything.
+                ///  * This method just sets the callback function.  You can start or stop the watcher with [hs.network.reachability:start](#start) or [hs.network.reachability:stop](#stop)
+                "setCallback": .closure { L in
+                    let obj: HSReachability = try L.checkArgument(1)
+                    let argType = lua_type(L, 2)
+                    guard argType == LUA_TFUNCTION || argType == LUA_TNIL else {
+                        throw LuaCallError("expected function or nil for argument 2")
+                    }
 
-        luaL_newmetatable(L, USERDATA_TAG)
-        lua_pushvalue(L, -1)
-        lua_setfield(L, -2, "__index")
-        L.push(reachabilityStatus)
-        lua_setfield(L, -2, "status")
-        L.push(reachabilityStatusString)
-        lua_setfield(L, -2, "statusString")
-        L.push(reachabilityCallback)
-        lua_setfield(L, -2, "setCallback")
-        L.push(reachabilityStartWatcher)
-        lua_setfield(L, -2, "start")
-        L.push(reachabilityStopWatcher)
-        lua_setfield(L, -2, "stop")
-        L.push(userdata_tostring)
-        lua_setfield(L, -2, "__tostring")
-        L.push(userdata_eq)
+                    if argType == LUA_TFUNCTION {
+                        obj.callback = L.ref(index: 2)
+                        if obj.selfRefValue == nil {
+                            lua_pushvalue(L, 1)
+                            obj.selfRefValue = L.ref(index: -1)
+                            lua_pop(L, 1)
+                        }
+                    } else {
+                        obj.callback = nil
+                        obj.selfRefValue = nil
+                    }
+
+                    lua_pushvalue(L, 1)
+                    return 1
+                },
+                /// hs.network.reachability:start() -> reachabilityObject
+                /// Method
+                /// Starts watching the reachability object for changes and invokes the callback function (if any) when a change occurs.
+                ///
+                /// Parameters:
+                ///  * None
+                ///
+                /// Returns:
+                ///  * the reachability object
+                ///
+                /// Notes:
+                ///  * The callback function should be specified with [hs.network.reachability:setCallback](#setCallback).
+                "start": .closure { L in
+                    let obj: HSReachability = try L.checkArgument(1)
+                    if !obj.watcherEnabled {
+                        var context = SCNetworkReachabilityContext(
+                            version: 0,
+                            info: Unmanaged.passUnretained(obj).toOpaque(),
+                            retain: nil,
+                            release: nil,
+                            copyDescription: nil
+                        )
+                        guard let r = obj.reachabilityObj else {
+                            throw LuaCallError("reachability object is invalid")
+                        }
+                        if SCNetworkReachabilitySetCallback(r, doReachabilityCallback, &context) {
+                            if SCNetworkReachabilitySetDispatchQueue(r, reachabilityQueue) {
+                                obj.watcherEnabled = true
+                            } else {
+                                SCNetworkReachabilitySetCallback(r, nil, nil)
+                                throw LuaCallError("unable to set watcher dispatch queue:\(String(cString: SCErrorString(SCError())))")
+                            }
+                        } else {
+                            throw LuaCallError("unable to set watcher callback:\(String(cString: SCErrorString(SCError())))")
+                        }
+                    }
+                    lua_pushvalue(L, 1)
+                    return 1
+                },
+                /// hs.network.reachability:stop() -> reachabilityObject
+                /// Method
+                /// Stops watching the reachability object for changes.
+                ///
+                /// Parameters:
+                ///  * None
+                ///
+                /// Returns:
+                ///  * the reachability object
+                "stop": .closure { L in
+                    let obj: HSReachability = try L.checkArgument(1)
+                    if let r = obj.reachabilityObj {
+                        SCNetworkReachabilitySetCallback(r, nil, nil)
+                        SCNetworkReachabilitySetDispatchQueue(r, nil)
+                    }
+                    obj.watcherEnabled = false
+                    lua_pushvalue(L, 1)
+                    return 1
+                },
+            ],
+            tostring: .closure { L in
+                let obj: HSReachability = try L.checkArgument(1)
+                let flagString: String
+                if let r = obj.reachabilityObj {
+                    var flags = SCNetworkReachabilityFlags()
+                    if SCNetworkReachabilityGetFlags(r, &flags) {
+                        flagString = statusString(flags)
+                    } else {
+                        flagString = "** unable to get reachability flags*"
+                    }
+                } else {
+                    flagString = "** reachability object is nil*"
+                }
+                let ptr = lua_topointer(L, 1)
+                lua_pushstring(L, "\(USERDATA_TAG): \(flagString) (\(String(describing: ptr)))")
+                return 1
+            }
+        ))
+
+        // -- Post-registration metatable patching --
+        // Replace LuaSwift's default __gc with custom teardown + deinitialize.
+        L.pushMetatable(for: HSReachability.self)
+
+        // __eq: compare via CFEqual on the underlying SCNetworkReachability
+        lua_pushcclosure(L, { (L: LuaState!) -> CInt in
+            if let obj1: HSReachability = L.touserdata(1),
+               let obj2: HSReachability = L.touserdata(2),
+               let r1 = obj1.reachabilityObj,
+               let r2 = obj2.reachabilityObj {
+                lua_pushboolean(L, CFEqual(r1, r2) ? 1 : 0)
+            } else {
+                lua_pushboolean(L, 0)
+            }
+            return 1
+        }, 0)
         lua_setfield(L, -2, "__eq")
-        L.push(userdata_gc)
-        lua_setfield(L, -2, "__gc")
-        lua_pop(L, 1)
 
-        lua_createtable(L, 0, 3)
+        // Replace __gc with our explicit teardown + deinitialize
+        lua_pushcclosure(L, { (L: LuaState!) -> CInt in
+            if let obj: HSReachability = L.touserdata(1) {
+                obj.teardown()
+            }
+            // Now deinitialize the Any box (same as LuaSwift's gcUserdata)
+            let rawptr = lua_touserdata(L, 1)!
+            let anyPtr = rawptr.assumingMemoryBound(to: Any.self)
+            anyPtr.deinitialize(count: 1)
+            return 0
+        }, 0)
+        lua_setfield(L, -2, "__gc")
+
+        // Set __type and __name for lsunit.lua assertIsUserdataOfType and tostring
+        lua_pushstring(L, USERDATA_TAG)
+        lua_setfield(L, -2, "__type")
+        lua_pushstring(L, USERDATA_TAG)
+        lua_setfield(L, -2, "__name")
+
+        // Alias the metatable under the legacy registry name so that
+        // core_getObjectMetatable("hs.network.reachability") still resolves.
+        lua_setfield(L, LUA_REGISTRYINDEX_VALUE, USERDATA_TAG)
+
+        // Create module table
+        lua_createtable(L, 0, 4)
         L.push(reachabilityForAddressPair)
         lua_setfield(L, -2, "forAddressPair")
         L.push(reachabilityForAddress)
@@ -430,9 +425,12 @@ public func luaopen_hs_libnetworkreachability(_ L: UnsafeMutablePointer<lua_Stat
         L.push(reachabilityForHostName)
         lua_setfield(L, -2, "forHostName")
 
-        // Set module metatable (for __gc)
+        // Set module metatable (for __gc to clean up reachabilityQueue)
         lua_createtable(L, 0, 1)
-        L.push(meta_gc)
+        lua_pushcclosure(L, { (L: LuaState!) -> CInt in
+            reachabilityQueue = nil
+            return 0
+        }, 0)
         lua_setfield(L, -2, "__gc")
         lua_setmetatable(L, -2)
 

@@ -6,28 +6,27 @@ import WebKit
 import os.log
 
 private let USERDATA_UCC_TAG = "hs.webview.usercontent"
-private var refTable: Int32 = 0
 
 // MARK: - HSUserContentController
 
 private class HSUserContentController: WKUserContentController, WKScriptMessageHandler {
     var name: String = ""
-    var udRef: Int32 = LUA_NOREF
-    var userContentCallback: Int32 = LUA_NOREF
+    var udRef: LuaValue?
+    var userContentCallback: LuaValue?
 
     convenience init(name: String) {
         self.init()
         self.name = name
-        self.udRef = LUA_NOREF
-        self.userContentCallback = LUA_NOREF
+        self.udRef = nil
+        self.userContentCallback = nil
         self.add(self, name: name)
     }
 
     func userContentController(_ userContentController: WKUserContentController,
                                didReceive message: WKScriptMessage) {
-        if message.name == name && userContentCallback != LUA_NOREF {
+        if message.name == name, let cb = userContentCallback {
             let L = lua_getCurrentState()!
-            lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(userContentCallback))
+            cb.push(onto: L)
             wv_pushAny(L, message)
             if lua_pcall(L, 1, 0, 0) != LUA_OK { lua_pop(L, 1) }
         }
@@ -165,14 +164,10 @@ private func ucc_setCallback(_ L: LuaState) throws -> CInt {
         .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
     let ucc = Unmanaged<HSUserContentController>.fromOpaque(ptr.pointee!).takeUnretainedValue()
 
-    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, ucc.userContentCallback)
-
-
-    ucc.userContentCallback = LUA_NOREF
+    ucc.userContentCallback = nil
 
     if lua_type(L, 2) == LUA_TFUNCTION {
-        lua_pushvalue(L, 2)
-        ucc.userContentCallback = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+        ucc.userContentCallback = L.ref(index: 2)
     }
 
     lua_pushvalue(L, 1)
@@ -184,16 +179,16 @@ private func ucc_setCallback(_ L: LuaState) throws -> CInt {
 private func HSUserContentController_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
     let ucc = obj as! HSUserContentController
 
-    if ucc.udRef == LUA_NOREF {
+    if ucc.udRef == nil {
         let uccPtr = lua_newuserdata(L, MemoryLayout<UnsafeMutableRawPointer>.size)!
             .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
         uccPtr.pointee = Unmanaged.passRetained(ucc).toOpaque()
         luaL_getmetatable(L, USERDATA_UCC_TAG)
         lua_setmetatable(L, -2)
-        ucc.udRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+        ucc.udRef = L.ref(index: -1)
     }
 
-    lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(ucc.udRef))
+    ucc.udRef!.push(onto: L)
     return 1
 }
 
@@ -298,7 +293,7 @@ private func userdata_eq(_ L: LuaState) throws -> CInt {
     if let raw1 = ptr1.pointee, let raw2 = ptr2.pointee {
         let ucc1 = Unmanaged<HSUserContentController>.fromOpaque(raw1).takeUnretainedValue()
         let ucc2 = Unmanaged<HSUserContentController>.fromOpaque(raw2).takeUnretainedValue()
-        lua_pushboolean(L, ucc1.udRef == ucc2.udRef ? 1 : 0)
+        lua_pushboolean(L, ucc1 === ucc2 ? 1 : 0)
     } else {
         lua_pushboolean(L, 0)
     }
@@ -311,9 +306,8 @@ private func userdata_gc(_ L: LuaState) throws -> CInt {
 
     if let rawPtr = ptr.pointee {
         let ucc = Unmanaged<HSUserContentController>.fromOpaque(rawPtr).takeRetainedValue()
-        luaL_unref(L, LUA_REGISTRYINDEX_VALUE, ucc.udRef)
-
-        ucc.udRef = LUA_NOREF
+        ucc.udRef = nil
+        ucc.userContentCallback = nil
         ucc.removeAllUserScripts()
         ucc.removeScriptMessageHandler(forName: ucc.name)
         ptr.pointee = nil
@@ -327,10 +321,6 @@ private func userdata_gc(_ L: LuaState) throws -> CInt {
 @_cdecl("luaopen_hs_libwebviewusercontent")
 public func luaopen_hs_libwebviewusercontent(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     runEntryPoint(L) { L in
-        // Create ref table in registry
-        lua_newtable(L)
-        refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
-
         // Register userdata metatable
         luaL_newmetatable(L, USERDATA_UCC_TAG)
         lua_pushvalue(L, -1)

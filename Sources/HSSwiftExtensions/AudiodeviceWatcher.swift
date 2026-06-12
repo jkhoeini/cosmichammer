@@ -15,10 +15,12 @@ import os.log
 
 // Define a datatype for hs.audiodevice.watcher objects
 struct AudioDeviceWatcher {
-    var callback: Int32
     var running: Bool
     var lsCanary: UInt64
 }
+
+/// Module-level LuaValue for the single watcher callback.
+private var watcherCallback: LuaValue? = nil
 
 private let watcherWatchSelectors: [AudioObjectPropertySelector] = [
     kAudioHardwarePropertyDevices,
@@ -56,14 +58,15 @@ private func audiodevicewatcher_callback(
             return
         }
 
-        if watcher.pointee.callback == LUA_NOREF {
+        guard let cb = watcherCallback else {
             os_log(.info, "%{public}s", "hs.audiodevice.watcher callback fired, but there is no callback. This is a bug")
-        } else {
-            for event in events {
-                lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(watcher.pointee.callback))
-                lua_pushany(L, event as NSString)
-                if lua_pcall(L, 1, 0, 0) != LUA_OK { lua_pop(L, 1) }
-            }
+            return
+        }
+
+        for event in events {
+            cb.push(onto: L)
+            lua_pushany(L, event as NSString)
+            if lua_pcall(L, 1, 0, 0) != LUA_OK { lua_pop(L, 1) }
         }
     }
     return noErr
@@ -96,19 +99,16 @@ private func audiodevicewatcher_setCallback(_ L: LuaState) throws -> CInt {
     if theWatcher == nil {
         theWatcher = UnsafeMutablePointer<AudioDeviceWatcher>.allocate(capacity: 1)
         theWatcher!.initialize(to: AudioDeviceWatcher(
-            callback: LUA_NOREF,
             running: false,
             lsCanary: lua_currentStateGeneration()
         ))
     }
 
-    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, theWatcher!.pointee.callback)
-    theWatcher!.pointee.callback = LUA_NOREF
+    watcherCallback = nil
 
     switch lua_type(L, 1) {
     case LUA_TFUNCTION:
-        lua_pushvalue(L, 1)
-        theWatcher!.pointee.callback = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+        watcherCallback = L.ref(index: 1)
     case LUA_TNIL:
         _ = try audiodevicewatcher_stop(L)
     default:
@@ -128,7 +128,7 @@ private func audiodevicewatcher_setCallback(_ L: LuaState) throws -> CInt {
 /// Returns:
 ///  * None
 private func audiodevicewatcher_start(_ L: LuaState) throws -> CInt {
-    guard let watcher = theWatcher, watcher.pointee.callback != LUA_NOREF else {
+    guard let watcher = theWatcher, watcherCallback != nil else {
         os_log(.error, "%{public}s", "You must call hs.audiodevice.watcher.setCallback() before hs.audiodevice.watcher.start()")
         return 0
     }
@@ -207,9 +207,8 @@ private func audiodevicewatcher_gc(_ L: LuaState) throws -> CInt {
 
     if let watcher = theWatcher {
         _ = try audiodevicewatcher_stop(L)
-        luaL_unref(L, LUA_REGISTRYINDEX_VALUE, watcher.pointee.callback)
+        watcherCallback = nil
 
-        watcher.pointee.callback = LUA_NOREF
         watcher.deinitialize(count: 1)
         watcher.deallocate()
         theWatcher = nil

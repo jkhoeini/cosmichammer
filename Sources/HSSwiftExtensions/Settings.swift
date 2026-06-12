@@ -8,7 +8,7 @@ private var myKVOContext: Int = 0 // See http://nshipster.com/key-value-observin
 // MARK: - HSUserDefaultKVOWatcher
 
 private class HSUserDefaultKVOWatcher: NSObject {
-    var watchedKeys = NSMutableDictionary()
+    var watchedKeys = [String: [String: LuaValue]]()
 
     override func observeValue(forKeyPath keyPath: String?, of object: Any?, change: [NSKeyValueChangeKey: Any]?, context: UnsafeMutableRawPointer?) {
         guard context == &myKVOContext else {
@@ -16,13 +16,12 @@ private class HSUserDefaultKVOWatcher: NSObject {
             return
         }
 
-        guard let keyPath = keyPath, let fnCallbacks = watchedKeys[keyPath] as? NSMutableDictionary else { return }
+        guard let keyPath = keyPath, let fnCallbacks = watchedKeys[keyPath] else { return }
 
         DispatchQueue.main.async {
             let L = lua_getCurrentState()!
-            fnCallbacks.enumerateKeysAndObjects { _, refN, _ in
-                let ref = (refN as! NSNumber).int32Value
-                lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(ref))
+            for (_, cb) in fnCallbacks {
+                cb.push(onto: L)
                 lua_pushany(L, keyPath)
                 if lua_pcall(L, 1, 0, 0) != LUA_OK {
                     lua_pop(L, 1)
@@ -249,34 +248,29 @@ private func target_watchKey(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TSTRING)
     luaL_checktype(L, 2, LUA_TSTRING)
 
-    let watcherID = String(cString: lua_tostring(L, 1)!) as NSString
-    let keyPath = String(cString: lua_tostring(L, 2)!) as NSString
+    let watcherID = String(cString: lua_tostring(L, 1)!)
+    let keyPath = String(cString: lua_tostring(L, 2)!)
 
     if watcherManager.watchedKeys[keyPath] == nil {
-        watcherManager.watchedKeys[keyPath] = NSMutableDictionary()
+        watcherManager.watchedKeys[keyPath] = [String: LuaValue]()
         _ = catchingObjCException {
-            UserDefaults.standard.addObserver(watcherManager, forKeyPath: keyPath as String,
+            UserDefaults.standard.addObserver(watcherManager, forKeyPath: keyPath,
                                               options: .new, context: &myKVOContext)
         }
     }
 
-    let keyWatchers = watcherManager.watchedKeys[keyPath] as! NSMutableDictionary
-    let refN = keyWatchers[watcherID] as? NSNumber
+    let existingCb = watcherManager.watchedKeys[keyPath]?[watcherID]
 
     if lua_gettop(L) == 2 {
-        if let ref = refN {
-            lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(ref.int32Value))
+        if let cb = existingCb {
+            cb.push(onto: L)
         } else {
             lua_pushnil(L)
         }
     } else {
-        if let ref = refN {
-            luaL_unref(L, LUA_REGISTRYINDEX_VALUE, ref.int32Value)
-        }
-        keyWatchers[watcherID] = nil
+        watcherManager.watchedKeys[keyPath]?[watcherID] = nil
         if lua_type(L, 3) != LUA_TNIL {
-            lua_pushvalue(L, 3)
-            keyWatchers[watcherID] = NSNumber(value: luaL_ref(L, LUA_REGISTRYINDEX_VALUE))
+            watcherManager.watchedKeys[keyPath]?[watcherID] = L.ref(index: 3)
         }
         lua_pushvalue(L, 1)
     }
@@ -285,20 +279,26 @@ private func target_watchKey(_ L: LuaState) throws -> CInt {
 
 // For debugging
 private func output_watchers(_ L: LuaState) throws -> CInt {
-    lua_pushany(L, watcherManager.watchedKeys)
+    lua_newtable(L)
+    for (keyPath, watchers) in watcherManager.watchedKeys {
+        lua_newtable(L)
+        for (watcherID, cb) in watchers {
+            cb.push(onto: L)
+            lua_setfield(L, -2, watcherID)
+        }
+        lua_setfield(L, -2, keyPath)
+    }
     return 1
 }
 
 private func meta_gc(_ L: LuaState) throws -> CInt {
-    watcherManager.watchedKeys.enumerateKeysAndObjects { keyPath, watchers, _ in
+    for (keyPath, _) in watcherManager.watchedKeys {
         _ = catchingObjCException {
-            UserDefaults.standard.removeObserver(watcherManager!, forKeyPath: keyPath as! String, context: &myKVOContext)
-        }
-        (watchers as! NSMutableDictionary).enumerateKeysAndObjects { _, refN, _ in
-            luaL_unref(L, LUA_REGISTRYINDEX_VALUE, (refN as! NSNumber).int32Value)
+            UserDefaults.standard.removeObserver(watcherManager!, forKeyPath: keyPath, context: &myKVOContext)
         }
     }
-    watcherManager.watchedKeys.removeAllObjects()
+    // Setting to empty releases all LuaValue refs via their deinit
+    watcherManager.watchedKeys.removeAll()
     watcherManager = nil
     return 0
 }

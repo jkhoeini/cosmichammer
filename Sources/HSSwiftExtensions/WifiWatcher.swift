@@ -76,9 +76,9 @@ private class HSWifiWatcherManager: NSObject {
             guard let aWatcher = obj as? HSWifiWatcher else { return }
             guard let watchingFor = aWatcher.watchingFor, watchingFor.contains(message) else { return }
             DispatchQueue.main.async {
-                if aWatcher.callbackRef != LUA_NOREF {
+                if let cb = aWatcher.callback {
                     let L = lua_getCurrentState()!
-                    lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(aWatcher.callbackRef))
+                    cb.push(onto: L)
                     pushHSWifiWatcher(L, aWatcher)
                     lua_pushstring(L, message)
                     let count = details?.count ?? 0
@@ -97,7 +97,7 @@ private class HSWifiWatcherManager: NSObject {
 }
 
 private class HSWifiWatcher: NSObject {
-    var callbackRef: Int32 = LUA_NOREF
+    var callback: LuaValue?
     var selfRef: Int32 = 0
     var watchingFor: Set<String>? = Set(["SSIDChange"])
 }
@@ -132,8 +132,7 @@ private class HSWifiWatcher: NSObject {
 private func wifi_watcher_new(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TFUNCTION)
     let newWatcher = HSWifiWatcher()
-    lua_pushvalue(L, 1)
-    newWatcher.callbackRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+    newWatcher.callback = L.ref(index: 1)
     pushHSWifiWatcher(L, newWatcher)
     return 1
 }
@@ -280,8 +279,7 @@ private func userdata_gc(_ L: LuaState) throws -> CInt {
         let obj = Unmanaged<HSWifiWatcher>.fromOpaque(rawPtr).takeRetainedValue()
         obj.selfRef -= 1
         if obj.selfRef == 0 {
-            luaL_unref(L, LUA_REGISTRYINDEX_VALUE, obj.callbackRef)
-            obj.callbackRef = LUA_NOREF
+            obj.callback = nil
             manager?.watchers.remove(obj)
         }
         ptr.pointee = nil

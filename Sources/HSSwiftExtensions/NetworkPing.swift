@@ -25,7 +25,6 @@ import Darwin.POSIX
 // MARK: - Constants
 
 private let USERDATA_TAG = "hs.network.ping.echoRequest"
-private var refTable: Int32 = LUA_NOREF
 
 private let ADDRESS_STYLES: [String: Int] = [
     "any":  SimplePingAddressStyle.any.rawValue,
@@ -95,13 +94,27 @@ private func pushParsedICMPPayload(_ L: UnsafeMutablePointer<lua_State>!, _ payl
 // MARK: - PingableObject
 
 private class PingableObject: SimplePing, SimplePingDelegate {
-    var callbackRef: Int32 = LUA_NOREF
-    var selfRef: Int32 = LUA_NOREF
+    var callback: LuaValue?
+    var selfRefValue: LuaValue?
     var passAllUnexpected: Bool = false
+    var generation: UInt64 = 0
+    private var tornDown = false
 
     override init(hostName: String) {
         super.init(hostName: hostName)
         self.delegate = self
+    }
+
+    /// Idempotent teardown: stop the pinger, drop the Lua callback and self
+    /// reference, mark as torn down.  Called from the explicit __gc closure
+    /// while the lua_State is still alive, AND from delegate methods when the
+    /// generation canary fires.
+    func teardown() {
+        guard !tornDown else { return }
+        tornDown = true
+        stop()
+        callback = nil
+        selfRefValue = nil
     }
 
     // MARK: SimplePingDelegate Methods
@@ -114,67 +127,87 @@ private class PingableObject: SimplePing, SimplePingDelegate {
             CFSocketSetSocketFlags(s, sockopt)
         }
 
-        if callbackRef != LUA_NOREF {
-            let L = lua_getCurrentState()!
-            lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(callbackRef))
-            pushPingableObject(L, pinger as! PingableObject)
-            lua_pushany(L, "didStart" as NSString)
-            _ = pushParsedAddress(L, address)
-            if lua_pcall(L, 3, 0, 0) != LUA_OK { lua_pop(L, 1) }
+        guard lua_isStateGenerationValid(generation) else {
+            teardown()
+            return
         }
+
+        guard let cb = callback else { return }
+        let L = lua_getCurrentState()!
+        cb.push(onto: L)
+        L.push(userdata: pinger as! PingableObject)
+        lua_pushany(L, "didStart" as NSString)
+        _ = pushParsedAddress(L, address)
+        if lua_pcall(L, 3, 0, 0) != LUA_OK { lua_pop(L, 1) }
     }
 
     func simplePing(_ pinger: SimplePing, didFailWithError error: Error) {
-        let L = lua_getCurrentState()!
         let errorReason = error.localizedDescription
         os_log(.debug, "%{public}s", "\(USERDATA_TAG):didFailWithError:\(errorReason) - ping stopped.")
-        if callbackRef != LUA_NOREF {
-            lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(callbackRef))
-            pushPingableObject(L, pinger as! PingableObject)
+
+        guard lua_isStateGenerationValid(generation) else {
+            teardown()
+            return
+        }
+
+        let L = lua_getCurrentState()!
+        if let cb = callback {
+            cb.push(onto: L)
+            L.push(userdata: pinger as! PingableObject)
             lua_pushany(L, "didFail" as NSString)
             lua_pushany(L, errorReason as NSString)
             if lua_pcall(L, 3, 0, 0) != LUA_OK { lua_pop(L, 1) }
         }
-        luaL_unref(L, LUA_REGISTRYINDEX_VALUE, selfRef)
-
-        selfRef = LUA_NOREF
+        selfRefValue = nil
     }
 
     func simplePing(_ pinger: SimplePing, didSendPacket packet: Data, sequenceNumber: UInt16) {
-        if callbackRef != LUA_NOREF {
-            let L = lua_getCurrentState()!
-            lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(callbackRef))
-            pushPingableObject(L, pinger as! PingableObject)
-            lua_pushany(L, "sendPacket" as NSString)
-            _ = pushParsedICMPPayload(L, packet)
-            lua_pushinteger(L, lua_Integer(sequenceNumber))
-            if lua_pcall(L, 4, 0, 0) != LUA_OK { lua_pop(L, 1) }
+        guard lua_isStateGenerationValid(generation) else {
+            teardown()
+            return
         }
+
+        guard let cb = callback else { return }
+        let L = lua_getCurrentState()!
+        cb.push(onto: L)
+        L.push(userdata: pinger as! PingableObject)
+        lua_pushany(L, "sendPacket" as NSString)
+        _ = pushParsedICMPPayload(L, packet)
+        lua_pushinteger(L, lua_Integer(sequenceNumber))
+        if lua_pcall(L, 4, 0, 0) != LUA_OK { lua_pop(L, 1) }
     }
 
     func simplePing(_ pinger: SimplePing, didFailToSendPacket packet: Data, sequenceNumber: UInt16, error: Error) {
-        if callbackRef != LUA_NOREF {
-            let L = lua_getCurrentState()!
-            lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(callbackRef))
-            pushPingableObject(L, pinger as! PingableObject)
-            lua_pushany(L, "sendPacketFailed" as NSString)
-            _ = pushParsedICMPPayload(L, packet)
-            lua_pushinteger(L, lua_Integer(sequenceNumber))
-            lua_pushany(L, error.localizedDescription as NSString)
-            if lua_pcall(L, 5, 0, 0) != LUA_OK { lua_pop(L, 1) }
+        guard lua_isStateGenerationValid(generation) else {
+            teardown()
+            return
         }
+
+        guard let cb = callback else { return }
+        let L = lua_getCurrentState()!
+        cb.push(onto: L)
+        L.push(userdata: pinger as! PingableObject)
+        lua_pushany(L, "sendPacketFailed" as NSString)
+        _ = pushParsedICMPPayload(L, packet)
+        lua_pushinteger(L, lua_Integer(sequenceNumber))
+        lua_pushany(L, error.localizedDescription as NSString)
+        if lua_pcall(L, 5, 0, 0) != LUA_OK { lua_pop(L, 1) }
     }
 
     func simplePing(_ pinger: SimplePing, didReceivePingResponsePacket packet: Data, sequenceNumber: UInt16) {
-        if callbackRef != LUA_NOREF {
-            let L = lua_getCurrentState()!
-            lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(callbackRef))
-            pushPingableObject(L, pinger as! PingableObject)
-            lua_pushany(L, "receivedPacket" as NSString)
-            _ = pushParsedICMPPayload(L, packet)
-            lua_pushinteger(L, lua_Integer(sequenceNumber))
-            if lua_pcall(L, 4, 0, 0) != LUA_OK { lua_pop(L, 1) }
+        guard lua_isStateGenerationValid(generation) else {
+            teardown()
+            return
         }
+
+        guard let cb = callback else { return }
+        let L = lua_getCurrentState()!
+        cb.push(onto: L)
+        L.push(userdata: pinger as! PingableObject)
+        lua_pushany(L, "receivedPacket" as NSString)
+        _ = pushParsedICMPPayload(L, packet)
+        lua_pushinteger(L, lua_Integer(sequenceNumber))
+        if lua_pcall(L, 4, 0, 0) != LUA_OK { lua_pop(L, 1) }
     }
 
     func simplePing(_ pinger: SimplePing, didReceiveUnexpectedPacket packet: Data) {
@@ -192,521 +225,430 @@ private class PingableObject: SimplePing, SimplePingDelegate {
                 }
             }
         }
-        if notifyCallback && callbackRef != LUA_NOREF {
-            let L = lua_getCurrentState()!
-            lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(callbackRef))
-            pushPingableObject(L, pinger as! PingableObject)
-            lua_pushany(L, "receivedUnexpectedPacket" as NSString)
-            _ = pushParsedICMPPayload(L, packet)
-            if lua_pcall(L, 3, 0, 0) != LUA_OK { lua_pop(L, 1) }
+
+        guard notifyCallback else { return }
+
+        guard lua_isStateGenerationValid(generation) else {
+            teardown()
+            return
         }
+
+        guard let cb = callback else { return }
+        let L = lua_getCurrentState()!
+        cb.push(onto: L)
+        L.push(userdata: pinger as! PingableObject)
+        lua_pushany(L, "receivedUnexpectedPacket" as NSString)
+        _ = pushParsedICMPPayload(L, packet)
+        if lua_pcall(L, 3, 0, 0) != LUA_OK { lua_pop(L, 1) }
     }
-}
-
-// MARK: - Module Functions
-
-/// hs.network.ping.echoRequest.echoRequest(server) -> echoRequestObject
-/// Constructor
-/// Creates a new ICMP Echo Request object for the server specified.
-///
-/// Parameters:
-///  * `server` - a string containing the hostname or ip address of the server to communicate with. Both IPv4 and IPv6 style addresses are supported.
-///
-/// Returns:
-///  * an echoRequest object
-///
-/// Notes:
-///  * This constructor returns a lower-level object than the `hs.network.ping.ping` constructor and is more difficult to use. It is recommended that you use this constructor only if `hs.network.ping.ping` is not sufficient for your needs.
-///
-///  * For convenience, you can call this constructor as `hs.network.ping.echoRequest(server)`
-private func echoRequest_new(_ L: LuaState) throws -> CInt {
-    luaL_checktype(L, 1, LUA_TSTRING)
-    let pinger = PingableObject(hostName: lua_tovalue(L, at: 1) as! String)
-    pushPingableObject(L, pinger)
-    return 1
-}
-
-// MARK: - Module Methods
-
-/// hs.network.ping.echoRequest:setCallback(fn) -> echoRequestObject
-/// Method
-/// Set or remove the object callback function
-///
-/// Parameters:
-///  * `fn` - a function to set as the callback function for this object, or nil if you wish to remove any existing callback function.
-///
-/// Returns:
-///  * the echoRequestObject
-///
-/// Notes:
-///  * The callback function should expect between 3 and 5 arguments and return none. The possible arguments which are sent will be one of the following:
-///
-///    * "didStart" - indicates that the object has resolved the address of the server and is ready to begin sending and receiving ICMP Echo packets.
-///      * `object`  - the echoRequestObject itself
-///      * `message` - the message to the callback, in this case "didStart"
-///      * `address` - a string representation of the IPv4 or IPv6 address of the server specified to the constructor.
-///
-///    * "didFail" - indicates that the object has failed, either because the address could not be resolved or a network error has occurred.
-///      * `object`  - the echoRequestObject itself
-///      * `message` - the message to the callback, in this case "didFail"
-///      * `error`   - a string describing the error that occurred.
-///    * Notes:
-///      * When this message is received, you do not need to call [hs.network.ping.echoRequest:stop](#stop) -- the object will already have been stopped.
-///
-///    * "sendPacket" - indicates that the object has sent an ICMP Echo Request packet.
-///      * `object`  - the echoRequestObject itself
-///      * `message` - the message to the callback, in this case "sendPacket"
-///      * `icmp`    - an ICMP packet table representing the packet which has been sent as described in the header of this module's documentation.
-///      * `seq`     - the sequence number for this packet. Sequence numbers always start at 0 and increase by 1 every time the [hs.network.ping.echoRequest:sendPayload](#sendPayload) method is called.
-///
-///    * "sendPacketFailed" - indicates that the object failed to send the ICMP Echo Request packet.
-///      * `object`  - the echoRequestObject itself
-///      * `message` - the message to the callback, in this case "sendPacketFailed"
-///      * `icmp`    - an ICMP packet table representing the packet which was to be sent.
-///      * `seq`     - the sequence number for this packet.
-///      * `error`   - a string describing the error that occurred.
-///    * Notes:
-///      * Unlike "didFail", the echoRequestObject is not stopped when this message occurs; you can try to send another payload if you wish without restarting the object first.
-///
-///    * "receivedPacket" - indicates that an expected ICMP Echo Reply packet has been received by the object.
-///      * `object`  - the echoRequestObject itself
-///      * `message` - the message to the callback, in this case "receivedPacket"
-///      * `icmp`    - an ICMP packet table representing the packet received.
-///      * `seq`     - the sequence number for this packet.
-///
-///    * "receivedUnexpectedPacket" - indicates that an unexpected ICMP packet was received
-///      * `object`  - the echoRequestObject itself
-///      * `message` - the message to the callback, in this case "receivedUnexpectedPacket"
-///      * `icmp`    - an ICMP packet table representing the packet received.
-///    * Notes:
-///      * This message can occur for a variety of reasons, the most common being:
-///        * the ICMP packet is corrupt or truncated and cannot be parsed
-///        * the ICMP Identifier does not match ours and the sequence number is not one we have sent
-///        * the ICMP type does not match an ICMP Echo Reply
-///        * When using IPv6, this is especially common because IPv6 uses ICMP for network management functions like Router Advertisement and Neighbor Discovery.
-///      * In general, it is reasonably safe to ignore these messages, unless you are having problems receiving anything else, in which case it could indicate problems on your network that need addressing.
-private func echoRequest_setCallback(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
-    let pinger = toPingableObjectFromLua(L, 1) as! PingableObject
-
-    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, pinger.callbackRef)
-
-
-    pinger.callbackRef = LUA_NOREF
-    if lua_type(L, 2) == LUA_TFUNCTION {
-        lua_pushvalue(L, 2)
-        pinger.callbackRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
-    }
-    lua_pushvalue(L, 1)
-    return 1
-}
-
-/// hs.network.ping.echoRequest:hostName() -> string
-/// Method
-/// Returns the name of the target host as provided to the echoRequestObject's constructor
-///
-/// Parameters:
-///  * None
-///
-/// Returns:
-///  * a string containing the hostname as specified when the object was created.
-private func echoRequest_hostName(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
-    let pinger = toPingableObjectFromLua(L, 1) as! PingableObject
-    lua_pushany(L, pinger.hostName as NSString)
-    return 1
-}
-
-/// hs.network.ping.echoRequest:identifier() -> integer
-/// Method
-/// Returns the identifier number for the echoRequestObject.
-///
-/// Parameters:
-///  * None
-///
-/// Returns:
-///  * an integer specifying the identifier which is embedded in the ICMP packets this object sends.
-///
-/// Notes:
-///  * ICMP Echo Replies which include this identifier will generate a "receivedPacket" message to the object callback, while replies which include a different identifier will generate a "receivedUnexpectedPacket" message.
-private func echoRequest_identifier(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
-    let pinger = toPingableObjectFromLua(L, 1) as! PingableObject
-    lua_pushinteger(L, lua_Integer(pinger.identifier))
-    return 1
-}
-
-/// hs.network.ping.echoRequest:nextSequenceNumber() -> integer
-/// Method
-/// The sequence number that will be used for the next ICMP packet sent by this object.
-///
-/// Parameters:
-///  * None
-///
-/// Returns:
-///  * an integer specifying the sequence number that will be embedded in the next ICMP message sent by this object when [hs.network.ping.echoRequest:sendPayload](#sendPayload) is invoked.
-///
-/// Notes:
-///  * ICMP Echo Replies which are expected by this object should always be less than this number, with the caveat that this number is a 16-bit integer which will wrap around to 0 after sending a packet with the sequence number 65535.
-///  * Because of this wrap around effect, this module will generate a "receivedPacket" message to the object callback whenever the received packet has a sequence number that is within the last 120 sequence numbers we've sent and a "receivedUnexpectedPacket" otherwise.
-///    * Per the comments in Apple's SimplePing.m file: Why 120?  Well, if we send one ping per second, 120 is 2 minutes, which is the standard "max time a packet can bounce around the Internet" value.
-private func echoRequest_nextSequenceNumber(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
-    let pinger = toPingableObjectFromLua(L, 1) as! PingableObject
-    lua_pushinteger(L, lua_Integer(pinger.nextSequenceNumber))
-    return 1
-}
-
-/// hs.network.ping.echoRequest:acceptAddressFamily([family]) -> echoRequestObject | current value
-/// Method
-/// Get or set the address family the echoRequestObject should communicate with.
-///
-/// Parameters:
-///  * `family` - an optional string, default "any", which specifies the address family used by this object.  Valid values are "any", "IPv4", and "IPv6".
-///
-/// Returns:
-///  * if an argument is provided, returns the echoRequestObject, otherwise returns the current value.
-///
-/// Notes:
-///  * Setting this value to "IPv6" or "IPv4" will cause the echoRequestObject to attempt to resolve the server's name into an IPv6 address or an IPv4 address and communicate via ICMPv6 or ICMP(v4) when the [hs.network.ping.echoRequest:start](#start) method is invoked.  A callback with the message "didFail" will occur if the server could not be resolved to an address in the specified family.
-///  * If this value is set to "any", then the first address which is discovered for the server's name will determine whether ICMPv6 or ICMP(v4) is used, based upon the family of the address.
-///
-///  * Setting a value with this method will have no immediate effect on an echoRequestObject which has already been started with [hs.network.ping.echoRequest:start](#start). You must first stop and then restart the object for any change to have an effect.
-private func echoRequest_addressStyle(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
-    let pinger = toPingableObjectFromLua(L, 1) as! PingableObject
-
-    if lua_gettop(L) == 1 {
-        let answer = ADDRESS_STYLES.first(where: { $0.value == pinger.addressStyle.rawValue })?.key
-        if let answer = answer {
-            lua_pushany(L, answer as NSString)
-        } else {
-            os_log(.error, "%{public}s", "\(USERDATA_TAG):unrecognized address style \(pinger.addressStyle.rawValue) -- notify developers")
-            lua_pushnil(L)
-        }
-    } else {
-        let key = lua_tovalue(L, at: 2) as! String
-        if let styleRaw = ADDRESS_STYLES[key], let style = SimplePingAddressStyle(rawValue: styleRaw) {
-            pinger.addressStyle = style
-            lua_pushvalue(L, 1)
-        } else {
-            let allKeys = ADDRESS_STYLES.keys.joined(separator: ", ")
-            throw LuaCallError("bad argument #1 (must be one of \(allKeys))")
-        }
-    }
-    return 1
-}
-
-/// hs.network.ping.echoRequest:start() -> echoRequestObject
-/// Method
-/// Start the echoRequestObject by resolving the server's address and start listening for ICMP Echo Reply packets.
-///
-/// Parameters:
-///  * None
-///
-/// Returns:
-///  * the echoRequestObject
-private func echoRequest_start(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
-    let pinger = toPingableObjectFromLua(L, 1) as! PingableObject
-
-    if pinger.selfRef == LUA_NOREF {
-        pinger.start()
-        lua_pushvalue(L, 1)
-        pinger.selfRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
-    }
-    lua_pushvalue(L, 1)
-    return 1
-}
-
-/// hs.network.ping.echoRequest:stop() -> echoRequestObject
-/// Method
-/// Stop listening for ICMP Echo Reply packets with this object.
-///
-/// Parameters:
-///  * None
-///
-/// Returns:
-///  * the echoRequestObject
-private func echoRequest_stop(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
-    let pinger = toPingableObjectFromLua(L, 1) as! PingableObject
-
-    if pinger.selfRef != LUA_NOREF {
-        pinger.stop()
-        luaL_unref(L, LUA_REGISTRYINDEX_VALUE, pinger.selfRef)
-
-        pinger.selfRef = LUA_NOREF
-    }
-    lua_pushvalue(L, 1)
-    return 1
-}
-
-/// hs.network.ping.echoRequest:isRunning() -> boolean
-/// Method
-/// Returns a boolean indicating whether or not this echoRequestObject is currently listening for ICMP Echo Replies.
-///
-/// Parameters:
-///  * None
-///
-/// Returns:
-///  * true if the object is currently listening for ICMP Echo Replies, or false if it is not.
-private func echoRequest_isRunning(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
-    let pinger = toPingableObjectFromLua(L, 1) as! PingableObject
-    lua_pushboolean(L, (pinger.selfRef != LUA_NOREF) ? 1 : 0)
-    return 1
-}
-
-/// hs.network.ping.echoRequest:hostAddress() -> string | false | nil
-/// Method
-/// Returns a string representation for the server's IP address, or a boolean if address resolution has not completed yet.
-///
-/// Parameters:
-///  * None
-///
-/// Returns:
-///  * If the object has been started and address resolution has completed, then the string representation of the server's IP address is returned.
-///  * If the object has been started, but resolution is still pending, returns a boolean value of false.
-///  * If the object has not been started, returns nil.
-private func echoRequest_hostAddress(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
-    let pinger = toPingableObjectFromLua(L, 1) as! PingableObject
-    if let hostAddress = pinger.hostAddress {
-        _ = pushParsedAddress(L, hostAddress)
-    } else {
-        if pinger.selfRef != LUA_NOREF {
-            lua_pushboolean(L, 0)
-        } else {
-            lua_pushnil(L)
-        }
-    }
-    return 1
-}
-
-/// hs.network.ping.echoRequest:sendPayload([payload]) -> echoRequestObject | false | nil
-/// Method
-/// Sends a single ICMP Echo Request packet.
-///
-/// Parameters:
-///  * `payload` - an optional string containing the data to include in the ICMP Echo Request as the packet payload.
-///
-/// Returns:
-///  * If the object has been started and address resolution has completed, then the ICMP Echo Packet is sent and this method returns the echoRequestObject
-///  * If the object has been started, but resolution is still pending, the packet is not sent and this method returns a boolean value of false.
-///  * If the object has not been started, the packet is not sent and this method returns nil.
-///
-/// Notes:
-///  * By convention, unless you are trying to test for specific network fragmentation or congestion problems, ICMP Echo Requests are generally 64 bytes in length (this includes the 8 byte header, giving 56 bytes of payload data).  If you do not specify a payload, a default payload which will result in a packet size of 64 bytes is constructed.
-private func echoRequest_sendPayload(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
-    let pinger = toPingableObjectFromLua(L, 1) as! PingableObject
-    var payload: Data? = nil
-    if lua_gettop(L) == 2 {
-        var len: Int = 0
-        if let ptr = lua_tolstring(L, 2, &len), len > 0 {
-            payload = Data(bytes: ptr, count: len)
-        }
-    }
-
-    if payload == nil {
-        let padLen = max(0, 56 - 24 - USERDATA_TAG.count)
-        let padStr = String(repeating: " ", count: padLen)
-        let defaultPayload = String(format: "Cosmic Hammer %s %s0x%04x:%04x", USERDATA_TAG, padStr, pinger.identifier, pinger.nextSequenceNumber)
-        payload = defaultPayload.data(using: .ascii)
-    }
-
-    if pinger.hostAddress != nil {
-        pinger.sendPing(with: payload)
-        lua_pushvalue(L, 1)
-    } else {
-        if pinger.selfRef != LUA_NOREF {
-            lua_pushboolean(L, 0)
-        } else {
-            lua_pushnil(L)
-        }
-    }
-    return 1
-}
-
-/// hs.network.ping.echoRequest:hostAddressFamily() -> string
-/// Method
-/// Returns the host address family currently in use by this echoRequestObject.
-///
-/// Parameters:
-///  * None
-///
-/// Returns:
-///  * a string indicating the IP address family currently used by this echoRequestObject.  It will be one of the following values:
-///    * "IPv4"       - indicates that ICMP(v4) packets are being sent and listened for.
-///    * "IPv6"       - indicates that ICMPv6 packets are being sent and listened for.
-///    * "unresolved" - indicates that the echoRequestObject has not been started or that address resolution is still in progress.
-private func echoRequest_addressFamily(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
-    let pinger = toPingableObjectFromLua(L, 1) as! PingableObject
-
-    switch pinger.hostAddressFamily {
-    case sa_family_t(AF_INET):
-        lua_pushany(L, "IPv4" as NSString)
-    case sa_family_t(AF_INET6):
-        lua_pushany(L, "IPv6" as NSString)
-    case sa_family_t(AF_UNSPEC):
-        lua_pushany(L, "unresolved" as NSString)
-    default:
-        os_log(.error, "%{public}s", "\(USERDATA_TAG):unrecognized address family \(pinger.hostAddressFamily) -- notify developers")
-        lua_pushnil(L)
-    }
-    return 1
-}
-
-/// hs.network.ping.echoRequest:seeAllUnexpectedPackets([state]) -> boolean | echoRequestObject
-/// Method
-/// Get or set whether or not the callback should receive all unexpected packets or only those which carry our identifier.
-///
-/// Parameters:
-///  * `state` - an optional boolean, default false, specifying whether or not all unexpected packets or only those which carry our identifier should generate a "receivedUnexpectedPacket" callback message.
-///
-/// Returns:
-///  * if an argument is provided, returns the echoRequestObject; otherwise returns the current value
-///
-/// Notes:
-///  * The nature of ICMP packet reception is such that all listeners receive all ICMP packets, even those which belong to another process or echoRequestObject.
-///    * By default, a valid packet (i.e. with a valid checksum) which does not contain our identifier is ignored since it was not intended for our receiver.  Only corrupt or packets with our identifier but that were otherwise unexpected will generate a "receivedUnexpectedPacket" callback message.
-///    * This method optionally allows the echoRequestObject to receive *all* incoming packets, even ones which are expected by another process or echoRequestObject.
-///  * If you wish to examine ICMPv6 router advertisement and neighbor discovery packets, you should set this property to true. Note that this module does not provide the necessary tools to decode these packets at present, so you will have to decode them yourself if you wish to examine their contents.
-private func echoRequest_seeAllUnexpectedPackets(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
-    let pinger = toPingableObjectFromLua(L, 1) as! PingableObject
-
-    if lua_gettop(L) == 1 {
-        lua_pushboolean(L, pinger.passAllUnexpected ? 1 : 0)
-    } else {
-        pinger.passAllUnexpected = lua_toboolean(L, 2) != 0
-        lua_pushvalue(L, 1)
-    }
-    return 1
-}
-
-// MARK: - Lua<->NSObject Conversion Functions
-
-@discardableResult
-private func pushPingableObject(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any) -> Int32 {
-    let value = obj as! PingableObject
-
-    if value.selfRef != LUA_NOREF {
-        lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(value.selfRef))
-    } else {
-        let valuePtr = lua_newuserdata(L, MemoryLayout<UnsafeMutableRawPointer>.size)!
-            .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
-        valuePtr.pointee = Unmanaged.passRetained(value).toOpaque()
-        luaL_getmetatable(L, USERDATA_TAG)
-        lua_setmetatable(L, -2)
-    }
-    return 1
-}
-
-private func toPingableObjectFromLua(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> Any? {
-    if luaL_testudata(L, idx, USERDATA_TAG) != nil {
-        let ptr = luaL_checkudata(L, idx, USERDATA_TAG)!
-            .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
-        return Unmanaged<PingableObject>.fromOpaque(ptr.pointee!).takeUnretainedValue()
-    } else {
-        os_log(.error, "%{public}s", "expected \(USERDATA_TAG) object, found \(String(cString: lua_typename(L, lua_type(L, idx))))")
-    }
-    return nil
 }
 
 // MARK: - Cosmic Hammer/Lua Infrastructure
 
-private func userdata_tostring(_ L: LuaState) throws -> CInt {
-    let obj = toPingableObjectFromLua(L, 1) as! PingableObject
-    let title = obj.hostName
-    let ptr = lua_topointer(L, 1)
-    lua_pushany(L, "\(USERDATA_TAG): \(title) (\(String(describing: ptr)))" as NSString)
-    return 1
-}
-
-private func userdata_eq(_ L: LuaState) throws -> CInt {
-    if luaL_testudata(L, 1, USERDATA_TAG) != nil && luaL_testudata(L, 2, USERDATA_TAG) != nil {
-        let obj1 = toPingableObjectFromLua(L, 1) as! PingableObject
-        let obj2 = toPingableObjectFromLua(L, 2) as! PingableObject
-        lua_pushboolean(L, (obj1 === obj2) ? 1 : 0)
-    } else {
-        lua_pushboolean(L, 0)
-    }
-    return 1
-}
-
-private func userdata_gc(_ L: LuaState) throws -> CInt {
-    let ptr = luaL_checkudata(L, 1, USERDATA_TAG)!
-        .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
-    if let rawPtr = ptr.pointee {
-        let obj = Unmanaged<PingableObject>.fromOpaque(rawPtr).takeRetainedValue()
-        luaL_unref(L, LUA_REGISTRYINDEX_VALUE, obj.callbackRef)
-
-        obj.callbackRef = LUA_NOREF
-
-        if obj.selfRef != LUA_NOREF {
-            obj.stop()
-            luaL_unref(L, LUA_REGISTRYINDEX_VALUE, obj.selfRef)
-
-            obj.selfRef = LUA_NOREF
-        }
-        ptr.pointee = nil
-    }
-
-    lua_pushnil(L)
-    lua_setmetatable(L, 1)
-    return 0
-}
-
-
 @_cdecl("luaopen_hs_libnetworkping")
 public func luaopen_hs_libnetworkping(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     runEntryPoint(L) { L in
-        // Create ref table in registry
-        lua_newtable(L)
-        refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+        // Register idiomatic Metatable<PingableObject> with LuaSwift.
+        L.register(Metatable<PingableObject>(
+            fields: [
+                /// hs.network.ping.echoRequest:setCallback(fn) -> echoRequestObject
+                /// Method
+                /// Set or remove the object callback function
+                ///
+                /// Parameters:
+                ///  * `fn` - a function to set as the callback function for this object, or nil if you wish to remove any existing callback function.
+                ///
+                /// Returns:
+                ///  * the echoRequestObject
+                ///
+                /// Notes:
+                ///  * The callback function should expect between 3 and 5 arguments and return none. The possible arguments which are sent will be one of the following:
+                ///
+                ///    * "didStart" - indicates that the object has resolved the address of the server and is ready to begin sending and receiving ICMP Echo packets.
+                ///      * `object`  - the echoRequestObject itself
+                ///      * `message` - the message to the callback, in this case "didStart"
+                ///      * `address` - a string representation of the IPv4 or IPv6 address of the server specified to the constructor.
+                ///
+                ///    * "didFail" - indicates that the object has failed, either because the address could not be resolved or a network error has occurred.
+                ///      * `object`  - the echoRequestObject itself
+                ///      * `message` - the message to the callback, in this case "didFail"
+                ///      * `error`   - a string describing the error that occurred.
+                ///    * Notes:
+                ///      * When this message is received, you do not need to call [hs.network.ping.echoRequest:stop](#stop) -- the object will already have been stopped.
+                ///
+                ///    * "sendPacket" - indicates that the object has sent an ICMP Echo Request packet.
+                ///      * `object`  - the echoRequestObject itself
+                ///      * `message` - the message to the callback, in this case "sendPacket"
+                ///      * `icmp`    - an ICMP packet table representing the packet which has been sent as described in the header of this module's documentation.
+                ///      * `seq`     - the sequence number for this packet. Sequence numbers always start at 0 and increase by 1 every time the [hs.network.ping.echoRequest:sendPayload](#sendPayload) method is called.
+                ///
+                ///    * "sendPacketFailed" - indicates that the object failed to send the ICMP Echo Request packet.
+                ///      * `object`  - the echoRequestObject itself
+                ///      * `message` - the message to the callback, in this case "sendPacketFailed"
+                ///      * `icmp`    - an ICMP packet table representing the packet which was to be sent.
+                ///      * `seq`     - the sequence number for this packet.
+                ///      * `error`   - a string describing the error that occurred.
+                ///    * Notes:
+                ///      * Unlike "didFail", the echoRequestObject is not stopped when this message occurs; you can try to send another payload if you wish without restarting the object first.
+                ///
+                ///    * "receivedPacket" - indicates that an expected ICMP Echo Reply packet has been received by the object.
+                ///      * `object`  - the echoRequestObject itself
+                ///      * `message` - the message to the callback, in this case "receivedPacket"
+                ///      * `icmp`    - an ICMP packet table representing the packet received.
+                ///      * `seq`     - the sequence number for this packet.
+                ///
+                ///    * "receivedUnexpectedPacket" - indicates that an unexpected ICMP packet was received
+                ///      * `object`  - the echoRequestObject itself
+                ///      * `message` - the message to the callback, in this case "receivedUnexpectedPacket"
+                ///      * `icmp`    - an ICMP packet table representing the packet received.
+                ///    * Notes:
+                ///      * This message can occur for a variety of reasons, the most common being:
+                ///        * the ICMP packet is corrupt or truncated and cannot be parsed
+                ///        * the ICMP Identifier does not match ours and the sequence number is not one we have sent
+                ///        * the ICMP type does not match an ICMP Echo Reply
+                ///        * When using IPv6, this is especially common because IPv6 uses ICMP for network management functions like Router Advertisement and Neighbor Discovery.
+                ///      * In general, it is reasonably safe to ignore these messages, unless you are having problems receiving anything else, in which case it could indicate problems on your network that need addressing.
+                "setCallback": .closure { L in
+                    let pinger: PingableObject = try L.checkArgument(1)
+                    pinger.callback = nil
+                    if lua_type(L, 2) == LUA_TFUNCTION {
+                        pinger.callback = L.ref(index: 2)
+                    }
+                    lua_pushvalue(L, 1)
+                    return 1
+                },
+                /// hs.network.ping.echoRequest:hostName() -> string
+                /// Method
+                /// Returns the name of the target host as provided to the echoRequestObject's constructor
+                ///
+                /// Parameters:
+                ///  * None
+                ///
+                /// Returns:
+                ///  * a string containing the hostname as specified when the object was created.
+                "hostName": .closure { L in
+                    let pinger: PingableObject = try L.checkArgument(1)
+                    lua_pushany(L, pinger.hostName as NSString)
+                    return 1
+                },
+                /// hs.network.ping.echoRequest:identifier() -> integer
+                /// Method
+                /// Returns the identifier number for the echoRequestObject.
+                ///
+                /// Parameters:
+                ///  * None
+                ///
+                /// Returns:
+                ///  * an integer specifying the identifier which is embedded in the ICMP packets this object sends.
+                ///
+                /// Notes:
+                ///  * ICMP Echo Replies which include this identifier will generate a "receivedPacket" message to the object callback, while replies which include a different identifier will generate a "receivedUnexpectedPacket" message.
+                "identifier": .closure { L in
+                    let pinger: PingableObject = try L.checkArgument(1)
+                    lua_pushinteger(L, lua_Integer(pinger.identifier))
+                    return 1
+                },
+                /// hs.network.ping.echoRequest:nextSequenceNumber() -> integer
+                /// Method
+                /// The sequence number that will be used for the next ICMP packet sent by this object.
+                ///
+                /// Parameters:
+                ///  * None
+                ///
+                /// Returns:
+                ///  * an integer specifying the sequence number that will be embedded in the next ICMP message sent by this object when [hs.network.ping.echoRequest:sendPayload](#sendPayload) is invoked.
+                ///
+                /// Notes:
+                ///  * ICMP Echo Replies which are expected by this object should always be less than this number, with the caveat that this number is a 16-bit integer which will wrap around to 0 after sending a packet with the sequence number 65535.
+                ///  * Because of this wrap around effect, this module will generate a "receivedPacket" message to the object callback whenever the received packet has a sequence number that is within the last 120 sequence numbers we've sent and a "receivedUnexpectedPacket" otherwise.
+                ///    * Per the comments in Apple's SimplePing.m file: Why 120?  Well, if we send one ping per second, 120 is 2 minutes, which is the standard "max time a packet can bounce around the Internet" value.
+                "nextSequenceNumber": .closure { L in
+                    let pinger: PingableObject = try L.checkArgument(1)
+                    lua_pushinteger(L, lua_Integer(pinger.nextSequenceNumber))
+                    return 1
+                },
+                /// hs.network.ping.echoRequest:acceptAddressFamily([family]) -> echoRequestObject | current value
+                /// Method
+                /// Get or set the address family the echoRequestObject should communicate with.
+                ///
+                /// Parameters:
+                ///  * `family` - an optional string, default "any", which specifies the address family used by this object.  Valid values are "any", "IPv4", and "IPv6".
+                ///
+                /// Returns:
+                ///  * if an argument is provided, returns the echoRequestObject, otherwise returns the current value.
+                ///
+                /// Notes:
+                ///  * Setting this value to "IPv6" or "IPv4" will cause the echoRequestObject to attempt to resolve the server's name into an IPv6 address or an IPv4 address and communicate via ICMPv6 or ICMP(v4) when the [hs.network.ping.echoRequest:start](#start) method is invoked.  A callback with the message "didFail" will occur if the server could not be resolved to an address in the specified family.
+                ///  * If this value is set to "any", then the first address which is discovered for the server's name will determine whether ICMPv6 or ICMP(v4) is used, based upon the family of the address.
+                ///
+                ///  * Setting a value with this method will have no immediate effect on an echoRequestObject which has already been started with [hs.network.ping.echoRequest:start](#start). You must first stop and then restart the object for any change to have an effect.
+                "acceptAddressFamily": .closure { L in
+                    let pinger: PingableObject = try L.checkArgument(1)
+                    if lua_gettop(L) == 1 {
+                        let answer = ADDRESS_STYLES.first(where: { $0.value == pinger.addressStyle.rawValue })?.key
+                        if let answer = answer {
+                            lua_pushany(L, answer as NSString)
+                        } else {
+                            os_log(.error, "%{public}s", "\(USERDATA_TAG):unrecognized address style \(pinger.addressStyle.rawValue) -- notify developers")
+                            lua_pushnil(L)
+                        }
+                    } else {
+                        let key = lua_tovalue(L, at: 2) as! String
+                        if let styleRaw = ADDRESS_STYLES[key], let style = SimplePingAddressStyle(rawValue: styleRaw) {
+                            pinger.addressStyle = style
+                            lua_pushvalue(L, 1)
+                        } else {
+                            let allKeys = ADDRESS_STYLES.keys.joined(separator: ", ")
+                            throw LuaCallError("bad argument #1 (must be one of \(allKeys))")
+                        }
+                    }
+                    return 1
+                },
+                /// hs.network.ping.echoRequest:start() -> echoRequestObject
+                /// Method
+                /// Start the echoRequestObject by resolving the server's address and start listening for ICMP Echo Reply packets.
+                ///
+                /// Parameters:
+                ///  * None
+                ///
+                /// Returns:
+                ///  * the echoRequestObject
+                "start": .closure { L in
+                    let pinger: PingableObject = try L.checkArgument(1)
+                    if pinger.selfRefValue == nil {
+                        pinger.start()
+                        lua_pushvalue(L, 1)
+                        pinger.selfRefValue = L.ref(index: -1)
+                    }
+                    lua_pushvalue(L, 1)
+                    return 1
+                },
+                /// hs.network.ping.echoRequest:stop() -> echoRequestObject
+                /// Method
+                /// Stop listening for ICMP Echo Reply packets with this object.
+                ///
+                /// Parameters:
+                ///  * None
+                ///
+                /// Returns:
+                ///  * the echoRequestObject
+                "stop": .closure { L in
+                    let pinger: PingableObject = try L.checkArgument(1)
+                    if pinger.selfRefValue != nil {
+                        pinger.stop()
+                        pinger.selfRefValue = nil
+                    }
+                    lua_pushvalue(L, 1)
+                    return 1
+                },
+                /// hs.network.ping.echoRequest:isRunning() -> boolean
+                /// Method
+                /// Returns a boolean indicating whether or not this echoRequestObject is currently listening for ICMP Echo Replies.
+                ///
+                /// Parameters:
+                ///  * None
+                ///
+                /// Returns:
+                ///  * true if the object is currently listening for ICMP Echo Replies, or false if it is not.
+                "isRunning": .closure { L in
+                    let pinger: PingableObject = try L.checkArgument(1)
+                    lua_pushboolean(L, (pinger.selfRefValue != nil) ? 1 : 0)
+                    return 1
+                },
+                /// hs.network.ping.echoRequest:hostAddress() -> string | false | nil
+                /// Method
+                /// Returns a string representation for the server's IP address, or a boolean if address resolution has not completed yet.
+                ///
+                /// Parameters:
+                ///  * None
+                ///
+                /// Returns:
+                ///  * If the object has been started and address resolution has completed, then the string representation of the server's IP address is returned.
+                ///  * If the object has been started, but resolution is still pending, returns a boolean value of false.
+                ///  * If the object has not been started, returns nil.
+                "hostAddress": .closure { L in
+                    let pinger: PingableObject = try L.checkArgument(1)
+                    if let hostAddress = pinger.hostAddress {
+                        _ = pushParsedAddress(L, hostAddress)
+                    } else {
+                        if pinger.selfRefValue != nil {
+                            lua_pushboolean(L, 0)
+                        } else {
+                            lua_pushnil(L)
+                        }
+                    }
+                    return 1
+                },
+                /// hs.network.ping.echoRequest:hostAddressFamily() -> string
+                /// Method
+                /// Returns the host address family currently in use by this echoRequestObject.
+                ///
+                /// Parameters:
+                ///  * None
+                ///
+                /// Returns:
+                ///  * a string indicating the IP address family currently used by this echoRequestObject.  It will be one of the following values:
+                ///    * "IPv4"       - indicates that ICMP(v4) packets are being sent and listened for.
+                ///    * "IPv6"       - indicates that ICMPv6 packets are being sent and listened for.
+                ///    * "unresolved" - indicates that the echoRequestObject has not been started or that address resolution is still in progress.
+                "hostAddressFamily": .closure { L in
+                    let pinger: PingableObject = try L.checkArgument(1)
+                    switch pinger.hostAddressFamily {
+                    case sa_family_t(AF_INET):
+                        lua_pushany(L, "IPv4" as NSString)
+                    case sa_family_t(AF_INET6):
+                        lua_pushany(L, "IPv6" as NSString)
+                    case sa_family_t(AF_UNSPEC):
+                        lua_pushany(L, "unresolved" as NSString)
+                    default:
+                        os_log(.error, "%{public}s", "\(USERDATA_TAG):unrecognized address family \(pinger.hostAddressFamily) -- notify developers")
+                        lua_pushnil(L)
+                    }
+                    return 1
+                },
+                /// hs.network.ping.echoRequest:sendPayload([payload]) -> echoRequestObject | false | nil
+                /// Method
+                /// Sends a single ICMP Echo Request packet.
+                ///
+                /// Parameters:
+                ///  * `payload` - an optional string containing the data to include in the ICMP Echo Request as the packet payload.
+                ///
+                /// Returns:
+                ///  * If the object has been started and address resolution has completed, then the ICMP Echo Packet is sent and this method returns the echoRequestObject
+                ///  * If the object has been started, but resolution is still pending, the packet is not sent and this method returns a boolean value of false.
+                ///  * If the object has not been started, the packet is not sent and this method returns nil.
+                ///
+                /// Notes:
+                ///  * By convention, unless you are trying to test for specific network fragmentation or congestion problems, ICMP Echo Requests are generally 64 bytes in length (this includes the 8 byte header, giving 56 bytes of payload data).  If you do not specify a payload, a default payload which will result in a packet size of 64 bytes is constructed.
+                "sendPayload": .closure { L in
+                    let pinger: PingableObject = try L.checkArgument(1)
+                    var payload: Data? = nil
+                    if lua_gettop(L) == 2 {
+                        var len: Int = 0
+                        if let ptr = lua_tolstring(L, 2, &len), len > 0 {
+                            payload = Data(bytes: ptr, count: len)
+                        }
+                    }
 
-        // Register userdata metatable
-        luaL_newmetatable(L, USERDATA_TAG)
-        lua_pushvalue(L, -1)
-        lua_setfield(L, -2, "__index")
-        L.push(echoRequest_hostName)
-        lua_setfield(L, -2, "hostName")
-        L.push(echoRequest_identifier)
-        lua_setfield(L, -2, "identifier")
-        L.push(echoRequest_nextSequenceNumber)
-        lua_setfield(L, -2, "nextSequenceNumber")
-        L.push(echoRequest_setCallback)
-        lua_setfield(L, -2, "setCallback")
-        L.push(echoRequest_addressStyle)
-        lua_setfield(L, -2, "acceptAddressFamily")
-        L.push(echoRequest_start)
-        lua_setfield(L, -2, "start")
-        L.push(echoRequest_stop)
-        lua_setfield(L, -2, "stop")
-        L.push(echoRequest_isRunning)
-        lua_setfield(L, -2, "isRunning")
-        L.push(echoRequest_hostAddress)
-        lua_setfield(L, -2, "hostAddress")
-        L.push(echoRequest_addressFamily)
-        lua_setfield(L, -2, "hostAddressFamily")
-        L.push(echoRequest_sendPayload)
-        lua_setfield(L, -2, "sendPayload")
-        L.push(echoRequest_seeAllUnexpectedPackets)
-        lua_setfield(L, -2, "seeAllUnexpectedPackets")
-        L.push(userdata_tostring)
-        lua_setfield(L, -2, "__tostring")
-        L.push(userdata_eq)
+                    if payload == nil {
+                        let padLen = max(0, 56 - 24 - USERDATA_TAG.count)
+                        let padStr = String(repeating: " ", count: padLen)
+                        let defaultPayload = String(format: "Cosmic Hammer %s %s0x%04x:%04x", USERDATA_TAG, padStr, pinger.identifier, pinger.nextSequenceNumber)
+                        payload = defaultPayload.data(using: .ascii)
+                    }
+
+                    if pinger.hostAddress != nil {
+                        pinger.sendPing(with: payload)
+                        lua_pushvalue(L, 1)
+                    } else {
+                        if pinger.selfRefValue != nil {
+                            lua_pushboolean(L, 0)
+                        } else {
+                            lua_pushnil(L)
+                        }
+                    }
+                    return 1
+                },
+                /// hs.network.ping.echoRequest:seeAllUnexpectedPackets([state]) -> boolean | echoRequestObject
+                /// Method
+                /// Get or set whether or not the callback should receive all unexpected packets or only those which carry our identifier.
+                ///
+                /// Parameters:
+                ///  * `state` - an optional boolean, default false, specifying whether or not all unexpected packets or only those which carry our identifier should generate a "receivedUnexpectedPacket" callback message.
+                ///
+                /// Returns:
+                ///  * if an argument is provided, returns the echoRequestObject; otherwise returns the current value
+                ///
+                /// Notes:
+                ///  * The nature of ICMP packet reception is such that all listeners receive all ICMP packets, even those which belong to another process or echoRequestObject.
+                ///    * By default, a valid packet (i.e. with a valid checksum) which does not contain our identifier is ignored since it was not intended for our receiver.  Only corrupt or packets with our identifier but that were otherwise unexpected will generate a "receivedUnexpectedPacket" callback message.
+                ///    * This method optionally allows the echoRequestObject to receive *all* incoming packets, even ones which are expected by another process or echoRequestObject.
+                ///  * If you wish to examine ICMPv6 router advertisement and neighbor discovery packets, you should set this property to true. Note that this module does not provide the necessary tools to decode these packets at present, so you will have to decode them yourself if you wish to examine their contents.
+                "seeAllUnexpectedPackets": .closure { L in
+                    let pinger: PingableObject = try L.checkArgument(1)
+                    if lua_gettop(L) == 1 {
+                        lua_pushboolean(L, pinger.passAllUnexpected ? 1 : 0)
+                    } else {
+                        pinger.passAllUnexpected = lua_toboolean(L, 2) != 0
+                        lua_pushvalue(L, 1)
+                    }
+                    return 1
+                },
+            ],
+            tostring: .closure { L in
+                let pinger: PingableObject = try L.checkArgument(1)
+                let title = pinger.hostName
+                let ptr = lua_topointer(L, 1)
+                lua_pushstring(L, "\(USERDATA_TAG): \(title) (\(String(describing: ptr)))")
+                return 1
+            }
+        ))
+
+        // -- Post-registration metatable patching --
+        // LuaSwift's register() always installs its own gcUserdata as __gc, which
+        // only deinitializes the Any box. We MUST replace it with a custom __gc
+        // that first calls teardown() (stop the pinger, drop the LuaValue callback
+        // and self-ref) and THEN deinitializes the Any box.
+        L.pushMetatable(for: PingableObject.self)
+
+        // __eq: compare by identity
+        lua_pushcclosure(L, { (L: LuaState!) -> CInt in
+            if let obj1: PingableObject = L.touserdata(1),
+               let obj2: PingableObject = L.touserdata(2) {
+                lua_pushboolean(L, (obj1 === obj2) ? 1 : 0)
+            } else {
+                lua_pushboolean(L, 0)
+            }
+            return 1
+        }, 0)
         lua_setfield(L, -2, "__eq")
-        L.push(userdata_gc)
+
+        // Replace __gc with our explicit teardown + deinitialize
+        lua_pushcclosure(L, { (L: LuaState!) -> CInt in
+            if let pinger: PingableObject = L.touserdata(1) {
+                pinger.teardown()
+            }
+            let rawptr = lua_touserdata(L, 1)!
+            let anyPtr = rawptr.assumingMemoryBound(to: Any.self)
+            anyPtr.deinitialize(count: 1)
+            return 0
+        }, 0)
         lua_setfield(L, -2, "__gc")
-        lua_pop(L, 1)
+
+        // Set __type and __name for lsunit.lua assertIsUserdataOfType and tostring
+        lua_pushstring(L, USERDATA_TAG)
+        lua_setfield(L, -2, "__type")
+        lua_pushstring(L, USERDATA_TAG)
+        lua_setfield(L, -2, "__name")
+
+        // Alias the metatable under the legacy registry name so that
+        // core_getObjectMetatable("hs.network.ping.echoRequest") still resolves.
+        lua_setfield(L, LUA_REGISTRYINDEX_VALUE, USERDATA_TAG)
 
         // Create module table
         lua_createtable(L, 0, 1)
-        L.push(echoRequest_new)
+
+        /// hs.network.ping.echoRequest.echoRequest(server) -> echoRequestObject
+        /// Constructor
+        /// Creates a new ICMP Echo Request object for the server specified.
+        ///
+        /// Parameters:
+        ///  * `server` - a string containing the hostname or ip address of the server to communicate with. Both IPv4 and IPv6 style addresses are supported.
+        ///
+        /// Returns:
+        ///  * an echoRequest object
+        ///
+        /// Notes:
+        ///  * This constructor returns a lower-level object than the `hs.network.ping.ping` constructor and is more difficult to use. It is recommended that you use this constructor only if `hs.network.ping.ping` is not sufficient for your needs.
+        ///
+        ///  * For convenience, you can call this constructor as `hs.network.ping.echoRequest(server)`
+        L.push({ (L: LuaState) throws -> CInt in
+            luaL_checktype(L, 1, LUA_TSTRING)
+            let pinger = PingableObject(hostName: lua_tovalue(L, at: 1) as! String)
+            pinger.generation = lua_currentStateGeneration()
+            L.push(userdata: pinger)
+            return 1
+        })
         lua_setfield(L, -2, "echoRequest")
     }
 }

@@ -19,7 +19,7 @@ import Cocoa
 
 extension NSImage {
 
-    @objc func imageRep(ofClass imageRepClass: AnyClass) -> NSImageRep? {
+    func imageRep(ofClass imageRepClass: AnyClass) -> NSImageRep? {
         for rep in representations {
             if rep.isKind(of: imageRepClass) {
                 return rep
@@ -28,11 +28,11 @@ extension NSImage {
         return nil
     }
 
-    @objc func bmpData() -> Data {
+    func bmpData() -> Data {
         return bmpData(withBackgroundColor: nil)
     }
 
-    @objc func bmpData(withBackgroundColor backgroundColor: NSColor?) -> Data {
+    func bmpData(withBackgroundColor backgroundColor: NSColor?) -> Data {
         // BMP structures — must be packed to 2-byte alignment.
         // Swift structs do not support #pragma pack, so we write the header bytes manually.
 

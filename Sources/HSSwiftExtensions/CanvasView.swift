@@ -1,36 +1,37 @@
 import Cocoa
 import CLua
+import Lua
 import os.log
 
 // MARK: - HSCanvasView
 
 @objc class HSCanvasView: NSView {
-    @objc var selfRef: Int32 = LUA_NOREF     // used during fadeOut to make sure collection doesn't interrupt
-    @objc var selfRefCount: Int32 = 0
+    var selfRef: LuaValue?             // used during fadeOut to make sure collection doesn't interrupt
+    var selfRefCount: Int32 = 0
     @objc var wrapperWindow: HSCanvasWindow?
-    @objc var mouseCallbackRef: Int32 = LUA_NOREF
-    @objc var draggingCallbackRef: Int32 = LUA_NOREF
-    @objc var mouseTracking: Bool = false
-    @objc var canvasMouseDown: Bool = false
-    @objc var canvasMouseUp: Bool = false
-    @objc var canvasMouseEnterExit: Bool = false
-    @objc var canvasMouseMove: Bool = false
-    @objc var previousTrackedIndex: UInt = UInt(NSNotFound)
-    @objc var canvasDefaults: NSMutableDictionary = NSMutableDictionary()
-    @objc var elementList: NSMutableArray = NSMutableArray()
-    @objc var elementBounds: NSMutableArray = NSMutableArray()
-    @objc var canvasTransform: NSAffineTransform = NSAffineTransform()
-    @objc var imageAnimations: NSMapTable<NSImage, HSGifAnimator> = NSMapTable<NSImage, HSGifAnimator>.weakToStrongObjects()
+    var mouseCallbackFn: LuaValue?
+    var draggingCallbackFn: LuaValue?
+    var mouseTracking: Bool = false
+    var canvasMouseDown: Bool = false
+    var canvasMouseUp: Bool = false
+    var canvasMouseEnterExit: Bool = false
+    var canvasMouseMove: Bool = false
+    var previousTrackedIndex: UInt = UInt(NSNotFound)
+    var canvasDefaults: NSMutableDictionary = NSMutableDictionary()
+    var elementList: NSMutableArray = NSMutableArray()
+    var elementBounds: NSMutableArray = NSMutableArray()
+    var canvasTransform: NSAffineTransform = NSAffineTransform()
+    var imageAnimations: NSMapTable<NSImage, HSGifAnimator> = NSMapTable<NSImage, HSGifAnimator>.weakToStrongObjects()
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
 
-        selfRef = LUA_NOREF
+        selfRef = nil
         selfRefCount = 0
         wrapperWindow = nil
 
-        mouseCallbackRef = LUA_NOREF
-        draggingCallbackRef = LUA_NOREF
+        mouseCallbackFn = nil
+        draggingCallbackFn = nil
         canvasDefaults = NSMutableDictionary()
         elementList = NSMutableArray()
         elementBounds = NSMutableArray()
@@ -79,7 +80,7 @@ import os.log
     override func mouseMoved(with theEvent: NSEvent) {
         let canvasMouseEvents = canvasMouseEnterExit || canvasMouseMove
 
-        guard mouseCallbackRef != LUA_NOREF, mouseTracking || canvasMouseEvents else { return }
+        guard mouseCallbackFn != nil, mouseTracking || canvasMouseEvents else { return }
 
         let eventLocation = theEvent.locationInWindow
         let localPoint = convert(eventLocation, from: nil)
@@ -161,7 +162,7 @@ import os.log
     }
 
     override func mouseEntered(with theEvent: NSEvent) {
-        if mouseCallbackRef != LUA_NOREF && canvasMouseEnterExit {
+        if mouseCallbackFn != nil && canvasMouseEnterExit {
             let eventLocation = theEvent.locationInWindow
             let localPoint = convert(eventLocation, from: nil)
             doMouseCallback("mouseEnter", for: "_canvas_", at: localPoint)
@@ -171,7 +172,7 @@ import os.log
     override func mouseExited(with theEvent: NSEvent) {
         let canvasMouseEvents = canvasMouseEnterExit || canvasMouseMove
 
-        guard mouseCallbackRef != LUA_NOREF, mouseTracking || canvasMouseEvents else { return }
+        guard mouseCallbackFn != nil, mouseTracking || canvasMouseEvents else { return }
 
         let eventLocation = theEvent.locationInWindow
         let localPoint = convert(eventLocation, from: nil)
@@ -189,9 +190,9 @@ import os.log
     }
 
     func doMouseCallback(_ message: String, for elementIdentifier: Any, at location: NSPoint) {
-        guard mouseCallbackRef != LUA_NOREF else { return }
+        guard let cb = mouseCallbackFn else { return }
         let L = lua_getCurrentState()!
-        lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(mouseCallbackRef))
+        cb.push(onto: L)
         canvas_pushValue(L, self)
         canvas_pushValue(L, message as NSString)
         canvas_pushValue(L, elementIdentifier)
@@ -201,9 +202,9 @@ import os.log
     }
 
     func subviewCallback(_ sender: Any) {
-        guard mouseCallbackRef != LUA_NOREF else { return }
+        guard let cb = mouseCallbackFn else { return }
         let L = lua_getCurrentState()!
-        lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(mouseCallbackRef))
+        cb.push(onto: L)
         canvas_pushValue(L, self)
         canvas_pushValue(L, "_subview_" as NSString)
         canvas_pushValue(L, sender as AnyObject)
@@ -212,7 +213,7 @@ import os.log
 
     override func mouseDown(with theEvent: NSEvent) {
         NSApp.preventWindowOrdering()
-        guard mouseCallbackRef != LUA_NOREF else { return }
+        guard mouseCallbackFn != nil else { return }
 
         let isDown = (theEvent.type == .leftMouseDown)  ||
                      (theEvent.type == .rightMouseDown) ||
@@ -433,7 +434,7 @@ import os.log
 
     // MARK: - massageKeyValue / getDefaultValue / setDefault / getElementValue / setElementValue
 
-    @objc func massageKeyValue(_ oldValue: Any!, forKey keyName: String, withState L: UnsafeMutablePointer<lua_State>!) -> Any! {
+    func massageKeyValue(_ oldValue: Any!, forKey keyName: String, withState L: UnsafeMutablePointer<lua_State>!) -> Any! {
         var newValue: Any! = oldValue
 
         // fix "...Color" tables
@@ -493,7 +494,7 @@ import os.log
         return newValue
     }
 
-    @objc func getDefaultValue(for keyName: String, onlyIfSet: Bool) -> Any? {
+    func getDefaultValue(for keyName: String, onlyIfSet: Bool) -> Any? {
         guard let attributeDefinition = canvas_languageDictionary[keyName] as? NSDictionary else { return nil }
         var result: Any?
         if attributeDefinition["default"] == nil {
@@ -514,7 +515,7 @@ import os.log
         return result
     }
 
-    @objc func setDefault(for keyName: String, to keyValue: Any!, withState L: UnsafeMutablePointer<lua_State>!) -> Int {
+    func setDefault(for keyName: String, to keyValue: Any!, withState L: UnsafeMutablePointer<lua_State>!) -> Int {
         var validityStatus: AttributeValidity = .invalid
         guard let langEntry = canvas_languageDictionary[keyName] as? NSDictionary,
               (langEntry["nullable"] as? NSNumber)?.boolValue == true else {
@@ -535,19 +536,19 @@ import os.log
         return validityStatus.rawValue
     }
 
-    @objc func getElementValue(for keyName: String, atIndex index: UInt) -> Any? {
+    func getElementValue(for keyName: String, atIndex index: UInt) -> Any? {
         return getElementValue(for: keyName, atIndex: index, resolvePercentages: false, onlyIfSet: false)
     }
 
-    @objc func getElementValue(for keyName: String, atIndex index: UInt, onlyIfSet: Bool) -> Any? {
+    func getElementValue(for keyName: String, atIndex index: UInt, onlyIfSet: Bool) -> Any? {
         return getElementValue(for: keyName, atIndex: index, resolvePercentages: false, onlyIfSet: onlyIfSet)
     }
 
-    @objc func getElementValue(for keyName: String, atIndex index: UInt, resolvePercentages: Bool) -> Any? {
+    func getElementValue(for keyName: String, atIndex index: UInt, resolvePercentages: Bool) -> Any? {
         return getElementValue(for: keyName, atIndex: index, resolvePercentages: resolvePercentages, onlyIfSet: false)
     }
 
-    @objc func getElementValue(for keyName: String, atIndex index: UInt, resolvePercentages: Bool, onlyIfSet: Bool) -> Any? {
+    func getElementValue(for keyName: String, atIndex index: UInt, resolvePercentages: Bool, onlyIfSet: Bool) -> Any? {
         guard index < elementList.count else { return nil }
         let elementAttributes = elementList[Int(index)] as! NSDictionary
         var foundObject: Any? = elementAttributes[keyName] ?? (onlyIfSet ? nil : getDefaultValue(for: keyName, onlyIfSet: false))
@@ -631,7 +632,7 @@ import os.log
         return foundObject
     }
 
-    @objc func setElementValue(for keyName: String, atIndex index: UInt, to keyValue: Any!, withState L: UnsafeMutablePointer<lua_State>!) -> Int {
+    func setElementValue(for keyName: String, atIndex index: UInt, to keyValue: Any!, withState L: UnsafeMutablePointer<lua_State>!) -> Int {
         guard index < elementList.count else { return AttributeValidity.invalid.rawValue }
         let massaged = massageKeyValue(keyValue, forKey: keyName, withState: L)
         var validityStatus = canvas_isValueValidForAttribute(keyName as NSString, massaged)
@@ -1121,9 +1122,10 @@ import os.log
     }
 
     func fadeOut(_ fadeTime: TimeInterval, andDelete deleteView: Bool, withState L: UnsafeMutablePointer<lua_State>!) {
-        if selfRef != LUA_NOREF { return } // already in a fade
+        if selfRef != nil { return } // already in a fade
         canvas_pushValue(L, self)
-        selfRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+        selfRef = L.ref(index: -1)
+        lua_pop(L, 1)
 
         let alphaSetting = self.alphaValue
         NSAnimationContext.beginGrouping()
@@ -1131,9 +1133,7 @@ import os.log
         NSAnimationContext.current.duration = fadeTime
         NSAnimationContext.current.completionHandler = {
             guard let mySelf = bself else { return }
-            let bL = lua_getCurrentState()!
-            luaL_unref(bL, LUA_REGISTRYINDEX_VALUE, mySelf.selfRef)
-            mySelf.selfRef = LUA_NOREF
+            mySelf.selfRef = nil
 
             if deleteView {
                 mySelf.removeFromSuperview()
@@ -1148,13 +1148,13 @@ import os.log
 
     // MARK: - NSDraggingDestination protocol methods
 
-    func draggingCallback(_ message: String, with sender: NSDraggingInfo?) -> Bool {
+    func performDraggingCallback(_ message: String, with sender: NSDraggingInfo?) -> Bool {
         var isAllGood = false
-        guard draggingCallbackRef != LUA_NOREF else { return isAllGood }
+        guard let cb = draggingCallbackFn else { return isAllGood }
 
         let L = lua_getCurrentState()!
         var argCount: Int32 = 2
-        lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(draggingCallbackRef))
+        cb.push(onto: L)
         canvas_pushValue(L, self)
         canvas_pushValue(L, message as NSString)
 
@@ -1201,15 +1201,15 @@ import os.log
     override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool { return true }
 
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
-        return draggingCallback("enter", with: sender) ? .generic : []
+        return performDraggingCallback("enter", with: sender) ? .generic : []
     }
 
     override func draggingExited(_ sender: NSDraggingInfo?) {
-        _ = draggingCallback("exit", with: sender)
+        _ = performDraggingCallback("exit", with: sender)
     }
 
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
-        return draggingCallback("receive", with: sender)
+        return performDraggingCallback("receive", with: sender)
     }
 
     // MARK: - Image drawing (ported from imageAdditions.m)

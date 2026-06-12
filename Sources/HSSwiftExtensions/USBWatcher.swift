@@ -16,11 +16,15 @@ private let kIOMessageServiceIsTerminated: UInt32 = 0xE000_0010
 private let USERDATA_TAG = "hs.usb.watcher"
 private var refTable: Int32 = 0
 
+/// Module-level map from userdata pointer to LuaValue callback.
+/// We cannot store a LuaValue (class) inside a struct that lives in
+/// lua_newuserdata raw memory, so we keep the association here.
+private var callbackMap: [UnsafeMutableRawPointer: LuaValue] = [:]
+
 // Userdata object for each watcher
 private struct USBWatcher {
     var running: Bool
     var isFirstRun: Bool
-    var fn: Int32
     var gNotifyPort: IONotificationPortRef?
     var gAddedIter: io_iterator_t
     var runLoopSource: Unmanaged<CFRunLoopSource>?
@@ -50,31 +54,31 @@ private func DeviceNotification(refCon: UnsafeMutableRawPointer?,
         let L = lua_getCurrentState()!
         guard lua_isStateGenerationValid(watcher.pointee.generation) else { return }
 
-        lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(watcher.pointee.fn))
+        if let cb = callbackMap[UnsafeMutableRawPointer(watcher)] {
+            cb.push(onto: L)
 
-        // Prepare the callback's argument table
-        lua_newtable(L)
-        lua_pushstring(L, "productName")
-        lua_pushstring(L, privateDataRef.pointee.productName)
-        lua_settable(L, -3)
-        lua_pushstring(L, "vendorName")
-        lua_pushstring(L, privateDataRef.pointee.vendorName)
-        lua_settable(L, -3)
-        lua_pushstring(L, "productID")
-        lua_pushinteger(L, lua_Integer(privateDataRef.pointee.productID))
-        lua_settable(L, -3)
-        lua_pushstring(L, "vendorID")
-        lua_pushinteger(L, lua_Integer(privateDataRef.pointee.vendorID))
-        lua_settable(L, -3)
-        lua_pushstring(L, "eventType")
-        lua_pushstring(L, "removed")
-        lua_settable(L, -3)
+            lua_newtable(L)
+            lua_pushstring(L, "productName")
+            lua_pushstring(L, privateDataRef.pointee.productName)
+            lua_settable(L, -3)
+            lua_pushstring(L, "vendorName")
+            lua_pushstring(L, privateDataRef.pointee.vendorName)
+            lua_settable(L, -3)
+            lua_pushstring(L, "productID")
+            lua_pushinteger(L, lua_Integer(privateDataRef.pointee.productID))
+            lua_settable(L, -3)
+            lua_pushstring(L, "vendorID")
+            lua_pushinteger(L, lua_Integer(privateDataRef.pointee.vendorID))
+            lua_settable(L, -3)
+            lua_pushstring(L, "eventType")
+            lua_pushstring(L, "removed")
+            lua_settable(L, -3)
 
-        if lua_pcall(L, 1, 0, 0) != LUA_OK {
-            lua_pop(L, 1)
+            if lua_pcall(L, 1, 0, 0) != LUA_OK {
+                lua_pop(L, 1)
+            }
         }
 
-        // Free the USB private data
         IOObjectRelease(privateDataRef.pointee.notification)
         if let pName = privateDataRef.pointee.productName {
             free(pName)
@@ -92,7 +96,6 @@ private func DeviceNotification(refCon: UnsafeMutableRawPointer?,
 private func DeviceAdded(refCon: UnsafeMutableRawPointer?, iterator: io_iterator_t) {
     let watcher = refCon!.assumingMemoryBound(to: USBWatcher.self)
     guard lua_isStateGenerationValid(watcher.pointee.generation) else {
-        // drain iterator
         while IOIteratorNext(iterator) != IO_OBJECT_NULL {}
         return
     }
@@ -100,51 +103,33 @@ private func DeviceAdded(refCon: UnsafeMutableRawPointer?, iterator: io_iterator
 
     var usbDevice = IOIteratorNext(iterator)
     while usbDevice != 0 {
-        // Prepare an object to store private data about this USB device
         let privateDataRef = UnsafeMutablePointer<USBPrivData>.allocate(capacity: 1)
         privateDataRef.initialize(to: USBPrivData(
-            watcher: watcher,
-            notification: 0,
-            productName: nil,
-            vendorName: nil,
-            productID: 0,
-            vendorID: 0
+            watcher: watcher, notification: 0, productName: nil,
+            vendorName: nil, productID: 0, vendorID: 0
         ))
 
-        // Fetch the IOKit properties for this device
         var deviceData: Unmanaged<CFMutableDictionary>?
         IORegistryEntryCreateCFProperties(usbDevice, &deviceData, kCFAllocatorDefault, 0)
 
         if let dict = deviceData?.takeRetainedValue() as? [String: Any] {
-            // Extract the USB device's name
             let productName = (dict[kUSBProductString] as? String) ?? ""
             let length = productName.utf8.count + 1
             privateDataRef.pointee.productName = UnsafeMutablePointer<CChar>.allocate(capacity: length)
-            _ = productName.withCString { src in
-                strcpy(privateDataRef.pointee.productName!, src)
-            }
+            _ = productName.withCString { src in strcpy(privateDataRef.pointee.productName!, src) }
 
-            // Extract the USB device's vendor's name
             let vendorName = (dict[kUSBVendorString] as? String) ?? ""
             let vLength = vendorName.utf8.count + 1
             privateDataRef.pointee.vendorName = UnsafeMutablePointer<CChar>.allocate(capacity: vLength)
-            _ = vendorName.withCString { src in
-                strcpy(privateDataRef.pointee.vendorName!, src)
-            }
+            _ = vendorName.withCString { src in strcpy(privateDataRef.pointee.vendorName!, src) }
 
-            // Extract the USB device's product/vendor IDs
             privateDataRef.pointee.productID = Int32((dict[kUSBProductID] as? NSNumber)?.intValue ?? 0)
             privateDataRef.pointee.vendorID = Int32((dict[kUSBVendorID] as? NSNumber)?.intValue ?? 0)
         }
 
-        // Register for notifications relating to this device
         let kr = IOServiceAddInterestNotification(
-            watcher.pointee.gNotifyPort,
-            usbDevice,
-            kIOGeneralInterest,
-            DeviceNotification,
-            privateDataRef,
-            &privateDataRef.pointee.notification
+            watcher.pointee.gNotifyPort, usbDevice, kIOGeneralInterest,
+            DeviceNotification, privateDataRef, &privateDataRef.pointee.notification
         )
         if kr != KERN_SUCCESS {
             os_log(.error, "IOServiceAddInterestNotification returned 0x%08x", kr)
@@ -152,9 +137,8 @@ private func DeviceAdded(refCon: UnsafeMutableRawPointer?, iterator: io_iterator
 
         IOObjectRelease(usbDevice)
 
-        // Don't trigger callbacks for devices attached before the watcher starts
-        if !watcher.pointee.isFirstRun && watcher.pointee.fn != LUA_REFNIL && watcher.pointee.fn != LUA_NOREF {
-            lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(watcher.pointee.fn))
+        if !watcher.pointee.isFirstRun, let cb = callbackMap[UnsafeMutableRawPointer(watcher)] {
+            cb.push(onto: L)
 
             lua_newtable(L)
             lua_pushstring(L, "productName")
@@ -202,9 +186,9 @@ private func usb_watcher_new(_ L: LuaState) throws -> CInt {
     let usbwatcher = lua_newuserdata(L, MemoryLayout<USBWatcher>.size)!
         .assumingMemoryBound(to: USBWatcher.self)
     memset(usbwatcher, 0, MemoryLayout<USBWatcher>.size)
-    lua_pushvalue(L, 1)
 
-    usbwatcher.pointee.fn = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+    callbackMap[UnsafeMutableRawPointer(usbwatcher)] = L.ref(index: 1)
+
     usbwatcher.pointee.running = false
     usbwatcher.pointee.gNotifyPort = IONotificationPortCreate(kIOMainPortDefault)
     usbwatcher.pointee.runLoopSource = IONotificationPortGetRunLoopSource(usbwatcher.pointee.gNotifyPort)
@@ -244,12 +228,8 @@ private func usb_watcher_start(_ L: LuaState) throws -> CInt {
                        .defaultMode)
 
     if IOServiceAddMatchingNotification(
-        usbwatcher.pointee.gNotifyPort,
-        kIOFirstMatchNotification,
-        matchingDict,
-        DeviceAdded,
-        usbwatcher,
-        &usbwatcher.pointee.gAddedIter
+        usbwatcher.pointee.gNotifyPort, kIOFirstMatchNotification,
+        matchingDict, DeviceAdded, usbwatcher, &usbwatcher.pointee.gAddedIter
     ) == KERN_SUCCESS {
         DeviceAdded(refCon: usbwatcher, iterator: usbwatcher.pointee.gAddedIter)
         usbwatcher.pointee.isFirstRun = false
@@ -288,8 +268,7 @@ private func usb_watcher_gc(_ L: LuaState) throws -> CInt {
     _ = try usb_watcher_stop(L)
     lua_pop(L, 1)
 
-    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, usbwatcher.pointee.fn)
-    usbwatcher.pointee.fn = Int32(LUA_NOREF)
+    callbackMap[UnsafeMutableRawPointer(usbwatcher)] = nil
 
     IONotificationPortDestroy(usbwatcher.pointee.gNotifyPort)
 
@@ -309,11 +288,9 @@ private func userdata_tostring(_ L: LuaState) throws -> CInt {
 @_cdecl("luaopen_hs_libusbwatcher")
 public func luaopen_hs_libusbwatcher(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     runEntryPoint(L) { L in
-        // Create ref table in registry
         lua_newtable(L)
         refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
 
-        // Register userdata metatable
         luaL_newmetatable(L, USERDATA_TAG)
         lua_pushvalue(L, -1)
         lua_setfield(L, -2, "__index")
@@ -327,12 +304,10 @@ public func luaopen_hs_libusbwatcher(_ L: UnsafeMutablePointer<lua_State>!) -> I
         lua_setfield(L, -2, "__gc")
         lua_pop(L, 1)
 
-        // Create module table
         lua_createtable(L, 0, 1)
         L.push(usb_watcher_new)
         lua_setfield(L, -2, "new")
 
-        // Set module metatable (for __gc)
         lua_createtable(L, 0, 1)
         L.push(meta_gc)
         lua_setfield(L, -2, "__gc")

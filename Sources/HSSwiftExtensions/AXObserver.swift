@@ -11,7 +11,7 @@ var observerRefTable: Int32 = LUA_NOREF
 var observerDetails: NSMutableDictionary? = nil
 
 let keySelfRefCount = "selfRefCount" as CFString
-let keyCallbackRef  = "callbackRef" as CFString
+let keyCallbackRef  = "callbackRef" as CFString  // value is LuaValue? (not NSNumber)
 let keyIsRunning    = "isRunning" as CFString
 let keyWatching     = "watching" as CFString
 
@@ -29,7 +29,7 @@ public func pushAXObserver(_ L: UnsafeMutablePointer<lua_State>!, _ observer: AX
     if details == nil {
         details = NSMutableDictionary()
         details![keySelfRefCount as String] = NSNumber(value: 0 as Int32)
-        details![keyCallbackRef as String]  = NSNumber(value: LUA_NOREF)
+        // callbackRef is stored as LuaValue? — nil means no callback
         details![keyIsRunning as String]    = NSNumber(value: false)
         details![keyWatching as String]     = NSMutableDictionary()
         observerDetails![observerKey] = details
@@ -56,13 +56,8 @@ func purgeWatchers(element: AXUIElement, notifications: NSMutableArray, observer
 }
 
 func cleanupAXObserver(_ observer: AXObserver, _ details: NSMutableDictionary) {
-    let L = lua_getCurrentState()!
-
-    var callbackRef = (details[keyCallbackRef as String] as? NSNumber)?.int32Value ?? LUA_NOREF
-    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, callbackRef)
-
-    callbackRef = LUA_NOREF
-    details[keyCallbackRef as String] = NSNumber(value: callbackRef)
+    // Drop the LuaValue callback ref (releases while L is still open)
+    details.removeObject(forKey: keyCallbackRef as String)
 
     let isRunning = (details[keyIsRunning as String] as? NSNumber)?.boolValue ?? false
     if isRunning {
@@ -94,9 +89,8 @@ let observerCallbackPtr: AXObserverCallbackWithInfo = { (observer, element, noti
         return
     }
 
-    let callbackRef = (details[keyCallbackRef as String] as? NSNumber)?.int32Value ?? LUA_NOREF
-    if callbackRef != LUA_NOREF {
-        lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(callbackRef))
+    if let cb = details[keyCallbackRef as String] as? LuaValue {
+        cb.push(onto: L)
         pushAXObserver(L, observer)
         pushAXUIElement(L, element)
         lua_pushany(L, notification as String)
@@ -176,21 +170,18 @@ private func axobserver_callback(_ L: LuaState) throws -> CInt {
     let observerKey = observer as AnyObject
     let details = observerDetails![observerKey] as! NSMutableDictionary
 
-    var callbackRef = (details[keyCallbackRef as String] as? NSNumber)?.int32Value ?? LUA_NOREF
     if lua_gettop(L) == 2 {
-        luaL_unref(L, LUA_REGISTRYINDEX_VALUE, callbackRef)
+        // Drop existing callback (LuaValue? released automatically)
+        details.removeObject(forKey: keyCallbackRef as String)
 
-        callbackRef = LUA_NOREF
-        details[keyCallbackRef as String] = NSNumber(value: callbackRef)
         if lua_type(L, 2) != LUA_TNIL {
-            lua_pushvalue(L, 2)
-            callbackRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
-            details[keyCallbackRef as String] = NSNumber(value: callbackRef)
+            let cb = L.ref(index: 2)
+            details[keyCallbackRef as String] = cb
             lua_pushvalue(L, 1)
         }
     } else {
-        if callbackRef != LUA_NOREF {
-            lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(callbackRef))
+        if let cb = details[keyCallbackRef as String] as? LuaValue {
+            cb.push(onto: L)
         } else {
             lua_pushnil(L)
         }

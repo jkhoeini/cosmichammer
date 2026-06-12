@@ -12,7 +12,7 @@ import os.log
 
 extension NSImage {
 
-    @objc func imageRotated(_ degrees: Int) -> NSImage {
+    func imageRotated(_ degrees: Int) -> NSImage {
         if degrees == 0 {
             return self
         }

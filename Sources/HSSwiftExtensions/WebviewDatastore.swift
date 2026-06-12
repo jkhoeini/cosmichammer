@@ -10,9 +10,9 @@ import WebKit
 import os.log
 
 private let USERDATA_DS_TAG = "hs.webview.datastore"
-private var refTable: Int32 = LUA_NOREF
 
-private var backgroundCallbacks = NSMutableSet()
+/// Holds LuaValue refs for in-flight async callbacks so they stay alive until completion.
+private var backgroundCallbacks: [ObjectIdentifier: LuaValue] = [:]
 
 // MARK: - Module Functions
 
@@ -102,9 +102,9 @@ private func datastore_fetchRecords(_ L: LuaState) throws -> CInt {
     let dataStore = wv_toWKWebsiteDataStore(L, 1)!
     var dataTypes: [String] = Array(WKWebsiteDataStore.allWebsiteDataTypes())
 
-    lua_pushvalue(L, lua_gettop(L))
-    let fnRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
-    backgroundCallbacks.add(NSNumber(value: fnRef))
+    let fnValue = L.ref(index: lua_gettop(L))
+    let key = ObjectIdentifier(fnValue)
+    backgroundCallbacks[key] = fnValue
 
     if lua_type(L, 2) == LUA_TSTRING {
         dataTypes = [lua_tovalue(L, at: 2) as! String]
@@ -124,16 +124,15 @@ private func datastore_fetchRecords(_ L: LuaState) throws -> CInt {
 
     dataStore.fetchDataRecords(ofTypes: typeSet) { records in
         DispatchQueue.main.async {
-            if backgroundCallbacks.contains(NSNumber(value: fnRef)) {
-                lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(fnRef))
+            if backgroundCallbacks[key] != nil {
+                fnValue.push(onto: L)
                 lua_createtable(L, Int32(records.count), 0)
                 for record in records {
                     wv_pushAny(L, record)
                     lua_rawseti(L, -2, luaL_len(L, -2) + 1)
                 }
                 if lua_pcall(L, 1, 0, 0) != LUA_OK { lua_pop(L, 1) }
-                luaL_unref(lua_getCurrentState()!, LUA_REGISTRYINDEX_VALUE, fnRef)
-                backgroundCallbacks.remove(NSNumber(value: fnRef))
+                backgroundCallbacks.removeValue(forKey: key)
             }
         }
     }
@@ -158,7 +157,8 @@ private func datastore_removeRecords(_ L: LuaState) throws -> CInt {
 
     var recordNames: [String]
     var recordTypes: [String]
-    var fnRef: Int32 = LUA_NOREF
+    var fnValue: LuaValue?
+    var key: ObjectIdentifier?
 
     if lua_type(L, 2) == LUA_TSTRING {
         recordNames = [lua_tovalue(L, at: 2) as! String]
@@ -184,20 +184,20 @@ private func datastore_removeRecords(_ L: LuaState) throws -> CInt {
     }
 
     if lua_type(L, 4) == LUA_TFUNCTION {
-        lua_pushvalue(L, 4)
-        fnRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
-        backgroundCallbacks.add(NSNumber(value: fnRef))
+        let val = L.ref(index: 4)
+        fnValue = val
+        key = ObjectIdentifier(val)
+        backgroundCallbacks[key!] = val
     }
 
     dataStore.fetchDataRecords(ofTypes: typeSet) { records in
         let targets = records.filter { recordNames.contains($0.displayName) }
         dataStore.removeData(ofTypes: typeSet, for: targets) {
             DispatchQueue.main.async {
-                if fnRef != LUA_NOREF && backgroundCallbacks.contains(NSNumber(value: fnRef)) {
-                    lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(fnRef))
+                if let k = key, let cb = fnValue, backgroundCallbacks[k] != nil {
+                    cb.push(onto: L)
                     if lua_pcall(L, 0, 0, 0) != LUA_OK { lua_pop(L, 1) }
-                    luaL_unref(lua_getCurrentState()!, LUA_REGISTRYINDEX_VALUE, fnRef)
-                    backgroundCallbacks.remove(NSNumber(value: fnRef))
+                    backgroundCallbacks.removeValue(forKey: k)
                 }
             }
         }
@@ -223,7 +223,8 @@ private func datastore_removeDataFrom(_ L: LuaState) throws -> CInt {
 
     var theDate: Date
     var recordTypes: [String]
-    var fnRef: Int32 = LUA_NOREF
+    var fnValue: LuaValue?
+    var key: ObjectIdentifier?
 
     if lua_type(L, 2) == LUA_TSTRING {
         let rfc3339DateFormatter = DateFormatter()
@@ -254,18 +255,18 @@ private func datastore_removeDataFrom(_ L: LuaState) throws -> CInt {
     }
 
     if lua_type(L, 4) == LUA_TFUNCTION {
-        lua_pushvalue(L, 4)
-        fnRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
-        backgroundCallbacks.add(NSNumber(value: fnRef))
+        let val = L.ref(index: 4)
+        fnValue = val
+        key = ObjectIdentifier(val)
+        backgroundCallbacks[key!] = val
     }
 
     dataStore.removeData(ofTypes: typeSet, modifiedSince: theDate) {
         DispatchQueue.main.async {
-            if fnRef != LUA_NOREF && backgroundCallbacks.contains(NSNumber(value: fnRef)) {
-                lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(fnRef))
+            if let k = key, let cb = fnValue, backgroundCallbacks[k] != nil {
+                cb.push(onto: L)
                 if lua_pcall(L, 0, 0, 0) != LUA_OK { lua_pop(L, 1) }
-                luaL_unref(lua_getCurrentState()!, LUA_REGISTRYINDEX_VALUE, fnRef)
-                backgroundCallbacks.remove(NSNumber(value: fnRef))
+                backgroundCallbacks.removeValue(forKey: k)
             }
         }
     }
@@ -375,12 +376,7 @@ private func userdata_gc(_ L: LuaState) throws -> CInt {
 }
 
 private func meta_gc(_ L: LuaState) throws -> CInt {
-    backgroundCallbacks.enumerateObjects { obj, _ in
-        if let ref = obj as? NSNumber {
-            luaL_unref(L, LUA_REGISTRYINDEX_VALUE, ref.int32Value)
-        }
-    }
-    backgroundCallbacks.removeAllObjects()
+    backgroundCallbacks.removeAll()
     return 0
 }
 
@@ -388,9 +384,6 @@ private func meta_gc(_ L: LuaState) throws -> CInt {
 @_cdecl("luaopen_hs_libwebviewdatastore")
 public func luaopen_hs_libwebviewdatastore(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     runEntryPoint(L) { L in
-        lua_newtable(L)
-        refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
-
         luaL_newmetatable(L, USERDATA_DS_TAG)
         lua_pushvalue(L, -1)
         lua_setfield(L, -2, "__index")
@@ -426,6 +419,6 @@ public func luaopen_hs_libwebviewdatastore(_ L: UnsafeMutablePointer<lua_State>!
         lua_setfield(L, -2, "__gc")
         lua_setmetatable(L, -2)
 
-        backgroundCallbacks = NSMutableSet()
+        backgroundCallbacks = [:]
     }
 }

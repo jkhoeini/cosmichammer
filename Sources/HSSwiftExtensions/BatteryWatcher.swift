@@ -16,9 +16,13 @@ private var refTable: Int32 = 0
 
 // Not so common code
 
+/// Module-level map from userdata pointer to LuaValue callback.
+/// We cannot store a LuaValue (class) inside a struct that lives in
+/// lua_newuserdata raw memory, so we keep the association here.
+private var callbackMap: [UnsafeMutableRawPointer: LuaValue] = [:]
+
 private struct BatteryWatcher {
     var t: CFRunLoopSource!
-    var fn: Int32 = Int32(LUA_NOREF)
     var started: Bool = false
     var generation: UInt64 = 0
 }
@@ -31,8 +35,8 @@ private func callback(_ info: UnsafeMutableRawPointer?) {
 
     let L = lua_getCurrentState()!
 
-    if watcher.pointee.fn != Int32(LUA_NOREF) {
-        lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(watcher.pointee.fn))
+    if let cb = callbackMap[info] {
+        cb.push(onto: L)
         if lua_pcall(L, 0, 0, 0) != LUA_OK {
             lua_pop(L, 1)
         }
@@ -58,8 +62,7 @@ private func battery_watcher_new(_ L: LuaState) throws -> CInt {
         .assumingMemoryBound(to: BatteryWatcher.self)
     watcherPtr.pointee = BatteryWatcher()
 
-    lua_pushvalue(L, 1)
-    watcherPtr.pointee.fn = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+    callbackMap[UnsafeMutableRawPointer(watcherPtr)] = L.ref(index: 1)
 
     luaL_getmetatable(L, USERDATA_TAG)
     lua_setmetatable(L, -2)
@@ -120,8 +123,7 @@ private func battery_watcher_gc(_ L: LuaState) throws -> CInt {
 
     _ = try battery_watcher_stop(L)
 
-    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, watcher.pointee.fn)
-    watcher.pointee.fn = Int32(LUA_NOREF)
+    callbackMap[UnsafeMutableRawPointer(watcher)] = nil
     CFRunLoopSourceInvalidate(watcher.pointee.t)
     // CFRelease not needed in Swift (ARC)
     return 0

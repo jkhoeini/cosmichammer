@@ -85,27 +85,27 @@ private struct HSRazerReportBuilder {
 
 // MARK: - HSRazerResult
 
-@objc class HSRazerResult: NSObject {
-    @objc var success: Bool = false
-    @objc var errorMessage: NSString?
+class HSRazerResult: NSObject {
+    var success: Bool = false
+    var errorMessage: NSString?
 
-    @objc var brightness: NSNumber?
+    var brightness: NSNumber?
 
-    @objc var orangeStatusLight: Bool = false
-    @objc var greenStatusLight: Bool = false
-    @objc var blueStatusLight: Bool = false
+    var orangeStatusLight: Bool = false
+    var greenStatusLight: Bool = false
+    var blueStatusLight: Bool = false
 
     var argumentTwo: UInt8 = 0
 }
 
 // MARK: - HSRazerDevice
 
-@objc class HSRazerDevice: NSObject, LuaUserdataConvertible {
-    @objc var device: IOHIDDevice?
-    @objc weak var manager: HSRazerManager?
-    @objc var selfRefCount: Int32 = 0
-    @objc var buttonCallbackRef: Int32 = LUA_NOREF
-    @objc var isValid: Bool = true
+class HSRazerDevice: NSObject, LuaUserdataConvertible {
+    var device: IOHIDDevice?
+    weak var manager: HSRazerManager?
+    var selfRefCount: Int32 = 0
+    var buttonCallbackRef: Int32 = LUA_NOREF
+    var isValid: Bool = true
 
     var luaUserdataMetatableName: String { USERDATA_TAG }
 
@@ -113,30 +113,30 @@ private struct HSRazerReportBuilder {
         selfRefCount += 1
     }
 
-    @objc var locationID: NSNumber?
+    var locationID: NSNumber?
 
     var eventTap: CFMachPort?
 
-    @objc var name: String = "Unknown"
-    @objc var productID: Int32 = 0
+    var name: String = "Unknown"
+    var productID: Int32 = 0
 
     // Remapping Details:
-    @objc var buttonNames: NSDictionary?
-    @objc var remapping: NSDictionary?
+    var buttonNames: NSDictionary?
+    var remapping: NSDictionary?
 
     // Backlight Details:
-    @objc var backlightRows: Int32 = 0
-    @objc var backlightColumns: Int32 = 0
+    var backlightRows: Int32 = 0
+    var backlightColumns: Int32 = 0
 
     // Scroll Wheel:
-    @objc var scrollWheelID: Int32 = 0
-    @objc var scrollWheelPressed: Bool = false
+    var scrollWheelID: Int32 = 0
+    var scrollWheelPressed: Bool = false
 
-    @objc var lastScrollWheelEvent: Double = 0
+    var lastScrollWheelEvent: Double = 0
 
-    @objc var lsCanary: UInt64 = UInt64()
+    var lsCanary: UInt64 = UInt64()
 
-    @objc init(device: IOHIDDevice, manager: HSRazerManager) {
+    init(device: IOHIDDevice, manager: HSRazerManager) {
         super.init()
         self.device = device
         self.isValid = true
@@ -148,14 +148,14 @@ private struct HSRazerReportBuilder {
         self.lastScrollWheelEvent = getSecondsSinceEpoch()
     }
 
-    @objc func invalidate() {
+    func invalidate() {
         isValid = false
         destroyEventTap()
     }
 
     // MARK: - Button Callbacks
 
-    @objc func deviceButtonPress(_ scancodeString: String, pressed: Int) {
+    func deviceButtonPress(_ scancodeString: String, pressed: Int) {
         guard isValid else { return }
 
         guard let buttonName = buttonNames?.value(forKey: scancodeString) as? String else {
@@ -199,7 +199,7 @@ private struct HSRazerReportBuilder {
 
     // MARK: - Event Tap for Scroll Wheel
 
-    @objc func setupEventTap() {
+    func setupEventTap() {
         guard scrollWheelID != 0 else {
             os_log(.info, "[hs.razer] The device does not have a scroll wheel ID, so aborting event tap setup.")
             return
@@ -228,7 +228,7 @@ private struct HSRazerReportBuilder {
         CGEvent.tapEnable(tap: tap, enable: true)
     }
 
-    @objc func destroyEventTap() {
+    func destroyEventTap() {
         if let tap = eventTap {
             if CGEvent.tapIsEnabled(tap: tap) {
                 CGEvent.tapEnable(tap: tap, enable: false)
@@ -240,77 +240,77 @@ private struct HSRazerReportBuilder {
 
     // MARK: - Backlight Placeholders (overridden by subclasses)
 
-    @objc func setBacklightToStaticColor(_ color: NSColor) -> HSRazerResult {
+    func setBacklightToStaticColor(_ color: NSColor) -> HSRazerResult {
         fatalError("setBacklightToStaticColor not implemented")
     }
 
-    @objc func setBacklightToOff() -> HSRazerResult {
+    func setBacklightToOff() -> HSRazerResult {
         fatalError("setBacklightToOff not implemented")
     }
 
-    @objc func setBacklightToWave(speed: NSNumber, direction: String) -> HSRazerResult {
+    func setBacklightToWave(speed: NSNumber, direction: String) -> HSRazerResult {
         fatalError("setBacklightToWaveWithSpeed not implemented")
     }
 
-    @objc func setBacklightToSpectrum() -> HSRazerResult {
+    func setBacklightToSpectrum() -> HSRazerResult {
         fatalError("setBacklightToSpectrum not implemented")
     }
 
-    @objc func setBacklightToReactive(color: NSColor, speed: NSNumber) -> HSRazerResult {
+    func setBacklightToReactive(color: NSColor, speed: NSNumber) -> HSRazerResult {
         fatalError("setBacklightToReactiveWithColor not implemented")
     }
 
-    @objc func setBacklightToStarlight(color: NSColor?, secondaryColor: NSColor?, speed: NSNumber) -> HSRazerResult {
+    func setBacklightToStarlight(color: NSColor?, secondaryColor: NSColor?, speed: NSNumber) -> HSRazerResult {
         fatalError("setBacklightToStarlightWithColor not implemented")
     }
 
-    @objc func setBacklightToBreathing(color: NSColor?, secondaryColor: NSColor?) -> HSRazerResult {
+    func setBacklightToBreathing(color: NSColor?, secondaryColor: NSColor?) -> HSRazerResult {
         fatalError("setBacklightToBreathingWithColor not implemented")
     }
 
-    @objc func setBacklightToCustom(colors: NSMutableDictionary) -> HSRazerResult {
+    func setBacklightToCustom(colors: NSMutableDictionary) -> HSRazerResult {
         fatalError("setBacklightToCustomWithColors not implemented")
     }
 
     // MARK: - Brightness Placeholders
 
-    @objc func getBrightness() -> HSRazerResult {
+    func getBrightness() -> HSRazerResult {
         fatalError("getBrightness not implemented")
     }
 
-    @objc func setBrightness(_ brightness: NSNumber) -> HSRazerResult {
+    func setBrightness(_ brightness: NSNumber) -> HSRazerResult {
         fatalError("setBrightness not implemented")
     }
 
     // MARK: - Status Light Placeholders
 
-    @objc func getOrangeStatusLight() -> HSRazerResult {
+    func getOrangeStatusLight() -> HSRazerResult {
         fatalError("getOrangeStatusLight not implemented")
     }
 
-    @objc func setOrangeStatusLight(_ active: Bool) -> HSRazerResult {
+    func setOrangeStatusLight(_ active: Bool) -> HSRazerResult {
         fatalError("setOrangeStatusLight not implemented")
     }
 
-    @objc func getGreenStatusLight() -> HSRazerResult {
+    func getGreenStatusLight() -> HSRazerResult {
         fatalError("getGreenStatusLight not implemented")
     }
 
-    @objc func setGreenStatusLight(_ active: Bool) -> HSRazerResult {
+    func setGreenStatusLight(_ active: Bool) -> HSRazerResult {
         fatalError("setGreenStatusLight not implemented")
     }
 
-    @objc func getBlueStatusLight() -> HSRazerResult {
+    func getBlueStatusLight() -> HSRazerResult {
         fatalError("getBlueStatusLight not implemented")
     }
 
-    @objc func setBlueStatusLight(_ active: Bool) -> HSRazerResult {
+    func setBlueStatusLight(_ active: Bool) -> HSRazerResult {
         fatalError("setBlueStatusLight not implemented")
     }
 
     // MARK: - USB Device Communication
 
-    @objc func sendRazerReport(transactionID: Int32, commandClass: Int32, commandID: Int32, arguments: NSDictionary) -> HSRazerResult {
+    func sendRazerReport(transactionID: Int32, commandClass: Int32, commandID: Int32, arguments: NSDictionary) -> HSRazerResult {
         let result = HSRazerResult()
 
         let wValue: UInt16 = 0x300
@@ -551,9 +551,9 @@ private func razerEventTapCallback(
 
 // MARK: - HSRazerTartarusV2Device
 
-@objc class HSRazerTartarusV2Device: HSRazerDevice {
+class HSRazerTartarusV2Device: HSRazerDevice {
 
-    @objc override init(device: IOHIDDevice, manager: HSRazerManager) {
+    override init(device: IOHIDDevice, manager: HSRazerManager) {
         super.init(device: device, manager: manager)
 
         self.name = "Razer Tartarus V2"
@@ -601,7 +601,7 @@ private func razerEventTapCallback(
 
     // MARK: - LED Backlights
 
-    @objc override func setBacklightToOff() -> HSRazerResult {
+    override func setBacklightToOff() -> HSRazerResult {
         let arguments: NSDictionary = [
             NSNumber(value: 0): NSNumber(value: 0x01), NSNumber(value: 1): NSNumber(value: 0x05),
             NSNumber(value: 2): NSNumber(value: 0x00), NSNumber(value: 3): NSNumber(value: 0x00),
@@ -611,7 +611,7 @@ private func razerEventTapCallback(
         return sendRazerReport(transactionID: 0x1F, commandClass: 0x0F, commandID: 0x02, arguments: arguments)
     }
 
-    @objc override func setBacklightToStaticColor(_ color: NSColor) -> HSRazerResult {
+    override func setBacklightToStaticColor(_ color: NSColor) -> HSRazerResult {
         let (red, green, blue) = colorComponents(color)
         let arguments: NSDictionary = [
             NSNumber(value: 0): NSNumber(value: 0x01), NSNumber(value: 1): NSNumber(value: 0x05),
@@ -622,7 +622,7 @@ private func razerEventTapCallback(
         return sendRazerReport(transactionID: 0x1F, commandClass: 0x0F, commandID: 0x02, arguments: arguments)
     }
 
-    @objc override func setBacklightToWave(speed: NSNumber, direction: String) -> HSRazerResult {
+    override func setBacklightToWave(speed: NSNumber, direction: String) -> HSRazerResult {
         let directionValue: NSNumber = (direction == "right") ? NSNumber(value: 2) : NSNumber(value: 1)
         let arguments: NSDictionary = [
             NSNumber(value: 0): NSNumber(value: 0x01), NSNumber(value: 1): NSNumber(value: 0x05),
@@ -633,7 +633,7 @@ private func razerEventTapCallback(
         return sendRazerReport(transactionID: 0x1F, commandClass: 0x0F, commandID: 0x02, arguments: arguments)
     }
 
-    @objc override func setBacklightToSpectrum() -> HSRazerResult {
+    override func setBacklightToSpectrum() -> HSRazerResult {
         let arguments: NSDictionary = [
             NSNumber(value: 0): NSNumber(value: 0x01), NSNumber(value: 1): NSNumber(value: 0x05),
             NSNumber(value: 2): NSNumber(value: 0x03), NSNumber(value: 3): NSNumber(value: 0x00),
@@ -643,7 +643,7 @@ private func razerEventTapCallback(
         return sendRazerReport(transactionID: 0x1F, commandClass: 0x0F, commandID: 0x02, arguments: arguments)
     }
 
-    @objc override func setBacklightToReactive(color: NSColor, speed: NSNumber) -> HSRazerResult {
+    override func setBacklightToReactive(color: NSColor, speed: NSNumber) -> HSRazerResult {
         let (red, green, blue) = colorComponents(color)
         let arguments: NSDictionary = [
             NSNumber(value: 0): NSNumber(value: 0x01), NSNumber(value: 1): NSNumber(value: 0x05),
@@ -654,7 +654,7 @@ private func razerEventTapCallback(
         return sendRazerReport(transactionID: 0x1F, commandClass: 0x0F, commandID: 0x02, arguments: arguments)
     }
 
-    @objc override func setBacklightToStarlight(color: NSColor?, secondaryColor: NSColor?, speed: NSNumber) -> HSRazerResult {
+    override func setBacklightToStarlight(color: NSColor?, secondaryColor: NSColor?, speed: NSNumber) -> HSRazerResult {
         if let color = color, let secondaryColor = secondaryColor {
             let (red, green, blue) = colorComponents(color)
             let (redS, greenS, blueS) = colorComponents(secondaryColor)
@@ -685,7 +685,7 @@ private func razerEventTapCallback(
         }
     }
 
-    @objc override func setBacklightToBreathing(color: NSColor?, secondaryColor: NSColor?) -> HSRazerResult {
+    override func setBacklightToBreathing(color: NSColor?, secondaryColor: NSColor?) -> HSRazerResult {
         if let color = color, let secondaryColor = secondaryColor {
             let (red, green, blue) = colorComponents(color)
             let (redS, greenS, blueS) = colorComponents(secondaryColor)
@@ -716,7 +716,7 @@ private func razerEventTapCallback(
         }
     }
 
-    @objc override func setBacklightToCustom(colors: NSMutableDictionary) -> HSRazerResult {
+    override func setBacklightToCustom(colors: NSMutableDictionary) -> HSRazerResult {
         var customColorsCount = 1
 
         for row in 0..<Int(backlightRows) {
@@ -761,7 +761,7 @@ private func razerEventTapCallback(
 
     // MARK: - LED Brightness
 
-    @objc override func getBrightness() -> HSRazerResult {
+    override func getBrightness() -> HSRazerResult {
         let arguments: NSDictionary = [
             NSNumber(value: 0): NSNumber(value: 0x00), NSNumber(value: 1): NSNumber(value: 0x00),
             NSNumber(value: 2): NSNumber(value: 0x00),
@@ -771,7 +771,7 @@ private func razerEventTapCallback(
         return result
     }
 
-    @objc override func setBrightness(_ brightness: NSNumber) -> HSRazerResult {
+    override func setBrightness(_ brightness: NSNumber) -> HSRazerResult {
         let adjustedBrightness = NSNumber(value: round(Double(brightness.intValue) * 2.55))
         let arguments: NSDictionary = [
             NSNumber(value: 0): NSNumber(value: 0x00), NSNumber(value: 1): NSNumber(value: 0x00),
@@ -784,7 +784,7 @@ private func razerEventTapCallback(
 
     // MARK: - Status Lights
 
-    @objc override func setOrangeStatusLight(_ active: Bool) -> HSRazerResult {
+    override func setOrangeStatusLight(_ active: Bool) -> HSRazerResult {
         let onOrOff: NSNumber = active ? NSNumber(value: 0x01) : NSNumber(value: 0x00)
         let arguments: NSDictionary = [
             NSNumber(value: 0): NSNumber(value: 0x00), NSNumber(value: 1): NSNumber(value: 0x0C), NSNumber(value: 2): onOrOff,
@@ -792,7 +792,7 @@ private func razerEventTapCallback(
         return sendRazerReport(transactionID: 0x1F, commandClass: 0x03, commandID: 0x00, arguments: arguments)
     }
 
-    @objc override func getOrangeStatusLight() -> HSRazerResult {
+    override func getOrangeStatusLight() -> HSRazerResult {
         let arguments: NSDictionary = [
             NSNumber(value: 0): NSNumber(value: 0x00), NSNumber(value: 1): NSNumber(value: 0x0C), NSNumber(value: 2): NSNumber(value: 0x00),
         ]
@@ -801,7 +801,7 @@ private func razerEventTapCallback(
         return result
     }
 
-    @objc override func setGreenStatusLight(_ active: Bool) -> HSRazerResult {
+    override func setGreenStatusLight(_ active: Bool) -> HSRazerResult {
         let onOrOff: NSNumber = active ? NSNumber(value: 0x01) : NSNumber(value: 0x00)
         let arguments: NSDictionary = [
             NSNumber(value: 0): NSNumber(value: 0x00), NSNumber(value: 1): NSNumber(value: 0x0D), NSNumber(value: 2): onOrOff,
@@ -809,7 +809,7 @@ private func razerEventTapCallback(
         return sendRazerReport(transactionID: 0x1F, commandClass: 0x03, commandID: 0x00, arguments: arguments)
     }
 
-    @objc override func getGreenStatusLight() -> HSRazerResult {
+    override func getGreenStatusLight() -> HSRazerResult {
         let arguments: NSDictionary = [
             NSNumber(value: 0): NSNumber(value: 0x00), NSNumber(value: 1): NSNumber(value: 0x0D), NSNumber(value: 2): NSNumber(value: 0x00),
         ]
@@ -818,7 +818,7 @@ private func razerEventTapCallback(
         return result
     }
 
-    @objc override func setBlueStatusLight(_ active: Bool) -> HSRazerResult {
+    override func setBlueStatusLight(_ active: Bool) -> HSRazerResult {
         let onOrOff: NSNumber = active ? NSNumber(value: 0x01) : NSNumber(value: 0x00)
         let arguments: NSDictionary = [
             NSNumber(value: 0): NSNumber(value: 0x00), NSNumber(value: 1): NSNumber(value: 0x0E), NSNumber(value: 2): onOrOff,
@@ -826,7 +826,7 @@ private func razerEventTapCallback(
         return sendRazerReport(transactionID: 0x1F, commandClass: 0x03, commandID: 0x00, arguments: arguments)
     }
 
-    @objc override func getBlueStatusLight() -> HSRazerResult {
+    override func getBlueStatusLight() -> HSRazerResult {
         let arguments: NSDictionary = [
             NSNumber(value: 0): NSNumber(value: 0x00), NSNumber(value: 1): NSNumber(value: 0x0E), NSNumber(value: 2): NSNumber(value: 0x00),
         ]
@@ -894,10 +894,10 @@ private func hidDisconnect(
 
 // MARK: - HSRazerManager
 
-@objc class HSRazerManager: NSObject {
-    @objc var ioHIDManager: IOHIDManager?
-    @objc var devices: NSMutableArray = NSMutableArray()
-    @objc var discoveryCallbackRef: Int32 = LUA_NOREF
+class HSRazerManager: NSObject {
+    var ioHIDManager: IOHIDManager?
+    var devices: NSMutableArray = NSMutableArray()
+    var discoveryCallbackRef: Int32 = LUA_NOREF
 
     override init() {
         super.init()
@@ -924,7 +924,7 @@ private func hidDisconnect(
         IOHIDManagerScheduleWithRunLoop(hidManager, CFRunLoopGetCurrent(), CFRunLoopMode.defaultMode.rawValue)
     }
 
-    @objc func doGC() {
+    func doGC() {
         guard let hidManager = ioHIDManager else { return }
         IOHIDManagerRegisterDeviceMatchingCallback(hidManager, nil, nil)
         IOHIDManagerRegisterDeviceRemovalCallback(hidManager, nil, nil)
@@ -933,18 +933,18 @@ private func hidDisconnect(
     }
 
     @discardableResult
-    @objc func startHIDManager() -> Bool {
+    func startHIDManager() -> Bool {
         guard let hidManager = ioHIDManager else { return false }
         return IOHIDManagerOpen(hidManager, IOOptionBits(kIOHIDOptionsTypeNone)) == kIOReturnSuccess
     }
 
     @discardableResult
-    @objc func stopHIDManager() -> Bool {
+    func stopHIDManager() -> Bool {
         guard let hidManager = ioHIDManager else { return true }
         return IOHIDManagerClose(hidManager, IOOptionBits(kIOHIDOptionsTypeNone)) == kIOReturnSuccess
     }
 
-    @objc func deviceDidConnect(_ device: IOHIDDevice) -> HSRazerDevice? {
+    func deviceDidConnect(_ device: IOHIDDevice) -> HSRazerDevice? {
         guard let vendorID = IOHIDDeviceGetProperty(device, kIOHIDVendorIDKey as CFString) as? NSNumber,
               let productID = IOHIDDeviceGetProperty(device, kIOHIDProductIDKey as CFString) as? NSNumber,
               let locationID = IOHIDDeviceGetProperty(device, kIOHIDLocationIDKey as CFString) as? NSNumber else {
@@ -990,7 +990,7 @@ private func hidDisconnect(
         return razerDevice
     }
 
-    @objc func deviceDidDisconnect(_ device: IOHIDDevice) {
+    func deviceDidDisconnect(_ device: IOHIDDevice) {
         for (index, item) in devices.enumerated() {
             guard let razerDevice = item as? HSRazerDevice else { continue }
             guard razerDevice.device == device else { continue }

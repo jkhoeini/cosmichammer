@@ -4,7 +4,6 @@ import Lua
 import os.log
 
 private let USERDATA_TAG = "hs.dialog"
-private var refTable: Int32 = LUA_NOREF
 
 // MARK: - Support Functions and Classes
 
@@ -12,7 +11,7 @@ private var refTable: Int32 = LUA_NOREF
 // COLOR PANEL:
 //
 private class HSColorPanel: NSObject {
-    var callbackRef: Int32 = LUA_NOREF
+    var callbackRef: LuaValue?
 
     override init() {
         super.init()
@@ -30,12 +29,12 @@ private class HSColorPanel: NSObject {
 
     // Second argument to callback is true indicating this is a close color panel event
     @objc func colorClose(_ note: NSNotification) {
-        if callbackRef != LUA_NOREF {
+        if callbackRef != nil {
             DispatchQueue.main.async { [weak self] in
-                guard let self = self, self.callbackRef != LUA_NOREF else { return }
+                guard let self = self, let cb = self.callbackRef else { return }
                 let L = lua_getCurrentState()!
                 let cp = NSColorPanel.shared
-                lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(self.callbackRef))
+                cb.push(onto: L)
                 NSColor_tolua(L, cp.color)
                 lua_pushboolean(L, 1)
                 if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
@@ -45,11 +44,11 @@ private class HSColorPanel: NSObject {
 
     // Second argument to callback is false indicating that the color panel is still open (i.e. they may change color again)
     @objc func colorCallback(_ colorPanel: NSColorPanel) {
-        if callbackRef != LUA_NOREF {
+        if callbackRef != nil {
             DispatchQueue.main.async { [weak self] in
-                guard let self = self, self.callbackRef != LUA_NOREF else { return }
+                guard let self = self, let cb = self.callbackRef else { return }
                 let L = lua_getCurrentState()!
-                lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(self.callbackRef))
+                cb.push(onto: L)
                 NSColor_tolua(L, colorPanel.color)
                 lua_pushboolean(L, 0)
                 if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
@@ -79,18 +78,16 @@ private var cpReceiverObject: HSColorPanel?
 ///      `hs.dialog.color.callback(function(a,b) print("COLOR CALLBACK:\nSelected Color: " .. hs.inspect(a) .. "\nPanel Closed: " .. hs.inspect(b)) end)`
 private func colorPanelCallback(_ L: LuaState) throws -> CInt {
 
-    if cpReceiverObject!.callbackRef != LUA_NOREF {
-        lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(cpReceiverObject!.callbackRef))
+    if let cb = cpReceiverObject!.callbackRef {
+        cb.push(onto: L)
     } else {
         lua_pushnil(L)
     }
     if lua_gettop(L) == 2 { // we just added to it...
         // in either case, we need to remove an existing callback, so...
-        luaL_unref(L, LUA_REGISTRYINDEX_VALUE, cpReceiverObject!.callbackRef)
-        cpReceiverObject!.callbackRef = LUA_NOREF
+        cpReceiverObject!.callbackRef = nil
         if lua_type(L, 1) == LUA_TFUNCTION {
-            lua_pushvalue(L, 1)
-            cpReceiverObject!.callbackRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+            cpReceiverObject!.callbackRef = L.ref(index: 1)
         }
     }
     // return the *last* fn (or nil) so you can save it and re-attach it if something needs to
@@ -411,8 +408,7 @@ private func webviewAlert(_ L: LuaState) throws -> CInt {
         throw LuaCallError("bad argument #1 (expected hs.webview object)")
     }
 
-    lua_pushvalue(L, 2) // Copy the callback function to the top of the stack
-    var callbackRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE) // Store what's at the top of the stack in the registry
+    var callbackRef: LuaValue? = L.ref(index: 2)
 
     let message = lua_tovalue(L, at: 3) as! String
     let informativeText = lua_tovalue(L, at: 4) as? String
@@ -458,10 +454,8 @@ private func webviewAlert(_ L: LuaState) throws -> CInt {
             lua_pushnil(L)
         }
 
-        lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(callbackRef)) // Put the saved function back on the stack.
-        luaL_unref(L, LUA_REGISTRYINDEX_VALUE, callbackRef)
-
-        callbackRef = LUA_NOREF // Remove the stored function from the registry.
+        callbackRef!.push(onto: L) // Put the saved function back on the stack.
+        callbackRef = nil // Release the stored function from the registry.
         lua_pushany(L, button)
         if lua_pcall(L, 1, 0, 0) != LUA_OK { lua_pop(L, 1) }
     }
@@ -646,10 +640,7 @@ private func releaseReceivers(_ L: LuaState) throws -> CInt {
     )
     cp.setTarget(nil)
     cp.setAction(nil)
-    if cpReceiverObject!.callbackRef != LUA_NOREF {
-        luaL_unref(L, LUA_REGISTRYINDEX_VALUE, cpReceiverObject!.callbackRef)
-        cpReceiverObject!.callbackRef = LUA_NOREF
-    }
+    cpReceiverObject!.callbackRef = nil
     cp.close() // Close the Color Panel
     cpReceiverObject = nil
 
@@ -659,10 +650,6 @@ private func releaseReceivers(_ L: LuaState) throws -> CInt {
 @_cdecl("luaopen_hs_libdialog")
 public func luaopen_hs_libdialog(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     runEntryPoint(L) { L in
-        // Create ref table in registry
-        lua_newtable(L)
-        refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
-
         // Create module table (4 functions)
         lua_createtable(L, 0, 4)
         L.push(webviewAlert)

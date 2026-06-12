@@ -4,7 +4,7 @@ import Lua
 import os.log
 
 private let USERDATA_TAG = "hs.canvas.matrix"
-private var refTable: Int32 = LUA_NOREF
+// refTable removed — not used by table-based matrix metatable
 
 // MARK: - Module Functions
 
@@ -274,10 +274,6 @@ private func toNSAffineTransformFromLua(_ L: UnsafeMutablePointer<lua_State>!, i
 @_cdecl("luaopen_hs_libcanvasmatrix")
 public func luaopen_hs_libcanvasmatrix(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     runEntryPoint(L) { L in
-        // Create ref table in registry
-        lua_newtable(L)
-        refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
-
         luaL_newmetatable(L, USERDATA_TAG)
         lua_pushvalue(L, -1)
         lua_setfield(L, -2, "__index")

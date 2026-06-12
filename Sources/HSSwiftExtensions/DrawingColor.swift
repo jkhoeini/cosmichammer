@@ -4,8 +4,7 @@ import Lua
 import Carbon
 import os.log
 
-private var refTable: Int32 = 0
-private var colorCollectionsTable: Int32 = LUA_NOREF
+private var colorCollectionsTable: LuaValue?
 
 /// hs.drawing.color.lists() -> table
 /// Function
@@ -263,8 +262,8 @@ private func table_toNSColorHelper(_ L: UnsafeMutablePointer<lua_State>!, _ idx:
             if let holding = NSColorList(named: colorList as String)?.color(withKey: colorName as String) {
                 return holding
             }
-            if colorCollectionsTable != LUA_NOREF {
-                lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(colorCollectionsTable))
+            if let collectionsRef = colorCollectionsTable {
+                collectionsRef.push(onto: L)
                 if lua_getfield(L, -1, (colorList as String).utf8CString.withUnsafeBufferPointer({ $0.baseAddress! })) == LUA_TTABLE {
                     if lua_getfield(L, -1, (colorName as String).utf8CString.withUnsafeBufferPointer({ $0.baseAddress! })) == LUA_TTABLE {
                         let holding = table_toNSColorHelper(L, lua_absindex(L, -1), level + 1)
@@ -304,18 +303,13 @@ func table_toNSColor(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> Any
 private func registerColorCollectionsTable(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TTABLE)
 
-    lua_pushvalue(L, 1)
-    colorCollectionsTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+    colorCollectionsTable = L.ref(index: 1)
     return 0
 }
 
 @_cdecl("luaopen_hs_libdrawing_color")
 public func luaopen_hs_libdrawing_color(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     runEntryPoint(L) { L in
-        // Create ref table in registry
-        lua_newtable(L)
-        refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
-
         // Create module table
         lua_createtable(L, 0, 4)
         L.push(getColorLists)
@@ -327,6 +321,6 @@ public func luaopen_hs_libdrawing_color(_ L: UnsafeMutablePointer<lua_State>!) -
         L.push(registerColorCollectionsTable)
         lua_setfield(L, -2, "_registerColorCollectionsTable")
 
-        colorCollectionsTable = LUA_NOREF
+        colorCollectionsTable = nil
     }
 }

@@ -5,7 +5,6 @@ import Carbon
 import os.log
 
 private let USERDATA_TAG = "hs.window"
-private var refTable: Int32 = LUA_NOREF
 
 @_silgen_name("CGSSetDebugOptions")
 private func cgsSetDebugOptions(_ options: Int32)
@@ -567,10 +566,6 @@ private func userdata_gc(_ L: LuaState) throws -> CInt {
 @_cdecl("luaopen_hs_libwindow")
 public func luaopen_hs_libwindow(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     runEntryPoint(L) { L in
-        // Create ref table in registry
-        lua_newtable(L)
-        refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
-
         // Register userdata metatable
         luaL_newmetatable(L, USERDATA_TAG)
         lua_pushvalue(L, -1)
@@ -610,6 +605,12 @@ public func luaopen_hs_libwindow(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
         L.push(userdata_tostring);               lua_setfield(L, -2, "__tostring")
         L.push(userdata_eq);                     lua_setfield(L, -2, "__eq")
         L.push(userdata_gc);                     lua_setfield(L, -2, "__gc")
+
+        // Set __type and __name for lsunit.lua assertIsUserdataOfType and tostring
+        lua_pushstring(L, USERDATA_TAG)
+        lua_setfield(L, -2, "__type")
+        lua_pushstring(L, USERDATA_TAG)
+        lua_setfield(L, -2, "__name")
 
         lua_pop(L, 1)
 

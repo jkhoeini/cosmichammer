@@ -1287,6 +1287,13 @@ public func luaopen_hs_libscreen(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
         lua_setfield(L, -2, "__gc")
         L.push(screen_eq)
         lua_setfield(L, -2, "__eq")
+
+        // Set __type and __name for lsunit.lua assertIsUserdataOfType and tostring
+        lua_pushstring(L, USERDATA_TAG)
+        lua_setfield(L, -2, "__type")
+        lua_pushstring(L, USERDATA_TAG)
+        lua_setfield(L, -2, "__name")
+
         lua_pop(L, 1)
 
         // Create module table

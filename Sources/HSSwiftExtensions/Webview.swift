@@ -409,13 +409,9 @@ func webview_navigationCallback(_ L: LuaState) throws -> CInt {
     let theWindow = wv_getWindowFromUD(L, 1)
     let theView = theWindow.contentView as! HSWebViewView
 
-    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, theView.navigationCallback)
-
-
-    theView.navigationCallback = LUA_NOREF
+    theView.navigationCallback = nil
     if lua_type(L, 2) == LUA_TFUNCTION {
-        lua_pushvalue(L, 2)
-        theView.navigationCallback = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+        theView.navigationCallback = L.ref(index: 2)
     }
     lua_pushvalue(L, 1)
     return 1
@@ -429,13 +425,9 @@ func webview_policyCallback(_ L: LuaState) throws -> CInt {
     let theWindow = wv_getWindowFromUD(L, 1)
     let theView = theWindow.contentView as! HSWebViewView
 
-    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, theView.policyCallback)
-
-
-    theView.policyCallback = LUA_NOREF
+    theView.policyCallback = nil
     if lua_type(L, 2) == LUA_TFUNCTION {
-        lua_pushvalue(L, 2)
-        theView.policyCallback = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+        theView.policyCallback = L.ref(index: 2)
     }
     lua_pushvalue(L, 1)
     return 1
@@ -449,13 +441,9 @@ func webview_sslCallback(_ L: LuaState) throws -> CInt {
     let theWindow = wv_getWindowFromUD(L, 1)
     let theView = theWindow.contentView as! HSWebViewView
 
-    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, theView.sslCallback)
-
-
-    theView.sslCallback = LUA_NOREF
+    theView.sslCallback = nil
     if lua_type(L, 2) == LUA_TFUNCTION {
-        lua_pushvalue(L, 2)
-        theView.sslCallback = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+        theView.sslCallback = L.ref(index: 2)
     }
     lua_pushvalue(L, 1)
     return 1
@@ -480,23 +468,22 @@ func webview_evaluateJavaScript(_ L: LuaState) throws -> CInt {
     let theView = theWindow.contentView as! HSWebViewView
 
     let javascript = lua_tovalue(L, at: 2) as! String
-    var callbackRef: Int32 = LUA_NOREF
+    var callbackValue: LuaValue?
     if lua_type(L, 3) == LUA_TFUNCTION {
-        lua_pushvalue(L, 3)
-        callbackRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+        callbackValue = L.ref(index: 3)
     }
 
     let lsCanary = lua_currentStateGeneration()
     theView.evaluateJavaScript(javascript) { obj, error in
-        if callbackRef != LUA_NOREF {
+        if let cb = callbackValue {
             DispatchQueue.main.async {
                 if !lua_isStateGenerationValid(lsCanary) { return }
                 let blockL = lua_getCurrentState()!
-                lua_rawgeti(blockL, LUA_REGISTRYINDEX_VALUE, lua_Integer(callbackRef))
+                cb.push(onto: blockL)
                 wv_pushAny(blockL, obj as? NSObject)
                 wv_NSError_toLua(blockL, error as NSError?)
                 if lua_pcall(blockL, 2, 0, 0) != LUA_OK { lua_pop(blockL, 1) }
-                luaL_unref(blockL, LUA_REGISTRYINDEX_VALUE, callbackRef)
+                callbackValue = nil
             }
         }
     }
@@ -960,13 +947,9 @@ func webview_windowCallback(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, wv_USERDATA_TAG)
     let theWindow = wv_getWindowFromUD(L, 1)
 
-    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, theWindow.windowCallback)
-
-
-    theWindow.windowCallback = LUA_NOREF
+    theWindow.windowCallback = nil
     if lua_type(L, 2) == LUA_TFUNCTION {
-        lua_pushvalue(L, 2)
-        theWindow.windowCallback = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+        theWindow.windowCallback = L.ref(index: 2)
     }
     lua_pushvalue(L, 1)
     return 1
@@ -1137,16 +1120,16 @@ func wv_luaTo_HSWebViewWindow(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int3
 func wv_HSWebViewWindow_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
     let theWindow = obj as! HSWebViewWindow
 
-    if theWindow.udRef == LUA_NOREF {
+    if theWindow.udRef == nil {
         let windowPtr = lua_newuserdata(L, MemoryLayout<UnsafeMutableRawPointer>.size)!
             .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
         windowPtr.pointee = Unmanaged.passRetained(theWindow).toOpaque()
         luaL_getmetatable(L, wv_USERDATA_TAG)
         lua_setmetatable(L, -2)
-        theWindow.udRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+        theWindow.udRef = L.ref(index: -1)
     }
 
-    lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(theWindow.udRef))
+    theWindow.udRef!.push(onto: L)
     return 1
 }
 
@@ -1631,7 +1614,7 @@ func wv_userdata_tostring(_ L: LuaState) throws -> CInt {
 func wv_userdata_eq(_ L: LuaState) throws -> CInt {
     let theWindow = wv_getWindowFromUD(L, 1)
     let otherWindow = wv_getWindowFromUD(L, 2)
-    lua_pushboolean(L, theWindow.udRef == otherWindow.udRef ? 1 : 0)
+    lua_pushboolean(L, theWindow === otherWindow ? 1 : 0)
     return 1
 }
 
@@ -1651,19 +1634,12 @@ func wv_userdata_gc(_ L: LuaState) throws -> CInt {
     lua_pushnil(L)
     lua_setmetatable(L, 1)
 
-    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, theWindow.udRef)
-
-    theWindow.udRef = LUA_NOREF
-    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, theWindow.windowCallback)
-
-    theWindow.windowCallback = LUA_NOREF
+    theWindow.udRef = nil
+    theWindow.windowCallback = nil
     if let theView = theView {
-        luaL_unref(L, LUA_REGISTRYINDEX_VALUE, theView.navigationCallback)
-
-        theView.navigationCallback = LUA_NOREF
-        luaL_unref(L, LUA_REGISTRYINDEX_VALUE, theView.policyCallback)
-
-        theView.policyCallback = LUA_NOREF
+        theView.navigationCallback = nil
+        theView.policyCallback = nil
+        theView.sslCallback = nil
     }
 
     if theWindow.toolbar != nil {

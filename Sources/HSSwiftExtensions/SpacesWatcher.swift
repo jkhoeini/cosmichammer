@@ -16,7 +16,6 @@ private let USERDATA_TAG = "hs.spaces.watcher"
 private struct SpaceWatcherData {
     var selfRef: Int32
     var running: Bool
-    var fn: Int32
     var obj: UnsafeMutableRawPointer?
 }
 
@@ -24,18 +23,20 @@ private struct SpaceWatcherData {
 
 private class SpaceWatcher: NSObject {
     var object: UnsafeMutablePointer<SpaceWatcherData>
+    var callback: LuaValue?
 
-    init(object: UnsafeMutablePointer<SpaceWatcherData>) {
+    init(object: UnsafeMutablePointer<SpaceWatcherData>, callback: LuaValue?) {
         self.object = object
+        self.callback = callback
         super.init()
     }
 
     // Call the lua callback function.
-    func callback(dict: NSDictionary?, space: Int32) {
-        if object.pointee.fn != LUA_NOREF {
+    func callbackFired(dict: NSDictionary?, space: Int32) {
+        if let cb = callback {
             let L = lua_getCurrentState()!
 
-            lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(object.pointee.fn))
+            cb.push(onto: L)
             lua_pushinteger(L, lua_Integer(space))
             if lua_pcall(L, 1, 0, 0) != LUA_OK {
                 lua_pop(L, 1)
@@ -47,7 +48,7 @@ private class SpaceWatcher: NSObject {
         let spaceID = SLSGetActiveSpace(SLSMainConnectionID())
         let currentSpace = Int32(clamping: spaceID)
 
-        callback(dict: notification.userInfo as NSDictionary?, space: currentSpace)
+        callbackFired(dict: notification.userInfo as NSDictionary?, space: currentSpace)
     }
 }
 
@@ -68,12 +69,11 @@ private func space_watcher_new(_ L: LuaState) throws -> CInt {
     let spaceWatcher = lua_newuserdata(L, MemoryLayout<SpaceWatcherData>.size)!
         .assumingMemoryBound(to: SpaceWatcherData.self)
 
-    lua_pushvalue(L, 1)
-    spaceWatcher.pointee.fn = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+    let cb = L.ref(index: 1)
     spaceWatcher.pointee.running = false
     spaceWatcher.pointee.selfRef = LUA_NOREF
 
-    let watcher = SpaceWatcher(object: spaceWatcher)
+    let watcher = SpaceWatcher(object: spaceWatcher, callback: cb)
     spaceWatcher.pointee.obj = Unmanaged.passRetained(watcher).toOpaque()
 
     luaL_getmetatable(L, USERDATA_TAG)
@@ -150,11 +150,12 @@ private func space_watcher_gc(_ L: LuaState) throws -> CInt {
     _ = try space_watcher_stop(L)
     lua_pop(L, 1)  // pop stop's self-return
 
-    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, spaceWatcher.pointee.fn)
-    spaceWatcher.pointee.fn = LUA_NOREF
-
-    let _: SpaceWatcher = Unmanaged.fromOpaque(spaceWatcher.pointee.obj!).takeRetainedValue()
-    spaceWatcher.pointee.obj = nil
+    // Release the retained SpaceWatcher (and its LuaValue callback via ARC)
+    if let obj = spaceWatcher.pointee.obj {
+        let watcher = Unmanaged<SpaceWatcher>.fromOpaque(obj).takeRetainedValue()
+        watcher.callback = nil
+        spaceWatcher.pointee.obj = nil
+    }
     return 0
 }
 

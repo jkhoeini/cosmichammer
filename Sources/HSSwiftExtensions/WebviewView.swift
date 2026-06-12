@@ -1,5 +1,6 @@
 import Foundation
 import CLua
+import Lua
 import Cocoa
 import WebKit
 import os.log
@@ -7,9 +8,9 @@ import os.log
 // MARK: - HSWebViewView
 
 class HSWebViewView: WKWebView, WKNavigationDelegate, WKUIDelegate {
-    var navigationCallback: Int32 = LUA_NOREF
-    var policyCallback: Int32 = LUA_NOREF
-    var sslCallback: Int32 = LUA_NOREF
+    var navigationCallback: LuaValue?
+    var policyCallback: LuaValue?
+    var sslCallback: LuaValue?
     var allowNewWindows: Bool = true
     var examineInvalidCertificates: Bool = false
     var trackingID: WKNavigation?
@@ -18,9 +19,6 @@ class HSWebViewView: WKWebView, WKNavigationDelegate, WKUIDelegate {
         super.init(frame: frameRect, configuration: configuration)
         self.navigationDelegate = self
         self.uiDelegate = self
-        self.navigationCallback = LUA_NOREF
-        self.policyCallback = LUA_NOREF
-        self.sslCallback = LUA_NOREF
         self.allowNewWindows = true
         self.examineInvalidCertificates = false
     }
@@ -82,9 +80,9 @@ class HSWebViewView: WKWebView, WKNavigationDelegate, WKUIDelegate {
 
             let previousCredential = challenge.proposedCredential
 
-            if self.policyCallback != LUA_NOREF && challenge.previousFailureCount < 3 {
+            if self.policyCallback != nil && challenge.previousFailureCount < 3 {
                 let L = lua_getCurrentState()!
-                lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(self.policyCallback))
+                self.policyCallback!.push(onto: L)
                 lua_pushstring(L, "authenticationChallenge")
                 wv_pushAny(L, webView.window as? HSWebViewWindow)
                 wv_pushAny(L, challenge)
@@ -164,9 +162,9 @@ class HSWebViewView: WKWebView, WKNavigationDelegate, WKUIDelegate {
             var status: SecTrustResultType = .invalid
             SecTrustEvaluate(serverTrust, &status)
 
-            if status == .recoverableTrustFailure && self.sslCallback != LUA_NOREF {
+            if status == .recoverableTrustFailure && self.sslCallback != nil {
                 let L = lua_getCurrentState()!
-                lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(self.sslCallback))
+                self.sslCallback!.push(onto: L)
                 wv_pushAny(L, webView.window as? HSWebViewWindow)
                 wv_pushAny(L, challenge.protectionSpace)
 
@@ -195,9 +193,9 @@ class HSWebViewView: WKWebView, WKNavigationDelegate, WKUIDelegate {
 
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
                  decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-        if self.policyCallback != LUA_NOREF {
+        if self.policyCallback != nil {
             let L = lua_getCurrentState()!
-            lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(self.policyCallback))
+            self.policyCallback!.push(onto: L)
             lua_pushstring(L, "navigationAction")
             wv_pushAny(L, webView.window as? HSWebViewWindow)
             wv_pushAny(L, navigationAction)
@@ -217,9 +215,9 @@ class HSWebViewView: WKWebView, WKNavigationDelegate, WKUIDelegate {
 
     func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse,
                  decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
-        if self.policyCallback != LUA_NOREF {
+        if self.policyCallback != nil {
             let L = lua_getCurrentState()!
-            lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(self.policyCallback))
+            self.policyCallback!.push(onto: L)
             lua_pushstring(L, "navigationResponse")
             wv_pushAny(L, webView.window as? HSWebViewWindow)
             wv_pushAny(L, navigationResponse)
@@ -260,9 +258,9 @@ class HSWebViewView: WKWebView, WKNavigationDelegate, WKUIDelegate {
         newWindow.isOpaque = parent.isOpaque
         newWindow.lsCanary = lua_currentStateGeneration()
 
-        if parent.windowCallback != LUA_NOREF {
-            lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(parent.windowCallback))
-            newWindow.windowCallback = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+        if let parentWinCb = parent.windowCallback {
+            parentWinCb.push(onto: L)
+            newWindow.windowCallback = L.ref(index: -1)
         }
 
         let newView = HSWebViewView(frame: (newWindow.contentView! as NSView).bounds, configuration: configuration)
@@ -273,17 +271,17 @@ class HSWebViewView: WKWebView, WKNavigationDelegate, WKUIDelegate {
         newView.allowsBackForwardNavigationGestures = webView.allowsBackForwardNavigationGestures
         newView.setValue(NSNumber(value: newWindow.isOpaque), forKey: "drawsTransparentBackground")
 
-        if (webView as! HSWebViewView).navigationCallback != LUA_NOREF {
-            lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer((webView as! HSWebViewView).navigationCallback))
-            newView.navigationCallback = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+        if let parentNavCb = (webView as! HSWebViewView).navigationCallback {
+            parentNavCb.push(onto: L)
+            newView.navigationCallback = L.ref(index: -1)
         }
-        if (webView as! HSWebViewView).policyCallback != LUA_NOREF {
-            lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer((webView as! HSWebViewView).policyCallback))
-            newView.policyCallback = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+        if let parentPolicyCb = (webView as! HSWebViewView).policyCallback {
+            parentPolicyCb.push(onto: L)
+            newView.policyCallback = L.ref(index: -1)
         }
 
-        if self.policyCallback != LUA_NOREF {
-            lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(self.policyCallback))
+        if self.policyCallback != nil {
+            self.policyCallback!.push(onto: L)
             lua_pushstring(L, "newWindow")
             wv_pushAny(L, newWindow)
             wv_pushAny(L, navigationAction)
@@ -387,10 +385,10 @@ class HSWebViewView: WKWebView, WKNavigationDelegate, WKUIDelegate {
 
         var actionRequiredAfterReturn = true
 
-        if self.navigationCallback != LUA_NOREF {
+        if self.navigationCallback != nil {
             let L = lua_getCurrentState()!
             var numberOfArguments: Int32 = 3
-            lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(self.navigationCallback))
+            self.navigationCallback!.push(onto: L)
             lua_pushstring(L, action)
             wv_pushAny(L, theView.window as? HSWebViewWindow)
             let navStr = String(describing: Unmanaged.passUnretained(navigation as AnyObject).toOpaque())

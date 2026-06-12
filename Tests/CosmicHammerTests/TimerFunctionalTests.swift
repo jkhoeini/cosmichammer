@@ -7,9 +7,11 @@ extension CosmicHammerTests {
     @Suite(.serialized) @MainActor final class TimerFunctionalTests {
         @Test func testTimerCreation() {
             withModuleLoaded(luaopen_hs_libtimer) { L in
-                // Set the global state so timer callbacks can find it
+                // Save/restore the global Lua state so pending callbacks from
+                // the bootstrapped state survive through this standalone test.
+                let saved = lua_getCurrentState()
                 lua_setCurrentState(L)
-                defer { lua_setCurrentState(nil) }
+                defer { lua_setCurrentState(saved) }
 
                 // Create a timer with mod.new(interval, fn)
                 #expect(luaEval(L, """
@@ -23,8 +25,9 @@ extension CosmicHammerTests {
 
         @Test func testTimerStartStop() {
             withModuleLoaded(luaopen_hs_libtimer) { L in
+                let saved = lua_getCurrentState()
                 lua_setCurrentState(L)
-                defer { lua_setCurrentState(nil) }
+                defer { lua_setCurrentState(saved) }
 
                 // Create a timer
                 #expect(luaEval(L, """

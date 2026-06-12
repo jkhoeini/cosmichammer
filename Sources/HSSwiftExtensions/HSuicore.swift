@@ -7,6 +7,7 @@ import AppKit
 import ApplicationServices
 import CLua
 import CoreGraphics
+import Lua
 import Darwin
 import os.log
 
@@ -94,12 +95,12 @@ private func getWindowTabs(_ win: AXUIElement) -> AXUIElement? {
 
     private var _elementRef: AXUIElement
 
-    @objc var elementRef: AXUIElement { _elementRef }
-    @objc var selfRefCount: Int32 = 0
+    var elementRef: AXUIElement { _elementRef }
+    var selfRefCount: Int32 = 0
 
     // MARK: Init / deinit
 
-    @objc init(withElement ref: AXUIElement) {
+    init(withElement ref: AXUIElement) {
         _elementRef = ref
         selfRefCount = 0
         super.init()
@@ -123,42 +124,40 @@ private func getWindowTabs(_ win: AXUIElement) -> AXUIElement? {
 
     // MARK: Computed properties
 
-    @objc var isApplication: Bool {
+    var isApplication: Bool {
         role == (kAXApplicationRole as String)
     }
 
-    @objc var isWindow: Bool {
+    var isWindow: Bool {
         isWindowForRole(role)
     }
 
-    @objc var role: String {
+    var role: String {
         getRole()
     }
 
-    @objc var selectedText: String {
+    var selectedText: String {
         getSelectedText() ?? ""
     }
 
     // MARK: Instance methods
 
-    @objc func newWatcher(atIndex callbackRefIndex: Int32,
-                          withUserdataAtIndex userDataRefIndex: Int32,
-                          withLuaState L: UnsafeMutablePointer<lua_State>!) -> NSObject? {
-        lua_pushvalue(L, callbackRefIndex)
-        let callbackRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
-        var userDataRef: Int32 = LUA_REFNIL
+    func newWatcher(atIndex callbackRefIndex: Int32,
+                    withUserdataAtIndex userDataRefIndex: Int32,
+                    withLuaState L: UnsafeMutablePointer<lua_State>!) -> NSObject? {
+        let handlerCb = L.ref(index: callbackRefIndex)
+        var userDataVal: LuaValue? = nil
         if lua_type(L, userDataRefIndex) != LUA_TNONE {
-            lua_pushvalue(L, userDataRefIndex)
-            userDataRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+            userDataVal = L.ref(index: userDataRefIndex)
         }
         let watcher = HSuielementWatcher(element: self,
-                                        callbackRef: callbackRef,
-                                        userdataRef: userDataRef)
+                                        handlerCallback: handlerCb,
+                                        userDataValue: userDataVal)
         watcher.lsCanary = lua_currentStateGeneration()
         return watcher
     }
 
-    @objc func getElementProperty(_ property: String, withDefaultValue defaultValue: Any?) -> Any? {
+    func getElementProperty(_ property: String, withDefaultValue defaultValue: Any?) -> Any? {
         var valueRef: CFTypeRef?
         if AXUIElementCopyAttributeValue(_elementRef, property as CFString, &valueRef) == .success,
            let valueRef = valueRef {
@@ -167,7 +166,7 @@ private func getWindowTabs(_ win: AXUIElement) -> AXUIElement? {
         return defaultValue
     }
 
-    @objc func getRole() -> String {
+    func getRole() -> String {
         var valueRef: CFTypeRef?
         if AXUIElementCopyAttributeValue(_elementRef,
                                          NSAccessibility.Attribute.role.rawValue as CFString,
@@ -178,7 +177,7 @@ private func getWindowTabs(_ win: AXUIElement) -> AXUIElement? {
         return ""
     }
 
-    @objc func getSelectedText() -> String? {
+    func getSelectedText() -> String? {
         var valueRef: CFTypeRef?
         if AXUIElementCopyAttributeValue(_elementRef, kAXSelectedTextAttribute as CFString, &valueRef) == .success,
            let str = valueRef as? String {
@@ -188,7 +187,7 @@ private func getWindowTabs(_ win: AXUIElement) -> AXUIElement? {
     }
 
     // isWindow with explicit role parameter (matches ObjC interface)
-    @objc(isWindow:) func isWindow(_ roleParam: String) -> Bool {
+    func isWindow(_ roleParam: String) -> Bool {
         return isWindowForRole(roleParam)
     }
 
@@ -209,7 +208,8 @@ private let watcherCallback: AXObserverCallback = { _, element, notificationName
     guard lua_isStateGenerationValid(watcher.lsCanary) else { return }
 
     // Push callback function
-    lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(watcher.handlerRef))
+    guard let cb = watcher.handlerCallback else { return }
+    cb.push(onto: L)
 
     // Determine what kind of object to push as parameter 1
     let elementObj = HSuielement(withElement: element)
@@ -236,13 +236,17 @@ private let watcherCallback: AXObserverCallback = { _, element, notificationName
     }
 
     // Parameter 3: watcher
-    lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(watcher.watcherRef))
+    if let ws = watcher.watcherSelfRef {
+        ws.push(onto: L)
+    } else {
+        lua_pushnil(L)
+    }
 
     // Parameter 4: userData
-    if watcher.userDataRef == LUA_NOREF || watcher.userDataRef == LUA_REFNIL {
-        lua_pushnil(L)
+    if let ud = watcher.userDataValue {
+        ud.push(onto: L)
     } else {
-        lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(watcher.userDataRef))
+        lua_pushnil(L)
     }
 
     if lua_pcall(L, 4, 0, 0) != LUA_OK {
@@ -257,40 +261,56 @@ private let watcherCallback: AXObserverCallback = { _, element, notificationName
 
 @objc(HSuielementWatcher) class HSuielementWatcher: NSObject, HSuielementWatcherProtocol {
 
-    @objc var selfRefCount: Int32 = 0
+    var selfRefCount: Int32 = 0
     private var _elementRef: AXUIElement
-    @objc var elementRef: AXUIElement {
+    var elementRef: AXUIElement {
         get { _elementRef }
         set { _elementRef = newValue }
     }
-    @objc var refTable: Int32
-    @objc var handlerRef: Int32
-    @objc var userDataRef: Int32
-    @objc var watcherRef: Int32
+    var refTable: Int32
+    var handlerRef: Int32
+    var userDataRef: Int32
+    var watcherRef: Int32
     private var _observer: AXObserver?
-    @objc var observer: AXObserver {
+    var observer: AXObserver {
         get { _observer! }
         set { _observer = newValue }
     }
-    @objc var running: Bool = false
-    @objc var pid: pid_t = 0
-    @objc var watchDestroyed: Bool = false
-    @objc var lsCanary: UInt64 = 0
+    var running: Bool = false
+    var pid: pid_t = 0
+    var watchDestroyed: Bool = false
+    var lsCanary: UInt64 = 0
 
-    // NOTE: The Lua ref arguments must be on LUA_REGISTRYINDEX_VALUE, not some other reftable.
-    @objc init(element: HSuielement, callbackRef: Int32, userdataRef: Int32) {
+    // LuaValue-based callback/ref storage (replaces raw luaL_ref integers)
+    var handlerCallback: LuaValue?
+    var userDataValue: LuaValue?
+    var watcherSelfRef: LuaValue?
+    private var tornDown = false
+
+    init(element: HSuielement, handlerCallback: LuaValue, userDataValue: LuaValue?) {
         refTable = LUA_REGISTRYINDEX_VALUE
         _elementRef = element.elementRef
-        handlerRef = callbackRef
-        userDataRef = userdataRef
+        handlerRef = LUA_NOREF
+        userDataRef = LUA_NOREF
         watcherRef = LUA_NOREF
         running = false
         watchDestroyed = false
         super.init()
+        self.handlerCallback = handlerCallback
+        self.userDataValue = userDataValue
         AXUIElementGetPid(_elementRef, &pid)
     }
 
-    @objc func start(_ events: [String], withState L: UnsafeMutablePointer<lua_State>!) {
+    func teardown() {
+        guard !tornDown else { return }
+        tornDown = true
+        stop()
+        handlerCallback = nil
+        userDataValue = nil
+        watcherSelfRef = nil
+    }
+
+    func start(_ events: [String], withState L: UnsafeMutablePointer<lua_State>!) {
         guard !running else { return }
 
         var obs: AXObserver?
@@ -314,7 +334,7 @@ private let watcherCallback: AXObserverCallback = { _, element, notificationName
                            CFRunLoopMode.defaultMode)
     }
 
-    @objc func stop() {
+    func stop() {
         guard running, let obs = _observer else { return }
         CFRunLoopRemoveSource(RunLoop.current.getCFRunLoop(),
                               AXObserverGetRunLoopSource(obs),
@@ -328,15 +348,15 @@ private let watcherCallback: AXObserverCallback = { _, element, notificationName
 @objc(HSapplication) class HSapplication: NSObject, HSapplicationProtocol {
 
     private var _elementRef: AXUIElement
-    @objc var elementRef: AXUIElement { _elementRef }
-    @objc private(set) var pid: pid_t
-    @objc private(set) var runningApp: NSRunningApplication
-    @objc private(set) var uiElement: NSObject
-    @objc var selfRefCount: Int32 = 0
+    var elementRef: AXUIElement { _elementRef }
+    private(set) var pid: pid_t
+    private(set) var runningApp: NSRunningApplication
+    private(set) var uiElement: NSObject
+    var selfRefCount: Int32 = 0
 
     // MARK: Init / deinit
 
-    @objc convenience init?(pid thePID: pid_t, withState L: UnsafeMutablePointer<lua_State>!) {
+    convenience init?(pid thePID: pid_t, withState L: UnsafeMutablePointer<lua_State>!) {
         guard let app = NSRunningApplication(processIdentifier: thePID) else {
             os_log(.error, "Unable to fetch NSRunningApplication for pid: %d", thePID)
             return nil
@@ -344,8 +364,8 @@ private let watcherCallback: AXObserverCallback = { _, element, notificationName
         self.init(nsRunningApplication: app, withState: L)
     }
 
-    @objc convenience init?(nsRunningApplication app: NSRunningApplication,
-                             withState L: UnsafeMutablePointer<lua_State>!) {
+    convenience init?(nsRunningApplication app: NSRunningApplication,
+                      withState L: UnsafeMutablePointer<lua_State>!) {
         guard let app2 = app as NSRunningApplication? else {
             os_log(.error, "HSapplication::initWithNSRunningApplication called with invalid application")
             return nil
@@ -365,7 +385,7 @@ private let watcherCallback: AXObserverCallback = { _, element, notificationName
 
     // MARK: Class factory methods
 
-    @objc static func frontmostApplication(withState L: UnsafeMutablePointer<lua_State>!) -> HSapplication? {
+    static func frontmostApplication(withState L: UnsafeMutablePointer<lua_State>!) -> HSapplication? {
         guard let app = NSWorkspace.shared.frontmostApplication else {
             os_log(.error, "Unable to fetch frontmost application")
             return nil
@@ -377,13 +397,13 @@ private let watcherCallback: AXObserverCallback = { _, element, notificationName
         return result
     }
 
-    @objc static func application(forNSRunningApplication app: NSRunningApplication,
-                                   withState L: UnsafeMutablePointer<lua_State>!) -> HSapplication? {
+    static func application(forNSRunningApplication app: NSRunningApplication,
+                            withState L: UnsafeMutablePointer<lua_State>!) -> HSapplication? {
         return HSapplication(nsRunningApplication: app, withState: L)
     }
 
-    @objc static func application(forPID thePID: pid_t,
-                                   withState L: UnsafeMutablePointer<lua_State>!) -> HSapplication? {
+    static func application(forPID thePID: pid_t,
+                            withState L: UnsafeMutablePointer<lua_State>!) -> HSapplication? {
         return HSapplication(pid: thePID, withState: L)
     }
 
@@ -424,14 +444,14 @@ private let watcherCallback: AXObserverCallback = { _, element, notificationName
         Bundle(path: bundlePath)?.localizations
     }
 
-    @objc static func runningApplications(withState L: UnsafeMutablePointer<lua_State>!) -> [HSapplication] {
+    static func runningApplications(withState L: UnsafeMutablePointer<lua_State>!) -> [HSapplication] {
         NSWorkspace.shared.runningApplications.compactMap {
             HSapplication(nsRunningApplication: $0, withState: L)
         }
     }
 
-    @objc static func applications(forBundleID bundleID: String,
-                                    withState L: UnsafeMutablePointer<lua_State>!) -> [HSapplication] {
+    static func applications(forBundleID bundleID: String,
+                             withState L: UnsafeMutablePointer<lua_State>!) -> [HSapplication] {
         NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).compactMap {
             HSapplication(nsRunningApplication: $0, withState: L)
         }
@@ -452,13 +472,12 @@ private let watcherCallback: AXObserverCallback = { _, element, notificationName
     // MARK: hidden property
 
     // Protocol declares `hidden: Bool { get set }` — expose as a plain computed property.
-    // We also expose isHidden()/setHidden(_:) as @objc methods for ObjC compatibility.
-    @objc var hidden: Bool {
+    var hidden: Bool {
         get { isHidden() }
         set { _setHidden(newValue) }
     }
 
-    @objc func isHidden() -> Bool {
+    func isHidden() -> Bool {
         var valueRef: CFTypeRef?
         if AXUIElementCopyAttributeValue(_elementRef,
                                          NSAccessibility.Attribute.hidden.rawValue as CFString,
@@ -470,7 +489,7 @@ private let watcherCallback: AXObserverCallback = { _, element, notificationName
     }
 
     // Renamed to avoid ObjC selector conflict with the `hidden` property setter.
-    @objc func _setHidden(_ shouldHide: Bool) {
+    func _setHidden(_ shouldHide: Bool) {
         AXUIElementSetAttributeValue(_elementRef,
                                      NSAccessibility.Attribute.hidden.rawValue as CFString,
                                      shouldHide ? kCFBooleanTrue : kCFBooleanFalse)
@@ -478,7 +497,7 @@ private let watcherCallback: AXObserverCallback = { _, element, notificationName
 
     // MARK: Instance methods
 
-    @objc func allWindows() -> [Any]? {
+    func allWindows() -> [Any]? {
         var windowsRef: CFArray?
         guard AXUIElementCopyAttributeValues(_elementRef, kAXWindowsAttribute as CFString, 0, 100, &windowsRef) == .success,
               let windows = windowsRef else { return [] }
@@ -493,45 +512,45 @@ private let watcherCallback: AXObserverCallback = { _, element, notificationName
         return result
     }
 
-    @objc func mainWindow() -> Any? {
+    func mainWindow() -> Any? {
         var valueRef: CFTypeRef?
         guard AXUIElementCopyAttributeValue(_elementRef, kAXMainWindowAttribute as CFString, &valueRef) == .success,
               let valueRef = valueRef else { return nil }
         return HSwindow(axuiElementRef: unsafeBitCast(valueRef, to: AXUIElement.self))
     }
 
-    @objc func focusedWindow() -> Any? {
+    func focusedWindow() -> Any? {
         var valueRef: CFTypeRef?
         guard AXUIElementCopyAttributeValue(_elementRef, kAXFocusedWindowAttribute as CFString, &valueRef) == .success,
               let valueRef = valueRef else { return nil }
         return HSwindow(axuiElementRef: unsafeBitCast(valueRef, to: AXUIElement.self))
     }
 
-    @objc func activate(_ allWindows: Bool) -> Bool {
+    func activate(_ allWindows: Bool) -> Bool {
         var options: NSApplication.ActivationOptions = []
         if allWindows { options.insert(.activateAllWindows) }
         return runningApp.activate(options: options)
     }
 
-    @objc func isResponsive() -> Bool {
+    func isResponsive() -> Bool {
         var psn = ProcessSerialNumber()
         _GetProcessForPID(pid, &psn)
         let conn = CGSMainConnectionID()
         return !CGSEventIsAppUnresponsive(conn, &psn)
     }
 
-    @objc func isRunning(withState L: UnsafeMutablePointer<lua_State>!) -> Bool {
+    func isRunning(withState L: UnsafeMutablePointer<lua_State>!) -> Bool {
         return HSapplication(pid: runningApp.processIdentifier, withState: L) != nil
     }
 
-    @objc func setFrontmost(_ allWindows: Bool) -> Bool {
+    func setFrontmost(_ allWindows: Bool) -> Bool {
         guard let app = NSRunningApplication(processIdentifier: pid) else { return false }
         var options: NSApplication.ActivationOptions = []
         if allWindows { options.insert(.activateAllWindows) }
         return app.activate(options: options)
     }
 
-    @objc func isFrontmost() -> Bool {
+    func isFrontmost() -> Bool {
         var valueRef: CFTypeRef?
         if AXUIElementCopyAttributeValue(_elementRef,
                                          NSAccessibility.Attribute.frontmost.rawValue as CFString,
@@ -542,28 +561,28 @@ private let watcherCallback: AXObserverCallback = { _, element, notificationName
         return false
     }
 
-    @objc func title() -> String? {
+    func title() -> String? {
         return runningApp.localizedName
     }
 
-    @objc func bundleID() -> String? {
+    func bundleID() -> String? {
         return runningApp.bundleIdentifier
     }
 
-    @objc func path() -> String? {
+    func path() -> String? {
         guard let url = runningApp.bundleURL else { return nil }
         return Bundle(url: url)?.bundlePath
     }
 
-    @objc func kill() {
+    func kill() {
         runningApp.terminate()
     }
 
-    @objc func kill9() {
+    func kill9() {
         runningApp.forceTerminate()
     }
 
-    @objc func kind() -> Int32 {
+    func kind() -> Int32 {
         switch runningApp.activationPolicy {
         case .accessory:   return 0
         case .prohibited:  return -1
@@ -577,11 +596,11 @@ private let watcherCallback: AXObserverCallback = { _, element, notificationName
 @objc(HSwindow) class HSwindow: NSObject, HSwindowProtocol {
 
     private var _elementRef: AXUIElement
-    @objc var elementRef: AXUIElement { _elementRef }
-    @objc private(set) var pid: pid_t = 0
-    @objc private(set) var winID: CGWindowID = 0
-    @objc private(set) var uiElement: HSuielement
-    @objc var selfRefCount: Int32 = 0
+    var elementRef: AXUIElement { _elementRef }
+    private(set) var pid: pid_t = 0
+    private(set) var winID: CGWindowID = 0
+    private(set) var uiElement: HSuielement
+    var selfRefCount: Int32 = 0
 
     // MARK: Init / deinit
 
@@ -650,7 +669,7 @@ private let watcherCallback: AXObserverCallback = { _, element, notificationName
 
     // MARK: Property helpers
 
-    @objc func getWindowProperty(_ property: String, withDefaultValue defaultValue: Any?) -> Any? {
+    func getWindowProperty(_ property: String, withDefaultValue defaultValue: Any?) -> Any? {
         var valueRef: CFTypeRef?
         if AXUIElementCopyAttributeValue(_elementRef, property as CFString, &valueRef) == .success,
            let valueRef = valueRef {
@@ -659,30 +678,30 @@ private let watcherCallback: AXObserverCallback = { _, element, notificationName
         return defaultValue
     }
 
-    @objc @discardableResult func setWindowProperty(_ property: String, withValue value: Any?) -> Bool {
+    @discardableResult func setWindowProperty(_ property: String, withValue value: Any?) -> Bool {
         guard let value = value as? NSNumber else { return false }
         return AXUIElementSetAttributeValue(_elementRef, property as CFString, value) == .success
     }
 
     // MARK: Protocol methods
 
-    @objc func title() -> String? {
+    func title() -> String? {
         getWindowProperty(NSAccessibility.Attribute.title.rawValue, withDefaultValue: "") as? String
     }
 
-    @objc func subRole() -> String? {
+    func subRole() -> String? {
         getWindowProperty(NSAccessibility.Attribute.subrole.rawValue, withDefaultValue: "") as? String
     }
 
-    @objc func role() -> String? {
+    func role() -> String? {
         getWindowProperty(NSAccessibility.Attribute.role.rawValue, withDefaultValue: "") as? String
     }
 
-    @objc func isStandard() -> Bool {
+    func isStandard() -> Bool {
         subRole() == kAXStandardWindowSubrole as String
     }
 
-    @objc func getTopLeft() -> NSPoint {
+    func getTopLeft() -> NSPoint {
         var topLeft = CGPoint.zero
         var positionRef: CFTypeRef?
         if AXUIElementCopyAttributeValue(_elementRef,
@@ -694,7 +713,7 @@ private let watcherCallback: AXObserverCallback = { _, element, notificationName
         return NSPoint(x: topLeft.x, y: topLeft.y)
     }
 
-    @objc func setTopLeft(_ topLeft: NSPoint) {
+    func setTopLeft(_ topLeft: NSPoint) {
         var point = CGPoint(x: topLeft.x, y: topLeft.y)
         if let positionStorage = AXValueCreate(.cgPoint, &point) {
             AXUIElementSetAttributeValue(_elementRef,
@@ -703,7 +722,7 @@ private let watcherCallback: AXObserverCallback = { _, element, notificationName
         }
     }
 
-    @objc func getSize() -> NSSize {
+    func getSize() -> NSSize {
         var size = CGSize.zero
         var sizeRef: CFTypeRef?
         if AXUIElementCopyAttributeValue(_elementRef,
@@ -715,7 +734,7 @@ private let watcherCallback: AXObserverCallback = { _, element, notificationName
         return NSSize(width: size.width, height: size.height)
     }
 
-    @objc func setSize(_ size: NSSize) {
+    func setSize(_ size: NSSize) {
         var cgSize = CGSize(width: size.width, height: size.height)
         if let sizeStorage = AXValueCreate(.cgSize, &cgSize) {
             AXUIElementSetAttributeValue(_elementRef,
@@ -724,7 +743,7 @@ private let watcherCallback: AXObserverCallback = { _, element, notificationName
         }
     }
 
-    @objc func setFrame(_ frame: NSRect) {
+    func setFrame(_ frame: NSRect) {
         // Temporarily disable AXEnhancedUserInterface for reliability
         let appElement = AXUIElementCreateApplication(pid)
         var enhancedRef: CFTypeRef?
@@ -749,18 +768,18 @@ private let watcherCallback: AXObserverCallback = { _, element, notificationName
         }
     }
 
-    @objc @discardableResult func pushButton(_ buttonId: CFString) -> Bool {
+    @discardableResult func pushButton(_ buttonId: CFString) -> Bool {
         var buttonRef: CFTypeRef?
         guard AXUIElementCopyAttributeValue(_elementRef, buttonId, &buttonRef) == .success,
               let buttonRef = buttonRef else { return false }
         return AXUIElementPerformAction(unsafeBitCast(buttonRef, to: AXUIElement.self), kAXPressAction as CFString) == .success
     }
 
-    @objc func toggleZoom() {
+    func toggleZoom() {
         pushButton(kAXZoomButtonAttribute as CFString)
     }
 
-    @objc func getZoomButtonRect() -> NSRect {
+    func getZoomButtonRect() -> NSRect {
         var buttonRef: CFTypeRef?
         guard AXUIElementCopyAttributeValue(_elementRef,
                                              kAXZoomButtonAttribute as CFString,
@@ -782,18 +801,18 @@ private let watcherCallback: AXObserverCallback = { _, element, notificationName
         return NSMakeRect(point.x, point.y, size.width, size.height)
     }
 
-    @objc func close() -> Bool {
+    func close() -> Bool {
         pushButton(kAXCloseButtonAttribute as CFString)
     }
 
-    @objc func getTabCount() -> Int32 {
+    func getTabCount() -> Int32 {
         guard let tabs = getWindowTabs(_elementRef) else { return 0 }
         var count: CFIndex = 0
         AXUIElementGetAttributeValueCount(tabs, kAXTabsAttribute as CFString, &count)
         return Int32(count)
     }
 
-    @objc func focusTab(_ index: Int32) -> Bool {
+    func focusTab(_ index: Int32) -> Bool {
         guard let tabs = getWindowTabs(_elementRef) else { return false }
 
         var childrenRef: CFArray?
@@ -813,7 +832,7 @@ private let watcherCallback: AXObserverCallback = { _, element, notificationName
         return AXUIElementPerformAction(tab, kAXPressAction as CFString) == .success
     }
 
-    @objc func isFullscreen() -> Bool {
+    func isFullscreen() -> Bool {
         var valueRef: CFTypeRef?
         guard AXUIElementCopyAttributeValue(_elementRef, "AXFullScreen" as CFString, &valueRef) == .success,
               let valueRef = valueRef,
@@ -821,35 +840,35 @@ private let watcherCallback: AXObserverCallback = { _, element, notificationName
         return boolVal.boolValue
     }
 
-    @objc func setFullscreen(_ fullscreen: Bool) {
+    func setFullscreen(_ fullscreen: Bool) {
         AXUIElementSetAttributeValue(_elementRef,
                                      "AXFullScreen" as CFString,
                                      fullscreen ? kCFBooleanTrue : kCFBooleanFalse)
     }
 
-    @objc func isMinimized() -> Bool {
+    func isMinimized() -> Bool {
         let val = getWindowProperty(NSAccessibility.Attribute.minimized.rawValue, withDefaultValue: NSNumber(value: false))
         return (val as? NSNumber)?.boolValue ?? false
     }
 
-    @objc func setMinimized(_ minimize: Bool) {
+    func setMinimized(_ minimize: Bool) {
         setWindowProperty(NSAccessibility.Attribute.minimized.rawValue, withValue: NSNumber(value: minimize))
     }
 
-    @objc func getApplication() -> Any? {
+    func getApplication() -> Any? {
         // Not implemented in ObjC source — placeholder
         return nil
     }
 
-    @objc func becomeMain() {
+    func becomeMain() {
         setWindowProperty(NSAccessibility.Attribute.main.rawValue, withValue: NSNumber(value: true))
     }
 
-    @objc func raise() {
+    func raise() {
         AXUIElementPerformAction(_elementRef, kAXRaiseAction as CFString)
     }
 
-    @objc func snapshot(_ keepTransparency: Bool) -> NSImage? {
+    func snapshot(_ keepTransparency: Bool) -> NSImage? {
         var wID: CGWindowID = 0
         guard _AXUIElementGetWindow(_elementRef, &wID) == .success else { return nil }
         return HSwindow.snapshot(forID: wID, keepTransparency: keepTransparency)

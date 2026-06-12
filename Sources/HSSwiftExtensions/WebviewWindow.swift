@@ -1,5 +1,6 @@
 import Foundation
 import CLua
+import Lua
 import Cocoa
 import WebKit
 import os.log
@@ -9,8 +10,8 @@ import os.log
 class HSWebViewWindow: NSPanel, NSWindowDelegate {
     var parentWebView: HSWebViewWindow?
     var children: NSMutableArray = NSMutableArray()
-    var udRef: Int32 = LUA_NOREF
-    var windowCallback: Int32 = LUA_NOREF
+    var udRef: LuaValue?
+    var windowCallback: LuaValue?
     var allowKeyboardEntry: Bool = false
     var darkMode: Bool = false
     var titleFollow: Bool = true
@@ -37,8 +38,6 @@ class HSWebViewWindow: NSPanel, NSWindowDelegate {
 
         self.parentWebView = nil
         self.children = NSMutableArray()
-        self.udRef = LUA_NOREF
-        self.windowCallback = LUA_NOREF
         self.titleFollow = true
         self.deleteOnClose = false
         self.allowKeyboardEntry = false
@@ -61,8 +60,8 @@ class HSWebViewWindow: NSPanel, NSWindowDelegate {
 
         if !lua_isStateGenerationValid(lsCanary) { return }
 
-        if windowCallback != LUA_NOREF {
-            lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(windowCallback))
+        if windowCallback != nil {
+            windowCallback!.push(onto: L)
             lua_pushany(L, "closing" as NSString)
             wv_pushAny(L, self)
             if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
@@ -80,9 +79,9 @@ class HSWebViewWindow: NSPanel, NSWindowDelegate {
     func windowDidBecomeKey(_ notification: Notification) {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
-            if self.windowCallback != LUA_NOREF {
+            if self.windowCallback != nil {
                 let L = lua_getCurrentState()!
-                lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(self.windowCallback))
+                self.windowCallback!.push(onto: L)
                 lua_pushany(L, "focusChange" as NSString)
                 wv_pushAny(L, self)
                 lua_pushboolean(L, 1)
@@ -94,9 +93,9 @@ class HSWebViewWindow: NSPanel, NSWindowDelegate {
     func windowDidResignKey(_ notification: Notification) {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
-            if self.windowCallback != LUA_NOREF {
+            if self.windowCallback != nil {
                 let L = lua_getCurrentState()!
-                lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(self.windowCallback))
+                self.windowCallback!.push(onto: L)
                 lua_pushany(L, "focusChange" as NSString)
                 wv_pushAny(L, self)
                 lua_pushboolean(L, 0)
@@ -108,9 +107,9 @@ class HSWebViewWindow: NSPanel, NSWindowDelegate {
     func windowDidResize(_ notification: Notification) {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
-            if self.windowCallback != LUA_NOREF {
+            if self.windowCallback != nil {
                 let L = lua_getCurrentState()!
-                lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(self.windowCallback))
+                self.windowCallback!.push(onto: L)
                 lua_pushany(L, "frameChange" as NSString)
                 wv_pushAny(L, self)
                 lua_pushNSRect(L, wv_RectWithFlippedYCoordinate(self.frame))
@@ -122,9 +121,9 @@ class HSWebViewWindow: NSPanel, NSWindowDelegate {
     func windowDidMove(_ notification: Notification) {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
-            if self.windowCallback != LUA_NOREF {
+            if self.windowCallback != nil {
                 let L = lua_getCurrentState()!
-                lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(self.windowCallback))
+                self.windowCallback!.push(onto: L)
                 lua_pushany(L, "frameChange" as NSString)
                 wv_pushAny(L, self)
                 lua_pushNSRect(L, wv_RectWithFlippedYCoordinate(self.frame))
@@ -159,7 +158,11 @@ class HSWebViewWindow: NSPanel, NSWindowDelegate {
                 if deleteWindow {
                     mySelf.close()
                     L.push(wv_userdata_gc)
-                    lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(mySelf.udRef))
+                    if let udRef = mySelf.udRef {
+                        udRef.push(onto: L)
+                    } else {
+                        lua_pushnil(L)
+                    }
                     if lua_pcall(L, 1, 0, 0) != LUA_OK {
                         os_log(.debug, "%{public}s", String(format: "%s:error invoking _gc for delete (with fade) method:%s", wv_USERDATA_TAG, lua_tostring(L, -1)!))
                         lua_pop(L, 1)

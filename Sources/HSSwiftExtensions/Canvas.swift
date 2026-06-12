@@ -9,12 +9,12 @@ import os.log
 // visibility of those ObjC headers, we provide a minimal Swift stand-in that
 // mirrors the ObjC interface just enough for Canvas.swift to compile.
 
-@objc class HSGifAnimator: NSObject {
-    @objc weak var animatingRepresentation: NSBitmapImageRep?
-    @objc weak var inCanvas: HSCanvasView?
-    @objc var isRunning: Bool = false
+class HSGifAnimator: NSObject {
+    weak var animatingRepresentation: NSBitmapImageRep?
+    weak var inCanvas: HSCanvasView?
+    var isRunning: Bool = false
 
-    @objc init(image: NSImage, forCanvas canvas: HSCanvasView) {
+    init(image: NSImage, forCanvas canvas: HSCanvasView) {
         self.inCanvas = canvas
         super.init()
         for case let rep as NSBitmapImageRep in image.representations {
@@ -25,7 +25,7 @@ import os.log
         }
     }
 
-    @objc func startAnimating() {
+    func startAnimating() {
         guard !isRunning, let rep = animatingRepresentation else { return }
         isRunning = true
         let frameCount = (rep.value(forProperty: .frameCount) as? NSNumber)?.intValue ?? 1
@@ -33,7 +33,7 @@ import os.log
         advanceFrame(rep: rep, frameCount: frameCount)
     }
 
-    @objc func stopAnimating() {
+    func stopAnimating() {
         isRunning = false
     }
 
@@ -53,16 +53,11 @@ import os.log
 // #define VIEW_DEBUG
 
 let canvas_USERDATA_TAG = "hs.canvas"
-var canvas_refTable: Int32 = LUA_NOREF
+// canvas_refTable removed — LuaValue? manages callback lifetime
 var canvas_defaultCustomSubRole: Bool = true
 
 // Can't have "static" or "constant" dynamic NSObjects like NSArray, so define in lua_open
 var canvas_languageDictionary: NSDictionary!
-
-func canvas_get_objectFromUserdata<T>(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32, _ tag: UnsafePointer<CChar>) -> T {
-    let ptr = luaL_checkudata(L, idx, tag)!
-    return ptr.assumingMemoryBound(to: UnsafeMutableRawPointer.self).pointee.assumingMemoryBound(to: T.self).pointee
-}
 
 enum AttributeValidity: Int {
     case valid
@@ -862,9 +857,6 @@ func canvas_orderHelper(_ L: UnsafeMutablePointer<lua_State>!, mode: NSWindow.Or
     return 1
 }
 
-// userdata_gc is defined later in this file (MARK: - Cosmic Hammer/Lua Infrastructure)
-
-
 // HSCanvasWindow -> CanvasWindow.swift
 // HSCanvasView -> CanvasView.swift
 // Module Functions/Methods -> CanvasLuaMethods.swift
@@ -922,18 +914,13 @@ func canvas_cg_windowLevels(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 func canvas_pushHSCanvasView(_ L: UnsafeMutablePointer<lua_State>!, obj: Any!) -> Int32 {
     let value = obj as! HSCanvasView
     value.selfRefCount += 1
-    let valuePtr = lua_newuserdata(L, MemoryLayout<UnsafeMutableRawPointer>.size)!
-    valuePtr.assumingMemoryBound(to: UnsafeMutableRawPointer.self).pointee = Unmanaged.passRetained(value).toOpaque()
-    luaL_getmetatable(L, canvas_USERDATA_TAG)
-    lua_setmetatable(L, -2)
+    L.push(userdata: value)
     return 1
 }
 
 func canvas_toHSCanvasViewFromLua(_ L: UnsafeMutablePointer<lua_State>!, idx: Int32) -> Any! {
-    if luaL_testudata(L, idx, canvas_USERDATA_TAG) != nil {
-        let ptr = luaL_checkudata(L, idx, canvas_USERDATA_TAG)!
-        let opaque = ptr.assumingMemoryBound(to: UnsafeMutableRawPointer.self).pointee
-        return Unmanaged<HSCanvasView>.fromOpaque(opaque).takeUnretainedValue()
+    if let view: HSCanvasView = L.touserdata(idx) {
+        return view
     } else {
         os_log(.error, "expected %{public}s object, found %{public}s",
                canvas_USERDATA_TAG, String(cString: lua_typename(L, lua_type(L, idx))))
@@ -944,40 +931,26 @@ func canvas_toHSCanvasViewFromLua(_ L: UnsafeMutablePointer<lua_State>!, idx: In
 // MARK: - Cosmic Hammer/Lua Infrastructure
 
 func canvas_userdata_tostring(_ L: LuaState) throws -> CInt {
-    let obj = canvas_toHSCanvasViewFromLua(L, idx: 1) as! HSCanvasView
+    let obj: HSCanvasView = try L.checkArgument(1)
     let title: String
     if canvas_parentIsWindow(obj) {
         title = NSStringFromRect(canvas_RectWithFlippedYCoordinate(obj.window!.frame))
     } else {
         title = NSStringFromRect(obj.frame)
     }
-    lua_pushstring(L, "\(canvas_USERDATA_TAG): \(title) (\(Unmanaged.passUnretained(obj).toOpaque()))")
+    lua_pushstring(L, "\(canvas_USERDATA_TAG): \(title) (\(lua_topointer(L, 1)!))")
     return 1
 }
 
-func canvas_userdata_eq(_ L: LuaState) throws -> CInt {
-    if luaL_testudata(L, 1, canvas_USERDATA_TAG) != nil && luaL_testudata(L, 2, canvas_USERDATA_TAG) != nil {
-        let obj1 = canvas_toHSCanvasViewFromLua(L, idx: 1) as! HSCanvasView
-        let obj2 = canvas_toHSCanvasViewFromLua(L, idx: 2) as! HSCanvasView
-        lua_pushboolean(L, obj1 === obj2 ? 1 : 0)
-    } else {
-        lua_pushboolean(L, 0)
-    }
-    return 1
-}
-
-func canvas_userdata_gc(_ L: LuaState) throws -> CInt {
-    let ptr = luaL_checkudata(L, 1, canvas_USERDATA_TAG)!
-    let opaque = ptr.assumingMemoryBound(to: UnsafeMutableRawPointer.self).pointee
-    let theView = Unmanaged<HSCanvasView>.fromOpaque(opaque).takeRetainedValue()
-
+// Custom __gc is installed via the post-registration closure below.
+// This standalone function is only used for the __gc closure and is kept
+// private to signal that callers should not invoke it directly.
+private func canvas_teardownView(_ theView: HSCanvasView) {
     theView.selfRefCount -= 1
     if theView.selfRefCount == 0 {
         if !canvas_parentIsWindow(theView) { theView.removeFromSuperview() }
-        luaL_unref(L, LUA_REGISTRYINDEX_VALUE, theView.mouseCallbackRef)
-        theView.mouseCallbackRef = LUA_NOREF
-        luaL_unref(L, LUA_REGISTRYINDEX_VALUE, theView.draggingCallbackRef)
-        theView.draggingCallbackRef = LUA_NOREF
+        theView.mouseCallbackFn = nil
+        theView.draggingCallbackFn = nil
 
         let tile = NSApplication.shared.dockTile
         if let tileView = tile.contentView, tileView === theView {
@@ -988,24 +961,65 @@ func canvas_userdata_gc(_ L: LuaState) throws -> CInt {
         theWindow?.close()
         theView.wrapperWindow = nil
     }
-
-    // Remove the Metatable so future use of the variable in Lua won't think its valid
-    lua_pushnil(L)
-    lua_setmetatable(L, 1)
-    return 0
 }
 
 @_cdecl("luaopen_hs_libcanvas")
 public func luaopen_hs_libcanvas(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     runEntryPoint(L) { L in
-        // Create ref table in registry
-        lua_newtable(L)
-        canvas_refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+        // Register idiomatic Metatable<HSCanvasView> with LuaSwift.
+        // This creates an internal metatable "LuaSwift_Type_HSCanvasView" and sets __gc
+        // to LuaSwift's gcUserdata (which deinitializes the Any box).
+        L.register(Metatable<HSCanvasView>(
+            fields: [:],
+            tostring: .closure(canvas_userdata_tostring)
+        ))
 
-        // Register userdata metatable
-        luaL_newmetatable(L, canvas_USERDATA_TAG)
+        // -- Post-registration metatable patching --
+        // LuaSwift's register() always installs its own gcUserdata as __gc, which
+        // only deinitializes the Any box. We MUST replace it with a custom __gc
+        // that first tears down the view (close window, drop callbacks)
+        // and THEN deinitializes the Any box.
+        L.pushMetatable(for: HSCanvasView.self)
+
+        // Replace __gc with our explicit teardown + deinitialize
+        lua_pushcclosure(L, { (L: LuaState!) -> CInt in
+            if let theView: HSCanvasView = L.touserdata(1) {
+                canvas_teardownView(theView)
+            }
+            // Now deinitialize the Any box (same as LuaSwift's gcUserdata)
+            let rawptr = lua_touserdata(L, 1)!
+            let anyPtr = rawptr.assumingMemoryBound(to: Any.self)
+            anyPtr.deinitialize(count: 1)
+            // Remove the Metatable so future use of the variable in Lua won't think its valid
+            lua_pushnil(L)
+            lua_setmetatable(L, 1)
+            return 0
+        }, 0)
+        lua_setfield(L, -2, "__gc")
+
+        // __eq
+        lua_pushcclosure(L, { (L: LuaState!) -> CInt in
+            if let obj1: HSCanvasView = L.touserdata(1),
+               let obj2: HSCanvasView = L.touserdata(2) {
+                lua_pushboolean(L, obj1 === obj2 ? 1 : 0)
+            } else {
+                lua_pushboolean(L, 0)
+            }
+            return 1
+        }, 0)
+        lua_setfield(L, -2, "__eq")
+
+        // __index = self (metatable is its own __index)
         lua_pushvalue(L, -1)
         lua_setfield(L, -2, "__index")
+
+        // Set __type and __name for assertIsUserdataOfType and tostring
+        lua_pushstring(L, canvas_USERDATA_TAG)
+        lua_setfield(L, -2, "__type")
+        lua_pushstring(L, canvas_USERDATA_TAG)
+        lua_setfield(L, -2, "__name")
+
+        // Register all methods on the metatable
         // affects drawing elements
         L.push(canvas_assignElementAtIndex);    lua_setfield(L, -2, "assignElement")
         L.push(canvas_canvasElements);          lua_setfield(L, -2, "canvasElements")
@@ -1040,10 +1054,10 @@ public func luaopen_hs_libcanvas(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
         L.push(canvas_wantsLayer);              lua_setfield(L, -2, "wantsLayer")
         L.push(canvas_draggingCallback);        lua_setfield(L, -2, "draggingCallback")
         L.push(canvas_accessibilitySubrole);    lua_setfield(L, -2, "_accessibilitySubrole")
-        L.push(canvas_userdata_tostring);       lua_setfield(L, -2, "__tostring")
-        L.push(canvas_userdata_eq);             lua_setfield(L, -2, "__eq")
-        L.push(canvas_userdata_gc);             lua_setfield(L, -2, "__gc")
-        lua_pop(L, 1)
+
+        // Alias the metatable under the legacy registry name "hs.canvas" so that
+        // core_getObjectMetatable("hs.canvas") and luaL_testudata still resolve.
+        lua_setfield(L, LUA_REGISTRYINDEX_VALUE, canvas_USERDATA_TAG)
 
         // Create module table
         lua_createtable(L, 0, 4)

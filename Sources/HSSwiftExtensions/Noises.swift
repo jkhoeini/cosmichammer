@@ -6,96 +6,99 @@ import Foundation
 // MARK: - Constants
 
 private let USERDATA_TAG = "hs.noises"
-private var refTable: Int32 = LUA_NOREF
+
+// MARK: - HSNoisesListener class
+
+private class HSNoisesListener {
+    var callback: LuaValue?
+    private var tornDown = false
+
+    func teardown() {
+        guard !tornDown else { return }
+        tornDown = true
+        callback = nil
+    }
+}
 
 // MARK: - Lua functions (stubbed — noise detection is not implemented)
 
-private func noises_listener_gc(_ L: LuaState) throws -> CInt {
-    let userdata = luaL_checkudata(L, 1, USERDATA_TAG)!
-        .assumingMemoryBound(to: Int32.self)
-    let fn = userdata.pointee
-    if fn != LUA_NOREF {
-        // Unreference callback from the module ref table
-        lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(refTable))
-        luaL_unref(L, -1, fn)
-        lua_pop(L, 1)
-    }
-    return 0
-}
-
-private func noises_listener_stop(_ L: LuaState) throws -> CInt {
+private func noises_listener_stop(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     lua_settop(L, 1)
     return 1
 }
 
-private func noises_listener_start(_ L: LuaState) throws -> CInt {
-    throw LuaCallError("hs.noises: noise detection is not implemented in this version")
-}
-
-private func noises_listener_eq(_ L: LuaState) throws -> CInt {
-    let udA = luaL_checkudata(L, 1, USERDATA_TAG)!
-    let udB = luaL_checkudata(L, 2, USERDATA_TAG)!
-    lua_pushboolean(L, udA == udB ? 1 : 0)
-    return 1
+private func noises_listener_start(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    // Push error via lua_error so the @_cdecl entry point stays non-throwing
+    luaL_error(L, "hs.noises: noise detection is not implemented in this version")
+    return 0
 }
 
 /// hs.noises.new(fn) -> listener
 /// Constructor
 /// Creates a new listener for mouth noise recognition (stub — not implemented)
-private func noises_listener_new(_ L: LuaState) throws -> CInt {
-    guard lua_type(L, 1) == LUA_TFUNCTION else {
-        throw LuaCallError("bad argument #1 (expected function)")
-    }
+private func noises_listener_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    luaL_checktype(L, 1, LUA_TFUNCTION)
 
-    let ud = lua_newuserdata(L, MemoryLayout<Int32>.size)!
-        .assumingMemoryBound(to: Int32.self)
-    // Store callback in the module ref table
-    lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(refTable))
-    lua_pushvalue(L, 1)
-    ud.pointee = luaL_ref(L, -2)
-    lua_pop(L, 1) // pop module ref table
+    let listener = HSNoisesListener()
+    listener.callback = L.ref(index: 1)
 
-    luaL_getmetatable(L, USERDATA_TAG)
-    lua_setmetatable(L, -2)
+    L.push(userdata: listener)
+
     return 1
-}
-
-private func noises_meta_gc(_ L: LuaState) throws -> CInt {
-    return 0
 }
 
 // MARK: - Module entry point
 
 @_cdecl("luaopen_hs_libnoises")
 public func luaopen_hs_libnoises(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    runEntryPoint(L) { L in
-        // Create ref table in registry
-        lua_newtable(L)
-        refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+    // Register idiomatic Metatable<HSNoisesListener>
+    L.register(Metatable<HSNoisesListener>(
+        fields: [
+            "start": .closure { L in
+                let _: HSNoisesListener = try L.checkArgument(1)
+                throw LuaCallError("hs.noises: noise detection is not implemented in this version")
+            },
+            "stop": .closure { L in
+                let _: HSNoisesListener = try L.checkArgument(1)
+                lua_settop(L, 1)
+                return 1
+            },
+        ],
+        tostring: .closure { L in
+            let _: HSNoisesListener = try L.checkArgument(1)
+            lua_pushstring(L, "\(USERDATA_TAG): (\(lua_topointer(L, 1)!))")
+            return 1
+        }
+    ))
 
-        // Register userdata metatable
-        luaL_newmetatable(L, USERDATA_TAG)
-        lua_pushvalue(L, -1)
-        lua_setfield(L, -2, "__index")  // mt.__index = mt
-        L.push(noises_listener_start)
-        lua_setfield(L, -2, "start")
-        L.push(noises_listener_stop)
-        lua_setfield(L, -2, "stop")
-        L.push(noises_listener_gc)
-        lua_setfield(L, -2, "__gc")
-        L.push(noises_listener_eq)
-        lua_setfield(L, -2, "__eq")
-        lua_pop(L, 1)
+    // Post-registration metatable patching
+    L.pushMetatable(for: HSNoisesListener.self)
 
-        // Create module table
-        lua_createtable(L, 0, 1)
-        L.push(noises_listener_new)
-        lua_setfield(L, -2, "new")
+    // Replace __gc with explicit teardown + deinitialize
+    lua_pushcclosure(L, { (L: LuaState!) -> CInt in
+        if let listener: HSNoisesListener = L.touserdata(1) {
+            listener.teardown()
+        }
+        let rawptr = lua_touserdata(L, 1)!
+        let anyPtr = rawptr.assumingMemoryBound(to: Any.self)
+        anyPtr.deinitialize(count: 1)
+        return 0
+    }, 0)
+    lua_setfield(L, -2, "__gc")
 
-        // Set module metatable (for __gc)
-        lua_createtable(L, 0, 1)
-        L.push(noises_meta_gc)
-        lua_setfield(L, -2, "__gc")
-        lua_setmetatable(L, -2)
-    }
+    // Set __type and __name
+    lua_pushstring(L, USERDATA_TAG)
+    lua_setfield(L, -2, "__type")
+    lua_pushstring(L, USERDATA_TAG)
+    lua_setfield(L, -2, "__name")
+
+    // Alias the metatable under the legacy registry name
+    lua_setfield(L, LUA_REGISTRYINDEX_VALUE, USERDATA_TAG)
+
+    // Create module table
+    lua_createtable(L, 0, 1)
+    L.push(noises_listener_new)
+    lua_setfield(L, -2, "new")
+
+    return 1
 }

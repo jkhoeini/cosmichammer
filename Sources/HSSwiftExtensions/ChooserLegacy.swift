@@ -12,8 +12,6 @@ private func get_objectFromUserdata<T: AnyObject>(_ type: T.Type, _ L: UnsafeMut
     return Unmanaged<T>.fromOpaque(ptr.load(as: UnsafeRawPointer.self)).takeUnretainedValue()
 }
 
-private var refTable: Int32 = LUA_NOREF
-
 // MARK: - Lua API - Constructors
 
 /// hs.chooser.new(completionFn) -> hs.chooser object
@@ -30,13 +28,8 @@ private var refTable: Int32 = LUA_NOREF
 ///  * As of macOS Sierra and later, if you want a `hs.chooser` object to appear above full-screen windows you must hide the Cosmic Hammer Dock icon first using: `hs.dockicon.hide()`
 private let chooserNew: LuaClosure = { L in
     luaL_checktype(L, 1, LUA_TFUNCTION)
-
-    // Parse function arguments
-    lua_pushvalue(L, 1)
-    let completionCallbackRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
-
-    // Create the HSChooser object with our arguments
-    let chooser = HSChooser(refTable: refTable, completionCallbackRef: completionCallbackRef)
+    let completionCb = L.ref(index: 1)
+    let chooser = HSChooser(completionCallback: completionCb)
     _ = pushHSChooser(L, chooser)
 
     return 1
@@ -130,10 +123,7 @@ private let chooserSetChoices: LuaClosure = { L in
 
     let chooser: HSChooser = toHSChooserFromLua(L, 1) as! HSChooser
 
-    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, chooser.choicesCallbackRef)
-
-
-    chooser.choicesCallbackRef = LUA_NOREF
+    chooser.choicesCallback = nil
     chooser.clearChoices()
 
     switch lua_type(L, 2) {
@@ -141,14 +131,9 @@ private let chooserSetChoices: LuaClosure = { L in
         break
 
     case LUA_TFUNCTION:
-        lua_pushvalue(L, 2)
-
-        chooser.choicesCallbackRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+        chooser.choicesCallback = L.ref(index: 2)
 
     case LUA_TTABLE:
-        luaL_unref(L, LUA_REGISTRYINDEX_VALUE, chooser.choicesCallbackRef)
-
-        chooser.choicesCallbackRef = LUA_NOREF
         chooser.currentStaticChoices = lua_toChooserChoices(L, at: 2)
 
         var staticChoicesTypeCheckPass = false
@@ -194,15 +179,10 @@ private let chooserHideCallback: LuaClosure = { L in
 
     let chooser: HSChooser = toHSChooserFromLua(L, 1) as! HSChooser
 
-    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, chooser.hideCallbackRef)
-
-
-    chooser.hideCallbackRef = LUA_NOREF
+    chooser.hideCallback = nil
 
     if lua_type(L, 2) == LUA_TFUNCTION {
-        lua_pushvalue(L, 2)
-
-        chooser.hideCallbackRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+        chooser.hideCallback = L.ref(index: 2)
     }
 
     lua_pushvalue(L, 1)
@@ -225,15 +205,10 @@ private let chooserShowCallback: LuaClosure = { L in
 
     let chooser: HSChooser = toHSChooserFromLua(L, 1) as! HSChooser
 
-    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, chooser.showCallbackRef)
-
-
-    chooser.showCallbackRef = LUA_NOREF
+    chooser.showCallback = nil
 
     if lua_type(L, 2) == LUA_TFUNCTION {
-        lua_pushvalue(L, 2)
-
-        chooser.showCallbackRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+        chooser.showCallback = L.ref(index: 2)
     }
 
     lua_pushvalue(L, 1)
@@ -259,7 +234,7 @@ private let chooserRefreshChoicesCallback: LuaClosure = { L in
 
     let reload = lua_toboolean(L, 2) != 0
 
-    if chooser.choicesCallbackRef != LUA_NOREF && chooser.choicesCallbackRef != LUA_REFNIL {
+    if chooser.choicesCallback != nil {
         chooser.clearChoices()
         _ = chooser.getChoices()
         chooser.updateChoices()
@@ -349,15 +324,10 @@ private let chooserQueryCallback: LuaClosure = { L in
 
     let chooser: HSChooser = toHSChooserFromLua(L, 1) as! HSChooser
 
-    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, chooser.queryChangedCallbackRef)
-
-
-    chooser.queryChangedCallbackRef = LUA_NOREF
+    chooser.queryChangedCallback = nil
 
     if lua_type(L, 2) == LUA_TFUNCTION {
-        lua_pushvalue(L, 2)
-
-        chooser.queryChangedCallbackRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+        chooser.queryChangedCallback = L.ref(index: 2)
     }
 
     lua_pushvalue(L, 1)
@@ -381,15 +351,10 @@ private let chooserRightClickCallback: LuaClosure = { L in
 
     let chooser: HSChooser = toHSChooserFromLua(L, 1) as! HSChooser
 
-    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, chooser.rightClickCallbackRef)
-
-
-    chooser.rightClickCallbackRef = LUA_NOREF
+    chooser.rightClickCallback = nil
 
     if lua_type(L, 2) == LUA_TFUNCTION {
-        lua_pushvalue(L, 2)
-
-        chooser.rightClickCallbackRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+        chooser.rightClickCallback = L.ref(index: 2)
     }
 
     lua_pushvalue(L, 1)
@@ -413,15 +378,10 @@ private let chooserInvalidCallback: LuaClosure = { L in
 
     let chooser: HSChooser = toHSChooserFromLua(L, 1) as! HSChooser
 
-    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, chooser.invalidCallbackRef)
-
-
-    chooser.invalidCallbackRef = LUA_NOREF
+    chooser.invalidCallback = nil
 
     if lua_type(L, 2) == LUA_TFUNCTION {
-        lua_pushvalue(L, 2)
-
-        chooser.invalidCallbackRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+        chooser.invalidCallback = L.ref(index: 2)
     }
 
     lua_pushvalue(L, 1)
@@ -909,35 +869,7 @@ private let userdata_gc: LuaClosure = { L in
 
     chooser.selfRefCount -= 1
     if chooser.selfRefCount == 0 {
-        luaL_unref(L, LUA_REGISTRYINDEX_VALUE, chooser.hideCallbackRef)
-
-        chooser.hideCallbackRef = LUA_NOREF
-        luaL_unref(L, LUA_REGISTRYINDEX_VALUE, chooser.showCallbackRef)
-
-        chooser.showCallbackRef = LUA_NOREF
-        luaL_unref(L, LUA_REGISTRYINDEX_VALUE, chooser.choicesCallbackRef)
-
-        chooser.choicesCallbackRef = LUA_NOREF
-        luaL_unref(L, LUA_REGISTRYINDEX_VALUE, chooser.queryChangedCallbackRef)
-
-        chooser.queryChangedCallbackRef = LUA_NOREF
-        luaL_unref(L, LUA_REGISTRYINDEX_VALUE, chooser.completionCallbackRef)
-
-        chooser.completionCallbackRef = LUA_NOREF
-        luaL_unref(L, LUA_REGISTRYINDEX_VALUE, chooser.rightClickCallbackRef)
-
-        chooser.rightClickCallbackRef = LUA_NOREF
-        luaL_unref(L, LUA_REGISTRYINDEX_VALUE, chooser.invalidCallbackRef)
-
-        chooser.invalidCallbackRef = LUA_NOREF
-        chooser.isObservingThemeChanges = false  // Stop observing for interface theme changes.
-
-        if let theWindow = chooser.window {
-            if theWindow.toolbar != nil {
-                theWindow.toolbar?.isVisible = false
-                theWindow.toolbar = nil
-            }
-        }
+        chooser.teardown()
     }
 
     // Remove the Metatable so future use of the variable in Lua won't think its valid
@@ -949,10 +881,6 @@ private let userdata_gc: LuaClosure = { L in
 @_cdecl("luaopen_hs_libchooser")
 public func luaopen_hs_libchooser(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     runEntryPoint(L) { L in
-        // Create ref table in registry
-        lua_newtable(L)
-        refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
-
         // Register userdata metatable
         luaL_newmetatable(L, USERDATA_TAG)
         lua_pushvalue(L, -1)
@@ -1011,7 +939,15 @@ public func luaopen_hs_libchooser(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
         lua_setfield(L, -2, "__eq")
         L.push(userdata_gc)
         lua_setfield(L, -2, "__gc")
-        lua_pop(L, 1)
+
+        // Set __type and __name for type identification
+        lua_pushstring(L, USERDATA_TAG)
+        lua_setfield(L, -2, "__type")
+        lua_pushstring(L, USERDATA_TAG)
+        lua_setfield(L, -2, "__name")
+
+        // Alias the metatable under the registry name
+        lua_setfield(L, LUA_REGISTRYINDEX_VALUE, USERDATA_TAG)
 
         // Create module table
         lua_createtable(L, 0, 1)

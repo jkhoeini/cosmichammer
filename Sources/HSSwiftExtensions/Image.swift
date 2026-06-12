@@ -5,7 +5,6 @@ import os.log
 import AVFoundation
 
 private let USERDATA_TAG = "hs.image"
-private var refTable: Int32 = LUA_NOREF
 
 // NSWorkspace iconForFile: logs a warning every time you try to query when the path is nil.  Since
 // this happens a lot when trying to query based on a file bundle it means anything using spotlight
@@ -13,7 +12,7 @@ private var refTable: Int32 = LUA_NOREF
 // and be done with it.
 private var missingIconForFile: NSImage?
 
-private var backgroundCallbacks = NSMutableSet()
+private var backgroundCallbacks = [UUID: LuaValue]()
 
 // MARK: - NSImage to ASCII Conversion
 
@@ -564,20 +563,18 @@ private func imageFromURL(_ L: LuaState) throws -> CInt {
     if lua_type(L, 2) != LUA_TFUNCTION {
         pushNSImageOrNil(L, NSImage(contentsOf: theURL))
     } else {
-        lua_pushvalue(L, 2)
-        let fnRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
-        backgroundCallbacks.add(NSNumber(value: fnRef))
+        let cb = L.ref(index: 2)
+        let callbackID = UUID()
+        backgroundCallbacks[callbackID] = cb
 
         DispatchQueue.global(qos: .default).async {
             let image = NSImage(contentsOf: theURL)
             DispatchQueue.main.async {
-                if backgroundCallbacks.contains(NSNumber(value: fnRef)) {
+                if let storedCb = backgroundCallbacks.removeValue(forKey: callbackID) {
                     let bgL = lua_getCurrentState()!
-                    lua_rawgeti(bgL, LUA_REGISTRYINDEX_VALUE, lua_Integer(fnRef))
+                    storedCb.push(onto: bgL)
                     pushNSImageOrNil(bgL, image)
                     if lua_pcall(bgL, 1, 0, 0) != LUA_OK { lua_pop(bgL, 1) }
-                    luaL_unref(bgL, LUA_REGISTRYINDEX_VALUE, fnRef)
-                    backgroundCallbacks.remove(NSNumber(value: fnRef))
                 }
             }
         }
@@ -1274,22 +1271,13 @@ private func image_userdata_gc(_ L: LuaState) throws -> CInt {
 }
 
 private func image_meta_gc(_ L: LuaState) throws -> CInt {
-    backgroundCallbacks.enumerateObjects { ref, _ in
-        if let num = ref as? NSNumber {
-            luaL_unref(L, LUA_REGISTRYINDEX_VALUE, num.int32Value)
-        }
-    }
-    backgroundCallbacks.removeAllObjects()
+    backgroundCallbacks.removeAll()
     return 0
 }
 
 @_cdecl("luaopen_hs_libimage")
 public func luaopen_hs_libimage(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     runEntryPoint(L) { L in
-        // Create ref table in registry
-        lua_newtable(L)
-        refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
-
         // Register userdata metatable
         luaL_newmetatable(L, USERDATA_TAG)
         lua_pushvalue(L, -1)
@@ -1307,6 +1295,10 @@ public func luaopen_hs_libimage(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
         L.push(image_userdata_tostring);    lua_setfield(L, -2, "__tostring")
         L.push(image_userdata_eq);          lua_setfield(L, -2, "__eq")
         L.push(image_userdata_gc);          lua_setfield(L, -2, "__gc")
+        lua_pushstring(L, USERDATA_TAG)
+        lua_setfield(L, -2, "__type")
+        lua_pushstring(L, USERDATA_TAG)
+        lua_setfield(L, -2, "__name")
         lua_pop(L, 1)
 
         // Create module table
@@ -1331,6 +1323,6 @@ public func luaopen_hs_libimage(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 
         if missingIconForFile == nil { missingIconForFile = NSWorkspace.shared.icon(forFile: "") }
 
-        backgroundCallbacks = NSMutableSet()
+        backgroundCallbacks = [UUID: LuaValue]()
     }
 }

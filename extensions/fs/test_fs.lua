@@ -9,7 +9,8 @@ function writeFile(filename, contents)
 end
 
 function setUp()
-  os.execute("mkdir "..testDir)
+  os.execute("rm -rf "..testDir)
+  os.execute("mkdir -p "..testDir)
   return success()
 end
 

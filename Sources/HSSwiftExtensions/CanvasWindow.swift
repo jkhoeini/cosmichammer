@@ -1,11 +1,12 @@
 import Cocoa
 import CLua
+import Lua
 import os.log
 
 // MARK: - HSCanvasWindow
 
-@objc class HSCanvasWindow: NSPanel, NSWindowDelegate {
-    @objc var subroleOverride: String?
+class HSCanvasWindow: NSPanel, NSWindowDelegate {
+    var subroleOverride: String?
 
     override init(contentRect: NSRect, styleMask style: NSWindow.StyleMask, backing backingStoreType: NSWindow.BackingStoreType, defer flag: Bool) {
         guard contentRect.origin.x.isFinite && contentRect.origin.y.isFinite &&
@@ -87,28 +88,25 @@ import os.log
 
     func fadeOut(_ fadeTime: TimeInterval, andDelete deleteCanvas: Bool, withState L: UnsafeMutablePointer<lua_State>!) {
         guard let theView = self.contentView as? HSCanvasView else { return }
-        if theView.selfRef != LUA_NOREF { return } // already in a fade
+        if theView.selfRef != nil { return } // already in a fade
 
         // Push the canvas view userdata and create a reference to prevent GC during fade
         canvas_pushValue(L, theView)
-        theView.selfRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+        theView.selfRef = L.ref(index: -1)
+        lua_pop(L, 1)
 
         let alphaSetting = self.alphaValue
         NSAnimationContext.beginGrouping()
         weak var bself = self
-        let generation = lua_currentStateGeneration()
 
         NSAnimationContext.current.duration = fadeTime
         NSAnimationContext.current.completionHandler = {
             DispatchQueue.main.async {
                 guard let mySelf = bself,
                       let myView = mySelf.contentView as? HSCanvasView,
-                      myView.selfRef != LUA_NOREF else { return }
+                      myView.selfRef != nil else { return }
 
-                if lua_isStateGenerationValid(generation) {
-                    luaL_unref(lua_getCurrentState()!, LUA_REGISTRYINDEX_VALUE, myView.selfRef)
-                    myView.selfRef = LUA_NOREF
-                }
+                myView.selfRef = nil
 
                 mySelf.orderOut(nil)
                 mySelf.alphaValue = alphaSetting

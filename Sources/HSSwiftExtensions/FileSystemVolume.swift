@@ -38,29 +38,38 @@ private enum VolumeEvent: Int {
     case didRename
 }
 
-// MARK: - Userdata struct
-
-private struct VolumeWatcher_t {
-    var running: Bool
-    var fn: Int32
-    var obj: UnsafeMutableRawPointer? // Retained VolumeWatcher
-}
-
 // MARK: - VolumeWatcher class
 
 private class VolumeWatcher: NSObject {
-    var object: UnsafeMutablePointer<VolumeWatcher_t>
+    var callback: LuaValue?
+    var running: Bool = false
+    var generation: UInt64 = 0
+    private var tornDown = false
 
-    init(object: UnsafeMutablePointer<VolumeWatcher_t>) {
-        self.object = object
-        super.init()
+    /// Idempotent teardown: stop observers, drop the Lua callback reference,
+    /// mark as torn down.
+    func teardown() {
+        guard !tornDown else { return }
+        tornDown = true
+        if running {
+            running = false
+            unregister_observer(self)
+        }
+        callback = nil
     }
 
     // Call the lua callback function and pass the event type and info dict.
-    func callback(_ dict: [AnyHashable: Any], withEvent event: VolumeEvent) {
+    func handleVolume(_ dict: [AnyHashable: Any], withEvent event: VolumeEvent) {
+        if !lua_isStateGenerationValid(generation) {
+            teardown()
+            return
+        }
+
         let L = lua_getCurrentState()!
 
-        lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(object.pointee.fn))
+        guard let cb = callback else { return }
+
+        cb.push(onto: L)
         lua_pushinteger(L, lua_Integer(event.rawValue))
 
         var tableArg = [String: Any]()
@@ -92,19 +101,19 @@ private class VolumeWatcher: NSObject {
     }
 
     @objc func volumeDidMount(_ notification: Notification) {
-        callback(notification.userInfo ?? [:], withEvent: .didMount)
+        handleVolume(notification.userInfo ?? [:], withEvent: .didMount)
     }
 
     @objc func volumeDidUnmount(_ notification: Notification) {
-        callback(notification.userInfo ?? [:], withEvent: .didUnmount)
+        handleVolume(notification.userInfo ?? [:], withEvent: .didUnmount)
     }
 
     @objc func volumeWillUnmount(_ notification: Notification) {
-        callback(notification.userInfo ?? [:], withEvent: .willUnmount)
+        handleVolume(notification.userInfo ?? [:], withEvent: .willUnmount)
     }
 
     @objc func volumeDidRename(_ notification: Notification) {
-        callback(notification.userInfo ?? [:], withEvent: .didRename)
+        handleVolume(notification.userInfo ?? [:], withEvent: .didRename)
     }
 }
 
@@ -180,94 +189,18 @@ private func volume_eject(_ L: LuaState) throws -> CInt {
 ///
 /// Returns:
 ///  * An `hs.fs.volume` object
-private func volume_watcher_new(_ L: LuaState) throws -> CInt {
+private func volume_watcher_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     luaL_checktype(L, 1, LUA_TFUNCTION)
 
-    let watcher = lua_newuserdata(L, MemoryLayout<VolumeWatcher_t>.size)!
-        .assumingMemoryBound(to: VolumeWatcher_t.self)
-    memset(watcher, 0, MemoryLayout<VolumeWatcher_t>.size)
+    let cb = L.ref(index: 1)
 
-    lua_pushvalue(L, 1)
-    watcher.pointee.fn = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
-    watcher.pointee.running = false
-    let watcherObj = VolumeWatcher(object: watcher)
-    watcher.pointee.obj = Unmanaged.passRetained(watcherObj).toOpaque()
+    let watcher = VolumeWatcher()
+    watcher.callback = cb
+    watcher.generation = lua_currentStateGeneration()
 
-    luaL_getmetatable(L, USERDATA_TAG)
-    lua_setmetatable(L, -2)
+    L.push(userdata: watcher)
+
     return 1
-}
-
-/// hs.fs.volume:start()
-/// Method
-/// Starts the volume watcher
-///
-/// Parameters:
-///  * None
-///
-/// Returns:
-///  * An `hs.fs.volume` object
-private func volume_watcher_start(_ L: LuaState) throws -> CInt {
-    let watcher = luaL_checkudata(L, 1, USERDATA_TAG)!.assumingMemoryBound(to: VolumeWatcher_t.self)
-    lua_settop(L, 1)
-
-    if watcher.pointee.running {
-        return 1
-    }
-
-    watcher.pointee.running = true
-    let observer = Unmanaged<VolumeWatcher>.fromOpaque(watcher.pointee.obj!).takeUnretainedValue()
-    register_observer(observer)
-    return 1
-}
-
-/// hs.fs.volume:stop()
-/// Method
-/// Stops the volume watcher
-///
-/// Parameters:
-///  * None
-///
-/// Returns:
-///  * An `hs.fs.volume` object
-private func volume_watcher_stop(_ L: LuaState) throws -> CInt {
-    let watcher = luaL_checkudata(L, 1, USERDATA_TAG)!.assumingMemoryBound(to: VolumeWatcher_t.self)
-    lua_settop(L, 1)
-
-    if !watcher.pointee.running {
-        return 1
-    }
-
-    watcher.pointee.running = false
-    let observer = Unmanaged<VolumeWatcher>.fromOpaque(watcher.pointee.obj!).takeUnretainedValue()
-    unregister_observer(observer)
-    return 1
-}
-
-// Perform cleanup if the VolumeWatcher is not required anymore.
-private func volume_watcher_gc(_ L: LuaState) throws -> CInt {
-    let watcher = luaL_checkudata(L, 1, USERDATA_TAG)!.assumingMemoryBound(to: VolumeWatcher_t.self)
-
-    _ = try volume_watcher_stop(L)
-
-    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, watcher.pointee.fn)
-    watcher.pointee.fn = LUA_NOREF
-
-    if let obj = watcher.pointee.obj {
-        let _ = Unmanaged<VolumeWatcher>.fromOpaque(obj).takeRetainedValue()
-        watcher.pointee.obj = nil
-    }
-    return 0
-}
-
-private func userdata_tostring(_ L: LuaState) throws -> CInt {
-    let desc = "\(USERDATA_TAG): (\(String(describing: lua_topointer(L, 1)!)))"
-    lua_pushstring(L, desc)
-    return 1
-}
-
-private func meta_gc(_ L: LuaState) throws -> CInt {
-    return 0
 }
 
 // MARK: - Event enum helpers
@@ -288,34 +221,68 @@ private func add_event_enum(_ L: UnsafeMutablePointer<lua_State>!) {
 
 @_cdecl("luaopen_hs_libfsvolume")
 public func luaopen_hs_libfsvolume(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    runEntryPoint(L) { L in
-        // Register userdata metatable
-        luaL_newmetatable(L, USERDATA_TAG)
-        lua_pushvalue(L, -1)
-        lua_setfield(L, -2, "__index")
-        L.push(volume_watcher_start)
-        lua_setfield(L, -2, "start")
-        L.push(volume_watcher_stop)
-        lua_setfield(L, -2, "stop")
-        L.push(volume_watcher_gc)
-        lua_setfield(L, -2, "__gc")
-        L.push(userdata_tostring)
-        lua_setfield(L, -2, "__tostring")
-        lua_pop(L, 1)
+    // Register idiomatic Metatable<VolumeWatcher> with LuaSwift.
+    L.register(Metatable<VolumeWatcher>(
+        fields: [
+            "start": .closure { L in
+                let watcher: VolumeWatcher = try L.checkArgument(1)
+                lua_settop(L, 1)
+                if !watcher.running {
+                    watcher.running = true
+                    register_observer(watcher)
+                }
+                return 1
+            },
+            "stop": .closure { L in
+                let watcher: VolumeWatcher = try L.checkArgument(1)
+                lua_settop(L, 1)
+                if watcher.running {
+                    watcher.running = false
+                    unregister_observer(watcher)
+                }
+                return 1
+            },
+        ],
+        tostring: .closure { L in
+            let _: VolumeWatcher = try L.checkArgument(1)
+            let desc = "\(USERDATA_TAG): (\(String(describing: lua_topointer(L, 1)!)))"
+            lua_pushstring(L, desc)
+            return 1
+        }
+    ))
 
-        // Create module table
-        lua_createtable(L, 0, 2)
-        L.push(volume_watcher_new)
-        lua_setfield(L, -2, "new")
-        L.push(volume_eject)
-        lua_setfield(L, -2, "eject")
+    // Replace __gc with our explicit teardown + deinitialize
+    L.pushMetatable(for: VolumeWatcher.self)
 
-        // Set module metatable for __gc
-        lua_createtable(L, 0, 1)
-        L.push(meta_gc)
-        lua_setfield(L, -2, "__gc")
-        lua_setmetatable(L, -2)
+    lua_pushcclosure(L, { (L: LuaState!) -> CInt in
+        if let watcher: VolumeWatcher = L.touserdata(1) {
+            watcher.teardown()
+        }
+        let rawptr = lua_touserdata(L, 1)!
+        let anyPtr = rawptr.assumingMemoryBound(to: Any.self)
+        anyPtr.deinitialize(count: 1)
+        return 0
+    }, 0)
+    lua_setfield(L, -2, "__gc")
 
-        add_event_enum(L)
-    }
+    // Set __type and __name for lsunit.lua assertIsUserdataOfType and tostring
+    lua_pushstring(L, USERDATA_TAG)
+    lua_setfield(L, -2, "__type")
+    lua_pushstring(L, USERDATA_TAG)
+    lua_setfield(L, -2, "__name")
+
+    // Alias the metatable under the legacy registry name so that
+    // core_getObjectMetatable("hs.fs.volume") still resolves.
+    lua_setfield(L, LUA_REGISTRYINDEX_VALUE, USERDATA_TAG)
+
+    // Create module table
+    lua_createtable(L, 0, 6)
+    L.push(volume_watcher_new)
+    lua_setfield(L, -2, "new")
+    L.push(volume_eject)
+    lua_setfield(L, -2, "eject")
+
+    add_event_enum(L)
+
+    return 1
 }

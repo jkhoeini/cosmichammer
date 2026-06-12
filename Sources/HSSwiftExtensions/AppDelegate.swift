@@ -23,7 +23,7 @@ class MJAppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: Properties (matching MJAppDelegate.h)
 
-    @objc var menuBarMenu: NSMenu?
+    var menuBarMenu: NSMenu?
     @objc var startupEvent: NSAppleEventDescriptor?
     @objc var startupFile: String?
     @objc weak var openFileDelegate: (NSObjectProtocol & HSOpenFileDelegateAppDelegate)?

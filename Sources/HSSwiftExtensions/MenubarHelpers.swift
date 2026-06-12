@@ -1,22 +1,25 @@
 import Cocoa
 import CLua
+import Lua
 import Carbon
 import os.log
 
 // MARK: - Callback Objects
 
 @objc class HSMenubarCallbackObject: NSObject {
-    var fn: Int32 = LUA_NOREF
-    var item: Int32 = LUA_NOREF
+    var fn: LuaValue?
+    var item: LuaValue?
 
     func callback_runner() {
         let L = lua_getCurrentState()!
+
+        guard let fnRef = fn else { return }
 
         var fn_result: Bool
 
         let event = NSApp.currentEvent
 
-        lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(fn))
+        fnRef.push(onto: L)
 
         if let event = event {
             let theFlags = event.modifierFlags
@@ -43,7 +46,11 @@ import os.log
             lua_pushboolean(L, isFnKey ? 1 : 0)
             lua_setfield(L, -2, "fn")
 
-            lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(item))
+            if let itemRef = item {
+                itemRef.push(onto: L)
+            } else {
+                lua_pushnil(L)
+            }
 
             fn_result = lua_pcall(L, 2, 1, 0) == LUA_OK
         } else {
@@ -63,7 +70,6 @@ import os.log
 struct menubaritem_t {
     var menuBarItemObject: UnsafeMutableRawPointer?
     var click_callback: UnsafeMutableRawPointer?
-    var click_fn: Int32
     var removed: Bool
     var stateBoxImageSize: NSSize
 }
@@ -167,11 +173,8 @@ func mb_parse_table(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32, _ menu:
             lua_getfield(L, -1, "fn")
             if lua_isfunction(L, -1) {
                 let delegate = HSMenubarItemClickDelegate()
-                lua_pushvalue(L, -1)
-                delegate.fn = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
-                lua_pushvalue(L, -2)
-
-                delegate.item = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+                delegate.fn = L.ref(index: -1)
+                delegate.item = L.ref(index: -2)
                 menuItem.target = delegate
                 menuItem.action = #selector(HSMenubarItemClickDelegate.click(_:))
                 menuItem.representedObject = delegate
@@ -271,12 +274,8 @@ func mb_erase_menu_items(_ L: UnsafeMutablePointer<lua_State>!, _ menu: NSMenu) 
 
     for menuItem in menu.items {
         if let target = menuItem.representedObject as? HSMenubarItemClickDelegate {
-            luaL_unref(L, LUA_REGISTRYINDEX_VALUE, target.fn)
-
-            target.fn = LUA_NOREF
-            luaL_unref(L, LUA_REGISTRYINDEX_VALUE, target.item)
-
-            target.item = LUA_NOREF
+            target.fn = nil
+            target.item = nil
             menuItem.target = nil
             menuItem.action = nil
             menuItem.representedObject = nil
@@ -293,9 +292,7 @@ func mb_erase_menu_items(_ L: UnsafeMutablePointer<lua_State>!, _ menu: NSMenu) 
 func mb_erase_menu_delegate(_ L: UnsafeMutablePointer<lua_State>!, _ menu: NSMenu) {
 
     if let delegate = menu.delegate as? HSMenubarItemMenuDelegate {
-        luaL_unref(L, LUA_REGISTRYINDEX_VALUE, delegate.fn)
-
-        delegate.fn = LUA_NOREF
+        delegate.fn = nil
         mb_dynamicMenuDelegates.remove(delegate)
         menu.delegate = nil
     }

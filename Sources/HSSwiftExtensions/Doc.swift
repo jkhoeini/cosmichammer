@@ -5,8 +5,7 @@ import os.log
 
 private let USERDATA_TAG = "hs.doc" // we're using it as a module tag for console messages
 
-private var refTable: Int32 = LUA_NOREF
-private var refTriggerFn: Int32 = LUA_NOREF
+private var triggerFn: LuaValue?
 
 private var registeredFiles: NSMutableDictionary!
 private var documentationTree: NSMutableDictionary!
@@ -180,8 +179,10 @@ private func processRegisteredFile(_ L: UnsafeMutablePointer<lua_State>!, _ path
         }
 
         // make sure watchers knows that something has changed
-        lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(refTriggerFn))
-        lua_call(L, 0, 0)
+        if let fn = triggerFn {
+            fn.push(onto: L)
+            lua_call(L, 0, 0)
+        }
     } else {
         os_log(.error, "%{public}s", "\(USERDATA_TAG).processRegisteredFile - error initializing regex: \(regexError?.localizedDescription ?? "unknown")")
     }
@@ -413,14 +414,7 @@ private func internal_loadRegisteredFiles(_ L: LuaState) throws -> CInt {
 // used to register lua function to trigger `hs.watchable` change counter so hsdocs knows when doc files have been updated
 private func internal_registerTriggerFunction(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TFUNCTION)
-
-    if refTriggerFn != LUA_NOREF && refTriggerFn != LUA_REFNIL {
-        luaL_unref(L, LUA_REGISTRYINDEX_VALUE, refTriggerFn)
-
-        refTriggerFn = LUA_NOREF
-    }
-    lua_pushvalue(L, 1)
-    refTriggerFn = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+    triggerFn = L.ref(index: 1)
     return 0
 }
 
@@ -441,9 +435,7 @@ private func internal_documentationTree(_ L: LuaState) throws -> CInt {
 // MARK: - Cosmic Hammer/Lua Infrastructure
 
 private func meta_gc(_ L: LuaState) throws -> CInt {
-    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, refTriggerFn)
-
-    refTriggerFn = LUA_NOREF
+    triggerFn = nil
 
     // probably overkill, but lets just be official about it
     registeredFiles.removeAllObjects()
@@ -456,10 +448,6 @@ private func meta_gc(_ L: LuaState) throws -> CInt {
 @_cdecl("luaopen_hs_libdoc")
 public func luaopen_hs_libdoc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     runEntryPoint(L) { L in
-        // Create ref table in registry
-        lua_newtable(L)
-        refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
-
         // Create module table (4 functions)
         lua_createtable(L, 0, 4)
         L.push(doc_help)

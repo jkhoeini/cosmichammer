@@ -10,7 +10,7 @@ import Cocoa
 
 extension NSImage {
 
-    @objc func flipImage(_ horiz: Bool, vert: Bool) -> NSImage {
+    func flipImage(_ horiz: Bool, vert: Bool) -> NSImage {
         if !horiz && !vert { return self }
 
         let existingSize = self.size

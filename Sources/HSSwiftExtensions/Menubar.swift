@@ -7,7 +7,6 @@ import os.log
 // MARK: - Definitions
 
 let mb_USERDATA_TAG = "hs.menubar"
-var mb_refTable: Int32 = LUA_NOREF
 
 func mb_get_item_arg(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> UnsafeMutablePointer<menubaritem_t> {
     return luaL_checkudata(L, idx, mb_USERDATA_TAG)!.assumingMemoryBound(to: menubaritem_t.self)
@@ -68,7 +67,6 @@ func menubarNew(_ L: LuaState) throws -> CInt {
 
     menuBarItem.pointee.menuBarItemObject = Unmanaged.passRetained(statusItem).toOpaque()
     menuBarItem.pointee.click_callback = nil
-    menuBarItem.pointee.click_fn = LUA_NOREF
     menuBarItem.pointee.removed = false
 
     let defaultFromFont = NSFont.menuFont(ofSize: 0).pointSize
@@ -263,9 +261,6 @@ func menubarSetClickCallback(_ L: LuaState) throws -> CInt {
     let statusItem = Unmanaged<NSStatusItem>.fromOpaque(menuBarItem.pointee.menuBarItemObject!).takeUnretainedValue()
 
     // Remove any existing click callback
-    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, menuBarItem.pointee.click_fn)
-
-    menuBarItem.pointee.click_fn = LUA_NOREF
     if let callback = menuBarItem.pointee.click_callback {
         statusItem.button?.target = nil
         statusItem.button?.action = nil
@@ -274,10 +269,8 @@ func menubarSetClickCallback(_ L: LuaState) throws -> CInt {
     }
 
     if lua_isfunction(L, 2) {
-        lua_pushvalue(L, 2)
-        menuBarItem.pointee.click_fn = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
         let object = HSMenubarItemClickDelegate()
-        object.fn = menuBarItem.pointee.click_fn
+        object.fn = L.ref(index: 2)
         menuBarItem.pointee.click_callback = Unmanaged.passRetained(object).toOpaque()
         statusItem.button?.target = object
         statusItem.button?.action = #selector(HSMenubarItemClickDelegate.click(_:))
@@ -320,8 +313,7 @@ func menubarSetMenu(_ L: LuaState) throws -> CInt {
         menu?.autoenablesItems = false
         delegate = HSMenubarItemMenuDelegate()
         delegate!.stateBoxImageSize = menuBarItem.pointee.stateBoxImageSize
-        lua_pushvalue(L, 2)
-        delegate!.fn = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+        delegate!.fn = L.ref(index: 2)
         mb_dynamicMenuDelegates.add(delegate!)
 
     default:
@@ -692,10 +684,6 @@ func mb_userdata_tostring(_ L: LuaState) throws -> CInt {
 func luaopen_hs_libmenubar(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     runEntryPoint(L) { L in
         menubar_setup()
-
-        // Create ref table in registry
-        lua_newtable(L)
-        mb_refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
 
         // Register userdata metatable
         luaL_newmetatable(L, mb_USERDATA_TAG)

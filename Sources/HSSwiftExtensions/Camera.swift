@@ -7,13 +7,12 @@ import os.log
 
 // MARK: - Module declarations
 
-private var refTable: Int32 = 0
 private let USERDATA_TAG = "hs.camera"
 
 // MARK: - Devices watcher declarations
 
 private struct DeviceWatcher {
-    var callback: Int32
+    var callback: LuaValue?
     var running: Bool
     var lsCanary: UInt64
 }
@@ -35,10 +34,19 @@ private class HSCamera: NSObject {
     var deviceId: CMIODeviceID
     var name: String?
     var uid: String?
-    var propertyWatcherCallback: Int32 = LUA_NOREF
+    var propertyWatcherCallbackValue: LuaValue?
     var propertyWatcherRunning: Bool = false
     var propertyWatcherBlock: CMIOObjectPropertyListenerBlock?
     var canary: UInt64
+    private var tornDown = false
+
+    /// Idempotent teardown: stop the property watcher and drop the LuaValue callback ref.
+    func teardown() {
+        guard !tornDown else { return }
+        tornDown = true
+        stopPropertyWatcher()
+        propertyWatcherCallbackValue = nil
+    }
 
     var isInUse: Bool {
         var dataSize: UInt32 = 0
@@ -102,18 +110,19 @@ private class HSCamera: NSObject {
 
                 let savedTop = lua_gettop(L)
 
-                if strongSelf.propertyWatcherCallback == LUA_NOREF {
+                guard let cb = strongSelf.propertyWatcherCallbackValue else {
                     os_log(.error, "%{public}s", "hs.camera property watcher fired, but no callback has been set")
-                } else {
-                    for event in events {
-                        lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(strongSelf.propertyWatcherCallback))
-                        pushHSCamera(L, strongSelf)
-                        lua_pushany(L, event["mSelector"] as? NSString)
-                        lua_pushany(L, event["mScope"] as? NSString)
-                        lua_pushany(L, event["mElement"] as? NSNumber)
+                    return
+                }
 
-                        if lua_pcall(L, 4, 0, 0) != LUA_OK { lua_pop(L, 1) }
-                    }
+                for event in events {
+                    cb.push(onto: L)
+                    L.push(userdata: strongSelf)
+                    lua_pushany(L, event["mSelector"] as? NSString)
+                    lua_pushany(L, event["mScope"] as? NSString)
+                    lua_pushany(L, event["mElement"] as? NSNumber)
+
+                    if lua_pcall(L, 4, 0, 0) != LUA_OK { lua_pop(L, 1) }
                 }
                 assert(savedTop == lua_gettop(L))
             }
@@ -126,7 +135,7 @@ private class HSCamera: NSObject {
     }
 
     func wasRemoved() {
-        stopPropertyWatcher()
+        teardown()
     }
 
     func startPropertyWatcher() {
@@ -289,7 +298,7 @@ private func allCameras(_ L: LuaState) throws -> CInt {
 
     lua_newtable(L)
     for (idx, camera) in cameraManagerInstance.getCameras().enumerated() {
-        pushHSCamera(L, camera)
+        L.push(userdata: camera)
         lua_rawseti(L, -2, lua_Integer(idx + 1))
     }
     return 1
@@ -312,13 +321,13 @@ private func deviceWatcherDoCallback(_ deviceId: CMIODeviceID, _ event: String) 
     }
     let savedTop = lua_gettop(L)
 
-    if watcher.pointee.callback == LUA_NOREF {
+    guard let cb = watcher.pointee.callback else {
         os_log(.info, "%{public}s", "hs.camera devices watcher callback fired, but there is no callback. This is a bug")
         return
     }
 
-    lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(watcher.pointee.callback))
-    pushHSCamera(L, cameraManagerInstance.cameraForDeviceID(deviceId))
+    cb.push(onto: L)
+    L.push(userdata: cameraManagerInstance.cameraForDeviceID(deviceId))
     lua_pushany(L, event as NSString)
     if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
 
@@ -336,7 +345,7 @@ private func deviceWatcherDoCallback(_ deviceId: CMIODeviceID, _ event: String) 
 ///  * None
 private func startWatcher(_ L: LuaState) throws -> CInt {
 
-    guard let watcher = deviceWatcher, watcher.pointee.callback != LUA_NOREF else {
+    guard let watcher = deviceWatcher, watcher.pointee.callback != nil else {
         os_log(.error, "%{public}s", "You must call hs.camera.setWatcherCallback() before hs.camera.startWatcher()")
         return 0
     }
@@ -423,7 +432,7 @@ private func stopWatcher(_ L: LuaState) throws -> CInt {
 ///  * A boolean, True if the watcher is running, otherwise False
 private func isWatcherRunning(_ L: LuaState) throws -> CInt {
 
-    lua_pushboolean(L, (deviceWatcher != nil && deviceWatcher!.pointee.running) ? 1 : 0)
+    lua_pushboolean(L, (deviceWatcher?.pointee.running ?? false) ? 1 : 0)
     return 1
 }
 
@@ -450,19 +459,17 @@ private func setWatcherCallback(_ L: LuaState) throws -> CInt {
     if deviceWatcher == nil {
         deviceWatcher = .allocate(capacity: 1)
         deviceWatcher!.initialize(to: DeviceWatcher(
-            callback: LUA_NOREF,
+            callback: nil,
             running: false,
             lsCanary: lua_currentStateGeneration()
         ))
     }
 
-    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, deviceWatcher!.pointee.callback)
-    deviceWatcher!.pointee.callback = LUA_NOREF
+    deviceWatcher!.pointee.callback = nil
 
     switch lua_type(L, 1) {
     case LUA_TFUNCTION:
-        lua_pushvalue(L, 1)
-        deviceWatcher!.pointee.callback = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+        deviceWatcher!.pointee.callback = L.ref(index: 1)
     case LUA_TNIL:
         _ = try stopWatcher(L)
     default:
@@ -472,212 +479,10 @@ private func setWatcherCallback(_ L: LuaState) throws -> CInt {
     return 0
 }
 
-/// hs.camera:uid() -> String
-/// Method
-/// Get the UID of the camera
-///
-/// Parameters:
-///  * None
-///
-/// Returns:
-///  * A string containing the UID of the camera
-///
-/// Notes:
-///  * The UID is not guaranteed to be stable across reboots
-private func camera_uid(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
-
-    let camera: HSCamera = toHSCameraFromLua(L, 1) as! HSCamera
-    lua_pushany(L, camera.uid as NSString?)
-    return 1
-}
-
-/// hs.camera:connectionID() -> String
-/// Method
-/// Get the raw connection ID of the camera
-///
-/// Parameters:
-///  * None
-///
-/// Returns:
-///  * A number containing the connection ID of the camera
-private func camera_cID(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
-
-    let camera: HSCamera = toHSCameraFromLua(L, 1) as! HSCamera
-    lua_pushinteger(L, lua_Integer(camera.deviceId))
-    return 1
-}
-
-/// hs.camera:name() -> String
-/// Method
-/// Get the name of the camera
-///
-/// Parameters:
-///  * None
-///
-/// Returns:
-///  * A string containing the name of the camera
-private func camera_name(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
-
-    let camera: HSCamera = toHSCameraFromLua(L, 1) as! HSCamera
-    lua_pushany(L, camera.name as NSString?)
-    return 1
-}
-
-/// hs.camera:isInUse() -> Boolean
-/// Method
-/// Get the usage status of the camera
-///
-/// Parameters:
-///  * None
-///
-/// Returns:
-///  * A boolean, True if the camera is in use, otherwise False
-private func camera_isinuse(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
-
-    let camera: HSCamera = toHSCameraFromLua(L, 1) as! HSCamera
-    lua_pushboolean(L, camera.isInUse ? 1 : 0)
-    return 1
-}
-
-/// hs.camera:setPropertyWatcherCallback(fn) -> hs.camera object
-/// Method
-/// Sets or clears a callback for when the properties of an hs.camera object change
-///
-/// Parameters:
-///  * fn - A function to be called when properties of the camera change, or nil to clear a previously set callback. The function should accept the following parameters:
-///   * The hs.camera object that changed
-///   * A string describing the property that changed. Possible values are:
-///    * gone - The device's "in use" status changed (ie another app started using the camera, or stopped using it)
-///   * A string containing the scope of the event, this will likely always be "glob"
-///   * A number containing the element of the event, this will likely always be "0"
-///
-/// Returns:
-///  * The `hs.camera` object
-private func camera_propertyWatcherCallback(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
-
-    let camera: HSCamera = toHSCameraFromLua(L, 1) as! HSCamera
-    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, camera.propertyWatcherCallback)
-
-    camera.propertyWatcherCallback = LUA_NOREF
-
-    switch lua_type(L, 2) {
-    case LUA_TFUNCTION:
-        lua_pushvalue(L, 2)
-        camera.propertyWatcherCallback = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
-    case LUA_TNIL:
-        break
-    default:
-        break
-    }
-
-    lua_pushvalue(L, 1)
-    return 1
-}
-
-/// hs.camera:startPropertyWatcher()
-/// Method
-/// Starts the property watcher on a camera
-///
-/// Parameters:
-///  * None
-///
-/// Returns:
-///  * The `hs.camera` object
-private func camera_startPropertyWatcher(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
-
-    let camera: HSCamera = toHSCameraFromLua(L, 1) as! HSCamera
-
-    if camera.propertyWatcherCallback == LUA_NOREF {
-        os_log(.error, "%{public}s", "You must call hs.camera:setPropertyWatcherCallback() before hs.camera:startPropertyWatcher()")
-        lua_pushnil(L)
-        return 1
-    }
-
-    camera.startPropertyWatcher()
-
-    lua_pushvalue(L, 1)
-    return 1
-}
-
-/// hs.camera:stopPropertyWatcher()
-/// Method
-/// Stops the property watcher on a camera
-///
-/// Parameters:
-///  * None
-///
-/// Returns:
-///  * The `hs.camera` object
-private func camera_stopPropertyWatcher(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
-
-    let camera: HSCamera = toHSCameraFromLua(L, 1) as! HSCamera
-    camera.stopPropertyWatcher()
-
-    lua_pushvalue(L, 1)
-    return 1
-}
-
-/// hs.camera:isPropertyWatcherRunning() -> bool
-/// Method
-/// Checks if the property watcher on a camera object is running
-///
-/// Parameters:
-///  * None
-///
-/// Returns:
-///  * A boolean, True if the property watcher is running, otherwise False
-private func camera_isPropertyWatcherRunning(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
-
-    let camera: HSCamera = toHSCameraFromLua(L, 1) as! HSCamera
-    lua_pushboolean(L, camera.propertyWatcherRunning ? 1 : 0)
-    return 1
-}
-
-// MARK: - Lua<->NSObject Conversion Functions
-
-@discardableResult
-private func pushHSCamera(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
-    guard let value = obj as? HSCamera else { return 0 }
-    let valuePtr = lua_newuserdata(L, MemoryLayout<UnsafeMutableRawPointer>.size)!
-        .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
-    valuePtr.pointee = Unmanaged.passRetained(value).toOpaque()
-    luaL_getmetatable(L, USERDATA_TAG)
-    lua_setmetatable(L, -2)
-    return 1
-}
-
-private func toHSCameraFromLua(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> Any! {
-    if luaL_testudata(L, idx, USERDATA_TAG) != nil {
-        let ptr = luaL_checkudata(L, idx, USERDATA_TAG)!
-            .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
-        guard let rawPtr = ptr.pointee else { return nil }
-        return Unmanaged<HSCamera>.fromOpaque(rawPtr).takeUnretainedValue()
-    } else {
-        os_log(.error, "%{public}s", "expected \(USERDATA_TAG) object, found \(String(cString: lua_typename(L, lua_type(L, idx))))")
-        return nil
-    }
-}
-
 // MARK: - Core Lua metamethods
 
-private func hsCamera_tostring(_ L: LuaState) throws -> CInt {
-    let camera: HSCamera = toHSCameraFromLua(L, 1) as! HSCamera
-    lua_pushany(L, "\(USERDATA_TAG): (\(camera.uid ?? "nil"):\(camera.name ?? "nil"))" as NSString)
-    return 1
-}
-
 private func hsCamera_eq(_ L: LuaState) throws -> CInt {
-    if luaL_testudata(L, 1, USERDATA_TAG) != nil && luaL_testudata(L, 2, USERDATA_TAG) != nil {
-        let obj1: HSCamera = toHSCameraFromLua(L, 1) as! HSCamera
-        let obj2: HSCamera = toHSCameraFromLua(L, 2) as! HSCamera
+    if let obj1: HSCamera = L.touserdata(1), let obj2: HSCamera = L.touserdata(2) {
         lua_pushboolean(L, obj1.isEqual(to: obj2) ? 1 : 0)
     } else {
         lua_pushboolean(L, 0)
@@ -685,25 +490,12 @@ private func hsCamera_eq(_ L: LuaState) throws -> CInt {
     return 1
 }
 
-private func hsCamera_gc(_ L: LuaState) throws -> CInt {
-    let ptr = luaL_checkudata(L, 1, USERDATA_TAG)!
-        .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
-    if let rawPtr = ptr.pointee {
-        _ = Unmanaged<HSCamera>.fromOpaque(rawPtr).takeRetainedValue()
-        ptr.pointee = nil
-    }
-    lua_pushnil(L)
-    lua_setmetatable(L, 1)
-    return 0
-}
-
 private func module_gc(_ L: LuaState) throws -> CInt {
 
     if let watcher = deviceWatcher {
         _ = try stopWatcher(L)
-        luaL_unref(L, LUA_REGISTRYINDEX_VALUE, watcher.pointee.callback)
+        watcher.pointee.callback = nil
 
-        watcher.pointee.callback = LUA_NOREF
         watcher.deallocate()
         deviceWatcher = nil
     }
@@ -723,37 +515,191 @@ public func luaopen_hs_libcamera(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
     runEntryPoint(L) { L in
         cameraManagerInstance = HSCameraManager()
 
-        // Create ref table in registry
-        lua_newtable(L)
-        refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+        // Register idiomatic Metatable<HSCamera> with LuaSwift.
+        L.register(Metatable<HSCamera>(
+            fields: [
+                /// hs.camera:uid() -> String
+                /// Method
+                /// Get the UID of the camera
+                ///
+                /// Parameters:
+                ///  * None
+                ///
+                /// Returns:
+                ///  * A string containing the UID of the camera
+                ///
+                /// Notes:
+                ///  * The UID is not guaranteed to be stable across reboots
+                "uid": .closure { L in
+                    let camera: HSCamera = try L.checkArgument(1)
+                    lua_pushany(L, camera.uid as NSString?)
+                    return 1
+                },
+                /// hs.camera:connectionID() -> String
+                /// Method
+                /// Get the raw connection ID of the camera
+                ///
+                /// Parameters:
+                ///  * None
+                ///
+                /// Returns:
+                ///  * A number containing the connection ID of the camera
+                "connectionID": .closure { L in
+                    let camera: HSCamera = try L.checkArgument(1)
+                    lua_pushinteger(L, lua_Integer(camera.deviceId))
+                    return 1
+                },
+                /// hs.camera:name() -> String
+                /// Method
+                /// Get the name of the camera
+                ///
+                /// Parameters:
+                ///  * None
+                ///
+                /// Returns:
+                ///  * A string containing the name of the camera
+                "name": .closure { L in
+                    let camera: HSCamera = try L.checkArgument(1)
+                    lua_pushany(L, camera.name as NSString?)
+                    return 1
+                },
+                /// hs.camera:isInUse() -> Boolean
+                /// Method
+                /// Get the usage status of the camera
+                ///
+                /// Parameters:
+                ///  * None
+                ///
+                /// Returns:
+                ///  * A boolean, True if the camera is in use, otherwise False
+                "isInUse": .closure { L in
+                    let camera: HSCamera = try L.checkArgument(1)
+                    lua_pushboolean(L, camera.isInUse ? 1 : 0)
+                    return 1
+                },
+                /// hs.camera:setPropertyWatcherCallback(fn) -> hs.camera object
+                /// Method
+                /// Sets or clears a callback for when the properties of an hs.camera object change
+                ///
+                /// Parameters:
+                ///  * fn - A function to be called when properties of the camera change, or nil to clear a previously set callback. The function should accept the following parameters:
+                ///   * The hs.camera object that changed
+                ///   * A string describing the property that changed. Possible values are:
+                ///    * gone - The device's "in use" status changed (ie another app started using the camera, or stopped using it)
+                ///   * A string containing the scope of the event, this will likely always be "glob"
+                ///   * A number containing the element of the event, this will likely always be "0"
+                ///
+                /// Returns:
+                ///  * The `hs.camera` object
+                "setPropertyWatcherCallback": .closure { L in
+                    let camera: HSCamera = try L.checkArgument(1)
 
-        // Register userdata metatable
-        luaL_newmetatable(L, USERDATA_TAG)
-        lua_pushvalue(L, -1)
-        lua_setfield(L, -2, "__index")
-        L.push(camera_uid)
-        lua_setfield(L, -2, "uid")
-        L.push(camera_cID)
-        lua_setfield(L, -2, "connectionID")
-        L.push(camera_name)
-        lua_setfield(L, -2, "name")
-        L.push(camera_isinuse)
-        lua_setfield(L, -2, "isInUse")
-        L.push(camera_propertyWatcherCallback)
-        lua_setfield(L, -2, "setPropertyWatcherCallback")
-        L.push(camera_startPropertyWatcher)
-        lua_setfield(L, -2, "startPropertyWatcher")
-        L.push(camera_stopPropertyWatcher)
-        lua_setfield(L, -2, "stopPropertyWatcher")
-        L.push(camera_isPropertyWatcherRunning)
-        lua_setfield(L, -2, "isPropertyWatcherRunning")
-        L.push(hsCamera_tostring)
-        lua_setfield(L, -2, "__tostring")
+                    camera.propertyWatcherCallbackValue = nil
+
+                    switch lua_type(L, 2) {
+                    case LUA_TFUNCTION:
+                        camera.propertyWatcherCallbackValue = L.ref(index: 2)
+                    case LUA_TNIL:
+                        break
+                    default:
+                        break
+                    }
+
+                    lua_pushvalue(L, 1)
+                    return 1
+                },
+                /// hs.camera:startPropertyWatcher()
+                /// Method
+                /// Starts the property watcher on a camera
+                ///
+                /// Parameters:
+                ///  * None
+                ///
+                /// Returns:
+                ///  * The `hs.camera` object
+                "startPropertyWatcher": .closure { L in
+                    let camera: HSCamera = try L.checkArgument(1)
+
+                    if camera.propertyWatcherCallbackValue == nil {
+                        os_log(.error, "%{public}s", "You must call hs.camera:setPropertyWatcherCallback() before hs.camera:startPropertyWatcher()")
+                        lua_pushnil(L)
+                        return 1
+                    }
+
+                    camera.startPropertyWatcher()
+
+                    lua_pushvalue(L, 1)
+                    return 1
+                },
+                /// hs.camera:stopPropertyWatcher()
+                /// Method
+                /// Stops the property watcher on a camera
+                ///
+                /// Parameters:
+                ///  * None
+                ///
+                /// Returns:
+                ///  * The `hs.camera` object
+                "stopPropertyWatcher": .closure { L in
+                    let camera: HSCamera = try L.checkArgument(1)
+                    camera.stopPropertyWatcher()
+                    lua_pushvalue(L, 1)
+                    return 1
+                },
+                /// hs.camera:isPropertyWatcherRunning() -> bool
+                /// Method
+                /// Checks if the property watcher on a camera object is running
+                ///
+                /// Parameters:
+                ///  * None
+                ///
+                /// Returns:
+                ///  * A boolean, True if the property watcher is running, otherwise False
+                "isPropertyWatcherRunning": .closure { L in
+                    let camera: HSCamera = try L.checkArgument(1)
+                    lua_pushboolean(L, camera.propertyWatcherRunning ? 1 : 0)
+                    return 1
+                },
+            ],
+            tostring: .closure { L in
+                let camera: HSCamera = try L.checkArgument(1)
+                lua_pushstring(L, "\(USERDATA_TAG): (\(camera.uid ?? "nil"):\(camera.name ?? "nil"))")
+                return 1
+            }
+        ))
+
+        // -- Post-registration metatable patching --
+        // LuaSwift's register() installs its own gcUserdata as __gc, which only
+        // deinitializes the Any box. Replace it with a custom __gc that first
+        // calls teardown() (stop property watcher, drop LuaValue callback) and
+        // THEN deinitializes the Any box.
+        L.pushMetatable(for: HSCamera.self)
+
+        // Replace __gc with our explicit teardown + deinitialize
+        lua_pushcclosure(L, { (L: LuaState!) -> CInt in
+            if let camera: HSCamera = L.touserdata(1) {
+                camera.teardown()
+            }
+            let rawptr = lua_touserdata(L, 1)!
+            let anyPtr = rawptr.assumingMemoryBound(to: Any.self)
+            anyPtr.deinitialize(count: 1)
+            return 0
+        }, 0)
+        lua_setfield(L, -2, "__gc")
+
+        // __eq
         L.push(hsCamera_eq)
         lua_setfield(L, -2, "__eq")
-        L.push(hsCamera_gc)
-        lua_setfield(L, -2, "__gc")
-        lua_pop(L, 1)
+
+        // Set __type and __name for assertIsUserdataOfType and tostring
+        lua_pushstring(L, USERDATA_TAG)
+        lua_setfield(L, -2, "__type")
+        lua_pushstring(L, USERDATA_TAG)
+        lua_setfield(L, -2, "__name")
+
+        // Alias the metatable under the legacy registry name so that
+        // core_getObjectMetatable("hs.camera") still resolves.
+        lua_setfield(L, LUA_REGISTRYINDEX_VALUE, USERDATA_TAG)
 
         // Create module table
         lua_createtable(L, 0, 5)

@@ -4,7 +4,6 @@ import Lua
 import os.log
 
 private let USERDATA_TB_TAG = "hs.webview.toolbar"
-private var refTable: Int32 = LUA_NOREF
 private var identifiersInUse = NSMutableArray()
 private var boolEncodingType: UnsafePointer<CChar>!
 private var builtinToolbarItems: [String] = []
@@ -81,8 +80,8 @@ private func isBoolNumber(_ value: Any?) -> Bool {
 // MARK: - HSToolbarSearchField
 
 @objc class HSToolbarSearchField: NSSearchField {
-    @objc weak var toolbarItem: NSToolbarItem?
-    @objc var releaseOnCallback = false
+    weak var toolbarItem: NSToolbarItem?
+    var releaseOnCallback = false
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -116,24 +115,24 @@ private func isBoolNumber(_ value: Any?) -> Bool {
 // MARK: - HSToolbar
 
 @objc class HSToolbar: NSToolbar, NSToolbarDelegate {
-    @objc var selfRef: Int32 = LUA_NOREF
-    @objc var callbackRef: Int32 = LUA_NOREF
-    @objc var notifyToolbarChanges = false
-    @objc var toolbarStyle_: NSInteger = NSWindow.ToolbarStyle.automatic.rawValue
-    @objc weak var windowUsingToolbar: NSWindow?
-    @objc let allowedIdentifiers_ = NSMutableOrderedSet()
-    @objc let defaultIdentifiers = NSMutableOrderedSet()
-    @objc let selectableIdentifiers_ = NSMutableOrderedSet()
-    @objc let itemDefDictionary = NSMutableDictionary()
-    @objc let fnRefDictionary = NSMutableDictionary()
-    @objc let enabledDictionary = NSMutableDictionary()
+    var selfRef: LuaValue?
+    var callbackRef: LuaValue?
+    var notifyToolbarChanges = false
+    var toolbarStyle_: NSInteger = NSWindow.ToolbarStyle.automatic.rawValue
+    weak var windowUsingToolbar: NSWindow?
+    let allowedIdentifiers_ = NSMutableOrderedSet()
+    let defaultIdentifiers = NSMutableOrderedSet()
+    let selectableIdentifiers_ = NSMutableOrderedSet()
+    let itemDefDictionary = NSMutableDictionary()
+    var fnRefDictionary: [String: LuaValue] = [:]
+    let enabledDictionary = NSMutableDictionary()
 
-    @objc init?(identifier: String, itemTableIndex idx: Int32, state L: UnsafeMutablePointer<lua_State>!) {
+    init?(identifier: String, itemTableIndex idx: Int32, state L: UnsafeMutablePointer<lua_State>!) {
         super.init(identifier: NSToolbar.Identifier(identifier))
         allowedIdentifiers_.addObjects(from: automaticallyIncluded)
         toolbarStyle_ = NSWindow.ToolbarStyle.automatic.rawValue
-        callbackRef = LUA_NOREF
-        selfRef = LUA_NOREF
+        callbackRef = nil
+        selfRef = nil
         windowUsingToolbar = nil
         notifyToolbarChanges = false
 
@@ -170,13 +169,13 @@ private func isBoolNumber(_ value: Any?) -> Bool {
 
     required init?(coder: NSCoder) { fatalError() }
 
-    @objc init?(copy original: HSToolbar, state L: UnsafeMutablePointer<lua_State>!) {
+    init?(copy original: HSToolbar, state L: UnsafeMutablePointer<lua_State>!) {
         super.init(identifier: original.identifier)
-        selfRef = LUA_NOREF
-        callbackRef = LUA_NOREF
-        if original.callbackRef != LUA_NOREF {
-            lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(original.callbackRef))
-            callbackRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+        selfRef = nil
+        callbackRef = nil
+        if let origCb = original.callbackRef {
+            origCb.push(onto: L)
+            callbackRef = L.ref(index: -1)
         }
         for obj in original.allowedIdentifiers_ { allowedIdentifiers_.add(obj) }
         for obj in original.defaultIdentifiers { defaultIdentifiers.add(obj) }
@@ -196,13 +195,8 @@ private func isBoolNumber(_ value: Any?) -> Bool {
         for (k, v) in copiedEnabled { enabledDictionary[k] = v }
 
         for (key, value) in original.fnRefDictionary {
-            guard let key = key as? String, let numVal = value as? NSNumber else { continue }
-            var theRef = numVal.int32Value
-            if theRef != LUA_NOREF {
-                lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(theRef))
-                theRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
-            }
-            fnRefDictionary[key] = NSNumber(value: theRef)
+            value.push(onto: L)
+            fnRefDictionary[key] = L.ref(index: -1)
         }
 
         delegate = self
@@ -229,15 +223,13 @@ private func isBoolNumber(_ value: Any?) -> Bool {
             return
         }
 
-        let theFnRef = fnRefDictionary[item?.itemIdentifier.rawValue ?? ""] as? NSNumber
-        let itemFnRef = theFnRef?.int32Value ?? LUA_NOREF
-        let fnRef = (itemFnRef != LUA_NOREF) ? itemFnRef : callbackRef
-        if fnRef != LUA_NOREF {
+        let itemFn = fnRefDictionary[item?.itemIdentifier.rawValue ?? ""]
+        let fn = itemFn ?? callbackRef
+        if let fn = fn {
             let capturedSelf = self
             DispatchQueue.main.async { [weak self] in
-                guard fnRef != LUA_NOREF else { return }
                 let L = lua_getCurrentState()!
-                lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(fnRef))
+                fn.push(onto: L)
                 wv_pushAny(L, capturedSelf)
                 _ = toolbar_pushWindowContext(L, self?.windowUsingToolbar)
                 lua_pushany(L, item?.itemIdentifier.rawValue)
@@ -254,7 +246,7 @@ private func isBoolNumber(_ value: Any?) -> Bool {
         return true
     }
 
-    @objc var isAttached: Bool {
+    var isAttached: Bool {
         guard let ourWindow = windowUsingToolbar else { return false }
         let attached = (ourWindow.toolbar as? HSToolbar) === self
         if !attached { windowUsingToolbar = nil }
@@ -263,7 +255,7 @@ private func isBoolNumber(_ value: Any?) -> Bool {
 
     // MARK: - Definition management
 
-    @objc func addToolbarDefinition(at idx: Int32, state L: UnsafeMutablePointer<lua_State>!) -> Bool {
+    func addToolbarDefinition(at idx: Int32, state L: UnsafeMutablePointer<lua_State>!) -> Bool {
         let absIdx = lua_absindex(L, idx)
 
         var identifier: String? = nil
@@ -299,8 +291,7 @@ private func isBoolNumber(_ value: Any?) -> Bool {
                         if lua_type(L, -1) != LUA_TFUNCTION {
                             toolbarItem[keyName] = lua_tovalue(L, at: -1)
                         } else if keyName == "fn" {
-                            lua_pushvalue(L, -1)
-                            fnRefDictionary[identifier] = NSNumber(value: luaL_ref(L, LUA_REGISTRYINDEX_VALUE))
+                            fnRefDictionary[identifier] = L.ref(index: -1)
                         }
                     }
                 } else {
@@ -328,16 +319,16 @@ private func isBoolNumber(_ value: Any?) -> Bool {
         return true
     }
 
-    @objc func fillinNewToolbarItem(_ item: NSToolbarItem) {
+    func fillinNewToolbarItem(_ item: NSToolbarItem) {
         let L = lua_getCurrentState()!
         updateToolbarItem(item, with: itemDefDictionary[item.itemIdentifier.rawValue] as? NSMutableDictionary ?? NSMutableDictionary(), inGroup: false, state: L)
     }
 
-    @objc func updateToolbarItem(_ item: NSToolbarItem, with itemDefinition: NSMutableDictionary, state L: UnsafeMutablePointer<lua_State>!) {
+    func updateToolbarItem(_ item: NSToolbarItem, with itemDefinition: NSMutableDictionary, state L: UnsafeMutablePointer<lua_State>!) {
         updateToolbarItem(item, with: itemDefinition, inGroup: false, state: L)
     }
 
-    @objc func updateToolbarItem(_ item: NSToolbarItem, with itemDefinition: NSMutableDictionary, inGroup: Bool, state L: UnsafeMutablePointer<lua_State>!) {
+    func updateToolbarItem(_ item: NSToolbarItem, with itemDefinition: NSMutableDictionary, inGroup: Bool, state L: UnsafeMutablePointer<lua_State>!) {
         var itemView = item.view as? HSToolbarSearchField
         let identifier = item.itemIdentifier.rawValue
 
@@ -397,11 +388,9 @@ private func isBoolNumber(_ value: Any?) -> Bool {
                     itemDefinition.removeObject(forKey: keyName)
                 }
             } else if keyName == "fn" {
-                if let existing = fnRefDictionary[identifier] as? NSNumber, existing.int32Value != LUA_NOREF {
-                    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, existing.int32Value)
-                }
-                lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer((keyValue as! NSNumber).int32Value))
-                fnRefDictionary[identifier] = NSNumber(value: luaL_ref(L, LUA_REGISTRYINDEX_VALUE))
+                // "fn" entries are handled directly via fnRefDictionary in the callers
+                // (addToolbarDefinition, modifyItem); this branch is kept for safety.
+                os_log(.debug, "%{public}s", "\(USERDATA_TB_TAG):fn key in item definition dictionary for \(identifier) unexpectedly reached updateToolbarItem")
             } else if keyName == "label" {
                 if let str = keyValue as? String {
                     item.label = str
@@ -651,12 +640,12 @@ private func isBoolNumber(_ value: Any?) -> Bool {
     }
 
     func toolbarWillAddItem(_ notification: Notification) {
-        guard notifyToolbarChanges && callbackRef != LUA_NOREF else { return }
+        guard notifyToolbarChanges, let cb = callbackRef else { return }
         let capturedSelf = self
         DispatchQueue.main.async { [weak self] in
-            guard let self = self, self.callbackRef != LUA_NOREF else { return }
+            guard let self = self, self.callbackRef != nil else { return }
             let L = lua_getCurrentState()!
-            lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(self.callbackRef))
+            cb.push(onto: L)
             wv_pushAny(L, capturedSelf)
             self.pushWindowContext(L)
             let itemId = (notification.userInfo?["item"] as? NSToolbarItem)?.itemIdentifier.rawValue ?? ""
@@ -667,12 +656,12 @@ private func isBoolNumber(_ value: Any?) -> Bool {
     }
 
     func toolbarDidRemoveItem(_ notification: Notification) {
-        guard notifyToolbarChanges && callbackRef != LUA_NOREF else { return }
+        guard notifyToolbarChanges, let cb = callbackRef else { return }
         let capturedSelf = self
         DispatchQueue.main.async { [weak self] in
-            guard let self = self, self.callbackRef != LUA_NOREF else { return }
+            guard let self = self, self.callbackRef != nil else { return }
             let L = lua_getCurrentState()!
-            lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(self.callbackRef))
+            cb.push(onto: L)
             wv_pushAny(L, capturedSelf)
             self.pushWindowContext(L)
             let itemId = (notification.userInfo?["item"] as? NSToolbarItem)?.itemIdentifier.rawValue ?? ""
@@ -827,12 +816,10 @@ private func toolbar_copy(_ L: LuaState) throws -> CInt {
 private func toolbar_setCallback(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TB_TAG)
     let toolbar = getToolbar(L, 1)
-    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, toolbar.callbackRef)
 
-    toolbar.callbackRef = LUA_NOREF
+    toolbar.callbackRef = nil
     if lua_type(L, 2) == LUA_TFUNCTION {
-        lua_pushvalue(L, 2)
-        toolbar.callbackRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+        toolbar.callbackRef = L.ref(index: 2)
     }
     lua_pushvalue(L, 1)
     return 1
@@ -1063,8 +1050,7 @@ private func toolbar_modifyItem(_ L: LuaState) throws -> CInt {
                 if lua_type(L, -1) != LUA_TFUNCTION {
                     newDict[keyName] = lua_tovalue(L, at: -1)
                 } else if keyName == "fn" {
-                    lua_pushvalue(L, -1)
-                    toolbar.fnRefDictionary[identifier] = NSNumber(value: luaL_ref(L, LUA_REGISTRYINDEX_VALUE))
+                    toolbar.fnRefDictionary[identifier] = L.ref(index: -1)
                 }
             }
         } else {
@@ -1147,7 +1133,7 @@ private func toolbar_deleteItem(_ L: LuaState) throws -> CInt {
         toolbar.removeItem(at: itemIndex)
     }
     toolbar.itemDefDictionary.removeObject(forKey: identifier)
-    toolbar.fnRefDictionary.removeObject(forKey: identifier)
+    toolbar.fnRefDictionary.removeValue(forKey: identifier)
     toolbar.enabledDictionary.removeObject(forKey: identifier)
     toolbar.allowedIdentifiers_.remove(identifier)
     toolbar.defaultIdentifiers.remove(identifier)
@@ -1189,8 +1175,7 @@ private func toolbar_itemDetails(_ L: LuaState) throws -> CInt {
     lua_setfield(L, -2, "default")
     lua_pushboolean(L, toolbar.allowedIdentifiers_.contains(identifier) ? 1 : 0)
     lua_setfield(L, -2, "allowedAlone")
-    let fnRef = toolbar.fnRefDictionary[identifier] as? NSNumber
-    lua_pushboolean(L, (fnRef != nil && fnRef!.int32Value != LUA_NOREF) ? 1 : 0)
+    lua_pushboolean(L, toolbar.fnRefDictionary[identifier] != nil ? 1 : 0)
     lua_setfield(L, -2, "privateCallback")
 
     if ourItem != nil {
@@ -1358,16 +1343,16 @@ func toolbar_pushWindowContext(_ L: UnsafeMutablePointer<lua_State>!, _ window: 
 @discardableResult
 func toolbar_pushHSToolbar(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
     guard let toolbar = obj as? HSToolbar else { lua_pushnil(L); return 1 }
-    if toolbar.selfRef == LUA_NOREF {
+    if toolbar.selfRef == nil {
         let ptr = lua_newuserdata(L, MemoryLayout<UnsafeMutableRawPointer>.size)!
             .assumingMemoryBound(to: UnsafeMutableRawPointer.self)
         ptr.pointee = Unmanaged.passRetained(toolbar).toOpaque()
         luaL_getmetatable(L, USERDATA_TB_TAG)
         lua_setmetatable(L, -2)
-        toolbar.selfRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+        toolbar.selfRef = L.ref(index: -1)
         identifiersInUse.add(toolbar.identifier)
     }
-    lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(toolbar.selfRef))
+    toolbar.selfRef!.push(onto: L)
     return 1
 }
 
@@ -1448,23 +1433,14 @@ private func toolbar_gc(_ L: LuaState) throws -> CInt {
         .assumingMemoryBound(to: UnsafeMutableRawPointer.self)
     let toolbar = Unmanaged<HSToolbar>.fromOpaque(ptr.pointee).takeRetainedValue()
 
-    for (_, value) in toolbar.fnRefDictionary {
-        if let num = value as? NSNumber {
-            luaL_unref(L, LUA_REGISTRYINDEX_VALUE, num.int32Value)
-        }
-    }
+    toolbar.fnRefDictionary.removeAll()
 
     if let ourWindow = toolbar.windowUsingToolbar, (ourWindow.toolbar as? HSToolbar) === toolbar {
         ourWindow.toolbar = nil
     }
 
-    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, toolbar.callbackRef)
-
-
-    toolbar.callbackRef = LUA_NOREF
-    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, toolbar.selfRef)
-
-    toolbar.selfRef = LUA_NOREF
+    toolbar.callbackRef = nil
+    toolbar.selfRef = nil
     toolbar.delegate = nil
 
     let identifierIndex = identifiersInUse.index(of: toolbar.identifier)
@@ -1485,10 +1461,6 @@ private func meta_gc(_ L: LuaState) throws -> CInt {
 @_cdecl("luaopen_hs_libwebviewtoolbar")
 public func luaopen_hs_libwebviewtoolbar(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     runEntryPoint(L) { L in
-        // Create ref table in registry
-        lua_newtable(L)
-        refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
-
         // Register userdata metatable
         luaL_newmetatable(L, USERDATA_TB_TAG)
         lua_pushvalue(L, -1)

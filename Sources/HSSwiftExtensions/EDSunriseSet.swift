@@ -19,28 +19,28 @@
 
 import Foundation
 
-@objc class EDSunriseSet: NSObject {
+class EDSunriseSet: NSObject {
 
     // MARK: - Public readonly properties
 
-    @objc private(set) var date: Date
-    @objc private(set) var sunset: Date
-    @objc private(set) var sunrise: Date
-    @objc private(set) var civilTwilightStart: Date
-    @objc private(set) var civilTwilightEnd: Date
-    @objc private(set) var nauticalTwilightStart: Date
-    @objc private(set) var nauticalTwilightEnd: Date
-    @objc private(set) var astronomicalTwilightStart: Date
-    @objc private(set) var astronomicalTwilightEnd: Date
+    private(set) var date: Date
+    private(set) var sunset: Date
+    private(set) var sunrise: Date
+    private(set) var civilTwilightStart: Date
+    private(set) var civilTwilightEnd: Date
+    private(set) var nauticalTwilightStart: Date
+    private(set) var nauticalTwilightEnd: Date
+    private(set) var astronomicalTwilightStart: Date
+    private(set) var astronomicalTwilightEnd: Date
 
-    @objc private(set) var localSunrise: DateComponents
-    @objc private(set) var localSunset: DateComponents
-    @objc private(set) var localCivilTwilightStart: DateComponents
-    @objc private(set) var localCivilTwilightEnd: DateComponents
-    @objc private(set) var localNauticalTwilightStart: DateComponents
-    @objc private(set) var localNauticalTwilightEnd: DateComponents
-    @objc private(set) var localAstronomicalTwilightStart: DateComponents
-    @objc private(set) var localAstronomicalTwilightEnd: DateComponents
+    private(set) var localSunrise: DateComponents
+    private(set) var localSunset: DateComponents
+    private(set) var localCivilTwilightStart: DateComponents
+    private(set) var localCivilTwilightEnd: DateComponents
+    private(set) var localNauticalTwilightStart: DateComponents
+    private(set) var localNauticalTwilightEnd: DateComponents
+    private(set) var localAstronomicalTwilightStart: DateComponents
+    private(set) var localAstronomicalTwilightEnd: DateComponents
 
     // MARK: - Private properties
 
@@ -69,7 +69,7 @@ import Foundation
 
     // MARK: - Initialization
 
-    @objc init(date: Date, timezone tz: TimeZone, latitude: Double, longitude: Double) {
+    init(date: Date, timezone tz: TimeZone, latitude: Double, longitude: Double) {
         self.date = date
         self.latitude = latitude
         self.longitude = longitude
@@ -101,8 +101,8 @@ import Foundation
         calculate()
     }
 
-    @objc static func sunriseset(withDate date: Date, timezone tz: TimeZone,
-                                  latitude: Double, longitude: Double) -> EDSunriseSet {
+    static func sunriseset(withDate date: Date, timezone tz: TimeZone,
+                           latitude: Double, longitude: Double) -> EDSunriseSet {
         return EDSunriseSet(date: date, timezone: tz, latitude: latitude, longitude: longitude)
     }
 

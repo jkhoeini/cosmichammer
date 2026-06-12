@@ -5,7 +5,6 @@ import CoreWLAN
 import os.log
 
 private let USERDATA_TAG = "hs.wifi"
-private var refTable: Int32 = LUA_NOREF
 
 // MARK: - Support Functions
 
@@ -20,15 +19,22 @@ private func get_wifi_interface(_ theInterface: String?) -> CWInterface? {
 // MARK: - HSWifiScan
 
 private class HSWifiScan: NSObject {
-    var fnRef: Int32
+    var callback: LuaValue?
     var isDone: Bool = false
+    private var tornDown = false
 
-    init(callback fnReference: Int32, onInterface interface: String?) {
-        self.fnRef = fnReference
+    init(callback: LuaValue?, onInterface interface: String?) {
+        self.callback = callback
         self.isDone = false
         super.init()
         self.performSelector(inBackground: #selector(doBackgroundScan(_:)),
                              with: interface as NSString?)
+    }
+
+    func teardown() {
+        guard !tornDown else { return }
+        tornDown = true
+        callback = nil
     }
 
     @objc func doBackgroundScan(_ object: Any?) {
@@ -53,21 +59,20 @@ private class HSWifiScan: NSObject {
     }
 
     @objc func invokeCallback(_ object: Any?) {
-        if fnRef != LUA_NOREF {
-            let L = lua_getCurrentState()!
-            lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(fnRef))
-            if let error = object as? NSError {
-                os_log(.info, "%{public}s", error.localizedDescription)
-                lua_pushany(L, error.localizedDescription as NSString)
-            } else if let networks = object as? Set<CWNetwork> {
-                pushWifiValue(L, networks)
-            } else if let networks = object as? NSSet {
-                pushWifiValue(L, networks)
-            } else {
-                lua_pushnil(L)
-            }
-            if lua_pcall(L, 1, 0, 0) != LUA_OK { lua_pop(L, 1) }
+        guard let cb = callback else { return }
+        let L = lua_getCurrentState()!
+        cb.push(onto: L)
+        if let error = object as? NSError {
+            os_log(.info, "%{public}s", error.localizedDescription)
+            lua_pushany(L, error.localizedDescription as NSString)
+        } else if let networks = object as? Set<CWNetwork> {
+            pushWifiValue(L, networks)
+        } else if let networks = object as? NSSet {
+            pushWifiValue(L, networks)
+        } else {
+            lua_pushnil(L)
         }
+        if lua_pcall(L, 1, 0, 0) != LUA_OK { lua_pop(L, 1) }
     }
 }
 
@@ -234,23 +239,15 @@ private func wifi_scan(_ L: LuaState) throws -> CInt {
 ///  * returns a scan object
 private func wifi_scan_background(_ L: LuaState) throws -> CInt {
 
-    var callbackRef: Int32 = LUA_NOREF
-    if lua_type(L, 1) != LUA_TNIL {
-        lua_pushvalue(L, 1)
-        callbackRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
-    }
+    let cb: LuaValue? = (lua_type(L, 1) != LUA_TNIL) ? L.ref(index: 1) : nil
 
     var theName: String?
     if lua_gettop(L) == 2 {
         theName = String(cString: luaL_checkstring(L, 2))
     }
 
-    let scanner = HSWifiScan(callback: callbackRef, onInterface: theName)
-    let scannerPtr = lua_newuserdata(L, MemoryLayout<UnsafeMutableRawPointer>.size)!
-        .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
-    scannerPtr.pointee = Unmanaged.passRetained(scanner).toOpaque()
-    luaL_getmetatable(L, USERDATA_TAG)
-    lua_setmetatable(L, -2)
+    let scanner = HSWifiScan(callback: cb, onInterface: theName)
+    L.push(userdata: scanner)
 
     return 1
 }
@@ -306,24 +303,6 @@ private func interfaceDetails(_ L: LuaState) throws -> CInt {
 }
 
 // MARK: - Module Object Methods
-
-/// hs.wifi:isDone() -> boolean
-/// Method
-/// Returns whether or not a scan object has completed its scan for wireless networks.
-///
-/// Parameters:
-///  * None
-///
-/// Returns:
-///  * a boolean value indicating whether or not the scan has been completed.
-private func backgroundScanIsDone(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
-    let scannerPtr = luaL_checkudata(L, 1, USERDATA_TAG)!
-        .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
-    let scanner = Unmanaged<HSWifiScan>.fromOpaque(scannerPtr.pointee!).takeUnretainedValue()
-    lua_pushboolean(L, scanner.isDone ? 1 : 0)
-    return 1
-}
 
 // MARK: - Lua<->NSObject Conversion Functions
 
@@ -677,65 +656,60 @@ private func pushCWNetworkProfile(_ L: UnsafeMutablePointer<lua_State>!, _ obj: 
 
 // MARK: - Cosmic Hammer Infrastructure
 
-private func userdata_tostring(_ L: LuaState) throws -> CInt {
-    let scannerPtr = luaL_checkudata(L, 1, USERDATA_TAG)!
-        .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
-    let scanner = Unmanaged<HSWifiScan>.fromOpaque(scannerPtr.pointee!).takeUnretainedValue()
-    lua_pushany(L, NSString(format: "%s: %s (%p)", USERDATA_TAG, scanner.isDone ? "done" : "scanning", scannerPtr))
-    return 1
-}
-
-private func userdata_gc(_ L: LuaState) throws -> CInt {
-    let scannerPtr = luaL_checkudata(L, 1, USERDATA_TAG)!
-        .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
-    let scanner = Unmanaged<HSWifiScan>.fromOpaque(scannerPtr.pointee!).takeRetainedValue()
-
-    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, scanner.fnRef)
-
-
-    scanner.fnRef = LUA_NOREF
-
-    // Remove the Metatable so future use of the variable in Lua won't think its valid
-    lua_pushnil(L)
-    lua_setmetatable(L, 1)
-
-    return 0
-}
-
-
 @_cdecl("luaopen_hs_libwifi")
 public func luaopen_hs_libwifi(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    runEntryPoint(L) { L in
-        lua_newtable(L)
-        refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+    L.register(Metatable<HSWifiScan>(
+        fields: [
+            "isDone": .memberfn { $0.isDone },
+        ],
+        tostring: .closure { L in
+            let scanner: HSWifiScan = try L.checkArgument(1)
+            lua_pushstring(L, "\(USERDATA_TAG): \(scanner.isDone ? "done" : "scanning") (\(lua_topointer(L, 1)!))")
+            return 1
+        }
+    ))
 
-        luaL_newmetatable(L, USERDATA_TAG)
-        lua_pushvalue(L, -1)
-        lua_setfield(L, -2, "__index")
-        L.push(backgroundScanIsDone)
-        lua_setfield(L, -2, "isDone")
-        L.push(userdata_tostring)
-        lua_setfield(L, -2, "__tostring")
-        L.push(userdata_gc)
-        lua_setfield(L, -2, "__gc")
-        lua_pop(L, 1)
+    // Post-registration __gc patch: teardown() + deinitialize the Any box
+    L.pushMetatable(for: HSWifiScan.self)
 
-        lua_createtable(L, 0, 8)
-        L.push(wifi_scan)
-        lua_setfield(L, -2, "availableNetworks")
-        L.push(wifi_scan_background)
-        lua_setfield(L, -2, "backgroundScan")
-        L.push(wifi_interfaces)
-        lua_setfield(L, -2, "interfaces")
-        L.push(wifi_current_ssid)
-        lua_setfield(L, -2, "currentNetwork")
-        L.push(interfaceDetails)
-        lua_setfield(L, -2, "interfaceDetails")
-        L.push(setPower)
-        lua_setfield(L, -2, "setPower")
-        L.push(disassociate)
-        lua_setfield(L, -2, "disassociate")
-        L.push(associate)
-        lua_setfield(L, -2, "associate")
-    }
+    lua_pushcclosure(L, { (L: LuaState!) -> CInt in
+        if let scanner: HSWifiScan = L.touserdata(1) {
+            scanner.teardown()
+        }
+        let rawptr = lua_touserdata(L, 1)!
+        let anyPtr = rawptr.assumingMemoryBound(to: Any.self)
+        anyPtr.deinitialize(count: 1)
+        return 0
+    }, 0)
+    lua_setfield(L, -2, "__gc")
+
+    lua_pushstring(L, USERDATA_TAG)
+    lua_setfield(L, -2, "__type")
+    lua_pushstring(L, USERDATA_TAG)
+    lua_setfield(L, -2, "__name")
+
+    // Alias the metatable under the legacy registry name so that
+    // core_getObjectMetatable("hs.wifi") still resolves.
+    lua_setfield(L, LUA_REGISTRYINDEX_VALUE, USERDATA_TAG)
+
+    // Module table
+    lua_createtable(L, 0, 8)
+    L.push(wifi_scan)
+    lua_setfield(L, -2, "availableNetworks")
+    L.push(wifi_scan_background)
+    lua_setfield(L, -2, "backgroundScan")
+    L.push(wifi_interfaces)
+    lua_setfield(L, -2, "interfaces")
+    L.push(wifi_current_ssid)
+    lua_setfield(L, -2, "currentNetwork")
+    L.push(interfaceDetails)
+    lua_setfield(L, -2, "interfaceDetails")
+    L.push(setPower)
+    lua_setfield(L, -2, "setPower")
+    L.push(disassociate)
+    lua_setfield(L, -2, "disassociate")
+    L.push(associate)
+    lua_setfield(L, -2, "associate")
+
+    return 1
 }

@@ -21,7 +21,7 @@ private enum AppWatcherEvent: Int {
 
 private class AppWatcher: NSObject {
     var running: Bool = false
-    var callbackRef: Int32 = LUA_NOREF
+    var callbackRef: LuaValue?
 
     func callback(_ dict: [AnyHashable: Any], event: AppWatcherEvent) {
         guard let app = dict["NSWorkspaceApplicationKey" as NSString] as? NSRunningApplication else { return }
@@ -36,7 +36,8 @@ private class AppWatcher: NSObject {
             appName = dict["NSApplicationName" as NSString] as? String
         }
 
-        lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(callbackRef))
+        guard let cb = callbackRef else { return }
+        cb.push(onto: L)
 
         if let name = appName {
             lua_pushstring(L, name)
@@ -146,8 +147,7 @@ private func app_watcher_new(_ L: LuaState) throws -> CInt {
 
     let watcher = AppWatcher()
 
-    lua_pushvalue(L, 1)
-    watcher.callbackRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+    watcher.callbackRef = L.ref(index: 1)
     watcher.running = false
 
     let valuePtr = lua_newuserdata(L, MemoryLayout<UnsafeMutableRawPointer>.size)!
@@ -210,8 +210,7 @@ private func app_watcher_gc(_ L: LuaState) throws -> CInt {
         let watcher = Unmanaged<AnyObject>.fromOpaque(rawPtr).takeRetainedValue() as! AppWatcher
         watcher.running = false
         watcher.unregisterObserver()
-        luaL_unref(L, LUA_REGISTRYINDEX_VALUE, watcher.callbackRef)
-        watcher.callbackRef = LUA_NOREF
+        watcher.callbackRef = nil
         ptr.pointee = nil
     }
     return 0

@@ -605,7 +605,9 @@ extension CosmicHammerTests {
 
         @Test func testChooserDynamicChoicesCallbackPreservesTypedValues() throws {
             try withBootstrappedLua(requiring: ["hs.image", "hs.styledtext", "hs.chooser"]) { L in
-                let chooser = HSChooser(refTable: LUA_NOREF, completionCallbackRef: LUA_NOREF)
+                lua_pushboolean(L, 0)
+                let dummyRef = L.ref(index: -1)
+                let chooser = HSChooser(completionCallback: dummyRef)
                 #expect(luaL_dostring(L, """
                     local image = require('hs.image')
                     local styledtext = require('hs.styledtext')
@@ -619,10 +621,9 @@ extension CosmicHammerTests {
                     end
                     """) == LUA_OK)
 
-                chooser.choicesCallbackRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+                chooser.choicesCallback = L.ref(index: -1)
                 defer {
-                    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, chooser.choicesCallbackRef)
-                    chooser.choicesCallbackRef = LUA_NOREF
+                    chooser.choicesCallback = nil
                 }
 
                 let choices = try #require(chooser.getChoices())

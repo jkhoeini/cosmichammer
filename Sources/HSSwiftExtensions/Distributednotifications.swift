@@ -8,14 +8,33 @@ private let USERDATA_TAG = "hs.distributednotifications"
 // MARK: - HSDistNotWatcher Definition
 
 private class HSDistNotWatcher: NSObject {
-    var fnRef: Int32 = LUA_NOREF
+    var callback: LuaValue?
     var object: String?
     var name: String?
+    var generation: UInt64 = 0
+    private var tornDown = false
 
-    @objc func callback(_ note: NSNotification) {
-        guard fnRef != LUA_NOREF && fnRef != LUA_REFNIL else { return }
+    /// Idempotent teardown: remove observer, drop the Lua callback reference,
+    /// mark as torn down.  Called from the explicit __gc closure while the
+    /// lua_State is still alive.
+    func teardown() {
+        guard !tornDown else { return }
+        tornDown = true
+        let center = DistributedNotificationCenter.default()
+        let noteName: NSNotification.Name? = name.map { NSNotification.Name($0) }
+        center.removeObserver(self, name: noteName, object: object)
+        callback = nil
+    }
+
+    @objc func callbackFired(_ note: NSNotification) {
+        if !lua_isStateGenerationValid(generation) {
+            teardown()
+            return
+        }
+
+        guard let cb = callback else { return }
         let L = lua_getCurrentState()!
-        lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(fnRef))
+        cb.push(onto: L)
         lua_pushany(L, note.name.rawValue)
         lua_pushany(L, note.object)
         lua_pushany(L, note.userInfo)
@@ -48,26 +67,16 @@ private func distnot_new(_ L: LuaState) throws -> CInt {
     let name: String? = lua_isnoneornil(L, 2) ? nil : (lua_type(L, 2) == LUA_TSTRING ? String(cString: lua_tostring(L, 2)!) : nil)
     let obj: String? = lua_isnoneornil(L, 3) ? nil : (lua_type(L, 3) == LUA_TSTRING ? String(cString: lua_tostring(L, 3)!) : nil)
 
-    // Allocate userdata to store a pointer to the watcher
-    let userData = lua_newuserdata(L, MemoryLayout<UnsafeMutableRawPointer>.size)!
-        .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
-    userData.pointee = nil
-
-    luaL_getmetatable(L, USERDATA_TAG)
-    lua_setmetatable(L, -2)
-
     let watcher = HSDistNotWatcher()
-    userData.pointee = Unmanaged.passRetained(watcher).toOpaque()
-
-    lua_pushvalue(L, 1)
-    watcher.fnRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+    watcher.callback = L.ref(index: 1)
     watcher.name = name
     watcher.object = obj
+    watcher.generation = lua_currentStateGeneration()
+
+    L.push(userdata: watcher)
 
     return 1
 }
-
-// MARK: - Module Methods
 
 /// hs.distributednotifications.post(name[, sender[, userInfo]])
 /// Function
@@ -100,105 +109,82 @@ private func distnot_post(_ L: LuaState) throws -> CInt {
     return 0
 }
 
-/// hs.distributednotifications:start() -> object
-/// Method
-/// Starts a NSDistributedNotificationCenter watcher
-///
-/// Parameters:
-///  * None
-///
-/// Returns:
-///  * The `hs.distributednotifications` object
-private func distnot_start(_ L: LuaState) throws -> CInt {
-    let userData = luaL_checkudata(L, 1, USERDATA_TAG)!.assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
-    let watcher = Unmanaged<HSDistNotWatcher>.fromOpaque(userData.pointee!).takeUnretainedValue()
-
-    let center = DistributedNotificationCenter.default()
-    let noteName: NSNotification.Name? = watcher.name.map { NSNotification.Name($0) }
-    center.addObserver(
-        watcher,
-        selector: #selector(HSDistNotWatcher.callback(_:)),
-        name: noteName,
-        object: watcher.object,
-        suspensionBehavior: .deliverImmediately
-    )
-
-    lua_pushvalue(L, 1)
-    return 1
-}
-
-/// hs.distributednotifications:stop() -> object
-/// Method
-/// Stops a NSDistributedNotificationCenter watcher
-///
-/// Parameters:
-///  * None
-///
-/// Returns:
-///  * The `hs.distributednotifications` object
-private func distnot_stop(_ L: LuaState) throws -> CInt {
-    let userData = luaL_checkudata(L, 1, USERDATA_TAG)!.assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
-    let watcher = Unmanaged<HSDistNotWatcher>.fromOpaque(userData.pointee!).takeUnretainedValue()
-
-    let center = DistributedNotificationCenter.default()
-    let noteName: NSNotification.Name? = watcher.name.map { NSNotification.Name($0) }
-    center.removeObserver(watcher, name: noteName, object: watcher.object)
-
-    lua_pushvalue(L, 1)
-    return 1
-}
-
-// MARK: - Cosmic Hammer Infrastructure
-
-private func userdata_tostring(_ L: LuaState) throws -> CInt {
-    let userData = luaL_checkudata(L, 1, USERDATA_TAG)!.assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
-    let watcher = Unmanaged<HSDistNotWatcher>.fromOpaque(userData.pointee!).takeUnretainedValue()
-
-    let ptr = Unmanaged.passUnretained(watcher).toOpaque()
-    lua_pushstring(L, "\(USERDATA_TAG): name: \(watcher.name ?? "nil") object: \(watcher.object ?? "nil") (\(ptr))")
-    return 1
-}
-
-private func userdata_gc(_ L: LuaState) throws -> CInt {
-    let userData = luaL_checkudata(L, 1, USERDATA_TAG)!.assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
-    let watcher = Unmanaged<HSDistNotWatcher>.fromOpaque(userData.pointee!).takeRetainedValue()
-
-    let center = DistributedNotificationCenter.default()
-    let noteName: NSNotification.Name? = watcher.name.map { NSNotification.Name($0) }
-    center.removeObserver(watcher, name: noteName, object: watcher.object)
-
-    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, watcher.fnRef)
-    watcher.fnRef = LUA_NOREF
-
-    // Remove the Metatable so future use of the variable in Lua won't think its valid
-    lua_pushnil(L)
-    lua_setmetatable(L, 1)
-
-    return 0
-}
+// MARK: - Module Entry Point
 
 @_cdecl("luaopen_hs_libdistributednotifications")
 public func luaopen_hs_libdistributednotifications(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    runEntryPoint(L) { L in
-        // Register userdata metatable
-        luaL_newmetatable(L, USERDATA_TAG)
-        lua_pushvalue(L, -1)
-        lua_setfield(L, -2, "__index")  // mt.__index = mt
-        L.push(distnot_start)
-        lua_setfield(L, -2, "start")
-        L.push(distnot_stop)
-        lua_setfield(L, -2, "stop")
-        L.push(userdata_tostring)
-        lua_setfield(L, -2, "__tostring")
-        L.push(userdata_gc)
-        lua_setfield(L, -2, "__gc")
-        lua_pop(L, 1)
+    // Register idiomatic Metatable<HSDistNotWatcher> with LuaSwift.
+    L.register(Metatable<HSDistNotWatcher>(
+        fields: [
+            "start": .closure { L in
+                let watcher: HSDistNotWatcher = try L.checkArgument(1)
+                lua_settop(L, 1)
 
-        // Create module table
-        lua_createtable(L, 0, 2)
-        L.push(distnot_new)
-        lua_setfield(L, -2, "new")
-        L.push(distnot_post)
-        lua_setfield(L, -2, "post")
-    }
+                let center = DistributedNotificationCenter.default()
+                let noteName: NSNotification.Name? = watcher.name.map { NSNotification.Name($0) }
+                center.addObserver(
+                    watcher,
+                    selector: #selector(HSDistNotWatcher.callbackFired(_:)),
+                    name: noteName,
+                    object: watcher.object,
+                    suspensionBehavior: .deliverImmediately
+                )
+
+                return 1  // return self
+            },
+            "stop": .closure { L in
+                let watcher: HSDistNotWatcher = try L.checkArgument(1)
+                lua_settop(L, 1)
+
+                let center = DistributedNotificationCenter.default()
+                let noteName: NSNotification.Name? = watcher.name.map { NSNotification.Name($0) }
+                center.removeObserver(watcher, name: noteName, object: watcher.object)
+
+                return 1  // return self
+            },
+        ],
+        tostring: .closure { L in
+            let watcher: HSDistNotWatcher = try L.checkArgument(1)
+            let ptr = lua_topointer(L, 1)!
+            lua_pushstring(L, "\(USERDATA_TAG): name: \(watcher.name ?? "nil") object: \(watcher.object ?? "nil") (\(ptr))")
+            return 1
+        }
+    ))
+
+    // -- Post-registration metatable patching --
+    // LuaSwift's register() installs its own gcUserdata as __gc, which only
+    // deinitializes the Any box. Replace it with a custom __gc that first
+    // calls teardown() (remove observer, drop LuaValue callback) and THEN
+    // deinitializes the Any box.
+    L.pushMetatable(for: HSDistNotWatcher.self)
+
+    lua_pushcclosure(L, { (L: LuaState!) -> CInt in
+        if let watcher: HSDistNotWatcher = L.touserdata(1) {
+            watcher.teardown()
+        }
+        let rawptr = lua_touserdata(L, 1)!
+        let anyPtr = rawptr.assumingMemoryBound(to: Any.self)
+        anyPtr.deinitialize(count: 1)
+        return 0
+    }, 0)
+    lua_setfield(L, -2, "__gc")
+
+    // Set __type and __name for lsunit.lua assertIsUserdataOfType and tostring
+    lua_pushstring(L, USERDATA_TAG)
+    lua_setfield(L, -2, "__type")
+    lua_pushstring(L, USERDATA_TAG)
+    lua_setfield(L, -2, "__name")
+
+    // Alias the metatable under the legacy registry name so that
+    // core_getObjectMetatable("hs.distributednotifications") still resolves.
+    lua_setfield(L, LUA_REGISTRYINDEX_VALUE, USERDATA_TAG)
+
+    // Create module table
+    lua_createtable(L, 0, 2)
+    L.push(distnot_new)
+    lua_setfield(L, -2, "new")
+    L.push(distnot_post)
+    lua_setfield(L, -2, "post")
+
+    return 1
 }
