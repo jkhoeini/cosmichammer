@@ -516,6 +516,8 @@ private func dynamicStoreStopWatcher(_ L: LuaState) throws -> CInt {
         os_log(.debug, "%{public}s", "\(USERDATA_TAG):stop, error removing watcher from dispatch queue:\(SCErrorString(SCError()))")
     }
     obj.watcherEnabled = false
+    // Release self-reference so the object can be GC'd when stopped
+    obj.selfRefValue = nil
     lua_pushvalue(L, 1)
     return 1
 }

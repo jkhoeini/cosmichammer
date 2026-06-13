@@ -751,6 +751,7 @@ func canvas_draggingCallback(_ L: LuaState) throws -> CInt {
     canvasView.unregisterDraggedTypes()
     if lua_type(L, 2) == LUA_TFUNCTION {
         canvasView.draggingCallbackFn = L.ref(index: 2)
+        canvasView.generation = lua_currentStateGeneration()
         canvasView.registerForDraggedTypes([.fileURL])
     }
 
@@ -830,6 +831,7 @@ func canvas_mouseCallback(_ L: LuaState) throws -> CInt {
 
     if lua_type(L, 2) == LUA_TFUNCTION {
         canvasView.mouseCallbackFn = L.ref(index: 2)
+        canvasView.generation = lua_currentStateGeneration()
         canvasWindow?.ignoresMouseEvents = false
     }
 

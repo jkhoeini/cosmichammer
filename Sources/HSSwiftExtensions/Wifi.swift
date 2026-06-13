@@ -21,11 +21,13 @@ private func get_wifi_interface(_ theInterface: String?) -> CWInterface? {
 private class HSWifiScan: NSObject {
     var callback: LuaValue?
     var isDone: Bool = false
+    var generation: UInt64 = 0
     private var tornDown = false
 
     init(callback: LuaValue?, onInterface interface: String?) {
         self.callback = callback
         self.isDone = false
+        self.generation = lua_currentStateGeneration()
         super.init()
         self.performSelector(inBackground: #selector(doBackgroundScan(_:)),
                              with: interface as NSString?)
@@ -59,6 +61,7 @@ private class HSWifiScan: NSObject {
     }
 
     @objc func invokeCallback(_ object: Any?) {
+        guard lua_isStateGenerationValid(generation) else { return }
         guard let cb = callback else { return }
         let L = lua_getCurrentState()!
         cb.push(onto: L)

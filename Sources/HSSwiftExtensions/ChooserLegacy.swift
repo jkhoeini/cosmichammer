@@ -400,8 +400,12 @@ private let chooserInvalidCallback: LuaClosure = { L in
 private let chooserDelete: LuaClosure = { L in
     luaL_checkudata(L, 1, USERDATA_TAG)
 
-    // FIXME: Should we force the selfRefCount to 1 here, so the _gc call definitely deletes the ObjC object?
-    return try userdata_gc(L)
+    let chooser: HSChooser = get_objectFromUserdata(HSChooser.self, L, 1, USERDATA_TAG)
+    chooser.hide()
+    chooser.teardown()
+
+    lua_pushvalue(L, 1)
+    return 1
 }
 
 /// hs.chooser:fgColor(color) -> hs.chooser object

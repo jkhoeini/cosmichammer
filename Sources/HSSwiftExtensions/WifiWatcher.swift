@@ -76,6 +76,7 @@ private class HSWifiWatcherManager: NSObject {
             guard let aWatcher = obj as? HSWifiWatcher else { return }
             guard let watchingFor = aWatcher.watchingFor, watchingFor.contains(message) else { return }
             DispatchQueue.main.async {
+                guard lua_isStateGenerationValid(aWatcher.generation) else { return }
                 if let cb = aWatcher.callback {
                     let L = lua_getCurrentState()!
                     cb.push(onto: L)
@@ -100,6 +101,7 @@ private class HSWifiWatcher: NSObject {
     var callback: LuaValue?
     var selfRef: Int32 = 0
     var watchingFor: Set<String>? = Set(["SSIDChange"])
+    var generation: UInt64 = 0
 }
 
 // MARK: - Module Functions
@@ -133,6 +135,7 @@ private func wifi_watcher_new(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TFUNCTION)
     let newWatcher = HSWifiWatcher()
     newWatcher.callback = L.ref(index: 1)
+    newWatcher.generation = lua_currentStateGeneration()
     pushHSWifiWatcher(L, newWatcher)
     return 1
 }

@@ -268,7 +268,10 @@ private func keycodes_userdata_tostring(_ L: LuaState) throws -> CInt {
 private func keycodes_callback_gc(_ L: LuaState) throws -> CInt {
 
     let ptr = luaL_checkudata(L, 1, USERDATA_TAG)!.assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
-    let observer = Unmanaged<MJKeycodesObserver>.fromOpaque(ptr.pointee!).takeRetainedValue()
+    guard let rawPtr = ptr.pointee else { return 0 }
+    let observer = Unmanaged<MJKeycodesObserver>.fromOpaque(rawPtr).takeRetainedValue()
+    // Zero the pointer so a hypothetical double-gc won't double-free.
+    ptr.pointee = nil
 
     var tmpCanary = observer.lsCanary
     observer.lsCanary = tmpCanary

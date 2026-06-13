@@ -30,6 +30,7 @@ private var defaultContentTypes: [String]?
 private class HSURLEventHandler: NSObject, HSOpenFileDelegate {
     var appleEventManager: NSAppleEventManager?
     var fnCallback: LuaValue?
+    var generation: UInt64 = 0
     var restoreHandlers: NSMutableDictionary = NSMutableDictionary()
     weak var appDelegate: (any HSAppDelegateURLAccess)?
 
@@ -110,6 +111,7 @@ private class HSURLEventHandler: NSObject, HSOpenFileDelegate {
     }
 
     func callback(withURL openUrl: String, senderPID pid: pid_t) {
+        guard lua_isStateGenerationValid(generation) else { return }
         let L = lua_getCurrentState()!
 
         guard let cb = fnCallback else {
@@ -160,6 +162,7 @@ private func urleventSetCallback(_ L: LuaState) throws -> CInt {
 
     luaL_checktype(L, 1, LUA_TFUNCTION)
     eventHandler?.fnCallback = L.ref(index: 1)
+    eventHandler?.generation = lua_currentStateGeneration()
 
     return 0
 }

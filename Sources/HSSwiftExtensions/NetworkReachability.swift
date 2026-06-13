@@ -352,6 +352,8 @@ public func luaopen_hs_libnetworkreachability(_ L: UnsafeMutablePointer<lua_Stat
                         SCNetworkReachabilitySetDispatchQueue(r, nil)
                     }
                     obj.watcherEnabled = false
+                    // Release self-reference so the object can be GC'd when stopped
+                    obj.selfRefValue = nil
                     lua_pushvalue(L, 1)
                     return 1
                 },

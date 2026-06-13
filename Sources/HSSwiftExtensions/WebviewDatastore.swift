@@ -122,8 +122,13 @@ private func datastore_fetchRecords(_ L: LuaState) throws -> CInt {
         throw LuaCallError("bad argument #3 (invalid datastore data type specified)")
     }
 
+    let generation = lua_currentStateGeneration()
     dataStore.fetchDataRecords(ofTypes: typeSet) { records in
         DispatchQueue.main.async {
+            guard lua_isStateGenerationValid(generation), let L = lua_getCurrentState() else {
+                backgroundCallbacks.removeValue(forKey: key)
+                return
+            }
             if backgroundCallbacks[key] != nil {
                 fnValue.push(onto: L)
                 lua_createtable(L, Int32(records.count), 0)
@@ -190,10 +195,15 @@ private func datastore_removeRecords(_ L: LuaState) throws -> CInt {
         backgroundCallbacks[key!] = val
     }
 
+    let generation = lua_currentStateGeneration()
     dataStore.fetchDataRecords(ofTypes: typeSet) { records in
         let targets = records.filter { recordNames.contains($0.displayName) }
         dataStore.removeData(ofTypes: typeSet, for: targets) {
             DispatchQueue.main.async {
+                guard lua_isStateGenerationValid(generation), let L = lua_getCurrentState() else {
+                    if let k = key { backgroundCallbacks.removeValue(forKey: k) }
+                    return
+                }
                 if let k = key, let cb = fnValue, backgroundCallbacks[k] != nil {
                     cb.push(onto: L)
                     if lua_pcall(L, 0, 0, 0) != LUA_OK { lua_pop(L, 1) }
@@ -261,8 +271,13 @@ private func datastore_removeDataFrom(_ L: LuaState) throws -> CInt {
         backgroundCallbacks[key!] = val
     }
 
+    let generation = lua_currentStateGeneration()
     dataStore.removeData(ofTypes: typeSet, modifiedSince: theDate) {
         DispatchQueue.main.async {
+            guard lua_isStateGenerationValid(generation), let L = lua_getCurrentState() else {
+                if let k = key { backgroundCallbacks.removeValue(forKey: k) }
+                return
+            }
             if let k = key, let cb = fnValue, backgroundCallbacks[k] != nil {
                 cb.push(onto: L)
                 if lua_pcall(L, 0, 0, 0) != LUA_OK { lua_pop(L, 1) }

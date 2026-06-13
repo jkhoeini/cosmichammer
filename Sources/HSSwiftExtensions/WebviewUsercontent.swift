@@ -13,6 +13,7 @@ private class HSUserContentController: WKUserContentController, WKScriptMessageH
     var name: String = ""
     var udRef: LuaValue?
     var userContentCallback: LuaValue?
+    var generation: UInt64 = 0
 
     convenience init(name: String) {
         self.init()
@@ -24,6 +25,7 @@ private class HSUserContentController: WKUserContentController, WKScriptMessageH
 
     func userContentController(_ userContentController: WKUserContentController,
                                didReceive message: WKScriptMessage) {
+        guard lua_isStateGenerationValid(generation) else { return }
         if message.name == name, let cb = userContentCallback {
             let L = lua_getCurrentState()!
             cb.push(onto: L)
@@ -168,6 +170,7 @@ private func ucc_setCallback(_ L: LuaState) throws -> CInt {
 
     if lua_type(L, 2) == LUA_TFUNCTION {
         ucc.userContentCallback = L.ref(index: 2)
+        ucc.generation = lua_currentStateGeneration()
     }
 
     lua_pushvalue(L, 1)

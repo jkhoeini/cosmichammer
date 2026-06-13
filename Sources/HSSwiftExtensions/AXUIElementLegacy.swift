@@ -1173,7 +1173,10 @@ private func userdata_tostring(_ L: LuaState) throws -> CInt {
 }
 
 private func userdata_gc(_ L: LuaState) throws -> CInt {
-    let _ = get_axuielementref(L, 1, USERDATA_TAG)
+    let ptr = luaL_checkudata(L, 1, USERDATA_TAG)!
+        .assumingMemoryBound(to: Unmanaged<AXUIElement>.self)
+    // Balance the passRetained() from pushAXUIElement — takeRetainedValue() releases the +1.
+    let _ = ptr.pointee.takeRetainedValue()
     lua_pushnil(L)
     lua_setmetatable(L, 1)
     return 0

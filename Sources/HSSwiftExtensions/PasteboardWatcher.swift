@@ -32,6 +32,7 @@ class HSPasteboardTimer: NSObject {
     var callback: LuaValue?
     var changeCount: Int = 0
     var isRunning: Bool = false
+    var generation: UInt64 = 0
 
     @objc func sharedPasteboardTimerCallback(_ timer: Timer) {
         NotificationCenter.default.post(
@@ -41,6 +42,7 @@ class HSPasteboardTimer: NSObject {
     }
 
     @objc func sharedPasteboardChanged(_ notification: Notification) {
+        guard lua_isStateGenerationValid(generation) else { return }
         // Get the correct Pasteboard:
         let pb: NSPasteboard
         if let name = pbName {
@@ -176,6 +178,7 @@ private func pasteboardwatcher_new(_ L: LuaState) throws -> CInt {
     // Create the timer object:
     let timer = HSPasteboardTimer()
     timer.callback = cb
+    timer.generation = lua_currentStateGeneration()
     timer.pbName = pbName
 
     // Start the timer:

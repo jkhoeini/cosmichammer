@@ -117,6 +117,7 @@ private func isBoolNumber(_ value: Any?) -> Bool {
 @objc class HSToolbar: NSToolbar, NSToolbarDelegate {
     var selfRef: LuaValue?
     var callbackRef: LuaValue?
+    var generation: UInt64 = 0
     var notifyToolbarChanges = false
     var toolbarStyle_: NSInteger = NSWindow.ToolbarStyle.automatic.rawValue
     weak var windowUsingToolbar: NSWindow?
@@ -133,6 +134,7 @@ private func isBoolNumber(_ value: Any?) -> Bool {
         toolbarStyle_ = NSWindow.ToolbarStyle.automatic.rawValue
         callbackRef = nil
         selfRef = nil
+        generation = lua_currentStateGeneration()
         windowUsingToolbar = nil
         notifyToolbarChanges = false
 
@@ -173,6 +175,7 @@ private func isBoolNumber(_ value: Any?) -> Bool {
         super.init(identifier: original.identifier)
         selfRef = nil
         callbackRef = nil
+        generation = lua_currentStateGeneration()
         if let origCb = original.callbackRef {
             origCb.push(onto: L)
             callbackRef = L.ref(index: -1)
@@ -228,6 +231,7 @@ private func isBoolNumber(_ value: Any?) -> Bool {
         if let fn = fn {
             let capturedSelf = self
             DispatchQueue.main.async { [weak self] in
+                guard lua_isStateGenerationValid(capturedSelf.generation) else { return }
                 let L = lua_getCurrentState()!
                 fn.push(onto: L)
                 wv_pushAny(L, capturedSelf)
@@ -644,6 +648,7 @@ private func isBoolNumber(_ value: Any?) -> Bool {
         let capturedSelf = self
         DispatchQueue.main.async { [weak self] in
             guard let self = self, self.callbackRef != nil else { return }
+            guard lua_isStateGenerationValid(self.generation) else { return }
             let L = lua_getCurrentState()!
             cb.push(onto: L)
             wv_pushAny(L, capturedSelf)
@@ -660,6 +665,7 @@ private func isBoolNumber(_ value: Any?) -> Bool {
         let capturedSelf = self
         DispatchQueue.main.async { [weak self] in
             guard let self = self, self.callbackRef != nil else { return }
+            guard lua_isStateGenerationValid(self.generation) else { return }
             let L = lua_getCurrentState()!
             cb.push(onto: L)
             wv_pushAny(L, capturedSelf)
@@ -751,6 +757,7 @@ private func toolbar_attachToolbar(_ L: LuaState) throws -> CInt {
                 theWindow?.isMovable = true
             }
             old.windowUsingToolbar = nil
+            old.selfRef = nil
         }
         if let new = newToolbar {
             if let existingWindow = new.windowUsingToolbar {
@@ -1430,8 +1437,14 @@ private func toolbar_eq(_ L: LuaState) throws -> CInt {
 
 private func toolbar_gc(_ L: LuaState) throws -> CInt {
     let ptr = luaL_checkudata(L, 1, USERDATA_TB_TAG)!
-        .assumingMemoryBound(to: UnsafeMutableRawPointer.self)
-    let toolbar = Unmanaged<HSToolbar>.fromOpaque(ptr.pointee).takeRetainedValue()
+        .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
+    guard let rawPtr = ptr.pointee else {
+        lua_pushnil(L)
+        lua_setmetatable(L, 1)
+        return 0
+    }
+    let toolbar = Unmanaged<HSToolbar>.fromOpaque(rawPtr).takeRetainedValue()
+    ptr.pointee = nil
 
     toolbar.fnRefDictionary.removeAll()
 

@@ -16,6 +16,7 @@ private class HSHTTPServer {
     var wsCallback: LuaValue?
     var wsPath: String?
     var wsServer: NWWebSocketServer?
+    var generation: UInt64 = 0
 
     /// Whether Bonjour advertisement is enabled (set at creation time).
     var useBonjour: Bool = true
@@ -51,6 +52,8 @@ private class HSHTTPServer {
     }
 
     func start() throws {
+        generation = lua_currentStateGeneration()
+
         // Wire up the request handler from the Lua callback
         nwServer.requestHandler = { [weak self] method, path, headers, body in
             guard let self = self else {
@@ -125,6 +128,7 @@ private class HSHTTPServer {
         var responseBody = Data("An error occurred during hs.httpserver callback handling".utf8)
 
         let responseCallbackBlock = { [self] in
+            guard lua_isStateGenerationValid(self.generation) else { return }
             guard let cb = self.fn else { return }
 
             let L = lua_getCurrentState()!
@@ -194,6 +198,7 @@ private class HSHTTPServer {
         var response: String? = nil
 
         let responseCallbackBlock = { [self] in
+            guard lua_isStateGenerationValid(self.generation) else { return }
             guard let cb = self.wsCallback else { return }
 
             let L = lua_getCurrentState()!

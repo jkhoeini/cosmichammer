@@ -1023,8 +1023,13 @@ private func application_getMenus(_ L: LuaState) throws -> CInt {
         backgroundCallbacks[fnKey] = fnRef
 
         let elementRef = app.elementRef
+        let generation = lua_currentStateGeneration()
 
         DispatchQueue.main.async {
+            guard lua_isStateGenerationValid(generation) else {
+                backgroundCallbacks.removeValue(forKey: fnKey)
+                return
+            }
             if backgroundCallbacks[fnKey] != nil {
                 var menus: NSMutableDictionary? = nil
                 var menuBarRef: CFTypeRef?

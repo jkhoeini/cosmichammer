@@ -22,10 +22,12 @@ private enum AppWatcherEvent: Int {
 private class AppWatcher: NSObject {
     var running: Bool = false
     var callbackRef: LuaValue?
+    var generation: UInt64 = 0
 
     func callback(_ dict: [AnyHashable: Any], event: AppWatcherEvent) {
         guard let app = dict["NSWorkspaceApplicationKey" as NSString] as? NSRunningApplication else { return }
         guard running else { return }
+        guard lua_isStateGenerationValid(generation) else { return }
 
         let L = lua_getCurrentState()!
 
@@ -148,6 +150,7 @@ private func app_watcher_new(_ L: LuaState) throws -> CInt {
     let watcher = AppWatcher()
 
     watcher.callbackRef = L.ref(index: 1)
+    watcher.generation = lua_currentStateGeneration()
     watcher.running = false
 
     let valuePtr = lua_newuserdata(L, MemoryLayout<UnsafeMutableRawPointer>.size)!

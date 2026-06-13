@@ -767,8 +767,11 @@ private func screen_setInvertedPolarity(_ L: LuaState) throws -> CInt {
 }
 
 private func screen_gc(_ L: LuaState) throws -> CInt {
-    let ptr = luaL_checkudata(L, 1, USERDATA_TAG)!.assumingMemoryBound(to: UnsafeMutableRawPointer.self)
-    let _ = Unmanaged<NSScreen>.fromOpaque(ptr.pointee).takeRetainedValue()
+    let ptr = luaL_checkudata(L, 1, USERDATA_TAG)!.assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
+    guard let rawPtr = ptr.pointee else { return 0 }
+    let _ = Unmanaged<NSScreen>.fromOpaque(rawPtr).takeRetainedValue()
+    // Zero the pointer so a hypothetical double-gc won't double-free.
+    ptr.pointee = nil
     return 0
 }
 

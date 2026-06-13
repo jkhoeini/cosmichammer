@@ -9,8 +9,10 @@ import os.log
 @objc class HSMenubarCallbackObject: NSObject {
     var fn: LuaValue?
     var item: LuaValue?
+    var generation: UInt64 = 0
 
     func callback_runner() {
+        guard lua_isStateGenerationValid(generation) else { return }
         let L = lua_getCurrentState()!
 
         guard let fnRef = fn else { return }
@@ -175,6 +177,7 @@ func mb_parse_table(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32, _ menu:
                 let delegate = HSMenubarItemClickDelegate()
                 delegate.fn = L.ref(index: -1)
                 delegate.item = L.ref(index: -2)
+                delegate.generation = lua_currentStateGeneration()
                 menuItem.target = delegate
                 menuItem.action = #selector(HSMenubarItemClickDelegate.click(_:))
                 menuItem.representedObject = delegate

@@ -10,6 +10,7 @@ private let USERDATA_TAG = "hs.ipc"
 class HSIPCMessagePort: NSObject {
     var messagePort: CFMessagePort?
     var callbackValue: LuaValue?
+    var generation: UInt64 = 0
     private var tornDown = false
 
     /// Idempotent teardown: invalidate the CFMessagePort, drop the Lua callback
@@ -39,6 +40,10 @@ private let ipc_callback: CFMessagePortCallBack = { (local, msgid, data, info) -
     }
 
     callbackInProgress += 1
+    guard lua_isStateGenerationValid(port.generation) else {
+        callbackInProgress -= 1
+        return outdata
+    }
     if let cb = port.callbackValue {
         let L = lua_getCurrentState()!
         cb.push(onto: L)
@@ -98,6 +103,7 @@ private func ipc_localPort(_ L: LuaState) throws -> CInt {
     lua_pushvalue(L, 2)
     port.callbackValue = L.ref(index: -1)
     lua_pop(L, 1)
+    port.generation = lua_currentStateGeneration()
 
     var ctx = CFMessagePortContext(
         version: 0,

@@ -14,6 +14,7 @@ class HSWebViewView: WKWebView, WKNavigationDelegate, WKUIDelegate {
     var allowNewWindows: Bool = true
     var examineInvalidCertificates: Bool = false
     var trackingID: WKNavigation?
+    var generation: UInt64 = 0
 
     override init(frame frameRect: NSRect, configuration: WKWebViewConfiguration) {
         super.init(frame: frameRect, configuration: configuration)
@@ -80,7 +81,7 @@ class HSWebViewView: WKWebView, WKNavigationDelegate, WKUIDelegate {
 
             let previousCredential = challenge.proposedCredential
 
-            if self.policyCallback != nil && challenge.previousFailureCount < 3 {
+            if self.policyCallback != nil && challenge.previousFailureCount < 3 && lua_isStateGenerationValid(self.generation) {
                 let L = lua_getCurrentState()!
                 self.policyCallback!.push(onto: L)
                 lua_pushstring(L, "authenticationChallenge")
@@ -162,7 +163,7 @@ class HSWebViewView: WKWebView, WKNavigationDelegate, WKUIDelegate {
             var status: SecTrustResultType = .invalid
             SecTrustEvaluate(serverTrust, &status)
 
-            if status == .recoverableTrustFailure && self.sslCallback != nil {
+            if status == .recoverableTrustFailure && self.sslCallback != nil && lua_isStateGenerationValid(self.generation) {
                 let L = lua_getCurrentState()!
                 self.sslCallback!.push(onto: L)
                 wv_pushAny(L, webView.window as? HSWebViewWindow)
@@ -193,7 +194,7 @@ class HSWebViewView: WKWebView, WKNavigationDelegate, WKUIDelegate {
 
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
                  decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-        if self.policyCallback != nil {
+        if self.policyCallback != nil && lua_isStateGenerationValid(self.generation) {
             let L = lua_getCurrentState()!
             self.policyCallback!.push(onto: L)
             lua_pushstring(L, "navigationAction")
@@ -215,7 +216,7 @@ class HSWebViewView: WKWebView, WKNavigationDelegate, WKUIDelegate {
 
     func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse,
                  decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
-        if self.policyCallback != nil {
+        if self.policyCallback != nil && lua_isStateGenerationValid(self.generation) {
             let L = lua_getCurrentState()!
             self.policyCallback!.push(onto: L)
             lua_pushstring(L, "navigationResponse")
@@ -240,6 +241,7 @@ class HSWebViewView: WKWebView, WKNavigationDelegate, WKUIDelegate {
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
                  for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
         guard (webView as? HSWebViewView)?.allowNewWindows == true else { return nil }
+        guard lua_isStateGenerationValid(self.generation) else { return nil }
 
         let L = lua_getCurrentState()!
 
@@ -264,6 +266,7 @@ class HSWebViewView: WKWebView, WKNavigationDelegate, WKUIDelegate {
         }
 
         let newView = HSWebViewView(frame: (newWindow.contentView! as NSView).bounds, configuration: configuration)
+        newView.generation = newWindow.lsCanary
         newWindow.contentView = newView
 
         newView.allowNewWindows = (webView as! HSWebViewView).allowNewWindows
@@ -386,6 +389,7 @@ class HSWebViewView: WKWebView, WKNavigationDelegate, WKUIDelegate {
         var actionRequiredAfterReturn = true
 
         if self.navigationCallback != nil {
+            guard lua_isStateGenerationValid(self.generation) else { return actionRequiredAfterReturn }
             let L = lua_getCurrentState()!
             var numberOfArguments: Int32 = 3
             self.navigationCallback!.push(onto: L)

@@ -125,7 +125,10 @@ private func battery_watcher_gc(_ L: LuaState) throws -> CInt {
 
     callbackMap[UnsafeMutableRawPointer(watcher)] = nil
     CFRunLoopSourceInvalidate(watcher.pointee.t)
-    // CFRelease not needed in Swift (ARC)
+    // Deinitialize the struct so ARC can release the CFRunLoopSource (and any
+    // other ARC-managed fields). Without this, Lua frees the raw memory and
+    // ARC never sees the release.
+    watcher.deinitialize(count: 1)
     return 0
 }
 

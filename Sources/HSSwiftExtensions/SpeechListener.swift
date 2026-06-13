@@ -155,6 +155,13 @@ public func luaopen_hs_libspeechlistener(_ L: UnsafeMutablePointer<lua_State>!) 
                 let recognizer: HSSpeechRecognizer = try L.checkArgument(1)
                 recognizer.startListening()
                 recognizer.isListeningFlag = true
+                // Hold a self-reference while actively listening to
+                // prevent GC from collecting the recognizer.
+                if recognizer.selfRefValue == nil {
+                    lua_pushvalue(L, 1)
+                    recognizer.selfRefValue = L.ref(index: -1)
+                    lua_pop(L, 1)
+                }
                 lua_pushvalue(L, 1)
                 return 1
             },
@@ -162,6 +169,8 @@ public func luaopen_hs_libspeechlistener(_ L: UnsafeMutablePointer<lua_State>!) 
                 let recognizer: HSSpeechRecognizer = try L.checkArgument(1)
                 recognizer.stopListening()
                 recognizer.isListeningFlag = false
+                // Release self-reference so the object can be GC'd
+                recognizer.selfRefValue = nil
                 lua_pushvalue(L, 1)
                 return 1
             },

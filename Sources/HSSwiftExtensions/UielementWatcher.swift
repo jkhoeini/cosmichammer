@@ -18,6 +18,7 @@ private func watcher_start(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 2, LUA_TTABLE)
     guard let watcher = getWatcher(L, at: 1) else { return 0 }
     if let concreteWatcher = watcher as? HSuielementWatcher {
+        concreteWatcher.watcherSelfRef = nil  // release old ref before reassigning
         concreteWatcher.watcherSelfRef = L.ref(index: 1)
     }
     if let events = lua_tovalue(L, at: 2) as? [String] {

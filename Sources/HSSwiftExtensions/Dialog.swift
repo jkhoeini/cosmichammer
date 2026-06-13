@@ -12,6 +12,7 @@ private let USERDATA_TAG = "hs.dialog"
 //
 private class HSColorPanel: NSObject {
     var callbackRef: LuaValue?
+    var generation: UInt64 = 0
 
     override init() {
         super.init()
@@ -32,6 +33,7 @@ private class HSColorPanel: NSObject {
         if callbackRef != nil {
             DispatchQueue.main.async { [weak self] in
                 guard let self = self, let cb = self.callbackRef else { return }
+                guard lua_isStateGenerationValid(self.generation) else { return }
                 let L = lua_getCurrentState()!
                 let cp = NSColorPanel.shared
                 cb.push(onto: L)
@@ -47,6 +49,7 @@ private class HSColorPanel: NSObject {
         if callbackRef != nil {
             DispatchQueue.main.async { [weak self] in
                 guard let self = self, let cb = self.callbackRef else { return }
+                guard lua_isStateGenerationValid(self.generation) else { return }
                 let L = lua_getCurrentState()!
                 cb.push(onto: L)
                 NSColor_tolua(L, colorPanel.color)
@@ -88,6 +91,7 @@ private func colorPanelCallback(_ L: LuaState) throws -> CInt {
         cpReceiverObject!.callbackRef = nil
         if lua_type(L, 1) == LUA_TFUNCTION {
             cpReceiverObject!.callbackRef = L.ref(index: 1)
+            cpReceiverObject!.generation = lua_currentStateGeneration()
         }
     }
     // return the *last* fn (or nil) so you can save it and re-attach it if something needs to
@@ -440,7 +444,13 @@ private func webviewAlert(_ L: LuaState) throws -> CInt {
     default:              alert.alertStyle = defaultAlertStyle
     }
 
+    let generation = lua_currentStateGeneration()
     alert.beginSheetModal(for: webview) { result in
+        guard lua_isStateGenerationValid(generation), let L = lua_getCurrentState() else {
+            callbackRef = nil
+            return
+        }
+
         var button = defaultButton
 
         if result == .alertFirstButtonReturn {

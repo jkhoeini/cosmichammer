@@ -951,6 +951,7 @@ private func canvas_teardownView(_ theView: HSCanvasView) {
         if !canvas_parentIsWindow(theView) { theView.removeFromSuperview() }
         theView.mouseCallbackFn = nil
         theView.draggingCallbackFn = nil
+        theView.selfRef = nil  // release any fade-animation registry reference
 
         let tile = NSApplication.shared.dockTile
         if let tileView = tile.contentView, tileView === theView {

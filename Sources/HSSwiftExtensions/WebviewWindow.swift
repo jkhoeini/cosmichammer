@@ -79,6 +79,7 @@ class HSWebViewWindow: NSPanel, NSWindowDelegate {
     func windowDidBecomeKey(_ notification: Notification) {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
+            guard lua_isStateGenerationValid(self.lsCanary) else { return }
             if self.windowCallback != nil {
                 let L = lua_getCurrentState()!
                 self.windowCallback!.push(onto: L)
@@ -93,6 +94,7 @@ class HSWebViewWindow: NSPanel, NSWindowDelegate {
     func windowDidResignKey(_ notification: Notification) {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
+            guard lua_isStateGenerationValid(self.lsCanary) else { return }
             if self.windowCallback != nil {
                 let L = lua_getCurrentState()!
                 self.windowCallback!.push(onto: L)
@@ -107,6 +109,7 @@ class HSWebViewWindow: NSPanel, NSWindowDelegate {
     func windowDidResize(_ notification: Notification) {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
+            guard lua_isStateGenerationValid(self.lsCanary) else { return }
             if self.windowCallback != nil {
                 let L = lua_getCurrentState()!
                 self.windowCallback!.push(onto: L)
@@ -121,6 +124,7 @@ class HSWebViewWindow: NSPanel, NSWindowDelegate {
     func windowDidMove(_ notification: Notification) {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
+            guard lua_isStateGenerationValid(self.lsCanary) else { return }
             if self.windowCallback != nil {
                 let L = lua_getCurrentState()!
                 self.windowCallback!.push(onto: L)

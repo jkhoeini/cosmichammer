@@ -566,10 +566,15 @@ private func imageFromURL(_ L: LuaState) throws -> CInt {
         let cb = L.ref(index: 2)
         let callbackID = UUID()
         backgroundCallbacks[callbackID] = cb
+        let generation = lua_currentStateGeneration()
 
         DispatchQueue.global(qos: .default).async {
             let image = NSImage(contentsOf: theURL)
             DispatchQueue.main.async {
+                guard lua_isStateGenerationValid(generation) else {
+                    backgroundCallbacks.removeValue(forKey: callbackID)
+                    return
+                }
                 if let storedCb = backgroundCallbacks.removeValue(forKey: callbackID) {
                     let bgL = lua_getCurrentState()!
                     storedCb.push(onto: bgL)

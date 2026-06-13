@@ -608,6 +608,7 @@ func webview_new(_ L: LuaState) throws -> CInt {
     }
 
     let theView = HSWebViewView(frame: (theWindow.contentView! as NSView).bounds, configuration: config)
+    theView.generation = theWindow.lsCanary
     theWindow.contentView = theView
     wv_pushAny(L, theWindow)
     return 1

@@ -13,6 +13,7 @@ private class HSSoundObject: NSObject, NSSoundDelegate {
     var callback: LuaValue?
     var selfRef: Int32 = LUA_NOREF
     var stopOnRelease: Bool = true
+    var generation: UInt64 = 0
     private var tornDown = false
 
     init(sound: NSSound) {
@@ -36,6 +37,10 @@ private class HSSoundObject: NSObject, NSSoundDelegate {
     func sound(_ sound: NSSound, didFinishPlaying flag: Bool) {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
+            guard lua_isStateGenerationValid(self.generation) else {
+                self.teardown()
+                return
+            }
             let L = lua_getCurrentState()!
 
             if let cb = self.callback {
@@ -114,6 +119,7 @@ private func sound_byname(_ L: LuaState) throws -> CInt {
     _ = luaL_checkstring(L, 1) // force number to be a string
     if let theSound = NSSound(named: NSSound.Name(lua_tovalue(L, at: 1) as! String)) {
         let value = HSSoundObject(sound: theSound)
+        value.generation = lua_currentStateGeneration()
         L.push(userdata: value)
     } else {
         lua_pushnil(L)
@@ -134,6 +140,7 @@ private func sound_byfile(_ L: LuaState) throws -> CInt {
     _ = luaL_checkstring(L, 1) // force number to be a string
     if let theSound = NSSound(contentsOfFile: lua_tovalue(L, at: 1) as! String, byReference: false) {
         let value = HSSoundObject(sound: theSound)
+        value.generation = lua_currentStateGeneration()
         L.push(userdata: value)
     } else {
         lua_pushnil(L)
@@ -256,6 +263,10 @@ public func luaopen_hs_libsound(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
             "stop": .closure { L in
                 let obj: HSSoundObject = try L.checkArgument(1)
                 if obj.soundObject?.stop() == true {
+                    // Release selfRef so a stopped sound can be GC'd
+                    // (looping sounds never fire didFinishPlaying)
+                    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, obj.selfRef)
+                    obj.selfRef = LUA_NOREF
                     lua_pushvalue(L, 1)
                 } else {
                     lua_pushboolean(L, 0)

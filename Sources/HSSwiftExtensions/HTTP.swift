@@ -33,6 +33,7 @@ private func responseBodyToId(_ httpResponse: HTTPURLResponse?, _ bodyData: Data
     var receivedData: NSMutableData = NSMutableData()
     var httpResponse: HTTPURLResponse?
     var connection: NSURLConnection?
+    var generation: UInt64 = 0
 
     func connection(_ connection: NSURLConnection, didReceive response: URLResponse) {
         receivedData.length = 0
@@ -44,6 +45,7 @@ private func responseBodyToId(_ httpResponse: HTTPURLResponse?, _ bodyData: Data
     }
 
     func connectionDidFinishLoading(_ connection: NSURLConnection) {
+        guard lua_isStateGenerationValid(generation) else { return }
         guard let fn = fn else { return }
         let L = lua_getCurrentState()!
 
@@ -57,6 +59,7 @@ private func responseBodyToId(_ httpResponse: HTTPURLResponse?, _ bodyData: Data
     }
 
     func connection(_ connection: NSURLConnection, didFailWithError error: Error) {
+        guard lua_isStateGenerationValid(generation) else { return }
         guard let fn = fn else { return }
         let L = lua_getCurrentState()!
 
@@ -69,6 +72,7 @@ private func responseBodyToId(_ httpResponse: HTTPURLResponse?, _ bodyData: Data
     }
 
     func connection(_ connection: NSURLConnection, willSend request: URLRequest, redirectResponse response: URLResponse?) -> URLRequest? {
+        guard lua_isStateGenerationValid(generation) else { return nil }
         guard let fn = fn else { return nil }
 
         if let httpResp = response as? HTTPURLResponse, !enableRedirect {
@@ -218,6 +222,7 @@ private func http_doAsyncRequest(_ L: LuaState) throws -> CInt {
     delegate.enableRedirect = enableRedirect
     delegate.receivedData = NSMutableData()
     delegate.fn = L.ref(index: 5)
+    delegate.generation = lua_currentStateGeneration()
 
     store_delegate(delegate)
 

@@ -271,6 +271,7 @@ func menubarSetClickCallback(_ L: LuaState) throws -> CInt {
     if lua_isfunction(L, 2) {
         let object = HSMenubarItemClickDelegate()
         object.fn = L.ref(index: 2)
+        object.generation = lua_currentStateGeneration()
         menuBarItem.pointee.click_callback = Unmanaged.passRetained(object).toOpaque()
         statusItem.button?.target = object
         statusItem.button?.action = #selector(HSMenubarItemClickDelegate.click(_:))
@@ -314,6 +315,7 @@ func menubarSetMenu(_ L: LuaState) throws -> CInt {
         delegate = HSMenubarItemMenuDelegate()
         delegate!.stateBoxImageSize = menuBarItem.pointee.stateBoxImageSize
         delegate!.fn = L.ref(index: 2)
+        delegate!.generation = lua_currentStateGeneration()
         mb_dynamicMenuDelegates.add(delegate!)
 
     default:
@@ -345,8 +347,12 @@ func menubarSetMenu(_ L: LuaState) throws -> CInt {
 func menubar_delete(_ L: LuaState) throws -> CInt {
     let menuBarItem = mb_get_item_arg(L, 1)
 
+    // Guard against double-delete: :delete() sets menuBarItemObject = nil,
+    // so __gc must not force-unwrap it again.
+    guard let rawObj = menuBarItem.pointee.menuBarItemObject else { return 0 }
+
     let statusBar = NSStatusBar.system
-    let statusItem = Unmanaged<NSStatusItem>.fromOpaque(menuBarItem.pointee.menuBarItemObject!).takeRetainedValue()
+    let statusItem = Unmanaged<NSStatusItem>.fromOpaque(rawObj).takeRetainedValue()
 
     // If an autosaveName exists, store the preferred position
     if let autosaveName = statusItem.autosaveName {

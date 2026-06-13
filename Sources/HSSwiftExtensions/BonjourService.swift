@@ -80,6 +80,10 @@ private func pushNetServiceCallbackArgument(_ L: UnsafeMutablePointer<lua_State>
         tornDown = true
         callback = nil
         monitorCallback = nil
+        if selfRef != LUA_NOREF {
+            luaL_unref(lua_getCurrentState(), LUA_REGISTRYINDEX_VALUE, selfRef)
+            selfRef = Int32(LUA_NOREF)
+        }
         service?.delegate = nil
         service?.stop()
         service?.stopMonitoring()
@@ -580,6 +584,10 @@ public func luaopen_hs_libbonjourservice(_ L: UnsafeMutablePointer<lua_State>!) 
                 let wrapper: HSNetServiceWrapper = try L.checkArgument(1)
                 wrapper.callback = nil
                 wrapper.service.stop()
+                if wrapper.selfRef != LUA_NOREF {
+                    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, wrapper.selfRef)
+                    wrapper.selfRef = Int32(LUA_NOREF)
+                }
                 lua_pushvalue(L, 1)
                 return 1
             },

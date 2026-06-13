@@ -19,12 +19,14 @@ private let USERDATA_TAG = "hs.screen.watcher"
 private class MJScreenWatcher: NSObject {
     var callback: LuaValue?
     var includeActive: Bool = false
+    var generation: UInt64 = 0
 
     @objc func _screensChanged(_ note: Notification) {
         performSelector(onMainThread: #selector(screensChanged(_:)), with: note, waitUntilDone: true)
     }
 
     @objc func screensChanged(_ note: Notification) {
+        guard lua_isStateGenerationValid(generation) else { return }
         guard let cb = callback else { return }
 
         let L = lua_getCurrentState()!
@@ -77,6 +79,7 @@ private func screen_watcher_new(_ L: LuaState) throws -> CInt {
 
     let object = MJScreenWatcher()
     object.callback = cb
+    object.generation = lua_currentStateGeneration()
     object.includeActive = false
 
     watcher.pointee.obj = Unmanaged.passRetained(object).toOpaque()

@@ -514,10 +514,14 @@ private func clgeocoder_lookupLocation(_ L: UnsafeMutablePointer<lua_State>!) ->
     backgroundCallbacks[fnKey] = fnRef
 
     let geoItem = CLGeocoder()
+    let generation = lua_currentStateGeneration()
     geoItem.reverseGeocodeLocation(theLocation) { placemark, error in
-        if backgroundCallbacks[fnKey] != nil {
-            let L = lua_getCurrentState()!
-            backgroundCallbacks[fnKey]!.push(onto: L)
+        guard lua_isStateGenerationValid(generation), let L = lua_getCurrentState() else {
+            backgroundCallbacks.removeValue(forKey: fnKey)
+            return
+        }
+        if let cb = backgroundCallbacks[fnKey] {
+            cb.push(onto: L)
             lua_pushboolean(L, error == nil ? 1 : 0)
             if let error = error {
                 lua_pushany(L, error.localizedDescription as NSString)
@@ -556,10 +560,14 @@ private func clgeocoder_lookupAddress(_ L: UnsafeMutablePointer<lua_State>!) -> 
     backgroundCallbacks[fnKey] = fnRef
 
     let geoItem = CLGeocoder()
+    let generation = lua_currentStateGeneration()
     geoItem.geocodeAddressString(searchString) { placemark, error in
-        if backgroundCallbacks[fnKey] != nil {
-            let L = lua_getCurrentState()!
-            backgroundCallbacks[fnKey]!.push(onto: L)
+        guard lua_isStateGenerationValid(generation), let L = lua_getCurrentState() else {
+            backgroundCallbacks.removeValue(forKey: fnKey)
+            return
+        }
+        if let cb = backgroundCallbacks[fnKey] {
+            cb.push(onto: L)
             lua_pushboolean(L, error == nil ? 1 : 0)
             if let error = error {
                 lua_pushany(L, error.localizedDescription as NSString)
@@ -609,10 +617,14 @@ private func clgeocoder_lookupAddressNear(_ L: UnsafeMutablePointer<lua_State>!)
     backgroundCallbacks[fnKey] = fnRef
 
     let geoItem = CLGeocoder()
+    let generation = lua_currentStateGeneration()
     geoItem.geocodeAddressString(searchString, in: theRegion) { placemark, error in
-        if backgroundCallbacks[fnKey] != nil {
-            let L = lua_getCurrentState()!
-            backgroundCallbacks[fnKey]!.push(onto: L)
+        guard lua_isStateGenerationValid(generation), let L = lua_getCurrentState() else {
+            backgroundCallbacks.removeValue(forKey: fnKey)
+            return
+        }
+        if let cb = backgroundCallbacks[fnKey] {
+            cb.push(onto: L)
             lua_pushboolean(L, error == nil ? 1 : 0)
             if let error = error {
                 lua_pushany(L, error.localizedDescription as NSString)

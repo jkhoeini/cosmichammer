@@ -11,6 +11,7 @@ import os.log
     @objc var wrapperWindow: HSCanvasWindow?
     var mouseCallbackFn: LuaValue?
     var draggingCallbackFn: LuaValue?
+    var generation: UInt64 = 0
     var mouseTracking: Bool = false
     var canvasMouseDown: Bool = false
     var canvasMouseUp: Bool = false
@@ -191,6 +192,7 @@ import os.log
 
     func doMouseCallback(_ message: String, for elementIdentifier: Any, at location: NSPoint) {
         guard let cb = mouseCallbackFn else { return }
+        guard lua_isStateGenerationValid(generation) else { return }
         let L = lua_getCurrentState()!
         cb.push(onto: L)
         canvas_pushValue(L, self)
@@ -203,6 +205,7 @@ import os.log
 
     func subviewCallback(_ sender: Any) {
         guard let cb = mouseCallbackFn else { return }
+        guard lua_isStateGenerationValid(generation) else { return }
         let L = lua_getCurrentState()!
         cb.push(onto: L)
         canvas_pushValue(L, self)
@@ -1151,6 +1154,7 @@ import os.log
     func performDraggingCallback(_ message: String, with sender: NSDraggingInfo?) -> Bool {
         var isAllGood = false
         guard let cb = draggingCallbackFn else { return isAllGood }
+        guard lua_isStateGenerationValid(generation) else { return isAllGood }
 
         let L = lua_getCurrentState()!
         var argCount: Int32 = 2

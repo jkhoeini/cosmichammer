@@ -24,6 +24,7 @@ private struct SpaceWatcherData {
 private class SpaceWatcher: NSObject {
     var object: UnsafeMutablePointer<SpaceWatcherData>
     var callback: LuaValue?
+    var generation: UInt64 = 0
 
     init(object: UnsafeMutablePointer<SpaceWatcherData>, callback: LuaValue?) {
         self.object = object
@@ -33,6 +34,7 @@ private class SpaceWatcher: NSObject {
 
     // Call the lua callback function.
     func callbackFired(dict: NSDictionary?, space: Int32) {
+        guard lua_isStateGenerationValid(generation) else { return }
         if let cb = callback {
             let L = lua_getCurrentState()!
 
@@ -74,6 +76,7 @@ private func space_watcher_new(_ L: LuaState) throws -> CInt {
     spaceWatcher.pointee.selfRef = LUA_NOREF
 
     let watcher = SpaceWatcher(object: spaceWatcher, callback: cb)
+    watcher.generation = lua_currentStateGeneration()
     spaceWatcher.pointee.obj = Unmanaged.passRetained(watcher).toOpaque()
 
     luaL_getmetatable(L, USERDATA_TAG)

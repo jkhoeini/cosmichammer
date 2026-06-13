@@ -210,13 +210,8 @@ private func task_new(_ L: LuaState) throws -> CInt {
     // Push userdata onto stack
     L.push(userdata: task)
 
-    // Create self-reference to prevent GC while running
-    lua_pushvalue(L, -1)
-    task.selfRef = L.ref(index: -1)
-    // ref() does not pop, so pop the duplicate
-    lua_pop(L, 1)
-
-    // Track the task
+    // Track the task (selfRef is created later in :start() to avoid
+    // leaking never-started tasks)
     activeTasks.append(task)
 
     return 1
@@ -285,6 +280,13 @@ public func luaopen_hs_libtask(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
                         try process.run()
                         result = true
                         task.hasStarted = true
+                        // Create self-reference now that the task is running,
+                        // preventing GC until termination releases it.
+                        if task.selfRef == nil {
+                            lua_pushvalue(L, 1)
+                            task.selfRef = L.ref(index: -1)
+                            lua_pop(L, 1)
+                        }
                         if task.isStream {
                             let stdOut = process.standardOutput as! Pipe
                             let stdErr = process.standardError as! Pipe

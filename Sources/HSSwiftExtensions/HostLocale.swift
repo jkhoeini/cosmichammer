@@ -23,8 +23,11 @@ extension NSLocale {
 }
 
 private class HSLocaleChangeObserver: NSObject {
+    var generation: UInt64 = 0
+
     @objc func localeChanged(_ notification: Notification) {
         DispatchQueue.main.async {
+            guard lua_isStateGenerationValid(self.generation) else { return }
             if let cb = callbackRef {
                 let L = lua_getCurrentState()!
                 cb.push(onto: L)
@@ -302,6 +305,7 @@ private func locale_localizedString(_ L: LuaState) throws -> CInt {
 private func locale_registerCallback(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TFUNCTION)
     callbackRef = L.ref(index: 1)
+    observerOfChanges?.generation = lua_currentStateGeneration()
     return 0
 }
 

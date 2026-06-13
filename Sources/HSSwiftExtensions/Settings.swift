@@ -9,6 +9,7 @@ private var myKVOContext: Int = 0 // See http://nshipster.com/key-value-observin
 
 private class HSUserDefaultKVOWatcher: NSObject {
     var watchedKeys = [String: [String: LuaValue]]()
+    var generation: UInt64 = 0
 
     override func observeValue(forKeyPath keyPath: String?, of object: Any?, change: [NSKeyValueChangeKey: Any]?, context: UnsafeMutableRawPointer?) {
         guard context == &myKVOContext else {
@@ -18,7 +19,8 @@ private class HSUserDefaultKVOWatcher: NSObject {
 
         guard let keyPath = keyPath, let fnCallbacks = watchedKeys[keyPath] else { return }
 
-        DispatchQueue.main.async {
+        DispatchQueue.main.async { [self] in
+            guard lua_isStateGenerationValid(self.generation) else { return }
             let L = lua_getCurrentState()!
             for (_, cb) in fnCallbacks {
                 cb.push(onto: L)
@@ -271,6 +273,7 @@ private func target_watchKey(_ L: LuaState) throws -> CInt {
         watcherManager.watchedKeys[keyPath]?[watcherID] = nil
         if lua_type(L, 3) != LUA_TNIL {
             watcherManager.watchedKeys[keyPath]?[watcherID] = L.ref(index: 3)
+            watcherManager.generation = lua_currentStateGeneration()
         }
         lua_pushvalue(L, 1)
     }

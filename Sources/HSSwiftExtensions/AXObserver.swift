@@ -14,6 +14,7 @@ let keySelfRefCount = "selfRefCount" as CFString
 let keyCallbackRef  = "callbackRef" as CFString  // value is LuaValue? (not NSNumber)
 let keyIsRunning    = "isRunning" as CFString
 let keyWatching     = "watching" as CFString
+let keyGeneration   = "generation" as CFString    // value is NSNumber (UInt64)
 
 // MARK: - Support Functions (observer)
 
@@ -81,13 +82,16 @@ func cleanupAXObserver(_ observer: AXObserver, _ details: NSMutableDictionary) {
 }
 
 let observerCallbackPtr: AXObserverCallbackWithInfo = { (observer, element, notification, info, refcon) in
-    let L = lua_getCurrentState()!
-
     let observerKey = observer as AnyObject
     guard let details = observerDetails?[observerKey] as? NSMutableDictionary else {
         os_log(.info, "%{public}s", "\(String(cString: axuielement_OBSERVER_TAG)):callback triggered for unregistered observer")
         return
     }
+
+    let generation = (details[keyGeneration as String] as? NSNumber)?.uint64Value ?? 0
+    guard lua_isStateGenerationValid(generation) else { return }
+
+    let L = lua_getCurrentState()!
 
     if let cb = details[keyCallbackRef as String] as? LuaValue {
         cb.push(onto: L)
@@ -177,6 +181,7 @@ private func axobserver_callback(_ L: LuaState) throws -> CInt {
         if lua_type(L, 2) != LUA_TNIL {
             let cb = L.ref(index: 2)
             details[keyCallbackRef as String] = cb
+            details[keyGeneration as String] = NSNumber(value: lua_currentStateGeneration())
             lua_pushvalue(L, 1)
         }
     } else {
