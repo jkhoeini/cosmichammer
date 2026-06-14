@@ -65,7 +65,7 @@ public class MJConsoleWindowController: NSWindowController, NSTextFieldDelegate 
 
     // MARK: Singleton
 
-    public class func singleton() -> MJConsoleWindowController {
+    @objc public class func singleton() -> MJConsoleWindowController {
         return _shared
     }
 

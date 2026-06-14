@@ -58,3 +58,4 @@ Brewfile.lock.json
 # Coverage instrumentation artifacts
 *.profraw
 *.profdata
+.gstack/
