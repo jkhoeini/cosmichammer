@@ -5,6 +5,9 @@ import os.log
 
 private let USERDATA_TAG = "hs.doc" // we're using it as a module tag for console messages
 
+// TigerStyle bounds: maximum doc JSON file size (100 MB)
+private let kMaxDocFileSize: UInt64 = 104_857_600
+
 private var triggerFn: LuaValue?
 
 private var registeredFiles: NSMutableDictionary!
@@ -76,118 +79,130 @@ private extension String {
 
 private func processRegisteredFile(_ L: UnsafeMutablePointer<lua_State>!, _ path: NSString) -> Bool {
 
-    var error: NSError?
-    var rawFile: Data?
-    do {
-        rawFile = try Data(contentsOf: URL(fileURLWithPath: path as String), options: .mappedIfSafe)
-    } catch let e as NSError {
-        error = e
-    }
-    guard let rawFile = rawFile, error == nil else {
-        os_log(.error, "%{public}s", "\(USERDATA_TAG).processRegisteredFile - unable to open '\(path)' (\(error?.localizedDescription ?? "unknown"))")
-        return false
-    }
-
-    var obj: Any?
-    do {
-        obj = try JSONSerialization.jsonObject(with: rawFile, options: .fragmentsAllowed)
-    } catch let e as NSError {
-        error = e
-    }
-    if let error = error {
-        os_log(.error, "%{public}s", "\(USERDATA_TAG).processRegisteredFile - error parsing JSON for \(path): \(error.localizedDescription)")
-        return false
-    }
-    guard let obj = obj else {
-        os_log(.error, "%{public}s", "\(USERDATA_TAG).processRegisteredFile - error parsing JSON for \(path): input resolved to nil")
-        return false
-    }
+    guard let obj = loadAndParseJSON(path) else { return false }
 
     (registeredFiles[path] as! NSMutableDictionary)["json"] = obj
-
-    let root: NSMutableDictionary = documentationTree
 
     guard let objArray = obj as? NSArray else {
         os_log(.error, "%{public}s", "\(USERDATA_TAG).processRegisteredFile - malformed documentation file \(path): proper format requires an array of entries")
         return false
     }
 
-    var regexError: NSError?
-    var parser: NSRegularExpression?
-    do {
-        parser = try NSRegularExpression(pattern: "[\\w_]+", options: .useUnicodeWordBoundaries)
-    } catch let e as NSError {
-        regexError = e
+    guard let parser = createWordParser() else { return false }
+
+    for (idx, element) in objArray.enumerated() {
+        processModuleEntry(element, idx: idx, path: path, parser: parser)
     }
 
-    if regexError == nil, let parser = parser {
-        for (idx, element) in objArray.enumerated() {
-            var pos = root
-
-            guard let entry = element as? NSDictionary, let entryName = entry["name"] as? NSString else {
-                os_log(.error, "%{public}s", "\(USERDATA_TAG).processRegisteredFile - malformed entry in \(path) -- expected module dictionary with 'name' key at index \(idx + 1) in \(path); skipping")
-                continue
-            }
-
-            parser.enumerateMatches(in: entryName as String, options: [], range: NSRange(location: 0, length: entryName.length)) { match, _, _ in
-                guard let match = match else { return }
-                let part = entryName.substring(with: match.range)
-                if pos[part] == nil {
-                    pos[part] = NSMutableDictionary(dictionary: ["__type__": "placeholder"])
-                }
-                pos = pos[part] as! NSMutableDictionary
-            }
-
-            if pos["__json__"] != nil {
-                // FIXME: Duplicate Handling
-                //    In theory additions or changes to the module could be defined elsewhere. Bad style, so log anyways, and we'll
-                //    decide how to officially handle it if it becomes normal as opposed to an "in-development" shortcut. For now,
-                //    assume since coredocs are loaded first, that this is an in-progress update that should overwrite the original.
-                os_log(.info, "%{public}s", "\(USERDATA_TAG).processRegisteredFile - duplicate module entry in \(path) for \(entryName) (\(entry["desc"] ?? ""))")
-            }
-            pos["__json__"] = entry
-            pos["__type__"] = "module" // this is more than a placeholder now
-
-            if let itemsAttached = entry["items"] {
-                guard let itemsArray = itemsAttached as? NSArray else {
-                    os_log(.info, "%{public}s", "\(USERDATA_TAG).processRegisteredFile - malformed entry in \(path) -- expected array or nil in 'items' key for \(entryName) at index \(idx + 1); skipping")
-                    continue
-                }
-
-                for (idx2, itemElement) in itemsArray.enumerated() {
-                    guard let itemEntry = itemElement as? NSDictionary, let itemName = itemEntry["name"] as? NSString else {
-                        os_log(.info, "%{public}s", "\(USERDATA_TAG).processRegisteredFile - malformed entry in \(path) -- expected item dictionary with 'name' key for \(entryName) at index \(idx2 + 1); skipping")
-                        continue
-                    }
-
-                    if let match = parser.firstMatch(in: itemName as String, options: [], range: NSRange(location: 0, length: itemName.length)),
-                       match.range.location != NSNotFound {
-                        let part = itemName.substring(with: match.range)
-                        if pos[part] != nil {
-                            // FIXME: Duplicate Handling
-                            //     See above for current behavior and reasoning
-                            os_log(.info, "%{public}s", "\(USERDATA_TAG).processRegisteredFile - duplicate item in \(path): \(itemName) (\(entry["def"] ?? "")) for \(entryName)")
-                        }
-                        let itemDict = NSMutableDictionary(dictionary: ["__type__": "entry"])
-                        itemDict["__json__"] = itemEntry
-                        pos[part] = itemDict
-                    } else {
-                        os_log(.info, "%{public}s", "\(USERDATA_TAG).processRegisteredFile - malformed entry in \(path) -- item name (\(itemName)) invalid for \(entryName) at index \(idx2 + 1); skipping")
-                    }
-                }
-            } // no items at all is ok, we only log when items isn't an array
-        }
-
-        // make sure watchers knows that something has changed
-        if let fn = triggerFn {
-            fn.push(onto: L)
-            lua_call(L, 0, 0)
-        }
-    } else {
-        os_log(.error, "%{public}s", "\(USERDATA_TAG).processRegisteredFile - error initializing regex: \(regexError?.localizedDescription ?? "unknown")")
+    if let fn = triggerFn {
+        fn.push(onto: L)
+        lua_call(L, 0, 0)
     }
 
     return true
+}
+
+/// Loads a file and parses it as JSON, returning nil on failure.
+private func loadAndParseJSON(_ path: NSString) -> Any? {
+    // TigerStyle: pre-check file size before loading entire doc JSON file
+    do {
+        let attrs = try FileManager.default.attributesOfItem(atPath: path as String)
+        if let fileSize = attrs[.size] as? UInt64, fileSize > kMaxDocFileSize {
+            os_log(.error, "%{public}s", "\(USERDATA_TAG).processRegisteredFile - file '\(path)' is \(fileSize) bytes, exceeds kMaxDocFileSize (\(kMaxDocFileSize) bytes)")
+            return nil
+        }
+    } catch {
+        // If stat fails, let the Data read attempt produce the real error below
+    }
+    let rawFile: Data
+    do {
+        rawFile = try Data(contentsOf: URL(fileURLWithPath: path as String), options: .mappedIfSafe)
+    } catch let e as NSError {
+        os_log(.error, "%{public}s", "\(USERDATA_TAG).processRegisteredFile - unable to open '\(path)' (\(e.localizedDescription))")
+        return nil
+    }
+
+    do {
+        guard let obj = try JSONSerialization.jsonObject(with: rawFile, options: .fragmentsAllowed) as Any? else {
+            os_log(.error, "%{public}s", "\(USERDATA_TAG).processRegisteredFile - error parsing JSON for \(path): input resolved to nil")
+            return nil
+        }
+        return obj
+    } catch let e as NSError {
+        os_log(.error, "%{public}s", "\(USERDATA_TAG).processRegisteredFile - error parsing JSON for \(path): \(e.localizedDescription)")
+        return nil
+    }
+}
+
+/// Creates a regex that matches word/underscore tokens for doc name parsing.
+private func createWordParser() -> NSRegularExpression? {
+    do {
+        return try NSRegularExpression(pattern: "[\\w_]+", options: .useUnicodeWordBoundaries)
+    } catch let e as NSError {
+        os_log(.error, "%{public}s", "\(USERDATA_TAG).processRegisteredFile - error initializing regex: \(e.localizedDescription)")
+        return nil
+    }
+}
+
+/// Processes a single module entry from the documentation JSON array.
+private func processModuleEntry(_ element: Any, idx: Int, path: NSString, parser: NSRegularExpression) {
+    let root: NSMutableDictionary = documentationTree
+
+    guard let entry = element as? NSDictionary, let entryName = entry["name"] as? NSString else {
+        os_log(.error, "%{public}s", "\(USERDATA_TAG).processRegisteredFile - malformed entry in \(path) -- expected module dictionary with 'name' key at index \(idx + 1) in \(path); skipping")
+        return
+    }
+
+    var pos = root
+    parser.enumerateMatches(in: entryName as String, options: [], range: NSRange(location: 0, length: entryName.length)) { match, _, _ in
+        guard let match = match else { return }
+        let part = entryName.substring(with: match.range)
+        if pos[part] == nil {
+            pos[part] = NSMutableDictionary(dictionary: ["__type__": "placeholder"])
+        }
+        pos = pos[part] as! NSMutableDictionary
+    }
+
+    if pos["__json__"] != nil {
+        // FIXME: Duplicate Handling
+        os_log(.info, "%{public}s", "\(USERDATA_TAG).processRegisteredFile - duplicate module entry in \(path) for \(entryName) (\(entry["desc"] ?? ""))")
+    }
+    pos["__json__"] = entry
+    pos["__type__"] = "module"
+
+    guard let itemsAttached = entry["items"] else { return }
+    guard let itemsArray = itemsAttached as? NSArray else {
+        os_log(.info, "%{public}s", "\(USERDATA_TAG).processRegisteredFile - malformed entry in \(path) -- expected array or nil in 'items' key for \(entryName) at index \(idx + 1); skipping")
+        return
+    }
+
+    processModuleItems(itemsArray, pos: pos, path: path, entryName: entryName, entry: entry, parser: parser)
+}
+
+/// Inserts each item from a module's "items" array into the documentation tree.
+private func processModuleItems(_ itemsArray: NSArray, pos: NSMutableDictionary,
+                                path: NSString, entryName: NSString,
+                                entry: NSDictionary, parser: NSRegularExpression) {
+    for (idx2, itemElement) in itemsArray.enumerated() {
+        guard let itemEntry = itemElement as? NSDictionary, let itemName = itemEntry["name"] as? NSString else {
+            os_log(.info, "%{public}s", "\(USERDATA_TAG).processRegisteredFile - malformed entry in \(path) -- expected item dictionary with 'name' key for \(entryName) at index \(idx2 + 1); skipping")
+            continue
+        }
+
+        if let match = parser.firstMatch(in: itemName as String, options: [], range: NSRange(location: 0, length: itemName.length)),
+           match.range.location != NSNotFound {
+            let part = itemName.substring(with: match.range)
+            if pos[part] != nil {
+                // FIXME: Duplicate Handling
+                os_log(.info, "%{public}s", "\(USERDATA_TAG).processRegisteredFile - duplicate item in \(path): \(itemName) (\(entry["def"] ?? "")) for \(entryName)")
+            }
+            let itemDict = NSMutableDictionary(dictionary: ["__type__": "entry"])
+            itemDict["__json__"] = itemEntry
+            pos[part] = itemDict
+        } else {
+            os_log(.info, "%{public}s", "\(USERDATA_TAG).processRegisteredFile - malformed entry in \(path) -- item name (\(itemName)) invalid for \(entryName) at index \(idx2 + 1); skipping")
+        }
+    }
 }
 
 private func findUnloadedDocumentationFiles(_ L: UnsafeMutablePointer<lua_State>!) {

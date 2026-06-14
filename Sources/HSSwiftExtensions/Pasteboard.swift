@@ -3,9 +3,12 @@ import CLua
 import Lua
 import os.log
 
+private let kMaxPasteboardRecursionDepth = 50
+
 // MARK: - Support Functions
 
 private func lua_to_pasteboard(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> NSPasteboard {
+    precondition(L != nil, "lua_State must not be nil")
     if !lua_isnoneornil(L, idx) {
         _ = luaL_checkstring(L, idx) // force number to string
         let name = NSPasteboard.Name(lua_tostringValue(L, at: idx) ?? "")
@@ -16,6 +19,8 @@ private func lua_to_pasteboard(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int
 }
 
 private func lua_tableHasAnyField(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32, _ fields: [String]) -> Bool {
+    precondition(L != nil, "lua_State must not be nil")
+    precondition(!fields.isEmpty, "fields array must not be empty")
     let absIdx = lua_absindex(L, idx)
     for field in fields {
         let hasField = lua_getfield(L, absIdx, field) != LUA_TNIL
@@ -36,7 +41,19 @@ private func lua_toArchivableObject(_ L: UnsafeMutablePointer<lua_State>!, at id
     return lua_tovalue(L, at: absIdx)
 }
 
-private func pushPasteboardValue(_ L: UnsafeMutablePointer<lua_State>!, _ value: Any?) {
+private func pushPasteboardValue(_ L: UnsafeMutablePointer<lua_State>!, _ value: Any?, depth: Int = 0) {
+    precondition(L != nil, "lua_State must not be nil")
+    let topBefore = lua_gettop(L)
+    defer {
+        assert(lua_gettop(L) == topBefore + 1, "pushPasteboardValue must push exactly one value onto the stack")
+    }
+
+    if depth >= kMaxPasteboardRecursionDepth {
+        os_log(.error, "pushPasteboardValue: recursion depth limit (%d) reached, pushing nil", kMaxPasteboardRecursionDepth)
+        lua_pushnil(L)
+        return
+    }
+
     guard let value = value else {
         lua_pushnil(L)
         return
@@ -57,14 +74,14 @@ private func pushPasteboardValue(_ L: UnsafeMutablePointer<lua_State>!, _ value:
     case let array as NSArray:
         lua_createtable(L, Int32(array.count), 0)
         for (index, item) in array.enumerated() {
-            pushPasteboardValue(L, item)
+            pushPasteboardValue(L, item, depth: depth + 1)
             lua_rawseti(L, -2, lua_Integer(index + 1))
         }
     case let dict as NSDictionary:
         lua_createtable(L, 0, Int32(dict.count))
         for (key, val) in dict {
             lua_pushany(L, key)
-            pushPasteboardValue(L, val)
+            pushPasteboardValue(L, val, depth: depth + 1)
             lua_settable(L, -3)
         }
     default:
@@ -792,7 +809,9 @@ private func readColorObjects(_ L: LuaState) throws -> CInt {
 }
 
 private func convertToPasteboardWritableObject(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> NSPasteboardWriting? {
+    precondition(L != nil, "lua_State must not be nil")
     let absIdx = lua_absindex(L, idx)
+    assert(absIdx > 0, "absolute index must be positive")
     let luaType = lua_type(L, absIdx)
     if luaType == LUA_TSTRING || luaType == LUA_TNUMBER {
         luaL_tolstring(L, absIdx, nil) // force number to be a string, but don't change value in stack
@@ -951,7 +970,8 @@ private func typesOnPasteboard(_ L: LuaState) throws -> CInt {
 
 @_cdecl("luaopen_hs_libpasteboard")
 public func luaopen_hs_libpasteboard(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    runEntryPoint(L) { L in
+    precondition(L != nil, "lua_State must not be nil")
+    return runEntryPoint(L) { L in
         lua_createtable(L, 0, 22)
         L.push( pasteboard_changeCount)
         lua_setfield(L, -2, "changeCount")

@@ -27,6 +27,11 @@ class HSIPCMessagePort: NSObject {
     }
 }
 
+/// TigerStyle: maximum IPC callback recursion depth. The callback dispatches Lua
+/// code that may itself send IPC messages; capping at 5 prevents runaway recursion
+/// while still allowing reasonable nested calls.
+private let kMaxIPCRecursionDepth = 5
+
 private var callbackInProgress: Int = 0
 
 private let ipc_callback: CFMessagePortCallBack = { (local, msgid, data, info) -> Unmanaged<CFData>? in
@@ -34,8 +39,8 @@ private let ipc_callback: CFMessagePortCallBack = { (local, msgid, data, info) -
     let port = Unmanaged<HSIPCMessagePort>.fromOpaque(info!).takeUnretainedValue()
     var outdata: Unmanaged<CFData>? = nil
 
-    if callbackInProgress >= 5 {
-        os_log(.error, "%{public}s", "hs.ipc callback is being called recursively. Check your callback function, it is triggering further IPC messages. This message was triggered after reaching 5 recursive callbacks.")
+    if callbackInProgress >= kMaxIPCRecursionDepth {
+        os_log(.error, "%{public}s", "hs.ipc callback is being called recursively. Check your callback function, it is triggering further IPC messages. This message was triggered after reaching \(kMaxIPCRecursionDepth) recursive callbacks.")
         return outdata
     }
 

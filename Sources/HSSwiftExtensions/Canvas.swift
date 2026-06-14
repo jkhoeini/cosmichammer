@@ -29,6 +29,7 @@ class HSGifAnimator: NSObject {
         guard !isRunning, let rep = animatingRepresentation else { return }
         isRunning = true
         let frameCount = (rep.value(forProperty: .frameCount) as? NSNumber)?.intValue ?? 1
+        assert(frameCount >= 1, "startAnimating: frameCount must be at least 1")
         guard frameCount > 1 else { return }
         advanceFrame(rep: rep, frameCount: frameCount)
     }
@@ -38,8 +39,10 @@ class HSGifAnimator: NSObject {
     }
 
     private func advanceFrame(rep: NSBitmapImageRep, frameCount: Int) {
+        precondition(frameCount > 0, "advanceFrame: frameCount must be positive")
         guard isRunning else { return }
         let current = (rep.value(forProperty: .currentFrame) as? NSNumber)?.intValue ?? 0
+        assert(current >= 0, "advanceFrame: current frame must be non-negative")
         let next = (current + 1) % frameCount
         rep.setProperty(.currentFrame, withValue: NSNumber(value: next))
         inCanvas?.needsDisplay = true
@@ -624,174 +627,130 @@ func canvas_defineLanguageDictionary() -> NSDictionary {
 // MARK: - Validation Functions
 
 func canvas_isValueValidForDictionary(_ keyName: NSString, _ keyValue: Any?, _ attributeDefinition: NSDictionary) -> AttributeValidity {
-    var validity = AttributeValidity.valid
-    var errorMessage: String? = nil
+    precondition(keyName.length > 0, "canvas_isValueValidForDictionary: keyName must not be empty")
+    precondition(attributeDefinition.count > 0, "canvas_isValueValidForDictionary: attributeDefinition must not be empty")
 
-    repeat {
-        guard let keyValue = keyValue, !(keyValue is NSNull) else {
-            if let nullable = attributeDefinition["nullable"] as? NSNumber, nullable.boolValue {
-                validity = .nulling
-            } else {
-                errorMessage = "\(keyName) is not nullable"
-            }
-            break
-        }
-
-        if let classArray = attributeDefinition["class"] as? [AnyClass] {
-            var found = false
-            for cls in classArray {
-                if (keyValue as AnyObject).isKind(of: cls) {
-                    found = true
-                    break
-                }
-            }
-            if !found {
-                errorMessage = "\(keyName) must be a \(attributeDefinition["luaClass"] ?? "unknown")"
-                break
-            }
-        }
-
-        if let expectedObjCType = attributeDefinition["objCType"] as? String,
-           let nsValue = keyValue as? NSNumber {
-            if String(cString: nsValue.objCType) != expectedObjCType {
-                errorMessage = "\(keyName) must be a \(attributeDefinition["luaClass"] ?? "unknown")"
-                break
-            }
-        }
-
-        if let nsNumber = keyValue as? NSNumber, attributeDefinition["objCType"] == nil {
-            if !nsNumber.doubleValue.isFinite {
-                errorMessage = "\(keyName) must be a finite number"
-                break
-            }
-        }
-
-        if let values = attributeDefinition["values"] as? [String], let strVal = keyValue as? String {
-            if !values.contains(strVal) {
-                errorMessage = "\(keyName) must be one of \(values.joined(separator: ", "))"
-                break
-            }
-        }
-
-        if let maxNumber = attributeDefinition["maxNumber"] as? NSNumber, let numVal = keyValue as? NSNumber {
-            if numVal.doubleValue > maxNumber.doubleValue {
-                errorMessage = "\(keyName) must be <= \(maxNumber.doubleValue)"
-                break
-            }
-        }
-
-        if let minNumber = attributeDefinition["minNumber"] as? NSNumber, let numVal = keyValue as? NSNumber {
-            if numVal.doubleValue < minNumber.doubleValue {
-                errorMessage = "\(keyName) must be >= \(minNumber.doubleValue)"
-                break
-            }
-        }
-
-        if let dictValue = keyValue as? NSDictionary, let subKeys = attributeDefinition["keys"] as? NSDictionary {
-            for case let subKeyName as String in subKeys.allKeys {
-                guard let subKeyDef = subKeys[subKeyName] as? NSDictionary else { continue }
-                let subVal = dictValue[subKeyName]
-
-                if let subClassArray = subKeyDef["class"] as? [AnyClass] {
-                    var found = false
-                    for cls in subClassArray {
-                        if let obj = subVal as AnyObject?, obj.isKind(of: cls) {
-                            found = true
-                            break
-                        }
-                    }
-                    if !found {
-                        errorMessage = "field \(subKeyName) of \(keyName) must be a \(subKeyDef["luaClass"] ?? "unknown")"
-                        break
-                    }
-                }
-
-                if let expectedObjCType = subKeyDef["objCType"] as? String,
-                   let nsValue = subVal as? NSNumber {
-                    if String(cString: nsValue.objCType) != expectedObjCType {
-                        errorMessage = "field \(subKeyName) of \(keyName) must be a \(subKeyDef["luaClass"] ?? "unknown")"
-                        break
-                    }
-                }
-
-                if let nsNumber = subVal as? NSNumber, subKeyDef["objCType"] == nil {
-                    if !nsNumber.doubleValue.isFinite {
-                        errorMessage = "field \(subKeyName) of \(keyName) must be a finite number"
-                        break
-                    }
-                }
-
-                if let values = subKeyDef["values"] as? [String], let strVal = subVal as? String {
-                    if !values.contains(strVal) {
-                        errorMessage = "field \(subKeyName) of \(keyName) must be one of \(values.joined(separator: ", "))"
-                        break
-                    }
-                }
-
-                if let maxNumber = subKeyDef["maxNumber"] as? NSNumber, let numVal = subVal as? NSNumber {
-                    if numVal.doubleValue > maxNumber.doubleValue {
-                        errorMessage = "field \(subKeyName) of \(keyName) must be <= \(maxNumber.doubleValue)"
-                        break
-                    }
-                }
-
-                if let minNumber = subKeyDef["minNumber"] as? NSNumber, let numVal = subVal as? NSNumber {
-                    if numVal.doubleValue < minNumber.doubleValue {
-                        errorMessage = "field \(subKeyName) of \(keyName) must be >= \(minNumber.doubleValue)"
-                        break
-                    }
-                }
-            }
-            if errorMessage != nil { break }
-        }
-
-        if let arrayValue = keyValue as? NSArray {
-            if arrayValue.count > 0 {
-                var isGood = true
-                if let memberClass = attributeDefinition["memberClass"] as? AnyClass {
-                    for i in 0..<arrayValue.count {
-                        if !(arrayValue[i] as AnyObject).isKind(of: memberClass) {
-                            isGood = false
-                            break
-                        } else if let dictItem = arrayValue[i] as? NSDictionary,
-                                  let memberClassKeys = attributeDefinition["memberClassKeys"] as? NSDictionary {
-                            for case let (subKey as String, obj) in dictItem {
-                                if let subKeyDef = memberClassKeys[subKey] as? NSDictionary {
-                                    validity = canvas_isValueValidForDictionary(subKey as NSString, obj, subKeyDef)
-                                } else {
-                                    validity = .invalid
-                                    errorMessage = "\(subKey) is not a valid subkey for a \(attributeDefinition["memberLuaClass"] ?? "unknown") value"
-                                }
-                                if validity != .valid { break }
-                            }
-                        }
-                    }
-                }
-                if !isGood {
-                    errorMessage = "\(keyName) must be an array of \(attributeDefinition["memberLuaClass"] ?? "unknown") values"
-                    break
-                }
-            }
-        }
-
-        if keyName.isEqual(to: "textFont"), let fontName = keyValue as? String {
-            if NSFont(name: fontName, size: 0.0) == nil {
-                errorMessage = "\(fontName) is not a recognized font name"
-                break
-            }
-        }
-
-        break // always exit the pseudo-loop
-    } while false
-
-    if let msg = errorMessage {
-        os_log(.error, "%{public}s:%{public}s", canvas_USERDATA_TAG, msg)
-        validity = .invalid
+    guard let keyValue = keyValue, !(keyValue is NSNull) else {
+        return canvas_validateNullability(keyName, attributeDefinition)
     }
-    return validity
+
+    if let err = canvas_validateTypeAndRange(keyName, keyValue, attributeDefinition) {
+        os_log(.error, "%{public}s:%{public}s", canvas_USERDATA_TAG, err)
+        return .invalid
+    }
+    if let err = canvas_validateSubKeys(keyName, keyValue, attributeDefinition) {
+        os_log(.error, "%{public}s:%{public}s", canvas_USERDATA_TAG, err)
+        return .invalid
+    }
+    let (validity, err) = canvas_validateArrayMembers(keyName, keyValue, attributeDefinition)
+    if let err = err {
+        os_log(.error, "%{public}s:%{public}s", canvas_USERDATA_TAG, err)
+        return .invalid
+    }
+    if validity != .valid { return validity }
+
+    if keyName.isEqual(to: "textFont"), let fontName = keyValue as? String {
+        if NSFont(name: fontName, size: 0.0) == nil {
+            os_log(.error, "%{public}s:%{public}s", canvas_USERDATA_TAG, "\(fontName) is not a recognized font name")
+            return .invalid
+        }
+    }
+    return .valid
+}
+
+private func canvas_validateNullability(_ keyName: NSString, _ attributeDefinition: NSDictionary) -> AttributeValidity {
+    if let nullable = attributeDefinition["nullable"] as? NSNumber, nullable.boolValue {
+        return .nulling
+    }
+    os_log(.error, "%{public}s:%{public}s", canvas_USERDATA_TAG, "\(keyName) is not nullable")
+    return .invalid
+}
+
+private func canvas_validateTypeAndRange(_ keyName: NSString, _ keyValue: Any, _ def: NSDictionary) -> String? {
+    if let classArray = def["class"] as? [AnyClass] {
+        if !classArray.contains(where: { (keyValue as AnyObject).isKind(of: $0) }) {
+            return "\(keyName) must be a \(def["luaClass"] ?? "unknown")"
+        }
+    }
+    if let expectedObjCType = def["objCType"] as? String, let nsValue = keyValue as? NSNumber {
+        if String(cString: nsValue.objCType) != expectedObjCType {
+            return "\(keyName) must be a \(def["luaClass"] ?? "unknown")"
+        }
+    }
+    if let nsNumber = keyValue as? NSNumber, def["objCType"] == nil {
+        if !nsNumber.doubleValue.isFinite { return "\(keyName) must be a finite number" }
+    }
+    if let values = def["values"] as? [String], let strVal = keyValue as? String {
+        if !values.contains(strVal) { return "\(keyName) must be one of \(values.joined(separator: ", "))" }
+    }
+    if let maxNumber = def["maxNumber"] as? NSNumber, let numVal = keyValue as? NSNumber {
+        if numVal.doubleValue > maxNumber.doubleValue { return "\(keyName) must be <= \(maxNumber.doubleValue)" }
+    }
+    if let minNumber = def["minNumber"] as? NSNumber, let numVal = keyValue as? NSNumber {
+        if numVal.doubleValue < minNumber.doubleValue { return "\(keyName) must be >= \(minNumber.doubleValue)" }
+    }
+    return nil
+}
+
+private func canvas_validateSubKeys(_ keyName: NSString, _ keyValue: Any, _ def: NSDictionary) -> String? {
+    guard let dictValue = keyValue as? NSDictionary, let subKeys = def["keys"] as? NSDictionary else { return nil }
+
+    for case let subKeyName as String in subKeys.allKeys {
+        guard let subKeyDef = subKeys[subKeyName] as? NSDictionary else { continue }
+        let subVal = dictValue[subKeyName]
+        let prefix = "field \(subKeyName) of \(keyName)"
+
+        if let subClassArray = subKeyDef["class"] as? [AnyClass] {
+            if !subClassArray.contains(where: { (subVal as AnyObject?)?.isKind(of: $0) == true }) {
+                return "\(prefix) must be a \(subKeyDef["luaClass"] ?? "unknown")"
+            }
+        }
+        if let expectedObjCType = subKeyDef["objCType"] as? String, let nsValue = subVal as? NSNumber {
+            if String(cString: nsValue.objCType) != expectedObjCType {
+                return "\(prefix) must be a \(subKeyDef["luaClass"] ?? "unknown")"
+            }
+        }
+        if let nsNumber = subVal as? NSNumber, subKeyDef["objCType"] == nil {
+            if !nsNumber.doubleValue.isFinite { return "\(prefix) must be a finite number" }
+        }
+        if let values = subKeyDef["values"] as? [String], let strVal = subVal as? String {
+            if !values.contains(strVal) { return "\(prefix) must be one of \(values.joined(separator: ", "))" }
+        }
+        if let maxNumber = subKeyDef["maxNumber"] as? NSNumber, let numVal = subVal as? NSNumber {
+            if numVal.doubleValue > maxNumber.doubleValue { return "\(prefix) must be <= \(maxNumber.doubleValue)" }
+        }
+        if let minNumber = subKeyDef["minNumber"] as? NSNumber, let numVal = subVal as? NSNumber {
+            if numVal.doubleValue < minNumber.doubleValue { return "\(prefix) must be >= \(minNumber.doubleValue)" }
+        }
+    }
+    return nil
+}
+
+private func canvas_validateArrayMembers(_ keyName: NSString, _ keyValue: Any, _ def: NSDictionary) -> (AttributeValidity, String?) {
+    guard let arrayValue = keyValue as? NSArray, arrayValue.count > 0 else { return (.valid, nil) }
+    guard let memberClass = def["memberClass"] as? AnyClass else { return (.valid, nil) }
+
+    for i in 0..<arrayValue.count {
+        if !(arrayValue[i] as AnyObject).isKind(of: memberClass) {
+            return (.invalid, "\(keyName) must be an array of \(def["memberLuaClass"] ?? "unknown") values")
+        }
+        if let dictItem = arrayValue[i] as? NSDictionary,
+           let memberClassKeys = def["memberClassKeys"] as? NSDictionary {
+            for case let (subKey as String, obj) in dictItem {
+                if let subKeyDef = memberClassKeys[subKey] as? NSDictionary {
+                    let v = canvas_isValueValidForDictionary(subKey as NSString, obj, subKeyDef)
+                    if v != .valid { return (v, nil) }
+                } else {
+                    return (.invalid, "\(subKey) is not a valid subkey for a \(def["memberLuaClass"] ?? "unknown") value")
+                }
+            }
+        }
+    }
+    return (.valid, nil)
 }
 
 func canvas_isValueValidForAttribute(_ keyName: NSString, _ keyValue: Any?) -> AttributeValidity {
+    precondition(keyName.length > 0, "canvas_isValueValidForAttribute: keyName must not be empty")
     guard let attributeDefinition = canvas_languageDictionary[keyName] as? NSDictionary else {
         os_log(.error, "%{public}s:%{public}@ is not a valid canvas attribute", canvas_USERDATA_TAG, keyName)
         return .invalid
@@ -830,6 +789,7 @@ func canvas_RectWithFlippedYCoordinate(_ theRect: NSRect) -> NSRect {
 }
 
 func canvas_orderHelper(_ L: UnsafeMutablePointer<lua_State>!, mode: NSWindow.OrderingMode) -> Int32 {
+    precondition(L != nil, "canvas_orderHelper: Lua state must not be nil")
     luaL_checkudata(L, 1, canvas_USERDATA_TAG)
 
     let canvasView = canvas_toHSCanvasViewFromLua(L, idx: 1) as! HSCanvasView
@@ -912,13 +872,17 @@ func canvas_cg_windowLevels(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 // MARK: - Lua<->NSObject Conversion Functions
 
 func canvas_pushHSCanvasView(_ L: UnsafeMutablePointer<lua_State>!, obj: Any!) -> Int32 {
+    precondition(L != nil, "canvas_pushHSCanvasView: Lua state must not be nil")
+    precondition(obj != nil, "canvas_pushHSCanvasView: obj must not be nil")
     let value = obj as! HSCanvasView
+    assert(value.selfRefCount >= 0, "canvas_pushHSCanvasView: selfRefCount must be non-negative before increment")
     value.selfRefCount += 1
     L.push(userdata: value)
     return 1
 }
 
 func canvas_toHSCanvasViewFromLua(_ L: UnsafeMutablePointer<lua_State>!, idx: Int32) -> Any! {
+    precondition(L != nil, "canvas_toHSCanvasViewFromLua: Lua state must not be nil")
     if let view: HSCanvasView = L.touserdata(idx) {
         return view
     } else {
@@ -946,6 +910,7 @@ func canvas_userdata_tostring(_ L: LuaState) throws -> CInt {
 // This standalone function is only used for the __gc closure and is kept
 // private to signal that callers should not invoke it directly.
 private func canvas_teardownView(_ theView: HSCanvasView) {
+    assert(theView.selfRefCount > 0, "canvas_teardownView: selfRefCount must be positive before decrement")
     theView.selfRefCount -= 1
     if theView.selfRefCount == 0 {
         if !canvas_parentIsWindow(theView) { theView.removeFromSuperview() }
@@ -966,7 +931,8 @@ private func canvas_teardownView(_ theView: HSCanvasView) {
 
 @_cdecl("luaopen_hs_libcanvas")
 public func luaopen_hs_libcanvas(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    runEntryPoint(L) { L in
+    precondition(L != nil, "luaopen_hs_libcanvas: Lua state must not be nil")
+    return runEntryPoint(L) { L in
         // Register idiomatic Metatable<HSCanvasView> with LuaSwift.
         // This creates an internal metatable "LuaSwift_Type_HSCanvasView" and sets __gc
         // to LuaSwift's gcUserdata (which deinitializes the Any box).

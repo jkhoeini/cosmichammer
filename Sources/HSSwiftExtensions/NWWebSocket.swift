@@ -15,6 +15,22 @@ import os.log
 ///
 /// Only one client connection is supported at a time (matching the
 /// current `hs.httpserver` WebSocket API).
+
+/// Maximum accumulated WebSocket read-buffer size (10 MB).  If a client
+/// sends more data than this without producing complete frames the
+/// connection is torn down.
+private let kMaxWebSocketBufferSize = 10_485_760
+
+/// Maximum number of WebSocket frames consumed in a single
+/// ``processFrames`` call.  This prevents a burst of tiny frames from
+/// monopolising the queue.
+private let kMaxWebSocketFramesPerCall = 10_000
+
+/// Maximum allowed WebSocket frame payload size (16 MB).  Frames whose
+/// declared payload length exceeds this are rejected and the connection
+/// is torn down immediately.
+private let kMaxWebSocketPayloadSize: UInt64 = 16_777_216
+
 class NWWebSocketServer {
 
     // MARK: Public properties
@@ -160,6 +176,11 @@ class NWWebSocketServer {
             guard let self, let connection else { return }
 
             if let content {
+                if self.readBuffer.count + content.count > kMaxWebSocketBufferSize {
+                    Self.logger.error("WebSocket read buffer exceeded \(kMaxWebSocketBufferSize) bytes — disconnecting client")
+                    self.tearDown(connection)
+                    return
+                }
                 self.readBuffer.append(content)
                 self.processFrames(connection)
             }
@@ -183,8 +204,10 @@ class NWWebSocketServer {
     /// Consume as many complete WebSocket frames as possible from
     /// ``readBuffer``.
     private func processFrames(_ connection: NWConnection) {
-        while true {
+        var framesConsumed = 0
+        for _ in 0..<kMaxWebSocketFramesPerCall {
             guard let frame = Self.parseFrame(&readBuffer) else { break }
+            framesConsumed += 1
 
             switch frame.opcode {
             case .text:
@@ -218,6 +241,11 @@ class NWWebSocketServer {
                 // hs.httpserver WebSocket API.  Drop them.
                 break
             }
+        }
+        // Warn only when the iteration limit was actually exhausted (not when
+        // the loop exited normally because no complete frame was available).
+        if framesConsumed >= kMaxWebSocketFramesPerCall && readBuffer.count > 2 {
+            Self.logger.warning("WebSocket processFrames hit \(kMaxWebSocketFramesPerCall)-frame limit with \(self.readBuffer.count) bytes remaining")
         }
     }
 
@@ -289,6 +317,13 @@ class NWWebSocketServer {
                 payloadLen = (payloadLen << 8) | UInt64(buffer[buffer.startIndex + offset + i])
             }
             offset += 8
+        }
+
+        // Reject frames whose declared payload exceeds the safety cap.
+        if payloadLen > kMaxWebSocketPayloadSize {
+            Self.logger.error("WebSocket frame payload \(payloadLen) bytes exceeds \(kMaxWebSocketPayloadSize)-byte limit — dropping connection")
+            buffer.removeAll()
+            return nil
         }
 
         // Masking key (4 bytes, present when masked).

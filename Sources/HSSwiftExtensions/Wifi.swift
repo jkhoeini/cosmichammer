@@ -405,92 +405,114 @@ private func pushCWInterface(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!)
     let theInterface = obj as! CWInterface
     lua_newtable(L)
 
-    pushWifiValue(L, theInterface.wlanChannel())
-    lua_setfield(L, -2, "wlanChannel")
-    L.push(lua_Number(theInterface.transmitRate()))
-    lua_setfield(L, -2, "transmitRate")
-    L.push(lua_Integer(theInterface.transmitPower()))
-    lua_setfield(L, -2, "transmitPower")
-    pushWifiValue(L, theInterface.supportedWLANChannels() as NSSet?)
-    lua_setfield(L, -2, "supportedChannels")
-    lua_pushany(L, theInterface.ssidData() as NSData?)
-    lua_setfield(L, -2, "ssidData")
-    lua_pushany(L, theInterface.ssid() as NSString?)
-    lua_setfield(L, -2, "ssid")
-    L.push(theInterface.serviceActive())
-    lua_setfield(L, -2, "active")
+    pushCWInterfaceRadioFields(L, theInterface)
+    pushCWInterfaceNetworkFields(L, theInterface)
 
-    let securityStr: String
-    switch theInterface.security() {
-    case .none:                securityStr = "None"
-    case .WEP:                 securityStr = "WEP"
-    case .wpaPersonal:         securityStr = "WPA Personal"
-    case .wpaPersonalMixed:    securityStr = "WPA Personal Mixed"
-    case .wpa2Personal:        securityStr = "WPA2 Personal"
-    case .personal:            securityStr = "Personal"
-    case .dynamicWEP:          securityStr = "Dynamic WEP"
-    case .wpaEnterprise:       securityStr = "WPA Enterprise"
-    case .wpaEnterpriseMixed:  securityStr = "WPA Enterprise Mixed"
-    case .wpa2Enterprise:      securityStr = "WPA2 Enterprise"
-    case .enterprise:          securityStr = "Enterprise"
-    case .wpa3Personal:        securityStr = "WPA3 Personal"
-    case .wpa3Enterprise:      securityStr = "WPA3 Enterprise"
-    case .wpa3Transition:      securityStr = "WPA3 Transition"
-    case .OWE:                 securityStr = "OWE"
-    case .oweTransition:       securityStr = "OWE Transition"
-    case .unknown:             securityStr = "Unknown"
-    @unknown default:          securityStr = "unrecognized (\(theInterface.security().rawValue))"
-    }
-    L.push(securityStr)
+    L.push(securityString(for: theInterface.security()))
     lua_setfield(L, -2, "security")
 
-    L.push(lua_Integer(theInterface.rssiValue()))
-    lua_setfield(L, -2, "rssi")
-    L.push(theInterface.powerOn())
-    lua_setfield(L, -2, "power")
-    L.push(lua_Integer(theInterface.noiseMeasurement()))
-    lua_setfield(L, -2, "noise")
-    lua_pushany(L, theInterface.interfaceName as NSString?)
-    lua_setfield(L, -2, "interface")
+    pushCWInterfaceStatusFields(L, theInterface)
 
-    let modeStr: String
-    switch theInterface.interfaceMode() {
-    case .none:    modeStr = "None"
-    case .station: modeStr = "Station"
-    case .IBSS:    modeStr = "IBSS"
-    case .hostAP:  modeStr = "Host AP"
-    @unknown default: modeStr = "unrecognized (\(theInterface.interfaceMode().rawValue))"
-    }
-    L.push(modeStr)
+    L.push(interfaceModeString(for: theInterface.interfaceMode()))
     lua_setfield(L, -2, "interfaceMode")
 
-    lua_pushany(L, theInterface.hardwareAddress() as NSString?)
-    lua_setfield(L, -2, "hardwareAddress")
-    lua_pushany(L, theInterface.countryCode() as NSString?)
-    lua_setfield(L, -2, "countryCode")
-    pushWifiValue(L, theInterface.configuration())
-    lua_setfield(L, -2, "configuration")
-    pushWifiValue(L, theInterface.cachedScanResults() as NSSet?)
-    lua_setfield(L, -2, "cachedScanResults")
-    lua_pushany(L, theInterface.bssid() as NSString?)
-    lua_setfield(L, -2, "bssid")
+    pushCWInterfaceIdentityFields(L, theInterface)
 
-    let phyStr: String
-    switch theInterface.activePHYMode() {
-    case .modeNone: phyStr = "None"
-    case .mode11a:  phyStr = "A"
-    case .mode11b:  phyStr = "B"
-    case .mode11g:  phyStr = "G"
-    case .mode11n:  phyStr = "N"
-    case .mode11ac: phyStr = "AC"
-    case .mode11ax: phyStr = "AX"
-    case .mode11be: phyStr = "BE"
-    @unknown default: phyStr = "unrecognized (\(theInterface.activePHYMode().rawValue))"
-    }
-    L.push(phyStr)
+    L.push(phyModeString(for: theInterface.activePHYMode()))
     lua_setfield(L, -2, "activePHYMode")
 
     return 1
+}
+
+private func pushCWInterfaceRadioFields(_ L: UnsafeMutablePointer<lua_State>!, _ iface: CWInterface) {
+    pushWifiValue(L, iface.wlanChannel())
+    lua_setfield(L, -2, "wlanChannel")
+    L.push(lua_Number(iface.transmitRate()))
+    lua_setfield(L, -2, "transmitRate")
+    L.push(lua_Integer(iface.transmitPower()))
+    lua_setfield(L, -2, "transmitPower")
+    pushWifiValue(L, iface.supportedWLANChannels() as NSSet?)
+    lua_setfield(L, -2, "supportedChannels")
+}
+
+private func pushCWInterfaceNetworkFields(_ L: UnsafeMutablePointer<lua_State>!, _ iface: CWInterface) {
+    lua_pushany(L, iface.ssidData() as NSData?)
+    lua_setfield(L, -2, "ssidData")
+    lua_pushany(L, iface.ssid() as NSString?)
+    lua_setfield(L, -2, "ssid")
+    L.push(iface.serviceActive())
+    lua_setfield(L, -2, "active")
+}
+
+private func pushCWInterfaceStatusFields(_ L: UnsafeMutablePointer<lua_State>!, _ iface: CWInterface) {
+    L.push(lua_Integer(iface.rssiValue()))
+    lua_setfield(L, -2, "rssi")
+    L.push(iface.powerOn())
+    lua_setfield(L, -2, "power")
+    L.push(lua_Integer(iface.noiseMeasurement()))
+    lua_setfield(L, -2, "noise")
+    lua_pushany(L, iface.interfaceName as NSString?)
+    lua_setfield(L, -2, "interface")
+}
+
+private func pushCWInterfaceIdentityFields(_ L: UnsafeMutablePointer<lua_State>!, _ iface: CWInterface) {
+    lua_pushany(L, iface.hardwareAddress() as NSString?)
+    lua_setfield(L, -2, "hardwareAddress")
+    lua_pushany(L, iface.countryCode() as NSString?)
+    lua_setfield(L, -2, "countryCode")
+    pushWifiValue(L, iface.configuration())
+    lua_setfield(L, -2, "configuration")
+    pushWifiValue(L, iface.cachedScanResults() as NSSet?)
+    lua_setfield(L, -2, "cachedScanResults")
+    lua_pushany(L, iface.bssid() as NSString?)
+    lua_setfield(L, -2, "bssid")
+}
+
+private func securityString(for security: CWSecurity) -> String {
+    switch security {
+    case .none:                return "None"
+    case .WEP:                 return "WEP"
+    case .wpaPersonal:         return "WPA Personal"
+    case .wpaPersonalMixed:    return "WPA Personal Mixed"
+    case .wpa2Personal:        return "WPA2 Personal"
+    case .personal:            return "Personal"
+    case .dynamicWEP:          return "Dynamic WEP"
+    case .wpaEnterprise:       return "WPA Enterprise"
+    case .wpaEnterpriseMixed:  return "WPA Enterprise Mixed"
+    case .wpa2Enterprise:      return "WPA2 Enterprise"
+    case .enterprise:          return "Enterprise"
+    case .wpa3Personal:        return "WPA3 Personal"
+    case .wpa3Enterprise:      return "WPA3 Enterprise"
+    case .wpa3Transition:      return "WPA3 Transition"
+    case .OWE:                 return "OWE"
+    case .oweTransition:       return "OWE Transition"
+    case .unknown:             return "Unknown"
+    @unknown default:          return "unrecognized (\(security.rawValue))"
+    }
+}
+
+private func interfaceModeString(for mode: CWInterfaceMode) -> String {
+    switch mode {
+    case .none:    return "None"
+    case .station: return "Station"
+    case .IBSS:    return "IBSS"
+    case .hostAP:  return "Host AP"
+    @unknown default: return "unrecognized (\(mode.rawValue))"
+    }
+}
+
+private func phyModeString(for mode: CWPHYMode) -> String {
+    switch mode {
+    case .modeNone: return "None"
+    case .mode11a:  return "A"
+    case .mode11b:  return "B"
+    case .mode11g:  return "G"
+    case .mode11n:  return "N"
+    case .mode11ac: return "AC"
+    case .mode11ax: return "AX"
+    case .mode11be: return "BE"
+    @unknown default: return "unrecognized (\(mode.rawValue))"
+    }
 }
 
 private func pushCWChannel(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {

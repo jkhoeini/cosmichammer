@@ -319,15 +319,7 @@ class HSRazerDevice: NSObject, LuaTeardownable {
         let wIndex: UInt16 = 0x01
         let wLength: UInt16 = 90
 
-        // Convert NSDictionary to [Int: NSNumber]
-        var args: [Int: NSNumber] = [:]
-        for (key, value) in arguments {
-            if let k = key as? NSNumber, let v = value as? NSNumber {
-                args[k.intValue] = v
-            }
-        }
-
-        // Build the report
+        let args = convertArgumentsDictionary(arguments)
         var reportBytes = HSRazerReportBuilder.build(
             transactionID: UInt8(truncatingIfNeeded: transactionID),
             commandClass: UInt8(truncatingIfNeeded: commandClass),
@@ -335,14 +327,50 @@ class HSRazerDevice: NSObject, LuaTeardownable {
             arguments: args
         )
 
-        // Find the matching USB device via IOKit
         guard let dev = getUSBRazerDevice() else {
             result.errorMessage = "Failed to create a Razer device for the initial report." as NSString
             return result
         }
 
-        // Send the report (OUT direction)
-        let sendResult: IOReturn = reportBytes.withUnsafeMutableBytes { rawBuf in
+        let sendResult = sendUSBReport(&reportBytes, to: dev, wValue: wValue, wIndex: wIndex, wLength: wLength)
+        if sendResult != kIOReturnSuccess {
+            closeAndReleaseDevice(dev)
+            result.errorMessage = "Failed to send Device Request: \(sendResult)" as NSString
+            return result
+        }
+
+        usleep(500)
+
+        var responseBytes = [UInt8](repeating: 0, count: 90)
+        let responseResult = readUSBResponse(&responseBytes, from: dev, wValue: wValue, wIndex: wIndex, wLength: wLength)
+        closeAndReleaseDevice(dev)
+
+        if responseResult != kIOReturnSuccess {
+            result.errorMessage = "Failed to get a response back from the Razer Device: \(String(cString: mach_error_string(responseResult)))" as NSString
+        } else {
+            validateRazerResponse(responseBytes, sentReport: reportBytes, result: result)
+        }
+
+        result.argumentTwo = responseBytes[10]
+        return result
+    }
+
+    private func convertArgumentsDictionary(_ arguments: NSDictionary) -> [Int: NSNumber] {
+        var args: [Int: NSNumber] = [:]
+        for (key, value) in arguments {
+            if let k = key as? NSNumber, let v = value as? NSNumber {
+                args[k.intValue] = v
+            }
+        }
+        return args
+    }
+
+    private func sendUSBReport(
+        _ reportBytes: inout [UInt8],
+        to dev: UnsafeMutablePointer<UnsafeMutablePointer<IOUSBDeviceInterface>>,
+        wValue: UInt16, wIndex: UInt16, wLength: UInt16
+    ) -> IOReturn {
+        reportBytes.withUnsafeMutableBytes { rawBuf in
             var request = IOUSBDevRequest()
             request.bmRequestType = UInt8(kUSBOut | kUSBClass | kUSBInterface)
             request.bRequest = UInt8(kUSBRqSetConfig)
@@ -352,20 +380,14 @@ class HSRazerDevice: NSObject, LuaTeardownable {
             request.pData = rawBuf.baseAddress
             return dev.pointee.pointee.DeviceRequest(dev, &request)
         }
+    }
 
-        if sendResult != kIOReturnSuccess {
-            _ = dev.pointee.pointee.USBDeviceClose(dev)
-            _ = dev.pointee.pointee.Release(dev)
-            result.errorMessage = "Failed to send Device Request: \(sendResult)" as NSString
-            return result
-        }
-
-        // Wait for response
-        usleep(500)
-
-        // Read response (IN direction)
-        var responseBytes = [UInt8](repeating: 0, count: 90)
-        let responseResult: IOReturn = responseBytes.withUnsafeMutableBytes { rawBuf in
+    private func readUSBResponse(
+        _ responseBytes: inout [UInt8],
+        from dev: UnsafeMutablePointer<UnsafeMutablePointer<IOUSBDeviceInterface>>,
+        wValue: UInt16, wIndex: UInt16, wLength: UInt16
+    ) -> IOReturn {
+        responseBytes.withUnsafeMutableBytes { rawBuf in
             var responseRequest = IOUSBDevRequest()
             responseRequest.bmRequestType = UInt8(kUSBIn | kUSBClass | kUSBInterface)
             responseRequest.bRequest = UInt8(kUSBRqClearFeature)
@@ -375,49 +397,42 @@ class HSRazerDevice: NSObject, LuaTeardownable {
             responseRequest.pData = rawBuf.baseAddress
             return dev.pointee.pointee.DeviceRequest(dev, &responseRequest)
         }
+    }
 
-        // Close & Release the USB Device:
+    private func closeAndReleaseDevice(_ dev: UnsafeMutablePointer<UnsafeMutablePointer<IOUSBDeviceInterface>>) {
         _ = dev.pointee.pointee.USBDeviceClose(dev)
         _ = dev.pointee.pointee.Release(dev)
+    }
 
-        if responseResult != kIOReturnSuccess {
-            result.errorMessage = "Failed to get a response back from the Razer Device: \(String(cString: mach_error_string(responseResult)))" as NSString
+    private func validateRazerResponse(_ responseBytes: [UInt8], sentReport: [UInt8], result: HSRazerResult) {
+        let respRemainingPackets = (UInt16(responseBytes[2]) << 8) | UInt16(responseBytes[3])
+        let sentRemainingPackets = (UInt16(sentReport[2]) << 8) | UInt16(sentReport[3])
+        let respCommandClass = responseBytes[6]
+        let sentCommandClass = sentReport[6]
+        let respCommandID = responseBytes[7]
+        let sentCommandID = sentReport[7]
+        let respStatus = responseBytes[0]
+
+        if respRemainingPackets != sentRemainingPackets {
+            result.errorMessage = "The sent report remaining packets don't match the response remaining packets." as NSString
+        } else if respCommandClass != sentCommandClass {
+            result.errorMessage = "The sent report command class doesn't match the response command class." as NSString
+        } else if respCommandID != sentCommandID {
+            result.errorMessage = "The sent report command ID doesn't match the response command ID." as NSString
+        } else if respStatus == 0x01 {
+            // "Busy" -- but still successful per the ObjC implementation
+            result.success = true
+        } else if respStatus == 0x02 {
+            result.success = true
+        } else if respStatus == 0x03 {
+            result.errorMessage = "The command sent to the Razer device failed." as NSString
+        } else if respStatus == 0x04 {
+            result.errorMessage = "The command sent to the Razer device timed out." as NSString
+        } else if respStatus == 0x05 {
+            result.errorMessage = "The command sent to the Razer device is not supported." as NSString
         } else {
-            // Validate response fields match sent report
-            let respRemainingPackets = (UInt16(responseBytes[2]) << 8) | UInt16(responseBytes[3])
-            let sentRemainingPackets = (UInt16(reportBytes[2]) << 8) | UInt16(reportBytes[3])
-            let respCommandClass = responseBytes[6]
-            let sentCommandClass = reportBytes[6]
-            let respCommandID = responseBytes[7]
-            let sentCommandID = reportBytes[7]
-            let respStatus = responseBytes[0]
-
-            if respRemainingPackets != sentRemainingPackets {
-                result.errorMessage = "The sent report remaining packets don't match the response remaining packets." as NSString
-            } else if respCommandClass != sentCommandClass {
-                result.errorMessage = "The sent report command class doesn't match the response command class." as NSString
-            } else if respCommandID != sentCommandID {
-                result.errorMessage = "The sent report command ID doesn't match the response command ID." as NSString
-            } else if respStatus == 0x01 {
-                // "Busy" -- but still successful per the ObjC implementation
-                result.success = true
-            } else if respStatus == 0x02 {
-                result.success = true
-            } else if respStatus == 0x03 {
-                result.errorMessage = "The command sent to the Razer device failed." as NSString
-            } else if respStatus == 0x04 {
-                result.errorMessage = "The command sent to the Razer device timed out." as NSString
-            } else if respStatus == 0x05 {
-                result.errorMessage = "The command sent to the Razer device is not supported." as NSString
-            } else {
-                result.errorMessage = "Unexpected status back from the Razer device: \(respStatus)" as NSString
-            }
+            result.errorMessage = "Unexpected status back from the Razer device: \(respStatus)" as NSString
         }
-
-        // Argument two from response (byte index 8+2 = 10)
-        result.argumentTwo = responseBytes[10]
-
-        return result
     }
 
     /// Find the USB device matching this Razer device's locationID and productID.
@@ -434,83 +449,98 @@ class HSRazerDevice: NSObject, LuaTeardownable {
 
         var usbDevice = IOIteratorNext(iter)
         while usbDevice != 0 {
-            var plugInInterface: UnsafeMutablePointer<UnsafeMutablePointer<IOCFPlugInInterface>?>?
-            var score: Int32 = 0
-
-            let plugInResult = IOCreatePlugInInterfaceForService(
-                usbDevice,
-                kIOUSBDeviceUserClientTypeID_,
-                kIOCFPlugInInterfaceID_,
-                &plugInInterface,
-                &score
-            )
-
-            IOObjectRelease(usbDevice)
-
-            guard plugInResult == kIOReturnSuccess,
-                  let plugin = plugInInterface,
-                  let pluginPtr = plugin.pointee else {
-                usbDevice = IOIteratorNext(iter)
-                continue
+            if let dev = tryAcquireUSBDevice(usbDevice) {
+                return dev
             }
-
-            // Query for IOUSBDeviceInterface
-            var devInterface: UnsafeMutableRawPointer?
-            let uuidBytes = CFUUIDGetUUIDBytes(kIOUSBDeviceInterfaceID_)
-            let hResult = withUnsafeBytes(of: uuidBytes) { uuidBuf in
-                pluginPtr.pointee.QueryInterface(
-                    pluginPtr,
-                    uuidBuf.load(as: REFIID.self),
-                    &devInterface
-                )
-            }
-
-            // Release plugin
-            _ = pluginPtr.pointee.Release(pluginPtr)
-
-            guard hResult == S_OK, let rawDev = devInterface else {
-                usbDevice = IOIteratorNext(iter)
-                continue
-            }
-
-            let dev = rawDev.assumingMemoryBound(to: UnsafeMutablePointer<IOUSBDeviceInterface>.self)
-
-            // Check location ID
-            var deviceLocationID: UInt32 = 0
-            guard dev.pointee.pointee.GetLocationID(dev, &deviceLocationID) == kIOReturnSuccess,
-                  deviceLocationID == locationID?.uint32Value else {
-                usbDevice = IOIteratorNext(iter)
-                continue
-            }
-
-            // Check vendor
-            var vendor: UInt16 = 0
-            guard dev.pointee.pointee.GetDeviceVendor(dev, &vendor) == kIOReturnSuccess,
-                  vendor == UInt16(USB_VID_RAZER) else {
-                usbDevice = IOIteratorNext(iter)
-                continue
-            }
-
-            // Check product
-            var product: UInt16 = 0
-            guard dev.pointee.pointee.GetDeviceProduct(dev, &product) == kIOReturnSuccess,
-                  product == UInt16(productID) else {
-                usbDevice = IOIteratorNext(iter)
-                continue
-            }
-
-            // Open the device
-            let openResult = dev.pointee.pointee.USBDeviceOpen(dev)
-            guard openResult == kIOReturnSuccess else {
-                _ = dev.pointee.pointee.Release(dev)
-                usbDevice = IOIteratorNext(iter)
-                continue
-            }
-
-            return dev
+            usbDevice = IOIteratorNext(iter)
         }
 
         return nil
+    }
+
+    private func tryAcquireUSBDevice(
+        _ usbDevice: io_object_t
+    ) -> UnsafeMutablePointer<UnsafeMutablePointer<IOUSBDeviceInterface>>? {
+        guard let dev = createDeviceInterface(from: usbDevice) else {
+            return nil
+        }
+
+        guard deviceMatchesExpected(dev) else {
+            return nil
+        }
+
+        let openResult = dev.pointee.pointee.USBDeviceOpen(dev)
+        guard openResult == kIOReturnSuccess else {
+            _ = dev.pointee.pointee.Release(dev)
+            return nil
+        }
+
+        return dev
+    }
+
+    private func createDeviceInterface(
+        from usbDevice: io_object_t
+    ) -> UnsafeMutablePointer<UnsafeMutablePointer<IOUSBDeviceInterface>>? {
+        var plugInInterface: UnsafeMutablePointer<UnsafeMutablePointer<IOCFPlugInInterface>?>?
+        var score: Int32 = 0
+
+        let plugInResult = IOCreatePlugInInterfaceForService(
+            usbDevice,
+            kIOUSBDeviceUserClientTypeID_,
+            kIOCFPlugInInterfaceID_,
+            &plugInInterface,
+            &score
+        )
+
+        IOObjectRelease(usbDevice)
+
+        guard plugInResult == kIOReturnSuccess,
+              let plugin = plugInInterface,
+              let pluginPtr = plugin.pointee else {
+            return nil
+        }
+
+        var devInterface: UnsafeMutableRawPointer?
+        let uuidBytes = CFUUIDGetUUIDBytes(kIOUSBDeviceInterfaceID_)
+        let hResult = withUnsafeBytes(of: uuidBytes) { uuidBuf in
+            pluginPtr.pointee.QueryInterface(
+                pluginPtr,
+                uuidBuf.load(as: REFIID.self),
+                &devInterface
+            )
+        }
+
+        _ = pluginPtr.pointee.Release(pluginPtr)
+
+        guard hResult == S_OK, let rawDev = devInterface else {
+            return nil
+        }
+
+        return rawDev.assumingMemoryBound(to: UnsafeMutablePointer<IOUSBDeviceInterface>.self)
+    }
+
+    private func deviceMatchesExpected(
+        _ dev: UnsafeMutablePointer<UnsafeMutablePointer<IOUSBDeviceInterface>>
+    ) -> Bool {
+        var deviceLocationID: UInt32 = 0
+        guard dev.pointee.pointee.GetLocationID(dev, &deviceLocationID) == kIOReturnSuccess,
+              deviceLocationID == locationID?.uint32Value else {
+            return false
+        }
+
+        var vendor: UInt16 = 0
+        guard dev.pointee.pointee.GetDeviceVendor(dev, &vendor) == kIOReturnSuccess,
+              vendor == UInt16(USB_VID_RAZER) else {
+            return false
+        }
+
+        var product: UInt16 = 0
+        guard dev.pointee.pointee.GetDeviceProduct(dev, &product) == kIOReturnSuccess,
+              product == UInt16(productID) else {
+            return false
+        }
+
+        return true
     }
 }
 

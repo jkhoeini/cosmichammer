@@ -128,6 +128,18 @@ public class MJConsoleWindowController: NSWindowController, NSTextFieldDelegate 
     // MARK: - Programmatic window construction
 
     public override func loadWindow() {
+        let window = buildConsoleWindow()
+        guard let contentView = window.contentView else { return }
+
+        let scrollView = buildOutputScrollView(in: contentView)
+        let inputField = buildInputField(in: contentView)
+        activateConsoleConstraints(contentView: contentView, scrollView: scrollView, inputField: inputField)
+
+        window.initialFirstResponder = inputField
+        self.window = window
+    }
+
+    private func buildConsoleWindow() -> NSWindow {
         let styleMask: NSWindow.StyleMask = [.titled, .closable, .miniaturizable, .resizable]
         let contentRect = NSRect(x: 916, y: 704, width: 510, height: 389)
         let window = NSWindow(
@@ -144,10 +156,10 @@ public class MJConsoleWindowController: NSWindowController, NSTextFieldDelegate 
         window.animationBehavior = .default
         window.autorecalculatesKeyViewLoop = false
         window.allowsToolTipsWhenApplicationIsInactive = false
+        return window
+    }
 
-        guard let contentView = window.contentView else { return }
-
-        // --- ScrollView + TextView (output) ---
+    private func buildOutputScrollView(in contentView: NSView) -> NSScrollView {
         let scrollView = NSScrollView(frame: .zero)
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         scrollView.hasVerticalScroller = true
@@ -156,6 +168,14 @@ public class MJConsoleWindowController: NSWindowController, NSTextFieldDelegate 
         scrollView.drawsBackground = true
         scrollView.contentView.drawsBackground = false
 
+        let textView = buildOutputTextView()
+        scrollView.documentView = textView
+        contentView.addSubview(scrollView)
+        self.outputView = textView
+        return scrollView
+    }
+
+    private func buildOutputTextView() -> NSTextView {
         let textView = NSTextView(frame: .zero)
         textView.isEditable = false
         textView.isSelectable = true
@@ -168,16 +188,13 @@ public class MJConsoleWindowController: NSWindowController, NSTextFieldDelegate 
         textView.isAutomaticTextCompletionEnabled = false
         textView.textColor = .textColor
         textView.backgroundColor = .textBackgroundColor
-
         textView.textContainer?.containerSize = NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
         textView.textContainer?.widthTracksTextView = true
         textView.autoresizingMask = [.width, .height]
+        return textView
+    }
 
-        scrollView.documentView = textView
-        contentView.addSubview(scrollView)
-        self.outputView = textView
-
-        // --- Input field (HSGrowingTextField) ---
+    private func buildInputField(in contentView: NSView) -> HSGrowingTextField {
         let inputField = HSGrowingTextField(frame: .zero)
         inputField.translatesAutoresizingMaskIntoConstraints = false
         inputField.font = NSFont(name: "Menlo-Regular", size: 12.0)
@@ -199,8 +216,10 @@ public class MJConsoleWindowController: NSWindowController, NSTextFieldDelegate 
         inputField.delegate = self
         contentView.addSubview(inputField)
         self.inputField = inputField
+        return inputField
+    }
 
-        // --- Auto Layout constraints ---
+    private func activateConsoleConstraints(contentView: NSView, scrollView: NSScrollView, inputField: HSGrowingTextField) {
         NSLayoutConstraint.activate([
             scrollView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 20),
             scrollView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 20),
@@ -212,9 +231,6 @@ public class MJConsoleWindowController: NSWindowController, NSTextFieldDelegate 
 
             inputField.topAnchor.constraint(equalTo: scrollView.bottomAnchor, constant: 8),
         ])
-
-        window.initialFirstResponder = inputField
-        self.window = window
     }
 
     // MARK: - Public API
@@ -225,6 +241,10 @@ public class MJConsoleWindowController: NSWindowController, NSTextFieldDelegate 
         MJColorForResult  = NSColor(calibratedHue: 0.54, saturation: 1.0, brightness: 0.7, alpha: 1.0)
         consoleFont       = NSFont(name: "Menlo", size: 12.0)
         maxConsoleOutputHistory = NSNumber(value: 100000)
+        assert(MJColorForStdout != nil, "stdout color must be set after initialization")
+        assert(MJColorForCommand != nil, "command color must be set after initialization")
+        assert(MJColorForResult != nil, "result color must be set after initialization")
+        assert(consoleFont != nil, "console font must be set after initialization")
     }
 
     public func setup() {
@@ -242,6 +262,7 @@ public class MJConsoleWindowController: NSWindowController, NSTextFieldDelegate 
     }
 
     public func reflectDefaults() {
+        assert(window != nil || outputView == nil, "reflectDefaults: window should exist if outputView exists")
         if ConsoleDarkModeEnabled() {
             window?.appearance = NSAppearance(named: .vibrantDark)
             window?.titlebarAppearsTransparent = true
@@ -257,6 +278,7 @@ public class MJConsoleWindowController: NSWindowController, NSTextFieldDelegate 
     // MARK: - Internal helpers
 
     private func appendString(_ str: String, type: MJReplLineType) {
+        assert(consoleFont != nil, "console font must be initialized before appending")
         var color = MJColorForStdout ?? .textColor
         switch type {
         case .stdout:  color = MJColorForStdout  ?? .textColor
@@ -297,18 +319,25 @@ public class MJConsoleWindowController: NSWindowController, NSTextFieldDelegate 
     }
 
     private func saveToHistory(_ cmd: String) {
+        let previousCount = history.count
         history.add(cmd)
+        assert(history.count == previousCount + 1, "history must grow by exactly one entry")
         historyIndex = history.count
+        assert(historyIndex >= 0, "history index must not be negative")
         useCurrentHistoryIndex()
     }
 
     private func goPrevHistory() {
         historyIndex = max(historyIndex - 1, 0)
+        assert(historyIndex >= 0, "history index must not be negative after goPrevHistory")
+        assert(historyIndex <= history.count, "history index must not exceed history count")
         useCurrentHistoryIndex()
     }
 
     private func goNextHistory() {
         historyIndex = min(historyIndex + 1, history.count)
+        assert(historyIndex >= 0, "history index must not be negative after goNextHistory")
+        assert(historyIndex <= history.count, "history index must not exceed history count")
         useCurrentHistoryIndex()
     }
 

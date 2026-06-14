@@ -72,124 +72,157 @@ class HSWebViewView: WKWebView, WKNavigationDelegate, WKUIDelegate {
 
     func webView(_ webView: WKWebView, didReceive challenge: URLAuthenticationChallenge,
                  completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
-        let hostName = webView.url?.host ?? ""
         let authenticationMethod = challenge.protectionSpace.authenticationMethod
 
         if authenticationMethod == NSURLAuthenticationMethodDefault
             || authenticationMethod == NSURLAuthenticationMethodHTTPBasic
             || authenticationMethod == NSURLAuthenticationMethodHTTPDigest {
-
-            let previousCredential = challenge.proposedCredential
-
-            if self.policyCallback != nil && challenge.previousFailureCount < 3 && lua_isStateGenerationValid(self.generation) {
-                let L = lua_getCurrentState()!
-                self.policyCallback!.push(onto: L)
-                L.push("authenticationChallenge")
-                wv_pushAny(L, webView.window as? HSWebViewWindow)
-                wv_pushAny(L, challenge)
-
-                if lua_pcall(L, 3, 1, 0) != LUA_OK {
-                    let errorMsg = lua_tostring(L, -1).map({ String(cString: $0) }) ?? "unknown error"
-                    os_log(.error, "%{public}s", "hs.webview:policyCallback() authenticationChallenge callback error: \(errorMsg)")
-                } else {
-                    if lua_type(L, -1) == LUA_TTABLE {
-                        lua_getfield(L, -1, "user")
-                        let userName = (lua_type(L, -1) == LUA_TSTRING) ? (lua_tovalue(L, at: -1) as? String ?? "") : ""
-                        lua_pop(L, 1)
-
-                        lua_getfield(L, -1, "password")
-                        let password = (lua_type(L, -1) == LUA_TSTRING) ? (lua_tovalue(L, at: -1) as? String ?? "") : ""
-                        lua_pop(L, 1)
-
-                        let credential = URLCredential(user: userName, password: password, persistence: .forSession)
-                        completionHandler(.useCredential, credential)
-                        lua_pop(L, 1)
-                        return
-                    } else if lua_toboolean(L, -1) == 0 {
-                        completionHandler(.cancelAuthenticationChallenge, nil)
-                        lua_pop(L, 1)
-                        return
-                    }
-                }
-                lua_pop(L, 1)
-            }
-
-            if let targetWindow = self.window {
-                var title = "Authentication Challenge"
-                if previousCredential != nil && challenge.previousFailureCount > 0 {
-                    title = "\(title), attempt \(challenge.previousFailureCount + 1)"
-                }
-                let alert1 = NSAlert()
-                alert1.addButton(withTitle: "OK")
-                alert1.addButton(withTitle: "Cancel")
-                alert1.messageText = title
-                alert1.informativeText = "Username for \(hostName)"
-                let user = NSTextField(frame: NSMakeRect(0, 0, 200, 24))
-                if let prevCred = previousCredential {
-                    user.stringValue = prevCred.user ?? ""
-                }
-                user.isEditable = true
-                alert1.accessoryView = user
-
-                alert1.beginSheetModal(for: targetWindow) { returnCode in
-                    if returnCode == .alertFirstButtonReturn {
-                        let alert2 = NSAlert()
-                        alert2.addButton(withTitle: "OK")
-                        alert2.addButton(withTitle: "Cancel")
-                        alert2.messageText = title
-                        alert2.informativeText = "password for \(hostName)"
-                        let pass = NSSecureTextField(frame: NSMakeRect(0, 36, 200, 24))
-                        pass.isEditable = true
-                        alert2.accessoryView = pass
-                        alert2.beginSheetModal(for: targetWindow) { returnCode2 in
-                            if returnCode2 == .alertFirstButtonReturn {
-                                let credential = URLCredential(user: user.stringValue, password: pass.stringValue, persistence: .forSession)
-                                completionHandler(.useCredential, credential)
-                            } else {
-                                completionHandler(.cancelAuthenticationChallenge, nil)
-                            }
-                        }
-                    } else {
-                        completionHandler(.cancelAuthenticationChallenge, nil)
-                    }
-                }
-            } else {
-                os_log(.default, "%{public}s","\(wv_USERDATA_TAG):didReceiveAuthenticationChallenge no target window")
-                completionHandler(.performDefaultHandling, nil)
-            }
-
+            handleBasicAuthChallenge(webView, challenge: challenge, completionHandler: completionHandler)
         } else if authenticationMethod == NSURLAuthenticationMethodServerTrust {
-            let serverTrust = challenge.protectionSpace.serverTrust!
-            var status: SecTrustResultType = .invalid
-            SecTrustEvaluate(serverTrust, &status)
-
-            if status == .recoverableTrustFailure && self.sslCallback != nil && lua_isStateGenerationValid(self.generation) {
-                let L = lua_getCurrentState()!
-                self.sslCallback!.push(onto: L)
-                wv_pushAny(L, webView.window as? HSWebViewWindow)
-                wv_pushAny(L, challenge.protectionSpace)
-
-                if lua_pcall(L, 2, 1, 0) != LUA_OK {
-                    let errorMsg = lua_tostring(L, -1).map({ String(cString: $0) }) ?? "unknown error"
-                    os_log(.error, "%{public}s", "hs.webview:sslCallback callback error: \(errorMsg)")
-                    completionHandler(.performDefaultHandling, nil)
-                } else {
-                    if lua_type(L, -1) == LUA_TBOOLEAN && lua_toboolean(L, -1) != 0 && examineInvalidCertificates {
-                        let exceptions = SecTrustCopyExceptions(serverTrust)
-                        SecTrustSetExceptions(serverTrust, exceptions)
-                        completionHandler(.useCredential, URLCredential(trust: serverTrust))
-                    } else {
-                        completionHandler(.performDefaultHandling, nil)
-                    }
-                }
-                lua_pop(L, 1)
-            } else {
-                completionHandler(.performDefaultHandling, nil)
-            }
+            handleServerTrustChallenge(webView, challenge: challenge, completionHandler: completionHandler)
         } else {
             os_log(.default, "%{public}s","\(wv_USERDATA_TAG):didReceiveAuthenticationChallenge unhandled challenge type:\(challenge.protectionSpace.authenticationMethod)")
             completionHandler(.performDefaultHandling, nil)
         }
+    }
+
+    // MARK: - Authentication challenge helpers
+
+    private func handleBasicAuthChallenge(_ webView: WKWebView, challenge: URLAuthenticationChallenge,
+                                          completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
+        let previousCredential = challenge.proposedCredential
+
+        if self.policyCallback != nil && challenge.previousFailureCount < 3 && lua_isStateGenerationValid(self.generation) {
+            let handled = tryPolicyCallbackForAuth(webView, challenge: challenge, completionHandler: completionHandler)
+            if handled { return }
+        }
+
+        guard let targetWindow = self.window else {
+            os_log(.default, "%{public}s","\(wv_USERDATA_TAG):didReceiveAuthenticationChallenge no target window")
+            completionHandler(.performDefaultHandling, nil)
+            return
+        }
+
+        let hostName = webView.url?.host ?? ""
+        presentAuthAlerts(hostName: hostName, previousCredential: previousCredential,
+                          failureCount: challenge.previousFailureCount,
+                          targetWindow: targetWindow, completionHandler: completionHandler)
+    }
+
+    private func tryPolicyCallbackForAuth(_ webView: WKWebView, challenge: URLAuthenticationChallenge,
+                                          completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) -> Bool {
+        let L = lua_getCurrentState()!
+        self.policyCallback!.push(onto: L)
+        L.push("authenticationChallenge")
+        wv_pushAny(L, webView.window as? HSWebViewWindow)
+        wv_pushAny(L, challenge)
+
+        if lua_pcall(L, 3, 1, 0) != LUA_OK {
+            let errorMsg = lua_tostring(L, -1).map({ String(cString: $0) }) ?? "unknown error"
+            os_log(.error, "%{public}s", "hs.webview:policyCallback() authenticationChallenge callback error: \(errorMsg)")
+            lua_pop(L, 1)
+            return false
+        }
+
+        if lua_type(L, -1) == LUA_TTABLE {
+            lua_getfield(L, -1, "user")
+            let userName = (lua_type(L, -1) == LUA_TSTRING) ? (lua_tovalue(L, at: -1) as? String ?? "") : ""
+            lua_pop(L, 1)
+            lua_getfield(L, -1, "password")
+            let password = (lua_type(L, -1) == LUA_TSTRING) ? (lua_tovalue(L, at: -1) as? String ?? "") : ""
+            lua_pop(L, 1)
+            let credential = URLCredential(user: userName, password: password, persistence: .forSession)
+            completionHandler(.useCredential, credential)
+            lua_pop(L, 1)
+            return true
+        } else if lua_toboolean(L, -1) == 0 {
+            completionHandler(.cancelAuthenticationChallenge, nil)
+            lua_pop(L, 1)
+            return true
+        }
+
+        lua_pop(L, 1)
+        return false
+    }
+
+    private func presentAuthAlerts(hostName: String, previousCredential: URLCredential?, failureCount: Int,
+                                   targetWindow: NSWindow,
+                                   completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
+        var title = "Authentication Challenge"
+        if previousCredential != nil && failureCount > 0 {
+            title = "\(title), attempt \(failureCount + 1)"
+        }
+        let alert1 = NSAlert()
+        alert1.addButton(withTitle: "OK")
+        alert1.addButton(withTitle: "Cancel")
+        alert1.messageText = title
+        alert1.informativeText = "Username for \(hostName)"
+        let user = NSTextField(frame: NSMakeRect(0, 0, 200, 24))
+        if let prevCred = previousCredential { user.stringValue = prevCred.user ?? "" }
+        user.isEditable = true
+        alert1.accessoryView = user
+
+        alert1.beginSheetModal(for: targetWindow) { returnCode in
+            if returnCode == .alertFirstButtonReturn {
+                self.presentPasswordAlert(title: title, hostName: hostName, user: user,
+                                          targetWindow: targetWindow, completionHandler: completionHandler)
+            } else {
+                completionHandler(.cancelAuthenticationChallenge, nil)
+            }
+        }
+    }
+
+    private func presentPasswordAlert(title: String, hostName: String, user: NSTextField,
+                                      targetWindow: NSWindow,
+                                      completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
+        let alert2 = NSAlert()
+        alert2.addButton(withTitle: "OK")
+        alert2.addButton(withTitle: "Cancel")
+        alert2.messageText = title
+        alert2.informativeText = "password for \(hostName)"
+        let pass = NSSecureTextField(frame: NSMakeRect(0, 36, 200, 24))
+        pass.isEditable = true
+        alert2.accessoryView = pass
+        alert2.beginSheetModal(for: targetWindow) { returnCode2 in
+            if returnCode2 == .alertFirstButtonReturn {
+                let credential = URLCredential(user: user.stringValue, password: pass.stringValue, persistence: .forSession)
+                completionHandler(.useCredential, credential)
+            } else {
+                completionHandler(.cancelAuthenticationChallenge, nil)
+            }
+        }
+    }
+
+    private func handleServerTrustChallenge(_ webView: WKWebView, challenge: URLAuthenticationChallenge,
+                                            completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
+        let serverTrust = challenge.protectionSpace.serverTrust!
+        var status: SecTrustResultType = .invalid
+        SecTrustEvaluate(serverTrust, &status)
+
+        guard status == .recoverableTrustFailure && self.sslCallback != nil && lua_isStateGenerationValid(self.generation) else {
+            completionHandler(.performDefaultHandling, nil)
+            return
+        }
+
+        let L = lua_getCurrentState()!
+        self.sslCallback!.push(onto: L)
+        wv_pushAny(L, webView.window as? HSWebViewWindow)
+        wv_pushAny(L, challenge.protectionSpace)
+
+        if lua_pcall(L, 2, 1, 0) != LUA_OK {
+            let errorMsg = lua_tostring(L, -1).map({ String(cString: $0) }) ?? "unknown error"
+            os_log(.error, "%{public}s", "hs.webview:sslCallback callback error: \(errorMsg)")
+            completionHandler(.performDefaultHandling, nil)
+        } else {
+            if lua_type(L, -1) == LUA_TBOOLEAN && lua_toboolean(L, -1) != 0 && examineInvalidCertificates {
+                let exceptions = SecTrustCopyExceptions(serverTrust)
+                SecTrustSetExceptions(serverTrust, exceptions)
+                completionHandler(.useCredential, URLCredential(trust: serverTrust))
+            } else {
+                completionHandler(.performDefaultHandling, nil)
+            }
+        }
+        lua_pop(L, 1)
     }
 
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,

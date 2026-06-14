@@ -123,20 +123,43 @@ private func hostLocalizedName(_ L: LuaState) throws -> CInt {
 ///  * Except for the addition of cacheHits, cacheLookups, pageSize and memSize, the results for this function should be identical to the OS X command `vm_stat`.
 ///  * Adapted primarily from the source code to Apple's vm_stat command located at http://www.opensource.apple.com/source/system_cmds/system_cmds-643.1.1/vm_stat.tproj/vm_stat.c
 private func hs_vmstat(_ L: LuaState) throws -> CInt {
+    let pagesize = try queryPageSize()
+    let memsize = try queryMemSize()
+    let vm_stat = try queryVMStatistics()
+
+    lua_newtable(L)
+    pushVMPageCountFields(L, vm_stat)
+    pushVMEventFields(L, vm_stat)
+    pushVMSwapAndCacheFields(L, vm_stat)
+    L.push(lua_Integer(pagesize))
+    lua_setfield(L, -2, "pageSize")
+    L.push(lua_Integer(memsize))
+    lua_setfield(L, -2, "memSize")
+
+    return 1
+}
+
+private func queryPageSize() throws -> UInt32 {
     var mib: [Int32] = [CTL_HW, HW_PAGESIZE]
     var pagesize: UInt32 = 0
     var length = MemoryLayout<UInt32>.size
     if sysctl(&mib, 2, &pagesize, &length, nil, 0) < 0 {
         throw LuaCallError("hs.host.vmStat() error: Error getting page size (\(errno)): \(String(cString: strerror(errno)))")
     }
+    return pagesize
+}
 
-    mib = [CTL_HW, HW_MEMSIZE]
+private func queryMemSize() throws -> UInt64 {
+    var mib: [Int32] = [CTL_HW, HW_MEMSIZE]
     var memsize: UInt64 = 0
-    length = MemoryLayout<UInt64>.size
+    var length = MemoryLayout<UInt64>.size
     if sysctl(&mib, 2, &memsize, &length, nil, 0) < 0 {
         throw LuaCallError("hs.host.vmStat() error: Error getting mem size (\(errno)): \(String(cString: strerror(errno)))")
     }
+    return memsize
+}
 
+private func queryVMStatistics() throws -> vm_statistics64_data_t {
     var count = mach_msg_type_number_t(MemoryLayout<vm_statistics64_data_t>.size / MemoryLayout<integer_t>.size)
     var vm_stat = vm_statistics64_data_t()
     let retVal = withUnsafeMutablePointer(to: &vm_stat) { ptr in
@@ -144,66 +167,67 @@ private func hs_vmstat(_ L: LuaState) throws -> CInt {
             host_statistics64(mach_host_self(), HOST_VM_INFO64, intPtr, &count)
         }
     }
-
     if retVal != KERN_SUCCESS {
         throw LuaCallError("hs.host.vmStat() error: Error getting VM Statistics: \(String(cString: mach_error_string(retVal)))")
     }
+    return vm_stat
+}
 
-    lua_newtable(L)
-    L.push(lua_Integer(Int64(vm_stat.free_count) - Int64(vm_stat.speculative_count)))
+private func pushVMPageCountFields(_ L: LuaState, _ s: vm_statistics64_data_t) {
+    L.push(lua_Integer(Int64(s.free_count) - Int64(s.speculative_count)))
     lua_setfield(L, -2, "pagesFree")
-    L.push(lua_Integer(vm_stat.active_count))
+    L.push(lua_Integer(s.active_count))
     lua_setfield(L, -2, "pagesActive")
-    L.push(lua_Integer(vm_stat.inactive_count))
+    L.push(lua_Integer(s.inactive_count))
     lua_setfield(L, -2, "pagesInactive")
-    L.push(lua_Integer(vm_stat.speculative_count))
+    L.push(lua_Integer(s.speculative_count))
     lua_setfield(L, -2, "pagesSpeculative")
-    L.push(lua_Integer(vm_stat.throttled_count))
+    L.push(lua_Integer(s.throttled_count))
     lua_setfield(L, -2, "pagesThrottled")
-    L.push(lua_Integer(vm_stat.wire_count))
+    L.push(lua_Integer(s.wire_count))
     lua_setfield(L, -2, "pagesWiredDown")
-    L.push(lua_Integer(vm_stat.purgeable_count))
+    L.push(lua_Integer(s.purgeable_count))
     lua_setfield(L, -2, "pagesPurgeable")
-    L.push(lua_Integer(vm_stat.faults))
-    lua_setfield(L, -2, "translationFaults")
-    L.push(lua_Integer(vm_stat.cow_faults))
-    lua_setfield(L, -2, "pagesCopyOnWrite")
-    L.push(lua_Integer(vm_stat.zero_fill_count))
-    lua_setfield(L, -2, "pagesZeroFilled")
-    L.push(lua_Integer(vm_stat.reactivations))
-    lua_setfield(L, -2, "pagesReactivated")
-    L.push(lua_Integer(vm_stat.purges))
-    lua_setfield(L, -2, "pagesPurged")
-    L.push(lua_Integer(vm_stat.external_page_count))
+    L.push(lua_Integer(s.external_page_count))
     lua_setfield(L, -2, "fileBackedPages")
-    L.push(lua_Integer(vm_stat.internal_page_count))
+    L.push(lua_Integer(s.internal_page_count))
     lua_setfield(L, -2, "anonymousPages")
-    L.push(lua_Integer(vm_stat.total_uncompressed_pages_in_compressor))
+    L.push(lua_Integer(s.total_uncompressed_pages_in_compressor))
     lua_setfield(L, -2, "uncompressedPages")
-    L.push(lua_Integer(vm_stat.compressor_page_count))
+    L.push(lua_Integer(s.compressor_page_count))
     lua_setfield(L, -2, "pagesUsedByVMCompressor")
-    L.push(lua_Integer(vm_stat.decompressions))
-    lua_setfield(L, -2, "pagesDecompressed")
-    L.push(lua_Integer(vm_stat.compressions))
-    lua_setfield(L, -2, "pagesCompressed")
-    L.push(lua_Integer(vm_stat.pageins))
-    lua_setfield(L, -2, "pageIns")
-    L.push(lua_Integer(vm_stat.pageouts))
-    lua_setfield(L, -2, "pageOuts")
-    L.push(lua_Integer(vm_stat.swapins))
-    lua_setfield(L, -2, "swapIns")
-    L.push(lua_Integer(vm_stat.swapouts))
-    lua_setfield(L, -2, "swapOuts")
-    L.push(lua_Integer(vm_stat.lookups))
-    lua_setfield(L, -2, "cacheLookups")
-    L.push(lua_Integer(vm_stat.hits))
-    lua_setfield(L, -2, "cacheHits")
-    L.push(lua_Integer(pagesize))
-    lua_setfield(L, -2, "pageSize")
-    L.push(lua_Integer(memsize))
-    lua_setfield(L, -2, "memSize")
+}
 
-    return 1
+private func pushVMEventFields(_ L: LuaState, _ s: vm_statistics64_data_t) {
+    L.push(lua_Integer(s.faults))
+    lua_setfield(L, -2, "translationFaults")
+    L.push(lua_Integer(s.cow_faults))
+    lua_setfield(L, -2, "pagesCopyOnWrite")
+    L.push(lua_Integer(s.zero_fill_count))
+    lua_setfield(L, -2, "pagesZeroFilled")
+    L.push(lua_Integer(s.reactivations))
+    lua_setfield(L, -2, "pagesReactivated")
+    L.push(lua_Integer(s.purges))
+    lua_setfield(L, -2, "pagesPurged")
+    L.push(lua_Integer(s.decompressions))
+    lua_setfield(L, -2, "pagesDecompressed")
+    L.push(lua_Integer(s.compressions))
+    lua_setfield(L, -2, "pagesCompressed")
+    L.push(lua_Integer(s.pageins))
+    lua_setfield(L, -2, "pageIns")
+    L.push(lua_Integer(s.pageouts))
+    lua_setfield(L, -2, "pageOuts")
+}
+
+private func pushVMSwapAndCacheFields(_ L: LuaState, _ s: vm_statistics64_data_t) {
+    L.push(lua_Integer(s.swapins))
+    lua_setfield(L, -2, "swapIns")
+    L.push(lua_Integer(s.swapouts))
+    lua_setfield(L, -2, "swapOuts")
+    L.push(lua_Integer(s.lookups))
+    lua_setfield(L, -2, "cacheLookups")
+    L.push(lua_Integer(s.hits))
+    lua_setfield(L, -2, "cacheHits")
 }
 
 /// hs.host.cpuUsageTicks() -> table

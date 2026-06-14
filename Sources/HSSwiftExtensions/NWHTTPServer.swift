@@ -3,6 +3,12 @@ import Network
 import Security
 import os.log
 
+// MARK: - Constants
+
+/// Maximum number of concurrent HTTP server connections.  New connections
+/// beyond this limit are immediately cancelled with an error log.
+private let kMaxHTTPServerConnections = 1000
+
 // MARK: - NWHTTPServer
 
 /// A lightweight HTTP/1.1 server built on Network.framework's `NWListener`.
@@ -81,6 +87,10 @@ class NWHTTPServer {
     ///
     /// - Throws: If the `NWListener` cannot be created (e.g. invalid port).
     func start() throws {
+        precondition(!isRunning, "Server is already running; call stop() first")
+        assert(requestHandler != nil || webSocketHandler != nil,
+               "At least one handler (request or websocket) should be configured before starting")
+
         let params = try makeParameters()
 
         // Require the port to fit NWEndpoint.Port
@@ -120,6 +130,9 @@ class NWHTTPServer {
             wrapper.connection.cancel()
         }
         connections.removeAll()
+
+        assert(!isRunning, "Server must not be running after stop")
+        assert(connections.isEmpty, "All connections must be cleared after stop")
     }
 
     /// Returns the actual TCP port the listener is bound to.
@@ -137,6 +150,8 @@ class NWHTTPServer {
     // MARK: - NWParameters / TLS
 
     private func makeParameters() throws -> NWParameters {
+        assert(!isRunning, "Parameters should not be constructed while server is already running")
+
         guard useSSL else { return .tcp }
 
         let tlsOptions = NWProtocolTLS.Options()
@@ -192,8 +207,18 @@ class NWHTTPServer {
     // MARK: - Connection Acceptance
 
     private func acceptConnection(_ connection: NWConnection) {
+        assert(isRunning, "Cannot accept connections when server is not running")
+
+        if connections.count >= kMaxHTTPServerConnections {
+            Self.logger.error("HTTP server at max connections (\(kMaxHTTPServerConnections)) — rejecting new connection")
+            connection.cancel()
+            return
+        }
+
         let wrapper = NWConnectionWrapper(connection: connection)
         connections.insert(wrapper)
+
+        assert(connections.contains(wrapper), "Wrapper must be in connections set after insert")
 
         connection.stateUpdateHandler = { [weak self, weak wrapper] state in
             guard let self = self, let wrapper = wrapper else { return }
@@ -212,6 +237,8 @@ class NWHTTPServer {
     private func removeConnection(_ wrapper: NWConnectionWrapper) {
         wrapper.connection.cancel()
         connections.remove(wrapper)
+
+        assert(!connections.contains(wrapper), "Wrapper must not be in connections set after removal")
     }
 
     // MARK: - Receive Loop
@@ -268,64 +295,18 @@ class NWHTTPServer {
         on wrapper: NWConnectionWrapper,
         remainingBuffer: Data
     ) {
-        // 1. WebSocket upgrade?
-        if let wsHandler = webSocketHandler,
-           isWebSocketUpgrade(request),
-           request.path == wsHandler.path {
-            // Hand the connection to the WebSocket server.  Convert ordered
-            // header pairs to the dictionary form that NWWebSocketServer expects.
-            let headerDict = headersToDict(request.headers)
-            wsHandler.acceptConnection(wrapper.connection, request: headerDict)
-            // WebSocket handler owns the connection now — remove from our set
-            // but do NOT cancel it.
-            connections.remove(wrapper)
-            return
-        }
+        precondition(!request.method.isEmpty, "HTTP request method must not be empty")
+        precondition(!request.path.isEmpty, "HTTP request path must not be empty")
 
-        // 2. Digest auth check
-        if let password = password {
-            let auth = HTTPDigestAuth(realm: digestAuthRealm, password: password)
+        if tryHandleWebSocketUpgrade(request, on: wrapper) { return }
+        if tryRejectUnauthorized(request, on: wrapper) { return }
 
-            if let authHeader = headerValueFromRequest(named: "Authorization", in: request.headers) {
-                if !auth.isAuthorized(method: request.method, authHeader: authHeader) {
-                    sendAuthChallenge(auth: auth, on: wrapper)
-                    return
-                }
-            } else {
-                sendAuthChallenge(auth: auth, on: wrapper)
-                return
-            }
-        }
-
-        // 3. Dispatch to the request handler
         guard let handler = requestHandler else {
             sendErrorResponse(status: 503, message: "No handler configured", on: wrapper)
             return
         }
 
-        // Convert ordered header pairs to dictionary (last value wins)
-        let headerDict = headersToDict(request.headers)
-
-        // Inject connection metadata as X- headers (matches CocoaHTTPServer behaviour)
-        var enrichedHeaders = headerDict
-        if let remoteEndpoint = wrapper.connection.currentPath?.remoteEndpoint {
-            switch remoteEndpoint {
-            case .hostPort(let host, let port):
-                enrichedHeaders["X-Remote-Addr"] = "\(host)"
-                enrichedHeaders["X-Remote-Port"] = "\(port)"
-            default:
-                break
-            }
-        }
-        if let localEndpoint = wrapper.connection.currentPath?.localEndpoint {
-            switch localEndpoint {
-            case .hostPort(let host, let port):
-                enrichedHeaders["X-Server-Addr"] = "\(host)"
-                enrichedHeaders["X-Server-Port"] = "\(port)"
-            default:
-                break
-            }
-        }
+        let enrichedHeaders = buildEnrichedHeaders(from: request, on: wrapper)
 
         let (body, statusCode, responseHeaders) = handler(
             request.method,
@@ -344,6 +325,66 @@ class NWHTTPServer {
         )
     }
 
+    private func tryHandleWebSocketUpgrade(
+        _ request: HTTPRequestHead,
+        on wrapper: NWConnectionWrapper
+    ) -> Bool {
+        guard let wsHandler = webSocketHandler,
+              isWebSocketUpgrade(request),
+              request.path == wsHandler.path else {
+            return false
+        }
+        let headerDict = headersToDict(request.headers)
+        wsHandler.acceptConnection(wrapper.connection, request: headerDict)
+        connections.remove(wrapper)
+        return true
+    }
+
+    private func tryRejectUnauthorized(
+        _ request: HTTPRequestHead,
+        on wrapper: NWConnectionWrapper
+    ) -> Bool {
+        guard let password = password else { return false }
+        let auth = HTTPDigestAuth(realm: digestAuthRealm, password: password)
+
+        if let authHeader = headerValueFromRequest(named: "Authorization", in: request.headers) {
+            if !auth.isAuthorized(method: request.method, authHeader: authHeader) {
+                sendAuthChallenge(auth: auth, on: wrapper)
+                return true
+            }
+        } else {
+            sendAuthChallenge(auth: auth, on: wrapper)
+            return true
+        }
+        return false
+    }
+
+    private func buildEnrichedHeaders(
+        from request: HTTPRequestHead,
+        on wrapper: NWConnectionWrapper
+    ) -> [String: String] {
+        var headers = headersToDict(request.headers)
+        if let remoteEndpoint = wrapper.connection.currentPath?.remoteEndpoint {
+            switch remoteEndpoint {
+            case .hostPort(let host, let port):
+                headers["X-Remote-Addr"] = "\(host)"
+                headers["X-Remote-Port"] = "\(port)"
+            default:
+                break
+            }
+        }
+        if let localEndpoint = wrapper.connection.currentPath?.localEndpoint {
+            switch localEndpoint {
+            case .hostPort(let host, let port):
+                headers["X-Server-Addr"] = "\(host)"
+                headers["X-Server-Port"] = "\(port)"
+            default:
+                break
+            }
+        }
+        return headers
+    }
+
     // MARK: - Response Sending
 
     private func sendResponse(
@@ -354,6 +395,8 @@ class NWHTTPServer {
         keepAlive: Bool,
         remainingBuffer: Data
     ) {
+        precondition(status >= 100 && status < 600, "HTTP status code must be between 100 and 599, got \(status)")
+
         // Convert dict headers to ordered pairs
         var headerPairs = headers.map { ($0.key, $0.value) }
 
@@ -395,6 +438,9 @@ class NWHTTPServer {
         message: String,
         on wrapper: NWConnectionWrapper
     ) {
+        precondition(status >= 400, "Error response status must be >= 400, got \(status)")
+        precondition(!message.isEmpty, "Error message must not be empty")
+
         let body = Data(message.utf8)
         let headers: [(String, String)] = [("Content-Type", "text/plain")]
         let responseData = formatHTTPResponse(
@@ -453,6 +499,7 @@ class NWHTTPServer {
         for (key, value) in headers {
             dict[key] = value
         }
+        assert(dict.count <= headers.count, "Dictionary cannot have more entries than input pairs")
         return dict
     }
 

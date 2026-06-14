@@ -154,141 +154,157 @@ private func NSColorList_tolua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any
 
 private let COLOR_LOOP_LEVEL = 10
 
-private func table_toNSColorHelper(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32, _ level: Int) -> NSColor {
-    var red: CGFloat = 0.0, green: CGFloat = 0.0, blue: CGFloat = 0.0, alpha: CGFloat = 1.0
-    var hue: CGFloat = 0.0, saturation: CGFloat = 0.0, brightness: CGFloat = 0.0
+private struct ParsedColorComponents {
+    var red: CGFloat = 0.0
+    var green: CGFloat = 0.0
+    var blue: CGFloat = 0.0
+    var alpha: CGFloat = 1.0
+    var hue: CGFloat = 0.0
+    var saturation: CGFloat = 0.0
+    var brightness: CGFloat = 0.0
     var white: CGFloat = 0.0
-
-    var rgbColor = true
+    var rgbColor: Bool = true
     var image: NSImage? = nil
+    var colorList: NSString? = nil
+    var colorName: NSString? = nil
+}
 
-    // arbitrary cutoff to prevent infinite loop in table lookups
-    if level < COLOR_LOOP_LEVEL {
-        var colorList: NSString? = nil
-        var colorName: NSString? = nil
-
-        switch lua_type(L, idx) {
-        case LUA_TTABLE:
-            if lua_getfield(L, idx, "list") == LUA_TSTRING {
-                colorList = lua_tovalue(L, at: -1) as? NSString
-            }
-            lua_pop(L, 1)
-            if lua_getfield(L, idx, "name") == LUA_TSTRING {
-                colorName = lua_tovalue(L, at: -1) as? NSString
-            }
-            lua_pop(L, 1)
-
-            if lua_getfield(L, idx, "hex") == LUA_TSTRING {
-                var hexString = lua_tovalue(L, at: -1) as! NSString
-                if hexString.hasPrefix("#")  { hexString = hexString.substring(from: 1) as NSString }
-                if hexString.hasPrefix("0x") { hexString = hexString.substring(from: 2) as NSString }
-                var isBadHex = true
-                var rHex: UInt64 = 0, gHex: UInt64 = 0, bHex: UInt64 = 0
-
-                let scanner = Scanner(string: hexString as String)
-                if scanner.scanHexInt64(nil) {
-                    if hexString.length == 3 {
-                        Scanner(string: hexString.substring(with: NSRange(location: 0, length: 1))).scanHexInt64(&rHex)
-                        Scanner(string: hexString.substring(with: NSRange(location: 1, length: 1))).scanHexInt64(&gHex)
-                        Scanner(string: hexString.substring(with: NSRange(location: 2, length: 1))).scanHexInt64(&bHex)
-                        rHex = rHex * 0x11
-                        gHex = gHex * 0x11
-                        bHex = bHex * 0x11
-                        isBadHex = false
-                    } else if hexString.length == 6 {
-                        Scanner(string: hexString.substring(with: NSRange(location: 0, length: 2))).scanHexInt64(&rHex)
-                        Scanner(string: hexString.substring(with: NSRange(location: 2, length: 2))).scanHexInt64(&gHex)
-                        Scanner(string: hexString.substring(with: NSRange(location: 4, length: 2))).scanHexInt64(&bHex)
-                        isBadHex = false
-                    }
-                }
-                if isBadHex {
-                    os_log(.info, "%{public}s", "invalid hexadecimal string #\(hexString) specified for color, ignoring")
-                } else {
-                    red   = CGFloat(rHex) / 255.0
-                    green = CGFloat(gHex) / 255.0
-                    blue  = CGFloat(bHex) / 255.0
-                }
-            }
-            lua_pop(L, 1)
-
-            if lua_getfield(L, idx, "red") == LUA_TNUMBER {
-                red = CGFloat(lua_tonumber(L, -1))
-            }
-            lua_pop(L, 1)
-            if lua_getfield(L, idx, "green") == LUA_TNUMBER {
-                green = CGFloat(lua_tonumber(L, -1))
-            }
-            lua_pop(L, 1)
-            if lua_getfield(L, idx, "blue") == LUA_TNUMBER {
-                blue = CGFloat(lua_tonumber(L, -1))
-            }
-            lua_pop(L, 1)
-
-            if lua_getfield(L, idx, "hue") == LUA_TNUMBER {
-                hue = CGFloat(lua_tonumber(L, -1))
-                rgbColor = false
-            }
-            lua_pop(L, 1)
-            if lua_getfield(L, idx, "saturation") == LUA_TNUMBER {
-                saturation = CGFloat(lua_tonumber(L, -1))
-            }
-            lua_pop(L, 1)
-            if lua_getfield(L, idx, "brightness") == LUA_TNUMBER {
-                brightness = CGFloat(lua_tonumber(L, -1))
-            }
-            lua_pop(L, 1)
-
-            if lua_getfield(L, idx, "white") == LUA_TNUMBER {
-                white = CGFloat(lua_tonumber(L, -1))
-            }
-            lua_pop(L, 1)
-
-            if lua_getfield(L, idx, "alpha") == LUA_TNUMBER {
-                alpha = CGFloat(lua_tonumber(L, -1))
-            }
-            lua_pop(L, 1)
-
-            if lua_getfield(L, idx, "image") == LUA_TUSERDATA && luaL_testudata(L, -1, "hs.image") != nil {
-                image = toNSImage(L, at: -1)
-            }
-            lua_pop(L, 1)
-
-        default:
-            os_log(.error, "%{public}s", "returning BLACK, unexpected type passed as a color: \(String(cString: lua_typename(L, lua_type(L, idx))))")
-        }
-
-        if let colorList = colorList, let colorName = colorName, image == nil {
-            if let holding = NSColorList(named: colorList as String)?.color(withKey: colorName as String) {
-                return holding
-            }
-            if let collectionsRef = colorCollectionsTable {
-                collectionsRef.push(onto: L)
-                if lua_getfield(L, -1, (colorList as String).utf8CString.withUnsafeBufferPointer({ $0.baseAddress! })) == LUA_TTABLE {
-                    if lua_getfield(L, -1, (colorName as String).utf8CString.withUnsafeBufferPointer({ $0.baseAddress! })) == LUA_TTABLE {
-                        let holding = table_toNSColorHelper(L, lua_absindex(L, -1), level + 1)
-                        lua_pop(L, 3) // the colorName entry, colorList entry, and lookup table
-                        return holding
-                    }
-                    lua_pop(L, 1) // the colorName entry
-                }
-                lua_pop(L, 2) // the colorList entry and the lookup table
-            }
-        }
-    } else {
+private func table_toNSColorHelper(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32, _ level: Int) -> NSColor {
+    guard level < COLOR_LOOP_LEVEL else {
         os_log(.error, "%{public}s", "returning BLACK, color list/name dereference depth > \(COLOR_LOOP_LEVEL): loop?")
+        return NSColor(calibratedRed: 0, green: 0, blue: 0, alpha: 1)
     }
 
-    if let image = image {
+    var c = ParsedColorComponents()
+
+    if lua_type(L, idx) == LUA_TTABLE {
+        parseColorListAndName(L, idx, &c)
+        parseHexColor(L, idx, &c)
+        parseRGBComponents(L, idx, &c)
+        parseHSBComponents(L, idx, &c)
+        parseWhiteAlphaImage(L, idx, &c)
+    } else {
+        os_log(.error, "%{public}s", "returning BLACK, unexpected type passed as a color: \(String(cString: lua_typename(L, lua_type(L, idx))))")
+    }
+
+    if let resolved = resolveNamedColor(L, c, level: level) {
+        return resolved
+    }
+
+    return buildNSColor(from: c)
+}
+
+private func parseColorListAndName(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32, _ c: inout ParsedColorComponents) {
+    if lua_getfield(L, idx, "list") == LUA_TSTRING {
+        c.colorList = lua_tovalue(L, at: -1) as? NSString
+    }
+    lua_pop(L, 1)
+    if lua_getfield(L, idx, "name") == LUA_TSTRING {
+        c.colorName = lua_tovalue(L, at: -1) as? NSString
+    }
+    lua_pop(L, 1)
+}
+
+private func parseHexColor(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32, _ c: inout ParsedColorComponents) {
+    guard lua_getfield(L, idx, "hex") == LUA_TSTRING else {
+        lua_pop(L, 1)
+        return
+    }
+    var hexString = lua_tovalue(L, at: -1) as! NSString
+    lua_pop(L, 1)
+
+    if hexString.hasPrefix("#")  { hexString = hexString.substring(from: 1) as NSString }
+    if hexString.hasPrefix("0x") { hexString = hexString.substring(from: 2) as NSString }
+    var rHex: UInt64 = 0, gHex: UInt64 = 0, bHex: UInt64 = 0
+
+    let scanner = Scanner(string: hexString as String)
+    guard scanner.scanHexInt64(nil) else {
+        os_log(.info, "%{public}s", "invalid hexadecimal string #\(hexString) specified for color, ignoring")
+        return
+    }
+
+    if hexString.length == 3 {
+        Scanner(string: hexString.substring(with: NSRange(location: 0, length: 1))).scanHexInt64(&rHex)
+        Scanner(string: hexString.substring(with: NSRange(location: 1, length: 1))).scanHexInt64(&gHex)
+        Scanner(string: hexString.substring(with: NSRange(location: 2, length: 1))).scanHexInt64(&bHex)
+        rHex = rHex * 0x11; gHex = gHex * 0x11; bHex = bHex * 0x11
+    } else if hexString.length == 6 {
+        Scanner(string: hexString.substring(with: NSRange(location: 0, length: 2))).scanHexInt64(&rHex)
+        Scanner(string: hexString.substring(with: NSRange(location: 2, length: 2))).scanHexInt64(&gHex)
+        Scanner(string: hexString.substring(with: NSRange(location: 4, length: 2))).scanHexInt64(&bHex)
+    } else {
+        os_log(.info, "%{public}s", "invalid hexadecimal string #\(hexString) specified for color, ignoring")
+        return
+    }
+    c.red   = CGFloat(rHex) / 255.0
+    c.green = CGFloat(gHex) / 255.0
+    c.blue  = CGFloat(bHex) / 255.0
+}
+
+private func parseRGBComponents(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32, _ c: inout ParsedColorComponents) {
+    if lua_getfield(L, idx, "red") == LUA_TNUMBER { c.red = CGFloat(lua_tonumber(L, -1)) }
+    lua_pop(L, 1)
+    if lua_getfield(L, idx, "green") == LUA_TNUMBER { c.green = CGFloat(lua_tonumber(L, -1)) }
+    lua_pop(L, 1)
+    if lua_getfield(L, idx, "blue") == LUA_TNUMBER { c.blue = CGFloat(lua_tonumber(L, -1)) }
+    lua_pop(L, 1)
+}
+
+private func parseHSBComponents(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32, _ c: inout ParsedColorComponents) {
+    if lua_getfield(L, idx, "hue") == LUA_TNUMBER {
+        c.hue = CGFloat(lua_tonumber(L, -1))
+        c.rgbColor = false
+    }
+    lua_pop(L, 1)
+    if lua_getfield(L, idx, "saturation") == LUA_TNUMBER { c.saturation = CGFloat(lua_tonumber(L, -1)) }
+    lua_pop(L, 1)
+    if lua_getfield(L, idx, "brightness") == LUA_TNUMBER { c.brightness = CGFloat(lua_tonumber(L, -1)) }
+    lua_pop(L, 1)
+}
+
+private func parseWhiteAlphaImage(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32, _ c: inout ParsedColorComponents) {
+    if lua_getfield(L, idx, "white") == LUA_TNUMBER { c.white = CGFloat(lua_tonumber(L, -1)) }
+    lua_pop(L, 1)
+    if lua_getfield(L, idx, "alpha") == LUA_TNUMBER { c.alpha = CGFloat(lua_tonumber(L, -1)) }
+    lua_pop(L, 1)
+    if lua_getfield(L, idx, "image") == LUA_TUSERDATA && luaL_testudata(L, -1, "hs.image") != nil {
+        c.image = toNSImage(L, at: -1)
+    }
+    lua_pop(L, 1)
+}
+
+private func resolveNamedColor(_ L: UnsafeMutablePointer<lua_State>!, _ c: ParsedColorComponents, level: Int) -> NSColor? {
+    guard let colorList = c.colorList, let colorName = c.colorName, c.image == nil else { return nil }
+
+    if let holding = NSColorList(named: colorList as String)?.color(withKey: colorName as String) {
+        return holding
+    }
+    guard let collectionsRef = colorCollectionsTable else { return nil }
+
+    collectionsRef.push(onto: L)
+    if lua_getfield(L, -1, (colorList as String).utf8CString.withUnsafeBufferPointer({ $0.baseAddress! })) == LUA_TTABLE {
+        if lua_getfield(L, -1, (colorName as String).utf8CString.withUnsafeBufferPointer({ $0.baseAddress! })) == LUA_TTABLE {
+            let holding = table_toNSColorHelper(L, lua_absindex(L, -1), level + 1)
+            lua_pop(L, 3) // the colorName entry, colorList entry, and lookup table
+            return holding
+        }
+        lua_pop(L, 1) // the colorName entry
+    }
+    lua_pop(L, 2) // the colorList entry and the lookup table
+    return nil
+}
+
+private func buildNSColor(from c: ParsedColorComponents) -> NSColor {
+    if let image = c.image {
         return NSColor(patternImage: image)
-    } else if rgbColor {
-        if white != 0.0 {
-            return NSColor(calibratedWhite: white, alpha: alpha)
+    } else if c.rgbColor {
+        if c.white != 0.0 {
+            return NSColor(calibratedWhite: c.white, alpha: c.alpha)
         } else {
-            return NSColor(calibratedRed: red, green: green, blue: blue, alpha: alpha)
+            return NSColor(calibratedRed: c.red, green: c.green, blue: c.blue, alpha: c.alpha)
         }
     } else {
-        return NSColor(calibratedHue: hue, saturation: saturation, brightness: brightness, alpha: alpha)
+        return NSColor(calibratedHue: c.hue, saturation: c.saturation, brightness: c.brightness, alpha: c.alpha)
     }
 }
 

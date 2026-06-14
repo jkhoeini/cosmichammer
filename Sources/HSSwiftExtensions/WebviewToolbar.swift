@@ -13,6 +13,7 @@ private var keysToKeepFromDefinitionDictionary: [String] = []
 // MARK: - Helper: get toolbar from userdata
 
 func getToolbar(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> HSToolbar {
+    precondition(L != nil, "getToolbar: Lua state must not be nil")
     let ptr = luaL_checkudata(L, idx, USERDATA_TB_TAG)!
     return Unmanaged<HSToolbar>.fromOpaque(
         ptr.assumingMemoryBound(to: UnsafeMutableRawPointer.self).pointee
@@ -129,6 +130,8 @@ private func isBoolNumber(_ value: Any?) -> Bool {
     let enabledDictionary = NSMutableDictionary()
 
     init?(identifier: String, itemTableIndex idx: Int32, state L: UnsafeMutablePointer<lua_State>!) {
+        precondition(!identifier.isEmpty, "HSToolbar.init: identifier must not be empty")
+        precondition(L != nil, "HSToolbar.init: Lua state must not be nil")
         super.init(identifier: NSToolbar.Identifier(identifier))
         allowedIdentifiers_.addObjects(from: automaticallyIncluded)
         toolbarStyle_ = NSWindow.ToolbarStyle.automatic.rawValue
@@ -172,6 +175,7 @@ private func isBoolNumber(_ value: Any?) -> Bool {
     required init?(coder: NSCoder) { fatalError() }
 
     init?(copy original: HSToolbar, state L: UnsafeMutablePointer<lua_State>!) {
+        precondition(L != nil, "HSToolbar.init(copy:): Lua state must not be nil")
         super.init(identifier: original.identifier)
         selfRef = nil
         callbackRef = nil
@@ -260,7 +264,9 @@ private func isBoolNumber(_ value: Any?) -> Bool {
     // MARK: - Definition management
 
     func addToolbarDefinition(at idx: Int32, state L: UnsafeMutablePointer<lua_State>!) -> Bool {
+        precondition(L != nil, "addToolbarDefinition: Lua state must not be nil")
         let absIdx = lua_absindex(L, idx)
+        assert(lua_type(L, absIdx) == LUA_TTABLE, "addToolbarDefinition: expected table at given index")
 
         var identifier: String? = nil
         if lua_getfield(L, absIdx, "id") == LUA_TSTRING {
@@ -333,277 +339,345 @@ private func isBoolNumber(_ value: Any?) -> Bool {
     }
 
     func updateToolbarItem(_ item: NSToolbarItem, with itemDefinition: NSMutableDictionary, inGroup: Bool, state L: UnsafeMutablePointer<lua_State>!) {
+        precondition(L != nil, "updateToolbarItem: Lua state must not be nil")
         var itemView = item.view as? HSToolbarSearchField
         let identifier = item.itemIdentifier.rawValue
+        assert(!identifier.isEmpty, "updateToolbarItem: item identifier must not be empty")
 
         if itemDefinition.count == 0 {
             if item.label.isEmpty { item.label = identifier }
             return
         }
 
-        // Handle searchfield first
-        if let keyValue = itemDefinition["searchfield"] {
-            if isBoolNumber(keyValue) {
-                if (keyValue as! NSNumber).boolValue {
-                    if itemView == nil {
-                        let sf = HSToolbarSearchField()
-                        sf.toolbarItem = item
-                        sf.target = self
-                        sf.action = #selector(performCallback(_:))
-                        item.view = sf
-                        itemView = sf
-                        if !inGroup {
-                            item.minSize = sf.frame.size
-                            item.maxSize = sf.frame.size
-                        }
-                    }
-                } else {
-                    if itemView != nil {
-                        item.view = nil
-                        itemView = nil
-                    }
-                }
-            } else {
-                os_log(.info, "%{public}s", "\(USERDATA_TB_TAG):searchfield for \(identifier) must be a boolean")
-                itemDefinition.removeObject(forKey: "searchfield")
-            }
-        }
-
-        // searchPredefinedMenuTitle validation
-        if let keyValue = itemDefinition["searchPredefinedMenuTitle"] {
-            if keyValue is String || isBoolNumber(keyValue) {
-                if itemDefinition !== itemDefDictionary[identifier] as? NSMutableDictionary && itemDefinition["searchPredefinedSearches"] == nil {
-                    itemDefinition["searchPredefinedSearches"] = (itemDefDictionary[identifier] as? NSDictionary)?["searchPredefinedSearches"]
-                }
-            } else {
-                os_log(.info, "%{public}s", "\(USERDATA_TB_TAG):searchPredefinedMenuTitle for \(identifier) must be a string or a boolean")
-                itemDefinition.removeObject(forKey: "searchPredefinedMenuTitle")
-            }
-        }
+        itemView = applySearchFieldToggle(to: item, itemView: itemView, definition: itemDefinition, identifier: identifier, inGroup: inGroup)
+        validatePredefinedMenuTitle(itemDefinition, identifier: identifier)
 
         for keyName in (itemDefinition.allKeys as? [String]) ?? [] {
             let keyValue = itemDefinition[keyName]!
-
-            if keyName == "enable" {
-                if isBoolNumber(keyValue) {
-                    enabledDictionary[identifier] = keyValue
-                } else {
-                    os_log(.info, "%{public}s", "\(USERDATA_TB_TAG):\(keyName) for \(identifier) must be a boolean")
-                    itemDefinition.removeObject(forKey: keyName)
-                }
-            } else if keyName == "fn" {
-                // "fn" entries are handled directly via fnRefDictionary in the callers
-                // (addToolbarDefinition, modifyItem); this branch is kept for safety.
-                os_log(.debug, "%{public}s", "\(USERDATA_TB_TAG):fn key in item definition dictionary for \(identifier) unexpectedly reached updateToolbarItem")
-            } else if keyName == "label" {
-                if let str = keyValue as? String {
-                    item.label = str
-                    item.paletteLabel = str
-                } else if let num = keyValue as? NSNumber, !num.boolValue {
-                    if item is NSToolbarItemGroup {
-                        item.label = ""
-                        item.paletteLabel = ""
-                    } else {
-                        item.label = ""
-                        item.paletteLabel = identifier
-                    }
-                    itemDefinition.removeObject(forKey: keyName)
-                } else {
-                    os_log(.info, "%{public}s", "\(USERDATA_TB_TAG):\(keyName) for \(identifier) must be a string, or false to clear")
-                    itemDefinition.removeObject(forKey: keyName)
-                }
-            } else if keyName == "tooltip" {
-                if let str = keyValue as? String {
-                    item.toolTip = str
-                } else {
-                    if let num = keyValue as? NSNumber, !num.boolValue {
-                        item.toolTip = nil
-                    } else {
-                        os_log(.info, "%{public}s", "\(USERDATA_TB_TAG):\(keyName) for \(identifier) must be a string, or false to clear")
-                    }
-                    itemDefinition.removeObject(forKey: keyName)
-                }
-            } else if keyName == "priority" {
-                if let num = keyValue as? NSNumber {
-                    item.visibilityPriority = NSToolbarItem.VisibilityPriority(rawValue: num.intValue)
-                } else {
-                    os_log(.info, "%{public}s", "\(USERDATA_TB_TAG):\(keyName) for \(identifier) must be an integer")
-                    itemDefinition.removeObject(forKey: keyName)
-                }
-            } else if keyName == "tag" {
-                if let num = keyValue as? NSNumber {
-                    item.tag = num.intValue
-                } else {
-                    os_log(.info, "%{public}s", "\(USERDATA_TB_TAG):\(keyName) for \(identifier) must be an integer")
-                    itemDefinition.removeObject(forKey: keyName)
-                }
-            } else if keyName == "image" {
-                if let img = keyValue as? NSImage {
-                    item.image = img
-                } else {
-                    os_log(.info, "%{public}s", "\(USERDATA_TB_TAG):\(keyName) for \(identifier) must be an hs.image object")
-                    itemDefinition.removeObject(forKey: keyName)
-                }
-            } else if keyName == "groupMembers" {
-                if item is NSToolbarItemGroup && !inGroup {
-                    if let members = keyValue as? [String] {
-                        let group = item as! NSToolbarItemGroup
-                        let oldSubitems = group.subitems
-                        var newSubitems = [NSToolbarItem]()
-                        var updateViews = [NSToolbarItem]()
-
-                        for memberIdentifier in members {
-                            let existingIndex = oldSubitems.firstIndex { $0.itemIdentifier.rawValue == memberIdentifier }
-                            let memberItem: NSToolbarItem
-                            if let idx = existingIndex {
-                                memberItem = oldSubitems[idx]
-                            } else {
-                                memberItem = NSToolbarItem(itemIdentifier: NSToolbarItem.Identifier(memberIdentifier))
-                                memberItem.target = self
-                                memberItem.action = #selector(performCallback(_:))
-                                memberItem.isEnabled = (enabledDictionary[memberIdentifier] as? NSNumber)?.boolValue ?? true
-                                updateToolbarItem(memberItem, with: itemDefDictionary[memberIdentifier] as? NSMutableDictionary ?? NSMutableDictionary(), inGroup: true, state: L)
-                                if memberItem.view is HSToolbarSearchField {
-                                    updateViews.append(memberItem)
-                                }
-                            }
-                            newSubitems.append(memberItem)
-                        }
-
-                        group.subitems = newSubitems
-
-                        for tmpItem in updateViews {
-                            let tmpItemDictionary = itemDefDictionary[tmpItem.itemIdentifier.rawValue] as? NSDictionary
-                            if let searchView = tmpItem.view as? HSToolbarSearchField {
-                                var searchFieldFrame = searchView.frame
-                                if let w = (tmpItemDictionary?["searchWidth"] as? NSNumber)?.doubleValue {
-                                    searchFieldFrame.size.width = CGFloat(w)
-                                }
-                                tmpItem.minSize = searchFieldFrame.size
-                                tmpItem.maxSize = searchFieldFrame.size
-                            }
-                        }
-
-                        var minSize = NSSize.zero
-                        var maxSize = NSSize.zero
-                        for tmpItem in group.subitems {
-                            minSize.width += tmpItem.minSize.width
-                            minSize.height = max(minSize.height, tmpItem.minSize.height)
-                            maxSize.width += tmpItem.maxSize.width
-                            maxSize.height = max(maxSize.height, tmpItem.maxSize.height)
-                        }
-                        item.minSize = minSize
-                        item.maxSize = maxSize
-                    } else {
-                        os_log(.info, "%{public}s", "\(USERDATA_TB_TAG):\(keyName) for \(identifier) must be an array of strings")
-                        itemDefinition.removeObject(forKey: keyName)
-                    }
-                } else {
-                    if inGroup {
-                        os_log(.info, "%{public}s", "\(USERDATA_TB_TAG):\(identifier) is in a group and cannot contain group members. Remove item from its group first.")
-                    } else {
-                        os_log(.info, "%{public}s", "\(USERDATA_TB_TAG):cannot change currently visible toolbar item \(identifier) type. Remove item from toolbar first.")
-                    }
-                    itemDefinition.removeObject(forKey: keyName)
-                }
-            } else if keyName == "searchWidth", itemView != nil {
-                if let num = keyValue as? NSNumber {
-                    if !inGroup {
-                        var fieldFrame = itemView!.frame
-                        fieldFrame.size.width = CGFloat(num.doubleValue)
-                        item.minSize = fieldFrame.size
-                        item.maxSize = fieldFrame.size
-                    }
-                } else {
-                    os_log(.info, "%{public}s", "\(USERDATA_TB_TAG):\(keyName) for \(identifier) must be a number")
-                    itemDefinition.removeObject(forKey: keyName)
-                }
-            } else if keyName == "searchReleaseFocusOnCallback", let sf = itemView {
-                if isBoolNumber(keyValue) {
-                    sf.releaseOnCallback = (keyValue as! NSNumber).boolValue
-                } else {
-                    os_log(.info, "%{public}s", "\(USERDATA_TB_TAG):\(keyName) for \(identifier) must be a boolean")
-                    itemDefinition.removeObject(forKey: keyName)
-                }
-            } else if keyName == "searchText", itemView != nil {
-                if let str = keyValue as? String {
-                    itemView!.stringValue = str
-                } else if let num = keyValue as? NSNumber {
-                    itemView!.stringValue = num.stringValue
-                } else {
-                    os_log(.info, "%{public}s", "\(USERDATA_TB_TAG):\(keyName) for \(identifier) must be a string")
-                    itemDefinition.removeObject(forKey: keyName)
-                }
-            } else if keyName == "searchPredefinedSearches", itemView != nil {
-                if let arr = keyValue as? [String] {
-                    let searchMenu = createCoreSearchFieldMenu()
-                    let predefinedSearchMenu = NSMenu(title: "Predefined Search Menu")
-                    for menuItemText in arr {
-                        let newMenuItem = NSMenuItem(title: menuItemText, action: #selector(HSToolbarSearchField.searchCallback(_:)), keyEquivalent: "")
-                        newMenuItem.target = itemView
-                        predefinedSearchMenu.addItem(newMenuItem)
-                    }
-
-                    var menuName: String? = "Predefined Searches"
-                    let checkForTitle = itemDefinition["searchPredefinedMenuTitle"] ?? (itemDefDictionary[identifier] as? NSDictionary)?["searchPredefinedMenuTitle"]
-                    if let check = checkForTitle {
-                        if isBoolNumber(check) {
-                            if !(check as! NSNumber).boolValue { menuName = nil }
-                        } else if let str = check as? String {
-                            menuName = str
-                        }
-                    }
-
-                    if let menuName = menuName {
-                        let predefinedSearches = NSMenuItem(title: menuName, action: nil, keyEquivalent: "")
-                        predefinedSearches.submenu = predefinedSearchMenu
-                        searchMenu.insertItem(predefinedSearches, at: 0)
-                        searchMenu.insertItem(.separator(), at: 1)
-                        (itemView!.cell as? NSSearchFieldCell)?.searchMenuTemplate = searchMenu
-                    } else {
-                        (itemView!.cell as? NSSearchFieldCell)?.searchMenuTemplate = predefinedSearchMenu
-                    }
-                } else {
-                    if let num = keyValue as? NSNumber, !num.boolValue {
-                        (itemView!.cell as? NSSearchFieldCell)?.searchMenuTemplate = createCoreSearchFieldMenu()
-                    } else {
-                        os_log(.info, "%{public}s", "\(USERDATA_TB_TAG):\(keyName) for \(identifier) must be an array, or false to remove")
-                    }
-                    itemDefinition.removeObject(forKey: keyName)
-                }
-            } else if keyName == "searchHistoryLimit", itemView != nil {
-                if let num = keyValue as? NSNumber {
-                    (itemView!.cell as? NSSearchFieldCell)?.maximumRecents = num.intValue
-                } else {
-                    os_log(.info, "%{public}s", "\(USERDATA_TB_TAG):\(keyName) for \(identifier) must be an integer")
-                    itemDefinition.removeObject(forKey: keyName)
-                }
-            } else if keyName == "searchHistory", itemView != nil {
-                if let arr = keyValue as? [String] {
-                    (itemView!.cell as? NSSearchFieldCell)?.recentSearches = arr
-                } else {
-                    os_log(.info, "%{public}s", "\(USERDATA_TB_TAG):\(keyName) for \(identifier) must be an array of strings")
-                    itemDefinition.removeObject(forKey: keyName)
-                }
-            } else if keyName == "searchHistoryAutosaveName", itemView != nil {
-                if let str = keyValue as? String {
-                    (itemView!.cell as? NSSearchFieldCell)?.recentsAutosaveName = str
-                    _ = (itemView!.cell as? NSSearchFieldCell)?.recentSearches
-                } else if let num = keyValue as? NSNumber {
-                    (itemView!.cell as? NSSearchFieldCell)?.recentsAutosaveName = num.stringValue
-                    _ = (itemView!.cell as? NSSearchFieldCell)?.recentSearches
-                } else {
-                    os_log(.info, "%{public}s", "\(USERDATA_TB_TAG):\(keyName) for \(identifier) must be a string")
-                    itemDefinition.removeObject(forKey: keyName)
-                }
-            } else if keyName != "searchfield" && keyName != "searchPredefinedMenuTitle" {
-                os_log(.debug, "%{public}s", "\(USERDATA_TB_TAG):\(keyName) is not a valid field for \(identifier); ignoring")
-                itemDefinition.removeObject(forKey: keyName)
-            }
+            applyToolbarItemProperty(keyName, value: keyValue, item: item, itemView: itemView,
+                                     definition: itemDefinition, identifier: identifier,
+                                     inGroup: inGroup, state: L)
         }
 
         if (itemDefDictionary[identifier] as AnyObject) !== (itemDefinition as AnyObject) {
             for (k, v) in itemDefinition { (itemDefDictionary[identifier] as? NSMutableDictionary)?[k] = v }
+        }
+    }
+
+    // MARK: - updateToolbarItem helpers
+
+    private func applySearchFieldToggle(to item: NSToolbarItem, itemView: HSToolbarSearchField?, definition: NSMutableDictionary, identifier: String, inGroup: Bool) -> HSToolbarSearchField? {
+        guard let keyValue = definition["searchfield"] else { return itemView }
+        guard isBoolNumber(keyValue) else {
+            os_log(.info, "%{public}s", "\(USERDATA_TB_TAG):searchfield for \(identifier) must be a boolean")
+            definition.removeObject(forKey: "searchfield")
+            return itemView
+        }
+        if (keyValue as! NSNumber).boolValue {
+            guard itemView == nil else { return itemView }
+            let sf = HSToolbarSearchField()
+            sf.toolbarItem = item
+            sf.target = self
+            sf.action = #selector(performCallback(_:))
+            item.view = sf
+            if !inGroup {
+                item.minSize = sf.frame.size
+                item.maxSize = sf.frame.size
+            }
+            return sf
+        } else {
+            if itemView != nil {
+                item.view = nil
+            }
+            return nil
+        }
+    }
+
+    private func validatePredefinedMenuTitle(_ itemDefinition: NSMutableDictionary, identifier: String) {
+        guard let keyValue = itemDefinition["searchPredefinedMenuTitle"] else { return }
+        if keyValue is String || isBoolNumber(keyValue) {
+            if itemDefinition !== itemDefDictionary[identifier] as? NSMutableDictionary && itemDefinition["searchPredefinedSearches"] == nil {
+                itemDefinition["searchPredefinedSearches"] = (itemDefDictionary[identifier] as? NSDictionary)?["searchPredefinedSearches"]
+            }
+        } else {
+            os_log(.info, "%{public}s", "\(USERDATA_TB_TAG):searchPredefinedMenuTitle for \(identifier) must be a string or a boolean")
+            itemDefinition.removeObject(forKey: "searchPredefinedMenuTitle")
+        }
+    }
+
+    private func applyToolbarItemProperty(_ keyName: String, value keyValue: Any, item: NSToolbarItem, itemView: HSToolbarSearchField?, definition: NSMutableDictionary, identifier: String, inGroup: Bool, state L: UnsafeMutablePointer<lua_State>!) {
+        switch keyName {
+        case "enable":
+            applyEnableProperty(keyValue, definition: definition, identifier: identifier, keyName: keyName)
+        case "fn":
+            os_log(.debug, "%{public}s", "\(USERDATA_TB_TAG):fn key in item definition dictionary for \(identifier) unexpectedly reached updateToolbarItem")
+        case "label":
+            applyLabelProperty(keyValue, item: item, definition: definition, identifier: identifier, keyName: keyName)
+        case "tooltip":
+            applyTooltipProperty(keyValue, item: item, definition: definition, identifier: identifier, keyName: keyName)
+        case "priority":
+            applyNumericProperty(keyValue, definition: definition, identifier: identifier, keyName: keyName, typeName: "an integer") { num in
+                item.visibilityPriority = NSToolbarItem.VisibilityPriority(rawValue: num.intValue)
+            }
+        case "tag":
+            applyNumericProperty(keyValue, definition: definition, identifier: identifier, keyName: keyName, typeName: "an integer") { num in
+                item.tag = num.intValue
+            }
+        case "image":
+            if let img = keyValue as? NSImage { item.image = img }
+            else { logAndRemove(definition, key: keyName, identifier: identifier, expected: "an hs.image object") }
+        case "groupMembers":
+            applyGroupMembers(keyValue, item: item, definition: definition, identifier: identifier, keyName: keyName, inGroup: inGroup, state: L)
+        case "searchWidth":
+            applySearchWidth(keyValue, item: item, itemView: itemView, definition: definition, identifier: identifier, keyName: keyName, inGroup: inGroup)
+        case "searchReleaseFocusOnCallback":
+            applySearchReleaseFocus(keyValue, itemView: itemView, definition: definition, identifier: identifier, keyName: keyName)
+        case "searchText":
+            applySearchText(keyValue, itemView: itemView, definition: definition, identifier: identifier, keyName: keyName)
+        case "searchPredefinedSearches":
+            applySearchPredefinedSearches(keyValue, itemView: itemView, definition: definition, identifier: identifier, keyName: keyName)
+        case "searchHistoryLimit":
+            applySearchHistoryLimit(keyValue, itemView: itemView, definition: definition, identifier: identifier, keyName: keyName)
+        case "searchHistory":
+            applySearchHistory(keyValue, itemView: itemView, definition: definition, identifier: identifier, keyName: keyName)
+        case "searchHistoryAutosaveName":
+            applySearchHistoryAutosaveName(keyValue, itemView: itemView, definition: definition, identifier: identifier, keyName: keyName)
+        case "searchfield", "searchPredefinedMenuTitle":
+            break // already handled above
+        default:
+            os_log(.debug, "%{public}s", "\(USERDATA_TB_TAG):\(keyName) is not a valid field for \(identifier); ignoring")
+            definition.removeObject(forKey: keyName)
+        }
+    }
+
+    private func logAndRemove(_ definition: NSMutableDictionary, key: String, identifier: String, expected: String) {
+        os_log(.info, "%{public}s", "\(USERDATA_TB_TAG):\(key) for \(identifier) must be \(expected)")
+        definition.removeObject(forKey: key)
+    }
+
+    private func applyEnableProperty(_ keyValue: Any, definition: NSMutableDictionary, identifier: String, keyName: String) {
+        if isBoolNumber(keyValue) {
+            enabledDictionary[identifier] = keyValue
+        } else {
+            logAndRemove(definition, key: keyName, identifier: identifier, expected: "a boolean")
+        }
+    }
+
+    private func applyLabelProperty(_ keyValue: Any, item: NSToolbarItem, definition: NSMutableDictionary, identifier: String, keyName: String) {
+        if let str = keyValue as? String {
+            item.label = str
+            item.paletteLabel = str
+        } else if let num = keyValue as? NSNumber, !num.boolValue {
+            item.label = ""
+            item.paletteLabel = (item is NSToolbarItemGroup) ? "" : identifier
+            definition.removeObject(forKey: keyName)
+        } else {
+            logAndRemove(definition, key: keyName, identifier: identifier, expected: "a string, or false to clear")
+        }
+    }
+
+    private func applyTooltipProperty(_ keyValue: Any, item: NSToolbarItem, definition: NSMutableDictionary, identifier: String, keyName: String) {
+        if let str = keyValue as? String {
+            item.toolTip = str
+        } else {
+            if let num = keyValue as? NSNumber, !num.boolValue {
+                item.toolTip = nil
+            } else {
+                os_log(.info, "%{public}s", "\(USERDATA_TB_TAG):\(keyName) for \(identifier) must be a string, or false to clear")
+            }
+            definition.removeObject(forKey: keyName)
+        }
+    }
+
+    private func applyNumericProperty(_ keyValue: Any, definition: NSMutableDictionary, identifier: String, keyName: String, typeName: String, apply: (NSNumber) -> Void) {
+        if let num = keyValue as? NSNumber {
+            apply(num)
+        } else {
+            logAndRemove(definition, key: keyName, identifier: identifier, expected: typeName)
+        }
+    }
+
+    private func applyGroupMembers(_ keyValue: Any, item: NSToolbarItem, definition: NSMutableDictionary, identifier: String, keyName: String, inGroup: Bool, state L: UnsafeMutablePointer<lua_State>!) {
+        guard item is NSToolbarItemGroup && !inGroup else {
+            if inGroup {
+                os_log(.info, "%{public}s", "\(USERDATA_TB_TAG):\(identifier) is in a group and cannot contain group members. Remove item from its group first.")
+            } else {
+                os_log(.info, "%{public}s", "\(USERDATA_TB_TAG):cannot change currently visible toolbar item \(identifier) type. Remove item from toolbar first.")
+            }
+            definition.removeObject(forKey: keyName)
+            return
+        }
+        guard let members = keyValue as? [String] else {
+            logAndRemove(definition, key: keyName, identifier: identifier, expected: "an array of strings")
+            return
+        }
+        let group = item as! NSToolbarItemGroup
+        let (newSubitems, updateViews) = buildGroupSubitems(members, oldSubitems: group.subitems, state: L)
+        group.subitems = newSubitems
+        applySearchWidthsToGroupViews(updateViews)
+        let (minSize, maxSize) = computeGroupSize(group.subitems)
+        item.minSize = minSize
+        item.maxSize = maxSize
+    }
+
+    private func buildGroupSubitems(_ members: [String], oldSubitems: [NSToolbarItem], state L: UnsafeMutablePointer<lua_State>!) -> ([NSToolbarItem], [NSToolbarItem]) {
+        var newSubitems = [NSToolbarItem]()
+        var updateViews = [NSToolbarItem]()
+        for memberIdentifier in members {
+            let existingIndex = oldSubitems.firstIndex { $0.itemIdentifier.rawValue == memberIdentifier }
+            let memberItem: NSToolbarItem
+            if let idx = existingIndex {
+                memberItem = oldSubitems[idx]
+            } else {
+                memberItem = NSToolbarItem(itemIdentifier: NSToolbarItem.Identifier(memberIdentifier))
+                memberItem.target = self
+                memberItem.action = #selector(performCallback(_:))
+                memberItem.isEnabled = (enabledDictionary[memberIdentifier] as? NSNumber)?.boolValue ?? true
+                updateToolbarItem(memberItem, with: itemDefDictionary[memberIdentifier] as? NSMutableDictionary ?? NSMutableDictionary(), inGroup: true, state: L)
+                if memberItem.view is HSToolbarSearchField { updateViews.append(memberItem) }
+            }
+            newSubitems.append(memberItem)
+        }
+        return (newSubitems, updateViews)
+    }
+
+    private func applySearchWidthsToGroupViews(_ updateViews: [NSToolbarItem]) {
+        for tmpItem in updateViews {
+            let tmpItemDictionary = itemDefDictionary[tmpItem.itemIdentifier.rawValue] as? NSDictionary
+            if let searchView = tmpItem.view as? HSToolbarSearchField {
+                var searchFieldFrame = searchView.frame
+                if let w = (tmpItemDictionary?["searchWidth"] as? NSNumber)?.doubleValue {
+                    searchFieldFrame.size.width = CGFloat(w)
+                }
+                tmpItem.minSize = searchFieldFrame.size
+                tmpItem.maxSize = searchFieldFrame.size
+            }
+        }
+    }
+
+    private func computeGroupSize(_ subitems: [NSToolbarItem]) -> (NSSize, NSSize) {
+        var minSize = NSSize.zero
+        var maxSize = NSSize.zero
+        for tmpItem in subitems {
+            minSize.width += tmpItem.minSize.width
+            minSize.height = max(minSize.height, tmpItem.minSize.height)
+            maxSize.width += tmpItem.maxSize.width
+            maxSize.height = max(maxSize.height, tmpItem.maxSize.height)
+        }
+        return (minSize, maxSize)
+    }
+
+    private func applySearchWidth(_ keyValue: Any, item: NSToolbarItem, itemView: HSToolbarSearchField?, definition: NSMutableDictionary, identifier: String, keyName: String, inGroup: Bool) {
+        guard itemView != nil else { return }
+        if let num = keyValue as? NSNumber {
+            if !inGroup {
+                var fieldFrame = itemView!.frame
+                fieldFrame.size.width = CGFloat(num.doubleValue)
+                item.minSize = fieldFrame.size
+                item.maxSize = fieldFrame.size
+            }
+        } else {
+            logAndRemove(definition, key: keyName, identifier: identifier, expected: "a number")
+        }
+    }
+
+    private func applySearchReleaseFocus(_ keyValue: Any, itemView: HSToolbarSearchField?, definition: NSMutableDictionary, identifier: String, keyName: String) {
+        guard let sf = itemView else { return }
+        if isBoolNumber(keyValue) {
+            sf.releaseOnCallback = (keyValue as! NSNumber).boolValue
+        } else {
+            logAndRemove(definition, key: keyName, identifier: identifier, expected: "a boolean")
+        }
+    }
+
+    private func applySearchText(_ keyValue: Any, itemView: HSToolbarSearchField?, definition: NSMutableDictionary, identifier: String, keyName: String) {
+        guard let view = itemView else { return }
+        if let str = keyValue as? String {
+            view.stringValue = str
+        } else if let num = keyValue as? NSNumber {
+            view.stringValue = num.stringValue
+        } else {
+            logAndRemove(definition, key: keyName, identifier: identifier, expected: "a string")
+        }
+    }
+
+    private func applySearchPredefinedSearches(_ keyValue: Any, itemView: HSToolbarSearchField?, definition: NSMutableDictionary, identifier: String, keyName: String) {
+        guard itemView != nil else { return }
+        guard let arr = keyValue as? [String] else {
+            if let num = keyValue as? NSNumber, !num.boolValue {
+                (itemView!.cell as? NSSearchFieldCell)?.searchMenuTemplate = createCoreSearchFieldMenu()
+            } else {
+                os_log(.info, "%{public}s", "\(USERDATA_TB_TAG):\(keyName) for \(identifier) must be an array, or false to remove")
+            }
+            definition.removeObject(forKey: keyName)
+            return
+        }
+        let searchMenu = createCoreSearchFieldMenu()
+        let predefinedSearchMenu = buildPredefinedSearchMenu(arr, target: itemView!)
+        let menuName = resolvePredefinedMenuTitle(definition, identifier: identifier)
+
+        if let menuName = menuName {
+            let predefinedSearches = NSMenuItem(title: menuName, action: nil, keyEquivalent: "")
+            predefinedSearches.submenu = predefinedSearchMenu
+            searchMenu.insertItem(predefinedSearches, at: 0)
+            searchMenu.insertItem(.separator(), at: 1)
+            (itemView!.cell as? NSSearchFieldCell)?.searchMenuTemplate = searchMenu
+        } else {
+            (itemView!.cell as? NSSearchFieldCell)?.searchMenuTemplate = predefinedSearchMenu
+        }
+    }
+
+    private func buildPredefinedSearchMenu(_ items: [String], target: HSToolbarSearchField) -> NSMenu {
+        let menu = NSMenu(title: "Predefined Search Menu")
+        for menuItemText in items {
+            let newMenuItem = NSMenuItem(title: menuItemText, action: #selector(HSToolbarSearchField.searchCallback(_:)), keyEquivalent: "")
+            newMenuItem.target = target
+            menu.addItem(newMenuItem)
+        }
+        return menu
+    }
+
+    private func resolvePredefinedMenuTitle(_ definition: NSMutableDictionary, identifier: String) -> String? {
+        var menuName: String? = "Predefined Searches"
+        let checkForTitle = definition["searchPredefinedMenuTitle"] ?? (itemDefDictionary[identifier] as? NSDictionary)?["searchPredefinedMenuTitle"]
+        if let check = checkForTitle {
+            if isBoolNumber(check) {
+                if !(check as! NSNumber).boolValue { menuName = nil }
+            } else if let str = check as? String {
+                menuName = str
+            }
+        }
+        return menuName
+    }
+
+    private func applySearchHistoryLimit(_ keyValue: Any, itemView: HSToolbarSearchField?, definition: NSMutableDictionary, identifier: String, keyName: String) {
+        guard itemView != nil else { return }
+        if let num = keyValue as? NSNumber {
+            (itemView!.cell as? NSSearchFieldCell)?.maximumRecents = num.intValue
+        } else {
+            logAndRemove(definition, key: keyName, identifier: identifier, expected: "an integer")
+        }
+    }
+
+    private func applySearchHistory(_ keyValue: Any, itemView: HSToolbarSearchField?, definition: NSMutableDictionary, identifier: String, keyName: String) {
+        guard itemView != nil else { return }
+        if let arr = keyValue as? [String] {
+            (itemView!.cell as? NSSearchFieldCell)?.recentSearches = arr
+        } else {
+            logAndRemove(definition, key: keyName, identifier: identifier, expected: "an array of strings")
+        }
+    }
+
+    private func applySearchHistoryAutosaveName(_ keyValue: Any, itemView: HSToolbarSearchField?, definition: NSMutableDictionary, identifier: String, keyName: String) {
+        guard itemView != nil else { return }
+        if let str = keyValue as? String {
+            (itemView!.cell as? NSSearchFieldCell)?.recentsAutosaveName = str
+            _ = (itemView!.cell as? NSSearchFieldCell)?.recentSearches
+        } else if let num = keyValue as? NSNumber {
+            (itemView!.cell as? NSSearchFieldCell)?.recentsAutosaveName = num.stringValue
+            _ = (itemView!.cell as? NSSearchFieldCell)?.recentSearches
+        } else {
+            logAndRemove(definition, key: keyName, identifier: identifier, expected: "a string")
         }
     }
 
@@ -681,7 +755,9 @@ private func isBoolNumber(_ value: Any?) -> Bool {
 // MARK: - Module Functions
 
 private func toolbar_new(_ L: LuaState) throws -> CInt {
+    precondition(lua_gettop(L) >= 1, "toolbar_new requires at least 1 argument (identifier)")
     let identifier = lua_tovalue(L, at: 1) as! String
+    assert(!identifier.isEmpty, "toolbar_new: identifier must not be empty")
 
     let idx: Int32 = (lua_gettop(L) == 2) ? 2 : LUA_NOREF
 
@@ -1016,6 +1092,17 @@ private func toolbar_modifyItem(_ L: LuaState) throws -> CInt {
         throw LuaCallError("cannot modify a built-in toolbar item definition")
     }
 
+    toolbar_modifyItemFlags(L, toolbar: toolbar, identifier: identifier)
+    let newDict = toolbar_collectModifiedProperties(L, toolbar: toolbar, identifier: identifier)
+
+    if newDict.count > 0 {
+        toolbar_applyModifiedProperties(L, toolbar: toolbar, identifier: identifier, newDict: newDict)
+    }
+    lua_pushvalue(L, 1)
+    return 1
+}
+
+private func toolbar_modifyItemFlags(_ L: LuaState, toolbar: HSToolbar, identifier: String) {
     if lua_getfield(L, 2, "selectable") == LUA_TBOOLEAN {
         if lua_toboolean(L, -1) != 0 {
             toolbar.selectableIdentifiers_.add(identifier)
@@ -1047,7 +1134,9 @@ private func toolbar_modifyItem(_ L: LuaState) throws -> CInt {
         }
     }
     lua_pop(L, 1)
+}
 
+private func toolbar_collectModifiedProperties(_ L: LuaState, toolbar: HSToolbar, identifier: String) -> NSMutableDictionary {
     let newDict = NSMutableDictionary()
     lua_pushnil(L)
     while lua_next(L, 2) != 0 {
@@ -1060,41 +1149,36 @@ private func toolbar_modifyItem(_ L: LuaState) throws -> CInt {
                     toolbar.fnRefDictionary[identifier] = L.ref(index: -1)
                 }
             }
-        } else {
-            throw LuaCallError("non-string keys not allowed in toolbar item definition \(identifier)")
         }
         lua_pop(L, 1)
     }
+    return newDict
+}
 
-    if newDict.count > 0 {
-        var handled = false
-        for item in toolbar.items {
-            if item.itemIdentifier.rawValue == identifier {
-                toolbar.updateToolbarItem(item, with: newDict, state: L)
+private func toolbar_applyModifiedProperties(_ L: LuaState, toolbar: HSToolbar, identifier: String, newDict: NSMutableDictionary) {
+    var handled = false
+    for item in toolbar.items {
+        if item.itemIdentifier.rawValue == identifier {
+            toolbar.updateToolbarItem(item, with: newDict, state: L)
+            handled = true
+            break
+        } else if let group = item as? NSToolbarItemGroup {
+            for subItem in group.subitems where subItem.itemIdentifier.rawValue == identifier {
+                toolbar.updateToolbarItem(subItem, with: newDict, state: L)
                 handled = true
                 break
-            } else if let group = item as? NSToolbarItemGroup {
-                for subItem in group.subitems {
-                    if subItem.itemIdentifier.rawValue == identifier {
-                        toolbar.updateToolbarItem(subItem, with: newDict, state: L)
-                        handled = true
-                        break
-                    }
-                }
-                if handled { break }
             }
-        }
-        if !handled {
-            if lua_getfield(L, 2, "groupMembers") == LUA_TBOOLEAN && lua_toboolean(L, -1) == 0 {
-                newDict.removeObject(forKey: "groupMembers")
-                (toolbar.itemDefDictionary[identifier] as? NSMutableDictionary)?.removeObject(forKey: "groupMembers")
-            }
-            lua_pop(L, 1)
-            for (k, v) in newDict { (toolbar.itemDefDictionary[identifier] as? NSMutableDictionary)?[k] = v }
+            if handled { break }
         }
     }
-    lua_pushvalue(L, 1)
-    return 1
+    if !handled {
+        if lua_getfield(L, 2, "groupMembers") == LUA_TBOOLEAN && lua_toboolean(L, -1) == 0 {
+            newDict.removeObject(forKey: "groupMembers")
+            (toolbar.itemDefDictionary[identifier] as? NSMutableDictionary)?.removeObject(forKey: "groupMembers")
+        }
+        lua_pop(L, 1)
+        for (k, v) in newDict { (toolbar.itemDefDictionary[identifier] as? NSMutableDictionary)?[k] = v }
+    }
 }
 
 private func toolbar_addItems(_ L: LuaState) throws -> CInt {

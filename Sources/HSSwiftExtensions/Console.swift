@@ -97,9 +97,11 @@ private func consoleStyledTextFromLua(_ L: UnsafeMutablePointer<lua_State>!, at 
 }
 
 private func consoleHistoryFromLua(_ L: UnsafeMutablePointer<lua_State>!, at index: Int32) -> NSMutableArray? {
+    precondition(L != nil, "Lua state must not be nil")
     guard lua_type(L, index) == LUA_TTABLE else { return nil }
     let absIndex = lua_absindex(L, index)
     let length = Int(luaL_len(L, absIndex))
+    assert(length >= 0, "table length must not be negative")
     var seenIndexes = Set<Int>()
 
     lua_pushnil(L)
@@ -591,17 +593,19 @@ private func console_printStyledText(_ L: LuaState) throws -> CInt {
 
     let theStr = NSMutableAttributedString()
     let top = lua_gettop(L)
-    for i: Int32 in 1...top {
-        if i > 1 {
+    // Note: zero arguments is valid (mirrors Lua's print() which outputs a blank line)
+    for i: Int32 in 0..<top {
+        let argIndex = i + 1
+        if i > 0 {
             theStr.append(NSAttributedString(string: "\t", attributes: consoleAttrs))
         }
-        if lua_type(L, i) == LUA_TUSERDATA && luaL_testudata(L, i, "hs.styledtext") != nil {
-            guard let styledText = consoleStyledTextFromLua(L, at: i) else {
-                throw LuaCallError("bad argument #\(i) (expected hs.styledtext userdata)")
+        if lua_type(L, argIndex) == LUA_TUSERDATA && luaL_testudata(L, argIndex, "hs.styledtext") != nil {
+            guard let styledText = consoleStyledTextFromLua(L, at: argIndex) else {
+                throw LuaCallError("bad argument #\(argIndex) (expected hs.styledtext userdata)")
             }
             theStr.append(styledText)
         } else {
-            luaL_tolstring(L, i, nil)
+            luaL_tolstring(L, argIndex, nil)
             let text = lua_tostringValue(L, at: -1) ?? ""
             theStr.append(NSAttributedString(
                 string: text,
@@ -743,7 +747,8 @@ private func console_titleVisibility(_ L: LuaState) throws -> CInt {
 
 @_cdecl("luaopen_hs_libconsole")
 public func luaopen_hs_libconsole(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    runEntryPoint(L) { L in
+    precondition(L != nil, "Lua state must not be nil")
+    return runEntryPoint(L) { L in
         // Create module table (20 functions)
         lua_createtable(L, 0, 20)
         L.push(consoleDarkMode)

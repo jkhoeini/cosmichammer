@@ -37,7 +37,7 @@ private func stringForBrightness(_ brightness: CGFloat) -> String {
 
 extension NSImage {
     func asciiArt(width: Int, height: Int) -> String? {
-        guard width > 0 && height > 0 else { return nil }
+        guard width > 0, height > 0 else { return nil }
 
         var result = ""
 
@@ -1225,6 +1225,11 @@ private func image_bitmapRepresentation(_ L: LuaState) throws -> CInt {
 // MARK: - Conversion Extensions
 
 private func pushNSImageOrNil(_ L: UnsafeMutablePointer<lua_State>!, _ image: NSImage?) {
+    precondition(L != nil, "lua_State must not be nil")
+    let topBefore = lua_gettop(L)
+    defer {
+        assert(lua_gettop(L) == topBefore + 1, "pushNSImageOrNil must push exactly one value onto the stack")
+    }
     guard let image = image else {
         lua_pushnil(L)
         return
@@ -1238,6 +1243,7 @@ private func pushNSImageOrNil(_ L: UnsafeMutablePointer<lua_State>!, _ image: NS
 // Pushes the provided NSImage onto the Lua Stack as a hs.image userdata object
 @discardableResult
 func NSImage_tolua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
+    precondition(L != nil, "lua_State must not be nil")
     guard let theImage = obj as? NSImage else { return 0 }
     theImage.cacheMode = .never
     return lua_pushretainedUserdata(L, theImage, metatableName: USERDATA_TAG) ? 1 : 0
@@ -1282,7 +1288,8 @@ private func image_meta_gc(_ L: LuaState) throws -> CInt {
 
 @_cdecl("luaopen_hs_libimage")
 public func luaopen_hs_libimage(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    runEntryPoint(L) { L in
+    precondition(L != nil, "lua_State must not be nil")
+    return runEntryPoint(L) { L in
         // Register userdata metatable
         luaL_newmetatable(L, USERDATA_TAG)
         lua_pushvalue(L, -1)

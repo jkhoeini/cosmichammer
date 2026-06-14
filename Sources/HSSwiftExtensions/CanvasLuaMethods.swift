@@ -17,10 +17,13 @@ private let canvasObjectUserdataGC: lua_CFunction = { L in
 }
 
 func canvas_valueFromLua(_ L: UnsafeMutablePointer<lua_State>!, at index: Int32, forKey keyName: String? = nil) -> Any? {
-    canvas_valueFromLuaRecursive(L, at: index, forKey: keyName, depth: 0)
+    precondition(L != nil, "canvas_valueFromLua: Lua state must not be nil")
+    return canvas_valueFromLuaRecursive(L, at: index, forKey: keyName, depth: 0)
 }
 
 private func canvas_valueFromLuaRecursive(_ L: UnsafeMutablePointer<lua_State>!, at index: Int32, forKey keyName: String?, depth: Int) -> Any? {
+    precondition(L != nil, "canvas_valueFromLuaRecursive: Lua state must not be nil")
+    assert(depth >= 0, "canvas_valueFromLuaRecursive: depth must be non-negative")
     guard depth < canvasMaxConversionDepth else { return nil }
     let idx = lua_absindex(L, index)
 
@@ -70,7 +73,10 @@ private func canvas_valueFromLuaRecursive(_ L: UnsafeMutablePointer<lua_State>!,
 }
 
 private func canvas_tableFromLua(_ L: UnsafeMutablePointer<lua_State>!, at index: Int32, depth: Int) -> Any? {
+    precondition(L != nil, "canvas_tableFromLua: Lua state must not be nil")
+    assert(depth >= 0, "canvas_tableFromLua: depth must be non-negative")
     let idx = lua_absindex(L, index)
+    assert(lua_type(L, idx) == LUA_TTABLE, "canvas_tableFromLua: expected table at given index")
     var totalKeys = 0
     var maxIntKey: lua_Integer = 0
     var allIntKeys = true
@@ -198,6 +204,7 @@ func canvas_styledTextFromLua(_ L: UnsafeMutablePointer<lua_State>!, at index: I
 }
 
 func canvas_colorFromLua(_ L: UnsafeMutablePointer<lua_State>!, at index: Int32) -> NSColor? {
+    precondition(L != nil, "canvas_colorFromLua: Lua state must not be nil")
     let idx = lua_absindex(L, index)
     guard lua_type(L, idx) == LUA_TTABLE else { return nil }
 
@@ -253,6 +260,7 @@ private func canvas_gradientColorsFromLua(_ L: UnsafeMutablePointer<lua_State>!,
 }
 
 func canvas_transformFromLua(_ L: UnsafeMutablePointer<lua_State>!, at index: Int32) -> NSAffineTransform? {
+    precondition(L != nil, "canvas_transformFromLua: Lua state must not be nil")
     let idx = lua_absindex(L, index)
     guard lua_type(L, idx) == LUA_TTABLE else { return nil }
 
@@ -269,6 +277,7 @@ func canvas_transformFromLua(_ L: UnsafeMutablePointer<lua_State>!, at index: In
 }
 
 func canvas_shadowFromLua(_ L: UnsafeMutablePointer<lua_State>!, at index: Int32) -> NSShadow? {
+    precondition(L != nil, "canvas_shadowFromLua: Lua state must not be nil")
     let idx = lua_absindex(L, index)
     guard lua_type(L, idx) == LUA_TTABLE else { return nil }
 
@@ -483,6 +492,8 @@ private func canvas_numberFromValue(_ value: Any?) -> CGFloat? {
 }
 
 private func canvas_colorFromHexString(_ hexString: String, alpha: CGFloat) -> NSColor? {
+    guard !hexString.isEmpty else { return nil }
+    assert(alpha >= 0.0 && alpha <= 1.0, "canvas_colorFromHexString: alpha must be in [0,1]")
     var normalized = hexString
     if normalized.hasPrefix("#") { normalized.removeFirst() }
     if normalized.hasPrefix("0x") { normalized.removeFirst(2) }
@@ -525,6 +536,7 @@ private func canvas_luaByteToObjCharMap(_ string: NSString) -> NSDictionary {
 }
 
 private func canvas_luaRangeToObjCRange(_ map: NSDictionary, len: lua_Integer, luaI: lua_Integer, luaJ: lua_Integer) -> (i: lua_Integer, j: lua_Integer, empty: Bool) {
+    assert(len >= 0, "canvas_luaRangeToObjCRange: len must be non-negative")
     var i = luaI
     var j = luaJ
     if i < 0 { i = len + 1 + i }
@@ -538,6 +550,7 @@ private func canvas_luaRangeToObjCRange(_ map: NSDictionary, len: lua_Integer, l
 }
 
 func canvas_pushValue(_ L: UnsafeMutablePointer<lua_State>!, _ value: Any?) {
+    precondition(L != nil, "canvas_pushValue: Lua state must not be nil")
     canvas_pushValueRecursive(L, value, depth: 0)
 }
 

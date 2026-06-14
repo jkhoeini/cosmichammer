@@ -218,6 +218,14 @@ private class HSAsyncUdpSocket {
     // MARK: Connect (NWConnection mode)
 
     func connect(toHost host: String, onPort port: UInt16) throws {
+        guard !host.isEmpty else {
+            throw NSError(domain: "HSAsyncUdpSocket", code: 2, userInfo: [NSLocalizedDescriptionKey: "UDP connect host must not be empty"])
+        }
+        guard port > 0 else {
+            throw NSError(domain: "HSAsyncUdpSocket", code: 3, userInfo: [NSLocalizedDescriptionKey: "UDP connect port must be greater than zero"])
+        }
+        assert(!tornDown, "Cannot connect a torn-down socket")
+
         guard !_isConnected else {
             throw NSError(domain: "HSAsyncUdpSocket", code: 1, userInfo: [NSLocalizedDescriptionKey: "Already connected"])
         }
@@ -281,6 +289,9 @@ private class HSAsyncUdpSocket {
     // MARK: Bind (POSIX mode)
 
     func bind(toPort port: UInt16) throws {
+        assert(!tornDown, "Cannot bind a torn-down socket")
+        assert(fd4 < 0 && fd6 < 0, "POSIX sockets already exist before bind")
+
         guard !isBound && !_isConnected else {
             throw NSError(domain: "HSAsyncUdpSocket", code: 3, userInfo: [NSLocalizedDescriptionKey: "Socket already bound or connected"])
         }
@@ -366,21 +377,30 @@ private class HSAsyncUdpSocket {
     // MARK: Receive (POSIX dispatch sources)
 
     func beginReceiving() throws {
+        assert(!tornDown, "Cannot receive on a torn-down socket")
+
         guard isBound else {
             throw NSError(domain: "HSAsyncUdpSocket", code: 7, userInfo: [NSLocalizedDescriptionKey: "Socket not bound"])
         }
         continuousReceive = true
         receiveActive = true
         installReadSources()
+
+        assert(receiveActive, "receiveActive must be true after beginReceiving")
     }
 
     func receiveOnce() throws {
+        assert(!tornDown, "Cannot receive on a torn-down socket")
+
         guard isBound else {
             throw NSError(domain: "HSAsyncUdpSocket", code: 7, userInfo: [NSLocalizedDescriptionKey: "Socket not bound"])
         }
         continuousReceive = false
         receiveActive = true
         installReadSources()
+
+        assert(!continuousReceive, "continuousReceive must be false after receiveOnce")
+        assert(receiveActive, "receiveActive must be true after receiveOnce")
     }
 
     func pauseReceiving() {
@@ -407,6 +427,7 @@ private class HSAsyncUdpSocket {
     }
 
     private func handleReadEvent(fd: Int32, isIPv6: Bool) {
+        assert(fd >= 0, "handleReadEvent called with invalid fd")
         guard fd >= 0, receiveActive else { return }
 
         let bufSize = isIPv6 ? Int(maxRecvIPv6Buffer) : Int(maxRecvIPv4Buffer)
@@ -469,6 +490,9 @@ private class HSAsyncUdpSocket {
     // MARK: Send (connected NWConnection)
 
     func send(_ data: Data, withTimeout timeout: TimeInterval, tag: Int) {
+        guard !data.isEmpty else { return }
+        guard _isConnected else { return }
+
         guard let conn = connection else {
             os_log(.error,"UDP send failed: not connected")
             return
@@ -492,6 +516,10 @@ private class HSAsyncUdpSocket {
     // MARK: Send (unconnected POSIX sendto)
 
     func send(_ data: Data, toHost host: String, port: UInt16, withTimeout timeout: TimeInterval, tag: Int) {
+        guard !data.isEmpty else { return }
+        guard !host.isEmpty else { return }
+        guard port > 0 else { return }
+
         // Ensure at least one POSIX socket exists
         ensurePosixSocket()
 
@@ -536,6 +564,9 @@ private class HSAsyncUdpSocket {
     }
 
     private func sendtoIPv4(fd: Int32, data: Data, host: String, port: UInt16) -> Bool {
+        precondition(fd >= 0, "sendtoIPv4: invalid file descriptor")
+        precondition(!data.isEmpty, "sendtoIPv4: data must not be empty")
+
         var addr = sockaddr_in()
         addr.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
         addr.sin_family = sa_family_t(AF_INET)
@@ -559,6 +590,9 @@ private class HSAsyncUdpSocket {
     }
 
     private func sendtoIPv6(fd: Int32, data: Data, host: String, port: UInt16) -> Bool {
+        precondition(fd >= 0, "sendtoIPv6: invalid file descriptor")
+        precondition(!data.isEmpty, "sendtoIPv6: data must not be empty")
+
         var addr6 = sockaddr_in6()
         addr6.sin6_len = UInt8(MemoryLayout<sockaddr_in6>.size)
         addr6.sin6_family = sa_family_t(AF_INET6)
@@ -581,6 +615,9 @@ private class HSAsyncUdpSocket {
     }
 
     private func resolveHost(_ host: String, family: Int32) -> in_addr? {
+        precondition(!host.isEmpty, "resolveHost: host must not be empty")
+        precondition(family == AF_INET, "resolveHost: family must be AF_INET for IPv4 resolution")
+
         var hints = addrinfo()
         hints.ai_family = family
         hints.ai_socktype = SOCK_DGRAM
@@ -595,6 +632,8 @@ private class HSAsyncUdpSocket {
     }
 
     private func resolveHost6(_ host: String) -> in6_addr? {
+        precondition(!host.isEmpty, "resolveHost6: host must not be empty")
+
         var hints = addrinfo()
         hints.ai_family = AF_INET6
         hints.ai_socktype = SOCK_DGRAM
@@ -633,6 +672,9 @@ private class HSAsyncUdpSocket {
     // MARK: Close
 
     func close() {
+        let wasBound = isBound
+        _ = wasBound
+
         pauseReceiving()
 
         if let conn = connection {
@@ -646,6 +688,11 @@ private class HSAsyncUdpSocket {
         _isClosed = true
         isBound = false
         role = .default
+
+        assert(!_isConnected, "Socket must not be connected after close")
+        assert(_isClosed, "Socket must be marked closed after close")
+        assert(fd4 < 0, "IPv4 fd must be invalid after close")
+        assert(fd6 < 0, "IPv6 fd must be invalid after close")
     }
 
     // MARK: POSIX helpers
@@ -661,6 +708,9 @@ private class HSAsyncUdpSocket {
     }
 
     private func hostFromFd(_ fd: Int32, family: Int32) -> String? {
+        precondition(fd >= 0, "hostFromFd: invalid file descriptor")
+        precondition(family == AF_INET || family == AF_INET6, "hostFromFd: unsupported address family")
+
         if family == AF_INET {
             var addr = sockaddr_in()
             var len = socklen_t(MemoryLayout<sockaddr_in>.size)
@@ -691,6 +741,9 @@ private class HSAsyncUdpSocket {
     }
 
     private func portFromFd(_ fd: Int32, family: Int32) -> UInt16 {
+        precondition(fd >= 0, "portFromFd: invalid file descriptor")
+        precondition(family == AF_INET || family == AF_INET6, "portFromFd: unsupported address family")
+
         if family == AF_INET {
             var addr = sockaddr_in()
             var len = socklen_t(MemoryLayout<sockaddr_in>.size)
@@ -777,6 +830,8 @@ private class HSAsyncUdpSocket {
 // MARK: - Helper for receiveContinuous
 
 private func socketudp_receiveContinuous(_ L: UnsafeMutablePointer<lua_State>!, readContinuous: Bool) throws -> Bool {
+    precondition(L != nil, "lua_State must not be nil")
+
     let asyncUdpSocket: HSAsyncUdpSocket = try L.checkArgument(1)
 
     if lua_type(L, 2) == LUA_TFUNCTION {
@@ -812,6 +867,9 @@ private func socketudp_receiveContinuous(_ L: UnsafeMutablePointer<lua_State>!, 
 
 @_cdecl("luaopen_hs_libsocketudp")
 public func luaopen_hs_libsocketudp(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    precondition(L != nil, "lua_State must not be nil")
+    let stackBase = lua_gettop(L)
+
     L.register(Metatable<HSAsyncUdpSocket>(
         fields: [
             /// hs.socket.udp:connect(host, port[, fn]) -> self or nil
@@ -1437,5 +1495,6 @@ public func luaopen_hs_libsocketudp(_ L: UnsafeMutablePointer<lua_State>!) -> In
     }
     lua_setfield(L, -2, "new")
 
+    assert(lua_gettop(L) == stackBase + 1, "luaopen_hs_libsocketudp must leave exactly 1 value (module table) on the stack")
     return 1
 }

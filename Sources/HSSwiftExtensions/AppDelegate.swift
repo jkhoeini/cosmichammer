@@ -33,16 +33,22 @@ class MJAppDelegate: NSObject, NSApplicationDelegate {
     private func setupMainMenu() {
         let mainMenu = NSMenu(title: "Main Menu")
 
-        // -- Cosmic Hammer (application) menu --
+        mainMenu.addItem(buildAppMenuItem())
+        mainMenu.addItem(buildFileMenuItem())
+        mainMenu.addItem(buildEditMenuItem())
+        mainMenu.addItem(buildWindowMenuItem())
+        mainMenu.addItem(buildHelpMenuItem())
+
+        NSApp.mainMenu = mainMenu
+    }
+
+    private func buildAppMenuItem() -> NSMenuItem {
         let appMenuItem = NSMenuItem(title: "Cosmic Hammer", action: nil, keyEquivalent: "")
         let appMenu = NSMenu(title: "Cosmic Hammer")
 
         appMenu.addItem(withTitle: "About Cosmic Hammer", action: #selector(showAboutPanel(_:)), keyEquivalent: "").target = self
-
         appMenu.addItem(.separator())
-
         appMenu.addItem(withTitle: "Preferences\u{2026}", action: #selector(showPreferencesWindow(_:)), keyEquivalent: ",").target = self
-
         appMenu.addItem(.separator())
 
         let servicesItem = NSMenuItem(title: "Services", action: nil, keyEquivalent: "")
@@ -52,94 +58,86 @@ class MJAppDelegate: NSObject, NSApplicationDelegate {
         NSApp.servicesMenu = servicesMenu
 
         appMenu.addItem(.separator())
-
         appMenu.addItem(withTitle: "Hide Cosmic Hammer", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
-
         let hideOthersItem = appMenu.addItem(withTitle: "Hide Others", action: #selector(NSApplication.hideOtherApplications(_:)), keyEquivalent: "h")
         hideOthersItem.keyEquivalentModifierMask = [.command, .option]
-
         appMenu.addItem(withTitle: "Show All", action: #selector(NSApplication.unhideAllApplications(_:)), keyEquivalent: "")
-
         appMenu.addItem(.separator())
-
         appMenu.addItem(withTitle: "Quit Cosmic Hammer", action: #selector(quitCosmicHammer(_:)), keyEquivalent: "q").target = self
 
         appMenuItem.submenu = appMenu
-        mainMenu.addItem(appMenuItem)
+        return appMenuItem
+    }
 
-        // -- File menu --
+    private func buildFileMenuItem() -> NSMenuItem {
         let fileMenuItem = NSMenuItem(title: "File", action: nil, keyEquivalent: "")
         let fileMenu = NSMenu(title: "File")
 
         let reloadItem = fileMenu.addItem(withTitle: "Reload Config", action: #selector(reloadConfig(_:)), keyEquivalent: "R")
         reloadItem.target = self
         reloadItem.keyEquivalentModifierMask = .command
-
         fileMenu.addItem(withTitle: "Open Config", action: #selector(openConfig(_:)), keyEquivalent: "o").target = self
-
         fileMenu.addItem(.separator())
-
         fileMenu.addItem(withTitle: "Console\u{2026}", action: #selector(showConsoleWindow(_:)), keyEquivalent: "r").target = self
-
         fileMenu.addItem(.separator())
-
         let pageSetupItem = fileMenu.addItem(withTitle: "Page Setup\u{2026}", action: #selector(NSDocument.runPageLayout(_:)), keyEquivalent: "P")
         pageSetupItem.keyEquivalentModifierMask = [.command, .shift]
-
         fileMenu.addItem(withTitle: "Print\u{2026}", action: #selector(NSView.printView(_:)), keyEquivalent: "p")
 
         fileMenuItem.submenu = fileMenu
-        mainMenu.addItem(fileMenuItem)
+        return fileMenuItem
+    }
 
-        // -- Edit menu --
+    private func buildEditMenuItem() -> NSMenuItem {
         let editMenuItem = NSMenuItem(title: "Edit", action: nil, keyEquivalent: "")
         let editMenu = NSMenu(title: "Edit")
 
         editMenu.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
         let redoItem = editMenu.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "Z")
         redoItem.keyEquivalentModifierMask = .command
-
         editMenu.addItem(.separator())
-
         editMenu.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
         editMenu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
         editMenu.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
-
         let pasteMatchItem = editMenu.addItem(withTitle: "Paste and Match Style", action: #selector(NSTextView.pasteAsPlainText(_:)), keyEquivalent: "V")
         pasteMatchItem.keyEquivalentModifierMask = [.command, .option]
-
         editMenu.addItem(withTitle: "Delete", action: #selector(NSText.delete(_:)), keyEquivalent: "")
         editMenu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
-
         editMenu.addItem(.separator())
 
-        // Find submenu
+        editMenu.addItem(buildFindSubmenuItem())
+        editMenu.addItem(buildSpellingSubmenuItem())
+        editMenu.addItem(buildSubstitutionsSubmenuItem())
+        editMenu.addItem(buildTransformationsSubmenuItem())
+        editMenu.addItem(buildSpeechSubmenuItem())
+
+        editMenuItem.submenu = editMenu
+        return editMenuItem
+    }
+
+    private func buildFindSubmenuItem() -> NSMenuItem {
         let findMenuItem = NSMenuItem(title: "Find", action: nil, keyEquivalent: "")
         let findMenu = NSMenu(title: "Find")
 
         let findItem = findMenu.addItem(withTitle: "Find\u{2026}", action: #selector(NSTextView.performFindPanelAction(_:)), keyEquivalent: "f")
         findItem.tag = 1
-
         let findReplaceItem = findMenu.addItem(withTitle: "Find and Replace\u{2026}", action: #selector(NSTextView.performFindPanelAction(_:)), keyEquivalent: "f")
         findReplaceItem.tag = 12
         findReplaceItem.keyEquivalentModifierMask = [.command, .option]
-
         let findNextItem = findMenu.addItem(withTitle: "Find Next", action: #selector(NSTextView.performFindPanelAction(_:)), keyEquivalent: "g")
         findNextItem.tag = 2
-
         let findPrevItem = findMenu.addItem(withTitle: "Find Previous", action: #selector(NSTextView.performFindPanelAction(_:)), keyEquivalent: "G")
         findPrevItem.tag = 3
         findPrevItem.keyEquivalentModifierMask = .command
-
         let useSelItem = findMenu.addItem(withTitle: "Use Selection for Find", action: #selector(NSTextView.performFindPanelAction(_:)), keyEquivalent: "e")
         useSelItem.tag = 7
-
         findMenu.addItem(withTitle: "Jump to Selection", action: #selector(NSResponder.centerSelectionInVisibleArea(_:)), keyEquivalent: "j")
 
         findMenuItem.submenu = findMenu
-        editMenu.addItem(findMenuItem)
+        return findMenuItem
+    }
 
-        // Spelling and Grammar submenu
+    private func buildSpellingSubmenuItem() -> NSMenuItem {
         let spellingMenuItem = NSMenuItem(title: "Spelling and Grammar", action: nil, keyEquivalent: "")
         let spellingMenu = NSMenu(title: "Spelling")
 
@@ -151,9 +149,10 @@ class MJAppDelegate: NSObject, NSApplicationDelegate {
         spellingMenu.addItem(withTitle: "Correct Spelling Automatically", action: #selector(NSTextView.toggleAutomaticSpellingCorrection(_:)), keyEquivalent: "")
 
         spellingMenuItem.submenu = spellingMenu
-        editMenu.addItem(spellingMenuItem)
+        return spellingMenuItem
+    }
 
-        // Substitutions submenu
+    private func buildSubstitutionsSubmenuItem() -> NSMenuItem {
         let subsMenuItem = NSMenuItem(title: "Substitutions", action: nil, keyEquivalent: "")
         let subsMenu = NSMenu(title: "Substitutions")
 
@@ -167,9 +166,10 @@ class MJAppDelegate: NSObject, NSApplicationDelegate {
         subsMenu.addItem(withTitle: "Text Replacement", action: #selector(NSTextView.toggleAutomaticTextReplacement(_:)), keyEquivalent: "")
 
         subsMenuItem.submenu = subsMenu
-        editMenu.addItem(subsMenuItem)
+        return subsMenuItem
+    }
 
-        // Transformations submenu
+    private func buildTransformationsSubmenuItem() -> NSMenuItem {
         let transMenuItem = NSMenuItem(title: "Transformations", action: nil, keyEquivalent: "")
         let transMenu = NSMenu(title: "Transformations")
 
@@ -178,9 +178,10 @@ class MJAppDelegate: NSObject, NSApplicationDelegate {
         transMenu.addItem(withTitle: "Capitalize", action: #selector(NSResponder.capitalizeWord(_:)), keyEquivalent: "")
 
         transMenuItem.submenu = transMenu
-        editMenu.addItem(transMenuItem)
+        return transMenuItem
+    }
 
-        // Speech submenu
+    private func buildSpeechSubmenuItem() -> NSMenuItem {
         let speechMenuItem = NSMenuItem(title: "Speech", action: nil, keyEquivalent: "")
         let speechMenu = NSMenu(title: "Speech")
 
@@ -188,12 +189,10 @@ class MJAppDelegate: NSObject, NSApplicationDelegate {
         speechMenu.addItem(withTitle: "Stop Speaking", action: #selector(NSTextView.stopSpeaking(_:)), keyEquivalent: "")
 
         speechMenuItem.submenu = speechMenu
-        editMenu.addItem(speechMenuItem)
+        return speechMenuItem
+    }
 
-        editMenuItem.submenu = editMenu
-        mainMenu.addItem(editMenuItem)
-
-        // -- Window menu --
+    private func buildWindowMenuItem() -> NSMenuItem {
         let windowMenuItem = NSMenuItem(title: "Window", action: nil, keyEquivalent: "")
         let windowMenu = NSMenu(title: "Window")
 
@@ -205,20 +204,19 @@ class MJAppDelegate: NSObject, NSApplicationDelegate {
         windowMenu.addItem(withTitle: "Bring All to Front", action: #selector(NSApplication.arrangeInFront(_:)), keyEquivalent: "")
 
         windowMenuItem.submenu = windowMenu
-        mainMenu.addItem(windowMenuItem)
         NSApp.windowsMenu = windowMenu
+        return windowMenuItem
+    }
 
-        // -- Help menu --
+    private func buildHelpMenuItem() -> NSMenuItem {
         let helpMenuItem = NSMenuItem(title: "Help", action: nil, keyEquivalent: "")
         let helpMenu = NSMenu(title: "Help")
 
         helpMenu.addItem(withTitle: "Cosmic Hammer Help", action: #selector(NSApplication.showHelp(_:)), keyEquivalent: "?")
 
         helpMenuItem.submenu = helpMenu
-        mainMenu.addItem(helpMenuItem)
         NSApp.helpMenu = helpMenu
-
-        NSApp.mainMenu = mainMenu
+        return helpMenuItem
     }
 
     private func setupStatusItemMenu() {
@@ -268,6 +266,7 @@ class MJAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func application(_ sender: NSApplication, openFile filename: String) -> Bool {
+        precondition(!filename.isEmpty, "filename must not be empty")
         let fileExtension = (filename as NSString).pathExtension
         let infoDict = Bundle.main.infoDictionary as NSDictionary?
         if let supportedExtensions = infoDict?.value(forKeyPath: "CFBundleDocumentTypes.CFBundleTypeExtensions") as? [Any] {
@@ -309,70 +308,14 @@ class MJAppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         AppLifecycle.registerDefaultDefaults()
-
-        // Set app icon programmatically as a fallback for non-bundle contexts
-        if let icon = NSImage(named: "CosmicHammer") {
-            NSApp.applicationIconImage = icon
-        }
-
-        // User is holding down Command (0x37) & Option (0x3A) keys:
-        if CGEventSource.keyState(.combinedSessionState, key: 0x3A)
-            && CGEventSource.keyState(.combinedSessionState, key: 0x37)
-        {
-            let alert = NSAlert()
-            let deleteButton = alert.addButton(withTitle: "Delete Preferences")
-            deleteButton.hasDestructiveAction = true
-
-            alert.addButton(withTitle: "Cancel")
-            alert.messageText = "Do you want to delete the preferences?"
-            alert.informativeText = "Deleting the preferences will reset all Cosmic Hammer settings (including everything that uses hs.settings) to their defaults. This does not remove anything in your Cosmic Hammer configuration directory."
-            alert.alertStyle = .warning
-
-            if alert.runModal() == .alertFirstButtonReturn {
-                // Reset Preferences
-                let allObjects = UserDefaults.standard.dictionaryRepresentation()
-                for key in allObjects.keys {
-                    UserDefaults.standard.removeObject(forKey: key)
-                }
-                UserDefaults.standard.synchronize()
-            }
-        }
-
-        DistributedNotificationCenter.default().addObserver(
-            self,
-            selector: #selector(accessibilityChanged(_:)),
-            name: NSNotification.Name("com.apple.accessibility.api"),
-            object: nil
-        )
+        setFallbackAppIcon()
+        promptToResetPreferencesIfHotkeyHeld()
+        registerAccessibilityObserver()
 
         // Remove our early event manager handler so hs.urlevent can register for it later
         NSAppleEventManager.shared().removeEventHandler(forEventClass: AEEventClass(kInternetEventClass), andEventID: AEEventID(kAEGetURL))
 
-        if NSClassFromString("XCTest") != nil {
-            // CosmicHammer Tests
-            os_log(.info, "in testing mode!")
-
-            let mainBundle = Bundle.main
-            if let bundle = Bundle(path: "\(mainBundle.bundlePath)/Contents/Plugins/CosmicHammer Tests.xctest"),
-               let lsUnitPath = bundle.path(forResource: "lsunit", ofType: "lua")
-            {
-                let fsPath = (lsUnitPath as NSString).fileSystemRepresentation
-                MJConfigFileSet(FileManager.default.string(withFileSystemRepresentation: fsPath, length: strlen(fsPath)) as NSString)
-            } else {
-                os_log(.fault, "Unable to find lsunit.lua in CosmicHammer Tests.xctest. We're about to crash, sorry!")
-                abort()
-            }
-        } else if ProcessInfo.processInfo.environment["XCTESTING"] != nil {
-            // CosmicHammer UI Tests
-            os_log(.info, "in UI testing mode")
-            let initPath = FileManager.default.currentDirectoryPath + "/CosmicHammer UI Tests-Runner.app/Contents/PlugIns/CosmicHammer UI Tests.xctest/Contents/Resources/init.lua"
-            let fsPath = (initPath as NSString).fileSystemRepresentation
-            MJConfigFileSet(FileManager.default.string(withFileSystemRepresentation: fsPath, length: strlen(fsPath)) as NSString)
-            showConsoleWindow(nil)
-        } else {
-            // No test environment detected, this is a live user run
-            AppLifecycle.applyStoredConfigFile()
-        }
+        configureTestEnvironmentIfNeeded()
 
         // Become the handler for events from macOS Services
         NSApp.servicesProvider = self
@@ -395,6 +338,74 @@ class MJAppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    private func setFallbackAppIcon() {
+        if let icon = NSImage(named: "CosmicHammer") {
+            NSApp.applicationIconImage = icon
+        }
+    }
+
+    private func promptToResetPreferencesIfHotkeyHeld() {
+        guard CGEventSource.keyState(.combinedSessionState, key: 0x3A)
+                && CGEventSource.keyState(.combinedSessionState, key: 0x37) else { return }
+
+        let alert = NSAlert()
+        let deleteButton = alert.addButton(withTitle: "Delete Preferences")
+        deleteButton.hasDestructiveAction = true
+        alert.addButton(withTitle: "Cancel")
+        alert.messageText = "Do you want to delete the preferences?"
+        alert.informativeText = "Deleting the preferences will reset all Cosmic Hammer settings (including everything that uses hs.settings) to their defaults. This does not remove anything in your Cosmic Hammer configuration directory."
+        alert.alertStyle = .warning
+
+        if alert.runModal() == .alertFirstButtonReturn {
+            let allObjects = UserDefaults.standard.dictionaryRepresentation()
+            for key in allObjects.keys {
+                UserDefaults.standard.removeObject(forKey: key)
+            }
+            UserDefaults.standard.synchronize()
+        }
+    }
+
+    private func registerAccessibilityObserver() {
+        DistributedNotificationCenter.default().addObserver(
+            self,
+            selector: #selector(accessibilityChanged(_:)),
+            name: NSNotification.Name("com.apple.accessibility.api"),
+            object: nil
+        )
+    }
+
+    private func configureTestEnvironmentIfNeeded() {
+        if NSClassFromString("XCTest") != nil {
+            configureUnitTestEnvironment()
+        } else if ProcessInfo.processInfo.environment["XCTESTING"] != nil {
+            configureUITestEnvironment()
+        } else {
+            AppLifecycle.applyStoredConfigFile()
+        }
+    }
+
+    private func configureUnitTestEnvironment() {
+        os_log(.info, "in testing mode!")
+        let mainBundle = Bundle.main
+        if let bundle = Bundle(path: "\(mainBundle.bundlePath)/Contents/Plugins/CosmicHammer Tests.xctest"),
+           let lsUnitPath = bundle.path(forResource: "lsunit", ofType: "lua")
+        {
+            let fsPath = (lsUnitPath as NSString).fileSystemRepresentation
+            MJConfigFileSet(FileManager.default.string(withFileSystemRepresentation: fsPath, length: strlen(fsPath)) as NSString)
+        } else {
+            os_log(.fault, "Unable to find lsunit.lua in CosmicHammer Tests.xctest. We're about to crash, sorry!")
+            abort()
+        }
+    }
+
+    private func configureUITestEnvironment() {
+        os_log(.info, "in UI testing mode")
+        let initPath = FileManager.default.currentDirectoryPath + "/CosmicHammer UI Tests-Runner.app/Contents/PlugIns/CosmicHammer UI Tests.xctest/Contents/Resources/init.lua"
+        let fsPath = (initPath as NSString).fileSystemRepresentation
+        MJConfigFileSet(FileManager.default.string(withFileSystemRepresentation: fsPath, length: strlen(fsPath)) as NSString)
+        showConsoleWindow(nil)
+    }
+
     // Dragging & Dropping of Text to Dock Item
     @objc func processDockIconDraggedText(_ pboard: NSPasteboard, userData: String, error errorPointer: AutoreleasingUnsafeMutablePointer<NSString?>) {
         if let pboardString = pboard.string(forType: .string) {
@@ -404,6 +415,7 @@ class MJAppDelegate: NSObject, NSApplicationDelegate {
 
     // Dragging & Dropping of File to Dock Item
     @objc func processDockIconDraggedFile(_ pboard: NSPasteboard, userData: String, error errorPointer: AutoreleasingUnsafeMutablePointer<NSString?>) {
+        // errorPointer is non-optional in Swift; no nil check needed
         let pasteboardType = NSPasteboard.PasteboardType(rawValue: "NSFilenamesPboardType")
         if let filePaths = pboard.propertyList(forType: pasteboardType) as? [String] {
             for filePath in filePaths {
@@ -467,6 +479,7 @@ class MJAppDelegate: NSObject, NSApplicationDelegate {
 
     @IBAction func openConfig(_ sender: Any?) {
         let path = MJConfigFileFullPath() as String
+        assert(!path.isEmpty, "config file path must not be empty")
 
         if !FileManager.default.fileExists(atPath: path) {
             FileManager.default.createFile(atPath: path, contents: Data(), attributes: nil)

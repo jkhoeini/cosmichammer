@@ -245,6 +245,7 @@ class HSChooserTableView: NSTableView {
 
     init(completionCallback: LuaValue) {
         let panel = HSChooser.createChooserWindow()
+        precondition(panel.isReleasedWhenClosed == false, "HSChooser.init: panel must not be released when closed")
         super.init(window: panel)
 
         self.selfRefCount = 0
@@ -315,12 +316,31 @@ class HSChooserTableView: NSTableView {
         guard let panel = self.window as? HSChooserWindow else { return }
         panel.delegate = self
 
-        // --- Root content view (HSChooserRootView) ---
         let rootView = HSChooserRootView(frame: NSRect(x: 0, y: 0, width: 509, height: 281))
         rootView.autoresizingMask = [.width, .height]
         panel.contentView = rootView
 
-        // --- Visual effect view (frosted glass) ---
+        let effectView = buildEffectView(in: rootView)
+        self.effectView = effectView
+
+        let queryField = buildQueryField()
+        effectView.addSubview(queryField)
+        self.queryField = queryField
+
+        let separator = buildSeparator()
+        effectView.addSubview(separator)
+
+        let (scrollView, tableView) = buildScrollViewAndTableView()
+        effectView.addSubview(scrollView)
+        self.choicesTableView = tableView
+
+        activateWindowLayoutConstraints(effectView: effectView, queryField: queryField,
+                                        separator: separator, scrollView: scrollView)
+    }
+
+    // MARK: - buildWindowContents helpers
+
+    private func buildEffectView(in rootView: NSView) -> NSVisualEffectView {
         let effectView = NSVisualEffectView(frame: rootView.bounds)
         effectView.translatesAutoresizingMaskIntoConstraints = false
         effectView.wantsLayer = true
@@ -328,17 +348,17 @@ class HSChooserTableView: NSTableView {
         effectView.material = .sidebar
         effectView.state = .followsWindowActiveState
         rootView.addSubview(effectView)
-        self.effectView = effectView
 
-        // Pin effectView to all edges of rootView
         NSLayoutConstraint.activate([
             effectView.leadingAnchor.constraint(equalTo: rootView.leadingAnchor),
             effectView.trailingAnchor.constraint(equalTo: rootView.trailingAnchor),
             effectView.topAnchor.constraint(equalTo: rootView.topAnchor),
             effectView.bottomAnchor.constraint(equalTo: rootView.bottomAnchor),
         ])
+        return effectView
+    }
 
-        // --- Query text field (31pt system font, no border) ---
+    private func buildQueryField() -> NSTextField {
         let queryField = NSTextField(frame: .zero)
         queryField.translatesAutoresizingMaskIntoConstraints = false
         queryField.wantsLayer = true
@@ -353,20 +373,36 @@ class HSChooserTableView: NSTableView {
         queryField.usesSingleLineMode = true
         queryField.cell?.isScrollable = true
         queryField.cell?.lineBreakMode = .byClipping
-        queryField.setContentHuggingPriority(NSLayoutConstraint.Priority(750),
-                                             for: .vertical)
-        effectView.addSubview(queryField)
-        self.queryField = queryField
+        queryField.setContentHuggingPriority(NSLayoutConstraint.Priority(750), for: .vertical)
+        return queryField
+    }
 
-        // --- Separator line ---
+    private func buildSeparator() -> NSBox {
         let separator = NSBox(frame: .zero)
         separator.translatesAutoresizingMaskIntoConstraints = false
         separator.boxType = .separator
-        separator.setContentHuggingPriority(NSLayoutConstraint.Priority(750),
-                                            for: .vertical)
-        effectView.addSubview(separator)
+        separator.setContentHuggingPriority(NSLayoutConstraint.Priority(750), for: .vertical)
+        return separator
+    }
 
-        // --- Scroll view + table view ---
+    private func buildScrollViewAndTableView() -> (NSScrollView, HSChooserTableView) {
+        let scrollView = buildScrollView()
+        let tableView = buildTableView()
+
+        let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("MainColumn"))
+        column.isEditable = false
+        column.width = 487
+        column.minWidth = 40
+        column.maxWidth = 99000
+        column.resizingMask = .autoresizingMask
+        tableView.addTableColumn(column)
+        tableView.headerView = nil
+
+        scrollView.documentView = tableView
+        return (scrollView, tableView)
+    }
+
+    private func buildScrollView() -> NSScrollView {
         let scrollView = NSScrollView(frame: .zero)
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         scrollView.borderType = .noBorder
@@ -379,7 +415,10 @@ class HSChooserTableView: NSTableView {
         scrollView.verticalPageScroll = 10
         scrollView.usesPredominantAxisScrolling = false
         scrollView.drawsBackground = false
+        return scrollView
+    }
 
+    private func buildTableView() -> HSChooserTableView {
         let tableView = HSChooserTableView(frame: .zero)
         tableView.rowHeight = 40
         tableView.usesAutomaticRowHeights = true
@@ -396,39 +435,22 @@ class HSChooserTableView: NSTableView {
         tableView.backgroundColor = NSColor(srgbRed: 0.0, green: 0.41176470588,
                                             blue: 0.85098039216, alpha: 0.0)
         tableView.gridColor = NSColor(white: 0.8, alpha: 0.0)
-        tableView.setContentHuggingPriority(NSLayoutConstraint.Priority(750),
-                                            for: .vertical)
+        tableView.setContentHuggingPriority(NSLayoutConstraint.Priority(750), for: .vertical)
+        return tableView
+    }
 
-        // Create the single table column
-        let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("MainColumn"))
-        column.isEditable = false
-        column.width = 487
-        column.minWidth = 40
-        column.maxWidth = 99000
-        column.resizingMask = .autoresizingMask
-        tableView.addTableColumn(column)
-
-        // Ensure header is hidden
-        tableView.headerView = nil
-
-        scrollView.documentView = tableView
-        effectView.addSubview(scrollView)
-        self.choicesTableView = tableView
-
-        // --- Auto Layout constraints matching the XIB ---
+    private func activateWindowLayoutConstraints(effectView: NSVisualEffectView, queryField: NSTextField,
+                                                  separator: NSBox, scrollView: NSScrollView) {
         NSLayoutConstraint.activate([
-            // Query field
             queryField.topAnchor.constraint(equalTo: effectView.topAnchor, constant: 20),
             queryField.leadingAnchor.constraint(equalTo: effectView.leadingAnchor, constant: 20),
             effectView.trailingAnchor.constraint(equalTo: queryField.trailingAnchor, constant: 20),
             queryField.heightAnchor.constraint(equalToConstant: 43),
 
-            // Separator
             separator.topAnchor.constraint(equalTo: queryField.bottomAnchor, constant: 20),
             separator.leadingAnchor.constraint(equalTo: effectView.leadingAnchor),
             effectView.trailingAnchor.constraint(equalTo: separator.trailingAnchor),
 
-            // Scroll view
             scrollView.topAnchor.constraint(equalTo: separator.bottomAnchor, constant: 5),
             scrollView.leadingAnchor.constraint(equalTo: effectView.leadingAnchor, constant: 5),
             effectView.trailingAnchor.constraint(equalTo: scrollView.trailingAnchor, constant: 5),
@@ -509,6 +531,7 @@ class HSChooserTableView: NSTableView {
             os_log(.error, "ERROR: Unable to create hs.chooser window")
             return false
         }
+        precondition(window is HSChooserWindow, "setupWindow: window must be an HSChooserWindow")
 
         // Build the window's view hierarchy
         buildWindowContents()
@@ -545,8 +568,10 @@ class HSChooserTableView: NSTableView {
     func resizeWindow() {
         guard let screen = NSScreen.main else { return }
         let screenFrame = screen.visibleFrame
+        assert(screenFrame.width > 0 && screenFrame.height > 0, "resizeWindow: screen frame must have positive dimensions")
 
         let rowHeight = choicesTableView.rowHeight
+        assert(rowHeight > 0, "resizeWindow: rowHeight must be positive")
         let intercellHeight = choicesTableView.intercellSpacing.height
         let allRowsHeight = (rowHeight + intercellHeight) * CGFloat(numRows)
 
@@ -586,6 +611,8 @@ class HSChooserTableView: NSTableView {
     }
 
     func showWithHints(_ center: Bool, atPoint topLeft: NSPoint) {
+        precondition(window != nil, "showWithHints: window must not be nil")
+        assert(completionCallback != nil, "showWithHints: completionCallback must be set before showing")
         hasChosen = false
 
         // Call hs.chooser.globalCallback("willShow")
@@ -748,18 +775,42 @@ class HSChooserTableView: NSTableView {
         cell.identifier = NSUserInterfaceItemIdentifier(identifier)
         cell.autoresizingMask = [.width, .height]
 
-        // --- Image view (36px wide) ---
+        let imageView = buildCellImageView()
+        cell.addSubview(imageView)
+        cell.iconView = imageView
+        cell.imageView = imageView
+
+        let textField = buildCellMainTextField()
+        cell.addSubview(textField)
+        cell.text = textField
+
+        let subTextField = buildCellSubTextField()
+        cell.addSubview(subTextField)
+        cell.subText = subTextField
+
+        let shortcutField = buildCellShortcutField()
+        cell.addSubview(shortcutField)
+        cell.shortcutText = shortcutField
+
+        activateSubtextCellConstraints(cell: cell, imageView: imageView,
+                                        textField: textField, subTextField: subTextField,
+                                        shortcutField: shortcutField)
+        return cell
+    }
+
+    // MARK: - makeSubtextCell helpers
+
+    private func buildCellImageView() -> NSImageView {
         let imageView = NSImageView(frame: .zero)
         imageView.translatesAutoresizingMaskIntoConstraints = false
         imageView.wantsLayer = true
         imageView.tag = 4
         imageView.imageScaling = .scaleProportionallyUpOrDown
         imageView.image = NSImage(named: NSImage.actionTemplateName)
-        cell.addSubview(imageView)
-        cell.iconView = imageView
-        cell.imageView = imageView
+        return imageView
+    }
 
-        // --- Main text field (15pt system) ---
+    private func buildCellMainTextField() -> NSTextField {
         let textField = NSTextField(frame: .zero)
         textField.translatesAutoresizingMaskIntoConstraints = false
         textField.tag = 1
@@ -775,10 +826,10 @@ class HSChooserTableView: NSTableView {
         textField.cell?.sendsActionOnEndEditing = true
         textField.setContentHuggingPriority(NSLayoutConstraint.Priority(750), for: .vertical)
         textField.setContentCompressionResistancePriority(NSLayoutConstraint.Priority(250), for: .horizontal)
-        cell.addSubview(textField)
-        cell.text = textField
+        return textField
+    }
 
-        // --- Subtext field ---
+    private func buildCellSubTextField() -> NSTextField {
         let subTextField = NSTextField(frame: .zero)
         subTextField.translatesAutoresizingMaskIntoConstraints = false
         subTextField.tag = -1
@@ -796,10 +847,10 @@ class HSChooserTableView: NSTableView {
         subTextField.cell?.sendsActionOnEndEditing = true
         subTextField.setContentHuggingPriority(NSLayoutConstraint.Priority(750), for: .vertical)
         subTextField.setContentCompressionResistancePriority(NSLayoutConstraint.Priority(250), for: .horizontal)
-        cell.addSubview(subTextField)
-        cell.subText = subTextField
+        return subTextField
+    }
 
-        // --- Shortcut text field (25pt, vertically centering cell) ---
+    private func buildCellShortcutField() -> NSTextField {
         let shortcutField = NSTextField(frame: .zero)
         shortcutField.translatesAutoresizingMaskIntoConstraints = false
         shortcutField.tag = 2
@@ -815,10 +866,12 @@ class HSChooserTableView: NSTableView {
         shortcutField.alignment = .left
         shortcutField.setContentCompressionResistancePriority(NSLayoutConstraint.Priority(1000), for: .vertical)
         shortcutField.setContentHuggingPriority(NSLayoutConstraint.Priority(750), for: .vertical)
-        cell.addSubview(shortcutField)
-        cell.shortcutText = shortcutField
+        return shortcutField
+    }
 
-        // --- Constraints matching XIB "HSChooserCellSubtext" ---
+    private func activateSubtextCellConstraints(cell: HSChooserCell, imageView: NSImageView,
+                                                 textField: NSTextField, subTextField: NSTextField,
+                                                 shortcutField: NSTextField) {
         NSLayoutConstraint.activate([
             imageView.widthAnchor.constraint(equalToConstant: 36),
             imageView.leadingAnchor.constraint(equalTo: cell.leadingAnchor),
@@ -841,8 +894,6 @@ class HSChooserTableView: NSTableView {
             shortcutField.leadingAnchor.constraint(equalTo: textField.trailingAnchor, constant: 5),
             shortcutField.leadingAnchor.constraint(equalTo: subTextField.trailingAnchor, constant: 5),
         ])
-
-        return cell
     }
 
     private func makePlainCell(withIdentifier identifier: String) -> HSChooserCell {
@@ -850,18 +901,27 @@ class HSChooserTableView: NSTableView {
         cell.identifier = NSUserInterfaceItemIdentifier(identifier)
         cell.autoresizingMask = [.width, .height]
 
-        // --- Image view (36px wide) ---
-        let imageView = NSImageView(frame: .zero)
-        imageView.translatesAutoresizingMaskIntoConstraints = false
-        imageView.wantsLayer = true
-        imageView.tag = 4
-        imageView.imageScaling = .scaleProportionallyUpOrDown
-        imageView.image = NSImage(named: NSImage.actionTemplateName)
+        let imageView = buildCellImageView()
         cell.addSubview(imageView)
         cell.iconView = imageView
         cell.imageView = imageView
 
-        // --- Main text field (20pt, vertically centering cell) ---
+        let textField = buildCellPlainTextField()
+        cell.addSubview(textField)
+        cell.text = textField
+
+        let shortcutField = buildCellShortcutField()
+        cell.addSubview(shortcutField)
+        cell.shortcutText = shortcutField
+
+        activatePlainCellConstraints(cell: cell, imageView: imageView,
+                                      textField: textField, shortcutField: shortcutField)
+        return cell
+    }
+
+    // MARK: - makePlainCell helpers
+
+    private func buildCellPlainTextField() -> NSTextField {
         let textField = NSTextField(frame: .zero)
         textField.translatesAutoresizingMaskIntoConstraints = false
         textField.tag = 1
@@ -878,29 +938,11 @@ class HSChooserTableView: NSTableView {
         textField.cell?.sendsActionOnEndEditing = true
         textField.setContentHuggingPriority(NSLayoutConstraint.Priority(750), for: .vertical)
         textField.setContentCompressionResistancePriority(NSLayoutConstraint.Priority(250), for: .horizontal)
-        cell.addSubview(textField)
-        cell.text = textField
+        return textField
+    }
 
-        // --- Shortcut text field (25pt, 40x40, vertically centering cell) ---
-        let shortcutField = NSTextField(frame: .zero)
-        shortcutField.translatesAutoresizingMaskIntoConstraints = false
-        shortcutField.tag = 2
-        shortcutField.isBordered = false
-        shortcutField.isBezeled = false
-        shortcutField.drawsBackground = false
-        shortcutField.isEditable = false
-        shortcutField.isSelectable = false
-        shortcutField.allowsExpansionToolTips = true
-        shortcutField.cell = HSChooserVerticallyCenteringTextFieldCell(textCell: "??")
-        shortcutField.font = NSFont.systemFont(ofSize: 25)
-        shortcutField.textColor = NSColor.secondaryLabelColor
-        shortcutField.alignment = .left
-        shortcutField.setContentHuggingPriority(NSLayoutConstraint.Priority(750), for: .vertical)
-        shortcutField.setContentCompressionResistancePriority(NSLayoutConstraint.Priority(1000), for: .vertical)
-        cell.addSubview(shortcutField)
-        cell.shortcutText = shortcutField
-
-        // --- Constraints matching XIB "HSChooserCell" ---
+    private func activatePlainCellConstraints(cell: HSChooserCell, imageView: NSImageView,
+                                               textField: NSTextField, shortcutField: NSTextField) {
         NSLayoutConstraint.activate([
             imageView.widthAnchor.constraint(equalToConstant: 36),
             imageView.leadingAnchor.constraint(equalTo: cell.leadingAnchor),
@@ -918,8 +960,6 @@ class HSChooserTableView: NSTableView {
 
             shortcutField.leadingAnchor.constraint(equalTo: textField.trailingAnchor, constant: 5),
         ])
-
-        return cell
     }
 
     // MARK: - HSChooserTableViewDelegate

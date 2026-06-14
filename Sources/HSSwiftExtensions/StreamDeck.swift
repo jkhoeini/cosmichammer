@@ -1100,69 +1100,81 @@ private func hidReportCallback(_ context: UnsafeMutableRawPointer?,
 
     let inputType = report[1]
     if inputType == 0x00 || inputType == 0x01 {
-        // BUTTON EVENT
-        var buttonReport: [NSNumber] = [NSNumber(value: 0)] // Slot zero unused (1-indexed)
-        for _ in 1...device.keyCount {
-            buttonReport.append(NSNumber(value: 0))
-        }
-
-        let start = report + Int(device.dataKeyOffset)
-        for button: Int32 in 1...device.keyCount {
-            let val = NSNumber(value: start[Int(button - 1)])
-            let translatedButton = device.transformKeyIndex(button)
-            buttonReport[Int(translatedButton)] = val
-        }
-        device.deviceDidSendInput(buttonReport)
-
+        handleButtonEvent(device: device, report: report)
     } else if inputType == 0x02 {
-        // LCD EVENT
-        var eventTypeString = "Unknown"
-        let startX = Int32(UInt16(report[6]) | (UInt16(report[7]) << 8))
-        let startY = Int32(UInt16(report[8]) | (UInt16(report[9]) << 8))
-        var endX: Int32 = 0
-        var endY: Int32 = 0
-
-        let eventType = report[4]
-        if eventType == 0x01 {
-            eventTypeString = "shortPress"
-        } else if eventType == 0x02 {
-            eventTypeString = "longPress"
-        } else if eventType == 0x03 {
-            eventTypeString = "swipe"
-            endX = Int32(UInt16(report[10]) | (UInt16(report[11]) << 8))
-            endY = Int32(UInt16(report[12]) | (UInt16(report[13]) << 8))
-        }
-
-        device.deviceDidSendScreenTouch(eventType: eventTypeString, startX: startX, startY: startY, endX: endX, endY: endY)
-
+        handleLCDEvent(device: device, report: report)
     } else if inputType == 0x03 {
-        // ENCODER EVENT
-        let eventType = report[4]
-        if eventType == 0x00 {
-            // ENCODER PRESS/RELEASE
-            var buttonReport: [NSNumber] = [NSNumber(value: 0)]
-            for _ in 1...device.encoderCount {
-                buttonReport.append(NSNumber(value: 0))
-            }
+        handleEncoderEvent(device: device, report: report)
+    }
+}
 
-            let start = report + Int(device.dataEncoderOffset)
-            for button: Int32 in 1...device.encoderCount {
-                let val = NSNumber(value: start[Int(button - 1)])
-                let translatedButton = device.transformKeyIndex(button)
-                buttonReport[Int(translatedButton)] = val
-            }
-            device.deviceDidSendEncoderInput(buttonReport)
+private func handleButtonEvent(device: HSStreamDeckDevice, report: UnsafeMutablePointer<UInt8>) {
+    var buttonReport: [NSNumber] = [NSNumber(value: 0)]
+    for _ in 1...device.keyCount {
+        buttonReport.append(NSNumber(value: 0))
+    }
 
-        } else if eventType == 0x01 {
-            // ENCODER TURN
-            let start = report + Int(device.dataEncoderOffset)
-            for button: Int32 in 1...device.encoderCount {
-                let value = Int(start[Int(button - 1)])
-                if value > 0 {
-                    let turningLeft = value >= 200
-                    device.deviceDidSendEncoderTurn(button: button, turningLeft: turningLeft)
-                }
-            }
+    let start = report + Int(device.dataKeyOffset)
+    for button: Int32 in 1...device.keyCount {
+        let val = NSNumber(value: start[Int(button - 1)])
+        let translatedButton = device.transformKeyIndex(button)
+        buttonReport[Int(translatedButton)] = val
+    }
+    device.deviceDidSendInput(buttonReport)
+}
+
+private func handleLCDEvent(device: HSStreamDeckDevice, report: UnsafeMutablePointer<UInt8>) {
+    var eventTypeString = "Unknown"
+    let startX = Int32(UInt16(report[6]) | (UInt16(report[7]) << 8))
+    let startY = Int32(UInt16(report[8]) | (UInt16(report[9]) << 8))
+    var endX: Int32 = 0
+    var endY: Int32 = 0
+
+    let eventType = report[4]
+    if eventType == 0x01 {
+        eventTypeString = "shortPress"
+    } else if eventType == 0x02 {
+        eventTypeString = "longPress"
+    } else if eventType == 0x03 {
+        eventTypeString = "swipe"
+        endX = Int32(UInt16(report[10]) | (UInt16(report[11]) << 8))
+        endY = Int32(UInt16(report[12]) | (UInt16(report[13]) << 8))
+    }
+
+    device.deviceDidSendScreenTouch(eventType: eventTypeString, startX: startX, startY: startY, endX: endX, endY: endY)
+}
+
+private func handleEncoderEvent(device: HSStreamDeckDevice, report: UnsafeMutablePointer<UInt8>) {
+    let eventType = report[4]
+    if eventType == 0x00 {
+        handleEncoderPressRelease(device: device, report: report)
+    } else if eventType == 0x01 {
+        handleEncoderTurn(device: device, report: report)
+    }
+}
+
+private func handleEncoderPressRelease(device: HSStreamDeckDevice, report: UnsafeMutablePointer<UInt8>) {
+    var buttonReport: [NSNumber] = [NSNumber(value: 0)]
+    for _ in 1...device.encoderCount {
+        buttonReport.append(NSNumber(value: 0))
+    }
+
+    let start = report + Int(device.dataEncoderOffset)
+    for button: Int32 in 1...device.encoderCount {
+        let val = NSNumber(value: start[Int(button - 1)])
+        let translatedButton = device.transformKeyIndex(button)
+        buttonReport[Int(translatedButton)] = val
+    }
+    device.deviceDidSendEncoderInput(buttonReport)
+}
+
+private func handleEncoderTurn(device: HSStreamDeckDevice, report: UnsafeMutablePointer<UInt8>) {
+    let start = report + Int(device.dataEncoderOffset)
+    for button: Int32 in 1...device.encoderCount {
+        let value = Int(start[Int(button - 1)])
+        if value > 0 {
+            let turningLeft = value >= 200
+            device.deviceDidSendEncoderTurn(button: button, turningLeft: turningLeft)
         }
     }
 }

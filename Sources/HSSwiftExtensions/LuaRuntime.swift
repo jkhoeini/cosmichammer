@@ -66,6 +66,8 @@ enum LuaBoot {
         setupPath: String,
         context: Context
     ) throws -> LifecycleReferences {
+        precondition(!setupPath.isEmpty, "setup path must not be empty")
+        precondition(!context.extensionsPath.isEmpty, "extensions path must not be empty")
         let baseTop = lua_gettop(L)
         let loadResult = luaL_loadfilex(L, (setupPath as NSString).fileSystemRepresentation, nil)
         guard loadResult == LUA_OK else {
@@ -104,6 +106,12 @@ enum LuaBoot {
         let evalRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
         lua_pop(L, 1)
 
+        assert(evalRef != LUA_NOREF, "evalFunctionRef must be a valid registry reference")
+        assert(evalRef != LUA_REFNIL, "evalFunctionRef must not be nil ref")
+        assert(completionsRef != LUA_NOREF, "completionsFunctionRef must be a valid registry reference")
+        assert(completionsRef != LUA_REFNIL, "completionsFunctionRef must not be nil ref")
+        assert(lua_gettop(L) == baseTop, "stack must be balanced after runSetup")
+
         return LifecycleReferences(
             evalFunctionRef: evalRef,
             completionsFunctionRef: completionsRef
@@ -111,6 +119,7 @@ enum LuaBoot {
     }
 
     static func pushContext(_ L: UnsafeMutablePointer<lua_State>, _ context: Context) {
+        let baseTop = lua_gettop(L)
         lua_createtable(L, 0, 8)
         setField(L, "extensionsPath", context.extensionsPath)
         setField(L, "configFileDisplayPath", context.configFileDisplayPath)
@@ -120,6 +129,8 @@ enum LuaBoot {
         setField(L, "docsJSONPath", context.docsJSONPath)
         setField(L, "hasInitFile", context.hasInitFile)
         setField(L, "autoloadExtensions", context.autoloadExtensions)
+        assert(lua_gettop(L) == baseTop + 1, "pushContext must leave exactly one table on the stack")
+        assert(lua_type(L, -1) == LUA_TTABLE, "pushContext must leave a table on top of the stack")
     }
 
     private static func setField(_ L: UnsafeMutablePointer<lua_State>, _ name: String, _ value: String) {
@@ -322,6 +333,8 @@ private func core_reload(_ L: LuaState) throws -> CInt {
 /// Constant
 /// A table containing read-only information about the Cosmic Hammer application instance currently running.
 private func push_hammerAppInfo(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    precondition(L != nil, "Lua state must not be nil")
+    let baseTop = lua_gettop(L)
     // Fetch the CPU architecture in use
     var arch = "Unknown"
     var utsname = utsname()
@@ -367,6 +380,7 @@ private func push_hammerAppInfo(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
     ]
 
     lua_pushany(L, appInfo as NSDictionary)
+    assert(lua_gettop(L) == baseTop + 1, "push_hammerAppInfo must push exactly one value")
     return 1
 }
 
@@ -395,6 +409,7 @@ private func isScreenRecordingEnabled() -> Bool {
     var canRecordScreen = false
     let runningApplication = NSRunningApplication.current
     let ourProcessIdentifier = runningApplication.processIdentifier
+    assert(ourProcessIdentifier > 0, "process identifier must be positive")
 
     guard let windowList = CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID) as? [[String: Any]] else {
         return false
@@ -664,6 +679,7 @@ private func core_getObjectMetatable(_ L: LuaState) throws -> CInt {
 ///  * This function does not modify the original string - to actually replace it, assign the result of this function to the original string.
 ///  * This function is a more specifically targeted version of the `hs.utf8.fixUTF8(...)` function.
 private func core_cleanUTF8(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    precondition(L != nil, "Lua state must not be nil")
     luaL_checkany(L, 1)
     // luaL_tolstring coerces any value to a string representation
     var len: Int = 0
@@ -719,6 +735,7 @@ private func core_notify(_ L: LuaState) throws -> CInt {
 /// Unicode Empty Set character (U+2205) and invalid sequences with the
 /// Unicode Replacement Character (U+FFFD).
 private func getValidUTF8(_ src: UnsafePointer<CChar>?, ofLength sourceLength: Int) -> String {
+    precondition(sourceLength >= 0, "source length must not be negative")
     guard let src = src, sourceLength > 0 else { return "" }
     let nullChar: [UInt8] = [0xE2, 0x88, 0x85]     // U+2205
     let invalidChar: [UInt8] = [0xEF, 0xBF, 0xBD]  // U+FFFD
@@ -819,7 +836,25 @@ func MJLuaAlloc() {
 func MJLuaInit() {
     let L = lua_getCurrentState()!
 
-    // Register the core library as the "hs" global table
+    registerHSGlobalTable(L)
+    installLuaSkinCompatibilityGlobals(L)
+
+    // Register every bundled hs.lib<name> entry point into package.preload before setup.lua runs.
+    hsExtensionsRegisterAll(L)
+
+    guard let setupPath = Bundle.main.path(forResource: "setup", ofType: "lua"),
+          let extensionsPath = Bundle.main.path(forResource: "extensions", ofType: nil),
+          let docsPath = Bundle.main.path(forResource: "docs", ofType: "json") else {
+        terminateWithCorruptInstallationAlert()
+        return
+    }
+
+    let context = buildBootContext(extensionsPath: extensionsPath, docsPath: docsPath)
+    runSetupOrTerminate(L, setupPath: setupPath, context: context)
+}
+
+/// Register the core library as the "hs" global table with all built-in functions.
+private func registerHSGlobalTable(_ L: UnsafeMutablePointer<lua_State>) {
     lua_createtable(L, 0, 23)
     L.push(preferencesDarkMode)
     lua_setfield(L, -2, "preferencesDarkMode")
@@ -869,29 +904,22 @@ func MJLuaInit() {
     lua_setfield(L, -2, "_notify")
     push_hammerAppInfo(L)
     lua_setfield(L, -2, "processInfo")
-
     lua_setglobal(L, "hs")
+}
 
-    installLuaSkinCompatibilityGlobals(L)
+private func terminateWithCorruptInstallationAlert() {
+    os_log(.fault, "Unable to find boot resources in bundle. Terminating")
+    let alert = NSAlert()
+    alert.addButton(withTitle: "OK")
+    alert.messageText = "Cosmic Hammer installation is corrupted"
+    alert.informativeText = "Please re-install Cosmic Hammer"
+    alert.alertStyle = .critical
+    alert.runModal()
+    NSApplication.shared.terminate(nil)
+}
 
-    // Register every bundled hs.lib<name> entry point into package.preload before setup.lua runs.
-    hsExtensionsRegisterAll(L)
-
-    guard let setupPath = Bundle.main.path(forResource: "setup", ofType: "lua"),
-          let extensionsPath = Bundle.main.path(forResource: "extensions", ofType: nil),
-          let docsPath = Bundle.main.path(forResource: "docs", ofType: "json") else {
-        os_log(.fault, "Unable to find boot resources in bundle. Terminating")
-        let alert = NSAlert()
-        alert.addButton(withTitle: "OK")
-        alert.messageText = "Cosmic Hammer installation is corrupted"
-        alert.informativeText = "Please re-install Cosmic Hammer"
-        alert.alertStyle = .critical
-        alert.runModal()
-        NSApplication.shared.terminate(nil)
-        return
-    }
-
-    let context = LuaBoot.Context(
+private func buildBootContext(extensionsPath: String, docsPath: String) -> LuaBoot.Context {
+    LuaBoot.Context(
         extensionsPath: extensionsPath,
         configFileDisplayPath: MJConfigFileGet() as String,
         configFilePath: MJConfigFileFullPath() as String,
@@ -901,33 +929,30 @@ func MJLuaInit() {
         hasInitFile: FileManager.default.fileExists(atPath: MJConfigFileFullPath() as String),
         autoloadExtensions: UserDefaults.standard.bool(forKey: HSAutoLoadExtensions)
     )
+}
 
+private func runSetupOrTerminate(_ L: UnsafeMutablePointer<lua_State>, setupPath: String, context: LuaBoot.Context) {
     do {
         let lifecycle = try LuaBoot.runSetup(L, setupPath: setupPath, context: context)
         evalfn = lifecycle.evalFunctionRef
         completionsForWordFn = lifecycle.completionsFunctionRef
         os_log(.default, "BREADCRUMB: setup.lua completed")
     } catch let error as LuaBoot.Error {
-        os_log(.error, "%{public}s", error.description)
-        let alert = NSAlert()
-        alert.addButton(withTitle: "OK")
-        alert.messageText = "Cosmic Hammer initialization failed"
-        alert.informativeText = error.description
-        alert.alertStyle = .critical
-        alert.runModal()
-        NSApplication.shared.terminate(nil)
-        return
+        terminateWithInitFailureAlert(error.description)
     } catch {
-        os_log(.error, "Unexpected Lua boot error: %{public}s", String(describing: error))
-        let alert = NSAlert()
-        alert.addButton(withTitle: "OK")
-        alert.messageText = "Cosmic Hammer initialization failed"
-        alert.informativeText = String(describing: error)
-        alert.alertStyle = .critical
-        alert.runModal()
-        NSApplication.shared.terminate(nil)
-        return
+        terminateWithInitFailureAlert(String(describing: error))
     }
+}
+
+private func terminateWithInitFailureAlert(_ message: String) {
+    os_log(.error, "%{public}s", message)
+    let alert = NSAlert()
+    alert.addButton(withTitle: "OK")
+    alert.messageText = "Cosmic Hammer initialization failed"
+    alert.informativeText = message
+    alert.alertStyle = .critical
+    alert.runModal()
+    NSApplication.shared.terminate(nil)
 }
 
 // MARK: - Callbacks
@@ -1045,6 +1070,7 @@ func callDockIconCallback() {
 
 /// Shutdown Callback
 private func callShutdownCallback(_ L: UnsafeMutablePointer<lua_State>!) {
+    precondition(L != nil, "Lua state must not be nil for shutdown callback")
     _lua_stackguard_entry(L)
 
     lua_getglobal(L, "hs")
@@ -1092,6 +1118,7 @@ func MJLuaDealloc() {
 
 @_cdecl("MJLuaRunString")
 func MJLuaRunString(_ command: NSString) -> NSString {
+    // Note: command can be empty (valid Lua noop); Swift's type system ensures non-nil.
     guard let L = currentLuaStateForCallback("MJLuaRunString") else { return "" }
     _lua_stackguard_entry(L)
 
@@ -1137,6 +1164,7 @@ func MJLuaRunString(_ command: NSString) -> NSString {
 
 @_cdecl("MJLuaCompletionsForWord")
 func MJLuaCompletionsForWord(_ completionWord: NSString) -> NSArray {
+    // Note: completionWord can be empty (prefix matching); Swift's type system ensures non-nil.
     guard let L = currentLuaStateForCallback("MJLuaCompletionsForWord") else { return [] }
     _lua_stackguard_entry(L)
 

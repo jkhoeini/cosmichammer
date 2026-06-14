@@ -3,6 +3,9 @@ import CLua
 import Lua
 import os.log
 
+// TigerStyle bounds: maximum JSON file size (100 MB)
+private let kMaxJSONFileSize: UInt64 = 104_857_600
+
 // MARK: - HSjson Helper Class
 
 class HSjson {
@@ -65,6 +68,16 @@ class HSjson {
     }
 
     func decodeFromFile(_ path: String) -> Any? {
+        // TigerStyle: pre-check file size before loading entire JSON file
+        do {
+            let attrs = try FileManager.default.attributesOfItem(atPath: path)
+            if let fileSize = attrs[.size] as? UInt64, fileSize > kMaxJSONFileSize {
+                os_log(.error, "JSON file '%{public}s' is %llu bytes, exceeds kMaxJSONFileSize (%llu bytes)", path, fileSize, kMaxJSONFileSize)
+                return nil
+            }
+        } catch {
+            // If stat fails, let the Data read attempt produce the real error below
+        }
         do {
             let json = try Data(contentsOf: URL(fileURLWithPath: path))
             return decode(json)

@@ -90,7 +90,27 @@ class MJPreferencesWindowController: NSWindowController {
     // MARK: - loadWindow
 
     override func loadWindow() {
-        // --- Panel ---
+        let panel = buildPreferencesPanel()
+        let effectView = buildEffectView(in: panel)
+
+        let behaviorLabel = buildBehaviorSection(in: effectView)
+        let (accessibilityLabel, statusText, enableAccessButton, statusDot) = buildAccessibilitySection(in: effectView)
+
+        activatePreferencesConstraints(
+            effectView: effectView,
+            behaviorLabel: behaviorLabel,
+            accessibilityLabel: accessibilityLabel,
+            statusText: statusText,
+            enableAccessButton: enableAccessButton,
+            statusDot: statusDot
+        )
+
+        self.window = panel
+        registerPostLoadObservers()
+        syncCheckboxStates()
+    }
+
+    private func buildPreferencesPanel() -> NSPanel {
         let panel = NSPanel(
             contentRect: NSRect(x: 957, y: 580, width: 357, height: 246),
             styleMask: [.titled, .closable, .miniaturizable],
@@ -103,8 +123,10 @@ class MJPreferencesWindowController: NSWindowController {
         panel.titlebarAppearsTransparent = true
         panel.titleVisibility = .hidden
         panel.animationBehavior = .default
+        return panel
+    }
 
-        // --- Visual effect view as the content view ---
+    private func buildEffectView(in panel: NSPanel) -> NSVisualEffectView {
         let effectView = NSVisualEffectView(frame: panel.contentView!.bounds)
         effectView.autoresizingMask = [.width, .height]
         effectView.blendingMode = .behindWindow
@@ -120,58 +142,56 @@ class MJPreferencesWindowController: NSWindowController {
             effectView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
             effectView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
         ])
+        return effectView
+    }
 
-        // --- "Behavior:" label ---
+    private func buildBehaviorSection(in effectView: NSVisualEffectView) -> NSTextField {
         let behaviorLabel = NSTextField(labelWithString: "Behavior:")
         behaviorLabel.translatesAutoresizingMaskIntoConstraints = false
         behaviorLabel.alignment = .right
         behaviorLabel.font = NSFont.systemFont(ofSize: 0)
         effectView.addSubview(behaviorLabel)
 
-        // --- Checkboxes ---
         let openAtLogin = NSButton(checkboxWithTitle: "Launch Cosmic Hammer at login",
-                                   target: self,
-                                   action: #selector(toggleOpensAtLogin(_:)))
+                                   target: self, action: #selector(toggleOpensAtLogin(_:)))
         openAtLogin.translatesAutoresizingMaskIntoConstraints = false
         effectView.addSubview(openAtLogin)
         self.openAtLoginCheckbox = openAtLogin
 
         let showDock = NSButton(checkboxWithTitle: "Show dock icon",
-                                target: self,
-                                action: #selector(toggleShowDockIcon(_:)))
+                                target: self, action: #selector(toggleShowDockIcon(_:)))
         showDock.translatesAutoresizingMaskIntoConstraints = false
         effectView.addSubview(showDock)
         self.showDockIconCheckbox = showDock
 
         let showMenu = NSButton(checkboxWithTitle: "Show menu icon",
-                                target: self,
-                                action: #selector(toggleMenuDockIcon(_:)))
+                                target: self, action: #selector(toggleMenuDockIcon(_:)))
         showMenu.translatesAutoresizingMaskIntoConstraints = false
         effectView.addSubview(showMenu)
         self.showMenuIconCheckbox = showMenu
 
         let keepOnTop = NSButton(checkboxWithTitle: "Keep Console window on top",
-                                 target: self,
-                                 action: #selector(toggleKeepConsoleOnTop(_:)))
+                                 target: self, action: #selector(toggleKeepConsoleOnTop(_:)))
         keepOnTop.translatesAutoresizingMaskIntoConstraints = false
         effectView.addSubview(keepOnTop)
         self.keepConsoleOnTopCheckbox = keepOnTop
 
-        // --- "Accessibility:" label ---
+        return behaviorLabel
+    }
+
+    private func buildAccessibilitySection(in effectView: NSVisualEffectView) -> (NSTextField, NSTextField, NSButton, NSImageView) {
         let accessibilityLabel = NSTextField(labelWithString: "Accessibility:")
         accessibilityLabel.translatesAutoresizingMaskIntoConstraints = false
         accessibilityLabel.alignment = .right
         accessibilityLabel.font = NSFont.systemFont(ofSize: 0)
         effectView.addSubview(accessibilityLabel)
 
-        // --- Accessibility status text (bound via KVC) ---
         let statusText = NSTextField(labelWithString: "")
         statusText.translatesAutoresizingMaskIntoConstraints = false
         statusText.font = NSFont.systemFont(ofSize: 0)
         statusText.bind(.value, to: self, withKeyPath: "maybeEnableAccessibilityString", options: nil)
         effectView.addSubview(statusText)
 
-        // --- "Enable Accessibility" button (bound via KVC) ---
         let enableAccessButton = NSButton(frame: .zero)
         enableAccessButton.translatesAutoresizingMaskIntoConstraints = false
         enableAccessButton.title = "Enable Accessibility"
@@ -182,58 +202,58 @@ class MJPreferencesWindowController: NSWindowController {
                                 options: [NSBindingOption.valueTransformerName: NSValueTransformerName.negateBooleanTransformerName])
         effectView.addSubview(enableAccessButton)
 
-        // --- Status dot image view (bound via KVC) ---
         let statusDot = NSImageView(frame: .zero)
         statusDot.translatesAutoresizingMaskIntoConstraints = false
         statusDot.bind(.value, to: self, withKeyPath: "isAccessibilityEnabledImage", options: nil)
         effectView.addSubview(statusDot)
 
-        // --- Auto Layout constraints ---
+        return (accessibilityLabel, statusText, enableAccessButton, statusDot)
+    }
+
+    private func activatePreferencesConstraints(
+        effectView: NSVisualEffectView,
+        behaviorLabel: NSTextField,
+        accessibilityLabel: NSTextField,
+        statusText: NSTextField,
+        enableAccessButton: NSButton,
+        statusDot: NSImageView
+    ) {
         NSLayoutConstraint.activate([
-            // "Behavior:" label — top-left
             behaviorLabel.topAnchor.constraint(equalTo: effectView.topAnchor, constant: 20),
             behaviorLabel.leadingAnchor.constraint(equalTo: effectView.leadingAnchor, constant: 20),
 
-            // First checkbox aligns baseline with "Behavior:" label, 8pt after label trailing
-            openAtLogin.bottomAnchor.constraint(equalTo: behaviorLabel.bottomAnchor, constant: -1),
-            openAtLogin.leadingAnchor.constraint(equalTo: behaviorLabel.trailingAnchor, constant: 8),
+            openAtLoginCheckbox.bottomAnchor.constraint(equalTo: behaviorLabel.bottomAnchor, constant: -1),
+            openAtLoginCheckbox.leadingAnchor.constraint(equalTo: behaviorLabel.trailingAnchor, constant: 8),
 
-            // Remaining checkboxes stack vertically with 6pt spacing
-            showDock.topAnchor.constraint(equalTo: openAtLogin.bottomAnchor, constant: 6),
-            showDock.leadingAnchor.constraint(equalTo: behaviorLabel.trailingAnchor, constant: 8),
+            showDockIconCheckbox.topAnchor.constraint(equalTo: openAtLoginCheckbox.bottomAnchor, constant: 6),
+            showDockIconCheckbox.leadingAnchor.constraint(equalTo: behaviorLabel.trailingAnchor, constant: 8),
 
-            showMenu.topAnchor.constraint(equalTo: showDock.bottomAnchor, constant: 6),
-            showMenu.leadingAnchor.constraint(equalTo: behaviorLabel.trailingAnchor, constant: 8),
+            showMenuIconCheckbox.topAnchor.constraint(equalTo: showDockIconCheckbox.bottomAnchor, constant: 6),
+            showMenuIconCheckbox.leadingAnchor.constraint(equalTo: behaviorLabel.trailingAnchor, constant: 8),
 
-            keepOnTop.topAnchor.constraint(equalTo: showMenu.bottomAnchor, constant: 6),
-            keepOnTop.leadingAnchor.constraint(equalTo: behaviorLabel.trailingAnchor, constant: 8),
+            keepConsoleOnTopCheckbox.topAnchor.constraint(equalTo: showMenuIconCheckbox.bottomAnchor, constant: 6),
+            keepConsoleOnTopCheckbox.leadingAnchor.constraint(equalTo: behaviorLabel.trailingAnchor, constant: 8),
 
-            // "Accessibility:" label — below last checkbox, right-aligned with "Behavior:" label
-            accessibilityLabel.topAnchor.constraint(equalTo: keepOnTop.bottomAnchor, constant: 8),
+            accessibilityLabel.topAnchor.constraint(equalTo: keepConsoleOnTopCheckbox.bottomAnchor, constant: 8),
             accessibilityLabel.leadingAnchor.constraint(equalTo: effectView.leadingAnchor, constant: 20),
             accessibilityLabel.trailingAnchor.constraint(equalTo: behaviorLabel.trailingAnchor),
 
-            // Status text vertically centered with "Accessibility:" label
             statusText.centerYAnchor.constraint(equalTo: accessibilityLabel.centerYAnchor),
             statusText.leadingAnchor.constraint(equalTo: accessibilityLabel.trailingAnchor, constant: 8),
             statusText.trailingAnchor.constraint(equalTo: effectView.trailingAnchor, constant: -20),
 
-            // "Enable Accessibility" button below status text, aligned to its leading
             enableAccessButton.topAnchor.constraint(equalTo: statusText.bottomAnchor, constant: 8),
             enableAccessButton.leadingAnchor.constraint(equalTo: statusText.leadingAnchor),
             enableAccessButton.widthAnchor.constraint(equalToConstant: 200),
 
-            // Status dot centered vertically with the button, 8pt to its right
             statusDot.centerYAnchor.constraint(equalTo: enableAccessButton.centerYAnchor),
             statusDot.leadingAnchor.constraint(equalTo: enableAccessButton.trailingAnchor, constant: 8),
             statusDot.widthAnchor.constraint(equalToConstant: 16),
             statusDot.heightAnchor.constraint(equalToConstant: 16),
         ])
+    }
 
-        // --- Assign the window ---
-        self.window = panel
-
-        // --- Post-load setup ---
+    private func registerPostLoadObservers() {
         DispatchQueue.main.async {
             self.cacheIsAccessibilityEnabled()
         }
@@ -245,17 +265,19 @@ class MJPreferencesWindowController: NSWindowController {
             object: nil
         )
 
-        openAtLoginCheckbox.state = MJAutoLaunchGet() ? .on : .off
-        showDockIconCheckbox.state = MJDockIconVisible() ? .on : .off
-        showMenuIconCheckbox.state = MJMenuIconVisible() ? .on : .off
-        keepConsoleOnTopCheckbox.state = MJConsoleWindowAlwaysOnTop() ? .on : .off
-
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(updateFeedbackDisplay(_:)),
             name: UserDefaults.didChangeNotification,
             object: nil
         )
+    }
+
+    private func syncCheckboxStates() {
+        openAtLoginCheckbox.state = MJAutoLaunchGet() ? .on : .off
+        showDockIconCheckbox.state = MJDockIconVisible() ? .on : .off
+        showMenuIconCheckbox.state = MJMenuIconVisible() ? .on : .off
+        keepConsoleOnTopCheckbox.state = MJConsoleWindowAlwaysOnTop() ? .on : .off
     }
 
     // MARK: - Notification handlers

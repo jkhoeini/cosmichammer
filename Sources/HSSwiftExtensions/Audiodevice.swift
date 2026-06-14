@@ -145,6 +145,8 @@ private func isInputDevice(_ deviceID: AudioDeviceID) -> Bool {
 // MARK: - Helper functions for creating userdata objects
 
 func new_device(_ L: UnsafeMutablePointer<lua_State>!, _ deviceId: AudioDeviceID) {
+    precondition(L != nil, "lua_State must not be nil")
+    precondition(deviceId != 0, "AudioDeviceID must not be kAudioObjectUnknown (0)")
     let ptr = lua_newuserdata(L, MemoryLayout<AudioDeviceUserData>.size)!
     let audioDevice = ptr.assumingMemoryBound(to: AudioDeviceUserData.self)
     audioDevice.pointee.deviceId = deviceId
@@ -156,6 +158,8 @@ func new_device(_ L: UnsafeMutablePointer<lua_State>!, _ deviceId: AudioDeviceID
 }
 
 func new_dataSource(_ L: UnsafeMutablePointer<lua_State>!, _ deviceID: AudioDeviceID, _ dataSource: UInt32) {
+    precondition(L != nil, "lua_State must not be nil")
+    precondition(deviceID != 0, "AudioDeviceID must not be kAudioObjectUnknown (0)")
     let ptr = lua_newuserdata(L, MemoryLayout<DataSourceUserData>.size)!
     let userData = ptr.assumingMemoryBound(to: DataSourceUserData.self)
     userData.pointee.dataSource = dataSource
@@ -1541,6 +1545,7 @@ private func audiodevice_watcherStart(_ L: LuaState) throws -> CInt {
 }
 
 func watcherStop(_ audioDevice: UnsafeMutablePointer<AudioDeviceUserData>) {
+    precondition(audioDevice.pointee.deviceId != 0, "Cannot stop watcher on unknown device")
     if !audioDevice.pointee.watcherRunning {
         return
     }
@@ -1651,6 +1656,7 @@ private func audiodevice_gc(_ L: LuaState) throws -> CInt {
 // MARK: - hs.audiodevice.datasource object methods
 
 func get_datasource_name(_ hostDevice: AudioDeviceID, _ dataSource: UInt32) -> String {
+    precondition(hostDevice != 0, "hostDevice must not be kAudioObjectUnknown (0)")
     var name = "(un-named datasource)"
     var dataSourceName: Unmanaged<CFString>?
     let scope: AudioObjectPropertyScope
@@ -1771,7 +1777,8 @@ private func datasource_eq(_ L: LuaState) throws -> CInt {
 
 @_cdecl("luaopen_hs_libaudiodevice")
 public func luaopen_hs_libaudiodevice(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    runEntryPoint(L) { L in
+    precondition(L != nil, "lua_State must not be nil")
+    return runEntryPoint(L) { L in
         // Register audiodevice userdata metatable
         luaL_newmetatable(L, USERDATA_TAG)
         lua_pushvalue(L, -1)

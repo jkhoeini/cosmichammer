@@ -6,6 +6,12 @@ import AVFoundation
 
 private let USERDATA_TAG = "hs.sound"
 
+/// TigerStyle: maximum audio components to enumerate before bailing out.
+private let kMaxAudioComponents = 1_000
+
+/// TigerStyle: maximum sound file entries to enumerate per directory search.
+private let kMaxSoundFileEntries = 10_000
+
 // MARK: - Support Functions and Classes
 
 private class HSSoundObject: NSObject, NSSoundDelegate {
@@ -89,9 +95,16 @@ private func sound_getAudioEffectNames(_ L: LuaState) throws -> CInt {
     var count: Int32 = 1
 
     lua_newtable(L)
+    // TigerStyle: bounded loop — cap iterations to prevent unbounded enumeration
+    var componentIter = 0
     while true {
         component = AudioComponentFindNext(component, &description)
         guard let comp = component else { break }
+        componentIter += 1
+        if componentIter > kMaxAudioComponents {
+            os_log(.error, "hs.sound: audio component enumeration exceeded %d entries — breaking", kMaxAudioComponents)
+            break
+        }
         var name: Unmanaged<CFString>?
         AudioComponentCopyName(comp, &name)
         if let theName = name?.takeRetainedValue() as String? {
@@ -168,7 +181,14 @@ private func sound_systemSounds(_ L: LuaState) throws -> CInt {
     for sourcePath in librarySources {
         let soundsPath = (sourcePath as NSString).appendingPathComponent("Sounds")
         if let soundSource = FileManager.default.enumerator(atPath: soundsPath) {
+            // TigerStyle: bounded directory traversal
+            var soundEntryCount = 0
             while let soundFile = soundSource.nextObject() as? String {
+                soundEntryCount += 1
+                if soundEntryCount > kMaxSoundFileEntries {
+                    os_log(.error, "hs.sound: sound file enumeration exceeded %d entries in %{public}s — breaking", kMaxSoundFileEntries, soundsPath)
+                    break
+                }
                 let soundName = (soundFile as NSString).deletingPathExtension
                 if NSSound(named: NSSound.Name(soundName)) != nil {
                     lua_pushany(L, soundName as NSString)

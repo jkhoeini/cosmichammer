@@ -6,6 +6,9 @@ import os.log
 
 private let USERDATA_TAG = "hs.task"
 
+// TigerStyle bounds: maximum process output size (100 MB)
+private let kMaxProcessOutputSize = 104_857_600
+
 // MARK: - HSTask class
 
 private class HSTask: NSObject {
@@ -34,6 +37,9 @@ private class HSTask: NSObject {
         luaStreamCallback = nil
         selfRef = nil
         inputData = nil
+        assert(process == nil, "process must be nil after teardown")
+        assert(luaCallback == nil, "luaCallback must be nil after teardown")
+        assert(selfRef == nil, "selfRef must be nil after teardown")
     }
 }
 
@@ -83,6 +89,8 @@ private let writerBlock: (FileHandle) -> Void = { stdInFH in
 }
 
 private func create_task(_ task: HSTask) {
+    precondition(!task.launchPath.isEmpty, "launchPath must not be empty")
+    precondition(!task.hasStarted, "cannot create_task for an already-started task")
     let process = Process()
     let stdOut = Pipe()
     let stdErr = Pipe()
@@ -113,12 +121,24 @@ private func create_task(_ task: HSTask) {
             var stdOutStr: String?
             var stdErrStr: String?
 
-            if let data = stdOutFH?.availableData ?? stdOutFH?.readDataToEndOfFile() {
-                stdOutStr = String(data: data, encoding: .utf8)
+            // TigerStyle: read process output in bounded chunks to prevent unbounded memory growth
+            func readBounded(_ fh: FileHandle?) -> Data {
+                guard let fh = fh else { return Data() }
+                var accumulated = Data()
+                let chunkSize = 65_536
+                while true {
+                    let chunk = fh.readData(ofLength: chunkSize)
+                    if chunk.isEmpty { break }
+                    accumulated.append(chunk)
+                    if accumulated.count > kMaxProcessOutputSize {
+                        os_log(.error, "hs.task: process output exceeded kMaxProcessOutputSize (%d bytes), truncating", kMaxProcessOutputSize)
+                        break
+                    }
+                }
+                return accumulated
             }
-            // Re-read to end for full output
-            stdOutStr = String(data: stdOutFH?.readDataToEndOfFile() ?? Data(), encoding: .utf8)
-            stdErrStr = String(data: stdErrFH?.readDataToEndOfFile() ?? Data(), encoding: .utf8)
+            stdOutStr = String(data: readBounded(stdOutFH), encoding: .utf8)
+            stdErrStr = String(data: readBounded(stdErrFH), encoding: .utf8)
             stdOutFH?.closeFile()
             stdErrFH?.closeFile()
 
@@ -168,6 +188,7 @@ private func create_task(_ task: HSTask) {
 ///  * The arguments are not processed via a shell, so you do not need to do any quoting or escaping. They are passed to the executable exactly as provided.
 ///  * When using a stream callback, the callback may be invoked one last time after the termination callback has already been invoked. In this case, the `task` argument to the stream callback will be `nil` rather than the task userdata object and the return value of the stream callback will be ignored.
 private func task_new(_ L: LuaState) throws -> CInt {
+    precondition(L != nil, "Lua state must not be nil")
     luaL_checktype(L, 1, LUA_TSTRING)
 
     let task = HSTask()
@@ -214,15 +235,21 @@ private func task_new(_ L: LuaState) throws -> CInt {
     // leaking never-started tasks)
     activeTasks.append(task)
 
+    assert(task.process != nil, "task.process must be set after create_task")
+    assert(!task.hasStarted, "newly created task must not be marked as started")
+    assert(!task.hasTerminated, "newly created task must not be marked as terminated")
     return 1
 }
 
 private func task_metagc(_ L: LuaState) throws -> CInt {
+    precondition(L != nil, "Lua state must not be nil")
     activeTasks.removeAll()
     if let observer = fileReadObserver {
         NotificationCenter.default.removeObserver(observer)
         fileReadObserver = nil
     }
+    assert(activeTasks.isEmpty, "activeTasks must be empty after module gc")
+    assert(fileReadObserver == nil, "fileReadObserver must be nil after module gc")
     return 0
 }
 

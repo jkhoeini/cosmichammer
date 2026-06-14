@@ -32,6 +32,7 @@ private class HSLocation: NSObject, CLLocationManagerDelegate {
     /// is handled at module level.
     func teardownManager() {
         if let mgr = manager {
+            precondition(mgr.delegate === self || mgr.delegate == nil, "teardownManager called but delegate is not self")
             mgr.delegate = nil
             mgr.stopUpdatingLocation()
             for region in mgr.monitoredRegions {
@@ -39,15 +40,19 @@ private class HSLocation: NSObject, CLLocationManagerDelegate {
             }
             manager = nil
         }
+        assert(manager == nil, "manager must be nil after teardown")
     }
 
     private func invokeCallback(_ setup: @escaping (LuaState) -> Void) {
+        assert(generation != 0, "invokeCallback called before generation was set")
         DispatchQueue.main.async {
             guard let cb = callbackValue else { return }
             guard lua_isStateGenerationValid(self.generation) else { return }
             let L = lua_getCurrentState()!
+            let topBefore = lua_gettop(L)
             cb.push(onto: L)
             setup(L)
+            assert(lua_gettop(L) == topBefore, "invokeCallback must restore stack to its original level")
         }
     }
 
@@ -131,12 +136,15 @@ private func checkLocationManager() -> Bool {
 
 // internally used function
 private func location_registerCallback(_ L: LuaState) throws -> CInt {
+    precondition(L != nil, "Lua state must not be nil")
+    let topBefore = lua_gettop(L)
     if lua_type(L, 1) == LUA_TFUNCTION {
         callbackValue = L.ref(index: 1)
     } else {
         callbackValue = nil
     }
     lua_pushvalue(L, 1)
+    assert(lua_gettop(L) == topBefore + 1, "location_registerCallback must push exactly 1 value")
     return 1
 }
 
@@ -201,13 +209,16 @@ private func location_authorizationStatus(_ L: LuaState) throws -> CInt {
 /// Notes:
 ///  * This function does not require Location Services to be enabled for Cosmic Hammer.
 private func location_distanceBetween(_ L: LuaState) throws -> CInt {
+    precondition(L != nil, "Lua state must not be nil")
     guard let pointA = toCLLocation(L, at: 1) else {
         throw LuaCallError("bad argument #1 (expected locationTable)")
     }
     guard let pointB = toCLLocation(L, at: 2) else {
         throw LuaCallError("bad argument #2 (expected locationTable)")
     }
-    L.push(pointA.distance(from: pointB))
+    let distance = pointA.distance(from: pointB)
+    assert(distance >= 0, "CLLocation.distance must be non-negative")
+    L.push(distance)
     return 1
 }
 
@@ -285,6 +296,7 @@ private func location_monitoredRegions(_ L: LuaState) throws -> CInt {
 
 // internally used function
 private func location_addMonitoredRegion(_ L: LuaState) throws -> CInt {
+    precondition(L != nil, "Lua state must not be nil")
     luaL_checktype(L, 1, LUA_TTABLE)
     guard let region = toCLCircularRegion(L, at: 1) else {
         throw LuaCallError("bad argument #1 (expected regionTable)")
@@ -300,6 +312,7 @@ private func location_addMonitoredRegion(_ L: LuaState) throws -> CInt {
 
 // internally used function
 private func location_removeMonitoredRegion(_ L: LuaState) throws -> CInt {
+    precondition(L != nil, "Lua state must not be nil")
     luaL_checktype(L, 1, LUA_TSTRING)
     let identifier = lua_tovalue(L, at: 1) as! String
 
@@ -325,6 +338,7 @@ private func location_removeMonitoredRegion(_ L: LuaState) throws -> CInt {
 
 // internally used function, may document for testing purposes
 private func location_fakeLocationChange(_ L: LuaState) throws -> CInt {
+    precondition(L != nil, "Lua state must not be nil")
     let message = lua_tovalue(L, at: 1) as! String
 
     guard let loc = location else {
@@ -394,6 +408,8 @@ private func location_fakeLocationChange(_ L: LuaState) throws -> CInt {
 // MARK: - Sunrise/Sunset Functions
 
 private func sunturns(_ L: UnsafeMutablePointer<lua_State>!) -> EDSunriseSet? {
+    precondition(L != nil, "Lua state must not be nil")
+    precondition(lua_gettop(L) >= 2, "sunturns requires at least 2 arguments")
 
     var date: Date
     var tz: TimeZone
@@ -504,6 +520,8 @@ private func location_sunset(_ L: LuaState) throws -> CInt {
 ///  * This constructor requires internet access and the callback will be invoked with an error message if the internet is not currently accessible.
 ///  * This constructor does not require Location Services to be enabled for Cosmic Hammer.
 private func clgeocoder_lookupLocation(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    precondition(L != nil, "Lua state must not be nil")
+    precondition(lua_gettop(L) >= 2, "lookupLocation requires location and callback arguments")
     guard let theLocation = toCLLocation(L, at: 1) else {
         _ = luaL_argerror(L, 1, "expected locationTable")
         return 0
@@ -553,6 +571,8 @@ private func clgeocoder_lookupLocation(_ L: UnsafeMutablePointer<lua_State>!) ->
 ///  * This constructor requires internet access and the callback will be invoked with an error message if the internet is not currently accessible.
 ///  * This constructor does not require Location Services to be enabled for Cosmic Hammer.
 private func clgeocoder_lookupAddress(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    precondition(L != nil, "Lua state must not be nil")
+    precondition(lua_gettop(L) >= 2, "lookupAddress requires address and callback arguments")
     let searchString = lua_tovalue(L, at: 1) as! String
     luaL_checktype(L, 2, LUA_TFUNCTION)
     let fnRef = L.ref(index: 2)
@@ -601,6 +621,8 @@ private func clgeocoder_lookupAddress(_ L: UnsafeMutablePointer<lua_State>!) -> 
 ///  * This constructor does not require Location Services to be enabled for Cosmic Hammer.
 ///  * While a partial address can be given, the more information you provide, the more likely the results will be useful.  The `regionTable` only determines sort order if multiple entries are returned, it does not constrain the search.
 private func clgeocoder_lookupAddressNear(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    precondition(L != nil, "Lua state must not be nil")
+    precondition(lua_gettop(L) >= 2, "lookupAddressNear requires at least address and callback arguments")
     let searchString = lua_tovalue(L, at: 1) as! String
     var theRegion: CLCircularRegion? = nil
 
@@ -670,11 +692,14 @@ private func pushCLLocation(_ L: UnsafeMutablePointer<lua_State>!, _ loc: CLLoca
 
 @discardableResult
 private func pushCLLocationArray(_ L: UnsafeMutablePointer<lua_State>!, _ locations: [CLLocation]) -> Int32 {
+    precondition(L != nil, "Lua state must not be nil")
+    let topBefore = lua_gettop(L)
     lua_createtable(L, Int32(locations.count), 0)
     for (offset, location) in locations.enumerated() {
         pushCLLocation(L, location)
         lua_rawseti(L, -2, lua_Integer(offset + 1))
     }
+    assert(lua_gettop(L) == topBefore + 1, "pushCLLocationArray must push exactly one table")
     return 1
 }
 
@@ -715,16 +740,22 @@ private func pushCLRegion(_ L: UnsafeMutablePointer<lua_State>!, _ region: CLReg
 
 @discardableResult
 private func pushCLRegionArray(_ L: UnsafeMutablePointer<lua_State>!, _ regions: [CLRegion]) -> Int32 {
+    precondition(L != nil, "Lua state must not be nil")
+    let topBefore = lua_gettop(L)
     lua_createtable(L, Int32(regions.count), 0)
     for (offset, region) in regions.enumerated() {
         pushCLRegion(L, region)
         lua_rawseti(L, -2, lua_Integer(offset + 1))
     }
+    assert(lua_gettop(L) == topBefore + 1, "pushCLRegionArray must push exactly one table")
     return 1
 }
 
 private func toCLLocation(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> CLLocation? {
+    precondition(L != nil, "Lua state must not be nil")
+    precondition(idx != 0, "Lua index must not be zero")
     let absIdx = lua_absindex(L, idx)
+    assert(absIdx > 0, "absolute index must be positive")
 
     guard lua_type(L, absIdx) == LUA_TTABLE else {
         os_log(.error, "%{public}s", "\(USERDATA_TAG):toCLLocation expected table, found \(String(cString: lua_typename(L, lua_type(L, absIdx))))")
@@ -768,7 +799,10 @@ private func toCLLocation(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) 
 }
 
 private func toCLCircularRegion(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> CLCircularRegion? {
+    precondition(L != nil, "Lua state must not be nil")
+    precondition(idx != 0, "Lua index must not be zero")
     let absIdx = lua_absindex(L, idx)
+    assert(absIdx > 0, "absolute index must be positive")
 
     guard lua_type(L, absIdx) == LUA_TTABLE else {
         os_log(.error, "%{public}s", "\(USERDATA_TAG):toCLCircularRegion expected table, found \(String(cString: lua_typename(L, lua_type(L, absIdx))))")
@@ -833,22 +867,26 @@ private func pushCLPlacemark(_ L: UnsafeMutablePointer<lua_State>!, _ thePlace: 
 
 @discardableResult
 private func pushCLPlacemarkArray(_ L: UnsafeMutablePointer<lua_State>!, _ placemarks: [CLPlacemark]?) -> Int32 {
+    precondition(L != nil, "Lua state must not be nil")
     guard let placemarks else {
         lua_pushnil(L)
         return 1
     }
 
+    let topBefore = lua_gettop(L)
     lua_createtable(L, Int32(placemarks.count), 0)
     for (offset, placemark) in placemarks.enumerated() {
         pushCLPlacemark(L, placemark)
         lua_rawseti(L, -2, lua_Integer(offset + 1))
     }
+    assert(lua_gettop(L) == topBefore + 1, "pushCLPlacemarkArray must push exactly one table")
     return 1
 }
 
 // MARK: - Cosmic Hammer/Lua Infrastructure
 
 private func meta_gc(_ L: LuaState) throws -> CInt {
+    precondition(L != nil, "Lua state must not be nil")
     // Release all background geocoder callback LuaValues
     backgroundCallbacks.removeAll()
 
@@ -860,6 +898,9 @@ private func meta_gc(_ L: LuaState) throws -> CInt {
         loc.teardownManager()
         location = nil
     }
+    assert(location == nil, "location must be nil after gc")
+    assert(callbackValue == nil, "callbackValue must be nil after gc")
+    assert(backgroundCallbacks.isEmpty, "backgroundCallbacks must be empty after gc")
     return 0
 }
 

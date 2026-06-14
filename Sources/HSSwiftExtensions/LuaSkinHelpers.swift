@@ -19,6 +19,8 @@ let LUA_RIDX_GLOBALS: Int = 2
 // ---------------------------------------------------------------
 
 func luaL_dostring(_ L: UnsafeMutablePointer<lua_State>!, _ s: UnsafePointer<CChar>!) -> Int32 {
+    precondition(L != nil, "Lua state must not be nil")
+    precondition(s != nil, "Lua source string must not be nil")
     let r = luaL_loadstring(L, s)
     return r != 0 ? r : lua_pcall(L, 0, LUA_MULTRET, 0)
 }
@@ -123,6 +125,7 @@ func _lua_stackguard_entry(_ L: UnsafeMutablePointer<lua_State>!) {
 
 func _lua_stackguard_exit(_ L: UnsafeMutablePointer<lua_State>!) {
     guard let L = L else { return }
+    precondition(!_stackguardLevels.isEmpty, "stackguard exit called without matching entry")
     let expected = _stackguardLevels.removeLast()
     let actual = lua_gettop(L)
     assert(expected == actual,

@@ -50,22 +50,18 @@ private let kPushStackSlotsPerLevel: Int32 = 4
 /// NSURL, NSData, NSNull, Array/NSArray, Dictionary/NSDictionary.
 /// Unknown types are pushed as their debugDescription string.
 func lua_pushany(_ L: UnsafeMutablePointer<lua_State>!, _ value: Any?) {
+    precondition(L != nil, "Lua state must not be nil")
+    let baseTop = lua_gettop(L)
     lua_pushvalue_recursive(L, value, depth: 0)
+    assert(lua_gettop(L) == baseTop + 1, "lua_pushany must push exactly one value onto the stack")
 }
 
 private func lua_pushvalue_recursive(_ L: UnsafeMutablePointer<lua_State>!, _ value: Any?, depth: Int) {
-    // Reserve the value-stack slots this level needs BEFORE pushing anything.
-    // Without this, a structure deeper than LUA_MINSTACK (20) overflows the
-    // stack and Lua's api_check aborts the whole process (SIGABRT). Reachable
-    // from normal Lua via hs.json.decode / hs.settings.get / hs.plist. If the
-    // stack genuinely cannot grow (true OOM), raise a catchable Lua error
-    // rather than abort, matching the luaL_error convention used elsewhere in
-    // this file. NOTE: there are no Swift ARC objects live on the *Lua* stack
-    // at this point, so this matches the existing home-grown error convention.
+    assert(depth >= 0, "recursion depth must not be negative")
+    assert(depth <= kMaxPushDepth, "recursion depth must not exceed kMaxPushDepth")
+
+    // Reserve stack slots this level needs BEFORE pushing anything.
     if lua_checkstack(L, kPushStackSlotsPerLevel) == 0 {
-        // Pass a plain (already-formatted) string; luaL_error is variadic and
-        // treats its argument as a format string, and the existing usages in
-        // this repo pass single literals with no % specifiers — match that.
         luaL_error(L, "lua_pushany: cannot grow Lua stack for nested value at depth \(depth)")
         return // unreachable; luaL_error does not return
     }
@@ -76,186 +72,187 @@ private func lua_pushvalue_recursive(_ L: UnsafeMutablePointer<lua_State>!, _ va
     }
 
     // Unwrap Optional<Any> layers that NSArray/NSDictionary can produce.
-    let obj: Any
     if let optional = value as? Any?, optional == nil {
         lua_pushnil(L)
         return
-    } else {
-        obj = value
     }
 
-    // Check for CFBoolean BEFORE the switch statement, since Swift's
-    // pattern matching can re-box NSNumber values and lose the identity
-    // of kCFBooleanTrue / kCFBooleanFalse singletons.
+    let obj: Any = value
+
+    // Check for CFBoolean BEFORE the switch, since Swift's pattern matching
+    // can re-box NSNumber values and lose the singleton identity.
     if isCFBoolean(obj) {
         lua_pushboolean(L, cfBooleanValue(obj) ? 1 : 0)
         return
     }
 
-    switch obj {
+    pushTypedValue(L, obj, depth: depth)
+}
 
-    // NSNull (must come before NSNumber because NSNull is not an NSNumber)
+/// Dispatch `obj` (already unwrapped from nil/Optional/CFBoolean) to the
+/// correct Lua push based on its Swift/Foundation runtime type.
+private func pushTypedValue(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any, depth: Int) {
+    switch obj {
     case is NSNull:
         lua_pushnil(L)
-
-    // NSNumber — must come before Bool because NSNumber(value: 1) bridges to Bool in Swift
     case let n as NSNumber:
-        if lua_pushNSNumber(L, n) {
-            // pushed by helper
-        } else {
-            lua_pushnumber(L, n.doubleValue)
-        }
-
-    // Int (Swift native, not bridged through NSNumber path on arm64)
+        pushNumericValue(L, n)
     case let i as Int:
         lua_pushinteger(L, lua_Integer(i))
-
     case let i as Int32:
         lua_pushinteger(L, lua_Integer(i))
-
     case let i as Int64:
         lua_pushinteger(L, lua_Integer(i))
-
     case let i as UInt:
         lua_pushinteger(L, lua_Integer(i))
-
     case let i as UInt32:
         lua_pushinteger(L, lua_Integer(i))
-
-    // Double
     case let d as Double:
         lua_pushnumber(L, d)
-
-    // Float
     case let f as Float:
         lua_pushnumber(L, lua_Number(f))
-
-    // String (Swift)
     case let s as String:
-        s.withCString { cstr in
-            let len = s.utf8.count
-            lua_pushlstring(L, cstr, len)
-        }
-
-    // NSString
+        pushSwiftString(L, s)
     case let ns as NSString:
-        let len = ns.lengthOfBytes(using: String.Encoding.utf8.rawValue)
-        if let cstr = ns.utf8String {
-            lua_pushlstring(L, cstr, len)
-        } else {
-            lua_pushnil(L)
-        }
-
-    // NSData -> raw bytes string
+        pushNSString(L, ns)
     case let data as NSData:
         lua_pushlstring(L, data.bytes.assumingMemoryBound(to: CChar.self), data.length)
-
-    // Data (Swift) -> raw bytes string
     case let data as Data:
         lua_pushdata(L, data)
-
-    // NSDate -> epoch seconds (integer)
     case let date as NSDate:
         lua_pushnumber(L, date.timeIntervalSince1970)
-
-    // NSURL -> string
     case let url as NSURL:
-        if let abs = url.absoluteString {
-            lua_pushstring(L, abs)
-        } else {
-            lua_pushnil(L)
-        }
-
-    // URL (Swift)
+        pushNSURL(L, url)
     case let url as URL:
         lua_pushstring(L, url.absoluteString)
-
-    // NSArray / Array
-    // Use luaL_len+1 for indexing (matching LuaSkin behavior): when a nil
-    // is pushed, the next element takes its position, collapsing holes.
-    // Depth guard: if we've exceeded kMaxPushDepth, push nil instead of
-    // recursing into more containers (prevents unbounded cycle-following).
-    // The guard is on the container entry, not on scalar pushes, so that
-    // dictionary keys (strings/numbers) always push correctly and never
-    // cause a "table index is nil" PANIC.
     case let arr as NSArray:
-        guard depth < kMaxPushDepth else { lua_pushnil(L); return }
-        lua_createtable(L, Int32(arr.count), 0)
-        for i in 0..<arr.count {
-            let item: Any = arr[i]
-            lua_pushvalue_recursive(L, item, depth: depth + 1)
-            lua_rawseti(L, -2, luaL_len(L, -2) + 1)
-        }
-
+        pushNSArrayRecursive(L, arr, depth: depth)
     case let arr as [Any]:
-        guard depth < kMaxPushDepth else { lua_pushnil(L); return }
-        lua_createtable(L, Int32(arr.count), 0)
-        for item in arr {
-            lua_pushvalue_recursive(L, item, depth: depth + 1)
-            lua_rawseti(L, -2, luaL_len(L, -2) + 1)
-        }
-
-    // NSDictionary / Dictionary
+        pushSwiftArrayRecursive(L, arr, depth: depth)
     case let dict as NSDictionary:
-        guard depth < kMaxPushDepth else { lua_pushnil(L); return }
-        lua_createtable(L, 0, Int32(dict.count))
-        for (key, val) in dict {
-            lua_pushvalue_recursive(L, key, depth: depth + 1)
-            lua_pushvalue_recursive(L, val, depth: depth + 1)
-            lua_settable(L, -3)
-        }
-
+        pushNSDictionaryRecursive(L, dict, depth: depth)
     case let dict as [String: Any]:
-        guard depth < kMaxPushDepth else { lua_pushnil(L); return }
-        lua_createtable(L, 0, Int32(dict.count))
-        for (key, val) in dict {
-            lua_pushstring(L, key)
-            lua_pushvalue_recursive(L, val, depth: depth + 1)
-            lua_settable(L, -3)
-        }
-
-    // NSValue containing geometry types
+        pushSwiftDictionaryRecursive(L, dict, depth: depth)
     case let val as NSValue:
         lua_pushNSValue(L, val)
-
     case let color as NSColor:
-        if lua_pushNSColor(L, color) {
-            return
-        }
-        lua_pushstring(L, String(describing: obj))
-
+        pushNSColorOrDescription(L, color, obj)
     case let font as NSFont:
         lua_pushNSFont(L, font)
-
-    // Known retained-pointer userdata adapters.
     case let image as NSImage:
-        image.cacheMode = .never
-        if lua_pushretainedUserdata(L, image, metatableName: "hs.image") {
-            return
-        }
-        lua_pushstring(L, String(describing: obj))
-
+        pushNSImageOrDescription(L, image, obj)
     case let attributedString as NSAttributedString:
-        if lua_pushretainedUserdata(L, attributedString, metatableName: "hs.styledtext") {
-            return
-        }
-        lua_pushstring(L, String(describing: obj))
-
+        pushAttributedStringOrDescription(L, attributedString, obj)
     case let convertible as LuaUserdataConvertible:
-        if lua_pushretainedUserdata(
-            L,
-            convertible,
-            metatableName: convertible.luaUserdataMetatableName,
-            beforeRetain: { convertible.luaUserdataWillRetain() }
-        ) {
-            return
-        }
-        lua_pushstring(L, String(describing: obj))
-
-    // Fallback: push the debugDescription
+        pushLuaUserdataConvertibleOrDescription(L, convertible, obj)
     default:
-        let desc = String(describing: obj)
-        lua_pushstring(L, desc)
+        lua_pushstring(L, String(describing: obj))
+    }
+}
+
+// MARK: - lua_pushvalue_recursive helpers
+
+private func pushNumericValue(_ L: UnsafeMutablePointer<lua_State>!, _ n: NSNumber) {
+    if !lua_pushNSNumber(L, n) {
+        lua_pushnumber(L, n.doubleValue)
+    }
+}
+
+private func pushSwiftString(_ L: UnsafeMutablePointer<lua_State>!, _ s: String) {
+    s.withCString { cstr in
+        let len = s.utf8.count
+        lua_pushlstring(L, cstr, len)
+    }
+}
+
+private func pushNSString(_ L: UnsafeMutablePointer<lua_State>!, _ ns: NSString) {
+    let len = ns.lengthOfBytes(using: String.Encoding.utf8.rawValue)
+    if let cstr = ns.utf8String {
+        lua_pushlstring(L, cstr, len)
+    } else {
+        lua_pushnil(L)
+    }
+}
+
+private func pushNSURL(_ L: UnsafeMutablePointer<lua_State>!, _ url: NSURL) {
+    if let abs = url.absoluteString {
+        lua_pushstring(L, abs)
+    } else {
+        lua_pushnil(L)
+    }
+}
+
+/// Push an NSArray as a Lua sequence table with depth-guarded recursion.
+/// Uses luaL_len+1 for indexing (matching LuaSkin behavior): when a nil
+/// is pushed, the next element takes its position, collapsing holes.
+/// The depth guard is on the container entry, not on scalar pushes, so that
+/// dictionary keys (strings/numbers) always push correctly.
+private func pushNSArrayRecursive(_ L: UnsafeMutablePointer<lua_State>!, _ arr: NSArray, depth: Int) {
+    guard depth < kMaxPushDepth else { lua_pushnil(L); return }
+    lua_createtable(L, Int32(arr.count), 0)
+    for i in 0..<arr.count {
+        let item: Any = arr[i]
+        lua_pushvalue_recursive(L, item, depth: depth + 1)
+        lua_rawseti(L, -2, luaL_len(L, -2) + 1)
+    }
+}
+
+private func pushSwiftArrayRecursive(_ L: UnsafeMutablePointer<lua_State>!, _ arr: [Any], depth: Int) {
+    guard depth < kMaxPushDepth else { lua_pushnil(L); return }
+    lua_createtable(L, Int32(arr.count), 0)
+    for item in arr {
+        lua_pushvalue_recursive(L, item, depth: depth + 1)
+        lua_rawseti(L, -2, luaL_len(L, -2) + 1)
+    }
+}
+
+private func pushNSDictionaryRecursive(_ L: UnsafeMutablePointer<lua_State>!, _ dict: NSDictionary, depth: Int) {
+    guard depth < kMaxPushDepth else { lua_pushnil(L); return }
+    lua_createtable(L, 0, Int32(dict.count))
+    for (key, val) in dict {
+        lua_pushvalue_recursive(L, key, depth: depth + 1)
+        lua_pushvalue_recursive(L, val, depth: depth + 1)
+        lua_settable(L, -3)
+    }
+}
+
+private func pushSwiftDictionaryRecursive(_ L: UnsafeMutablePointer<lua_State>!, _ dict: [String: Any], depth: Int) {
+    guard depth < kMaxPushDepth else { lua_pushnil(L); return }
+    lua_createtable(L, 0, Int32(dict.count))
+    for (key, val) in dict {
+        lua_pushstring(L, key)
+        lua_pushvalue_recursive(L, val, depth: depth + 1)
+        lua_settable(L, -3)
+    }
+}
+
+private func pushNSColorOrDescription(_ L: UnsafeMutablePointer<lua_State>!, _ color: NSColor, _ obj: Any) {
+    if !lua_pushNSColor(L, color) {
+        lua_pushstring(L, String(describing: obj))
+    }
+}
+
+private func pushNSImageOrDescription(_ L: UnsafeMutablePointer<lua_State>!, _ image: NSImage, _ obj: Any) {
+    image.cacheMode = .never
+    if !lua_pushretainedUserdata(L, image, metatableName: "hs.image") {
+        lua_pushstring(L, String(describing: obj))
+    }
+}
+
+private func pushAttributedStringOrDescription(_ L: UnsafeMutablePointer<lua_State>!, _ attributedString: NSAttributedString, _ obj: Any) {
+    if !lua_pushretainedUserdata(L, attributedString, metatableName: "hs.styledtext") {
+        lua_pushstring(L, String(describing: obj))
+    }
+}
+
+private func pushLuaUserdataConvertibleOrDescription(_ L: UnsafeMutablePointer<lua_State>!, _ convertible: LuaUserdataConvertible, _ obj: Any) {
+    if !lua_pushretainedUserdata(
+        L,
+        convertible,
+        metatableName: convertible.luaUserdataMetatableName,
+        beforeRetain: { convertible.luaUserdataWillRetain() }
+    ) {
+        lua_pushstring(L, String(describing: obj))
     }
 }
 
@@ -396,6 +393,7 @@ func lua_todata(_ L: UnsafeMutablePointer<lua_State>!, at index: Int32) -> Data?
 
 /// Checked raw-byte pull for APIs that accept binary Lua strings.
 func lua_checkdata(_ L: UnsafeMutablePointer<lua_State>!, at index: Int32) -> Data {
+    precondition(L != nil, "Lua state must not be nil")
     luaL_checktype(L, index, LUA_TSTRING)
     guard let data = lua_todata(L, at: index) else {
         _ = luaL_argerror(L, index, "string expected")
@@ -418,6 +416,8 @@ func lua_pushretainedUserdata(
     metatableName: String,
     beforeRetain: (() -> Void)? = nil
 ) -> Bool {
+    precondition(L != nil, "Lua state must not be nil")
+    precondition(!metatableName.isEmpty, "metatable name must not be empty")
     luaL_getmetatable(L, metatableName)
     guard lua_type(L, -1) != LUA_TNIL else {
         lua_pop(L, 1)
@@ -440,6 +440,8 @@ func lua_testUserdataObject<T: AnyObject>(
     at index: Int32,
     metatableName: String
 ) -> T? {
+    precondition(L != nil, "Lua state must not be nil")
+    precondition(!metatableName.isEmpty, "metatable name must not be empty")
     guard let ptr = luaL_testudata(L, index, metatableName) else { return nil }
     guard let opaque = ptr.assumingMemoryBound(to: UnsafeMutableRawPointer?.self).pointee else { return nil }
     let object = Unmanaged<AnyObject>.fromOpaque(UnsafeRawPointer(opaque)).takeUnretainedValue()
@@ -517,6 +519,7 @@ func lua_unrefRegistryRef(_ L: UnsafeMutablePointer<lua_State>!, _ ref: inout In
 }
 
 func lua_replaceRegistryFunctionRef(_ L: UnsafeMutablePointer<lua_State>!, _ ref: inout Int32, at index: Int32) {
+    precondition(L != nil, "Lua state must not be nil")
     lua_unrefRegistryRef(L, &ref)
     let valueType = lua_type(L, index)
     if valueType == LUA_TNONE || valueType == LUA_TNIL {
@@ -537,7 +540,8 @@ func lua_replaceRegistryFunctionRef(_ L: UnsafeMutablePointer<lua_State>!, _ ref
 /// Handles: string, number (integer or float), boolean, table
 /// (array if sequential integer keys 1..n, otherwise dictionary), nil.
 func lua_tovalue(_ L: UnsafeMutablePointer<lua_State>!, at index: Int32) -> Any? {
-    lua_tovalue_recursive(L, at: index, depth: 0)
+    precondition(L != nil, "Lua state must not be nil")
+    return lua_tovalue_recursive(L, at: index, depth: 0)
 }
 
 private func lua_tovalue_recursive(_ L: UnsafeMutablePointer<lua_State>!, at index: Int32, depth: Int) -> Any? {
@@ -575,6 +579,8 @@ private func lua_tovalue_recursive(_ L: UnsafeMutablePointer<lua_State>!, at ind
 
 /// Convert a Lua table at the given stack index to either an Array or Dictionary.
 private func lua_tableToValue(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32, depth: Int) -> Any? {
+    assert(depth >= 0, "table conversion depth must not be negative")
+    assert(depth < kMaxPushDepth, "table conversion depth must be within bounds")
     let absIdx = lua_absindex(L, idx)
 
     // Determine if array-like: count total keys and find max integer key.
@@ -647,30 +653,38 @@ private func lua_tableToValue(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int
 /// Read an NSPoint from a Lua table at the given stack index.
 /// Expected format: `{x=n, y=n}`. Missing fields default to 0.
 func lua_tableToPoint(_ L: UnsafeMutablePointer<lua_State>!, at index: Int32) -> NSPoint {
+    precondition(L != nil, "Lua state must not be nil")
+    let baseTop = lua_gettop(L)
     let idx = lua_absindex(L, index)
     guard lua_type(L, idx) == LUA_TTABLE else { return .zero }
 
     let x: CGFloat = (lua_getfield(L, idx, "x") == LUA_TNUMBER) ? CGFloat(lua_tonumber(L, -1)) : 0.0
     let y: CGFloat = (lua_getfield(L, idx, "y") == LUA_TNUMBER) ? CGFloat(lua_tonumber(L, -1)) : 0.0
     lua_pop(L, 2)
+    assert(lua_gettop(L) == baseTop, "lua_tableToPoint must not change the stack height")
     return NSMakePoint(x, y)
 }
 
 /// Read an NSSize from a Lua table at the given stack index.
 /// Expected format: `{w=n, h=n}`. Missing fields default to 0.
 func lua_tableToSize(_ L: UnsafeMutablePointer<lua_State>!, at index: Int32) -> NSSize {
+    precondition(L != nil, "Lua state must not be nil")
+    let baseTop = lua_gettop(L)
     let idx = lua_absindex(L, index)
     guard lua_type(L, idx) == LUA_TTABLE else { return .zero }
 
     let w: CGFloat = (lua_getfield(L, idx, "w") == LUA_TNUMBER) ? CGFloat(lua_tonumber(L, -1)) : 0.0
     let h: CGFloat = (lua_getfield(L, idx, "h") == LUA_TNUMBER) ? CGFloat(lua_tonumber(L, -1)) : 0.0
     lua_pop(L, 2)
+    assert(lua_gettop(L) == baseTop, "lua_tableToSize must not change the stack height")
     return NSMakeSize(w, h)
 }
 
 /// Read an NSRect from a Lua table at the given stack index.
 /// Expected format: `{x=n, y=n, w=n, h=n}`. Missing fields default to 0.
 func lua_tableToRect(_ L: UnsafeMutablePointer<lua_State>!, at index: Int32) -> NSRect {
+    precondition(L != nil, "Lua state must not be nil")
+    let baseTop = lua_gettop(L)
     let idx = lua_absindex(L, index)
     guard lua_type(L, idx) == LUA_TTABLE else { return .zero }
 
@@ -679,6 +693,7 @@ func lua_tableToRect(_ L: UnsafeMutablePointer<lua_State>!, at index: Int32) -> 
     let w: CGFloat = (lua_getfield(L, idx, "w") == LUA_TNUMBER) ? CGFloat(lua_tonumber(L, -1)) : 0.0
     let h: CGFloat = (lua_getfield(L, idx, "h") == LUA_TNUMBER) ? CGFloat(lua_tonumber(L, -1)) : 0.0
     lua_pop(L, 4)
+    assert(lua_gettop(L) == baseTop, "lua_tableToRect must not change the stack height")
     return NSMakeRect(x, y, w, h)
 }
 
@@ -706,6 +721,8 @@ func toNSAttributedString(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) 
 
 /// Convert a Lua color table `{red=, green=, blue=, alpha=}` to NSColor.
 func tableToNSColor(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> NSColor? {
+    precondition(L != nil, "Lua state must not be nil")
+    let baseTop = lua_gettop(L)
     guard lua_type(L, idx) == LUA_TTABLE else { return nil }
     let absIdx = lua_absindex(L, idx)
     lua_getfield(L, absIdx, "red")
@@ -717,11 +734,13 @@ func tableToNSColor(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> NSC
     lua_getfield(L, absIdx, "alpha")
     let a = lua_isnumber(L, -1) != 0 ? CGFloat(lua_tonumber(L, -1)) : 1.0
     lua_pop(L, 4)
+    assert(lua_gettop(L) == baseTop, "tableToNSColor must not change the stack height")
     return NSColor(red: r, green: g, blue: b, alpha: a)
 }
 
 /// Convert a Lua font table `{name=, size=}` or font name string to NSFont.
 func tableToNSFont(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> NSFont? {
+    precondition(L != nil, "Lua state must not be nil")
     var theName = NSFont.systemFont(ofSize: 0).fontName
     var theSize = NSFont.systemFontSize
 
@@ -781,6 +800,8 @@ private func _objc_tryCatch(_ block: @convention(block) () -> Void, _ outError: 
 func catchingObjCException(_ block: () -> Void) -> String? {
     var error: NSString?
     let ok = _objc_tryCatch(block, &error)
+    // Invariant: if ok is true, error should be nil; if ok is false, error should be set
+    assert(ok || error != nil, "ObjC exception caught but no error description available")
     return ok ? nil : (error as String? ?? "unknown ObjC exception")
 }
 

@@ -41,6 +41,8 @@ private struct IPv4Header {
 // MARK: - Checksum
 
 private func inCksum(_ data: Data) -> UInt16 {
+    precondition(!data.isEmpty, "inCksum: data must not be empty")
+
     var sum: Int32 = 0
     var index = data.startIndex
 
@@ -148,7 +150,9 @@ class SimplePing: NSObject {
     }
 
     func sendPing(with data: Data?) {
-        assert(hostAddress != nil)
+        assert(hostAddress != nil, "sendPing: hostAddress must be resolved before sending")
+        assert(hostAddressFamily == sa_family_t(AF_INET) || hostAddressFamily == sa_family_t(AF_INET6),
+               "sendPing: hostAddressFamily must be IPv4 or IPv6, got \(hostAddressFamily)")
 
         let payload: Data
         if let data = data {
@@ -217,6 +221,10 @@ class SimplePing: NSObject {
     // MARK: - Packet building
 
     private func pingPacket(type: UInt8, payload: Data, requiresChecksum: Bool) -> Data {
+        assert(!payload.isEmpty, "pingPacket: payload is unexpectedly empty")
+        assert(type == ICMPv4TypeEchoRequest || type == ICMPv6TypeEchoRequest,
+               "pingPacket: unexpected ICMP type \(type)")
+
         var packet = Data(count: kICMPHeaderSize + payload.count)
 
         packet[0] = type
@@ -236,12 +244,16 @@ class SimplePing: NSObject {
             packet[3] = UInt8(cs >> 8)
         }
 
+        assert(packet.count == kICMPHeaderSize + payload.count,
+               "pingPacket: final packet size mismatch")
         return packet
     }
 
     // MARK: - Validation
 
     private static func icmpHeaderOffset(inIPv4Packet packet: Data) -> Int? {
+        precondition(!packet.isEmpty, "icmpHeaderOffset: packet must not be empty")
+
         let ipHeaderMinSize = MemoryLayout<IPv4Header>.size
         guard packet.count >= ipHeaderMinSize + kICMPHeaderSize else { return nil }
 
@@ -264,6 +276,10 @@ class SimplePing: NSObject {
     }
 
     private func readICMPHeader(from data: Data, at offset: Int) -> ICMPHeader {
+        precondition(offset >= 0, "readICMPHeader: offset must be non-negative")
+        precondition(data.count >= offset + kICMPHeaderSize,
+                     "readICMPHeader: data too small for ICMP header at offset \(offset)")
+
         var hdr = ICMPHeader(type: 0, code: 0, checksum: 0, identifier: 0, sequenceNumber: 0)
         data.withUnsafeBytes { buf in
             let src = buf.baseAddress!.advanced(by: offset)
@@ -321,6 +337,8 @@ class SimplePing: NSObject {
     // MARK: - Socket I/O
 
     fileprivate func readData() {
+        precondition(socket != nil, "readData: socket must exist")
+
         let bufferSize = 65535
         let buffer = UnsafeMutableRawPointer.allocate(byteCount: bufferSize, alignment: 1)
         defer { buffer.deallocate() }
@@ -352,7 +370,10 @@ class SimplePing: NSObject {
     // MARK: - Startup
 
     private func startWithHostAddress() {
-        assert(hostAddress != nil)
+        assert(hostAddress != nil, "startWithHostAddress: hostAddress must be set")
+        assert(socket == nil, "startWithHostAddress: socket must be nil before startup")
+        assert(hostAddressFamily != sa_family_t(AF_UNSPEC),
+               "startWithHostAddress: host address family must be resolved")
 
         var fd: Int32 = -1
         var err: Int32 = 0
@@ -392,6 +413,7 @@ class SimplePing: NSObject {
     }
 
     fileprivate func hostResolutionDone() {
+        assert(hostAddress == nil, "hostResolutionDone: hostAddress should not yet be set")
         guard let hostRef = host else { return }
 
         var resolved: DarwinBoolean = false
@@ -467,6 +489,7 @@ class SimplePing: NSObject {
 
     private func stopSocket() {
         if let s = socket {
+            assert(CFSocketIsValid(s), "stopSocket: CFSocket should be valid before invalidation")
             let fd = CFSocketGetNative(s)
             let autoClose = CFSocketGetSocketFlags(s) & kCFSocketCloseOnInvalidate != 0
             CFSocketInvalidate(s)

@@ -6,6 +6,11 @@ import os.log
 
 private let USERDATA_TAG = "hs.eventtap"
 
+/// Maximum number of characters that ``eventtap_keyStrokes`` will
+/// synthesise in a single call.  Longer strings are truncated and an
+/// error is logged.
+private let kMaxKeystrokeSynthesisLength = 10_000
+
 // Shared with libeventtap_event_new.swift (same module)
 let EVENTTAP_EVENT_USERDATA_TAG = "hs.eventtap.event"
 
@@ -133,7 +138,13 @@ private func eventtap_keyStrokes(_ L: LuaState) throws -> CInt {
         return 0
     }
 
-    for i in 0..<theString.length {
+    var length = theString.length
+    if length > kMaxKeystrokeSynthesisLength {
+        os_log(.error, "hs.eventtap.keyStrokes: string length %d exceeds %d-character limit — truncating", length, kMaxKeystrokeSynthesisLength)
+        length = kMaxKeystrokeSynthesisLength
+    }
+
+    for i in 0..<length {
         var buffer = theString.character(at: i)
 
         keyDownEvent.flags = CGEventFlags(rawValue: 0)

@@ -6,6 +6,8 @@ import os.log
 
 // MARK: - Callback Objects
 
+private let kMaxMenuRecursionDepth = 50
+
 @objc class HSMenubarCallbackObject: NSObject {
     var fn: LuaValue?
     var item: LuaValue?
@@ -120,7 +122,12 @@ func mb_proportionallyScaleStateImageSize(_ theImage: NSImage, _ stateBoxImageSi
 }
 
 // Helper function to parse a Lua table and turn it into an NSMenu hierarchy
-func mb_parse_table(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32, _ menu: NSMenu, _ stateBoxImageSize: NSSize) {
+func mb_parse_table(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32, _ menu: NSMenu, _ stateBoxImageSize: NSSize, depth: Int = 0) {
+    if depth >= kMaxMenuRecursionDepth {
+        os_log(.error, "mb_parse_table: recursion depth limit (%d) reached, skipping deeper submenus", kMaxMenuRecursionDepth)
+        return
+    }
+
     lua_pushnil(L)
     while lua_next(L, idx) != 0 {
         if lua_type(L, -1) != LUA_TTABLE {
@@ -129,7 +136,6 @@ func mb_parse_table(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32, _ menu:
             continue
         }
 
-        // MARK: title key
         let titleType = lua_getfield(L, -1, "title")
 
         if !lua_isstring(L, -1) && luaL_testudata(L, -1, "hs.styledtext") == nil {
@@ -138,133 +144,20 @@ func mb_parse_table(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32, _ menu:
             continue
         }
 
-        let aTitle: NSAttributedString
-        if let styledText = toNSAttributedString(L, at: -1) {
-            aTitle = styledText
-        } else if lua_isstring(L, -1) {
-            aTitle = NSAttributedString(string: String(cString: lua_tostring(L, -1)!))
-        } else {
-            aTitle = NSAttributedString(string: "")
-        }
+        let aTitle = mb_extractTitle(L)
         let title = aTitle.string
-
         lua_pop(L, 1)
 
         if title == "-" {
             menu.addItem(.separator())
         } else {
-            let menuTitle = title
-            let menuItem = NSMenuItem(title: menuTitle, action: nil, keyEquivalent: "")
+            let menuItem = NSMenuItem(title: title, action: nil, keyEquivalent: "")
             if titleType != LUA_TSTRING { menuItem.attributedTitle = aTitle }
 
-            // MARK: menu key
-            lua_getfield(L, -1, "menu")
-            if lua_istable(L, -1) {
-                let subMenu = NSMenu(title: "Cosmic HammerSubMenu")
-                subMenu.autoenablesItems = false
-                if lua_checkstack(L, 20) != 0 {
-                    mb_parse_table(L, lua_gettop(L), subMenu, stateBoxImageSize)
-                    menuItem.submenu = subMenu
-                } else {
-                    os_log(.error, "%{public}s", "hs.menubar menu recursion depth exceeded.")
-                }
-            }
-            lua_pop(L, 1)
-
-            // MARK: fn key
-            lua_getfield(L, -1, "fn")
-            if lua_isfunction(L, -1) {
-                let delegate = HSMenubarItemClickDelegate()
-                delegate.fn = L.ref(index: -1)
-                delegate.item = L.ref(index: -2)
-                delegate.generation = lua_currentStateGeneration()
-                menuItem.target = delegate
-                menuItem.action = #selector(HSMenubarItemClickDelegate.click(_:))
-                menuItem.representedObject = delegate
-            }
-            lua_pop(L, 1)
-
-            // MARK: disabled key
-            lua_getfield(L, -1, "disabled")
-            if lua_isboolean(L, -1) {
-                menuItem.isEnabled = lua_toboolean(L, -1) == 0
-            } else {
-                menuItem.isEnabled = true
-            }
-            lua_pop(L, 1)
-
-            // MARK: checked key
-            lua_getfield(L, -1, "checked")
-            if lua_isboolean(L, -1) {
-                menuItem.state = lua_toboolean(L, -1) != 0 ? .on : .off
-            } else {
-                menuItem.state = .off
-            }
-            lua_pop(L, 1)
-
-            // MARK: state key
-            lua_getfield(L, -1, "state")
-            if let state = lua_tovalue(L, at: -1) as? String {
-                if state == "on"    { menuItem.state = .on }
-                if state == "off"   { menuItem.state = .off }
-                if state == "mixed" { menuItem.state = .mixed }
-            }
-            lua_pop(L, 1)
-
-            // MARK: tooltip key
-            lua_getfield(L, -1, "tooltip")
-            if lua_isstring(L, -1) {
-                menuItem.toolTip = lua_tovalue(L, at: -1) as? String
-            }
-            lua_pop(L, 1)
-
-            // MARK: indent key
-            lua_getfield(L, -1, "indent")
-            var indentLevel = Int(lua_tointegerx(L, -1, nil))
-            if indentLevel < 0  { indentLevel = 0 }
-            if indentLevel > 15 { indentLevel = 15 }
-            menuItem.indentationLevel = indentLevel
-            lua_pop(L, 1)
-
-            // MARK: image keys
-            lua_getfield(L, -1, "image")
-            if let image = toNSImage(L, at: -1) {
-                menuItem.image = image.copy() as? NSImage
-            }
-            lua_pop(L, 1)
-
-            lua_getfield(L, -1, "onStateImage")
-            if let image = toNSImage(L, at: -1) {
-                let imageCopy = image.copy() as! NSImage
-                imageCopy.size = mb_proportionallyScaleStateImageSize(imageCopy, stateBoxImageSize)
-                menuItem.onStateImage = imageCopy
-            }
-            lua_pop(L, 1)
-
-            lua_getfield(L, -1, "offStateImage")
-            if let image = toNSImage(L, at: -1) {
-                let imageCopy = image.copy() as! NSImage
-                imageCopy.size = mb_proportionallyScaleStateImageSize(imageCopy, stateBoxImageSize)
-                menuItem.offStateImage = imageCopy
-            }
-            lua_pop(L, 1)
-
-            lua_getfield(L, -1, "mixedStateImage")
-            if let image = toNSImage(L, at: -1) {
-                let imageCopy = image.copy() as! NSImage
-                imageCopy.size = mb_proportionallyScaleStateImageSize(imageCopy, stateBoxImageSize)
-                menuItem.mixedStateImage = imageCopy
-            }
-            lua_pop(L, 1)
-
-            // MARK: shortcut key
-            lua_getfield(L, -1, "shortcut")
-            if lua_isstring(L, -1) {
-                let shortcutKey = lua_tovalue(L, at: -1) as! String
-                menuItem.keyEquivalent = shortcutKey
-                menuItem.keyEquivalentModifierMask = []
-            }
-            lua_pop(L, 1)
+            mb_parseSubmenu(L, menuItem: menuItem, stateBoxImageSize: stateBoxImageSize, depth: depth)
+            mb_parseAction(L, menuItem: menuItem)
+            mb_parseStateKeys(L, menuItem: menuItem)
+            mb_parseAppearanceKeys(L, menuItem: menuItem, stateBoxImageSize: stateBoxImageSize)
 
             menu.addItem(menuItem)
         }
@@ -272,8 +165,130 @@ func mb_parse_table(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32, _ menu:
     }
 }
 
+private func mb_extractTitle(_ L: UnsafeMutablePointer<lua_State>!) -> NSAttributedString {
+    if let styledText = toNSAttributedString(L, at: -1) {
+        return styledText
+    } else if lua_isstring(L, -1) {
+        return NSAttributedString(string: String(cString: lua_tostring(L, -1)!))
+    }
+    return NSAttributedString(string: "")
+}
+
+private func mb_parseSubmenu(_ L: UnsafeMutablePointer<lua_State>!, menuItem: NSMenuItem, stateBoxImageSize: NSSize, depth: Int) {
+    lua_getfield(L, -1, "menu")
+    if lua_istable(L, -1) {
+        let subMenu = NSMenu(title: "Cosmic HammerSubMenu")
+        subMenu.autoenablesItems = false
+        mb_parse_table(L, lua_gettop(L), subMenu, stateBoxImageSize, depth: depth + 1)
+        menuItem.submenu = subMenu
+    }
+    lua_pop(L, 1)
+}
+
+private func mb_parseAction(_ L: UnsafeMutablePointer<lua_State>!, menuItem: NSMenuItem) {
+    lua_getfield(L, -1, "fn")
+    if lua_isfunction(L, -1) {
+        let delegate = HSMenubarItemClickDelegate()
+        delegate.fn = L.ref(index: -1)
+        delegate.item = L.ref(index: -2)
+        delegate.generation = lua_currentStateGeneration()
+        menuItem.target = delegate
+        menuItem.action = #selector(HSMenubarItemClickDelegate.click(_:))
+        menuItem.representedObject = delegate
+    }
+    lua_pop(L, 1)
+}
+
+private func mb_parseStateKeys(_ L: UnsafeMutablePointer<lua_State>!, menuItem: NSMenuItem) {
+    lua_getfield(L, -1, "disabled")
+    if lua_isboolean(L, -1) {
+        menuItem.isEnabled = lua_toboolean(L, -1) == 0
+    } else {
+        menuItem.isEnabled = true
+    }
+    lua_pop(L, 1)
+
+    lua_getfield(L, -1, "checked")
+    if lua_isboolean(L, -1) {
+        menuItem.state = lua_toboolean(L, -1) != 0 ? .on : .off
+    } else {
+        menuItem.state = .off
+    }
+    lua_pop(L, 1)
+
+    lua_getfield(L, -1, "state")
+    if let state = lua_tovalue(L, at: -1) as? String {
+        if state == "on"    { menuItem.state = .on }
+        if state == "off"   { menuItem.state = .off }
+        if state == "mixed" { menuItem.state = .mixed }
+    }
+    lua_pop(L, 1)
+}
+
+private func mb_parseAppearanceKeys(_ L: UnsafeMutablePointer<lua_State>!, menuItem: NSMenuItem, stateBoxImageSize: NSSize) {
+    lua_getfield(L, -1, "tooltip")
+    if lua_isstring(L, -1) {
+        menuItem.toolTip = lua_tovalue(L, at: -1) as? String
+    }
+    lua_pop(L, 1)
+
+    lua_getfield(L, -1, "indent")
+    var indentLevel = Int(lua_tointegerx(L, -1, nil))
+    if indentLevel < 0  { indentLevel = 0 }
+    if indentLevel > 15 { indentLevel = 15 }
+    menuItem.indentationLevel = indentLevel
+    lua_pop(L, 1)
+
+    mb_parseImages(L, menuItem: menuItem, stateBoxImageSize: stateBoxImageSize)
+
+    lua_getfield(L, -1, "shortcut")
+    if lua_isstring(L, -1) {
+        let shortcutKey = lua_tovalue(L, at: -1) as! String
+        menuItem.keyEquivalent = shortcutKey
+        menuItem.keyEquivalentModifierMask = []
+    }
+    lua_pop(L, 1)
+}
+
+private func mb_parseImages(_ L: UnsafeMutablePointer<lua_State>!, menuItem: NSMenuItem, stateBoxImageSize: NSSize) {
+    lua_getfield(L, -1, "image")
+    if let image = toNSImage(L, at: -1) {
+        menuItem.image = image.copy() as? NSImage
+    }
+    lua_pop(L, 1)
+
+    lua_getfield(L, -1, "onStateImage")
+    if let image = toNSImage(L, at: -1) {
+        let imageCopy = image.copy() as! NSImage
+        imageCopy.size = mb_proportionallyScaleStateImageSize(imageCopy, stateBoxImageSize)
+        menuItem.onStateImage = imageCopy
+    }
+    lua_pop(L, 1)
+
+    lua_getfield(L, -1, "offStateImage")
+    if let image = toNSImage(L, at: -1) {
+        let imageCopy = image.copy() as! NSImage
+        imageCopy.size = mb_proportionallyScaleStateImageSize(imageCopy, stateBoxImageSize)
+        menuItem.offStateImage = imageCopy
+    }
+    lua_pop(L, 1)
+
+    lua_getfield(L, -1, "mixedStateImage")
+    if let image = toNSImage(L, at: -1) {
+        let imageCopy = image.copy() as! NSImage
+        imageCopy.size = mb_proportionallyScaleStateImageSize(imageCopy, stateBoxImageSize)
+        menuItem.mixedStateImage = imageCopy
+    }
+    lua_pop(L, 1)
+}
+
 // Recursively remove all items from a menu, de-allocating their delegates as we go
-func mb_erase_menu_items(_ L: UnsafeMutablePointer<lua_State>!, _ menu: NSMenu) {
+func mb_erase_menu_items(_ L: UnsafeMutablePointer<lua_State>!, _ menu: NSMenu, depth: Int = 0) {
+
+    if depth >= kMaxMenuRecursionDepth {
+        os_log(.error, "mb_erase_menu_items: recursion depth limit (%d) reached, skipping deeper submenus", kMaxMenuRecursionDepth)
+        return
+    }
 
     for menuItem in menu.items {
         if let target = menuItem.representedObject as? HSMenubarItemClickDelegate {
@@ -284,7 +299,7 @@ func mb_erase_menu_items(_ L: UnsafeMutablePointer<lua_State>!, _ menu: NSMenu) 
             menuItem.representedObject = nil
         }
         if menuItem.hasSubmenu {
-            mb_erase_menu_items(L, menuItem.submenu!)
+            mb_erase_menu_items(L, menuItem.submenu!, depth: depth + 1)
             menuItem.submenu = nil
         }
         menu.removeItem(menuItem)

@@ -5,6 +5,9 @@ import IOKit
 import IOKit.hid
 import os.log
 
+/// TigerStyle: maximum run-loop drain iterations during HID enumeration.
+private let kMaxRunLoopIterations = 10_000
+
 // We need a mutable array and a callback outside HSmouse so they can be used at the IOKit level
 private var mice: NSMutableArray? = nil
 
@@ -54,8 +57,14 @@ private class HSmouse {
         mice = NSMutableArray()
 
         // Run a sub-runloop until the initial enumeration of mice is completed
+        // TigerStyle: bounded loop — cap iterations to prevent infinite spin
+        var runLoopIter = 0
         while CFRunLoopRunInMode(HSmouse.RUNLOOPMODE, 0, true) == .handledSource {
-            // Do nothing
+            runLoopIter += 1
+            if runLoopIter >= kMaxRunLoopIterations {
+                os_log(.error, "hs.mouse: HID enumeration run-loop exceeded %d iterations — breaking", kMaxRunLoopIterations)
+                break
+            }
         }
 
         // Remove our callback and unschedule from the runloop

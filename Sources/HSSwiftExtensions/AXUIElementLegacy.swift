@@ -16,11 +16,14 @@ private func luaNSObject(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32, m
 @_cdecl("pushAXUIElement")
 @discardableResult
 public func pushAXUIElement(_ L: UnsafeMutablePointer<lua_State>!, _ theElement: AXUIElement) -> Int32 {
+    precondition(L != nil, "Lua state must not be nil")
+    let topBefore = lua_gettop(L)
     let thePtr = lua_newuserdata(L, MemoryLayout<AXUIElement>.size)!
         .assumingMemoryBound(to: Unmanaged<AXUIElement>.self)
     thePtr.pointee = Unmanaged.passRetained(theElement)
     luaL_getmetatable(L, USERDATA_TAG)
     lua_setmetatable(L, -2)
+    assert(lua_gettop(L) == topBefore + 1, "pushAXUIElement must push exactly one userdata")
     return 1
 }
 
@@ -60,6 +63,8 @@ private func isApplicationOrSystem(_ theRef: AXUIElement) -> Bool {
 }
 
 private func errorWrapper(_ L: UnsafeMutablePointer<lua_State>!, _ where_: NSString, _ what: NSString?, _ err: AXError) -> Int32 {
+    precondition(L != nil, "Lua state must not be nil")
+    precondition(err != .success, "errorWrapper should not be called for AXError.success")
     let axErrMsg = AXErrorAsString(err)
 
     if let what = what {
@@ -190,6 +195,7 @@ private func axuielement_duplicateReference(_ L: LuaState) throws -> CInt {
 /// Notes:
 ///  * Common attribute names can be found in the [hs.axuielement.attributes](#attributes) tables; however, this method will list only those names which are supported by this object, and is not limited to just those in the referenced table.
 private func axuielement_getAttributeNames(_ L: LuaState) throws -> CInt {
+    precondition(L != nil, "Lua state must not be nil")
     luaL_checkudata(L, 1, USERDATA_TAG)
     let theRef = get_axuielementref(L, 1, USERDATA_TAG)
     var attributeNames: CFArray?
@@ -221,6 +227,7 @@ private func axuielement_getAttributeNames(_ L: LuaState) throws -> CInt {
 /// Notes:
 ///  * Common action names can be found in the [hs.axuielement.actions](#actions) table; however, this method will list only those names which are supported by this object, and is not limited to just those in the referenced table.
 private func axuielement_getActionNames(_ L: LuaState) throws -> CInt {
+    precondition(L != nil, "Lua state must not be nil")
     luaL_checkudata(L, 1, USERDATA_TAG)
     let theRef = get_axuielementref(L, 1, USERDATA_TAG)
     var attributeNames: CFArray?
@@ -317,6 +324,7 @@ private func axuielement_getAttributeValue(_ L: LuaState) throws -> CInt {
 ///      * `_code` = -25212
 ///      * `error` = "Requested value does not exist"
 private func axuielement_getAllAttributeValues(_ L: LuaState) throws -> CInt {
+    precondition(L != nil, "Lua state must not be nil")
     luaL_checkudata(L, 1, USERDATA_TAG)
     let theRef = get_axuielementref(L, 1, USERDATA_TAG)
     let includeErrors = lua_gettop(L) == 2 ? (lua_toboolean(L, 2) != 0) : false
@@ -498,6 +506,7 @@ private func axuielement_getPid(_ L: LuaState) throws -> CInt {
 /// Notes:
 ///  * The return value only suggests success or failure, but is not a guarantee.  The receiving application may have internal logic which prevents the action from occurring at this time for some reason, even though this method returns success (the axuielementObject).  Contrawise, the requested action may trigger a requirement for a response from the user and thus appear to time out, causing this method to return false or nil.
 private func axuielement_performAction(_ L: LuaState) throws -> CInt {
+    precondition(L != nil, "Lua state must not be nil")
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     luaL_checktype(L, 2, LUA_TSTRING)
@@ -541,6 +550,8 @@ private func axuielement_performAction(_ L: LuaState) throws -> CInt {
 ///  * If this method is called on an axuielementObject representing an application, the search is restricted to the application.
 ///  * If this method is called on an axuielementObject representing the system-wide element, the search is not restricted to any particular application.  See [hs.axuielement.systemElementAtPosition](#systemElementAtPosition).
 private func axuielement_getElementAtPosition(_ L: LuaState) throws -> CInt {
+    precondition(L != nil, "Lua state must not be nil")
+    precondition(lua_gettop(L) >= 2, "elementAtPosition requires at least self + point/coordinates")
     let theRef = get_axuielementref(L, 1, USERDATA_TAG)
     var returnCount: Int32 = 1
     if isApplicationOrSystem(theRef) {
@@ -584,6 +595,8 @@ private func axuielement_getElementAtPosition(_ L: LuaState) throws -> CInt {
 /// Notes:
 ///  * The specific parameter required for a each parameterized attribute is different and is often application specific thus requiring some experimentation. Notes regarding identified parameter types and thoughts on some still being investigated will be provided in the Cosmic Hammer Wiki, hopefully shortly after this module becomes part of a Cosmic Hammer release.
 private func axuielement_getParameterizedAttributeValue(_ L: LuaState) throws -> CInt {
+    precondition(L != nil, "Lua state must not be nil")
+    precondition(lua_gettop(L) >= 3, "parameterizedAttributeValue requires self, attribute, and parameter")
     let theRef = get_axuielementref(L, 1, USERDATA_TAG)
     let attribute = lua_tovalue(L, at: 2) as! NSString
     let parameter = lua_toCFType(L, 3)
@@ -612,6 +625,8 @@ private func axuielement_getParameterizedAttributeValue(_ L: LuaState) throws ->
 /// Returns:
 ///  * the axuielementObject on success; nil and an error string if the attribute could not be set or an accessibility error occurred.
 private func axuielement_setAttributeValue(_ L: LuaState) throws -> CInt {
+    precondition(L != nil, "Lua state must not be nil")
+    precondition(lua_gettop(L) >= 3, "setAttributeValue requires self, attribute, and value")
     let theRef = get_axuielementref(L, 1, USERDATA_TAG)
     let attribute = lua_tovalue(L, at: 2) as! NSString
     let value = lua_toCFType(L, 3)
@@ -1173,6 +1188,8 @@ private func userdata_tostring(_ L: LuaState) throws -> CInt {
 }
 
 private func userdata_gc(_ L: LuaState) throws -> CInt {
+    precondition(L != nil, "Lua state must not be nil")
+    precondition(lua_gettop(L) >= 1, "gc requires the userdata argument")
     let ptr = luaL_checkudata(L, 1, USERDATA_TAG)!
         .assumingMemoryBound(to: Unmanaged<AXUIElement>.self)
     // Balance the passRetained() from pushAXUIElement — takeRetainedValue() releases the +1.

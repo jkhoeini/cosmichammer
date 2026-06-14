@@ -231,6 +231,8 @@ class HSSerialPort: NSObject, ORSSerialPortDelegate, LuaTeardownable {
     // MARK: - Port validation and creation
 
     func isPortNameValid(_ portName: String) -> Bool {
+        precondition(!portName.isEmpty, "Port name must not be empty")
+
         for port in serialPortManager.availablePorts {
             if portName == port.name {
                 self.portName = portName
@@ -241,6 +243,8 @@ class HSSerialPort: NSObject, ORSSerialPortDelegate, LuaTeardownable {
     }
 
     func isPathValid(_ path: String) -> Bool {
+        precondition(!path.isEmpty, "Serial port path must not be empty")
+
         for port in serialPortManager.availablePorts {
             if path == port.path {
                 self.portPath = port.path
@@ -252,6 +256,8 @@ class HSSerialPort: NSObject, ORSSerialPortDelegate, LuaTeardownable {
     }
 
     func createPortFromPortName(_ portName: String) -> Bool {
+        precondition(!portName.isEmpty, "Port name must not be empty for createPort")
+
         for port in serialPortManager.availablePorts {
             if portName == port.name {
                 serialPort?.close()
@@ -266,15 +272,22 @@ class HSSerialPort: NSObject, ORSSerialPortDelegate, LuaTeardownable {
     }
 
     func createPortFromPath(_ portPath: String) -> Bool {
+        precondition(!portPath.isEmpty, "Port path must not be empty for createPort")
+
         serialPort?.close()
         serialPort?.delegate = nil
 
         serialPort = ORSSerialPort(path: portPath)
         serialPort?.delegate = self
+
+        assert(serialPort != nil, "ORSSerialPort should have been created for path: \(portPath)")
         return true
     }
 
     func open() -> Bool {
+        assert(!tornDown, "Cannot open a torn-down serial port")
+        assert(portPath != nil || portName != nil, "Either portPath or portName must be set before opening")
+
         if serialPort == nil, let path = portPath {
             _ = createPortFromPath(path)
         }
@@ -360,6 +373,9 @@ class HSSerialPort: NSObject, ORSSerialPortDelegate, LuaTeardownable {
     }
 
     func sendData(_ data: Data) {
+        precondition(!data.isEmpty, "Cannot send empty data to serial port")
+        assert(isOpen, "Serial port must be open before sending data")
+
         serialPort?.send(data)
     }
 }
@@ -379,6 +395,8 @@ class HSSerialPort: NSObject, ORSSerialPortDelegate, LuaTeardownable {
 /// Notes:
 ///  * A valid port name can be found by checking `hs.serial.availablePortNames()`.
 private func serial_newFromName(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    precondition(L != nil, "lua_State must not be nil")
+
     luaL_checktype(L, 1, LUA_TSTRING)
 
     let portName = lua_tovalue(L, at: 1) as! String
@@ -406,6 +424,8 @@ private func serial_newFromName(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 /// Notes:
 ///  * A valid port name can be found by checking `hs.serial.availablePortPaths()`.
 private func serial_newFromPath(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    precondition(L != nil, "lua_State must not be nil")
+
     luaL_checktype(L, 1, LUA_TSTRING)
 
     let path = lua_tovalue(L, at: 1) as! String
@@ -525,6 +545,7 @@ private func serial_deviceCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int
 
 @discardableResult
 func pushHSSerialPort(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
+    precondition(L != nil, "lua_State must not be nil")
     guard let value = obj as? HSSerialPort else { return 0 }
     L.push(userdata: value)
     return 1
@@ -534,6 +555,9 @@ func pushHSSerialPort(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int
 
 @_cdecl("luaopen_hs_libserial")
 public func luaopen_hs_libserial(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    precondition(L != nil, "lua_State must not be nil")
+    let stackBase = lua_gettop(L)
+
     // Create ref table in registry
     lua_newtable(L)
     refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
@@ -784,5 +808,6 @@ public func luaopen_hs_libserial(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
     lua_setfield(L, -2, "__gc")
     lua_setmetatable(L, -2)
 
+    assert(lua_gettop(L) == stackBase + 1, "luaopen_hs_libserial must leave exactly 1 value (module table) on the stack")
     return 1
 }

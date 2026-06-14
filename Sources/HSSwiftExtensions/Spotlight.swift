@@ -43,7 +43,10 @@ private class HSMetadataQuery: NSObject {
     /// Lua callback reference. Called from __gc while the lua_State is still
     /// alive, and from doCallback when the generation canary fires.
     func teardown() {
-        guard !tornDown else { return }
+        guard !tornDown else {
+            assert(callback == nil, "teardown: callback should already be nil after teardown")
+            return
+        }
         tornDown = true
         let nc = NotificationCenter.default
         nc.removeObserver(self, name: .NSMetadataQueryDidFinishGathering, object: metadataSearch)
@@ -71,6 +74,7 @@ private class HSMetadataQuery: NSObject {
     }
 
     func doCallback(for message: String, with notification: Notification) {
+        precondition(!message.isEmpty, "doCallback: message must not be empty")
         DispatchQueue.main.async { [weak self] in
             guard let self = self, let cb = self.callback else { return }
             if !lua_isStateGenerationValid(self.generation) {
@@ -644,6 +648,8 @@ private func push_commonAttributeKeys(_ L: UnsafeMutablePointer<lua_State>!) -> 
 // MARK: - Lua<->NSObject Conversion Functions
 
 private func pushSpotlightValue(_ L: UnsafeMutablePointer<lua_State>!, _ value: Any?, depth: Int = 0) {
+    precondition(L != nil, "pushSpotlightValue: L must not be nil")
+    precondition(depth >= 0, "pushSpotlightValue: depth must be non-negative")
     guard depth < 50 else {
         lua_pushnil(L)
         return
@@ -706,6 +712,8 @@ private func pushNSSortDescriptor(_ L: UnsafeMutablePointer<lua_State>!, obj: An
 }
 
 private func toNSSortDescriptorFromLua(_ L: UnsafeMutablePointer<lua_State>!, idx: Int32) -> Any! {
+    precondition(L != nil, "toNSSortDescriptorFromLua: L must not be nil")
+    precondition(idx != 0, "toNSSortDescriptorFromLua: idx must not be 0")
     let absIdx = lua_absindex(L, idx)
     if lua_type(L, absIdx) == LUA_TSTRING {
         return NSSortDescriptor(key: lua_tovalue(L, at: absIdx) as? String, ascending: true)
@@ -766,6 +774,7 @@ private func meta_gc(_ L: LuaState) throws -> CInt {
 
 @_cdecl("luaopen_hs_libspotlight")
 public func luaopen_hs_libspotlight(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    precondition(L != nil, "luaopen_hs_libspotlight: L must not be nil")
     // 1. Register HSMetadataQuery metatable
     L.register(Metatable<HSMetadataQuery>(
         fields: [

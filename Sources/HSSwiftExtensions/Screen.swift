@@ -106,11 +106,14 @@ private var notificationQueue: DispatchQueue!
 // MARK: - Helpers
 
 private func geom_pushrect(_ L: UnsafeMutablePointer<lua_State>!, _ rect: NSRect) {
+    precondition(L != nil, "geom_pushrect: L must not be nil")
+    let previousTop = lua_gettop(L)
     lua_newtable(L)
     L.push(lua_Number(rect.origin.x));    lua_setfield(L, -2, "x")
     L.push(lua_Number(rect.origin.y));    lua_setfield(L, -2, "y")
     L.push(lua_Number(rect.size.width));  lua_setfield(L, -2, "w")
     L.push(lua_Number(rect.size.height)); lua_setfield(L, -2, "h")
+    assert(lua_gettop(L) == previousTop + 1, "geom_pushrect: stack should grow by exactly 1 (table)")
 }
 
 private func getScreenID(_ screen: NSScreen) -> CGDirectDisplayID {
@@ -274,6 +277,8 @@ private func screen_availableModes(_ L: LuaState) throws -> CInt {
 }
 
 private func handleDisplayUpdate(_ L: UnsafeMutablePointer<lua_State>!, _ config: CGDisplayConfigRef, _ name: String) -> Int32 {
+    precondition(L != nil, "handleDisplayUpdate: L must not be nil")
+    precondition(!name.isEmpty, "handleDisplayUpdate: name must not be empty")
     let anError = CGCompleteDisplayConfiguration(config, .permanently)
     if anError == .success {
         L.push(true)
@@ -405,7 +410,9 @@ private func screen_gammaGet(_ L: LuaState) throws -> CInt {
 }
 
 func storeInitialScreenGamma(_ display: CGDirectDisplayID) {
+    precondition(display != kCGNullDirectDisplay, "storeInitialScreenGamma: display must not be kCGNullDirectDisplay")
     let capacity = CGDisplayGammaTableCapacity(display)
+    precondition(capacity > 0, "storeInitialScreenGamma: gamma table capacity must be positive")
     var count: UInt32 = 0
 
     let redTable = UnsafeMutablePointer<CGGammaValue>.allocate(capacity: Int(capacity))
@@ -457,6 +464,9 @@ func screen_gammaReapply(_ display: CGDirectDisplayID) {
           let blue = gammas["blue"] as? [NSNumber] else { return }
 
     let count = red.count
+    precondition(count > 0, "screen_gammaReapply: gamma table must not be empty")
+    precondition(green.count == count, "screen_gammaReapply: green table length must match red")
+    precondition(blue.count == count, "screen_gammaReapply: blue table length must match red")
 
     let redTable = UnsafeMutablePointer<CGGammaValue>.allocate(capacity: count)
     let greenTable = UnsafeMutablePointer<CGGammaValue>.allocate(capacity: count)
@@ -783,11 +793,14 @@ private func screen_eq(_ L: LuaState) throws -> CInt {
 }
 
 func new_screen(_ L: UnsafeMutablePointer<lua_State>!, _ screen: NSScreen) {
+    precondition(L != nil, "new_screen: L must not be nil")
+    let previousTop = lua_gettop(L)
     let screenPtr = lua_newuserdata(L, MemoryLayout<UnsafeMutableRawPointer>.size)!.assumingMemoryBound(to: UnsafeMutableRawPointer.self)
     screenPtr.pointee = Unmanaged.passRetained(screen).toOpaque()
 
     luaL_getmetatable(L, USERDATA_TAG)
     lua_setmetatable(L, -2)
+    assert(lua_gettop(L) == previousTop + 1, "new_screen: stack should grow by exactly 1")
 }
 
 /// hs.screen.allScreens() -> hs.screen[]
@@ -908,20 +921,11 @@ private func screen_rotate(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let screen = get_screen_arg(L, 1)
-    let maxDisplays: CGDisplayCount = 32
 
-    var rotation: Int32 = -1
-
-    if lua_type(L, 2) == LUA_TNUMBER {
-        switch Int(lua_tointeger(L, 2)) {
-        case 0:   rotation = Int32(kIOScaleRotate0)
-        case 90:  rotation = Int32(kIOScaleRotate90)
-        case 180: rotation = Int32(kIOScaleRotate180)
-        case 270: rotation = Int32(kIOScaleRotate270)
-        default:
-            L.push(false)
-            return 1
-        }
+    let rotation = parseRotationArgument(L)
+    if rotation == nil {
+        L.push(false)
+        return 1
     }
 
     let screenID = getScreenID(screen)
@@ -932,55 +936,77 @@ private func screen_rotate(_ L: LuaState) throws -> CInt {
         return 1
     }
 
+    let success = applyRotation(rotation!, to: screenID)
+    L.push(success)
+    return 1
+}
+
+/// Returns the rotation value, -1 for query mode, or nil for invalid input.
+private func parseRotationArgument(_ L: LuaState) -> Int32? {
+    guard lua_type(L, 2) == LUA_TNUMBER else { return -1 }
+    switch Int(lua_tointeger(L, 2)) {
+    case 0:   return Int32(kIOScaleRotate0)
+    case 90:  return Int32(kIOScaleRotate90)
+    case 180: return Int32(kIOScaleRotate180)
+    case 270: return Int32(kIOScaleRotate270)
+    default:  return nil
+    }
+}
+
+private func applyRotation(_ rotation: Int32, to screenID: CGDirectDisplayID) -> Bool {
+    let maxDisplays: CGDisplayCount = 32
     let onlineDisplays = UnsafeMutablePointer<CGDirectDisplayID>.allocate(capacity: Int(maxDisplays))
     defer { onlineDisplays.deallocate() }
 
     var displayCount: CGDisplayCount = 0
-    if CGGetOnlineDisplayList(maxDisplays, onlineDisplays, &displayCount) != .success {
-        L.push(false)
-        return 1
+    guard CGGetOnlineDisplayList(maxDisplays, onlineDisplays, &displayCount) == .success else {
+        return false
     }
 
     for i in 0..<Int(displayCount) {
         let dID = onlineDisplays[i]
         if dID == screenID {
-            var service: io_service_t = 0
-            var iter: io_iterator_t = 0
-            let matching = IOServiceMatching("IODisplayConnect")
-            if IOServiceGetMatchingServices(kIOMainPortDefault, matching, &iter) == KERN_SUCCESS {
-                var s = IOIteratorNext(iter)
-                while s != 0 {
-                    if let info = IODisplayCreateInfoDictionary(s, UInt32(kIODisplayOnlyPreferredName))?.takeRetainedValue() as NSDictionary? {
-                        if let vendorID = info[kDisplayVendorID] as? UInt32,
-                           let productID = info[kDisplayProductID] as? UInt32,
-                           vendorID == CGDisplayVendorNumber(dID),
-                           productID == CGDisplayModelNumber(dID) {
-                            service = s
-                            break
-                        }
-                    }
-                    IOObjectRelease(s)
-                    s = IOIteratorNext(iter)
-                }
-                IOObjectRelease(iter)
-            }
-            guard service != 0 else {
-                L.push(false)
-                return 1
-            }
-            let options = IOOptionBits(kIOFBSetTransform | (UInt32(rotation) << 16))
-            let result = IOServiceRequestProbe(service, options)
-            IOObjectRelease(service)
-            if result != KERN_SUCCESS {
-                L.push(false)
-                return 1
-            }
-            break
+            return applyRotationToService(rotation, displayID: dID)
         }
     }
 
-    L.push(true)
-    return 1
+    return true
+}
+
+private func applyRotationToService(_ rotation: Int32, displayID: CGDirectDisplayID) -> Bool {
+    guard let service = findIODisplayService(for: displayID) else {
+        return false
+    }
+
+    let options = IOOptionBits(kIOFBSetTransform | (UInt32(rotation) << 16))
+    let result = IOServiceRequestProbe(service, options)
+    IOObjectRelease(service)
+    return result == KERN_SUCCESS
+}
+
+private func findIODisplayService(for displayID: CGDirectDisplayID) -> io_service_t? {
+    var iter: io_iterator_t = 0
+    let matching = IOServiceMatching("IODisplayConnect")
+    guard IOServiceGetMatchingServices(kIOMainPortDefault, matching, &iter) == KERN_SUCCESS else {
+        return nil
+    }
+
+    var s = IOIteratorNext(iter)
+    while s != 0 {
+        if let info = IODisplayCreateInfoDictionary(s, UInt32(kIODisplayOnlyPreferredName))?.takeRetainedValue() as NSDictionary? {
+            if let vendorID = info[kDisplayVendorID] as? UInt32,
+               let productID = info[kDisplayProductID] as? UInt32,
+               vendorID == CGDisplayVendorNumber(displayID),
+               productID == CGDisplayModelNumber(displayID) {
+                IOObjectRelease(iter)
+                return s
+            }
+        }
+        IOObjectRelease(s)
+        s = IOIteratorNext(iter)
+    }
+    IOObjectRelease(iter)
+    return nil
 }
 
 /// hs.screen:setOrigin(x, y) -> bool
@@ -1077,6 +1103,7 @@ private func screen_mirrorStop(_ L: LuaState) throws -> CInt {
 }
 
 func screenRectToNSRect(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> NSRect {
+    precondition(L != nil, "screenRectToNSRect: L must not be nil")
     if lua_isnoneornil(L, idx) || lua_type(L, idx) != LUA_TTABLE {
         return NSZeroRect
     }
@@ -1104,6 +1131,7 @@ func screenRectToNSRect(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> 
 
 func screenToNSImage(_ screen: NSScreen, _ screenRect: NSRect) -> NSImage? {
     let screenID = getScreenID(screen)
+    assert(screenID != kCGNullDirectDisplay, "screenToNSImage: screenID must not be null display")
 
     let captureRect: CGRect
     if NSIsEmptyRect(screenRect) {
@@ -1232,7 +1260,8 @@ private func userdata_tostring(_ L: LuaState) throws -> CInt {
 
 @_cdecl("luaopen_hs_libscreen")
 public func luaopen_hs_libscreen(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    runEntryPoint(L) { L in
+    precondition(L != nil, "luaopen_hs_libscreen: L must not be nil")
+    return runEntryPoint(L) { L in
         // Initialize gamma structures, populate them, and register callbacks
         originalGammas = NSMutableDictionary()
         currentGammas = NSMutableDictionary()

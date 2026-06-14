@@ -372,6 +372,7 @@ private func window_snapshot(_ L: LuaState) throws -> CInt {
 
 /// Returns the corner radius for the given CGWindowID, or nil if unavailable.
 private func windowCornerRadius(for windowID: CGWindowID) -> CGFloat? {
+    precondition(windowID != 0, "windowCornerRadius: windowID must not be 0")
     let cid = slsMainConnectionID()
     let windowArray = [NSNumber(value: windowID)] as CFArray
     guard let query = SLSWindowQueryWindows(cid, windowArray, 0x0) else { return nil }
@@ -428,6 +429,10 @@ private func window_cornerRadius(_ L: LuaState) throws -> CInt {
 ///  * Returns 0 for windows whose corner radius cannot be determined or for invalid window IDs.
 private func window_cornerRadiusForID(_ L: LuaState) throws -> CInt {
     let windowID = CGWindowID(lua_tointeger(L, 1))
+    guard windowID != 0 else {
+        L.push(0.0)
+        return 1
+    }
     let radius = windowCornerRadius(for: windowID) ?? 0
     L.push(Double(radius))
     return 1
@@ -479,13 +484,16 @@ private func window_uielement_newWatcher(_ L: LuaState) throws -> CInt {
 
 @discardableResult
 func pushHSwindow(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any?) -> Int32 {
+    precondition(L != nil, "pushHSwindow: L must not be nil")
     guard let value = obj as? NSObject & HSwindowProtocol else { return 0 }
+    let previousTop = lua_gettop(L)
     value.selfRefCount += 1
     let valuePtr = lua_newuserdata(L, MemoryLayout<UnsafeMutableRawPointer>.size)!
         .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
     valuePtr.pointee = Unmanaged.passRetained(value as NSObject).toOpaque()
     luaL_getmetatable(L, USERDATA_TAG)
     lua_setmetatable(L, -2)
+    assert(lua_gettop(L) == previousTop + 1, "pushHSwindow: stack should grow by exactly 1")
     return 1
 }
 
@@ -496,11 +504,13 @@ func pushHSwindowOrNil(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any?) {
 }
 
 func pushHSwindows(_ L: UnsafeMutablePointer<lua_State>!, _ windows: [Any]?) {
+    precondition(L != nil, "pushHSwindows: L must not be nil")
     guard let windows = windows else {
         lua_pushnil(L)
         return
     }
 
+    let previousTop = lua_gettop(L)
     lua_createtable(L, Int32(windows.count), 0)
     var index: lua_Integer = 1
     for window in windows {
@@ -509,9 +519,12 @@ func pushHSwindows(_ L: UnsafeMutablePointer<lua_State>!, _ windows: [Any]?) {
             index += 1
         }
     }
+    assert(lua_gettop(L) == previousTop + 1, "pushHSwindows: stack should grow by exactly 1 (table)")
 }
 
 private func toHSwindowFromLua(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> Any! {
+    precondition(L != nil, "toHSwindowFromLua: L must not be nil")
+    precondition(idx != 0, "toHSwindowFromLua: idx must not be 0")
     if luaL_testudata(L, idx, USERDATA_TAG) != nil {
         let ptr = luaL_checkudata(L, idx, USERDATA_TAG)!
             .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
@@ -565,7 +578,8 @@ private func userdata_gc(_ L: LuaState) throws -> CInt {
 
 @_cdecl("luaopen_hs_libwindow")
 public func luaopen_hs_libwindow(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    runEntryPoint(L) { L in
+    precondition(L != nil, "luaopen_hs_libwindow: L must not be nil")
+    return runEntryPoint(L) { L in
         // Register userdata metatable
         luaL_newmetatable(L, USERDATA_TAG)
         lua_pushvalue(L, -1)

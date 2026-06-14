@@ -4,6 +4,7 @@ import Lua
 import os.log
 
 private let USERDATA_TAG = "hs.styledtext"
+private let kMaxStyledtextRecursionDepth = 50
 
 // MARK: - Helpers
 
@@ -23,6 +24,11 @@ private func get_objectFromUserdata_transfer(_ L: UnsafeMutablePointer<lua_State
 // Lua string and the values are the corresponding character positions in the NSString.
 private func luaByteToObjCharMap(_ theString: NSString) -> NSDictionary {
     let luaByteToObjChar = NSMutableDictionary()
+    // Postcondition: the map must have as many entries as there are UTF-8 bytes in the string
+    defer {
+        let utf8Len = (theString as String).utf8.count
+        assert(luaByteToObjChar.count == utf8Len, "luaByteToObjCharMap must produce one entry per UTF-8 byte (expected \(utf8Len), got \(luaByteToObjChar.count))")
+    }
 
     var luaPos: UInt = 1
     var i: UInt = 0
@@ -54,6 +60,7 @@ private func luaByteToObjCharMap(_ theString: NSString) -> NSDictionary {
 
 // Helper to resolve lua byte range to ObjC character range
 private func luaRangeToObjCRange(_ theMap: NSDictionary, len: lua_Integer, luaI: lua_Integer, luaJ: lua_Integer) -> (i: lua_Integer, j: lua_Integer, empty: Bool) {
+    precondition(len >= 0, "luaRangeToObjCRange len must be non-negative")
     var i = luaI
     var j = luaJ
     if i < 0 { i = len + 1 + i }
@@ -595,7 +602,13 @@ private func luaToObjCMap(_ L: LuaState) throws -> CInt {
 
 // MARK: - Methods unique to hs.styledtext objects
 
-private func styledtext_attributeValueToLua(_ L: UnsafeMutablePointer<lua_State>!, _ value: Any) {
+private func styledtext_attributeValueToLua(_ L: UnsafeMutablePointer<lua_State>!, _ value: Any, depth: Int = 0) {
+    if depth >= kMaxStyledtextRecursionDepth {
+        os_log(.error, "styledtext_attributeValueToLua: recursion depth limit (%d) reached, pushing nil", kMaxStyledtextRecursionDepth)
+        lua_pushnil(L)
+        return
+    }
+
     switch value {
     case let font as NSFont:
         NSFont_toLua(L, obj: font)
@@ -610,7 +623,7 @@ private func styledtext_attributeValueToLua(_ L: UnsafeMutablePointer<lua_State>
     case let array as NSArray:
         lua_createtable(L, Int32(array.count), 0)
         for item in array {
-            styledtext_attributeValueToLua(L, item)
+            styledtext_attributeValueToLua(L, item, depth: depth + 1)
             lua_rawseti(L, -2, luaL_len(L, -2) + 1)
         }
     default:
@@ -1227,6 +1240,7 @@ private func table_toAttributesDictionary(_ L: UnsafeMutablePointer<lua_State>!,
 
 @discardableResult
 func NSAttributedString_toLua(_ L: UnsafeMutablePointer<lua_State>!, obj: Any!) -> Int32 {
+    precondition(L != nil, "lua_State must not be nil")
     guard let theString = obj as? NSAttributedString else {
         lua_pushnil(L)
         return 1
@@ -1403,192 +1417,142 @@ private func NSParagraphStyle_toLua(_ L: UnsafeMutablePointer<lua_State>!, obj: 
 private func table_toNSParagraphStyle(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> AnyObject! {
     let thePS = (NSParagraphStyle.default.mutableCopy() as! NSMutableParagraphStyle)
 
-    if lua_type(L, idx) == LUA_TTABLE {
-        if lua_getfield(L, idx, "alignment") == LUA_TSTRING {
-            let theString = lua_tovalue(L, at: -1) as! String
-            switch theString {
-            case "left":      thePS.alignment = .left
-            case "right":     thePS.alignment = .right
-            case "center":    thePS.alignment = .center
-            case "justified": thePS.alignment = .justified
-            case "natural":   thePS.alignment = .natural
-            default:          os_log(.info, "%{public}s", "invalid alignment specified: \(theString)")
-            }
-        }
-        lua_pop(L, 1)
-
-        if lua_getfield(L, idx, "lineBreak") == LUA_TSTRING {
-            let theString = lua_tovalue(L, at: -1) as! String
-            switch theString {
-            case "charWrap":        thePS.lineBreakMode = .byCharWrapping
-            case "clip":            thePS.lineBreakMode = .byClipping
-            case "truncateHead":    thePS.lineBreakMode = .byTruncatingHead
-            case "truncateTail":    thePS.lineBreakMode = .byTruncatingTail
-            case "truncateMiddle":  thePS.lineBreakMode = .byTruncatingMiddle
-            case "wordWrap":        thePS.lineBreakMode = .byWordWrapping
-            default:                os_log(.info, "%{public}s", "invalid lineBreakMode: \(theString)")
-            }
-        }
-        lua_pop(L, 1)
-
-        if lua_getfield(L, idx, "baseWritingDirection") == LUA_TSTRING {
-            let theString = lua_tovalue(L, at: -1) as! String
-            switch theString {
-            case "leftToRight":  thePS.baseWritingDirection = .leftToRight
-            case "rightToLeft":  thePS.baseWritingDirection = .rightToLeft
-            case "natural":      thePS.baseWritingDirection = .natural
-            default:             os_log(.info, "%{public}s", "invalid baseWritingDirection: \(theString)")
-            }
-        }
-        lua_pop(L, 1)
-
-        if lua_getfield(L, idx, "defaultTabInterval") == LUA_TNUMBER {
-            let theNumber = lua_tonumber(L, -1)
-            if theNumber >= 0.0 {
-                thePS.defaultTabInterval = CGFloat(theNumber)
-            } else {
-                os_log(.info, "%{public}s", "defaultTabInterval must be non-negative")
-            }
-        }
-        lua_pop(L, 1)
-
-        if lua_getfield(L, idx, "firstLineHeadIndent") == LUA_TNUMBER {
-            let theNumber = lua_tonumber(L, -1)
-            if theNumber >= 0.0 {
-                thePS.firstLineHeadIndent = CGFloat(theNumber)
-            } else {
-                os_log(.info, "%{public}s", "firstLineHeadIndent must be non-negative")
-            }
-        }
-        lua_pop(L, 1)
-
-        if lua_getfield(L, idx, "headIndent") == LUA_TNUMBER {
-            let theNumber = lua_tonumber(L, -1)
-            if theNumber >= 0.0 {
-                thePS.headIndent = CGFloat(theNumber)
-            } else {
-                os_log(.info, "%{public}s", "headIndent must be non-negative")
-            }
-        }
-        lua_pop(L, 1)
-
-        if lua_getfield(L, idx, "tailIndent") == LUA_TNUMBER {
-            thePS.tailIndent = CGFloat(lua_tonumber(L, -1))
-        }
-        lua_pop(L, 1)
-
-        if lua_getfield(L, idx, "maximumLineHeight") == LUA_TNUMBER {
-            let theNumber = lua_tonumber(L, -1)
-            if theNumber >= 0.0 {
-                thePS.maximumLineHeight = CGFloat(theNumber)
-            } else {
-                os_log(.info, "%{public}s", "maximumLineHeight must be non-negative")
-            }
-        }
-        lua_pop(L, 1)
-
-        if lua_getfield(L, idx, "minimumLineHeight") == LUA_TNUMBER {
-            let theNumber = lua_tonumber(L, -1)
-            if theNumber >= 0.0 {
-                thePS.minimumLineHeight = CGFloat(theNumber)
-            } else {
-                os_log(.info, "%{public}s", "minimumLineHeight must be non-negative")
-            }
-        }
-        lua_pop(L, 1)
-
-        if lua_getfield(L, idx, "lineSpacing") == LUA_TNUMBER {
-            let theNumber = lua_tonumber(L, -1)
-            if theNumber >= 0.0 {
-                thePS.lineSpacing = CGFloat(theNumber)
-            } else {
-                os_log(.info, "%{public}s", "lineSpacing must be non-negative")
-            }
-        }
-        lua_pop(L, 1)
-
-        if lua_getfield(L, idx, "paragraphSpacing") == LUA_TNUMBER {
-            let theNumber = lua_tonumber(L, -1)
-            if theNumber >= 0.0 {
-                thePS.paragraphSpacing = CGFloat(theNumber)
-            } else {
-                os_log(.info, "%{public}s", "paragraphSpacing must be non-negative")
-            }
-        }
-        lua_pop(L, 1)
-
-        if lua_getfield(L, idx, "paragraphSpacingBefore") == LUA_TNUMBER {
-            let theNumber = lua_tonumber(L, -1)
-            if theNumber >= 0.0 {
-                thePS.paragraphSpacingBefore = CGFloat(theNumber)
-            } else {
-                os_log(.info, "%{public}s", "paragraphSpacingBefore must be non-negative")
-            }
-        }
-        lua_pop(L, 1)
-
-        if lua_getfield(L, idx, "lineHeightMultiple") == LUA_TNUMBER {
-            let theNumber = lua_tonumber(L, -1)
-            if theNumber >= 0.0 {
-                thePS.lineHeightMultiple = CGFloat(theNumber)
-            } else {
-                os_log(.info, "%{public}s", "lineHeightMultiple must be non-negative")
-            }
-        }
-        lua_pop(L, 1)
-
-        if lua_getfield(L, idx, "hyphenationFactor") == LUA_TNUMBER {
-            let theNumber = lua_tonumber(L, -1)
-            if theNumber >= 0.0 && theNumber <= 1.0 {
-                thePS.hyphenationFactor = Float(theNumber)
-            } else {
-                os_log(.info, "%{public}s", "hyphenationFactor must be between 0.0 and 1.0 inclusive")
-            }
-        }
-        lua_pop(L, 1)
-
-        if lua_getfield(L, idx, "tighteningFactorForTruncation") == LUA_TNUMBER {
-            thePS.tighteningFactorForTruncation = Float(lua_tonumber(L, -1))
-        }
-        lua_pop(L, 1)
-
-        if lua_getfield(L, -1, "allowsTighteningForTruncation") == LUA_TBOOLEAN {
-            thePS.allowsDefaultTighteningForTruncation = lua_toboolean(L, -1) != 0
-        }
-        lua_pop(L, 1)
-
-        if lua_getfield(L, idx, "headerLevel") == LUA_TNUMBER {
-            let theNumber = lua_tointeger(L, -1)
-            if theNumber >= 0 && theNumber <= 6 {
-                thePS.headerLevel = Int(theNumber)
-            } else {
-                os_log(.info, "%{public}s", "headerNumber must be between 0 and 6 inclusive")
-            }
-        }
-        lua_pop(L, 1)
-
-        if lua_getfield(L, idx, "tabStops") == LUA_TTABLE {
-            var theTabStops: [NSTextTab] = []
-            var pos: lua_Integer = 1
-            while lua_rawgeti(L, -1, pos) != LUA_TNIL {
-                if lua_type(L, -1) == LUA_TTABLE {
-                    if let tab = table_toNSTextTab(L, at: -1) as? NSTextTab {
-                        theTabStops.append(tab)
-                    }
-                    lua_pop(L, 1)
-                } else {
-                    os_log(.info, "%{public}s", "invalid tapStop at position \(pos): expected table, found \(String(cString: lua_typename(L, lua_type(L, -1))))")
-                }
-                pos += 1
-            }
-            lua_pop(L, 1) // loop terminating nil
-            thePS.tabStops = theTabStops
-        }
-        lua_pop(L, 1)
-    } else {
+    guard lua_type(L, idx) == LUA_TTABLE else {
         os_log(.info, "%{public}s", "invalid paragraphStyle: expected table, found \(String(cString: lua_typename(L, lua_type(L, idx))))")
+        return thePS
     }
+
+    psParseEnumFields(L, at: idx, thePS: thePS)
+    psParseNumericFields(L, at: idx, thePS: thePS)
+    psParseRemainingFields(L, at: idx, thePS: thePS)
+
     return thePS
+}
+
+private func psParseEnumFields(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32, thePS: NSMutableParagraphStyle) {
+    if lua_getfield(L, idx, "alignment") == LUA_TSTRING {
+        let theString = lua_tovalue(L, at: -1) as! String
+        switch theString {
+        case "left":      thePS.alignment = .left
+        case "right":     thePS.alignment = .right
+        case "center":    thePS.alignment = .center
+        case "justified": thePS.alignment = .justified
+        case "natural":   thePS.alignment = .natural
+        default:          os_log(.info, "%{public}s", "invalid alignment specified: \(theString)")
+        }
+    }
+    lua_pop(L, 1)
+
+    if lua_getfield(L, idx, "lineBreak") == LUA_TSTRING {
+        let theString = lua_tovalue(L, at: -1) as! String
+        switch theString {
+        case "charWrap":        thePS.lineBreakMode = .byCharWrapping
+        case "clip":            thePS.lineBreakMode = .byClipping
+        case "truncateHead":    thePS.lineBreakMode = .byTruncatingHead
+        case "truncateTail":    thePS.lineBreakMode = .byTruncatingTail
+        case "truncateMiddle":  thePS.lineBreakMode = .byTruncatingMiddle
+        case "wordWrap":        thePS.lineBreakMode = .byWordWrapping
+        default:                os_log(.info, "%{public}s", "invalid lineBreakMode: \(theString)")
+        }
+    }
+    lua_pop(L, 1)
+
+    if lua_getfield(L, idx, "baseWritingDirection") == LUA_TSTRING {
+        let theString = lua_tovalue(L, at: -1) as! String
+        switch theString {
+        case "leftToRight":  thePS.baseWritingDirection = .leftToRight
+        case "rightToLeft":  thePS.baseWritingDirection = .rightToLeft
+        case "natural":      thePS.baseWritingDirection = .natural
+        default:             os_log(.info, "%{public}s", "invalid baseWritingDirection: \(theString)")
+        }
+    }
+    lua_pop(L, 1)
+}
+
+private func psParseNumericFields(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32, thePS: NSMutableParagraphStyle) {
+    psParseNonNegativeNumber(L, at: idx, field: "defaultTabInterval") { thePS.defaultTabInterval = $0 }
+    psParseNonNegativeNumber(L, at: idx, field: "firstLineHeadIndent") { thePS.firstLineHeadIndent = $0 }
+    psParseNonNegativeNumber(L, at: idx, field: "headIndent") { thePS.headIndent = $0 }
+
+    if lua_getfield(L, idx, "tailIndent") == LUA_TNUMBER {
+        thePS.tailIndent = CGFloat(lua_tonumber(L, -1))
+    }
+    lua_pop(L, 1)
+
+    psParseNonNegativeNumber(L, at: idx, field: "maximumLineHeight") { thePS.maximumLineHeight = $0 }
+    psParseNonNegativeNumber(L, at: idx, field: "minimumLineHeight") { thePS.minimumLineHeight = $0 }
+    psParseNonNegativeNumber(L, at: idx, field: "lineSpacing") { thePS.lineSpacing = $0 }
+    psParseNonNegativeNumber(L, at: idx, field: "paragraphSpacing") { thePS.paragraphSpacing = $0 }
+    psParseNonNegativeNumber(L, at: idx, field: "paragraphSpacingBefore") { thePS.paragraphSpacingBefore = $0 }
+    psParseNonNegativeNumber(L, at: idx, field: "lineHeightMultiple") { thePS.lineHeightMultiple = $0 }
+
+    if lua_getfield(L, idx, "hyphenationFactor") == LUA_TNUMBER {
+        let theNumber = lua_tonumber(L, -1)
+        if theNumber >= 0.0 && theNumber <= 1.0 {
+            thePS.hyphenationFactor = Float(theNumber)
+        } else {
+            os_log(.info, "%{public}s", "hyphenationFactor must be between 0.0 and 1.0 inclusive")
+        }
+    }
+    lua_pop(L, 1)
+}
+
+private func psParseNonNegativeNumber(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32,
+                                       field: String, apply: (CGFloat) -> Void) {
+    if lua_getfield(L, idx, field) == LUA_TNUMBER {
+        let theNumber = lua_tonumber(L, -1)
+        if theNumber >= 0.0 {
+            apply(CGFloat(theNumber))
+        } else {
+            os_log(.info, "%{public}s", "\(field) must be non-negative")
+        }
+    }
+    lua_pop(L, 1)
+}
+
+private func psParseRemainingFields(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32, thePS: NSMutableParagraphStyle) {
+    if lua_getfield(L, idx, "tighteningFactorForTruncation") == LUA_TNUMBER {
+        thePS.tighteningFactorForTruncation = Float(lua_tonumber(L, -1))
+    }
+    lua_pop(L, 1)
+
+    if lua_getfield(L, -1, "allowsTighteningForTruncation") == LUA_TBOOLEAN {
+        thePS.allowsDefaultTighteningForTruncation = lua_toboolean(L, -1) != 0
+    }
+    lua_pop(L, 1)
+
+    if lua_getfield(L, idx, "headerLevel") == LUA_TNUMBER {
+        let theNumber = lua_tointeger(L, -1)
+        if theNumber >= 0 && theNumber <= 6 {
+            thePS.headerLevel = Int(theNumber)
+        } else {
+            os_log(.info, "%{public}s", "headerNumber must be between 0 and 6 inclusive")
+        }
+    }
+    lua_pop(L, 1)
+
+    psParseTabStops(L, at: idx, thePS: thePS)
+}
+
+private func psParseTabStops(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32, thePS: NSMutableParagraphStyle) {
+    if lua_getfield(L, idx, "tabStops") == LUA_TTABLE {
+        var theTabStops: [NSTextTab] = []
+        var pos: lua_Integer = 1
+        while lua_rawgeti(L, -1, pos) != LUA_TNIL {
+            if lua_type(L, -1) == LUA_TTABLE {
+                if let tab = table_toNSTextTab(L, at: -1) as? NSTextTab {
+                    theTabStops.append(tab)
+                }
+                lua_pop(L, 1)
+            } else {
+                os_log(.info, "%{public}s", "invalid tapStop at position \(pos): expected table, found \(String(cString: lua_typename(L, lua_type(L, -1))))")
+            }
+            pos += 1
+        }
+        lua_pop(L, 1) // loop terminating nil
+        thePS.tabStops = theTabStops
+    }
+    lua_pop(L, 1)
 }
 
 @discardableResult
@@ -1727,7 +1691,8 @@ private func userdata_gc(_ L: LuaState) throws -> CInt {
 
 @_cdecl("luaopen_hs_libstyledtext")
 public func luaopen_hs_libstyledtext(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    runEntryPoint(L) { L in
+    precondition(L != nil, "lua_State must not be nil")
+    return runEntryPoint(L) { L in
         // Register userdata metatable
         luaL_newmetatable(L, USERDATA_TAG)
         lua_pushvalue(L, -1)

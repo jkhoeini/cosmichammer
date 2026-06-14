@@ -18,6 +18,16 @@ private enum SocketRole: String {
 
 private let USERDATA_TAG = "hs.socket"
 
+/// Maximum size for the socket read buffer (10 MB).  If accumulated data
+/// exceeds this without producing a delimiter match the read is abandoned
+/// and an error is logged.
+private let kMaxSocketBufferSize = 10_485_760
+
+/// Maximum number of concurrently connected client sockets a server socket
+/// will accept.  New connections beyond this limit are rejected with an
+/// error log.
+private let kMaxConnectedSockets = 1000
+
 private func socketCheckPort(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> UInt16 {
     let port = luaL_checkinteger(L, idx)
     luaL_argcheck(L, port >= 0 && port <= 65_535, idx, "port must be between 0 and 65535")
@@ -165,6 +175,16 @@ private class HSAsyncTcpSocket {
     // MARK: Client connect (host:port)
 
     func connect(toHost host: String, onPort port: UInt16, withTimeout timeout: TimeInterval) throws {
+        guard !host.isEmpty else {
+            throw NSError(domain: "HSAsyncTcpSocket", code: 2, userInfo: [NSLocalizedDescriptionKey: "TCP connect host must not be empty"])
+        }
+        guard port > 0 else {
+            throw NSError(domain: "HSAsyncTcpSocket", code: 3, userInfo: [NSLocalizedDescriptionKey: "TCP connect port must be greater than zero"])
+        }
+        guard role == .default || role == .client else {
+            throw NSError(domain: "HSAsyncTcpSocket", code: 4, userInfo: [NSLocalizedDescriptionKey: "Cannot connect a server socket"])
+        }
+
         let tcpOptions = NWProtocolTCP.Options()
         let params = NWParameters(tls: nil, tcp: tcpOptions)
         if !isIPv4Enabled { params.requiredInterfaceType = .other } // will refine below
@@ -220,6 +240,13 @@ private class HSAsyncTcpSocket {
 
     func connect(toURL url: URL, withTimeout timeout: TimeInterval) throws {
         let path = url.path
+        guard !path.isEmpty else {
+            throw NSError(domain: "HSAsyncTcpSocket", code: 5, userInfo: [NSLocalizedDescriptionKey: "TCP Unix domain socket path must not be empty"])
+        }
+        guard role == .default || role == .client else {
+            throw NSError(domain: "HSAsyncTcpSocket", code: 4, userInfo: [NSLocalizedDescriptionKey: "Cannot connect a server socket to a Unix path"])
+        }
+
         let params = NWParameters(tls: nil, tcp: NWProtocolTCP.Options())
         let endpoint = NWEndpoint.unix(path: path)
         let conn = NWConnection(to: endpoint, using: params)
@@ -270,16 +297,35 @@ private class HSAsyncTcpSocket {
     // MARK: Server listen (port)
 
     func accept(onPort port: UInt16) throws {
+        guard role == .default else {
+            throw NSError(domain: "HSAsyncTcpSocket", code: 10, userInfo: [NSLocalizedDescriptionKey: "Socket already has a role assigned: \(role.rawValue)"])
+        }
+        guard !isConnectedFlag else {
+            throw NSError(domain: "HSAsyncTcpSocket", code: 11, userInfo: [NSLocalizedDescriptionKey: "Cannot listen on a connected socket"])
+        }
+
         let tcpOptions = NWProtocolTCP.Options()
         let params = NWParameters(tls: nil, tcp: tcpOptions)
         let nwListener = try NWListener(using: params, on: NWEndpoint.Port(rawValue: port)!)
         setupListener(nwListener)
+
+        assert(role == .server, "Role must be server after accept")
     }
 
     // MARK: Server listen (Unix domain socket)
 
     func accept(onURL url: URL) throws {
         let path = url.path
+        guard !path.isEmpty else {
+            throw NSError(domain: "HSAsyncTcpSocket", code: 12, userInfo: [NSLocalizedDescriptionKey: "Unix domain socket path must not be empty"])
+        }
+        guard role == .default else {
+            throw NSError(domain: "HSAsyncTcpSocket", code: 10, userInfo: [NSLocalizedDescriptionKey: "Socket already has a role assigned: \(role.rawValue)"])
+        }
+        guard !isConnectedFlag else {
+            throw NSError(domain: "HSAsyncTcpSocket", code: 11, userInfo: [NSLocalizedDescriptionKey: "Cannot listen on a connected socket"])
+        }
+
         // Remove stale socket file if present
         if FileManager.default.fileExists(atPath: path) {
             try FileManager.default.removeItem(atPath: path)
@@ -332,6 +378,10 @@ private class HSAsyncTcpSocket {
 
     /// POSIX-based Unix domain socket listener, since NWListener doesn't support Unix paths directly.
     private func acceptUnixSocket(path: String) throws {
+        guard !path.isEmpty else {
+            throw NSError(domain: "HSAsyncTcpSocket", code: 12, userInfo: [NSLocalizedDescriptionKey: "Unix socket path must not be empty"])
+        }
+
         // Remove stale socket file
         if FileManager.default.fileExists(atPath: path) {
             try FileManager.default.removeItem(atPath: path)
@@ -398,6 +448,8 @@ private class HSAsyncTcpSocket {
     private var unixAcceptSource: DispatchSourceRead?
 
     private func setupListener(_ nwListener: NWListener) {
+        assert(listener == nil, "Listener already set; cannot setup a second listener")
+
         nwListener.stateUpdateHandler = { [weak self] state in
             guard let self = self else { return }
             switch state {
@@ -439,6 +491,16 @@ private class HSAsyncTcpSocket {
     private func handleNewConnection(_ newConn: NWConnection) {
         os_log(.debug,"TCP client connected")
 
+        lock.lock()
+        let currentCount = connectedSockets.count
+        lock.unlock()
+
+        if currentCount >= kMaxConnectedSockets {
+            os_log(.error, "TCP server at max connected sockets (%d) — rejecting new connection", kMaxConnectedSockets)
+            newConn.cancel()
+            return
+        }
+
         newConn.stateUpdateHandler = { [weak self, weak newConn] state in
             guard let self = self, let conn = newConn else { return }
             switch state {
@@ -466,6 +528,9 @@ private class HSAsyncTcpSocket {
     // MARK: Disconnect
 
     func disconnect() {
+        let previousRole = role
+        _ = previousRole // suppress unused warning; used in postcondition below
+
         if role == .server {
             listener?.cancel()
             listener = nil
@@ -493,11 +558,15 @@ private class HSAsyncTcpSocket {
             isConnectedFlag = false
         }
         role = .default
+
+        assert(role == .default, "Role must be reset to default after disconnect")
+        assert(!isConnectedFlag || previousRole == .server, "isConnectedFlag should be false after disconnect for non-server sockets")
     }
 
     // MARK: Read data (length-based)
 
     func readData(toLength length: UInt, withTimeout timeout: TimeInterval, tag: Int) {
+        guard length > 0 else { return }
         guard let conn = connection else { return }
         receiveExactly(from: conn, length: Int(length), timeout: timeout, buffer: Data()) { [weak self] data in
             guard let self = self else { return }
@@ -507,6 +576,12 @@ private class HSAsyncTcpSocket {
 
     /// Read exactly `length` bytes from a connection, accumulating into buffer.
     private func receiveExactly(from conn: NWConnection, length: Int, timeout: TimeInterval, buffer: Data, completion: @escaping (Data) -> Void) {
+        guard length > 0 else {
+            completion(buffer)
+            return
+        }
+        assert(buffer.count <= length, "Buffer already exceeds requested length")
+
         let remaining = length - buffer.count
         guard remaining > 0 else {
             completion(buffer)
@@ -563,6 +638,7 @@ private class HSAsyncTcpSocket {
     // MARK: Read data (delimiter-based)
 
     func readData(to separator: Data, withTimeout timeout: TimeInterval, tag: Int) {
+        guard !separator.isEmpty else { return }
         guard let conn = connection else { return }
         receiveUntilDelimiter(from: conn, separator: separator, timeout: timeout, buffer: &readBuffer) { [weak self] data in
             guard let self = self else { return }
@@ -571,6 +647,8 @@ private class HSAsyncTcpSocket {
     }
 
     private func receiveUntilDelimiter(from conn: NWConnection, separator: Data, timeout: TimeInterval, buffer: inout Data, completion: @escaping (Data) -> Void) {
+        guard !separator.isEmpty else { return }
+
         // Check if delimiter is already in existing buffer
         if let range = buffer.range(of: separator) {
             let endIndex = range.upperBound
@@ -597,6 +675,11 @@ private class HSAsyncTcpSocket {
                 return
             }
             if let content = content {
+                if self.readBuffer.count + content.count > kMaxSocketBufferSize {
+                    os_log(.error, "TCP read buffer exceeded %d bytes — abandoning read", kMaxSocketBufferSize)
+                    self.readBuffer.removeAll()
+                    return
+                }
                 self.readBuffer.append(content)
             }
             if let range = self.readBuffer.range(of: separator) {
@@ -655,6 +738,11 @@ private class HSAsyncTcpSocket {
             }
             var buf = self.clientReadBuffers[clientId] ?? Data()
             if let content = content {
+                if buf.count + content.count > kMaxSocketBufferSize {
+                    os_log(.error, "TCP client read buffer exceeded %d bytes — abandoning read for client", kMaxSocketBufferSize)
+                    self.clientReadBuffers[clientId] = Data()
+                    return
+                }
                 buf.append(content)
             }
             self.clientReadBuffers[clientId] = buf
@@ -679,6 +767,7 @@ private class HSAsyncTcpSocket {
     // MARK: Write data
 
     func write(_ data: Data, withTimeout timeout: TimeInterval, tag: Int) {
+        guard !data.isEmpty else { return }
         guard let conn = connection else { return }
         sendData(data, on: conn, timeout: timeout) { [weak self] in
             guard let self = self else { return }
@@ -689,6 +778,9 @@ private class HSAsyncTcpSocket {
     }
 
     func writeToClients(_ data: Data, withTimeout timeout: TimeInterval, tag: Int) {
+        guard !data.isEmpty else { return }
+        guard role == .server else { return }
+
         lock.lock()
         let clients = connectedSockets
         lock.unlock()
@@ -724,6 +816,7 @@ private class HSAsyncTcpSocket {
     // MARK: TLS
 
     func startTLS(verify: Bool, peerName: String?) {
+        guard role != .server else { return }
         guard let conn = connection else { return }
 
         let tlsOptions = NWProtocolTLS.Options()
@@ -814,6 +907,8 @@ private class HSAsyncTcpSocket {
 
     /// Build a binary sockaddr from host + port (for info table compatibility).
     private func sockaddrData(host: String, port: UInt16) -> Data {
+        assert(!host.isEmpty, "sockaddrData: host must not be empty")
+
         if host.contains(":") {
             // IPv6
             var addr = sockaddr_in6()
@@ -878,14 +973,11 @@ private func socket_new(_ L: LuaState) throws -> CInt {
     }
 
     lua_getglobal(L, "require")
-
-
     L.push("hs.socket")
-
-
     lua_pcall(L, 1, 1, 0)
     lua_getfield(L, -1, "timeout")
     asyncSocket.socketTimeout = lua_tonumber(L, -1)
+    lua_pop(L, 2) // pop timeout value and module table
 
     asyncSocket.generation = lua_currentStateGeneration()
     L.push(userdata: asyncSocket)
@@ -923,6 +1015,9 @@ private func socket_new(_ L: LuaState) throws -> CInt {
 /// AF_INET6 | 30 | IPv6
 ///
 private func socket_parseAddress(_ L: LuaState) throws -> CInt {
+    let stackBase = lua_gettop(L)
+    assert(stackBase >= 1, "parseAddress requires at least 1 argument")
+
     let address = lua_checkdata(L, at: 1)
 
     // Parse the sockaddr structure directly
@@ -1000,6 +1095,9 @@ private func socket_parseAddress(_ L: LuaState) throws -> CInt {
 ///  * Either a host/port pair OR a Unix domain socket path must be supplied. If no port is passed, the first parameter is assumed to be a path to the socket file.
 ///
 private func socket_connect(_ L: LuaState) throws -> CInt {
+    let stackBase = lua_gettop(L)
+    assert(stackBase >= 2, "connect requires at least 2 arguments (self, host/path)")
+
     let asyncSocket: HSAsyncTcpSocket = try L.checkArgument(1)
 
     if lua_type(L, 3) == LUA_TNUMBER {
@@ -1118,6 +1216,9 @@ private func socket_disconnect(_ L: LuaState) throws -> CInt {
 ///  * If called on a listening socket with multiple connections, data is read from each of them.
 ///
 private func socket_read(_ L: LuaState) throws -> CInt {
+    let stackBase = lua_gettop(L)
+    assert(stackBase >= 2, "read requires at least 2 arguments (self, delimiter)")
+
     let asyncSocket: HSAsyncTcpSocket = try L.checkArgument(1)
     let tag: Int = lua_type(L, 3) == LUA_TNUMBER ? Int(lua_tointeger(L, 3)) : -1
 
@@ -1164,6 +1265,9 @@ private func socket_read(_ L: LuaState) throws -> CInt {
 ///  * If called on a listening socket with multiple connections, data is broadcast to all connected sockets.
 ///
 private func socket_write(_ L: LuaState) throws -> CInt {
+    let stackBase = lua_gettop(L)
+    assert(stackBase >= 2, "write requires at least 2 arguments (self, message)")
+
     let asyncSocket: HSAsyncTcpSocket = try L.checkArgument(1)
     let message = lua_checkdata(L, at: 2)
     let tag: Int = lua_type(L, 3) == LUA_TNUMBER ? Int(lua_tointeger(L, 3)) : -1
@@ -1379,6 +1483,9 @@ private func socket_info(_ L: LuaState) throws -> CInt {
 
 @_cdecl("luaopen_hs_libsocket")
 public func luaopen_hs_libsocket(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    precondition(L != nil, "lua_State must not be nil")
+    let stackBase = lua_gettop(L)
+
     // Register idiomatic Metatable<HSAsyncTcpSocket> with LuaSwift.
     L.register(Metatable<HSAsyncTcpSocket>(
         fields: [
@@ -1463,5 +1570,6 @@ public func luaopen_hs_libsocket(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
     L.push(socket_parseAddress)
     lua_setfield(L, -2, "parseAddress")
 
+    assert(lua_gettop(L) == stackBase + 1, "luaopen_hs_libsocket must leave exactly 1 value (module table) on the stack")
     return 1
 }

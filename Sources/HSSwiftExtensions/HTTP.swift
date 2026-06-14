@@ -5,6 +5,16 @@ import Cocoa
 import os.log
 import WebKit
 
+// MARK: - Constants
+
+/// Maximum allowed HTTP response body size (100 MB).  If accumulated
+/// `receivedData` exceeds this the connection is aborted and an error logged.
+private let kMaxHTTPResponseSize = 104_857_600
+
+/// Maximum number of concurrent async HTTP requests (delegates).  New requests
+/// beyond this limit are rejected with an error log.
+private let kMaxConcurrentHTTPDelegates = 1000
+
 // MARK: - Module State
 
 private var delegates: NSMutableArray = NSMutableArray()
@@ -41,6 +51,19 @@ private func responseBodyToId(_ httpResponse: HTTPURLResponse?, _ bodyData: Data
     }
 
     func connection(_ connection: NSURLConnection, didReceive data: Data) {
+        if receivedData.length + data.count > kMaxHTTPResponseSize {
+            os_log(.error, "HTTP response exceeded max size of %d bytes — aborting connection", kMaxHTTPResponseSize)
+            connection.cancel()
+            if lua_isStateGenerationValid(generation), let fn = fn {
+                let L = lua_getCurrentState()!
+                fn.push(onto: L)
+                L.push(-1)
+                lua_pushany(L, "HTTP response exceeded maximum allowed size (\(kMaxHTTPResponseSize) bytes)" as NSString)
+                if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
+            }
+            remove_delegate(self)
+            return
+        }
         receivedData.append(data)
     }
 
@@ -97,8 +120,13 @@ private func responseBodyToId(_ httpResponse: HTTPURLResponse?, _ bodyData: Data
 // MARK: - Delegate Storage
 
 /// Store a created delegate so we can cancel it on garbage collection
-private func store_delegate(_ delegate: ConnectionDelegate) {
+private func store_delegate(_ delegate: ConnectionDelegate) -> Bool {
+    if delegates.count >= kMaxConcurrentHTTPDelegates {
+        os_log(.error, "HTTP async request limit (%d) reached — rejecting new request", kMaxConcurrentHTTPDelegates)
+        return false
+    }
     delegates.add(delegate)
+    return true
 }
 
 /// Remove a delegate either if loading has finished or if it needs to be garbage collected.
@@ -224,7 +252,10 @@ private func http_doAsyncRequest(_ L: LuaState) throws -> CInt {
     delegate.fn = L.ref(index: 5)
     delegate.generation = lua_currentStateGeneration()
 
-    store_delegate(delegate)
+    if !store_delegate(delegate) {
+        delegate.fn = nil
+        return 0
+    }
 
     let connection = NSURLConnection(request: request as URLRequest, delegate: delegate)
     delegate.connection = connection
@@ -456,91 +487,9 @@ private func table_toNSURLRequest(_ L: UnsafeMutablePointer<lua_State>!, _ idx: 
         }
         lua_pop(L, 1)
 
-        if lua_getfield(L, -1, "mainDocumentURL") == LUA_TSTRING {
-            request.mainDocumentURL = URL(string: lua_tovalue(L, at: -1) as! String)
-        }
-        lua_pop(L, 1)
-
-        if lua_getfield(L, -1, "HTTPBody") == LUA_TSTRING {
-            var size: Int = 0
-            let block = lua_tolstring(L, -1, &size)
-            request.httpBody = Data(bytes: block!, count: size)
-        }
-        lua_pop(L, 1)
-
-        if lua_getfield(L, -1, "HTTPMethod") == LUA_TSTRING {
-            request.httpMethod = (lua_tovalue(L, at: -1) as? String) ?? "GET"
-        }
-        lua_pop(L, 1)
-
-        if lua_getfield(L, -1, "timeoutInterval") == LUA_TNUMBER {
-            request.timeoutInterval = lua_tonumber(L, -1)
-        }
-        lua_pop(L, 1)
-
-        if lua_getfield(L, -1, "HTTPShouldHandleCookies") == LUA_TBOOLEAN {
-            request.httpShouldHandleCookies = lua_toboolean(L, -1) != 0
-        }
-        lua_pop(L, 1)
-
-        if lua_getfield(L, -1, "HTTPShouldUsePipelining") == LUA_TBOOLEAN {
-            request.httpShouldUsePipelining = lua_toboolean(L, -1) != 0
-        }
-        lua_pop(L, 1)
-
-        if lua_getfield(L, -1, "cachePolicy") == LUA_TSTRING {
-            let cp: String = lua_tovalue(L, at: -1) as! String
-            switch cp {
-            case "protocolCachePolicy": request.cachePolicy = .useProtocolCachePolicy
-            case "ignoreLocalCache":    request.cachePolicy = .reloadIgnoringLocalCacheData
-            case "returnCacheOrLoad":   request.cachePolicy = .returnCacheDataElseLoad
-            case "returnCacheDontLoad": request.cachePolicy = .returnCacheDataDontLoad
-            default: break
-            }
-        }
-        lua_pop(L, 1)
-
-        if lua_getfield(L, -1, "networkServiceType") == LUA_TSTRING {
-            let nst: String = lua_tovalue(L, at: -1) as! String
-            switch nst {
-            case "default":    request.networkServiceType = .default
-            case "VoIP":       request.networkServiceType = .voip
-            case "video":      request.networkServiceType = .video
-            case "background": request.networkServiceType = .background
-            case "voice":      request.networkServiceType = .voice
-            default: break
-            }
-        }
-        lua_pop(L, 1)
-
-        if lua_getfield(L, -1, "HTTPHeaderFields") == LUA_TTABLE {
-            if var fields = lua_tovalue(L, at: -1) as? [String: Any] {
-                var toRemove = [String]()
-
-                for (key, value) in fields {
-                    if let numValue = value as? NSNumber {
-                        fields[key] = numValue.stringValue
-                    }
-
-                    guard let strValue = fields[key] as? String else {
-                        toRemove.append(key)
-                        continue
-                    }
-
-                    let reservedHeaders = ["Authorization", "Connection", "Host", "WWW-Authenticate", "Content-Length"]
-                    for reserved in reservedHeaders {
-                        if key.caseInsensitiveCompare(reserved) == .orderedSame {
-                            toRemove.append(key)
-                            break
-                        }
-                    }
-                }
-
-                for item in toRemove { fields.removeValue(forKey: item) }
-                request.allHTTPHeaderFields = fields as? [String: String]
-            }
-        }
-        lua_pop(L, 1)
+        httpParseBasicFields(L, request: &request)
+        httpParsePolicyFields(L, request: &request)
+        httpParseHeaderFields(L, request: &request)
 
     case LUA_TSTRING:
         request = NSMutableURLRequest(url: URL(string: lua_tovalue(L, at: idx) as! String)!)
@@ -553,6 +502,98 @@ private func table_toNSURLRequest(_ L: UnsafeMutablePointer<lua_State>!, _ idx: 
 
     lua_pop(L, 1)
     return request
+}
+
+private func httpParseBasicFields(_ L: UnsafeMutablePointer<lua_State>!, request: inout NSMutableURLRequest) {
+    if lua_getfield(L, -1, "mainDocumentURL") == LUA_TSTRING {
+        request.mainDocumentURL = URL(string: lua_tovalue(L, at: -1) as! String)
+    }
+    lua_pop(L, 1)
+
+    if lua_getfield(L, -1, "HTTPBody") == LUA_TSTRING {
+        var size: Int = 0
+        let block = lua_tolstring(L, -1, &size)
+        request.httpBody = Data(bytes: block!, count: size)
+    }
+    lua_pop(L, 1)
+
+    if lua_getfield(L, -1, "HTTPMethod") == LUA_TSTRING {
+        request.httpMethod = (lua_tovalue(L, at: -1) as? String) ?? "GET"
+    }
+    lua_pop(L, 1)
+
+    if lua_getfield(L, -1, "timeoutInterval") == LUA_TNUMBER {
+        request.timeoutInterval = lua_tonumber(L, -1)
+    }
+    lua_pop(L, 1)
+
+    if lua_getfield(L, -1, "HTTPShouldHandleCookies") == LUA_TBOOLEAN {
+        request.httpShouldHandleCookies = lua_toboolean(L, -1) != 0
+    }
+    lua_pop(L, 1)
+
+    if lua_getfield(L, -1, "HTTPShouldUsePipelining") == LUA_TBOOLEAN {
+        request.httpShouldUsePipelining = lua_toboolean(L, -1) != 0
+    }
+    lua_pop(L, 1)
+}
+
+private func httpParsePolicyFields(_ L: UnsafeMutablePointer<lua_State>!, request: inout NSMutableURLRequest) {
+    if lua_getfield(L, -1, "cachePolicy") == LUA_TSTRING {
+        let cp: String = lua_tovalue(L, at: -1) as! String
+        switch cp {
+        case "protocolCachePolicy": request.cachePolicy = .useProtocolCachePolicy
+        case "ignoreLocalCache":    request.cachePolicy = .reloadIgnoringLocalCacheData
+        case "returnCacheOrLoad":   request.cachePolicy = .returnCacheDataElseLoad
+        case "returnCacheDontLoad": request.cachePolicy = .returnCacheDataDontLoad
+        default: break
+        }
+    }
+    lua_pop(L, 1)
+
+    if lua_getfield(L, -1, "networkServiceType") == LUA_TSTRING {
+        let nst: String = lua_tovalue(L, at: -1) as! String
+        switch nst {
+        case "default":    request.networkServiceType = .default
+        case "VoIP":       request.networkServiceType = .voip
+        case "video":      request.networkServiceType = .video
+        case "background": request.networkServiceType = .background
+        case "voice":      request.networkServiceType = .voice
+        default: break
+        }
+    }
+    lua_pop(L, 1)
+}
+
+private func httpParseHeaderFields(_ L: UnsafeMutablePointer<lua_State>!, request: inout NSMutableURLRequest) {
+    if lua_getfield(L, -1, "HTTPHeaderFields") == LUA_TTABLE {
+        if var fields = lua_tovalue(L, at: -1) as? [String: Any] {
+            var toRemove = [String]()
+
+            for (key, value) in fields {
+                if let numValue = value as? NSNumber {
+                    fields[key] = numValue.stringValue
+                }
+
+                guard let strValue = fields[key] as? String else {
+                    toRemove.append(key)
+                    continue
+                }
+
+                let reservedHeaders = ["Authorization", "Connection", "Host", "WWW-Authenticate", "Content-Length"]
+                for reserved in reservedHeaders {
+                    if key.caseInsensitiveCompare(reserved) == .orderedSame {
+                        toRemove.append(key)
+                        break
+                    }
+                }
+            }
+
+            for item in toRemove { fields.removeValue(forKey: item) }
+            request.allHTTPHeaderFields = fields as? [String: String]
+        }
+    }
+    lua_pop(L, 1)
 }
 
 // MARK: - GC

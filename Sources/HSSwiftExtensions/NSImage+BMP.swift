@@ -33,17 +33,38 @@ extension NSImage {
     }
 
     func bmpData(withBackgroundColor backgroundColor: NSColor?) -> Data {
-        // BMP structures — must be packed to 2-byte alignment.
-        // Swift structs do not support #pragma pack, so we write the header bytes manually.
-
-        let BI_RGB: UInt32 = 0
-        let BM: UInt16 = 19778
-
-        // Create an NSBitmapImageRep locked to our size
         let pixelsWide = Int(self.size.width)
         let pixelsHigh = Int(self.size.height)
 
-        guard let bitmapImageRep = NSBitmapImageRep(
+        guard let bitmapImageRep = bmpCreateBitmapRep(pixelsWide: pixelsWide, pixelsHigh: pixelsHigh) else {
+            return Data()
+        }
+
+        bmpRenderIntoBitmapRep(bitmapImageRep)
+
+        assert(bitmapImageRep.pixelsWide < Int(Int32.max))
+        assert(bitmapImageRep.pixelsHigh < Int(Int32.max))
+
+        let width = UInt32(bitmapImageRep.pixelsWide)
+        let height = UInt32(bitmapImageRep.pixelsHigh)
+        guard let image = bitmapImageRep.bitmapData else { return Data() }
+        let samplesPerPixel = UInt32(bitmapImageRep.samplesPerPixel)
+        let extrabytes = (4 - (width * 3) % 4) % 4
+        let bytesize = (width * 3 + extrabytes) * height
+
+        var mutableBMPData = Data()
+        bmpAppendFileHeader(&mutableBMPData)
+        bmpAppendInfoHeader(&mutableBMPData, width: width, height: height, bytesize: bytesize)
+        bmpAppendPixelData(&mutableBMPData, image: image, width: width, height: height,
+                           samplesPerPixel: samplesPerPixel, extrabytes: extrabytes, bytesize: bytesize)
+
+        return mutableBMPData
+    }
+
+    // MARK: - BMP private helpers
+
+    private func bmpCreateBitmapRep(pixelsWide: Int, pixelsHigh: Int) -> NSBitmapImageRep? {
+        return NSBitmapImageRep(
             bitmapDataPlanes: nil,
             pixelsWide: pixelsWide,
             pixelsHigh: pixelsHigh,
@@ -54,77 +75,68 @@ extension NSImage {
             colorSpaceName: .calibratedRGB,
             bytesPerRow: pixelsWide * 4,
             bitsPerPixel: 32
-        ) else {
-            return Data()
-        }
+        )
+    }
 
+    private func bmpRenderIntoBitmapRep(_ bitmapImageRep: NSBitmapImageRep) {
         let ctx = NSGraphicsContext(bitmapImageRep: bitmapImageRep)
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = ctx
-
-        // Render our image into the bitmaprep
         self.draw(at: .zero, from: .zero, operation: .copy, fraction: 1.0)
         ctx?.flushGraphics()
-
         NSGraphicsContext.restoreGraphicsState()
+    }
 
-        // Can't export huge images
-        assert(bitmapImageRep.pixelsWide < Int(Int32.max))
-        assert(bitmapImageRep.pixelsHigh < Int(Int32.max))
-
-        let width = UInt32(bitmapImageRep.pixelsWide)
-        let height = UInt32(bitmapImageRep.pixelsHigh)
-        guard let image = bitmapImageRep.bitmapData else { return Data() }
-        let samplesPerPixel = UInt32(bitmapImageRep.samplesPerPixel)
-
-        let extrabytes = (4 - (width * 3) % 4) % 4
-        let bytesize = (width * 3 + extrabytes) * height
-
-        var mutableBMPData = Data()
-
-        // --- BITMAPFILEHEADER (14 bytes, packed to 2-byte alignment) ---
-        // bfType (2), bfSize (4), bfReserved1 (2), bfReserved2 (2), bfOffBits (4)
+    private func bmpAppendFileHeader(_ data: inout Data) {
+        // BMP structures — must be packed to 2-byte alignment.
+        // BITMAPFILEHEADER (14 bytes): bfType (2), bfSize (4), bfReserved1 (2), bfReserved2 (2), bfOffBits (4)
         let bitmapFileHeaderSize: UInt32 = 14
         let bitmapInfoHeaderSize: UInt32 = 40
 
-        var bfType = BM.littleEndian
+        var bfType = UInt16(19778).littleEndian
         var bfSize = UInt32(0).littleEndian
         var bfReserved1 = UInt16(0).littleEndian
         var bfReserved2 = UInt16(0).littleEndian
         var bfOffBits = (bitmapFileHeaderSize + bitmapInfoHeaderSize).littleEndian
 
-        mutableBMPData.append(Data(bytes: &bfType, count: 2))
-        mutableBMPData.append(Data(bytes: &bfSize, count: 4))
-        mutableBMPData.append(Data(bytes: &bfReserved1, count: 2))
-        mutableBMPData.append(Data(bytes: &bfReserved2, count: 2))
-        mutableBMPData.append(Data(bytes: &bfOffBits, count: 4))
+        data.append(Data(bytes: &bfType, count: 2))
+        data.append(Data(bytes: &bfSize, count: 4))
+        data.append(Data(bytes: &bfReserved1, count: 2))
+        data.append(Data(bytes: &bfReserved2, count: 2))
+        data.append(Data(bytes: &bfOffBits, count: 4))
+    }
 
-        // --- BITMAPINFOHEADER (40 bytes) ---
+    private func bmpAppendInfoHeader(_ data: inout Data, width: UInt32, height: UInt32, bytesize: UInt32) {
+        // BITMAPINFOHEADER (40 bytes)
+        let bitmapInfoHeaderSize: UInt32 = 40
         var biSize = bitmapInfoHeaderSize.littleEndian
         var biWidth = width.littleEndian
         var biHeight = height.littleEndian
         var biPlanes = UInt16(1).littleEndian
         var biBitCount = UInt16(24).littleEndian
-        var biCompression = BI_RGB.littleEndian
+        var biCompression = UInt32(0).littleEndian  // BI_RGB
         var biSizeImage = bytesize.littleEndian
         var biXPelsPerMeter = UInt32(0).littleEndian
         var biYPelsPerMeter = UInt32(0).littleEndian
         var biClrUsed = UInt32(0).littleEndian
         var biClrImportant = UInt32(0).littleEndian
 
-        mutableBMPData.append(Data(bytes: &biSize, count: 4))
-        mutableBMPData.append(Data(bytes: &biWidth, count: 4))
-        mutableBMPData.append(Data(bytes: &biHeight, count: 4))
-        mutableBMPData.append(Data(bytes: &biPlanes, count: 2))
-        mutableBMPData.append(Data(bytes: &biBitCount, count: 2))
-        mutableBMPData.append(Data(bytes: &biCompression, count: 4))
-        mutableBMPData.append(Data(bytes: &biSizeImage, count: 4))
-        mutableBMPData.append(Data(bytes: &biXPelsPerMeter, count: 4))
-        mutableBMPData.append(Data(bytes: &biYPelsPerMeter, count: 4))
-        mutableBMPData.append(Data(bytes: &biClrUsed, count: 4))
-        mutableBMPData.append(Data(bytes: &biClrImportant, count: 4))
+        data.append(Data(bytes: &biSize, count: 4))
+        data.append(Data(bytes: &biWidth, count: 4))
+        data.append(Data(bytes: &biHeight, count: 4))
+        data.append(Data(bytes: &biPlanes, count: 2))
+        data.append(Data(bytes: &biBitCount, count: 2))
+        data.append(Data(bytes: &biCompression, count: 4))
+        data.append(Data(bytes: &biSizeImage, count: 4))
+        data.append(Data(bytes: &biXPelsPerMeter, count: 4))
+        data.append(Data(bytes: &biYPelsPerMeter, count: 4))
+        data.append(Data(bytes: &biClrUsed, count: 4))
+        data.append(Data(bytes: &biClrImportant, count: 4))
+    }
 
-        // Allocate temporary storage for the padded image
+    private func bmpAppendPixelData(_ data: inout Data, image: UnsafeMutablePointer<UInt8>,
+                                     width: UInt32, height: UInt32, samplesPerPixel: UInt32,
+                                     extrabytes: UInt32, bytesize: UInt32) {
         let paddedImage = UnsafeMutablePointer<UInt8>.allocate(capacity: Int(bytesize))
         paddedImage.initialize(repeating: 0, count: Int(bytesize))
 
@@ -141,9 +153,7 @@ extension NSImage {
             }
         }
 
-        mutableBMPData.append(paddedImage, count: Int(bytesize))
+        data.append(paddedImage, count: Int(bytesize))
         paddedImage.deallocate()
-
-        return mutableBMPData
     }
 }

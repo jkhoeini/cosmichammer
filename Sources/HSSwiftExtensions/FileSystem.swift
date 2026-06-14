@@ -29,6 +29,13 @@ import os.log
 
 private let LFS_MAXPATHLEN = Int(MAXPATHLEN)
 
+// TigerStyle bounds: directory traversal limits
+private let kMaxDirectoryTraversalEntries = 100_000
+private let kMaxDirectoryDepth = 50
+
+// TigerStyle bounds: getcwd buffer doubling cap
+private let kMaxGetcwdBufferSize = Int(MAXPATHLEN) * 16
+
 private let DIR_METATABLE = "directory metatable"
 private let LOCK_METATABLE = "lock metatable"
 private let USERDATA_TAG = "hs.fs"
@@ -56,6 +63,8 @@ func path_at_index(_ L: UnsafeMutablePointer<lua_State>!, _ i: Int32) -> UnsafeP
 }
 
 func tags_from_lua_stack(_ L: UnsafeMutablePointer<lua_State>!) -> NSArray {
+    precondition(L != nil, "tags_from_lua_stack: L must not be nil")
+    precondition(lua_type(L, 2) == LUA_TTABLE, "tags_from_lua_stack: argument 2 must be a table")
     let tags = NSMutableSet()
 
     lua_pushnil(L)
@@ -70,6 +79,8 @@ func tags_from_lua_stack(_ L: UnsafeMutablePointer<lua_State>!) -> NSArray {
 }
 
 func tags_from_file(_ L: UnsafeMutablePointer<lua_State>!, _ filePath: NSString) -> NSArray? {
+    precondition(L != nil, "tags_from_file: L must not be nil")
+    precondition(filePath.length > 0, "tags_from_file: filePath must not be empty")
     let url = path_to_nsurl(filePath) as URL
 
     do {
@@ -82,6 +93,8 @@ func tags_from_file(_ L: UnsafeMutablePointer<lua_State>!, _ filePath: NSString)
 }
 
 func tags_to_file(_ L: UnsafeMutablePointer<lua_State>!, _ filePath: NSString, _ tags: NSArray) -> Bool {
+    precondition(L != nil, "tags_to_file: L must not be nil")
+    precondition(filePath.length > 0, "tags_to_file: filePath must not be empty")
     let url = path_to_nsurl(filePath) as URL
 
     do {
@@ -94,6 +107,7 @@ func tags_to_file(_ L: UnsafeMutablePointer<lua_State>!, _ filePath: NSString, _
 }
 
 private func pusherror(_ L: UnsafeMutablePointer<lua_State>!, _ info: UnsafePointer<CChar>?) -> Int32 {
+    precondition(L != nil, "pusherror: L must not be nil")
     lua_pushnil(L)
     if info == nil {
         L.push(String(cString: strerror(errno)!))
@@ -147,6 +161,11 @@ private func get_dir(_ L: LuaState) throws -> CInt {
     var result: Int32
 
     while true {
+        // TigerStyle: cap buffer doubling to prevent unbounded growth
+        if size > kMaxGetcwdBufferSize {
+            result = pusherror(L, "get_dir path exceeds kMaxGetcwdBufferSize")
+            break
+        }
         let path2 = realloc(path, size)
         if path2 == nil {
             result = pusherror(L, "get_dir realloc() failed")
@@ -195,6 +214,9 @@ private func check_file(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32, _ f
 /// Returns:
 ///  * True if the lock was obtained successfully, otherwise nil and an error string
 private func _file_lock(_ L: UnsafeMutablePointer<lua_State>!, _ fh: OpaquePointer, _ mode: UnsafePointer<CChar>, _ start: CLong, _ len: CLong, _ funcname: UnsafePointer<CChar>) -> Bool {
+    precondition(L != nil, "_file_lock: L must not be nil")
+    precondition(start >= 0, "_file_lock: start offset must be non-negative")
+    precondition(len >= 0, "_file_lock: length must be non-negative")
     var f = flock()
     let modeChar = mode.pointee
     switch Int32(modeChar) {
@@ -395,6 +417,7 @@ private func remove_dir(_ L: LuaState) throws -> CInt {
 // MARK: - Directory iterator
 
 private func dir_iter(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    precondition(L != nil, "dir_iter: L must not be nil")
     let d = luaL_checkudata(L, 1, DIR_METATABLE)!.assumingMemoryBound(to: dir_data.self)
     luaL_argcheck(L, d.pointee.closed == 0, 1, "closed directory")
 
@@ -617,9 +640,11 @@ private func push_st_blksize(_ L: UnsafeMutablePointer<lua_State>!, _ info: Unsa
 
 private func perm2string(_ mode: mode_t) -> UnsafePointer<CChar> {
     // We need a stable buffer for the permission string
-    let perms = UnsafeMutablePointer<CChar>.allocate(capacity: 10)
+    let permBufferSize = 10
+    let perms = UnsafeMutablePointer<CChar>.allocate(capacity: permBufferSize)
     for i in 0..<9 { perms[i] = Int8(UInt8(ascii: "-")) }
     perms[9] = 0
+    assert(perms[permBufferSize - 1] == 0, "perm2string: buffer must be null-terminated")
     if mode & S_IRUSR != 0 { perms[0] = Int8(UInt8(ascii: "r")) }
     if mode & S_IWUSR != 0 { perms[1] = Int8(UInt8(ascii: "w")) }
     if mode & S_IXUSR != 0 { perms[2] = Int8(UInt8(ascii: "x")) }
@@ -696,8 +721,10 @@ private let members: [StatMember] = [
 /// Notes:
 ///  * This function uses `stat()` internally thus if the given filepath is a symbolic link, it is followed (if it points to another link the chain is followed recursively) and the information is about the file it refers to. To obtain information about the link itself, see function `hs.fs.symlinkAttributes()`
 private func _file_info_(_ L: UnsafeMutablePointer<lua_State>!, _ st: @convention(c) (UnsafePointer<CChar>?, UnsafeMutablePointer<stat>?) -> Int32) -> Int32 {
+    precondition(L != nil, "_file_info_: L must not be nil")
     luaL_checktype(L, 1, LUA_TSTRING)
     let file = path_at_index(L, 1)
+    assert(file != nil, "_file_info_: path_at_index returned nil for a string argument")
     var info = stat()
 
     if st(file, &info) != 0 {
@@ -793,6 +820,8 @@ private func tagsGet(_ L: LuaState) throws -> CInt {
 /// Returns:
 ///  * true if the tags were updated; throws a lua error if an error occurs updating the tags
 private func tagsAdd(_ L: LuaState) throws -> CInt {
+    luaL_checktype(L, 1, LUA_TSTRING)
+    luaL_checktype(L, 2, LUA_TTABLE)
     let path = lua_tovalue(L, at: 1) as! NSString
 
     let oldTags = NSMutableSet(array: (tags_from_file(L, path) as? [Any]) ?? [])
@@ -814,6 +843,8 @@ private func tagsAdd(_ L: LuaState) throws -> CInt {
 /// Returns:
 ///  * true if the tags were set; throws a lua error if an error occurs setting the new tags
 private func tagsSet(_ L: LuaState) throws -> CInt {
+    luaL_checktype(L, 1, LUA_TSTRING)
+    luaL_checktype(L, 2, LUA_TTABLE)
     let path = lua_tovalue(L, at: 1) as! NSString
 
     let tags = tags_from_lua_stack(L)
@@ -833,6 +864,8 @@ private func tagsSet(_ L: LuaState) throws -> CInt {
 /// Returns:
 ///  * true if the tags were updated; throws a lua error if an error occurs updating the tags
 private func tagsRemove(_ L: LuaState) throws -> CInt {
+    luaL_checktype(L, 1, LUA_TSTRING)
+    luaL_checktype(L, 2, LUA_TTABLE)
     let path = lua_tovalue(L, at: 1) as! NSString
     let removeTags = NSMutableSet(array: tags_from_lua_stack(L) as [AnyObject])
 
@@ -1099,7 +1132,6 @@ private func fs_urlFromPath(_ L: LuaState) throws -> CInt {
 private func fs_filesInPath(_ L: LuaState) throws -> CInt {
 
     var path = lua_tovalue(L, at: 1) as! NSString
-
     var subdirs = false
     var followSymlinks = false
     var expandSymlinks = false
@@ -1108,100 +1140,18 @@ private func fs_filesInPath(_ L: LuaState) throws -> CInt {
     var except: NSArray? = nil
 
     if lua_type(L, 2) == LUA_TTABLE {
-        lua_pushnil(L)
-        while lua_next(L, 2) != 0 {
-            if lua_type(L, -2) == LUA_TSTRING {
-                let keyName = String(cString: lua_tostring(L, -2)!)
-                switch keyName {
-                case "subdirs":
-                    guard lua_type(L, -1) == LUA_TBOOLEAN else {
-                        throw LuaCallError("bad argument #2 (subdirs option expects boolean value)")
-                    }
-                    subdirs = lua_toboolean(L, -1) != 0
-                case "followSymlinks":
-                    guard lua_type(L, -1) == LUA_TBOOLEAN else {
-                        throw LuaCallError("bad argument #2 (followSymlinks option expects boolean value)")
-                    }
-                    followSymlinks = lua_toboolean(L, -1) != 0
-                case "expandSymlinks":
-                    guard lua_type(L, -1) == LUA_TBOOLEAN else {
-                        throw LuaCallError("bad argument #2 (expandSymlinks option expects boolean value)")
-                    }
-                    expandSymlinks = lua_toboolean(L, -1) != 0
-                case "relativePath":
-                    guard lua_type(L, -1) == LUA_TBOOLEAN else {
-                        throw LuaCallError("bad argument #2 (relativePath option expects boolean value)")
-                    }
-                    relativePath = lua_toboolean(L, -1) != 0
-                case "ignore":
-                    ignore = lua_tovalue(L, at: -1) as? NSArray
-                    if let arr = ignore {
-                        for entry in arr {
-                            guard entry is NSString else {
-                                throw LuaCallError("bad argument #2 (ignore option table entries must be strings)")
-                            }
-                        }
-                    } else {
-                        throw LuaCallError("bad argument #2 (ignore option expects table value)")
-                    }
-                case "except":
-                    except = lua_tovalue(L, at: -1) as? NSArray
-                    if let arr = except {
-                        for entry in arr {
-                            guard entry is NSString else {
-                                throw LuaCallError("bad argument #2 (except option table entries must be strings)")
-                            }
-                        }
-                    } else {
-                        throw LuaCallError("bad argument #2 (except option expects table value)")
-                    }
-                default:
-                    throw LuaCallError("bad argument #2 (option \(keyName) not recognized)")
-                }
-            } else {
-                throw LuaCallError("bad argument #2 (option table keys must be strings)")
-            }
-            lua_pop(L, 1)
-        }
+        try fsParseOptions(L, subdirs: &subdirs, followSymlinks: &followSymlinks,
+                           expandSymlinks: &expandSymlinks, relativePath: &relativePath,
+                           ignore: &ignore, except: &except)
     }
 
     if except == nil { except = NSArray() }
+    if ignore == nil { ignore = fsLoadDefaultExcludes(L) }
 
-    if ignore == nil {
-        lua_getglobal(L, "require")
-
-        L.push("\(USERDATA_TAG)")
-
-        lua_pcall(L, 1, 1, 0)
-        lua_getfield(L, -1, "defaultPathListExcludes")
-        ignore = lua_tovalue(L, at: -1) as? NSArray
-        lua_pop(L, 2)
-    }
-
-    var excluders = [NSRegularExpression]()
-    var exceptions = [NSRegularExpression]()
-
-    for i in 0..<(ignore?.count ?? 0) {
-        do {
-            let p = try NSRegularExpression(pattern: ignore![i] as! String,
-                                            options: .useUnicodeWordBoundaries)
-            excluders.append(p)
-        } catch {
-            throw LuaCallError("bad argument #2 (invalid regex (\(error.localizedDescription)) at index \(i + 1) of ignore option)")
-        }
-    }
-    for i in 0..<(except?.count ?? 0) {
-        do {
-            let p = try NSRegularExpression(pattern: except![i] as! String,
-                                            options: .useUnicodeWordBoundaries)
-            exceptions.append(p)
-        } catch {
-            throw LuaCallError("bad argument #2 (invalid regex (\(error.localizedDescription)) at index \(i + 1) of except option)")
-        }
-    }
+    let excluders = try fsCompileRegexes(ignore, label: "ignore")
+    let exceptions = try fsCompileRegexes(except, label: "except")
 
     path = (path.expandingTildeInPath as NSString).resolvingSymlinksInPath as NSString
-    var dirCount: lua_Integer = 0
 
     let fileManager = FileManager.default
     var isDirectory: ObjCBool = false
@@ -1219,19 +1169,136 @@ private func fs_filesInPath(_ L: LuaState) throws -> CInt {
     let startingURL = URL(fileURLWithPath: path as String, isDirectory: true)
     let startingPathStr = (try? startingURL.resourceValues(forKeys: [.pathKey]))?.allValues[.pathKey] as? NSString ?? path
 
+    let (foundPaths, dirCount) = fsWalkDirectories(
+        fileManager: fileManager, startingPathStr: startingPathStr,
+        subdirs: subdirs, followSymlinks: followSymlinks,
+        expandSymlinks: expandSymlinks, relativePath: relativePath,
+        excluders: excluders, exceptions: exceptions
+    )
+
+    foundPaths.sort(using: [NSSortDescriptor(key: "self", ascending: true, selector: #selector(NSString.compare(_:)))])
+
+    lua_pushany(L, foundPaths)
+    L.push(lua_Integer(foundPaths.count))
+    L.push(dirCount)
+    return 3
+}
+
+private func fsParseOptions(_ L: LuaState,
+                             subdirs: inout Bool, followSymlinks: inout Bool,
+                             expandSymlinks: inout Bool, relativePath: inout Bool,
+                             ignore: inout NSArray?, except: inout NSArray?) throws {
+    lua_pushnil(L)
+    while lua_next(L, 2) != 0 {
+        guard lua_type(L, -2) == LUA_TSTRING else {
+            throw LuaCallError("bad argument #2 (option table keys must be strings)")
+        }
+        let keyName = String(cString: lua_tostring(L, -2)!)
+        switch keyName {
+        case "subdirs":
+            guard lua_type(L, -1) == LUA_TBOOLEAN else {
+                throw LuaCallError("bad argument #2 (subdirs option expects boolean value)")
+            }
+            subdirs = lua_toboolean(L, -1) != 0
+        case "followSymlinks":
+            guard lua_type(L, -1) == LUA_TBOOLEAN else {
+                throw LuaCallError("bad argument #2 (followSymlinks option expects boolean value)")
+            }
+            followSymlinks = lua_toboolean(L, -1) != 0
+        case "expandSymlinks":
+            guard lua_type(L, -1) == LUA_TBOOLEAN else {
+                throw LuaCallError("bad argument #2 (expandSymlinks option expects boolean value)")
+            }
+            expandSymlinks = lua_toboolean(L, -1) != 0
+        case "relativePath":
+            guard lua_type(L, -1) == LUA_TBOOLEAN else {
+                throw LuaCallError("bad argument #2 (relativePath option expects boolean value)")
+            }
+            relativePath = lua_toboolean(L, -1) != 0
+        case "ignore":
+            ignore = try fsParseStringArrayOption(L, keyName: keyName)
+        case "except":
+            except = try fsParseStringArrayOption(L, keyName: keyName)
+        default:
+            throw LuaCallError("bad argument #2 (option \(keyName) not recognized)")
+        }
+        lua_pop(L, 1)
+    }
+}
+
+private func fsParseStringArrayOption(_ L: LuaState, keyName: String) throws -> NSArray {
+    guard let arr = lua_tovalue(L, at: -1) as? NSArray else {
+        throw LuaCallError("bad argument #2 (\(keyName) option expects table value)")
+    }
+    for entry in arr {
+        guard entry is NSString else {
+            throw LuaCallError("bad argument #2 (\(keyName) option table entries must be strings)")
+        }
+    }
+    return arr
+}
+
+private func fsLoadDefaultExcludes(_ L: LuaState) -> NSArray? {
+    lua_getglobal(L, "require")
+    L.push("\(USERDATA_TAG)")
+    lua_pcall(L, 1, 1, 0)
+    lua_getfield(L, -1, "defaultPathListExcludes")
+    let result = lua_tovalue(L, at: -1) as? NSArray
+    lua_pop(L, 2)
+    return result
+}
+
+private func fsCompileRegexes(_ patterns: NSArray?, label: String) throws -> [NSRegularExpression] {
+    var regexes = [NSRegularExpression]()
+    for i in 0..<(patterns?.count ?? 0) {
+        do {
+            let p = try NSRegularExpression(pattern: patterns![i] as! String,
+                                            options: .useUnicodeWordBoundaries)
+            regexes.append(p)
+        } catch {
+            throw LuaCallError("bad argument #2 (invalid regex (\(error.localizedDescription)) at index \(i + 1) of \(label) option)")
+        }
+    }
+    return regexes
+}
+
+private func fsWalkDirectories(fileManager: FileManager, startingPathStr: NSString,
+                                subdirs: Bool, followSymlinks: Bool,
+                                expandSymlinks: Bool, relativePath: Bool,
+                                excluders: [NSRegularExpression],
+                                exceptions: [NSRegularExpression]) -> (NSMutableArray, lua_Integer) {
     let foundPaths = NSMutableArray()
     let seenDirectories = NSMutableArray()
     let directories = NSMutableArray(array: [NSArray(array: [startingPathStr, startingPathStr])])
+    var dirCount: lua_Integer = 0
 
     while directories.count > 0 {
+        // TigerStyle: cap total directories processed to prevent unbounded traversal
+        if dirCount >= kMaxDirectoryTraversalEntries {
+            os_log(.error, "fsWalkDirectories: hit kMaxDirectoryTraversalEntries (%d), stopping traversal", kMaxDirectoryTraversalEntries)
+            break
+        }
+        // TigerStyle: cap total found paths to prevent unbounded memory growth
+        if foundPaths.count >= kMaxDirectoryTraversalEntries {
+            os_log(.error, "fsWalkDirectories: foundPaths reached kMaxDirectoryTraversalEntries (%d), stopping traversal", kMaxDirectoryTraversalEntries)
+            break
+        }
+
         let currentPathArray = directories[0] as! NSArray
         directories.removeObject(at: 0)
         dirCount += 1
 
         let thisDir = currentPathArray[0] as! NSString
         let symbolicDir = currentPathArray[1] as! NSString
-
         seenDirectories.add(thisDir)
+
+        // TigerStyle: cap directory depth to prevent unbounded recursion
+        let depth = (thisDir as String).components(separatedBy: "/").count -
+                    (startingPathStr as String).components(separatedBy: "/").count
+        if depth > kMaxDirectoryDepth {
+            os_log(.error, "fsWalkDirectories: hit kMaxDirectoryDepth (%d) at %{public}s, skipping", kMaxDirectoryDepth, thisDir as String)
+            continue
+        }
 
         let thisDirURL = NSURL(fileURLWithPath: thisDir as String, isDirectory: true) as URL
         guard let dirEnum = fileManager.enumerator(
@@ -1241,89 +1308,111 @@ private func fs_filesInPath(_ L: LuaState) throws -> CInt {
             errorHandler: nil
         ) else { continue }
 
-        for case var fileURL as URL in dirEnum {
-            guard let vals = try? fileURL.resourceValues(forKeys: [.pathKey, .isSymbolicLinkKey]) else { continue }
-            var filePathStr = (vals.allValues[.pathKey] as? NSString) ?? (fileURL.path as NSString)
+        fsProcessDirectoryEntries(dirEnum: dirEnum, fileManager: fileManager,
+                                  thisDir: thisDir, symbolicDir: symbolicDir,
+                                  startingPathStr: startingPathStr,
+                                  subdirs: subdirs, followSymlinks: followSymlinks,
+                                  expandSymlinks: expandSymlinks, relativePath: relativePath,
+                                  excluders: excluders, exceptions: exceptions,
+                                  foundPaths: foundPaths, seenDirectories: seenDirectories,
+                                  directories: directories)
+    }
 
-            let originalFilePath = filePathStr.copy() as! NSString
-            let fileName = originalFilePath.lastPathComponent as NSString
+    return (foundPaths, dirCount)
+}
 
-            if vals.isSymbolicLink == true {
-                if followSymlinks {
-                    let newPath = (filePathStr as String).resolvingSymlinksInPath
-                    if fileManager.fileExists(atPath: newPath) {
-                        fileURL = URL(fileURLWithPath: newPath)
-                        if let resolvedVals = try? fileURL.resourceValues(forKeys: [.pathKey]) {
-                            filePathStr = (resolvedVals.allValues[.pathKey] as? NSString) ?? (fileURL.path as NSString)
-                        }
-                    } else {
-                        os_log(.info, "%{public}s", "\(USERDATA_TAG).pathList - error resolving symbolic link \(newPath)")
-                        continue
-                    }
-                } else {
-                    continue
-                }
+private func fsProcessDirectoryEntries(dirEnum: FileManager.DirectoryEnumerator,
+                                        fileManager: FileManager,
+                                        thisDir: NSString, symbolicDir: NSString,
+                                        startingPathStr: NSString,
+                                        subdirs: Bool, followSymlinks: Bool,
+                                        expandSymlinks: Bool, relativePath: Bool,
+                                        excluders: [NSRegularExpression],
+                                        exceptions: [NSRegularExpression],
+                                        foundPaths: NSMutableArray,
+                                        seenDirectories: NSMutableArray,
+                                        directories: NSMutableArray) {
+    for case var fileURL as URL in dirEnum {
+        guard let vals = try? fileURL.resourceValues(forKeys: [.pathKey, .isSymbolicLinkKey]) else { continue }
+        var filePathStr = (vals.allValues[.pathKey] as? NSString) ?? (fileURL.path as NSString)
+
+        let originalFilePath = filePathStr.copy() as! NSString
+        let fileName = originalFilePath.lastPathComponent as NSString
+
+        if vals.isSymbolicLink == true {
+            guard followSymlinks else { continue }
+            let newPath = (filePathStr as String).resolvingSymlinksInPath
+            guard fileManager.fileExists(atPath: newPath) else {
+                os_log(.info, "%{public}s", "\(USERDATA_TAG).pathList - error resolving symbolic link \(newPath)")
+                continue
             }
-
-            var keepGoing = true
-
-            for test in excluders {
-                let matches = test.numberOfMatches(in: fileName as String, options: [],
-                                                   range: NSRange(location: 0, length: fileName.length))
-                if matches > 0 {
-                    keepGoing = false
-                    break
-                }
+            fileURL = URL(fileURLWithPath: newPath)
+            if let resolvedVals = try? fileURL.resourceValues(forKeys: [.pathKey]) {
+                filePathStr = (resolvedVals.allValues[.pathKey] as? NSString) ?? (fileURL.path as NSString)
             }
+        }
 
-            for test in exceptions {
-                let matches = test.numberOfMatches(in: fileName as String, options: [],
-                                                   range: NSRange(location: 0, length: fileName.length))
-                if matches > 0 {
-                    keepGoing = true
-                    break
-                }
-            }
+        guard fsFilePassesFilters(fileName: fileName, excluders: excluders, exceptions: exceptions) else { continue }
 
-            if !keepGoing { continue }
+        let fileVals = try? fileURL.resourceValues(forKeys: [.isRegularFileKey, .isDirectoryKey])
+        if fileVals?.isRegularFile == true {
+            let resultPath = fsComputeResultPath(filePathStr: filePathStr, originalFilePath: originalFilePath,
+                                                  thisDir: thisDir, symbolicDir: symbolicDir,
+                                                  startingPathStr: startingPathStr,
+                                                  expandSymlinks: expandSymlinks, relativePath: relativePath)
+            foundPaths.add(resultPath)
+        } else if subdirs && fileVals?.isDirectory == true && !seenDirectories.contains(filePathStr) {
+            directories.add(NSArray(array: [filePathStr, "\(symbolicDir)/\(fileName)"]))
+        }
+    }
+}
 
-            let fileVals = try? fileURL.resourceValues(forKeys: [.isRegularFileKey, .isDirectoryKey])
-            if fileVals?.isRegularFile == true {
-                var resultPath = filePathStr
-                if !expandSymlinks {
-                    resultPath = originalFilePath.replacingOccurrences(
-                        of: thisDir as String,
-                        with: symbolicDir as String,
-                        options: [.anchored, .literal],
-                        range: NSRange(location: 0, length: originalFilePath.length)
-                    ) as NSString
-                }
-                if relativePath && resultPath.hasPrefix(startingPathStr as String) {
-                    foundPaths.add(resultPath.substring(from: startingPathStr.length + 1))
-                } else {
-                    foundPaths.add(resultPath)
-                }
-            } else if subdirs {
-                if fileVals?.isDirectory == true && !seenDirectories.contains(filePathStr) {
-                    directories.add(NSArray(array: [filePathStr, "\(symbolicDir)/\(fileName)"]))
-                }
-            }
+private func fsFilePassesFilters(fileName: NSString, excluders: [NSRegularExpression],
+                                  exceptions: [NSRegularExpression]) -> Bool {
+    var keepGoing = true
+    let range = NSRange(location: 0, length: fileName.length)
+
+    for test in excluders {
+        if test.numberOfMatches(in: fileName as String, options: [], range: range) > 0 {
+            keepGoing = false
+            break
         }
     }
 
-    // ensure consistent order
-    foundPaths.sort(using: [NSSortDescriptor(key: "self", ascending: true, selector: #selector(NSString.compare(_:)))])
+    for test in exceptions {
+        if test.numberOfMatches(in: fileName as String, options: [], range: range) > 0 {
+            keepGoing = true
+            break
+        }
+    }
 
-    lua_pushany(L, foundPaths)
-    L.push(lua_Integer(foundPaths.count))
-    L.push(dirCount)
-    return 3
+    return keepGoing
+}
+
+private func fsComputeResultPath(filePathStr: NSString, originalFilePath: NSString,
+                                  thisDir: NSString, symbolicDir: NSString,
+                                  startingPathStr: NSString,
+                                  expandSymlinks: Bool, relativePath: Bool) -> Any {
+    var resultPath = filePathStr
+    if !expandSymlinks {
+        resultPath = originalFilePath.replacingOccurrences(
+            of: thisDir as String,
+            with: symbolicDir as String,
+            options: [.anchored, .literal],
+            range: NSRange(location: 0, length: originalFilePath.length)
+        ) as NSString
+    }
+    if relativePath && resultPath.hasPrefix(startingPathStr as String) {
+        return resultPath.substring(from: startingPathStr.length + 1)
+    }
+    return resultPath
 }
 
 // MARK: - Module registration
 
 @_cdecl("luaopen_hs_libfs")
 public func luaopen_hs_libfs(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    precondition(L != nil, "luaopen_hs_libfs: L must not be nil")
     dir_create_meta(L)
     lock_create_meta(L)
 

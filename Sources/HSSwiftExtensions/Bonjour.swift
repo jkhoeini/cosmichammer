@@ -89,7 +89,7 @@ private func pushBonjourCallbackArgument(_ L: UnsafeMutablePointer<lua_State>!, 
         }
         if lua_pcall(L, argCount, 0, 0) != LUA_OK {
             os_log(.error, "%{public}s", "\(USERDATA_TAG):callback error:\(String(cString: lua_tostring(L, -1)!))")
-            lua_pop(L, -1)
+            lua_pop(L, 1)
         }
     }
 

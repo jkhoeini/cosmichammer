@@ -9,6 +9,9 @@ import zlib
 /// Pure-Swift implementation of SHA3 (Keccak) based on the NIST FIPS 202 standard.
 /// Ported from the RHash C implementation (sha3.m / sha3.h).
 
+// TigerStyle bounds: maximum file size for hashing (1 GB)
+private let kMaxHashFileSize: UInt64 = 1_073_741_824
+
 private let kNumberOfRounds = 24
 
 private let keccakRoundConstants: [UInt64] = [
@@ -53,6 +56,7 @@ private func rotl64(_ qword: UInt64, _ n: Int) -> UInt64 {
 }
 
 private func keccakPermutation(_ state: inout [UInt64]) {
+    precondition(state.count == 25, "Keccak state must be exactly 25 UInt64 words (1600 bits)")
     for round in 0..<kNumberOfRounds {
         // theta
         var C = [UInt64](repeating: 0, count: 5)
@@ -92,15 +96,20 @@ private func keccakPermutation(_ state: inout [UInt64]) {
 }
 
 private func sha3Init(bits: Int) -> SHA3Context {
+    precondition(bits == 224 || bits == 256 || bits == 384 || bits == 512, "SHA3 bits must be 224, 256, 384, or 512")
     let rate = 1600 - bits * 2
     var ctx = SHA3Context()
     ctx.blockSize = UInt32(rate / 8)
+    assert(ctx.blockSize > 0, "SHA3 block size must be positive")
+    assert(ctx.blockSize <= 168, "SHA3 block size must not exceed 168 bytes (rate/8 for SHA3-224)")
     return ctx
 }
 
 private let kSHA3Finalized: UInt32 = 0x80000000
 
 private func sha3Update(_ ctx: inout SHA3Context, _ msg: UnsafePointer<UInt8>, _ size: Int) {
+    precondition(size >= 0, "sha3Update size must be non-negative")
+    precondition(ctx.blockSize > 0, "sha3Update requires initialized context with positive blockSize")
     var msgPtr = msg
     var remaining = size
     let blockSize = Int(ctx.blockSize)
@@ -114,7 +123,7 @@ private func sha3Update(_ ctx: inout SHA3Context, _ msg: UnsafePointer<UInt8>, _
     if index > 0 {
         let left = blockSize - index
         let toCopy = min(remaining, left)
-        withUnsafeMutableBytes(of: &ctx.message) { bufPtr in
+        ctx.message.withUnsafeMutableBytes { bufPtr in
             let dest = bufPtr.baseAddress!.advanced(by: index)
             dest.copyMemory(from: msgPtr, byteCount: toCopy)
         }
@@ -128,7 +137,7 @@ private func sha3Update(_ ctx: inout SHA3Context, _ msg: UnsafePointer<UInt8>, _
 
     while remaining >= blockSize {
         // copy into message buffer for alignment
-        withUnsafeMutableBytes(of: &ctx.message) { bufPtr in
+        ctx.message.withUnsafeMutableBytes { bufPtr in
             bufPtr.baseAddress!.copyMemory(from: msgPtr, byteCount: blockSize)
         }
         keccakProcessBlock(&ctx.hash, ctx.message, blockSize)
@@ -137,14 +146,18 @@ private func sha3Update(_ ctx: inout SHA3Context, _ msg: UnsafePointer<UInt8>, _
     }
 
     if remaining > 0 {
-        withUnsafeMutableBytes(of: &ctx.message) { bufPtr in
+        ctx.message.withUnsafeMutableBytes { bufPtr in
             bufPtr.baseAddress!.copyMemory(from: msgPtr, byteCount: remaining)
         }
     }
 }
 
 private func keccakProcessBlock(_ hash: inout [UInt64], _ block: [UInt64], _ blockSize: Int) {
+    precondition(hash.count == 25, "Keccak hash state must be 25 words")
+    precondition(blockSize > 0, "blockSize must be positive")
+    precondition(blockSize % 8 == 0, "blockSize must be a multiple of 8")
     let count = blockSize / 8
+    assert(count <= hash.count, "block word count must not exceed hash state size")
     for i in 0..<count {
         hash[i] ^= block[i].littleEndian  // on LE arch this is identity
     }
@@ -152,13 +165,16 @@ private func keccakProcessBlock(_ hash: inout [UInt64], _ block: [UInt64], _ blo
 }
 
 private func sha3Final(_ ctx: inout SHA3Context) -> [UInt8] {
+    precondition(ctx.blockSize > 0, "sha3Final requires initialized context")
     let digestLength = 100 - Int(ctx.blockSize) / 2
+    assert(digestLength > 0, "SHA3 digest length must be positive")
+    assert(digestLength <= 64, "SHA3 digest length must not exceed 64 bytes")
     let blockSize = Int(ctx.blockSize)
 
     if ctx.rest & kSHA3Finalized == 0 {
         let restIndex = Int(ctx.rest)
         // clear the rest of the data queue
-        withUnsafeMutableBytes(of: &ctx.message) { bufPtr in
+        ctx.message.withUnsafeMutableBytes { bufPtr in
             let base = bufPtr.baseAddress!
             if blockSize - restIndex > 0 {
                 memset(base.advanced(by: restIndex), 0, blockSize - restIndex)
@@ -174,7 +190,7 @@ private func sha3Final(_ ctx: inout SHA3Context) -> [UInt8] {
 
     // extract digest bytes (little-endian)
     var result = [UInt8](repeating: 0, count: digestLength)
-    withUnsafeBytes(of: &ctx.hash) { srcPtr in
+    ctx.hash.withUnsafeBytes { srcPtr in
         for i in 0..<digestLength {
             result[i] = srcPtr.load(fromByteOffset: i, as: UInt8.self)
         }
@@ -342,6 +358,7 @@ private func hmacAppend(_ context: UnsafeMutableRawPointer, _ data: Data) {
 
 private func hmacInit(algorithm: CCHmacAlgorithm, key: Data?) -> UnsafeMutableRawPointer {
     let ctx = UnsafeMutablePointer<CCHmacContext>.allocate(capacity: 1)
+    assert(ctx != nil, "CCHmacContext allocation must succeed")
     let k = key ?? Data()
     if k.isEmpty {
         CCHmacInit(ctx, algorithm, nil, 0)
@@ -354,6 +371,7 @@ private func hmacInit(algorithm: CCHmacAlgorithm, key: Data?) -> UnsafeMutableRa
 }
 
 private func hmacFinish(context: UnsafeMutableRawPointer, digestLength: Int) -> Data {
+    precondition(digestLength > 0, "HMAC digest length must be positive")
     let ctx = context.assumingMemoryBound(to: CCHmacContext.self)
     var digest = [UInt8](repeating: 0, count: digestLength)
     CCHmacFinal(ctx, &digest)
@@ -455,20 +473,28 @@ private class HSHashObjectNew: NSObject {
     var value: Data?
 
     init(hashType: Int, secret: Data?) {
+        precondition(hashType >= 0, "hashType index must be non-negative")
+        precondition(hashType < hashLookupTable.count, "hashType index must be within hashLookupTable bounds")
         self.hashType = hashType
         self.secret = secret
         self.context = hashLookupTable[hashType].initFn(secret)
         self.value = nil
         super.init()
+        assert(self.context != nil, "Hash context must be non-nil after init")
     }
 
     func append(_ data: Data) {
+        precondition(context != nil, "Cannot append to a finalized hash context")
+        precondition(value == nil, "Cannot append after hash has been finalized")
         hashLookupTable[hashType].appendFn(context!, data)
     }
 
     func finish() {
+        precondition(context != nil, "Cannot finish an already-finalized hash context")
         value = hashLookupTable[hashType].finishFn(context!)
         context = nil // freed in finish function
+        assert(value != nil, "Hash value must be non-nil after finish")
+        assert(!value!.isEmpty, "Hash value must be non-empty after finish")
     }
 
     /// Idempotent teardown: finalize the hash context if still in progress.
@@ -523,6 +549,7 @@ private func hash_new(_ L: LuaState) throws -> CInt {
 
 @_cdecl("luaopen_hs_libhash")
 public func luaopen_hs_libhash(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    precondition(L != nil, "lua_State must not be nil")
     // Register idiomatic Metatable<HSHashObjectNew> with LuaSwift.
     L.register(Metatable<HSHashObjectNew>(
         fields: [
@@ -550,8 +577,20 @@ public func luaopen_hs_libhash(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
                 if object.value == nil {
                     path = (path as NSString).expandingTildeInPath
                     path = (path as NSString).resolvingSymlinksInPath
+                    // TigerStyle: pre-check file size before loading entire file for hashing
+                    let fileURL = URL(fileURLWithPath: path)
                     do {
-                        let data = try Data(contentsOf: URL(fileURLWithPath: path), options: .uncached)
+                        let attrs = try FileManager.default.attributesOfItem(atPath: path)
+                        if let fileSize = attrs[.size] as? UInt64, fileSize > kMaxHashFileSize {
+                            throw LuaCallError("file '\(path)' is \(fileSize) bytes, exceeds kMaxHashFileSize (\(kMaxHashFileSize) bytes)")
+                        }
+                    } catch let e as LuaCallError {
+                        throw e
+                    } catch {
+                        // If we can't stat, let the Data read attempt produce the real error
+                    }
+                    do {
+                        let data = try Data(contentsOf: fileURL, options: .uncached)
                         object.append(data)
                     } catch {
                         lua_pushnil(L)

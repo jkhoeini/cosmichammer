@@ -13,6 +13,7 @@ func init_CRC32(_ key: NSData?) -> UnsafeMutableRawPointer {
 
 @_cdecl("append_CRC32")
 func append_CRC32(_ _context: UnsafeMutableRawPointer, _ data: NSData) {
+    precondition(data.length >= 0, "data length must be non-negative")
     let context = _context.assumingMemoryBound(to: UInt.self)
     context.pointee = UInt(crc32_z(uLong(context.pointee), data.bytes.assumingMemoryBound(to: UInt8.self), data.length))
 }
@@ -30,7 +31,9 @@ func finish_CRC32(_ _context: UnsafeMutableRawPointer) -> NSData {
     ]
 
     context.deallocate()
-    return NSData(bytes: &asBytes, length: 4)
+    let result = NSData(bytes: &asBytes, length: 4)
+    assert(result.length == 4, "CRC32 digest must be exactly 4 bytes")
+    return result
 }
 
 // MARK: - MD2
@@ -102,7 +105,9 @@ func finish_MD5(_ _context: UnsafeMutableRawPointer) -> NSData {
     let md = UnsafeMutablePointer<UInt8>.allocate(capacity: Int(CC_MD5_DIGEST_LENGTH))
     CC_MD5_Final(md, context)
     context.deallocate()
-    return NSData(bytesNoCopy: md, length: Int(CC_MD5_DIGEST_LENGTH))
+    let result = NSData(bytesNoCopy: md, length: Int(CC_MD5_DIGEST_LENGTH))
+    assert(result.length == Int(CC_MD5_DIGEST_LENGTH), "MD5 digest must be exactly \(CC_MD5_DIGEST_LENGTH) bytes")
+    return result
 }
 
 // MARK: - SHA1
@@ -174,7 +179,9 @@ func finish_SHA256(_ _context: UnsafeMutableRawPointer) -> NSData {
     let md = UnsafeMutablePointer<UInt8>.allocate(capacity: Int(CC_SHA256_DIGEST_LENGTH))
     CC_SHA256_Final(md, context)
     context.deallocate()
-    return NSData(bytesNoCopy: md, length: Int(CC_SHA256_DIGEST_LENGTH))
+    let result = NSData(bytesNoCopy: md, length: Int(CC_SHA256_DIGEST_LENGTH))
+    assert(result.length == Int(CC_SHA256_DIGEST_LENGTH), "SHA256 digest must be exactly \(CC_SHA256_DIGEST_LENGTH) bytes")
+    return result
 }
 
 // MARK: - SHA384
@@ -222,7 +229,9 @@ func finish_SHA512(_ _context: UnsafeMutableRawPointer) -> NSData {
     let md = UnsafeMutablePointer<UInt8>.allocate(capacity: Int(CC_SHA512_DIGEST_LENGTH))
     CC_SHA512_Final(md, context)
     context.deallocate()
-    return NSData(bytesNoCopy: md, length: Int(CC_SHA512_DIGEST_LENGTH))
+    let result = NSData(bytesNoCopy: md, length: Int(CC_SHA512_DIGEST_LENGTH))
+    assert(result.length == Int(CC_SHA512_DIGEST_LENGTH), "SHA512 digest must be exactly \(CC_SHA512_DIGEST_LENGTH) bytes")
+    return result
 }
 
 // MARK: - hmacMD5

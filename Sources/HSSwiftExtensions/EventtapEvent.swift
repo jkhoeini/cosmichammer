@@ -17,6 +17,7 @@ private var eventSource: CGEventSource? = nil
 // MARK: - Helpers
 
 private func getEvent(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> CGEvent {
+    precondition(L != nil, "lua_State must not be nil")
     let ptr = luaL_checkudata(L, idx, EVENTTAP_EVENT_USERDATA_TAG)!
     return Unmanaged<CGEvent>.fromOpaque(
         ptr.assumingMemoryBound(to: UnsafeMutableRawPointer.self).pointee
@@ -24,6 +25,7 @@ private func getEvent(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> CG
 }
 
 private func parseFlagsFromTable(_ L: UnsafeMutablePointer<lua_State>!, _ arg: Int32) -> CGEventFlags {
+    precondition(L != nil, "lua_State must not be nil")
     luaL_checktype(L, arg, LUA_TTABLE)
     var flags = CGEventFlags(rawValue: 0)
     lua_getfield(L, arg, "cmd");   if lua_toboolean(L, -1) != 0 { flags.insert(.maskCommand) };   lua_pop(L, 1)
@@ -77,6 +79,7 @@ private func parseModsFromIterator(_ L: UnsafeMutablePointer<lua_State>!, tableI
 }
 
 private func hsToPoint(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> CGPoint {
+    precondition(L != nil, "lua_State must not be nil")
     luaL_checktype(L, idx, LUA_TTABLE)
     lua_getfield(L, idx, "x"); let x = CGFloat(luaL_checknumber(L, -1))
     lua_getfield(L, idx, "y"); let y = CGFloat(luaL_checknumber(L, -1))
@@ -820,18 +823,44 @@ private func event_meta_gc(_ L: LuaState) throws -> CInt {
 // MARK: - NSTouch -> Lua helper
 
 private func pushNSTouch(_ L: UnsafeMutablePointer<lua_State>!, _ touch: NSTouch) {
+    precondition(L != nil, "lua_State must not be nil")
+    let topBefore = lua_gettop(L)
+    defer {
+        assert(lua_gettop(L) == topBefore + 1, "pushNSTouch must push exactly one table onto the stack")
+    }
     lua_newtable(L)
 
+    pushTouchTypeField(L, touch)
+    pushTouchIdentityField(L, touch)
+    pushTouchPhaseFields(L, touch)
+    pushTouchPositionFields(L, touch)
+    pushTouchPrivateAPIFields(L, touch)
+
+    L.push(touch.isResting)
+    lua_setfield(L, -2, "resting")
+
+    L.push("\(Unmanaged.passUnretained(touch.device as AnyObject).toOpaque())")
+    lua_setfield(L, -2, "device")
+
+    lua_pushNSSize(L, touch.deviceSize)
+    lua_setfield(L, -2, "deviceSize")
+}
+
+private func pushTouchTypeField(_ L: UnsafeMutablePointer<lua_State>!, _ touch: NSTouch) {
     switch touch.type {
     case .direct:   L.push("direct")
     case .indirect: L.push("indirect")
     @unknown default: L.push("** unrecognized type: \(touch.type.rawValue)")
     }
     lua_setfield(L, -2, "type")
+}
 
+private func pushTouchIdentityField(_ L: UnsafeMutablePointer<lua_State>!, _ touch: NSTouch) {
     L.push("\(Unmanaged.passUnretained(touch.identity as AnyObject).toOpaque())")
     lua_setfield(L, -2, "identity")
+}
 
+private func pushTouchPhaseFields(_ L: UnsafeMutablePointer<lua_State>!, _ touch: NSTouch) {
     switch touch.phase {
     case .began:      L.push("began")
     case .moved:      L.push("moved")
@@ -844,11 +873,12 @@ private func pushNSTouch(_ L: UnsafeMutablePointer<lua_State>!, _ touch: NSTouch
 
     L.push(touch.phase.contains(.touching))
     lua_setfield(L, -2, "touching")
+}
 
+private func pushTouchPositionFields(_ L: UnsafeMutablePointer<lua_State>!, _ touch: NSTouch) {
     if touch.type == .indirect {
         lua_pushNSPoint(L, touch.normalizedPosition)
         lua_setfield(L, -2, "normalizedPosition")
-        // Private API: previousNormalizedPosition
         if touch.responds(to: Selector(("previousNormalizedPosition"))) {
             let prevPos = catchingObjCException {
                 touch.perform(Selector(("previousNormalizedPosition")))?.takeUnretainedValue()
@@ -866,7 +896,9 @@ private func pushNSTouch(_ L: UnsafeMutablePointer<lua_State>!, _ touch: NSTouch
         lua_pushNSPoint(L, touch.previousLocation(in: nil))
         lua_setfield(L, -2, "previousLocation")
     }
+}
 
+private func pushTouchPrivateAPIFields(_ L: UnsafeMutablePointer<lua_State>!, _ touch: NSTouch) {
     // Private API: timestamp
     if touch.responds(to: Selector(("timestamp"))) {
         let ts = catchingObjCException {
@@ -888,22 +920,14 @@ private func pushNSTouch(_ L: UnsafeMutablePointer<lua_State>!, _ touch: NSTouch
         L.push(lua_Number(0))
     }
     lua_setfield(L, -2, "force")
-
-    L.push(touch.isResting)
-    lua_setfield(L, -2, "resting")
-
-    L.push("\(Unmanaged.passUnretained(touch.device as AnyObject).toOpaque())")
-    lua_setfield(L, -2, "device")
-
-    lua_pushNSSize(L, touch.deviceSize)
-    lua_setfield(L, -2, "deviceSize")
 }
 
 // MARK: - Entry Point
 
 @_cdecl("luaopen_hs_libeventtapevent")
 public func luaopen_hs_libeventtapevent(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    runEntryPoint(L) { L in
+    precondition(L != nil, "lua_State must not be nil")
+    return runEntryPoint(L) { L in
         // Register userdata metatable
         luaL_newmetatable(L, EVENTTAP_EVENT_USERDATA_TAG)
         lua_pushvalue(L, -1)

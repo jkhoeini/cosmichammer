@@ -6,6 +6,7 @@ import WebKit
 import os.log
 
 let wv_USERDATA_TAG = "hs.webview"
+private let kMaxWebviewRecursionDepth = 50
 private let USERDATA_UCC_TAG = "hs.webview.usercontent"
 private let USERDATA_DS_TAG = "hs.webview.datastore"
 private let USERDATA_TB_TAG = "hs.webview.toolbar"
@@ -24,6 +25,7 @@ func wv_RectWithFlippedYCoordinate(_ theRect: NSRect) -> NSRect {
 // forward declarations handled by Swift naturally
 
 func wv_delayUntilViewStopsLoading(_ theView: HSWebViewView, block: @escaping () -> Void) {
+    precondition(Thread.isMainThread, "wv_delayUntilViewStopsLoading must be called on main thread")
     if wv_delayTimers == nil { wv_delayTimers = NSMapTable<HSWebViewView, Timer>.strongToWeakObjects() }
 
     if let existingTimer = wv_delayTimers?.object(forKey: theView) {
@@ -384,6 +386,7 @@ func webview_magnification(_ L: LuaState) throws -> CInt {
 /// Method
 /// Render the given HTML in the webview with an optional base URL for relative links.
 func webview_html(_ L: LuaState) throws -> CInt {
+    precondition(lua_gettop(L) >= 2, "webview_html requires at least 2 arguments (self + html)")
     let theWindow = wv_getWindowFromUD(L, 1)
     let theView = theWindow.contentView as! HSWebViewView
 
@@ -464,6 +467,7 @@ func webview_historyList(_ L: LuaState) throws -> CInt {
 /// Method
 /// Execute JavaScript within the context of the current webview and optionally receive its result or error in a callback function.
 func webview_evaluateJavaScript(_ L: LuaState) throws -> CInt {
+    precondition(lua_gettop(L) >= 2, "webview_evaluateJavaScript requires at least 2 arguments (self + script)")
     let theWindow = wv_getWindowFromUD(L, 1)
     let theView = theWindow.contentView as! HSWebViewView
 
@@ -534,7 +538,10 @@ func webview_size(_ L: LuaState) throws -> CInt {
 /// Constructor
 /// Create a webviewObject and optionally modify its preferences.
 func webview_new(_ L: LuaState) throws -> CInt {
+    luaL_checktype(L, 1, LUA_TTABLE)
     let windowRect = lua_tableToRect(L, at: 1)
+    assert(windowRect.size.width >= 0, "webview_new: window rect width must be non-negative")
+    assert(windowRect.size.height >= 0, "webview_new: window rect height must be non-negative")
 
     let theWindow = HSWebViewWindow(contentRect: windowRect, styleMask: .borderless, backing: .buffered, defer: true)
 
@@ -802,6 +809,7 @@ func webview_windowStyle(_ L: LuaState) throws -> CInt {
 /// Method
 /// Get or set the window level
 func webview_level(_ L: LuaState) throws -> CInt {
+    precondition(lua_gettop(L) >= 1, "webview_level requires at least 1 argument (self)")
     let theWindow = wv_getWindowFromUD(L, 1)
 
     if lua_gettop(L) == 1 {
@@ -1119,6 +1127,8 @@ func wv_luaTo_HSWebViewWindow(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int3
 }
 
 func wv_HSWebViewWindow_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
+    precondition(L != nil, "wv_HSWebViewWindow_toLua: Lua state must not be nil")
+    precondition(obj != nil, "wv_HSWebViewWindow_toLua: obj must not be nil")
     let theWindow = obj as! HSWebViewWindow
 
     if theWindow.udRef == nil {
@@ -1134,7 +1144,15 @@ func wv_HSWebViewWindow_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!
     return 1
 }
 
-func wv_pushAny(_ L: UnsafeMutablePointer<lua_State>!, _ value: Any?) {
+func wv_pushAny(_ L: UnsafeMutablePointer<lua_State>!, _ value: Any?, depth: Int = 0) {
+    precondition(L != nil, "wv_pushAny: Lua state must not be nil")
+
+    if depth >= kMaxWebviewRecursionDepth {
+        os_log(.error, "wv_pushAny: recursion depth limit (%d) reached, pushing nil", kMaxWebviewRecursionDepth)
+        lua_pushnil(L)
+        return
+    }
+
     guard let value = value else {
         lua_pushnil(L)
         return
@@ -1156,21 +1174,21 @@ func wv_pushAny(_ L: UnsafeMutablePointer<lua_State>!, _ value: Any?) {
     case let script as WKUserScript:
         _ = wv_WKUserScript_toLua(L, script)
     case let navigationAction as WKNavigationAction:
-        _ = wv_WKNavigationAction_toLua(L, navigationAction)
+        _ = wv_WKNavigationAction_toLua(L, navigationAction, depth: depth + 1)
     case let navigationResponse as WKNavigationResponse:
-        _ = wv_WKNavigationResponse_toLua(L, navigationResponse)
+        _ = wv_WKNavigationResponse_toLua(L, navigationResponse, depth: depth + 1)
     case let frameInfo as WKFrameInfo:
-        _ = wv_WKFrameInfo_toLua(L, frameInfo)
+        _ = wv_WKFrameInfo_toLua(L, frameInfo, depth: depth + 1)
     case let item as WKBackForwardListItem:
         _ = wv_WKBackForwardListItem_toLua(L, item)
     case let list as WKBackForwardList:
-        _ = wv_WKBackForwardList_toLua(L, list)
+        _ = wv_WKBackForwardList_toLua(L, list, depth: depth + 1)
     case let navigation as WKNavigation:
         _ = wv_WKNavigation_toLua(L, navigation)
     case let features as WKWindowFeatures:
         _ = wv_WKWindowFeatures_toLua(L, features)
     case let challenge as URLAuthenticationChallenge:
-        _ = wv_NSURLAuthenticationChallenge_toLua(L, challenge)
+        _ = wv_NSURLAuthenticationChallenge_toLua(L, challenge, depth: depth + 1)
     case let protectionSpace as URLProtectionSpace:
         _ = wv_NSURLProtectionSpace_toLua(L, protectionSpace)
     case let credential as URLCredential:
@@ -1260,107 +1278,13 @@ func wv_URLResponse_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) ->
 }
 
 func wv_toURLRequest(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> URLRequest? {
+    precondition(L != nil, "wv_toURLRequest: Lua state must not be nil")
     let absIdx = lua_absindex(L, idx)
+    assert(absIdx > 0, "wv_toURLRequest: absolute index must be positive")
 
     switch lua_type(L, absIdx) {
     case LUA_TTABLE:
-        guard lua_getfield(L, absIdx, "URL") == LUA_TSTRING,
-              let urlString = lua_tovalue(L, at: -1) as? String,
-              let url = URL(string: urlString) else {
-            lua_pop(L, 1)
-            os_log(.error, "%{public}s", "URL field missing in NSURLRequest table")
-            return nil
-        }
-        lua_pop(L, 1)
-
-        var request = URLRequest(url: url)
-
-        if lua_getfield(L, absIdx, "mainDocumentURL") == LUA_TSTRING,
-           let value = lua_tovalue(L, at: -1) as? String {
-            request.mainDocumentURL = URL(string: value)
-        }
-        lua_pop(L, 1)
-
-        if lua_getfield(L, absIdx, "HTTPBody") == LUA_TSTRING {
-            var size: Int = 0
-            if let block = lua_tolstring(L, -1, &size) {
-                request.httpBody = Data(bytes: block, count: size)
-            }
-        }
-        lua_pop(L, 1)
-
-        if lua_getfield(L, absIdx, "HTTPMethod") == LUA_TSTRING {
-            request.httpMethod = lua_tovalue(L, at: -1) as? String
-        }
-        lua_pop(L, 1)
-
-        if lua_getfield(L, absIdx, "timeoutInterval") == LUA_TNUMBER {
-            request.timeoutInterval = lua_tonumber(L, -1)
-        }
-        lua_pop(L, 1)
-
-        if lua_getfield(L, absIdx, "HTTPShouldHandleCookies") == LUA_TBOOLEAN {
-            request.httpShouldHandleCookies = lua_toboolean(L, -1) != 0
-        }
-        lua_pop(L, 1)
-
-        if lua_getfield(L, absIdx, "HTTPShouldUsePipelining") == LUA_TBOOLEAN {
-            request.httpShouldUsePipelining = lua_toboolean(L, -1) != 0
-        }
-        lua_pop(L, 1)
-
-        if lua_getfield(L, absIdx, "cachePolicy") == LUA_TSTRING,
-           let cp = lua_tovalue(L, at: -1) as? String {
-            switch cp {
-            case "protocolCachePolicy": request.cachePolicy = .useProtocolCachePolicy
-            case "ignoreLocalCache":    request.cachePolicy = .reloadIgnoringLocalCacheData
-            case "returnCacheOrLoad":   request.cachePolicy = .returnCacheDataElseLoad
-            case "returnCacheDontLoad": request.cachePolicy = .returnCacheDataDontLoad
-            default: break
-            }
-        }
-        lua_pop(L, 1)
-
-        if lua_getfield(L, absIdx, "networkServiceType") == LUA_TSTRING,
-           let nst = lua_tovalue(L, at: -1) as? String {
-            switch nst {
-            case "default":    request.networkServiceType = .default
-            case "VoIP":       request.networkServiceType = .voip
-            case "video":      request.networkServiceType = .video
-            case "background": request.networkServiceType = .background
-            case "voice":      request.networkServiceType = .voice
-            default: break
-            }
-        }
-        lua_pop(L, 1)
-
-        if lua_getfield(L, absIdx, "HTTPHeaderFields") == LUA_TTABLE,
-           var fields = lua_tovalue(L, at: -1) as? [String: Any] {
-            var toRemove: [String] = []
-
-            for (key, value) in fields {
-                if let numberValue = value as? NSNumber {
-                    fields[key] = numberValue.stringValue
-                }
-
-                guard fields[key] is String else {
-                    toRemove.append(key)
-                    continue
-                }
-
-                let reservedHeaders = ["Authorization", "Connection", "Host", "WWW-Authenticate", "Content-Length"]
-                if reservedHeaders.contains(where: { key.caseInsensitiveCompare($0) == .orderedSame }) {
-                    toRemove.append(key)
-                }
-            }
-
-            for item in toRemove { fields.removeValue(forKey: item) }
-            request.allHTTPHeaderFields = fields as? [String: String]
-        }
-        lua_pop(L, 1)
-
-        return request
-
+        return wv_parseURLRequestTable(L, absIdx)
     case LUA_TSTRING:
         guard let urlString = lua_tovalue(L, at: absIdx) as? String,
               let url = URL(string: urlString) else {
@@ -1368,20 +1292,127 @@ func wv_toURLRequest(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> URL
             return nil
         }
         return URLRequest(url: url)
-
     default:
         os_log(.error, "%{public}s", "Unexpected type passed as a NSURLRequest: \(String(cString: lua_typename(L, lua_type(L, absIdx))))")
         return nil
     }
 }
 
-func wv_WKNavigationAction_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
+private func wv_parseURLRequestTable(_ L: UnsafeMutablePointer<lua_State>!, _ absIdx: Int32) -> URLRequest? {
+    guard lua_getfield(L, absIdx, "URL") == LUA_TSTRING,
+          let urlString = lua_tovalue(L, at: -1) as? String,
+          let url = URL(string: urlString) else {
+        lua_pop(L, 1)
+        os_log(.error, "%{public}s", "URL field missing in NSURLRequest table")
+        return nil
+    }
+    lua_pop(L, 1)
+
+    var request = URLRequest(url: url)
+    wv_applyRequestStringField(L, absIdx, field: "mainDocumentURL") { request.mainDocumentURL = URL(string: $0) }
+    wv_applyRequestHTTPBody(L, absIdx, request: &request)
+    wv_applyRequestStringField(L, absIdx, field: "HTTPMethod") { request.httpMethod = $0 }
+
+    if lua_getfield(L, absIdx, "timeoutInterval") == LUA_TNUMBER {
+        request.timeoutInterval = lua_tonumber(L, -1)
+    }
+    lua_pop(L, 1)
+
+    wv_applyRequestBoolField(L, absIdx, field: "HTTPShouldHandleCookies") { request.httpShouldHandleCookies = $0 }
+    wv_applyRequestBoolField(L, absIdx, field: "HTTPShouldUsePipelining") { request.httpShouldUsePipelining = $0 }
+    wv_applyRequestCachePolicy(L, absIdx, request: &request)
+    wv_applyRequestNetworkServiceType(L, absIdx, request: &request)
+    wv_applyRequestHeaderFields(L, absIdx, request: &request)
+
+    return request
+}
+
+private func wv_applyRequestStringField(_ L: UnsafeMutablePointer<lua_State>!, _ absIdx: Int32, field: String, apply: (String) -> Void) {
+    if lua_getfield(L, absIdx, field) == LUA_TSTRING,
+       let value = lua_tovalue(L, at: -1) as? String {
+        apply(value)
+    }
+    lua_pop(L, 1)
+}
+
+private func wv_applyRequestBoolField(_ L: UnsafeMutablePointer<lua_State>!, _ absIdx: Int32, field: String, apply: (Bool) -> Void) {
+    if lua_getfield(L, absIdx, field) == LUA_TBOOLEAN {
+        apply(lua_toboolean(L, -1) != 0)
+    }
+    lua_pop(L, 1)
+}
+
+private func wv_applyRequestHTTPBody(_ L: UnsafeMutablePointer<lua_State>!, _ absIdx: Int32, request: inout URLRequest) {
+    if lua_getfield(L, absIdx, "HTTPBody") == LUA_TSTRING {
+        var size: Int = 0
+        if let block = lua_tolstring(L, -1, &size) {
+            request.httpBody = Data(bytes: block, count: size)
+        }
+    }
+    lua_pop(L, 1)
+}
+
+private func wv_applyRequestCachePolicy(_ L: UnsafeMutablePointer<lua_State>!, _ absIdx: Int32, request: inout URLRequest) {
+    if lua_getfield(L, absIdx, "cachePolicy") == LUA_TSTRING,
+       let cp = lua_tovalue(L, at: -1) as? String {
+        switch cp {
+        case "protocolCachePolicy": request.cachePolicy = .useProtocolCachePolicy
+        case "ignoreLocalCache":    request.cachePolicy = .reloadIgnoringLocalCacheData
+        case "returnCacheOrLoad":   request.cachePolicy = .returnCacheDataElseLoad
+        case "returnCacheDontLoad": request.cachePolicy = .returnCacheDataDontLoad
+        default: break
+        }
+    }
+    lua_pop(L, 1)
+}
+
+private func wv_applyRequestNetworkServiceType(_ L: UnsafeMutablePointer<lua_State>!, _ absIdx: Int32, request: inout URLRequest) {
+    if lua_getfield(L, absIdx, "networkServiceType") == LUA_TSTRING,
+       let nst = lua_tovalue(L, at: -1) as? String {
+        switch nst {
+        case "default":    request.networkServiceType = .default
+        case "VoIP":       request.networkServiceType = .voip
+        case "video":      request.networkServiceType = .video
+        case "background": request.networkServiceType = .background
+        case "voice":      request.networkServiceType = .voice
+        default: break
+        }
+    }
+    lua_pop(L, 1)
+}
+
+private func wv_applyRequestHeaderFields(_ L: UnsafeMutablePointer<lua_State>!, _ absIdx: Int32, request: inout URLRequest) {
+    if lua_getfield(L, absIdx, "HTTPHeaderFields") == LUA_TTABLE,
+       var fields = lua_tovalue(L, at: -1) as? [String: Any] {
+        let reservedHeaders = ["Authorization", "Connection", "Host", "WWW-Authenticate", "Content-Length"]
+        var toRemove: [String] = []
+
+        for (key, value) in fields {
+            if let numberValue = value as? NSNumber {
+                fields[key] = numberValue.stringValue
+            }
+            guard fields[key] is String else {
+                toRemove.append(key)
+                continue
+            }
+            if reservedHeaders.contains(where: { key.caseInsensitiveCompare($0) == .orderedSame }) {
+                toRemove.append(key)
+            }
+        }
+
+        for item in toRemove { fields.removeValue(forKey: item) }
+        request.allHTTPHeaderFields = fields as? [String: String]
+    }
+    lua_pop(L, 1)
+}
+
+func wv_WKNavigationAction_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!, depth: Int = 0) -> Int32 {
     let navAction = obj as! WKNavigationAction
 
     lua_newtable(L)
-    wv_pushAny(L, navAction.request);      lua_setfield(L, -2, "request")
-    wv_pushAny(L, navAction.sourceFrame);  lua_setfield(L, -2, "sourceFrame")
-    wv_pushAny(L, navAction.targetFrame);  lua_setfield(L, -2, "targetFrame")
+    wv_pushAny(L, navAction.request, depth: depth);      lua_setfield(L, -2, "request")
+    wv_pushAny(L, navAction.sourceFrame, depth: depth);  lua_setfield(L, -2, "sourceFrame")
+    wv_pushAny(L, navAction.targetFrame, depth: depth);  lua_setfield(L, -2, "targetFrame")
     L.push(Int(navAction.buttonNumber)); lua_setfield(L, -2, "buttonNumber")
 
     let theFlags = navAction.modifierFlags.rawValue
@@ -1408,23 +1439,23 @@ func wv_WKNavigationAction_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: A
     return 1
 }
 
-func wv_WKNavigationResponse_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
+func wv_WKNavigationResponse_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!, depth: Int = 0) -> Int32 {
     let navResponse = obj as! WKNavigationResponse
 
     lua_newtable(L)
     L.push(navResponse.canShowMIMEType); lua_setfield(L, -2, "canShowMIMEType")
     L.push(navResponse.isForMainFrame);  lua_setfield(L, -2, "forMainFrame")
-    wv_pushAny(L, navResponse.response);                     lua_setfield(L, -2, "response")
+    wv_pushAny(L, navResponse.response, depth: depth);                     lua_setfield(L, -2, "response")
     return 1
 }
 
-func wv_WKFrameInfo_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
+func wv_WKFrameInfo_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!, depth: Int = 0) -> Int32 {
     let frameInfo = obj as! WKFrameInfo
 
     lua_newtable(L)
     L.push(frameInfo.isMainFrame); lua_setfield(L, -2, "mainFrame")
-    wv_pushAny(L, frameInfo.request);                 lua_setfield(L, -2, "request")
-    wv_pushAny(L, frameInfo.securityOrigin);          lua_setfield(L, -2, "securityOrigin")
+    wv_pushAny(L, frameInfo.request, depth: depth);                 lua_setfield(L, -2, "request")
+    wv_pushAny(L, frameInfo.securityOrigin, depth: depth);          lua_setfield(L, -2, "securityOrigin")
     return 1
 }
 
@@ -1438,23 +1469,23 @@ func wv_WKBackForwardListItem_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj
     return 1
 }
 
-func wv_WKBackForwardList_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
+func wv_WKBackForwardList_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!, depth: Int = 0) -> Int32 {
     let theList = obj as? WKBackForwardList
 
     lua_newtable(L)
     if let theList = theList {
         for value in theList.backList {
-            wv_pushAny(L, value)
+            wv_pushAny(L, value, depth: depth)
             lua_rawseti(L, -2, luaL_len(L, -2) + 1)
         }
         if let currentItem = theList.currentItem {
-            wv_pushAny(L, currentItem)
+            wv_pushAny(L, currentItem, depth: depth)
             lua_rawseti(L, -2, luaL_len(L, -2) + 1)
         }
         L.push(Int(luaL_len(L, -1))); lua_setfield(L, -2, "current")
 
         for value in theList.forwardList {
-            wv_pushAny(L, value)
+            wv_pushAny(L, value, depth: depth)
             lua_rawseti(L, -2, luaL_len(L, -2) + 1)
         }
     } else {
@@ -1499,15 +1530,15 @@ func wv_WKWindowFeatures_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any
     return 1
 }
 
-func wv_NSURLAuthenticationChallenge_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
+func wv_NSURLAuthenticationChallenge_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!, depth: Int = 0) -> Int32 {
     let challenge = obj as! URLAuthenticationChallenge
 
     lua_newtable(L)
     L.push(Int(challenge.previousFailureCount)); lua_setfield(L, -2, "previousFailureCount")
-    wv_pushAny(L, challenge.error as NSError?);                     lua_setfield(L, -2, "error")
-    wv_pushAny(L, challenge.failureResponse);                       lua_setfield(L, -2, "failureResponse")
-    wv_pushAny(L, challenge.proposedCredential);                    lua_setfield(L, -2, "proposedCredential")
-    wv_pushAny(L, challenge.protectionSpace);                       lua_setfield(L, -2, "protectionSpace")
+    wv_pushAny(L, challenge.error as NSError?, depth: depth);                     lua_setfield(L, -2, "error")
+    wv_pushAny(L, challenge.failureResponse, depth: depth);                       lua_setfield(L, -2, "failureResponse")
+    wv_pushAny(L, challenge.proposedCredential, depth: depth);                    lua_setfield(L, -2, "proposedCredential")
+    wv_pushAny(L, challenge.protectionSpace, depth: depth);                       lua_setfield(L, -2, "protectionSpace")
     return 1
 }
 
@@ -1620,6 +1651,7 @@ func wv_userdata_eq(_ L: LuaState) throws -> CInt {
 }
 
 func wv_userdata_gc(_ L: LuaState) throws -> CInt {
+    precondition(lua_gettop(L) >= 1, "wv_userdata_gc requires at least 1 argument")
     if luaL_testudata(L, 1, wv_USERDATA_TAG) == nil { return 0 }
 
     let ptr = luaL_checkudata(L, 1, wv_USERDATA_TAG)!
@@ -1693,7 +1725,8 @@ func wv_meta_gc(_ L: LuaState) throws -> CInt {
 
 @_cdecl("luaopen_hs_libwebview")
 public func luaopen_hs_libwebview(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    runEntryPoint(L) { L in
+    precondition(L != nil, "luaopen_hs_libwebview: Lua state must not be nil")
+    return runEntryPoint(L) { L in
         // Create ref table in registry
         lua_newtable(L)
         wv_refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)

@@ -574,6 +574,8 @@ private func application_kind(_ L: LuaState) throws -> CInt {
 // MARK: - Menu helpers
 
 private func _findmenuitembyname(_ L: UnsafeMutablePointer<lua_State>!, _ app: AXUIElement, _ name: String, _ nameIsRegex: Bool) -> AXUIElement? {
+    precondition(L != nil, "_findmenuitembyname: L must not be nil")
+    precondition(!name.isEmpty, "_findmenuitembyname: name must not be empty")
 
     var menuBarRef: CFTypeRef?
     var error = AXUIElementCopyAttributeValue(app, kAXMenuBarAttribute as CFString, &menuBarRef)
@@ -638,93 +640,105 @@ private func _findmenuitembyname(_ L: UnsafeMutablePointer<lua_State>!, _ app: A
 }
 
 private func _findmenuitembypath(_ L: UnsafeMutablePointer<lua_State>!, _ app: AXUIElement, _ _path: [String]) -> AXUIElement? {
-    var foundItem: AXUIElement?
+    precondition(L != nil, "_findmenuitembypath: L must not be nil")
+    precondition(!_path.isEmpty, "_findmenuitembypath: path must not be empty")
+
     let path = NSMutableArray(array: _path)
 
     var menuBarRef: CFTypeRef?
-    var error = AXUIElementCopyAttributeValue(app, kAXMenuBarAttribute as CFString, &menuBarRef)
+    let error = AXUIElementCopyAttributeValue(app, kAXMenuBarAttribute as CFString, &menuBarRef)
     guard error == .success, let menuBar = menuBarRef else { return nil }
 
     var searchItem: AXUIElement = menuBar as! AXUIElement
 
     var i = 5000
-    while foundItem == nil && i > 0 {
+    while i > 0 {
         i -= 1
 
-        var count: CFIndex = -1
-        error = AXUIElementGetAttributeValueCount(searchItem, kAXChildrenAttribute as CFString, &count)
-        guard error == .success else {
-            os_log(.debug, "%{public}s", "Failed to get child count")
-            break
-        }
-
-        var cfChildren: CFArray?
-        error = AXUIElementCopyAttributeValues(searchItem, kAXChildrenAttribute as CFString, 0, count, &cfChildren)
-        guard error == .success, var children = cfChildren else {
-            os_log(.debug, "%{public}s", "Failed to get children")
-            break
-        }
-
-        if count > 0 {
-            let aSearchItem = CFArrayGetValueAtIndex(children, 0)
-            let aSearchElement = Unmanaged<AXUIElement>.fromOpaque(aSearchItem!).takeUnretainedValue()
-            var cfRole: CFTypeRef?
-            error = AXUIElementCopyAttributeValue(aSearchElement, kAXRoleAttribute as CFString, &cfRole)
-            guard error == .success else {
-                os_log(.debug, "%{public}s", "Failed to get role")
-                break
-            }
-            let isMenuRole = CFStringCompare(cfRole as! CFString, kAXMenuRole as CFString, [])
-            if isMenuRole == .compareEqualTo {
-                var axMenuCount: CFIndex = -1
-                error = AXUIElementGetAttributeValueCount(aSearchElement, kAXChildrenAttribute as CFString, &axMenuCount)
-                guard error == .success else {
-                    os_log(.debug, "%{public}s", "Failed to get AXMenu child count")
-                    break
-                }
-                var axMenuChildren: CFArray?
-                error = AXUIElementCopyAttributeValues(aSearchElement, kAXChildrenAttribute as CFString, 0, axMenuCount, &axMenuChildren)
-                guard error == .success, let newChildren = axMenuChildren else {
-                    os_log(.debug, "%{public}s", "Failed to get AXMenu children")
-                    break
-                }
-                children = newChildren
-            }
-        }
+        guard let children = fetchChildrenUnwrappingMenu(searchItem) else { break }
 
         let nextMenuItem = path[0] as! String
         path.removeObject(at: 0)
 
-        var found = false
-        let childCount = CFArrayGetCount(children)
-        for j in 0..<childCount {
-            let testMenuItemPtr = CFArrayGetValueAtIndex(children, j)!
-            let testMenuItem = Unmanaged<AXUIElement>.fromOpaque(testMenuItemPtr).takeUnretainedValue()
-            var cfTitle: CFTypeRef?
-            let titleError = AXUIElementCopyAttributeValue(testMenuItem, kAXTitleAttribute as CFString, &cfTitle)
-            if titleError != .success {
-                os_log(.debug, "%{public}s", "Unable to get menu item title")
-                continue
-            }
-            if nextMenuItem == (cfTitle as? String ?? "") {
-                found = true
-                searchItem = testMenuItem
-                break
-            }
-        }
-
-        if !found {
+        guard let matched = findChildByTitle(children, nextMenuItem) else {
             os_log(.debug, "%{public}s", "Unable to resolve complete search path")
             break
         }
+        searchItem = matched
 
-        if path.count == 0 {
-            foundItem = searchItem
-            break
-        }
+        if path.count == 0 { return searchItem }
     }
 
-    return foundItem
+    return nil
+}
+
+/// Fetches the children of `element`. If the first child has AXMenu role,
+/// unwraps one level to return the menu's children instead.
+private func fetchChildrenUnwrappingMenu(_ element: AXUIElement) -> CFArray? {
+    var count: CFIndex = -1
+    var axError = AXUIElementGetAttributeValueCount(element, kAXChildrenAttribute as CFString, &count)
+    guard axError == .success else {
+        os_log(.debug, "%{public}s", "Failed to get child count")
+        return nil
+    }
+
+    var cfChildren: CFArray?
+    axError = AXUIElementCopyAttributeValues(element, kAXChildrenAttribute as CFString, 0, count, &cfChildren)
+    guard axError == .success, var children = cfChildren else {
+        os_log(.debug, "%{public}s", "Failed to get children")
+        return nil
+    }
+
+    if count > 0, let unwrapped = unwrapAXMenuChildren(children) {
+        children = unwrapped
+    }
+    return children
+}
+
+/// If the first element in `children` has the AXMenu role, returns that menu's
+/// children (one level deeper). Otherwise returns nil.
+private func unwrapAXMenuChildren(_ children: CFArray) -> CFArray? {
+    guard let firstPtr = CFArrayGetValueAtIndex(children, 0) else { return nil }
+    let firstElement = Unmanaged<AXUIElement>.fromOpaque(firstPtr).takeUnretainedValue()
+
+    var cfRole: CFTypeRef?
+    guard AXUIElementCopyAttributeValue(firstElement, kAXRoleAttribute as CFString, &cfRole) == .success else {
+        os_log(.debug, "%{public}s", "Failed to get role")
+        return nil
+    }
+    guard CFStringCompare(cfRole as! CFString, kAXMenuRole as CFString, []) == .compareEqualTo else {
+        return nil
+    }
+
+    var axMenuCount: CFIndex = -1
+    guard AXUIElementGetAttributeValueCount(firstElement, kAXChildrenAttribute as CFString, &axMenuCount) == .success else {
+        os_log(.debug, "%{public}s", "Failed to get AXMenu child count")
+        return nil
+    }
+    var axMenuChildren: CFArray?
+    guard AXUIElementCopyAttributeValues(firstElement, kAXChildrenAttribute as CFString, 0, axMenuCount, &axMenuChildren) == .success,
+          let result = axMenuChildren else {
+        os_log(.debug, "%{public}s", "Failed to get AXMenu children")
+        return nil
+    }
+    return result
+}
+
+/// Searches `children` for the first element whose AXTitle matches `title`.
+private func findChildByTitle(_ children: CFArray, _ title: String) -> AXUIElement? {
+    let childCount = CFArrayGetCount(children)
+    for j in 0..<childCount {
+        let ptr = CFArrayGetValueAtIndex(children, j)!
+        let element = Unmanaged<AXUIElement>.fromOpaque(ptr).takeUnretainedValue()
+        var cfTitle: CFTypeRef?
+        let err = AXUIElementCopyAttributeValue(element, kAXTitleAttribute as CFString, &cfTitle)
+        if err != .success {
+            os_log(.debug, "%{public}s", "Unable to get menu item title")
+            continue
+        }
+        if title == (cfTitle as? String ?? "") { return element }
+    }
+    return nil
 }
 
 /// hs.application:findMenuItem(menuItem[, isRegex]) -> table or nil
@@ -879,6 +893,7 @@ private func application_selectmenuitem(_ L: LuaState) throws -> CInt {
 // MARK: - Menu structure
 
 private func _getMenuStructure(_ menuItem: AXUIElement) -> Any {
+    let initialAttributeCount = 7
     let attributeNames = NSMutableArray(array: [
         kAXTitleAttribute as String,
         kAXRoleAttribute as String,
@@ -888,97 +903,99 @@ private func _getMenuStructure(_ menuItem: AXUIElement) -> Any {
         kAXEnabledAttribute as String,
         kAXMenuItemCmdGlyphAttribute as String,
     ])
+    assert(attributeNames.count == initialAttributeCount, "_getMenuStructure: expected \(initialAttributeCount) attribute names, got \(attributeNames.count)")
 
     var cfAttributeValues: CFArray?
     let result = AXUIElementCopyMultipleAttributeValues(menuItem, attributeNames as CFArray, AXCopyMultipleAttributeOptions(rawValue: 0), &cfAttributeValues)
 
     if result != AXError.success {
         os_log(.default, "%{public}s","Unable to fetch menu structure")
-    } else if let cfValues = cfAttributeValues {
-        let firstElement = CFArrayGetValueAtIndex(cfValues, 0)
-        if let firstElement = firstElement {
-            let typeID = CFGetTypeID(Unmanaged<CFTypeRef>.fromOpaque(firstElement).takeUnretainedValue())
-            if typeID == CFStringGetTypeID() {
-                let firstStr = Unmanaged<CFString>.fromOpaque(firstElement).takeUnretainedValue()
-                if CFStringCompare(firstStr, "Apple" as CFString, []) == .compareEqualTo {
-                    return NSNull()
-                }
+    } else if isAppleMenuItem(cfAttributeValues) {
+        return NSNull()
+    }
+
+    guard let cfValues = cfAttributeValues else { return NSNull() }
+
+    let attributeValues = NSMutableArray(array: (cfValues as? [Any]) ?? [])
+    replaceAXErrorValues(attributeValues)
+    replaceModifiersWithArray(attributeValues, attributeNames)
+
+    let children = collectMenuChildren(menuItem)
+    if let children = children, children.count > 0 {
+        attributeNames.add(kAXChildrenAttribute as String)
+        attributeValues.add(children)
+    }
+
+    return buildMenuResult(attributeValues, attributeNames, children)
+}
+
+/// Returns true if the first attribute value is the string "Apple" (the Apple menu).
+private func isAppleMenuItem(_ cfValues: CFArray?) -> Bool {
+    guard let cfValues = cfValues,
+          let firstElement = CFArrayGetValueAtIndex(cfValues, 0) else { return false }
+    let typeID = CFGetTypeID(Unmanaged<CFTypeRef>.fromOpaque(firstElement).takeUnretainedValue())
+    guard typeID == CFStringGetTypeID() else { return false }
+    let firstStr = Unmanaged<CFString>.fromOpaque(firstElement).takeUnretainedValue()
+    return CFStringCompare(firstStr, "Apple" as CFString, []) == .compareEqualTo
+}
+
+/// Replaces any AXValue entries of type .axError with empty strings.
+private func replaceAXErrorValues(_ attributeValues: NSMutableArray) {
+    for j in 0..<attributeValues.count {
+        let val = attributeValues[j]
+        if CFGetTypeID(val as CFTypeRef) == AXValueGetTypeID() {
+            if AXValueGetType(val as! AXValue) == .axError {
+                attributeValues[j] = ""
             }
         }
     }
+}
 
-    if let cfValues = cfAttributeValues {
-        let attributeValues = NSMutableArray(array: (cfValues as? [Any]) ?? [])
-        var children: NSMutableArray? = nil
+/// Converts the raw modifier integer into an array of modifier name strings.
+private func replaceModifiersWithArray(_ attributeValues: NSMutableArray, _ attributeNames: NSMutableArray) {
+    let modifiersIndex = attributeNames.index(of: kAXMenuItemCmdModifiersAttribute as String)
+    guard let modsNum = attributeValues[modifiersIndex] as? NSNumber else {
+        attributeValues[modifiersIndex] = NSNull()
+        return
+    }
+    let modsInt = modsNum.intValue
+    let modsArr = NSMutableArray()
+    if (modsInt & kAXMenuItemModifierNoCommand) == 0 { modsArr.add("cmd") }
+    if (modsInt & kAXMenuItemModifierShift) != 0     { modsArr.add("shift") }
+    if (modsInt & kAXMenuItemModifierOption) != 0    { modsArr.add("alt") }
+    if (modsInt & kAXMenuItemModifierControl) != 0   { modsArr.add("ctrl") }
+    attributeValues[modifiersIndex] = modsArr
+}
 
-        for j in 0..<attributeValues.count {
-            let attributeValue = attributeValues[j]
-            if CFGetTypeID(attributeValue as CFTypeRef) == AXValueGetTypeID() {
-                let rawType = AXValueGetType(attributeValue as! AXValue)
-                if rawType == .axError {
-                    attributeValues[j] = ""
-                }
-            }
-        }
-
-        let modifiersIndex = attributeNames.index(of: kAXMenuItemCmdModifiersAttribute as String)
-        let modsSrc = attributeValues[modifiersIndex]
-        var modsDst: Any
-
-        if let modsNum = modsSrc as? NSNumber {
-            let modsInt = modsNum.intValue
-            let modsArr = NSMutableArray()
-            modsDst = modsArr
-
-            if (modsInt & kAXMenuItemModifierNoCommand) == 0 {
-                modsArr.add("cmd")
-            }
-            if (modsInt & kAXMenuItemModifierShift) != 0 {
-                modsArr.add("shift")
-            }
-            if (modsInt & kAXMenuItemModifierOption) != 0 {
-                modsArr.add("alt")
-            }
-            if (modsInt & kAXMenuItemModifierControl) != 0 {
-                modsArr.add("ctrl")
-            }
-        } else {
-            modsDst = NSNull()
-        }
-
-        attributeValues[modifiersIndex] = modsDst
-
-        var cfChildren: CFArray?
-        if AXUIElementCopyAttributeValues(menuItem, kAXChildrenAttribute as CFString, 0, CFIndex(INT32_MAX), &cfChildren) == .success {
-            children = NSMutableArray()
-            if let cfChildren = cfChildren {
-                let numChildren = CFArrayGetCount(cfChildren)
-                for i in 0..<numChildren {
-                    let childPtr = CFArrayGetValueAtIndex(cfChildren, i)!
-                    let child = Unmanaged<AXUIElement>.fromOpaque(childPtr).takeUnretainedValue()
-                    let childValues = _getMenuStructure(child)
-
-                    if !(childValues is NSNull) {
-                        children!.add(childValues)
-                    }
-                }
-            }
-
-            if let children = children, children.count > 0 {
-                attributeNames.add(kAXChildrenAttribute as String)
-                attributeValues.add(children)
-            }
-        }
-
-        let roleValue = attributeValues[1] as? String ?? ""
-        if roleValue == "AXMenuItem" || roleValue == "AXMenuBarItem" {
-            let thisMenuItem = NSMutableDictionary(objects: attributeValues as! [Any], forKeys: attributeNames as! [NSCopying])
-            if thisMenuItem.count > 0 { return thisMenuItem }
-        } else {
-            if let children = children, children.count > 0 { return children }
+/// Recursively collects non-null child menu structures.
+private func collectMenuChildren(_ menuItem: AXUIElement) -> NSMutableArray? {
+    var cfChildren: CFArray?
+    guard AXUIElementCopyAttributeValues(menuItem, kAXChildrenAttribute as CFString, 0, CFIndex(INT32_MAX), &cfChildren) == .success else {
+        return nil
+    }
+    let result = NSMutableArray()
+    if let cfChildren = cfChildren {
+        let numChildren = CFArrayGetCount(cfChildren)
+        for i in 0..<numChildren {
+            let childPtr = CFArrayGetValueAtIndex(cfChildren, i)!
+            let child = Unmanaged<AXUIElement>.fromOpaque(childPtr).takeUnretainedValue()
+            let childValues = _getMenuStructure(child)
+            if !(childValues is NSNull) { result.add(childValues) }
         }
     }
+    return result
+}
 
+/// Builds the final menu item dictionary or returns the children array.
+private func buildMenuResult(_ attributeValues: NSMutableArray, _ attributeNames: NSMutableArray,
+                             _ children: NSMutableArray?) -> Any {
+    let roleValue = attributeValues[1] as? String ?? ""
+    if roleValue == "AXMenuItem" || roleValue == "AXMenuBarItem" {
+        let thisMenuItem = NSMutableDictionary(objects: attributeValues as! [Any], forKeys: attributeNames as! [NSCopying])
+        if thisMenuItem.count > 0 { return thisMenuItem }
+    } else {
+        if let children = children, children.count > 0 { return children }
+    }
     return NSNull()
 }
 
@@ -1161,13 +1178,16 @@ private func application_uielement_newWatcher(_ L: LuaState) throws -> CInt {
 
 @discardableResult
 func pushHSapplication(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any?) -> Int32 {
+    precondition(L != nil, "pushHSapplication: L must not be nil")
     guard let value = obj as? (NSObject & HSapplicationProtocol) else { return 0 }
+    let previousTop = lua_gettop(L)
     value.selfRefCount += 1
     let valuePtr = lua_newuserdata(L, MemoryLayout<UnsafeMutableRawPointer>.size)!
         .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
     valuePtr.pointee = Unmanaged.passRetained(value as NSObject).toOpaque()
     luaL_getmetatable(L, USERDATA_TAG)
     lua_setmetatable(L, -2)
+    assert(lua_gettop(L) == previousTop + 1, "pushHSapplication: stack should grow by exactly 1")
     return 1
 }
 
@@ -1178,11 +1198,13 @@ func pushHSapplicationOrNil(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any?) 
 }
 
 private func pushHSapplications(_ L: UnsafeMutablePointer<lua_State>!, _ apps: [HSapplication]?) {
+    precondition(L != nil, "pushHSapplications: L must not be nil")
     guard let apps = apps else {
         lua_pushnil(L)
         return
     }
 
+    let previousTop = lua_gettop(L)
     lua_createtable(L, Int32(apps.count), 0)
     var index: lua_Integer = 1
     for app in apps {
@@ -1191,9 +1213,12 @@ private func pushHSapplications(_ L: UnsafeMutablePointer<lua_State>!, _ apps: [
             index += 1
         }
     }
+    assert(lua_gettop(L) == previousTop + 1, "pushHSapplications: stack should grow by exactly 1 (table)")
 }
 
 private func toHSapplicationFromLua(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> Any! {
+    precondition(L != nil, "toHSapplicationFromLua: L must not be nil")
+    precondition(idx != 0, "toHSapplicationFromLua: idx must not be 0")
     if luaL_testudata(L, idx, USERDATA_TAG) != nil {
         let ptr = luaL_checkudata(L, idx, USERDATA_TAG)!
             .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
@@ -1248,7 +1273,8 @@ private func userdata_gc(_ L: LuaState) throws -> CInt {
 
 @_cdecl("luaopen_hs_libapplication")
 public func luaopen_hs_libapplication_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    runEntryPoint(L) { L in
+    precondition(L != nil, "luaopen_hs_libapplication: L must not be nil")
+    return runEntryPoint(L) { L in
         backgroundCallbacks = [Int32: LuaValue]()
         backgroundCallbackNextKey = 0
 
