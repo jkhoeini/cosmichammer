@@ -29,8 +29,8 @@ private func hostAddresses(_ L: LuaState) throws -> CInt {
     lua_newtable(L)
     var i: lua_Integer = 1
     for address in addresses {
-        lua_pushinteger(L, i)
-        lua_pushstring(L, address)
+        L.push(i)
+        L.push(address)
         lua_settable(L, -3)
         i += 1
     }
@@ -59,8 +59,8 @@ private func hostNames(_ L: LuaState) throws -> CInt {
     lua_newtable(L)
     var i: lua_Integer = 1
     for name in names {
-        lua_pushinteger(L, i)
-        lua_pushstring(L, name)
+        L.push(i)
+        L.push(name)
         lua_settable(L, -3)
         i += 1
     }
@@ -78,7 +78,7 @@ private func hostNames(_ L: LuaState) throws -> CInt {
 /// Returns:
 ///  * A string containing the name of the current machine
 private func hostLocalizedName(_ L: LuaState) throws -> CInt {
-    lua_pushstring(L, Host.current().localizedName)
+    L.push(Host.current().localizedName ?? "")
     return 1
 }
 
@@ -150,57 +150,57 @@ private func hs_vmstat(_ L: LuaState) throws -> CInt {
     }
 
     lua_newtable(L)
-    lua_pushinteger(L, lua_Integer(Int64(vm_stat.free_count) - Int64(vm_stat.speculative_count)))
+    L.push(lua_Integer(Int64(vm_stat.free_count) - Int64(vm_stat.speculative_count)))
     lua_setfield(L, -2, "pagesFree")
-    lua_pushinteger(L, lua_Integer(vm_stat.active_count))
+    L.push(lua_Integer(vm_stat.active_count))
     lua_setfield(L, -2, "pagesActive")
-    lua_pushinteger(L, lua_Integer(vm_stat.inactive_count))
+    L.push(lua_Integer(vm_stat.inactive_count))
     lua_setfield(L, -2, "pagesInactive")
-    lua_pushinteger(L, lua_Integer(vm_stat.speculative_count))
+    L.push(lua_Integer(vm_stat.speculative_count))
     lua_setfield(L, -2, "pagesSpeculative")
-    lua_pushinteger(L, lua_Integer(vm_stat.throttled_count))
+    L.push(lua_Integer(vm_stat.throttled_count))
     lua_setfield(L, -2, "pagesThrottled")
-    lua_pushinteger(L, lua_Integer(vm_stat.wire_count))
+    L.push(lua_Integer(vm_stat.wire_count))
     lua_setfield(L, -2, "pagesWiredDown")
-    lua_pushinteger(L, lua_Integer(vm_stat.purgeable_count))
+    L.push(lua_Integer(vm_stat.purgeable_count))
     lua_setfield(L, -2, "pagesPurgeable")
-    lua_pushinteger(L, lua_Integer(vm_stat.faults))
+    L.push(lua_Integer(vm_stat.faults))
     lua_setfield(L, -2, "translationFaults")
-    lua_pushinteger(L, lua_Integer(vm_stat.cow_faults))
+    L.push(lua_Integer(vm_stat.cow_faults))
     lua_setfield(L, -2, "pagesCopyOnWrite")
-    lua_pushinteger(L, lua_Integer(vm_stat.zero_fill_count))
+    L.push(lua_Integer(vm_stat.zero_fill_count))
     lua_setfield(L, -2, "pagesZeroFilled")
-    lua_pushinteger(L, lua_Integer(vm_stat.reactivations))
+    L.push(lua_Integer(vm_stat.reactivations))
     lua_setfield(L, -2, "pagesReactivated")
-    lua_pushinteger(L, lua_Integer(vm_stat.purges))
+    L.push(lua_Integer(vm_stat.purges))
     lua_setfield(L, -2, "pagesPurged")
-    lua_pushinteger(L, lua_Integer(vm_stat.external_page_count))
+    L.push(lua_Integer(vm_stat.external_page_count))
     lua_setfield(L, -2, "fileBackedPages")
-    lua_pushinteger(L, lua_Integer(vm_stat.internal_page_count))
+    L.push(lua_Integer(vm_stat.internal_page_count))
     lua_setfield(L, -2, "anonymousPages")
-    lua_pushinteger(L, lua_Integer(vm_stat.total_uncompressed_pages_in_compressor))
+    L.push(lua_Integer(vm_stat.total_uncompressed_pages_in_compressor))
     lua_setfield(L, -2, "uncompressedPages")
-    lua_pushinteger(L, lua_Integer(vm_stat.compressor_page_count))
+    L.push(lua_Integer(vm_stat.compressor_page_count))
     lua_setfield(L, -2, "pagesUsedByVMCompressor")
-    lua_pushinteger(L, lua_Integer(vm_stat.decompressions))
+    L.push(lua_Integer(vm_stat.decompressions))
     lua_setfield(L, -2, "pagesDecompressed")
-    lua_pushinteger(L, lua_Integer(vm_stat.compressions))
+    L.push(lua_Integer(vm_stat.compressions))
     lua_setfield(L, -2, "pagesCompressed")
-    lua_pushinteger(L, lua_Integer(vm_stat.pageins))
+    L.push(lua_Integer(vm_stat.pageins))
     lua_setfield(L, -2, "pageIns")
-    lua_pushinteger(L, lua_Integer(vm_stat.pageouts))
+    L.push(lua_Integer(vm_stat.pageouts))
     lua_setfield(L, -2, "pageOuts")
-    lua_pushinteger(L, lua_Integer(vm_stat.swapins))
+    L.push(lua_Integer(vm_stat.swapins))
     lua_setfield(L, -2, "swapIns")
-    lua_pushinteger(L, lua_Integer(vm_stat.swapouts))
+    L.push(lua_Integer(vm_stat.swapouts))
     lua_setfield(L, -2, "swapOuts")
-    lua_pushinteger(L, lua_Integer(vm_stat.lookups))
+    L.push(lua_Integer(vm_stat.lookups))
     lua_setfield(L, -2, "cacheLookups")
-    lua_pushinteger(L, lua_Integer(vm_stat.hits))
+    L.push(lua_Integer(vm_stat.hits))
     lua_setfield(L, -2, "cacheHits")
-    lua_pushinteger(L, lua_Integer(pagesize))
+    L.push(lua_Integer(pagesize))
     lua_setfield(L, -2, "pageSize")
-    lua_pushinteger(L, lua_Integer(memsize))
+    L.push(lua_Integer(memsize))
     lua_setfield(L, -2, "memSize")
 
     return 1
@@ -266,20 +266,20 @@ private func hs_cpuUsageTicks(_ L: LuaState) throws -> CInt {
             overallInUse    += UInt64(inUse)
 
             lua_newtable(L)
-            lua_pushinteger(L, lua_Integer(inUser));   lua_setfield(L, -2, "user")
-            lua_pushinteger(L, lua_Integer(inSystem)); lua_setfield(L, -2, "system")
-            lua_pushinteger(L, lua_Integer(inNice));   lua_setfield(L, -2, "nice")
-            lua_pushinteger(L, lua_Integer(inUse));    lua_setfield(L, -2, "active")
-            lua_pushinteger(L, lua_Integer(inIdle));   lua_setfield(L, -2, "idle")
+            L.push(lua_Integer(inUser));   lua_setfield(L, -2, "user")
+            L.push(lua_Integer(inSystem)); lua_setfield(L, -2, "system")
+            L.push(lua_Integer(inNice));   lua_setfield(L, -2, "nice")
+            L.push(lua_Integer(inUse));    lua_setfield(L, -2, "active")
+            L.push(lua_Integer(inIdle));   lua_setfield(L, -2, "idle")
             lua_rawseti(L, -2, luaL_len(L, -2) + 1)
         }
 
         lua_newtable(L)
-        lua_pushinteger(L, lua_Integer(overallInUser));   lua_setfield(L, -2, "user")
-        lua_pushinteger(L, lua_Integer(overallInSystem)); lua_setfield(L, -2, "system")
-        lua_pushinteger(L, lua_Integer(overallInNice));   lua_setfield(L, -2, "nice")
-        lua_pushinteger(L, lua_Integer(overallInUse));    lua_setfield(L, -2, "active")
-        lua_pushinteger(L, lua_Integer(overallInIdle));   lua_setfield(L, -2, "idle")
+        L.push(lua_Integer(overallInUser));   lua_setfield(L, -2, "user")
+        L.push(lua_Integer(overallInSystem)); lua_setfield(L, -2, "system")
+        L.push(lua_Integer(overallInNice));   lua_setfield(L, -2, "nice")
+        L.push(lua_Integer(overallInUse));    lua_setfield(L, -2, "active")
+        L.push(lua_Integer(overallInIdle));   lua_setfield(L, -2, "idle")
         lua_setfield(L, -2, "overall")
 
         vm_deallocate(mach_task_self_, vm_address_t(bitPattern: cpuInfo), vm_size_t(MemoryLayout<integer_t>.size * Int(numCpuInfo)))
@@ -287,7 +287,7 @@ private func hs_cpuUsageTicks(_ L: LuaState) throws -> CInt {
         throw LuaCallError("hs.host.cpuUsage() error: \(String(cString: mach_error_string(err)))")
     }
 
-    lua_pushinteger(L, lua_Integer(numCPUs))
+    L.push(lua_Integer(numCPUs))
     lua_setfield(L, -2, "n")
     return 1
 }
@@ -306,7 +306,7 @@ private func hs_cpuUsageTicks(_ L: LuaState) throws -> CInt {
 ///  * According to the OS X Developer documentation, "The operating system version string is human readable, localized, and is appropriate for displaying to the user. This string is not appropriate for parsing."
 private func hs_operatingSystemVersionString(_ L: LuaState) throws -> CInt {
     let pinfo = ProcessInfo.processInfo
-    lua_pushstring(L, pinfo.operatingSystemVersionString)
+    L.push(pinfo.operatingSystemVersionString)
     return 1
 }
 
@@ -330,7 +330,7 @@ private func hs_thermalStateString(_ L: LuaState) throws -> CInt {
     @unknown default: returnState = "unknown"
     }
 
-    lua_pushstring(L, returnState)
+    L.push(returnState)
     return 1
 }
 
@@ -352,10 +352,10 @@ private func hs_operatingSystemVersion(_ L: LuaState) throws -> CInt {
     let osv = ProcessInfo.processInfo.operatingSystemVersion
 
     lua_newtable(L)
-    lua_pushinteger(L, lua_Integer(osv.majorVersion)); lua_setfield(L, -2, "major")
-    lua_pushinteger(L, lua_Integer(osv.minorVersion)); lua_setfield(L, -2, "minor")
-    lua_pushinteger(L, lua_Integer(osv.patchVersion)); lua_setfield(L, -2, "patch")
-    lua_pushboolean(L, 1);                             lua_setfield(L, -2, "exact")
+    L.push(lua_Integer(osv.majorVersion)); lua_setfield(L, -2, "major")
+    L.push(lua_Integer(osv.minorVersion)); lua_setfield(L, -2, "minor")
+    L.push(lua_Integer(osv.patchVersion)); lua_setfield(L, -2, "patch")
+    L.push(true);                          lua_setfield(L, -2, "exact")
 
     return 1
 }
@@ -374,7 +374,7 @@ private func hs_operatingSystemVersion(_ L: LuaState) throws -> CInt {
 ///  * As of OS X 10.10.4, other than the default style, only "Dark" is recognized as a valid style.
 private func hs_interfaceStyle(_ L: LuaState) throws -> CInt {
     if let style = UserDefaults.standard.string(forKey: "AppleInterfaceStyle") {
-        lua_pushstring(L, style)
+        L.push(style)
     } else {
         lua_pushnil(L)
     }
@@ -395,7 +395,7 @@ private func hs_interfaceStyle(_ L: LuaState) throws -> CInt {
 ///  * See also `hs.host.globallyUniqueString`
 ///  * UUIDs (Universally Unique Identifiers), also known as GUIDs (Globally Unique Identifiers) or IIDs (Interface Identifiers), are 128-bit values. UUIDs created by NSUUID conform to RFC 4122 version 4 and are created with random bytes.
 private func hs_uuid(_ L: LuaState) throws -> CInt {
-    lua_pushstring(L, UUID().uuidString)
+    L.push(UUID().uuidString)
     return 1
 }
 
@@ -414,7 +414,7 @@ private func hs_uuid(_ L: LuaState) throws -> CInt {
 ///  * The global unique identifier for a process includes the host name, process ID, and a time stamp, which ensures that the ID is unique for the network. This property generates a new string each time it is invoked, and it uses a counter to guarantee that strings are unique.
 ///  * This is often used as a file or directory name in conjunction with `hs.host.temporaryDirectory()` when creating temporary files.
 private func hs_globallyUniqueString(_ L: LuaState) throws -> CInt {
-    lua_pushstring(L, ProcessInfo.processInfo.globallyUniqueString)
+    L.push(ProcessInfo.processInfo.globallyUniqueString)
     return 1
 }
 
@@ -474,7 +474,7 @@ private func hs_idleTime(_ L: LuaState) throws -> CInt {
 
     IOObjectRelease(ioIterator)
 
-    lua_pushinteger(L, lua_Integer(time >> 30))
+    L.push(lua_Integer(time >> 30))
     return 1
 }
 
@@ -618,9 +618,9 @@ private func hs_vramSize(_ L: LuaState) throws -> CInt {
             }
 
             if valueInBytes { size >>= 20 }
-            lua_pushnumber(L, lua_Number(size))
+            L.push(lua_Number(size))
         } else {
-            lua_pushnumber(L, -1)
+            L.push(lua_Number(-1))
         }
 
         let modelPtr = CFDataGetBytePtr(modelData)!

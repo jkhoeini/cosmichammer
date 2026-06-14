@@ -12,7 +12,7 @@ import Lua
 /// Returns:
 ///  * A boolean, true if the dock icon is visible, false if not
 private func icon_visible(_ L: LuaState) throws -> CInt {
-    lua_pushboolean(L, MJDockIconVisible() ? 1 : 0)
+    L.push(MJDockIconVisible())
     return 1
 }
 
@@ -70,7 +70,8 @@ private func icon_bounce(_ L: LuaState) throws -> CInt {
 ///  * None
 private func icon_setBadge(_ L: LuaState) throws -> CInt {
     let tile = NSApplication.shared.dockTile
-    tile.badgeLabel = String(cString: luaL_checkstring(L, 1))
+    let badge = String(cString: luaL_checkstring(L, 1)!)
+    tile.badgeLabel = badge
     tile.display()
     return 0
 }

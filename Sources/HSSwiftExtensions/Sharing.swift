@@ -218,7 +218,7 @@ private func pushNSURL(_ L: UnsafeMutablePointer<lua_State>!, obj: Any!) -> Int3
         lua_pushany(L, url.path as NSString?)
         lua_setfield(L, -2, "filePath")
     }
-    lua_pushstring(L, "NSURL")
+    L.push("NSURL")
     lua_setfield(L, -2, "__luaSkinType")
     return 1
 }
@@ -266,7 +266,7 @@ public func luaopen_hs_libsharing(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
                     throw LuaCallError("bad argument #2 (unrecognized element in array)")
                 }
 
-                lua_pushboolean(L, (wrapper.sharingService?.canPerform(withItems: items) ?? false) ? 1 : 0)
+                L.push(wrapper.sharingService?.canPerform(withItems: items) ?? false)
                 return 1
             },
 
@@ -403,13 +403,13 @@ public func luaopen_hs_libsharing(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
         eq: .closure { L in
             let obj1: HSSharingService = try L.checkArgument(1)
             let obj2: HSSharingService = try L.checkArgument(2)
-            lua_pushboolean(L, obj1.isEqual(obj2) ? 1 : 0)
+            L.push(obj1.isEqual(obj2))
             return 1
         },
         tostring: .closure { L in
             let obj: HSSharingService = try L.checkArgument(1)
             let title = obj.sharingService?.title ?? "unknown"
-            lua_pushstring(L, "\(USERDATA_TAG): \(title) (\(String(describing: lua_topointer(L, 1)!)))")
+            L.push("\(USERDATA_TAG): \(title) (\(String(describing: lua_topointer(L, 1)!)))")
             return 1
         }
     ))
@@ -429,9 +429,9 @@ public func luaopen_hs_libsharing(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
     lua_setfield(L, -2, "__gc")
 
     // Set __type and __name for compat
-    lua_pushstring(L, USERDATA_TAG)
+    L.push(USERDATA_TAG)
     lua_setfield(L, -2, "__type")
-    lua_pushstring(L, USERDATA_TAG)
+    L.push(USERDATA_TAG)
     lua_setfield(L, -2, "__name")
 
     // Alias the metatable under the legacy registry name

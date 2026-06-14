@@ -100,7 +100,7 @@ private func json_encode(_ L: LuaState) throws -> CInt {
 
     let json = jsonManager.encode(table, prettyPrint: prettyPrint)
     if let json = json {
-        lua_pushstring(L, json)
+        L.push(json)
     } else {
         lua_pushnil(L)
     }
@@ -148,7 +148,7 @@ private func json_decode(_ L: LuaState) throws -> CInt {
 ///  * `true` if successful otherwise `false` if an error has occurred
 private func json_write(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TTABLE)
-    let pathStr = String(cString: luaL_checkstring(L, 2))
+    let pathStr: String = try L.checkArgument(2)
 
     let jsonManager = HSjson()
 
@@ -159,7 +159,7 @@ private func json_write(_ L: LuaState) throws -> CInt {
 
     let result = jsonManager.encodeToFile(table, filePath: filePath, replace: replace, prettyPrint: prettyPrint)
 
-    lua_pushboolean(L, result ? 1 : 0)
+    L.push(result)
     return 1
 }
 
@@ -173,7 +173,7 @@ private func json_write(_ L: LuaState) throws -> CInt {
 /// Returns:
 ///  * A table representing the supplied JSON data, or `nil` if an error occurs.
 private func json_read(_ L: LuaState) throws -> CInt {
-    let pathStr = String(cString: luaL_checkstring(L, 1))
+    let pathStr: String = try L.checkArgument(1)
 
     let jsonManager = HSjson()
 

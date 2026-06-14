@@ -48,7 +48,7 @@ private let ipc_callback: CFMessagePortCallBack = { (local, msgid, data, info) -
         let L = lua_getCurrentState()!
         cb.push(onto: L)
         L.push(userdata: port)
-        lua_pushinteger(L, lua_Integer(msgid))
+        L.push(lua_Integer(msgid))
         if let data = data {
             lua_pushany(L, data as NSData)
         } else {
@@ -240,7 +240,7 @@ private func ipc_sendMessage(_ L: LuaState) throws -> CInt {
         response = errMsg.data(using: .utf8)
     }
 
-    lua_pushboolean(L, status ? 1 : 0)
+    L.push(status)
     lua_pushany(L, response as NSData?)
     return 2
 }
@@ -267,12 +267,12 @@ public func luaopen_hs_libipc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
                 },
                 "isRemote": .closure { L in
                     let port: HSIPCMessagePort = try L.checkArgument(1)
-                    lua_pushboolean(L, CFMessagePortIsRemote(port.messagePort) ? 1 : 0)
+                    L.push(CFMessagePortIsRemote(port.messagePort))
                     return 1
                 },
                 "isValid": .closure { L in
                     let port: HSIPCMessagePort = try L.checkArgument(1)
-                    lua_pushboolean(L, CFMessagePortIsValid(port.messagePort) ? 1 : 0)
+                    L.push(CFMessagePortIsValid(port.messagePort))
                     return 1
                 },
                 "sendMessage": .closure(ipc_sendMessage),
@@ -282,7 +282,7 @@ public func luaopen_hs_libipc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
                 let portName = port.messagePort.flatMap { CFMessagePortGetName($0) as String? } ?? "unknown"
                 let locality = port.messagePort.flatMap { CFMessagePortIsRemote($0) ? "remote" : "local" } ?? "unknown"
                 let title = "\(portName), \(locality)"
-                lua_pushstring(L, "\(USERDATA_TAG): \(title) (\(lua_topointer(L, 1)!))")
+                L.push("\(USERDATA_TAG): \(title) (\(lua_topointer(L, 1)!))")
                 return 1
             }
         ))
@@ -292,19 +292,19 @@ public func luaopen_hs_libipc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
         L.pushMetatable(for: HSIPCMessagePort.self)
 
         // __eq: compare the underlying HSIPCMessagePort identity
-        lua_pushcclosure(L, { (L: LuaState!) -> CInt in
+        L.push({ (L: LuaState!) -> CInt in
             if let obj1: HSIPCMessagePort = L.touserdata(1),
                let obj2: HSIPCMessagePort = L.touserdata(2) {
-                lua_pushboolean(L, obj1.isEqual(obj2) ? 1 : 0)
+                L.push(obj1.isEqual(obj2))
             } else {
-                lua_pushboolean(L, 0)
+                L.push(false)
             }
             return 1
-        }, 0)
+        })
         lua_setfield(L, -2, "__eq")
 
         // Replace __gc with our explicit teardown + deinitialize
-        lua_pushcclosure(L, { (L: LuaState!) -> CInt in
+        L.push({ (L: LuaState!) -> CInt in
             if let port: HSIPCMessagePort = L.touserdata(1) {
                 port.teardown()
             }
@@ -312,13 +312,13 @@ public func luaopen_hs_libipc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
             let anyPtr = rawptr.assumingMemoryBound(to: Any.self)
             anyPtr.deinitialize(count: 1)
             return 0
-        }, 0)
+        })
         lua_setfield(L, -2, "__gc")
 
         // Set __type and __name for lsunit.lua assertIsUserdataOfType and tostring
-        lua_pushstring(L, USERDATA_TAG)
+        L.push(USERDATA_TAG)
         lua_setfield(L, -2, "__type")
-        lua_pushstring(L, USERDATA_TAG)
+        L.push(USERDATA_TAG)
         lua_setfield(L, -2, "__name")
 
         // Alias the metatable under the legacy registry name so that

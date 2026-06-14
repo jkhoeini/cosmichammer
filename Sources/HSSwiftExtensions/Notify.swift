@@ -71,7 +71,7 @@ class HSModuleNotificationManager: NSObject, NSUserNotificationCenterDelegate {
         userInfo[KEY_DELIVERED] = true // just in case its a holdover from before a reload/relaunch
 
         let L = lua_getCurrentState()!
-        if !(lua_getglobal(L, "require") == LUA_OK && { lua_pushstring(L, nt_USERDATA_TAG); return lua_pcall(L, 1, 1, 0) == LUA_OK }()) {
+        if !(lua_getglobal(L, "require") == LUA_OK && { L.push(nt_USERDATA_TAG); return lua_pcall(L, 1, 1, 0) == LUA_OK }()) {
             os_log(.error, "%{public}s", "\(nt_USERDATA_TAG):_didActivateNotification - unable to load tag handler: \(String(cString: lua_tostring(L, -1)!))")
             lua_pop(L, 1) // remove error message
             return
@@ -290,15 +290,15 @@ func nt_activationTypesTable(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Notes:
 ///  * Count starts at zero. (implemented in Objective-C)
     lua_newtable(L)
-    lua_pushinteger(L, lua_Integer(NSUserNotification.ActivationType.none.rawValue))
+    L.push(lua_Integer(NSUserNotification.ActivationType.none.rawValue))
     lua_setfield(L, -2, "none")
-    lua_pushinteger(L, lua_Integer(NSUserNotification.ActivationType.contentsClicked.rawValue))
+    L.push(lua_Integer(NSUserNotification.ActivationType.contentsClicked.rawValue))
     lua_setfield(L, -2, "contentsClicked")
-    lua_pushinteger(L, lua_Integer(NSUserNotification.ActivationType.actionButtonClicked.rawValue))
+    L.push(lua_Integer(NSUserNotification.ActivationType.actionButtonClicked.rawValue))
     lua_setfield(L, -2, "actionButtonClicked")
-    lua_pushinteger(L, lua_Integer(NSUserNotification.ActivationType.replied.rawValue))
+    L.push(lua_Integer(NSUserNotification.ActivationType.replied.rawValue))
     lua_setfield(L, -2, "replied")
-    lua_pushinteger(L, lua_Integer(NSUserNotification.ActivationType.additionalActionClicked.rawValue))
+    L.push(lua_Integer(NSUserNotification.ActivationType.additionalActionClicked.rawValue))
     lua_setfield(L, -2, "additionalActionClicked")
     return 1
 }
@@ -347,8 +347,8 @@ func nt_toNSUserNotificationFromLua(_ L: UnsafeMutablePointer<lua_State>!, _ idx
 private func nt_userdata_tostring(_ L: LuaState) throws -> CInt {
     let obj = nt_getNotification(L, 1)
     let title = obj.title ?? ""
-    let ptr = lua_topointer(L, 1)
-    lua_pushany(L, NSString(string: "\(nt_USERDATA_TAG): \(title) (\(String(describing: ptr)))"))
+    let desc = "\(nt_USERDATA_TAG): \(title) (\(String(describing: lua_topointer(L, 1)!)))"
+    L.push(desc)
     return 1
 }
 
@@ -358,9 +358,9 @@ private func nt_userdata_eq(_ L: LuaState) throws -> CInt {
     if luaL_testudata(L, 1, nt_USERDATA_TAG) != nil && luaL_testudata(L, 2, nt_USERDATA_TAG) != nil {
         let obj1 = nt_getNotification(L, 1)
         let obj2 = nt_getNotification(L, 2)
-        lua_pushboolean(L, obj1.isEqual(to: obj2) ? 1 : 0)
+        L.push(obj1.isEqual(to: obj2))
     } else {
-        lua_pushboolean(L, 0)
+        L.push(false)
     }
     return 1
 }
@@ -439,6 +439,8 @@ public func luaopen_hs_libnotify(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
         nt_refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
 
         // Register userdata metatable
+        // NOTE: NSUserNotification is an Apple framework class stored via Unmanaged raw pointer,
+        // so we cannot use Metatable<T>/installMetatableBoilerplate. Manual registration is correct here.
         luaL_newmetatable(L, nt_USERDATA_TAG)
         lua_pushvalue(L, -1)
         lua_setfield(L, -2, "__index")
@@ -474,9 +476,40 @@ public func luaopen_hs_libnotify(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
         #endif
         L.push(nt_userdata_tostring);                     lua_setfield(L, -2, "__tostring")
         L.push(nt_userdata_eq);                           lua_setfield(L, -2, "__eq")
-        L.push(nt_userdata_gc);                           lua_setfield(L, -2, "__gc")
 
-        lua_pop(L, 1)
+        // __gc must be a non-throwing C closure — finalizers must not raise Lua errors.
+        lua_pushcclosure(L, { (L: LuaState!) -> CInt in
+            let ptr = luaL_checkudata(L, 1, nt_USERDATA_TAG)!
+                .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
+            if let rawPtr = ptr.pointee {
+                let obj = Unmanaged<NSUserNotification>.fromOpaque(rawPtr).takeRetainedValue()
+                if let userInfoDict = obj.userInfo {
+                    if let gus = userInfoDict[KEY_ID] as? String {
+                        if let specifics = nt_specifics,
+                           let userInfo = specifics[gus] as? NSMutableDictionary {
+                            let selfRefCount = (userInfo[KEY_SELFREFCOUNT] as? NSNumber)?.intValue ?? 0
+                            let newSelfRefCount = selfRefCount - 1
+                            userInfo[KEY_SELFREFCOUNT] = NSNumber(value: newSelfRefCount)
+                            if newSelfRefCount <= 0 {
+                                specifics[gus] = nil
+                            }
+                        }
+                    }
+                }
+                ptr.pointee = nil
+            }
+            lua_pushnil(L)
+            lua_setmetatable(L, 1)
+            return 0
+        }, 0)
+        lua_setfield(L, -2, "__gc")
+
+        // Set __type/__name and alias metatable in registry
+        L.push(nt_USERDATA_TAG)
+        lua_setfield(L, -2, "__type")
+        L.push(nt_USERDATA_TAG)
+        lua_setfield(L, -2, "__name")
+        lua_setfield(L, LUA_REGISTRYINDEX_VALUE, nt_USERDATA_TAG)
 
         // Create module table
         lua_createtable(L, 0, 5)
@@ -486,9 +519,17 @@ public func luaopen_hs_libnotify(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
         L.push(notification_deliveredNotifications); lua_setfield(L, -2, "deliveredNotifications")
         L.push(notification_scheduledNotifications); lua_setfield(L, -2, "scheduledNotifications")
 
-        // Set module metatable (for __gc)
+        // Set module metatable (for __gc) — non-throwing C closure for finalizer safety
         lua_createtable(L, 0, 1)
-        L.push(nt_meta_gc); lua_setfield(L, -2, "__gc")
+        lua_pushcclosure(L, { (L: LuaState!) -> CInt in
+            NSUserNotificationCenter.default.delegate = nt_old_delegate
+            if nt_specifics != nil {
+                nt_specifics.removeAllObjects()
+                nt_specifics = nil
+            }
+            return 0
+        }, 0)
+        lua_setfield(L, -2, "__gc")
         lua_setmetatable(L, -2)
 
         _ = nt_activationTypesTable(L)
@@ -497,7 +538,7 @@ public func luaopen_hs_libnotify(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
     /// hs.notify.defaultNotificationSound
     /// Constant
     /// The string representation of the default notification sound. Use `hs.notify:soundName()` or set the `soundName` attribute in `hs:notify.new()`, to this constant, if you want to use the default sound
-        lua_pushstring(L, NSUserNotificationDefaultSoundName)
+        L.push(NSUserNotificationDefaultSoundName)
         lua_setfield(L, -2, "defaultNotificationSound")
 
         nt_delegate_setup()

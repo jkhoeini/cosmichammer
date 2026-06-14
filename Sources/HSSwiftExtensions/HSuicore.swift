@@ -228,12 +228,7 @@ private let watcherCallback: AXObserverCallback = { _, element, notificationName
     }
 
     // Parameter 2: event name
-    if let cstr = CFStringGetCStringPtr(notificationName, CFStringBuiltInEncodings.ASCII.rawValue) {
-        lua_pushstring(L, cstr)
-    } else {
-        let str = notificationName as String
-        lua_pushstring(L, str)
-    }
+    L.push(notificationName as String)
 
     // Parameter 3: watcher
     if let ws = watcher.watcherSelfRef {

@@ -6,86 +6,11 @@ import os.log
 
 private let USERDATA_TAG = "hs.uielement.watcher"
 
-private func getWatcher(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> (NSObject & HSuielementWatcherProtocol)? {
-    let ptr = luaL_checkudata(L, idx, USERDATA_TAG)!
-        .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
-    guard let rawPtr = ptr.pointee else { return nil }
-    return Unmanaged<NSObject>.fromOpaque(rawPtr).takeUnretainedValue() as? NSObject & HSuielementWatcherProtocol
-}
-
-private func watcher_start(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
-    luaL_checktype(L, 2, LUA_TTABLE)
-    guard let watcher = getWatcher(L, at: 1) else { return 0 }
-    if let concreteWatcher = watcher as? HSuielementWatcher {
-        concreteWatcher.watcherSelfRef = nil  // release old ref before reassigning
-        concreteWatcher.watcherSelfRef = L.ref(index: 1)
-    }
-    if let events = lua_tovalue(L, at: 2) as? [String] {
-        watcher.start(events, withState: L)
-    }
-    lua_pushvalue(L, 1)
-    return 1
-}
-
-private func watcher_stop(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
-    guard let watcher = getWatcher(L, at: 1) else { return 0 }
-    watcher.stop()
-    if let concreteWatcher = watcher as? HSuielementWatcher {
-        concreteWatcher.watcherSelfRef = nil
-    }
-    lua_pushvalue(L, 1)
-    return 1
-}
-
-/// hs.uielement.watcher:pid() -> number
-/// Method
-/// Returns the PID of the element being watched
-private func watcher_pid(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
-    guard let watcher = getWatcher(L, at: 1) else { return 0 }
-    lua_pushnumber(L, lua_Number(watcher.pid))
-    return 1
-}
-
-/// hs.uielement.watcher:element() -> object
-/// Method
-/// Returns the element the watcher is watching.
-private func watcher_element(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
-    guard let watcher = getWatcher(L, at: 1) else { return 0 }
-
-    let element = HSuielement(withElement: watcher.elementRef)
-
-    if element.isWindow {
-        let window = HSwindow(axuiElementRef: watcher.elementRef)
-        pushHSwindow(L, window)
-        return 1
-    } else if element.isApplication {
-        let app = HSapplication(pid: watcher.pid, withState: L)
-        pushHSapplicationOrNil(L, app)
-        return 1
-    }
-    pushHSuielement(L, element)
-    return 1
-}
-
-private func watcher_watchDestroyed(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
-    guard let watcher = getWatcher(L, at: 1) else { return 0 }
-
-    if lua_type(L, 2) == LUA_TBOOLEAN {
-        watcher.watchDestroyed = lua_toboolean(L, 2) != 0
-        lua_pushvalue(L, 1)
-    } else {
-        lua_pushboolean(L, watcher.watchDestroyed ? 1 : 0)
-    }
-    return 1
-}
-
 // MARK: - Lua<->NSObject Conversion Functions
 
+/// Push an HSuielementWatcher (or any HSuielementWatcherProtocol-conforming object) as
+/// raw-pointer userdata. This is called from Uielement.swift, Window.swift, and
+/// Application.swift, so it must remain public and keep the Unmanaged/selfRefCount pattern.
 @discardableResult
 func pushHSuielementWatcher(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any?) -> Int32 {
     guard let value = obj as? NSObject & HSuielementWatcherProtocol else { return 0 }
@@ -104,60 +29,11 @@ func pushHSuielementWatcherOrNil(_ L: UnsafeMutablePointer<lua_State>!, _ obj: A
     }
 }
 
-private func toHSuielementWatcherFromLua(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> Any! {
-    if luaL_testudata(L, idx, USERDATA_TAG) != nil {
-        let ptr = luaL_checkudata(L, idx, USERDATA_TAG)!
-            .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
-        guard let rawPtr = ptr.pointee else { return nil }
-        return Unmanaged<NSObject>.fromOpaque(rawPtr).takeUnretainedValue()
-    } else {
-        os_log(.error, "%{public}s", "\(USERDATA_TAG): expected \(USERDATA_TAG) object, found \(String(cString: lua_typename(L, lua_type(L, idx))))")
-    }
-    return nil
-}
-
-// MARK: - Infrastructure
-
-private func userdata_tostring(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
-    let desc = "\(USERDATA_TAG): (\(String(describing: lua_topointer(L, 1)!)))"
-    lua_pushstring(L, desc)
-    return 1
-}
-
-private func userdata_eq(_ L: LuaState) throws -> CInt {
-    var isEqual = false
-    if luaL_testudata(L, 1, USERDATA_TAG) != nil && luaL_testudata(L, 2, USERDATA_TAG) != nil {
-        if let w1 = toHSuielementWatcherFromLua(L, 1) as? NSObject,
-           let w2 = toHSuielementWatcherFromLua(L, 2) as? NSObject {
-            isEqual = w1.isEqual(w2)
-        }
-    }
-    lua_pushboolean(L, isEqual ? 1 : 0)
-    return 1
-}
-
-private func userdata_gc(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
-    let ptr = luaL_checkudata(L, 1, USERDATA_TAG)!
+private func getWatcher(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> (NSObject & HSuielementWatcherProtocol)? {
+    let ptr = luaL_checkudata(L, idx, USERDATA_TAG)!
         .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
-    if let rawPtr = ptr.pointee {
-        let watcher = Unmanaged<NSObject>.fromOpaque(rawPtr).takeRetainedValue()
-        if let w = watcher as? HSuielementWatcherProtocol {
-            w.selfRefCount -= 1
-            if w.selfRefCount == 0 {
-                if let concreteWatcher = watcher as? HSuielementWatcher {
-                    concreteWatcher.teardown()
-                } else {
-                    w.stop()
-                }
-            }
-        }
-        ptr.pointee = nil
-    }
-    lua_pushnil(L)
-    lua_setmetatable(L, 1)
-    return 0
+    guard let rawPtr = ptr.pointee else { return nil }
+    return Unmanaged<NSObject>.fromOpaque(rawPtr).takeUnretainedValue() as? NSObject & HSuielementWatcherProtocol
 }
 
 // MARK: - Registration
@@ -169,27 +45,137 @@ public func luaopen_hs_libuielementwatcher(_ L: UnsafeMutablePointer<lua_State>!
         luaL_newmetatable(L, USERDATA_TAG)
         lua_pushvalue(L, -1)
         lua_setfield(L, -2, "__index")
-        L.push(watcher_start)
+
+        // _start
+        L.push({ (L: LuaState) throws -> CInt in
+            luaL_checkudata(L, 1, USERDATA_TAG)
+            luaL_checktype(L, 2, LUA_TTABLE)
+            guard let watcher = getWatcher(L, at: 1) else { return 0 }
+            if let concreteWatcher = watcher as? HSuielementWatcher {
+                concreteWatcher.watcherSelfRef = nil  // release old ref before reassigning
+                concreteWatcher.watcherSelfRef = L.ref(index: 1)
+            }
+            if let events = lua_tovalue(L, at: 2) as? [String] {
+                watcher.start(events, withState: L)
+            }
+            lua_pushvalue(L, 1)
+            return 1
+        })
         lua_setfield(L, -2, "_start")
-        L.push(watcher_stop)
+
+        // _stop
+        L.push({ (L: LuaState) throws -> CInt in
+            luaL_checkudata(L, 1, USERDATA_TAG)
+            guard let watcher = getWatcher(L, at: 1) else { return 0 }
+            watcher.stop()
+            if let concreteWatcher = watcher as? HSuielementWatcher {
+                concreteWatcher.watcherSelfRef = nil
+            }
+            lua_pushvalue(L, 1)
+            return 1
+        })
         lua_setfield(L, -2, "_stop")
-        L.push(watcher_pid)
+
+        // pid
+        L.push({ (L: LuaState) throws -> CInt in
+            luaL_checkudata(L, 1, USERDATA_TAG)
+            guard let watcher = getWatcher(L, at: 1) else { return 0 }
+            L.push(lua_Number(watcher.pid))
+            return 1
+        })
         lua_setfield(L, -2, "pid")
-        L.push(watcher_element)
+
+        // element
+        L.push({ (L: LuaState) throws -> CInt in
+            luaL_checkudata(L, 1, USERDATA_TAG)
+            guard let watcher = getWatcher(L, at: 1) else { return 0 }
+
+            let element = HSuielement(withElement: watcher.elementRef)
+
+            if element.isWindow {
+                let window = HSwindow(axuiElementRef: watcher.elementRef)
+                pushHSwindow(L, window)
+                return 1
+            } else if element.isApplication {
+                let app = HSapplication(pid: watcher.pid, withState: L)
+                pushHSapplicationOrNil(L, app)
+                return 1
+            }
+            pushHSuielement(L, element)
+            return 1
+        })
         lua_setfield(L, -2, "element")
-        L.push(watcher_watchDestroyed)
+
+        // watchDestroyed
+        L.push({ (L: LuaState) throws -> CInt in
+            luaL_checkudata(L, 1, USERDATA_TAG)
+            guard let watcher = getWatcher(L, at: 1) else { return 0 }
+
+            if lua_type(L, 2) == LUA_TBOOLEAN {
+                watcher.watchDestroyed = lua_toboolean(L, 2) != 0
+                lua_pushvalue(L, 1)
+            } else {
+                L.push(watcher.watchDestroyed)
+            }
+            return 1
+        })
         lua_setfield(L, -2, "watchDestroyed")
-        L.push(userdata_tostring)
+
+        // __tostring
+        L.push({ (L: LuaState) throws -> CInt in
+            luaL_checkudata(L, 1, USERDATA_TAG)
+            let desc = "\(USERDATA_TAG): (\(String(describing: lua_topointer(L, 1)!)))"
+            L.push(desc)
+            return 1
+        })
         lua_setfield(L, -2, "__tostring")
-        L.push(userdata_eq)
+
+        // __eq
+        L.push({ (L: LuaState) throws -> CInt in
+            var isEqual = false
+            if luaL_testudata(L, 1, USERDATA_TAG) != nil && luaL_testudata(L, 2, USERDATA_TAG) != nil {
+                let ptr1 = luaL_checkudata(L, 1, USERDATA_TAG)!.assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
+                let ptr2 = luaL_checkudata(L, 2, USERDATA_TAG)!.assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
+                if let raw1 = ptr1.pointee, let raw2 = ptr2.pointee {
+                    let obj1 = Unmanaged<NSObject>.fromOpaque(raw1).takeUnretainedValue()
+                    let obj2 = Unmanaged<NSObject>.fromOpaque(raw2).takeUnretainedValue()
+                    isEqual = obj1.isEqual(obj2)
+                }
+            }
+            L.push(isEqual)
+            return 1
+        })
         lua_setfield(L, -2, "__eq")
-        L.push(userdata_gc)
+
+        // __gc — handles Unmanaged raw-pointer layout with selfRefCount
+        lua_pushcclosure(L, { (L: LuaState!) -> CInt in
+            luaL_checkudata(L, 1, USERDATA_TAG)
+            let ptr = luaL_checkudata(L, 1, USERDATA_TAG)!
+                .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
+            if let rawPtr = ptr.pointee {
+                let watcher = Unmanaged<NSObject>.fromOpaque(rawPtr).takeRetainedValue()
+                if let w = watcher as? HSuielementWatcherProtocol {
+                    w.selfRefCount -= 1
+                    if w.selfRefCount == 0 {
+                        if let concreteWatcher = watcher as? HSuielementWatcher {
+                            concreteWatcher.teardown()
+                        } else {
+                            w.stop()
+                        }
+                    }
+                }
+                ptr.pointee = nil
+            }
+            lua_pushnil(L)
+            lua_setmetatable(L, 1)
+            return 0
+        }, 0)
         lua_setfield(L, -2, "__gc")
 
         // Set __type and __name for type identification
-        lua_pushstring(L, USERDATA_TAG)
+        L.push(USERDATA_TAG)
         lua_setfield(L, -2, "__type")
-        lua_pushstring(L, USERDATA_TAG)
+        L.push(USERDATA_TAG)
         lua_setfield(L, -2, "__name")
 
         // Alias the metatable under the registry name

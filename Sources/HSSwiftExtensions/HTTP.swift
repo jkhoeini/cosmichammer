@@ -50,7 +50,7 @@ private func responseBodyToId(_ httpResponse: HTTPURLResponse?, _ bodyData: Data
         let L = lua_getCurrentState()!
 
         fn.push(onto: L)
-        lua_pushinteger(L, lua_Integer(httpResponse?.statusCode ?? 0))
+        L.push(Int(httpResponse?.statusCode ?? 0))
         lua_pushany(L, responseBodyToId(httpResponse, receivedData as Data) as? NSObject)
         lua_pushany(L, httpResponse?.allHeaderFields as? NSDictionary)
         if lua_pcall(L, 3, 0, 0) != LUA_OK { lua_pop(L, 1) }
@@ -65,7 +65,7 @@ private func responseBodyToId(_ httpResponse: HTTPURLResponse?, _ bodyData: Data
 
         let errorMessage = "Connection failed: \(error.localizedDescription) - \((error as NSError).userInfo[NSURLErrorFailingURLStringErrorKey] ?? "")"
         fn.push(onto: L)
-        lua_pushinteger(L, -1)
+        L.push(-1)
         lua_pushany(L, errorMessage as NSString)
         if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
         remove_delegate(self)
@@ -79,7 +79,7 @@ private func responseBodyToId(_ httpResponse: HTTPURLResponse?, _ bodyData: Data
             let L = lua_getCurrentState()!
 
             fn.push(onto: L)
-            lua_pushinteger(L, lua_Integer(httpResp.statusCode))
+            L.push(Int(httpResp.statusCode))
             lua_pushany(L, responseBodyToId(httpResponse, receivedData as Data) as? NSObject)
             lua_pushany(L, httpResp.allHeaderFields as NSDictionary)
             if lua_pcall(L, 3, 0, 0) != LUA_OK { lua_pop(L, 1) }
@@ -267,7 +267,7 @@ private func http_doRequest(_ L: LuaState) throws -> CInt {
 
     let httpResponse = response as? HTTPURLResponse
 
-    lua_pushinteger(L, lua_Integer(httpResponse?.statusCode ?? 0))
+    L.push(Int(httpResponse?.statusCode ?? 0))
     lua_pushany(L, responseBodyToId(httpResponse, dataReply) as? NSObject)
     lua_pushany(L, httpResponse?.allHeaderFields as? NSDictionary)
 
@@ -334,7 +334,7 @@ private func http_urlParts(_ L: LuaState) throws -> CInt {
     lua_pushany(L, theURL.absoluteString as NSString?);     lua_setfield(L, -2, "absoluteString")
     lua_pushany(L, theURL.absoluteURL as NSURL?);           lua_setfield(L, -2, "absoluteURL")
     lua_pushany(L, theURL.baseURL as NSURL?);               lua_setfield(L, -2, "baseURL")
-    lua_pushstring(L, theURL.fileSystemRepresentation);        lua_setfield(L, -2, "fileSystemRepresentation")
+    L.push(String(cString: theURL.fileSystemRepresentation));   lua_setfield(L, -2, "fileSystemRepresentation")
     lua_pushany(L, theURL.fragment as NSString?);           lua_setfield(L, -2, "fragment")
     lua_pushany(L, theURL.host as NSString?);               lua_setfield(L, -2, "host")
     lua_pushany(L, theURL.lastPathComponent as NSString?);  lua_setfield(L, -2, "lastPathComponent")
@@ -351,7 +351,7 @@ private func http_urlParts(_ L: LuaState) throws -> CInt {
     lua_pushany(L, theURL.scheme as NSString?);             lua_setfield(L, -2, "scheme")
     lua_pushany(L, theURL.standardized as NSURL?);          lua_setfield(L, -2, "standardizedURL")
     lua_pushany(L, theURL.user as NSString?);               lua_setfield(L, -2, "user")
-    lua_pushboolean(L, theURL.isFileURL ? 1 : 0);             lua_setfield(L, -2, "isFileURL")
+    L.push(theURL.isFileURL);                                  lua_setfield(L, -2, "isFileURL")
 
     if theURL.query != nil {
         if var components = URLComponents(url: theURL as URL, resolvingAgainstBaseURL: true) {
@@ -387,14 +387,14 @@ private func NSURLResponse_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: A
     let theResponse = obj as! URLResponse
 
     lua_newtable(L)
-    lua_pushinteger(L, lua_Integer(theResponse.expectedContentLength)); lua_setfield(L, -2, "expectedContentLength")
+    L.push(Int(theResponse.expectedContentLength)); lua_setfield(L, -2, "expectedContentLength")
     lua_pushany(L, theResponse.suggestedFilename as NSString?);      lua_setfield(L, -2, "suggestedFilename")
     lua_pushany(L, theResponse.mimeType as NSString?);               lua_setfield(L, -2, "MIMEType")
     lua_pushany(L, theResponse.textEncodingName as NSString?);       lua_setfield(L, -2, "textEncodingName")
     lua_pushany(L, theResponse.url as NSURL?);                       lua_setfield(L, -2, "URL")
 
     if let httpResponse = obj as? HTTPURLResponse {
-        lua_pushinteger(L, lua_Integer(httpResponse.statusCode)); lua_setfield(L, -2, "statusCode")
+        L.push(Int(httpResponse.statusCode)); lua_setfield(L, -2, "statusCode")
         lua_pushany(L, HTTPURLResponse.localizedString(forStatusCode: httpResponse.statusCode) as NSString)
         lua_setfield(L, -2, "statusCodeDescription")
         lua_pushany(L, httpResponse.allHeaderFields as NSDictionary); lua_setfield(L, -2, "allHeaderFields")
@@ -413,9 +413,9 @@ private func NSURLRequest_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: An
     lua_pushany(L, request.httpBody as NSData?);               lua_setfield(L, -2, "HTTPBody")
     lua_pushany(L, request.httpMethod as NSString?);           lua_setfield(L, -2, "HTTPMethod")
 
-    lua_pushnumber(L, lua_Number(request.timeoutInterval));       lua_setfield(L, -2, "timeoutInterval")
-    lua_pushboolean(L, request.httpShouldHandleCookies ? 1 : 0); lua_setfield(L, -2, "HTTPShouldHandleCookies")
-    lua_pushboolean(L, request.httpShouldUsePipelining ? 1 : 0); lua_setfield(L, -2, "HTTPShouldUsePipelining")
+    L.push(request.timeoutInterval);                               lua_setfield(L, -2, "timeoutInterval")
+    L.push(request.httpShouldHandleCookies);                        lua_setfield(L, -2, "HTTPShouldHandleCookies")
+    L.push(request.httpShouldUsePipelining);                        lua_setfield(L, -2, "HTTPShouldUsePipelining")
 
     let cachePolicyStr: String
     switch request.cachePolicy {
@@ -425,7 +425,7 @@ private func NSURLRequest_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: An
     case .returnCacheDataDontLoad:      cachePolicyStr = "returnCacheDontLoad"
     default:                            cachePolicyStr = "unknown"
     }
-    lua_pushstring(L, cachePolicyStr); lua_setfield(L, -2, "cachePolicy")
+    L.push(cachePolicyStr); lua_setfield(L, -2, "cachePolicy")
 
     let networkServiceStr: String
     switch request.networkServiceType {
@@ -436,7 +436,7 @@ private func NSURLRequest_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: An
     case .voice:      networkServiceStr = "voice"
     default:          networkServiceStr = "unknown"
     }
-    lua_pushstring(L, networkServiceStr); lua_setfield(L, -2, "networkServiceType")
+    L.push(networkServiceStr); lua_setfield(L, -2, "networkServiceType")
 
     return 1
 }

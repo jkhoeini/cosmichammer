@@ -81,7 +81,7 @@ private class HSWifiWatcherManager: NSObject {
                     let L = lua_getCurrentState()!
                     cb.push(onto: L)
                     pushHSWifiWatcher(L, aWatcher)
-                    lua_pushstring(L, message)
+                    L.push(message)
                     let count = details?.count ?? 0
                     if let details = details {
                         for argument in details {
@@ -97,122 +97,43 @@ private class HSWifiWatcherManager: NSObject {
     }
 }
 
-private class HSWifiWatcher: NSObject {
+private class HSWifiWatcher: NSObject, LuaTeardownable {
     var callback: LuaValue?
     var selfRef: Int32 = 0
     var watchingFor: Set<String>? = Set(["SSIDChange"])
     var generation: UInt64 = 0
-}
+    private var tornDown = false
 
-// MARK: - Module Functions
-
-/// hs.wifi.watcher.new(fn) -> watcher
-/// Constructor
-/// Creates a new watcher for WiFi network events
-///
-/// Parameters:
-///  * fn - A function that will be called when a WiFi event that is being monitored occurs. The function should expect 2 or 4 arguments as described in the notes below.
-///
-/// Returns:
-///  * A `hs.wifi.watcher` object
-///
-/// Notes:
-///  * For backwards compatibility, only "SSIDChange" is watched for by default, so existing code can continue to ignore the callback function arguments unless you add or change events with the [hs.wifi.watcher:watchingFor](#watchingFor).
-///  * The callback function should expect between 3 and 5 arguments, depending upon the events being watched.  The possible arguments are as follows:
-///    * `watcher`, "SSIDChange", `interface` - occurs when the associated network for the Wi-Fi interface changes
-///      * `watcher`   - the watcher object itself
-///      * `message`   - the message specifying the event, in this case "SSIDChange"
-///      * `interface` - the name of the interface for which the event occurred
-///    * Use `hs.wifi.currentNetwork([interface])` to identify the new network, which may be nil when you leave a network.
-///    * `watcher`, "BSSIDChange", `interface` - occurs when the base station the Wi-Fi interface is connected to changes
-///    * `watcher`, "countryCodeChange", `interface` - occurs when the adopted country code of the Wi-Fi interface changes
-///    * `watcher`, "linkChange", `interface` - occurs when the link state for the Wi-Fi interface changes
-///    * `watcher`, "linkQualityChange", `interface`, `rssi`, `rate` - occurs when the RSSI or transmit rate for the Wi-Fi interface changes
-///    * `watcher`, "modeChange", `interface` - occurs when the operating mode of the Wi-Fi interface changes
-///    * `watcher`, "powerChange", `interface` - occurs when the power state of the Wi-Fi interface changes
-///    * `watcher`, "scanCacheUpdated", `interface` - occurs when the scan cache of the Wi-Fi interface is updated with new information
-private func wifi_watcher_new(_ L: LuaState) throws -> CInt {
-    luaL_checktype(L, 1, LUA_TFUNCTION)
-    let newWatcher = HSWifiWatcher()
-    newWatcher.callback = L.ref(index: 1)
-    newWatcher.generation = lua_currentStateGeneration()
-    pushHSWifiWatcher(L, newWatcher)
-    return 1
-}
-
-// MARK: - Module Methods
-
-/// hs.wifi.watcher:start() -> watcher
-/// Method
-/// Starts the SSID watcher
-///
-/// Parameters:
-///  * None
-///
-/// Returns:
-///  * The `hs.wifi.watcher` object
-private func wifi_watcher_start(_ L: LuaState) throws -> CInt {
-    let ptr = luaL_checkudata(L, 1, USERDATA_TAG)!
-        .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
-    let watcher = Unmanaged<HSWifiWatcher>.fromOpaque(ptr.pointee!).takeUnretainedValue()
-    manager?.watchers.add(watcher)
-    lua_pushvalue(L, 1)
-    return 1
-}
-
-/// hs.wifi.watcher:stop() -> watcher
-/// Method
-/// Stops the SSID watcher
-///
-/// Parameters:
-///  * None
-///
-/// Returns:
-///  * The `hs.wifi.watcher` object
-private func wifi_watcher_stop(_ L: LuaState) throws -> CInt {
-    let ptr = luaL_checkudata(L, 1, USERDATA_TAG)!
-        .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
-    let watcher = Unmanaged<HSWifiWatcher>.fromOpaque(ptr.pointee!).takeUnretainedValue()
-    manager?.watchers.remove(watcher)
-    lua_pushvalue(L, 1)
-    return 1
-}
-
-/// hs.wifi.watcher:watchingFor([messages]) -> watcher | current-value
-/// Method
-/// Get or set the specific types of wifi events to generate a callback for with this watcher.
-///
-/// Parameters:
-///  * `messages` - an optional table of or list of strings specifying the types of events this watcher should invoke a callback for.  You can specify multiple types of events to watch for. Defaults to `{ "SSIDChange" }`.
-///
-/// Returns:
-///  * if a value is provided, returns the watcher object; otherwise returns the current values as a table of strings.
-///
-/// Notes:
-///  * the possible values for this method are described in [hs.wifi.watcher.eventTypes](#eventTypes).
-///  * the special string "all" specifies that all event types should be watched for.
-private func wifi_watcher_watchingFor(_ L: LuaState) throws -> CInt {
-    let ptr = luaL_checkudata(L, 1, USERDATA_TAG)!
-        .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
-    let watcher = Unmanaged<HSWifiWatcher>.fromOpaque(ptr.pointee!).takeUnretainedValue()
-    if lua_gettop(L) == 1 {
-        lua_pushany(L, watcher.watchingFor.map { Array($0) })
-    } else {
-        let messages = lua_tovalue(L, at: 2) as? [Any]
-        if let messages = messages as? [String] {
-            for (idx, msg) in messages.enumerated() {
-                if watchableTypes[msg] == nil {
-                    let keys = watchableTypes.keys.joined(separator: ", ")
-                    throw LuaCallError("bad argument #2 (unrecognized message at index \(idx + 1); expected one of \(keys))")
-                }
-            }
-            watcher.watchingFor = Set(messages)
-            lua_pushvalue(L, 1)
-        } else {
-            throw LuaCallError("bad argument #2 (expected an array of messages)")
-        }
+    func teardown() {
+        guard !tornDown else { return }
+        tornDown = true
+        callback = nil
+        manager?.watchers.remove(self)
     }
+}
+
+// MARK: - Lua<->NSObject Conversion Functions
+
+/// Push an HSWifiWatcher as userdata with Unmanaged retain (for selfRef counting).
+/// This is called from the callback path where the watcher pushes itself.
+@discardableResult
+private func pushHSWifiWatcher(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
+    let value = obj as! HSWifiWatcher
+    value.selfRef += 1
+    let valuePtr = lua_newuserdata(L, MemoryLayout<UnsafeMutableRawPointer>.size)!
+        .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
+    valuePtr.pointee = Unmanaged.passRetained(value).toOpaque()
+    luaL_getmetatable(L, USERDATA_TAG)
+    lua_setmetatable(L, -2)
     return 1
+}
+
+/// Extract an HSWifiWatcher from Unmanaged raw-pointer userdata at the given stack index.
+private func getHSWifiWatcher(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> HSWifiWatcher? {
+    let ptr = luaL_checkudata(L, idx, USERDATA_TAG)!
+        .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
+    guard let rawPtr = ptr.pointee else { return nil }
+    return Unmanaged<AnyObject>.fromOpaque(rawPtr).takeUnretainedValue() as? HSWifiWatcher
 }
 
 // MARK: - Module Constants
@@ -225,108 +146,135 @@ private func pushEventTypes(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     return 1
 }
 
-// MARK: - Lua<->NSObject Conversion Functions
-
-private func pushHSWifiWatcher(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
-    let value = obj as! HSWifiWatcher
-    value.selfRef += 1
-    let valuePtr = lua_newuserdata(L, MemoryLayout<UnsafeMutableRawPointer>.size)!
-        .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
-    valuePtr.pointee = Unmanaged.passRetained(value).toOpaque()
-    luaL_getmetatable(L, USERDATA_TAG)
-    lua_setmetatable(L, -2)
-    return 1
-}
-
-private func toHSWifiWatcherFromLua(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> Any! {
-    if luaL_testudata(L, idx, USERDATA_TAG) != nil {
-        let ptr = luaL_checkudata(L, idx, USERDATA_TAG)!
-            .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
-        return Unmanaged<HSWifiWatcher>.fromOpaque(ptr.pointee!).takeUnretainedValue()
-    } else {
-        os_log(.error, "expected %{public}s object, found %{public}s",
-               USERDATA_TAG, String(cString: lua_typename(L, lua_type(L, idx))))
-    }
-    return nil
-}
-
-// MARK: - Cosmic Hammer/Lua Infrastructure
-
-private func userdata_tostring(_ L: LuaState) throws -> CInt {
-    let str = "\(USERDATA_TAG): (\(String(describing: lua_topointer(L, 1)!)))"
-    lua_pushstring(L, str)
-    return 1
-}
-
-private func userdata_eq(_ L: LuaState) throws -> CInt {
-    if luaL_testudata(L, 1, USERDATA_TAG) != nil && luaL_testudata(L, 2, USERDATA_TAG) != nil {
-        let ptr1 = luaL_checkudata(L, 1, USERDATA_TAG)!.assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
-        let ptr2 = luaL_checkudata(L, 2, USERDATA_TAG)!.assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
-        if let raw1 = ptr1.pointee, let raw2 = ptr2.pointee {
-            let obj1 = Unmanaged<HSWifiWatcher>.fromOpaque(raw1).takeUnretainedValue()
-            let obj2 = Unmanaged<HSWifiWatcher>.fromOpaque(raw2).takeUnretainedValue()
-            lua_pushboolean(L, obj1.isEqual(obj2) ? 1 : 0)
-        } else {
-            lua_pushboolean(L, 0)
-        }
-    } else {
-        lua_pushboolean(L, 0)
-    }
-    return 1
-}
-
-private func userdata_gc(_ L: LuaState) throws -> CInt {
-    let ptr = luaL_checkudata(L, 1, USERDATA_TAG)!
-        .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
-    if let rawPtr = ptr.pointee {
-        let obj = Unmanaged<HSWifiWatcher>.fromOpaque(rawPtr).takeRetainedValue()
-        obj.selfRef -= 1
-        if obj.selfRef == 0 {
-            obj.callback = nil
-            manager?.watchers.remove(obj)
-        }
-        ptr.pointee = nil
-    }
-    lua_pushnil(L)
-    lua_setmetatable(L, 1)
-    return 0
-}
-
-private func meta_gc(_ L: LuaState) throws -> CInt {
-    manager?.watchers.removeAllObjects()
-    manager = nil
-    return 0
-}
+// MARK: - Module entry point
 
 @_cdecl("luaopen_hs_libwifiwatcher")
 public func luaopen_hs_libwifiwatcher(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     runEntryPoint(L) { L in
-        // Register userdata metatable
+        // Register userdata metatable.
+        // HSWifiWatcher uses Unmanaged raw-pointer layout (pushHSWifiWatcher) for both
+        // constructor and callback paths, with selfRef counting. Cannot use Metatable<T>.
         luaL_newmetatable(L, USERDATA_TAG)
         lua_pushvalue(L, -1)
         lua_setfield(L, -2, "__index")
-        L.push(wifi_watcher_start)
+
+        // start
+        L.push({ (L: LuaState) throws -> CInt in
+            guard let watcher = getHSWifiWatcher(L, at: 1) else {
+                throw LuaCallError("expected \(USERDATA_TAG) object")
+            }
+            manager?.watchers.add(watcher)
+            lua_pushvalue(L, 1)
+            return 1
+        })
         lua_setfield(L, -2, "start")
-        L.push(wifi_watcher_stop)
+
+        // stop
+        L.push({ (L: LuaState) throws -> CInt in
+            guard let watcher = getHSWifiWatcher(L, at: 1) else {
+                throw LuaCallError("expected \(USERDATA_TAG) object")
+            }
+            manager?.watchers.remove(watcher)
+            lua_pushvalue(L, 1)
+            return 1
+        })
         lua_setfield(L, -2, "stop")
-        L.push(wifi_watcher_watchingFor)
+
+        // watchingFor
+        L.push({ (L: LuaState) throws -> CInt in
+            guard let watcher = getHSWifiWatcher(L, at: 1) else {
+                throw LuaCallError("expected \(USERDATA_TAG) object")
+            }
+            if lua_gettop(L) == 1 {
+                lua_pushany(L, watcher.watchingFor.map { Array($0) })
+            } else {
+                let messages = lua_tovalue(L, at: 2) as? [Any]
+                if let messages = messages as? [String] {
+                    for (idx, msg) in messages.enumerated() {
+                        if watchableTypes[msg] == nil {
+                            let keys = watchableTypes.keys.joined(separator: ", ")
+                            throw LuaCallError("bad argument #2 (unrecognized message at index \(idx + 1); expected one of \(keys))")
+                        }
+                    }
+                    watcher.watchingFor = Set(messages)
+                    lua_pushvalue(L, 1)
+                } else {
+                    throw LuaCallError("bad argument #2 (expected an array of messages)")
+                }
+            }
+            return 1
+        })
         lua_setfield(L, -2, "watchingFor")
-        L.push(userdata_tostring)
+
+        // __tostring
+        L.push({ (L: LuaState) throws -> CInt in
+            let str = "\(USERDATA_TAG): (\(String(describing: lua_topointer(L, 1)!)))"
+            L.push(str)
+            return 1
+        })
         lua_setfield(L, -2, "__tostring")
-        L.push(userdata_eq)
+
+        // __eq
+        L.push({ (L: LuaState) throws -> CInt in
+            var isEqual = false
+            if luaL_testudata(L, 1, USERDATA_TAG) != nil && luaL_testudata(L, 2, USERDATA_TAG) != nil {
+                if let obj1 = getHSWifiWatcher(L, at: 1), let obj2 = getHSWifiWatcher(L, at: 2) {
+                    isEqual = obj1.isEqual(obj2)
+                }
+            }
+            L.push(isEqual)
+            return 1
+        })
         lua_setfield(L, -2, "__eq")
-        L.push(userdata_gc)
+
+        // __gc — handles the raw-pointer layout from pushHSWifiWatcher
+        lua_pushcclosure(L, { (L: LuaState!) -> CInt in
+            let ptr = luaL_checkudata(L, 1, USERDATA_TAG)!
+                .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
+            if let rawPtr = ptr.pointee {
+                let obj = Unmanaged<HSWifiWatcher>.fromOpaque(rawPtr).takeRetainedValue()
+                obj.selfRef -= 1
+                if obj.selfRef == 0 {
+                    obj.teardown()
+                }
+                ptr.pointee = nil
+            }
+            lua_pushnil(L)
+            lua_setmetatable(L, 1)
+            return 0
+        }, 0)
         lua_setfield(L, -2, "__gc")
-        lua_pop(L, 1)
+
+        // __type and __name
+        L.push(USERDATA_TAG)
+        lua_setfield(L, -2, "__type")
+        L.push(USERDATA_TAG)
+        lua_setfield(L, -2, "__name")
+
+        // Alias the metatable under the registry name
+        lua_setfield(L, LUA_REGISTRYINDEX_VALUE, USERDATA_TAG)
 
         // Create module table
         lua_createtable(L, 0, 1)
-        L.push(wifi_watcher_new)
+
+        // new constructor
+        L.push({ (L: LuaState) throws -> CInt in
+            luaL_checktype(L, 1, LUA_TFUNCTION)
+            let newWatcher = HSWifiWatcher()
+            newWatcher.callback = L.ref(index: 1)
+            newWatcher.generation = lua_currentStateGeneration()
+            pushHSWifiWatcher(L, newWatcher)
+            return 1
+        })
         lua_setfield(L, -2, "new")
 
-        // Set module metatable for __gc
+        // Set module metatable for __gc (manager cleanup)
         lua_createtable(L, 0, 1)
-        L.push(meta_gc)
+        lua_pushcclosure(L, { (L: LuaState!) -> CInt in
+            manager?.watchers.removeAllObjects()
+            manager = nil
+            return 0
+        }, 0)
         lua_setfield(L, -2, "__gc")
         lua_setmetatable(L, -2)
 

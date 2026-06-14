@@ -490,8 +490,7 @@ private class HSHashObjectNew: NSObject {
 /// Returns:
 ///  * the new hash object
 private func hash_new(_ L: LuaState) throws -> CInt {
-    guard let hashNameC = luaL_checkstring(L, 1) else { return 0 }
-    let hashName = String(cString: hashNameC)
+    let hashName: String = try L.checkArgument(1)
     var secret: Data? = nil
     if lua_gettop(L) == 2 && lua_type(L, 2) == LUA_TSTRING {
         var len: Int = 0
@@ -537,7 +536,7 @@ public func luaopen_hs_libhash(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
                     object.append(data)
                 } else {
                     lua_pushnil(L)
-                    lua_pushstring(L, "hash calculation completed")
+                    L.push("hash calculation completed")
                     return 2
                 }
 
@@ -546,8 +545,7 @@ public func luaopen_hs_libhash(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
             },
             "appendFile": .closure { L in
                 let object: HSHashObjectNew = try L.checkArgument(1)
-                guard let pathC = luaL_checkstring(L, 2) else { return 0 }
-                var path = String(cString: pathC)
+                var path: String = try L.checkArgument(2)
 
                 if object.value == nil {
                     path = (path as NSString).expandingTildeInPath
@@ -557,12 +555,12 @@ public func luaopen_hs_libhash(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
                         object.append(data)
                     } catch {
                         lua_pushnil(L)
-                        lua_pushstring(L, "error reading contents of \(path): \(error.localizedDescription)")
+                        L.push("error reading contents of \(path): \(error.localizedDescription)")
                         return 2
                     }
                 } else {
                     lua_pushnil(L)
-                    lua_pushstring(L, "hash calculation completed")
+                    L.push("hash calculation completed")
                     return 2
                 }
 
@@ -594,7 +592,7 @@ public func luaopen_hs_libhash(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
                         for byte in val {
                             hex += String(format: "%02x", byte)
                         }
-                        lua_pushstring(L, hex)
+                        L.push(hex)
                     }
                 } else {
                     lua_pushnil(L)
@@ -603,14 +601,14 @@ public func luaopen_hs_libhash(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
             },
             "type": .closure { L in
                 let object: HSHashObjectNew = try L.checkArgument(1)
-                lua_pushstring(L, hashLookupTable[object.hashType].hashName)
+                L.push(hashLookupTable[object.hashType].hashName)
                 return 1
             },
         ],
         eq: .closure { L in
             let obj1: HSHashObjectNew = try L.checkArgument(1)
             let obj2: HSHashObjectNew = try L.checkArgument(2)
-            lua_pushboolean(L, obj1.isEqual(obj2) ? 1 : 0)
+            L.push(obj1.isEqual(obj2))
             return 1
         },
         tostring: .closure { L in
@@ -619,7 +617,7 @@ public func luaopen_hs_libhash(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
             if obj.value == nil {
                 title = "\(title) <in-progress>"
             }
-            lua_pushstring(L, "\(USERDATA_TAG): \(title) (\(String(describing: lua_topointer(L, 1))))")
+            L.push("\(USERDATA_TAG): \(title) (\(String(describing: lua_topointer(L, 1))))")
             return 1
         }
     ))
@@ -639,9 +637,9 @@ public func luaopen_hs_libhash(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     lua_setfield(L, -2, "__gc")
 
     // Set __type and __name for lsunit.lua assertions
-    lua_pushstring(L, USERDATA_TAG)
+    L.push(USERDATA_TAG)
     lua_setfield(L, -2, "__type")
-    lua_pushstring(L, USERDATA_TAG)
+    L.push(USERDATA_TAG)
     lua_setfield(L, -2, "__name")
 
     // Registry alias so core_getObjectMetatable("hs.hash") resolves
@@ -655,7 +653,7 @@ public func luaopen_hs_libhash(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     // Push types constant
     lua_newtable(L)
     for i in 0..<hashLookupTable.count {
-        lua_pushstring(L, hashLookupTable[i].hashName)
+        L.push(hashLookupTable[i].hashName)
         lua_rawseti(L, -2, luaL_len(L, -2) + 1)
     }
     lua_setfield(L, -2, "types")

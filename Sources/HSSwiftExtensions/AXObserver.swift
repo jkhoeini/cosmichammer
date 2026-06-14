@@ -164,7 +164,7 @@ private func axobserver_isRunning(_ L: LuaState) throws -> CInt {
     let details = observerDetails![observerKey] as! NSMutableDictionary
 
     let isRunning = (details[keyIsRunning as String] as? NSNumber)?.boolValue ?? false
-    lua_pushboolean(L, isRunning ? 1 : 0)
+    L.push(isRunning)
     return 1
 }
 
@@ -380,7 +380,7 @@ private func observer_userdata_gc(_ L: LuaState) throws -> CInt {
 private func observer_userdata_eq(_ L: LuaState) throws -> CInt {
     let observer1 = get_axobserverref(L, 1, axuielement_OBSERVER_TAG)
     let observer2 = get_axobserverref(L, 2, axuielement_OBSERVER_TAG)
-    lua_pushboolean(L, CFEqual(observer1, observer2) ? 1 : 0)
+    L.push(CFEqual(observer1, observer2))
     return 1
 }
 

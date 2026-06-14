@@ -95,7 +95,7 @@ private let chooserIsVisible: LuaClosure = { L in
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let chooser: HSChooser = toHSChooserFromLua(L, 1) as! HSChooser
-    lua_pushboolean(L, chooser.isVisible ? 1 : 0)
+    L.push(chooser.isVisible)
     return 1
 }
 
@@ -501,7 +501,7 @@ private let chooserSetBgDark: LuaClosure = { L in
         lua_pushvalue(L, 1)
 
     case LUA_TNONE:
-        lua_pushboolean(L, chooser.isBgLightDark() ? 1 : 0)
+        L.push(chooser.isBgLightDark())
 
     default:
         os_log(.error, "ERROR: Unknown type in hs.chooser:bgDark(). This should not be possible")
@@ -534,7 +534,7 @@ private let chooserSetEnableDefaultForQuery: LuaClosure = { L in
         lua_pushvalue(L, 1)
 
     case LUA_TNONE:
-        lua_pushboolean(L, chooser.enableDefaultForQuery ? 1 : 0)
+        L.push(chooser.enableDefaultForQuery)
         return 1
 
     default:
@@ -568,7 +568,7 @@ private let chooserSetSearchSubText: LuaClosure = { L in
         lua_pushvalue(L, 1)
 
     case LUA_TNONE:
-        lua_pushboolean(L, chooser.searchSubText ? 1 : 0)
+        L.push(chooser.searchSubText)
         return 1
 
     default:
@@ -602,7 +602,7 @@ private let chooserSetWidth: LuaClosure = { L in
         lua_pushvalue(L, 1)
 
     case LUA_TNONE:
-        lua_pushnumber(L, lua_Number(chooser.width))
+        L.push(Double(chooser.width))
 
     default:
         os_log(.error, "ERROR: Unknown type passed to hs.chooser:width(). This should not be possible")
@@ -632,7 +632,7 @@ private let chooserSetNumRows: LuaClosure = { L in
         lua_pushvalue(L, 1)
 
     case LUA_TNONE:
-        lua_pushinteger(L, lua_Integer(chooser.numRows))
+        L.push(chooser.numRows)
 
     default:
         os_log(.error, "ERROR: Unknown type passed to hs.chooser:rows(). This should not be possible")
@@ -657,7 +657,7 @@ private let chooserSelectedRow: LuaClosure = { L in
 
     if lua_gettop(L) == 1 {
         let selectedRow = chooser.choicesTableView.selectedRow
-        lua_pushinteger(L, lua_Integer(selectedRow + 1))
+        L.push(selectedRow + 1)
     } else {
         let maxRow = chooser.choicesTableView.numberOfRows - 1
         var newRow = Int(lua_tointeger(L, 2)) - 1
@@ -857,9 +857,9 @@ private let userdata_eq: LuaClosure = { L in
     if luaL_testudata(L, 1, USERDATA_TAG) != nil && luaL_testudata(L, 2, USERDATA_TAG) != nil {
         let obj1 = toHSChooserFromLua(L, 1) as! HSChooser
         let obj2 = toHSChooserFromLua(L, 2) as! HSChooser
-        lua_pushboolean(L, obj1.isEqual(to: obj2) ? 1 : 0)
+        L.push(obj1.isEqual(to: obj2))
     } else {
-        lua_pushboolean(L, 0)
+        L.push(false)
     }
     return 1
 }
@@ -945,9 +945,9 @@ public func luaopen_hs_libchooser(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
         lua_setfield(L, -2, "__gc")
 
         // Set __type and __name for type identification
-        lua_pushstring(L, USERDATA_TAG)
+        L.push(USERDATA_TAG)
         lua_setfield(L, -2, "__type")
-        lua_pushstring(L, USERDATA_TAG)
+        L.push(USERDATA_TAG)
         lua_setfield(L, -2, "__name")
 
         // Alias the metatable under the registry name

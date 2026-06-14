@@ -16,17 +16,17 @@ import OSAKit
 ///  * An object containing the parsed output that can be any type, or nil if unsuccessful
 ///  * A string containing the raw output of the code and/or its errors
 private func runosascript(_ L: LuaState) throws -> CInt {
-    let source = String(cString: luaL_checkstring(L, 1))
-    let language = String(cString: luaL_checkstring(L, 2))
+    let source: String = try L.checkArgument(1)
+    let language: String = try L.checkArgument(2)
 
     let osa = OSAScript(source: source, language: OSALanguage(forName: language))
     var compileError: NSDictionary?
     osa.compileAndReturnError(&compileError)
 
     if let compileError = compileError {
-        lua_pushboolean(L, 0)
+        L.push(false)
         lua_pushnil(L)
-        lua_pushstring(L, NSString(format: "%@", compileError) as String)
+        L.push(NSString(format: "%@", compileError) as String)
         return 3
     }
 
@@ -34,13 +34,13 @@ private func runosascript(_ L: LuaState) throws -> CInt {
     let result = osa.executeAndReturnError(&error)
     let didSucceed = (result != nil)
 
-    lua_pushboolean(L, didSucceed ? 1 : 0)
+    L.push(didSucceed)
     if didSucceed {
         lua_pushany(L, result!.objectValue)
     } else {
         lua_pushnil(L)
     }
-    lua_pushstring(L, NSString(format: "%@", didSucceed ? result! : error!) as String)
+    L.push(NSString(format: "%@", didSucceed ? result! : error!) as String)
     return 3
 }
 

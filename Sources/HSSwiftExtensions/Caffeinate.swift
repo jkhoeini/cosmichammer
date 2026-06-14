@@ -122,7 +122,7 @@ private func caffeinate_allowIdleDisplaySleep(_ L: LuaState) throws -> CInt {
 
 // Determine if idle display sleep is currently prevented
 private func caffeinate_isIdleDisplaySleepPrevented(_ L: LuaState) throws -> CInt {
-    lua_pushboolean(L, noIdleDisplaySleep != 0 ? 1 : 0)
+    L.push(noIdleDisplaySleep != 0)
     return 1
 }
 
@@ -142,7 +142,7 @@ private func caffeinate_allowIdleSystemSleep(_ L: LuaState) throws -> CInt {
 
 // Determine if idle system sleep is currently prevented
 private func caffeinate_isIdleSystemSleepPrevented(_ L: LuaState) throws -> CInt {
-    lua_pushboolean(L, noIdleSystemSleep != 0 ? 1 : 0)
+    L.push(noIdleSystemSleep != 0)
     return 1
 }
 
@@ -181,7 +181,7 @@ private func caffeinate_allowSystemSleep(_ L: LuaState) throws -> CInt {
 
 // Determine if system sleep is currently prevented
 private func caffeinate_isSystemSleepPrevented(_ L: LuaState) throws -> CInt {
-    lua_pushboolean(L, noSystemSleep != 0 ? 1 : 0)
+    L.push(noSystemSleep != 0)
     return 1
 }
 
@@ -224,7 +224,7 @@ private func caffeinate_declareUserActivity(_ L: LuaState) throws -> CInt {
     }
     IOPMAssertionDeclareUserActivity("hs.caffeinate.declareUserActivity()" as CFString, kIOPMUserActiveLocal, &assertionID)
 
-    lua_pushinteger(L, lua_Integer(assertionID))
+    L.push(lua_Integer(assertionID))
     return 1
 }
 

@@ -10,11 +10,11 @@ private var refTable: Int32 = LUA_NOREF
 
 private func pushkeycode(_ L: UnsafeMutablePointer<lua_State>!, _ code: Int, _ key: String) {
     // t[key] = code
-    lua_pushinteger(L, lua_Integer(code))
+    L.push(lua_Integer(code))
     lua_setfield(L, -2, key)
 
     // t[code] = key
-    lua_pushstring(L, key)
+    L.push(key)
     lua_rawseti(L, -2, lua_Integer(code))
 }
 
@@ -203,9 +203,30 @@ public func keycodes_cachemap(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 // MARK: - Keycodes Observer
 
-class MJKeycodesObserver: NSObject {
+class MJKeycodesObserver: NSObject, LuaTeardownable {
     var ref: Int32 = LUA_NOREF
     var lsCanary: UInt64 = UInt64()
+    private var running = false
+    private var tornDown = false
+
+    func teardown() {
+        guard !tornDown else { return }
+        tornDown = true
+        if running {
+            running = false
+            NotificationCenter.default.removeObserver(
+                self,
+                name: NSTextInputContext.keyboardSelectionDidChangeNotification,
+                object: nil
+            )
+        }
+        if ref != LUA_NOREF {
+            if let L = lua_getCurrentState() {
+                luaL_unref(L, LUA_REGISTRYINDEX_VALUE, ref)
+            }
+            ref = LUA_NOREF
+        }
+    }
 
     @objc func inputSourceChanged(_ note: Notification) {
         DispatchQueue.main.async { [weak self] in
@@ -218,6 +239,8 @@ class MJKeycodesObserver: NSObject {
     }
 
     func start() {
+        guard !running else { return }
+        running = true
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(inputSourceChanged(_:)),
@@ -227,6 +250,8 @@ class MJKeycodesObserver: NSObject {
     }
 
     func stop() {
+        guard running else { return }
+        running = false
         NotificationCenter.default.removeObserver(
             self,
             name: NSTextInputContext.keyboardSelectionDidChangeNotification,
@@ -235,60 +260,7 @@ class MJKeycodesObserver: NSObject {
     }
 }
 
-// MARK: - Callback Functions
-
-private func keycodes_newcallback(_ L: LuaState) throws -> CInt {
-
-    luaL_checktype(L, 1, LUA_TFUNCTION)
-
-    lua_pushvalue(L, 1)
-    let ref = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
-
-    let observer = MJKeycodesObserver()
-    observer.ref = ref
-    observer.lsCanary = lua_currentStateGeneration()
-    observer.start()
-
-    let ud = lua_newuserdata(L, MemoryLayout<UnsafeMutableRawPointer>.size)!
-    ud.assumingMemoryBound(to: UnsafeMutableRawPointer?.self).pointee = Unmanaged.passRetained(observer).toOpaque()
-
-    luaL_getmetatable(L, USERDATA_TAG)
-    lua_setmetatable(L, -2)
-
-    return 1
-}
-
-private func keycodes_userdata_tostring(_ L: LuaState) throws -> CInt {
-    let ptr = lua_topointer(L, 1)
-    let str = "\(USERDATA_TAG): (0x\(String(Int(bitPattern: ptr), radix: 16)))"
-    lua_pushstring(L, str)
-    return 1
-}
-
-private func keycodes_callback_gc(_ L: LuaState) throws -> CInt {
-
-    let ptr = luaL_checkudata(L, 1, USERDATA_TAG)!.assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
-    guard let rawPtr = ptr.pointee else { return 0 }
-    let observer = Unmanaged<MJKeycodesObserver>.fromOpaque(rawPtr).takeRetainedValue()
-    // Zero the pointer so a hypothetical double-gc won't double-free.
-    ptr.pointee = nil
-
-    var tmpCanary = observer.lsCanary
-    observer.lsCanary = tmpCanary
-
-    observer.stop()
-    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, observer.ref)
-
-    observer.ref = LUA_NOREF
-    return 0
-}
-
-private func keycodes_callback_stop(_ L: LuaState) throws -> CInt {
-    let ptr = luaL_checkudata(L, 1, USERDATA_TAG)!.assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
-    let observer = Unmanaged<MJKeycodesObserver>.fromOpaque(ptr.pointee!).takeUnretainedValue()
-    observer.stop()
-    return 0
-}
+// MARK: - Callback Functions (migrated to idiomatic LuaSwift)
 
 // MARK: - Layout Helper Functions
 
@@ -367,7 +339,7 @@ private func keycodes_sourceID(_ L: LuaState) throws -> CInt {
            !sources.isEmpty {
             found = TISSelectInputSource(sources[0]) == noErr
         }
-        lua_pushboolean(L, found ? 1 : 0)
+        L.push(found)
     }
     return 1
 }
@@ -515,7 +487,7 @@ private func keycodes_setLayout(_ L: LuaState) throws -> CInt {
             }
         }
     }
-    lua_pushboolean(L, found ? 1 : 0)
+    L.push(found)
     return 1
 }
 
@@ -542,7 +514,7 @@ private func keycodes_setMethod(_ L: LuaState) throws -> CInt {
             }
         }
     }
-    lua_pushboolean(L, found ? 1 : 0)
+    L.push(found)
     return 1
 }
 
@@ -600,22 +572,45 @@ public func luaopen_hs_libkeycodes(_ L: UnsafeMutablePointer<lua_State>!) -> Int
         lua_newtable(L)
         refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
 
-        // Register userdata metatable
-        luaL_newmetatable(L, USERDATA_TAG)
-        lua_pushvalue(L, -1)
-        lua_setfield(L, -2, "__index")
-        L.push(keycodes_callback_stop)
-        lua_setfield(L, -2, "_stop")
-        L.push(keycodes_userdata_tostring)
-        lua_setfield(L, -2, "__tostring")
-        L.push(keycodes_callback_gc)
-        lua_setfield(L, -2, "__gc")
-        lua_pop(L, 1)
+        // Register idiomatic Metatable<MJKeycodesObserver> with LuaSwift
+        L.register(Metatable<MJKeycodesObserver>(
+            fields: [
+                "_stop": .closure { L in
+                    let observer: MJKeycodesObserver = try L.checkArgument(1)
+                    lua_settop(L, 1)
+                    observer.stop()
+                    return 1
+                },
+            ],
+            tostring: .closure { L in
+                let _: MJKeycodesObserver = try L.checkArgument(1)
+                let desc = "\(USERDATA_TAG): (\(String(describing: lua_topointer(L, 1)!)))"
+                L.push(desc)
+                return 1
+            }
+        ))
+        installMetatableBoilerplate(L, for: MJKeycodesObserver.self, tag: USERDATA_TAG)
 
         // Create module table
         lua_createtable(L, 0, 11)
-        L.push(keycodes_newcallback)
+
+        // _newcallback constructor
+        L.push { (L: LuaState) throws -> CInt in
+            luaL_checktype(L, 1, LUA_TFUNCTION)
+
+            lua_pushvalue(L, 1)
+            let ref = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+
+            let observer = MJKeycodesObserver()
+            observer.ref = ref
+            observer.lsCanary = lua_currentStateGeneration()
+            observer.start()
+
+            L.push(userdata: observer)
+            return 1
+        }
         lua_setfield(L, -2, "_newcallback")
+
         lua_pushcclosure(L, keycodes_cachemap, 0)
         lua_setfield(L, -2, "_cachemap")
         L.push(keycodes_currentLayout)

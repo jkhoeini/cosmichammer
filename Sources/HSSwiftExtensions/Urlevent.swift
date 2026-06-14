@@ -148,7 +148,7 @@ private class HSURLEventHandler: NSObject, HSOpenFileDelegate {
         lua_pushany(L, url.host?.lowercased() as NSString?)
         lua_pushany(L, pairs)
         lua_pushany(L, url.absoluteString as NSString)
-        lua_pushinteger(L, lua_Integer(pid))
+        L.push(lua_Integer(pid))
         if lua_pcall(L, 5, 0, 0) != LUA_OK { lua_pop(L, 1) }
     }
 }
@@ -248,7 +248,7 @@ private func urleventgetDefaultHandler(_ L: LuaState) throws -> CInt {
 
     let scheme = String(cString: lua_tostring(L, 1)!)
     if let bundleID = LSCopyDefaultHandlerForURLScheme(scheme as CFString)?.takeRetainedValue() {
-        lua_pushstring(L, (bundleID as String))
+        L.push(bundleID as String)
     } else {
         lua_pushnil(L)
     }
@@ -275,8 +275,8 @@ private func urleventgetAllHandlersForScheme(_ L: LuaState) throws -> CInt {
 
     if let handlers = array as? [String] {
         for bundleID in handlers {
-            lua_pushinteger(L, i)
-            lua_pushstring(L, bundleID)
+            L.push(i)
+            L.push(bundleID)
             lua_settable(L, -3)
             i += 1
         }
@@ -309,7 +309,7 @@ private func urleventopenURLWithBundle(_ L: LuaState) throws -> CInt {
                                          launchIdentifiers: nil)
     }
 
-    lua_pushboolean(L, result ? 1 : 0)
+    L.push(result)
     return 1
 }
 

@@ -102,7 +102,7 @@ private func audiodevice_callback(
             cb.push(onto: L)
 
             if let uid = deviceUIDNS {
-                lua_pushstring(L, uid)
+                L.push(uid)
             } else {
                 lua_pushnil(L)
             }
@@ -205,7 +205,7 @@ private func audiodevice_alldevices(_ L: LuaState) throws -> CInt {
     var tableIndex: Int32 = 1
     for i in 0..<numDevices {
         let deviceId = deviceList[i]
-        lua_pushinteger(L, lua_Integer(tableIndex))
+        L.push(lua_Integer(tableIndex))
         new_device(L, deviceId)
         lua_settable(L, -3)
         tableIndex += 1
@@ -327,9 +327,9 @@ private func audiodevice_setdefaultoutputdevice(_ L: LuaState) throws -> CInt {
     let deviceIdSize = UInt32(MemoryLayout<AudioDeviceID>.size)
 
     if isOutputDevice(deviceId) && AudioObjectSetPropertyData(AudioObjectID(kAudioObjectSystemObject), &propertyAddress, 0, nil, deviceIdSize, &deviceId) == noErr {
-        lua_pushboolean(L, 1)
+        L.push(true)
     } else {
-        lua_pushboolean(L, 0)
+        L.push(false)
     }
 
     return 1
@@ -359,9 +359,9 @@ private func audiodevice_setdefaulteffectdevice(_ L: LuaState) throws -> CInt {
     let deviceIdSize = UInt32(MemoryLayout<AudioDeviceID>.size)
 
     if isOutputDevice(deviceId) && AudioObjectSetPropertyData(AudioObjectID(kAudioObjectSystemObject), &propertyAddress, 0, nil, deviceIdSize, &deviceId) == noErr {
-        lua_pushboolean(L, 1)
+        L.push(true)
     } else {
-        lua_pushboolean(L, 0)
+        L.push(false)
     }
 
     return 1
@@ -391,9 +391,9 @@ private func audiodevice_setdefaultinputdevice(_ L: LuaState) throws -> CInt {
     let deviceIdSize = UInt32(MemoryLayout<AudioDeviceID>.size)
 
     if isInputDevice(deviceId) && AudioObjectSetPropertyData(AudioObjectID(kAudioObjectSystemObject), &propertyAddress, 0, nil, deviceIdSize, &deviceId) == noErr {
-        lua_pushboolean(L, 1)
+        L.push(true)
     } else {
-        lua_pushboolean(L, 0)
+        L.push(false)
     }
 
     return 1
@@ -425,7 +425,7 @@ private func audiodevice_name(_ L: LuaState) throws -> CInt {
     if withUnsafeMutablePointer(to: &deviceName, { ptr in
         AudioObjectGetPropertyData(deviceId, &propertyAddress, 0, nil, &propertySize, ptr)
     }) == noErr, let name = deviceName?.takeRetainedValue() {
-        lua_pushstring(L, (name as String))
+        L.push(name as String)
     } else {
         lua_pushnil(L)
     }
@@ -466,7 +466,7 @@ private func audiodevice_uid(_ L: LuaState) throws -> CInt {
 
     if let uid = deviceUID {
         let uidString = uid.takeRetainedValue() as String
-        lua_pushstring(L, uidString)
+        L.push(uidString)
     } else {
         lua_pushnil(L)
     }
@@ -511,7 +511,7 @@ private func audiodevice_inUse(_ L: LuaState) throws -> CInt {
         return 1
     }
 
-    lua_pushboolean(L, isUsed != 0 ? 1 : 0)
+    L.push(isUsed != 0)
     return 1
 }
 
@@ -539,7 +539,7 @@ private func audiodevice_inputMuted(_ L: LuaState) throws -> CInt {
     )
 
     if AudioObjectHasProperty(deviceId, &propertyAddress) && AudioObjectGetPropertyData(deviceId, &propertyAddress, 0, nil, &mutedSize, &muted) == noErr {
-        lua_pushboolean(L, muted != 0 ? 1 : 0)
+        L.push(muted != 0)
     } else {
         lua_pushnil(L)
     }
@@ -571,7 +571,7 @@ private func audiodevice_outputMuted(_ L: LuaState) throws -> CInt {
     )
 
     if AudioObjectHasProperty(deviceId, &propertyAddress) && AudioObjectGetPropertyData(deviceId, &propertyAddress, 0, nil, &mutedSize, &muted) == noErr {
-        lua_pushboolean(L, muted != 0 ? 1 : 0)
+        L.push(muted != 0)
     } else {
         lua_pushnil(L)
     }
@@ -608,7 +608,7 @@ private func audiodevice_muted(_ L: LuaState) throws -> CInt {
     )
 
     if AudioObjectHasProperty(deviceId, &propertyAddress) && AudioObjectGetPropertyData(deviceId, &propertyAddress, 0, nil, &mutedSize, &muted) == noErr {
-        lua_pushboolean(L, muted != 0 ? 1 : 0)
+        L.push(muted != 0)
     } else {
         lua_pushnil(L)
     }
@@ -639,9 +639,9 @@ private func audiodevice_setInputMuted(_ L: LuaState) throws -> CInt {
     )
 
     if AudioObjectHasProperty(deviceId, &propertyAddress) && AudioObjectSetPropertyData(deviceId, &propertyAddress, 0, nil, mutedSize, &muted) == noErr {
-        lua_pushboolean(L, 1)
+        L.push(true)
     } else {
-        lua_pushboolean(L, 0)
+        L.push(false)
     }
 
     return 1
@@ -670,9 +670,9 @@ private func audiodevice_setOutputMuted(_ L: LuaState) throws -> CInt {
     )
 
     if AudioObjectHasProperty(deviceId, &propertyAddress) && AudioObjectSetPropertyData(deviceId, &propertyAddress, 0, nil, mutedSize, &muted) == noErr {
-        lua_pushboolean(L, 1)
+        L.push(true)
     } else {
-        lua_pushboolean(L, 0)
+        L.push(false)
     }
 
     return 1
@@ -706,9 +706,9 @@ private func audiodevice_setmuted(_ L: LuaState) throws -> CInt {
     )
 
     if AudioObjectHasProperty(deviceId, &propertyAddress) && AudioObjectSetPropertyData(deviceId, &propertyAddress, 0, nil, mutedSize, &muted) == noErr {
-        lua_pushboolean(L, 1)
+        L.push(true)
     } else {
-        lua_pushboolean(L, 0)
+        L.push(false)
     }
 
     return 1
@@ -746,7 +746,7 @@ private func audiodevice_inputVolume(_ L: LuaState) throws -> CInt {
     )
 
     if AudioObjectHasProperty(deviceId, &propertyAddress) && AudioObjectGetPropertyData(deviceId, &propertyAddress, 0, nil, &volumeSize, &volume) == noErr {
-        lua_pushnumber(L, lua_Number(volume * 100.0))
+        L.push(lua_Number(volume * 100.0))
     } else {
         lua_pushnil(L)
     }
@@ -786,7 +786,7 @@ private func audiodevice_outputVolume(_ L: LuaState) throws -> CInt {
     )
 
     if AudioObjectHasProperty(deviceId, &propertyAddress) && AudioObjectGetPropertyData(deviceId, &propertyAddress, 0, nil, &volumeSize, &volume) == noErr {
-        lua_pushnumber(L, lua_Number(volume * 100.0))
+        L.push(lua_Number(volume * 100.0))
     } else {
         lua_pushnil(L)
     }
@@ -824,7 +824,7 @@ private func audiodevice_volume(_ L: LuaState) throws -> CInt {
     )
 
     if AudioObjectHasProperty(deviceId, &propertyAddress) && AudioObjectGetPropertyData(deviceId, &propertyAddress, 0, nil, &volumeSize, &volume) == noErr {
-        lua_pushnumber(L, lua_Number(volume * 100.0))
+        L.push(lua_Number(volume * 100.0))
     } else {
         lua_pushnil(L)
     }
@@ -864,9 +864,9 @@ private func audiodevice_setInputVolume(_ L: LuaState) throws -> CInt {
     )
 
     if AudioObjectHasProperty(deviceId, &propertyAddress) && AudioObjectSetPropertyData(deviceId, &propertyAddress, 0, nil, volumeSize, &volume) == noErr {
-        lua_pushboolean(L, 1)
+        L.push(true)
     } else {
-        lua_pushboolean(L, 0)
+        L.push(false)
     }
 
     return 1
@@ -904,9 +904,9 @@ private func audiodevice_setOutputVolume(_ L: LuaState) throws -> CInt {
     )
 
     if AudioObjectHasProperty(deviceId, &propertyAddress) && AudioObjectSetPropertyData(deviceId, &propertyAddress, 0, nil, volumeSize, &volume) == noErr {
-        lua_pushboolean(L, 1)
+        L.push(true)
     } else {
-        lua_pushboolean(L, 0)
+        L.push(false)
     }
 
     return 1
@@ -947,9 +947,9 @@ private func audiodevice_setvolume(_ L: LuaState) throws -> CInt {
     )
 
     if AudioObjectHasProperty(deviceId, &propertyAddress) && AudioObjectSetPropertyData(deviceId, &propertyAddress, 0, nil, volumeSize, &volume) == noErr {
-        lua_pushboolean(L, 1)
+        L.push(true)
     } else {
-        lua_pushboolean(L, 0)
+        L.push(false)
     }
 
     return 1
@@ -985,7 +985,7 @@ private func audiodevice_balance(_ L: LuaState) throws -> CInt {
     )
 
     if AudioObjectHasProperty(deviceId, &propertyAddress) && AudioObjectGetPropertyData(deviceId, &propertyAddress, 0, nil, &balanceSize, &balance) == noErr {
-        lua_pushnumber(L, lua_Number(balance))
+        L.push(lua_Number(balance))
     } else {
         lua_pushnil(L)
     }
@@ -1027,9 +1027,9 @@ private func audiodevice_setbalance(_ L: LuaState) throws -> CInt {
     )
 
     if AudioObjectHasProperty(deviceId, &propertyAddress) && AudioObjectSetPropertyData(deviceId, &propertyAddress, 0, nil, balanceSize, &balance) == noErr {
-        lua_pushboolean(L, 1)
+        L.push(true)
     } else {
-        lua_pushboolean(L, 0)
+        L.push(false)
     }
 
     return 1
@@ -1065,7 +1065,7 @@ private func audiodevice_thru(_ L: LuaState) throws -> CInt {
     )
 
     if AudioObjectHasProperty(deviceId, &propertyAddress) && AudioObjectGetPropertyData(deviceId, &propertyAddress, 0, nil, &thruSize, &thru) == noErr {
-        lua_pushboolean(L, thru != 0 ? 1 : 0)
+        L.push(thru != 0)
     } else {
         lua_pushnil(L)
     }
@@ -1102,9 +1102,9 @@ private func audiodevice_setThru(_ L: LuaState) throws -> CInt {
     )
 
     if AudioObjectHasProperty(deviceId, &propertyAddress) && AudioObjectSetPropertyData(deviceId, &propertyAddress, 0, nil, thruSize, &thru) == noErr {
-        lua_pushboolean(L, 1)
+        L.push(true)
     } else {
-        lua_pushboolean(L, 0)
+        L.push(false)
     }
 
     return 1
@@ -1123,7 +1123,7 @@ private func audiodevice_isOutputDevice(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let audioDevice = userdataToAudioDevice(L, 1)
-    lua_pushboolean(L, isOutputDevice(audioDevice.pointee.deviceId) ? 1 : 0)
+    L.push(isOutputDevice(audioDevice.pointee.deviceId))
 
     return 1
 }
@@ -1141,7 +1141,7 @@ private func audiodevice_isInputDevice(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let audioDevice = userdataToAudioDevice(L, 1)
-    lua_pushboolean(L, isInputDevice(audioDevice.pointee.deviceId) ? 1 : 0)
+    L.push(isInputDevice(audioDevice.pointee.deviceId))
 
     return 1
 }
@@ -1187,7 +1187,7 @@ private func audiodevice_transportType(_ L: LuaState) throws -> CInt {
         case kAudioDeviceTransportTypeThunderbolt:    transportTypeName = "Thunderbolt"
         default:                                      transportTypeName = "UNKNOWN"
         }
-        lua_pushstring(L, transportTypeName)
+        L.push(transportTypeName)
     } else {
         lua_pushnil(L)
     }
@@ -1222,7 +1222,7 @@ private func audiodevice_jackConnected(_ L: LuaState) throws -> CInt {
     if AudioObjectGetPropertyData(deviceId, &propertyAddress, 0, nil, &jackConnectedSize, &jackConnected) != noErr {
         lua_pushnil(L)
     } else {
-        lua_pushboolean(L, jackConnected != 0 ? 1 : 0)
+        L.push(jackConnected != 0)
     }
 
     return 1
@@ -1249,7 +1249,7 @@ private func audiodevice_supportsInputDataSources(_ L: LuaState) throws -> CInt 
         mElement: kAudioObjectPropertyElementMain
     )
 
-    lua_pushboolean(L, AudioObjectHasProperty(deviceId, &propertyAddress) ? 1 : 0)
+    L.push(AudioObjectHasProperty(deviceId, &propertyAddress))
 
     return 1
 }
@@ -1275,7 +1275,7 @@ private func audiodevice_supportsOutputDataSources(_ L: LuaState) throws -> CInt
         mElement: kAudioObjectPropertyElementMain
     )
 
-    lua_pushboolean(L, AudioObjectHasProperty(deviceId, &propertyAddress) ? 1 : 0)
+    L.push(AudioObjectHasProperty(deviceId, &propertyAddress))
 
     return 1
 }
@@ -1391,7 +1391,7 @@ private func audiodevice_allOutputDataSources(_ L: LuaState) throws -> CInt {
     lua_newtable(L)
 
     for i in 0..<numSources {
-        lua_pushinteger(L, lua_Integer(i + 1))
+        L.push(lua_Integer(i + 1))
         new_dataSource(L, deviceId, datasourceList[i])
         lua_settable(L, -3)
     }
@@ -1438,7 +1438,7 @@ private func audiodevice_allInputDataSources(_ L: LuaState) throws -> CInt {
     lua_newtable(L)
 
     for i in 0..<numSources {
-        lua_pushinteger(L, lua_Integer(i + 1))
+        L.push(lua_Integer(i + 1))
         new_dataSource(L, deviceId, datasourceList[i])
         lua_settable(L, -3)
     }
@@ -1594,7 +1594,7 @@ private func audiodevice_watcherIsRunning(_ L: LuaState) throws -> CInt {
 
     let audioDevice = userdataToAudioDevice(L, 1)
 
-    lua_pushboolean(L, audioDevice.pointee.watcherRunning ? 1 : 0)
+    L.push(audioDevice.pointee.watcherRunning)
 
     return 1
 }
@@ -1632,7 +1632,7 @@ private func audiodevice_eq(_ L: LuaState) throws -> CInt {
 
     let deviceA = userdataToAudioDevice(L, 1)
     let deviceB = userdataToAudioDevice(L, 2)
-    lua_pushboolean(L, deviceA.pointee.deviceId == deviceB.pointee.deviceId ? 1 : 0)
+    L.push(deviceA.pointee.deviceId == deviceB.pointee.deviceId)
 
     return 1
 }
@@ -1702,7 +1702,7 @@ private func datasource_name(_ L: LuaState) throws -> CInt {
     let dataSource = userdataToDataSource(L, 1)
     let name = get_datasource_name(dataSource.pointee.hostDevice, dataSource.pointee.dataSource)
 
-    lua_pushstring(L, name)
+    L.push(name)
 
     return 1
 }
@@ -1753,7 +1753,7 @@ private func datasource_tostring(_ L: LuaState) throws -> CInt {
     let name = get_datasource_name(dataSource.pointee.hostDevice, dataSource.pointee.dataSource)
 
     let ptr = lua_topointer(L, 1)
-    lua_pushstring(L, "\(USERDATA_DATASOURCE_TAG): \(name) (\(String(describing: ptr)))")
+    L.push("\(USERDATA_DATASOURCE_TAG): \(name) (\(String(describing: ptr)))")
 
     return 1
 }
@@ -1762,7 +1762,7 @@ private func datasource_eq(_ L: LuaState) throws -> CInt {
 
     let sourceA = userdataToDataSource(L, 1)
     let sourceB = userdataToDataSource(L, 2)
-    lua_pushboolean(L, sourceA.pointee.dataSource == sourceB.pointee.dataSource ? 1 : 0)
+    L.push(sourceA.pointee.dataSource == sourceB.pointee.dataSource)
 
     return 1
 }
@@ -1776,7 +1776,7 @@ public func luaopen_hs_libaudiodevice(_ L: UnsafeMutablePointer<lua_State>!) -> 
         luaL_newmetatable(L, USERDATA_TAG)
         lua_pushvalue(L, -1)
         lua_setfield(L, -2, "__index")
-        lua_pushstring(L, USERDATA_TAG)
+        L.push(USERDATA_TAG)
         lua_setfield(L, -2, "__type")
         L.push(audiodevice_setdefaultoutputdevice)
         lua_setfield(L, -2, "setDefaultOutputDevice")
@@ -1862,7 +1862,7 @@ public func luaopen_hs_libaudiodevice(_ L: UnsafeMutablePointer<lua_State>!) -> 
         luaL_newmetatable(L, USERDATA_DATASOURCE_TAG)
         lua_pushvalue(L, -1)
         lua_setfield(L, -2, "__index")
-        lua_pushstring(L, USERDATA_DATASOURCE_TAG)
+        L.push(USERDATA_DATASOURCE_TAG)
         lua_setfield(L, -2, "__type")
         L.push(datasource_name)
         lua_setfield(L, -2, "name")

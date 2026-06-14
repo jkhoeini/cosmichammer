@@ -195,11 +195,11 @@ private func audiodevicewatcher_stop(_ L: LuaState) throws -> CInt {
 private func audiodevicewatcher_isRunning(_ L: LuaState) throws -> CInt {
 
     guard let watcher = theWatcher else {
-        lua_pushboolean(L, 0)
+        L.push(false)
         return 1
     }
 
-    lua_pushboolean(L, watcher.pointee.running ? 1 : 0)
+    L.push(watcher.pointee.running)
     return 1
 }
 

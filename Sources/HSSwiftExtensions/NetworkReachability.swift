@@ -43,7 +43,7 @@ private let doReachabilityCallback: SCNetworkReachabilityCallBack = { target, fl
         guard lua_isStateGenerationValid(obj.generation) else { return }
         cb.push(onto: L)
         L.push(userdata: obj)
-        lua_pushinteger(L, lua_Integer(flags.rawValue))
+        L.push(lua_Integer(flags.rawValue))
         if lua_pcall(L, 2, 0, 0) != LUA_OK {
             lua_pop(L, 1)
         }
@@ -184,21 +184,21 @@ private func reachabilityForHostName(_ L: LuaState) throws -> CInt {
 /// * isDirect             - indicates if the destination is directly connected
 private func pushReachabilityFlags(_ L: LuaState) throws -> CInt {
     lua_createtable(L, 0, 0)
-    lua_pushinteger(L, lua_Integer(SCNetworkReachabilityFlags.transientConnection.rawValue))
+    L.push(lua_Integer(SCNetworkReachabilityFlags.transientConnection.rawValue))
     lua_setfield(L, -2, "transientConnection")
-    lua_pushinteger(L, lua_Integer(SCNetworkReachabilityFlags.reachable.rawValue))
+    L.push(lua_Integer(SCNetworkReachabilityFlags.reachable.rawValue))
     lua_setfield(L, -2, "reachable")
-    lua_pushinteger(L, lua_Integer(SCNetworkReachabilityFlags.connectionRequired.rawValue))
+    L.push(lua_Integer(SCNetworkReachabilityFlags.connectionRequired.rawValue))
     lua_setfield(L, -2, "connectionRequired")
-    lua_pushinteger(L, lua_Integer(SCNetworkReachabilityFlags.connectionOnTraffic.rawValue))
+    L.push(lua_Integer(SCNetworkReachabilityFlags.connectionOnTraffic.rawValue))
     lua_setfield(L, -2, "connectionOnTraffic")
-    lua_pushinteger(L, lua_Integer(SCNetworkReachabilityFlags.interventionRequired.rawValue))
+    L.push(lua_Integer(SCNetworkReachabilityFlags.interventionRequired.rawValue))
     lua_setfield(L, -2, "interventionRequired")
-    lua_pushinteger(L, lua_Integer(SCNetworkReachabilityFlags.connectionOnDemand.rawValue))
+    L.push(lua_Integer(SCNetworkReachabilityFlags.connectionOnDemand.rawValue))
     lua_setfield(L, -2, "connectionOnDemand")
-    lua_pushinteger(L, lua_Integer(SCNetworkReachabilityFlags.isLocalAddress.rawValue))
+    L.push(lua_Integer(SCNetworkReachabilityFlags.isLocalAddress.rawValue))
     lua_setfield(L, -2, "isLocalAddress")
-    lua_pushinteger(L, lua_Integer(SCNetworkReachabilityFlags.isDirect.rawValue))
+    L.push(lua_Integer(SCNetworkReachabilityFlags.isDirect.rawValue))
     lua_setfield(L, -2, "isDirect")
     return 1
 }
@@ -229,7 +229,7 @@ public func luaopen_hs_libnetworkreachability(_ L: UnsafeMutablePointer<lua_Stat
                     guard let r = obj.reachabilityObj, SCNetworkReachabilityGetFlags(r, &flags) else {
                         throw LuaCallError("unable to get reachability flags:\(String(cString: SCErrorString(SCError())))")
                     }
-                    lua_pushinteger(L, lua_Integer(flags.rawValue))
+                    L.push(lua_Integer(flags.rawValue))
                     return 1
                 },
                 /// hs.network.reachability:statusString() -> string
@@ -259,7 +259,7 @@ public func luaopen_hs_libnetworkreachability(_ L: UnsafeMutablePointer<lua_Stat
                     guard let r = obj.reachabilityObj, SCNetworkReachabilityGetFlags(r, &flags) else {
                         throw LuaCallError("unable to get reachability flags:\(String(cString: SCErrorString(SCError())))")
                     }
-                    lua_pushstring(L, statusString(flags))
+                    L.push(statusString(flags))
                     return 1
                 },
                 /// hs.network.reachability:setCallback(function) -> reachabilityObject
@@ -372,7 +372,7 @@ public func luaopen_hs_libnetworkreachability(_ L: UnsafeMutablePointer<lua_Stat
                     flagString = "** reachability object is nil*"
                 }
                 let ptr = lua_topointer(L, 1)
-                lua_pushstring(L, "\(USERDATA_TAG): \(flagString) (\(String(describing: ptr)))")
+                L.push("\(USERDATA_TAG): \(flagString) (\(String(describing: ptr)))")
                 return 1
             }
         ))
@@ -382,21 +382,21 @@ public func luaopen_hs_libnetworkreachability(_ L: UnsafeMutablePointer<lua_Stat
         L.pushMetatable(for: HSReachability.self)
 
         // __eq: compare via CFEqual on the underlying SCNetworkReachability
-        lua_pushcclosure(L, { (L: LuaState!) -> CInt in
+        L.push({ (L: LuaState!) -> CInt in
             if let obj1: HSReachability = L.touserdata(1),
                let obj2: HSReachability = L.touserdata(2),
                let r1 = obj1.reachabilityObj,
                let r2 = obj2.reachabilityObj {
-                lua_pushboolean(L, CFEqual(r1, r2) ? 1 : 0)
+                L.push(CFEqual(r1, r2))
             } else {
-                lua_pushboolean(L, 0)
+                L.push(false)
             }
             return 1
-        }, 0)
+        })
         lua_setfield(L, -2, "__eq")
 
         // Replace __gc with our explicit teardown + deinitialize
-        lua_pushcclosure(L, { (L: LuaState!) -> CInt in
+        L.push({ (L: LuaState!) -> CInt in
             if let obj: HSReachability = L.touserdata(1) {
                 obj.teardown()
             }
@@ -405,13 +405,13 @@ public func luaopen_hs_libnetworkreachability(_ L: UnsafeMutablePointer<lua_Stat
             let anyPtr = rawptr.assumingMemoryBound(to: Any.self)
             anyPtr.deinitialize(count: 1)
             return 0
-        }, 0)
+        })
         lua_setfield(L, -2, "__gc")
 
         // Set __type and __name for lsunit.lua assertIsUserdataOfType and tostring
-        lua_pushstring(L, USERDATA_TAG)
+        L.push(USERDATA_TAG)
         lua_setfield(L, -2, "__type")
-        lua_pushstring(L, USERDATA_TAG)
+        L.push(USERDATA_TAG)
         lua_setfield(L, -2, "__name")
 
         // Alias the metatable under the legacy registry name so that
@@ -429,10 +429,10 @@ public func luaopen_hs_libnetworkreachability(_ L: UnsafeMutablePointer<lua_Stat
 
         // Set module metatable (for __gc to clean up reachabilityQueue)
         lua_createtable(L, 0, 1)
-        lua_pushcclosure(L, { (L: LuaState!) -> CInt in
+        L.push({ (L: LuaState!) -> CInt in
             reachabilityQueue = nil
             return 0
-        }, 0)
+        })
         lua_setfield(L, -2, "__gc")
         lua_setmetatable(L, -2)
 

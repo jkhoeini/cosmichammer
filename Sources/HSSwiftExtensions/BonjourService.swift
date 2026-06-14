@@ -255,10 +255,10 @@ public func luaopen_hs_libbonjourservice(_ L: UnsafeMutablePointer<lua_State>!) 
                                                nil, 0, NI_NUMERICHOST | NI_WITHSCOPEID | NI_NUMERICSERV)
                         }
                         if err == 0 {
-                            lua_pushstring(L, addrStr)
+                            L.push(String(cString: addrStr))
                             lua_rawseti(L, -2, luaL_len(L, -2) + 1)
                         } else {
-                            lua_pushstring(L, "** error:\(String(cString: gai_strerror(err)!))")
+                            L.push("** error:\(String(cString: gai_strerror(err)!))")
                         }
                     }
                 }
@@ -348,7 +348,7 @@ public func luaopen_hs_libbonjourservice(_ L: UnsafeMutablePointer<lua_State>!) 
             ///  * for local (published) serviceObjects, this method will always return the number specified when the serviceObject was created with the [hs.bonjour.service.new](#new) constructor.
             "port": .closure { L in
                 let wrapper: HSNetServiceWrapper = try L.checkArgument(1)
-                lua_pushinteger(L, lua_Integer(wrapper.service.port))
+                L.push(lua_Integer(wrapper.service.port))
                 return 1
             },
 
@@ -399,7 +399,7 @@ public func luaopen_hs_libbonjourservice(_ L: UnsafeMutablePointer<lua_State>!) 
                     if wrapper.service.setTXTRecord(txtRecord) {
                         lua_pushvalue(L, 1)
                     } else {
-                        lua_pushboolean(L, 0)
+                        L.push(false)
                     }
                 }
                 return 1
@@ -423,7 +423,7 @@ public func luaopen_hs_libbonjourservice(_ L: UnsafeMutablePointer<lua_State>!) 
             "includesPeerToPeer": .closure { L in
                 let wrapper: HSNetServiceWrapper = try L.checkArgument(1)
                 if lua_gettop(L) == 1 {
-                    lua_pushboolean(L, wrapper.service.includesPeerToPeer ? 1 : 0)
+                    L.push(wrapper.service.includesPeerToPeer)
                 } else {
                     wrapper.service.includesPeerToPeer = lua_toboolean(L, 2) != 0
                     lua_pushvalue(L, 1)
@@ -615,9 +615,9 @@ public func luaopen_hs_libbonjourservice(_ L: UnsafeMutablePointer<lua_State>!) 
         eq: .closure { L in
             if let obj1: HSNetServiceWrapper = L.touserdata(1),
                let obj2: HSNetServiceWrapper = L.touserdata(2) {
-                lua_pushboolean(L, obj1.isEqual(to: obj2) ? 1 : 0)
+                L.push(obj1.isEqual(to: obj2))
             } else {
-                lua_pushboolean(L, 0)
+                L.push(false)
             }
             return 1
         },
@@ -652,9 +652,9 @@ public func luaopen_hs_libbonjourservice(_ L: UnsafeMutablePointer<lua_State>!) 
     lua_setfield(L, -2, "__gc")
 
     // Set __type and __name for core_getObjectMetatable and tostring
-    lua_pushstring(L, USERDATA_TAG)
+    L.push(USERDATA_TAG)
     lua_setfield(L, -2, "__type")
-    lua_pushstring(L, USERDATA_TAG)
+    L.push(USERDATA_TAG)
     lua_setfield(L, -2, "__name")
 
     // Alias the metatable under the legacy registry name so that

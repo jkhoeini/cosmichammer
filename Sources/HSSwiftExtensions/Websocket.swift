@@ -58,8 +58,8 @@ private class HSWebSocketDelegate: NSObject, URLSessionWebSocketDelegate {
                 strongSelf.performLuaWork { [weak strongSelf] in
                     guard let strongSelf, !strongSelf.isOpen, !strongSelf.isExplicitlyClosing else { return }
                     strongSelf.invokeLuaCallback { L in
-                        lua_pushstring(L, "fail")
-                        lua_pushstring(L, error.localizedDescription)
+                        L.push("fail")
+                        L.push(error.localizedDescription)
                         return 2
                     }
                 }
@@ -68,10 +68,10 @@ private class HSWebSocketDelegate: NSObject, URLSessionWebSocketDelegate {
                 strongSelf.performLuaWork { [weak strongSelf] in
                     guard let strongSelf, !strongSelf.isExplicitlyClosing else { return }
                     strongSelf.invokeLuaCallback { L in
-                        lua_pushstring(L, "received")
+                        L.push("received")
                         switch message {
                         case .string(let text):
-                            lua_pushstring(L, text)
+                            L.push(text)
                         case .data(let data):
                             data.withUnsafeBytes { rawBuf in
                                 _ = lua_pushlstring(L, rawBuf.baseAddress?.assumingMemoryBound(to: CChar.self), rawBuf.count)
@@ -114,7 +114,7 @@ private class HSWebSocketDelegate: NSObject, URLSessionWebSocketDelegate {
             guard !isExplicitlyClosing else { return }
             isOpen = true
             invokeLuaCallback { L in
-                lua_pushstring(L, "open")
+                L.push("open")
                 return 1
             }
         }
@@ -128,7 +128,7 @@ private class HSWebSocketDelegate: NSObject, URLSessionWebSocketDelegate {
             guard let self else { return }
             isOpen = false
             invokeLuaCallback { L in
-                lua_pushstring(L, "closed")
+                L.push("closed")
                 return 1
             }
         }
@@ -249,13 +249,13 @@ public func luaopen_hs_libwebsocket(_ L: UnsafeMutablePointer<lua_State>!) -> In
                 let ws: HSWebSocketDelegate = try L.checkArgument(1)
                 switch ws.webSocket?.state {
                 case .running:
-                    lua_pushstring(L, ws.isOpen ? "open" : "connecting")
+                    L.push(ws.isOpen ? "open" : "connecting")
                 case .canceling:
-                    lua_pushstring(L, "closing")
+                    L.push("closing")
                 case .completed:
-                    lua_pushstring(L, "closed")
+                    L.push("closed")
                 default:
-                    lua_pushstring(L, "unknown")
+                    L.push("unknown")
                 }
                 return 1
             },
@@ -263,7 +263,7 @@ public func luaopen_hs_libwebsocket(_ L: UnsafeMutablePointer<lua_State>!) -> In
         tostring: .closure { L in
             let ws: HSWebSocketDelegate = try L.checkArgument(1)
             let host = ws.isOpen ? "connected" : "disconnected"
-            lua_pushstring(L, "\(WS_USERDATA_TAG): \(host) (\(lua_topointer(L, 1)!))")
+            L.push("\(WS_USERDATA_TAG): \(host) (\(lua_topointer(L, 1)!))")
             return 1
         }
     ))
@@ -282,9 +282,9 @@ public func luaopen_hs_libwebsocket(_ L: UnsafeMutablePointer<lua_State>!) -> In
     lua_setfield(L, -2, "__gc")
 
     // Set __type and __name for lsunit.lua assertIsUserdataOfType and tostring
-    lua_pushstring(L, WS_USERDATA_TAG)
+    L.push(WS_USERDATA_TAG)
     lua_setfield(L, -2, "__type")
-    lua_pushstring(L, WS_USERDATA_TAG)
+    L.push(WS_USERDATA_TAG)
     lua_setfield(L, -2, "__name")
 
     // Alias the metatable under the legacy registry name so that

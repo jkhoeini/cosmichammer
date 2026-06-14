@@ -154,7 +154,7 @@ private func mouse_count(_ L: LuaState) throws -> CInt {
         mouseCount -= 1
     }
 
-    lua_pushinteger(L, lua_Integer(mouseCount))
+    L.push(mouseCount)
     return 1
 }
 
@@ -235,7 +235,7 @@ private func mouse_mouseAcceleration(_ L: LuaState) throws -> CInt {
         }
     }
 
-    lua_pushnumber(L, isTrackpad ? mouseManager.trackpadTrackingSpeed : mouseManager.trackingSpeed)
+    L.push(isTrackpad ? mouseManager.trackpadTrackingSpeed : mouseManager.trackingSpeed)
     return 1
 }
 
@@ -251,7 +251,7 @@ private func mouse_mouseAcceleration(_ L: LuaState) throws -> CInt {
 private func mouse_scrollDirection(_ L: LuaState) throws -> CInt {
     let mouseManager = HSmouse()
 
-    lua_pushstring(L, mouseManager.isScrollDirectionNatural ? "natural" : "normal")
+    L.push(mouseManager.isScrollDirectionNatural ? "natural" : "normal")
     return 1
 }
 
@@ -272,7 +272,7 @@ private func mouse_currentCursorType(_ L: LuaState) throws -> CInt {
     var value = "unknown"
 
     guard let currentCursor = NSCursor.currentSystem else {
-        lua_pushstring(L, value)
+        L.push(value)
         return 1
     }
 
@@ -317,7 +317,7 @@ private func mouse_currentCursorType(_ L: LuaState) throws -> CInt {
         }
     }
 
-    lua_pushstring(L, value)
+    L.push(value)
     return 1
 }
 

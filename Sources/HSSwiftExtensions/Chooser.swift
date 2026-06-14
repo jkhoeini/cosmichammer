@@ -592,7 +592,7 @@ class HSChooserTableView: NSTableView {
         let L = lua_getCurrentState()!
         lua_getglobal(L, "require")
 
-        lua_pushstring(L, "hs.chooser")
+        L.push("hs.chooser")
 
         lua_pcall(L, 1, 1, 0)
         lua_getfield(L, -1, "globalCallback")
@@ -606,7 +606,7 @@ class HSChooserTableView: NSTableView {
             lua_remove(L, -1)
         } else {
             _ = pushHSChooser(L, self)
-            lua_pushstring(L, "willOpen")
+            L.push("willOpen")
             if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
         }
 
@@ -640,7 +640,7 @@ class HSChooserTableView: NSTableView {
         let L = lua_getCurrentState()!
         lua_getglobal(L, "require")
 
-        lua_pushstring(L, "hs.chooser")
+        L.push("hs.chooser")
 
         lua_pcall(L, 1, 1, 0)
         lua_getfield(L, -1, "globalCallback")
@@ -654,7 +654,7 @@ class HSChooserTableView: NSTableView {
             lua_remove(L, -1)
         } else {
             _ = pushHSChooser(L, self)
-            lua_pushstring(L, "didClose")
+            L.push("didClose")
             if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
         }
 
@@ -960,7 +960,7 @@ class HSChooserTableView: NSTableView {
         if let cb = rightClickCallback {
             let L = lua_getCurrentState()!
             cb.push(onto: L)
-            lua_pushinteger(L, lua_Integer(row + 1))
+            L.push(lua_Integer(row + 1))
             if lua_pcall(L, 1, 0, 0) != LUA_OK { lua_pop(L, 1) }
         }
     }

@@ -198,8 +198,8 @@ import os.log
         canvas_pushValue(L, self)
         canvas_pushValue(L, message as NSString)
         canvas_pushValue(L, elementIdentifier)
-        lua_pushnumber(L, lua_Number(location.x))
-        lua_pushnumber(L, lua_Number(location.y))
+        L.push(lua_Number(location.x))
+        L.push(lua_Number(location.y))
         if lua_pcall(L, 5, 0, 0) != LUA_OK { lua_pop(L, 1) }
     }
 
@@ -1168,7 +1168,7 @@ import os.log
             canvas_pushValue(L, pasteboard.name.rawValue as NSString)
             lua_setfield(L, -2, "pasteboard")
 
-            lua_pushinteger(L, lua_Integer(sender.draggingSequenceNumber))
+            L.push(lua_Integer(sender.draggingSequenceNumber))
             lua_setfield(L, -2, "sequence")
 
             lua_pushNSPoint(L, sender.draggingLocation)
@@ -1177,14 +1177,14 @@ import os.log
             let operation = sender.draggingSourceOperationMask
             lua_newtable(L)
             if operation == [] {
-                lua_pushstring(L, "none"); lua_rawseti(L, -2, luaL_len(L, -2) + 1)
+                L.push("none"); lua_rawseti(L, -2, luaL_len(L, -2) + 1)
             } else {
-                if operation.contains(.copy)    { lua_pushstring(L, "copy");    lua_rawseti(L, -2, luaL_len(L, -2) + 1) }
-                if operation.contains(.link)    { lua_pushstring(L, "link");    lua_rawseti(L, -2, luaL_len(L, -2) + 1) }
-                if operation.contains(.generic) { lua_pushstring(L, "generic"); lua_rawseti(L, -2, luaL_len(L, -2) + 1) }
-                if operation.contains(.private) { lua_pushstring(L, "private"); lua_rawseti(L, -2, luaL_len(L, -2) + 1) }
-                if operation.contains(.move)    { lua_pushstring(L, "move");    lua_rawseti(L, -2, luaL_len(L, -2) + 1) }
-                if operation.contains(.delete)  { lua_pushstring(L, "delete");  lua_rawseti(L, -2, luaL_len(L, -2) + 1) }
+                if operation.contains(.copy)    { L.push("copy");    lua_rawseti(L, -2, luaL_len(L, -2) + 1) }
+                if operation.contains(.link)    { L.push("link");    lua_rawseti(L, -2, luaL_len(L, -2) + 1) }
+                if operation.contains(.generic) { L.push("generic"); lua_rawseti(L, -2, luaL_len(L, -2) + 1) }
+                if operation.contains(.private) { L.push("private"); lua_rawseti(L, -2, luaL_len(L, -2) + 1) }
+                if operation.contains(.move)    { L.push("move");    lua_rawseti(L, -2, luaL_len(L, -2) + 1) }
+                if operation.contains(.delete)  { L.push("delete");  lua_rawseti(L, -2, luaL_len(L, -2) + 1) }
             }
             lua_setfield(L, -2, "operation")
             argCount += 1

@@ -194,9 +194,9 @@ private func target_clear(_ L: LuaState) throws -> CInt {
     let defaults = UserDefaults.standard
     if defaults.object(forKey: key) != nil && !defaults.objectIsForced(forKey: key) {
         defaults.removeObject(forKey: key)
-        lua_pushboolean(L, 1)
+        L.push(true)
     } else {
-        lua_pushboolean(L, 0)
+        L.push(false)
     }
     return 1
 }
@@ -220,12 +220,12 @@ private func target_getKeys(_ L: LuaState) throws -> CInt {
 
     lua_newtable(L)
     for (i, key) in keys.enumerated() {
-        lua_pushinteger(L, lua_Integer(i + 1))
-        lua_pushstring(L, key)
+        L.push(lua_Integer(i + 1))
+        L.push(key)
         lua_settable(L, -3)
 
-        lua_pushstring(L, key)
-        lua_pushboolean(L, 1)
+        L.push(key)
+        L.push(true)
         lua_settable(L, -3)
     }
     return 1
@@ -340,13 +340,13 @@ public func luaopen_hs_libsettings(_ L: UnsafeMutablePointer<lua_State>!) -> Int
         /// hs.settings.dateFormat
         /// Constant
         /// A string representing the expected format of date and time when presenting the date and time as a string to `hs.setDate()`.  e.g. `os.date(hs.settings.dateFormat)`
-        lua_pushstring(L, "!%Y-%m-%dT%H:%M:%SZ")
+        L.push("!%Y-%m-%dT%H:%M:%SZ")
         lua_setfield(L, -2, "dateFormat")
 
         /// hs.settings.bundleID
         /// Constant
         /// A string representing the ID of the bundle Cosmic Hammer's settings are stored in . You can use this with the command line tool `defaults` or other tools which allow access to the `User Defaults` of applications, to access these outside of Cosmic Hammer
-        lua_pushstring(L, Bundle.main.bundleIdentifier ?? "")
+        L.push(Bundle.main.bundleIdentifier ?? "")
         lua_setfield(L, -2, "bundleID")
     }
 }

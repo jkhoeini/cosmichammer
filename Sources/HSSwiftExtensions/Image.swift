@@ -247,7 +247,7 @@ private func additionalImages(_ L: LuaState) -> CInt {
     func pushStringArray(_ L: UnsafeMutablePointer<lua_State>!, _ names: [String], _ field: String) {
         lua_newtable(L)
         for name in names {
-            lua_pushstring(L, name)
+            L.push(name)
             lua_rawseti(L, -2, luaL_len(L, -2) + 1)
         }
         lua_setfield(L, -2, field)
@@ -782,7 +782,7 @@ private func getImageName(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let testImage = lua_checkUserdataObject(NSImage.self, L, at: 1, metatableName: USERDATA_TAG)
     if lua_gettop(L) == 1 {
-        lua_pushstring(L, testImage.name())
+        L.push(testImage.name())
     } else {
         if testImage.setName(String(cString: luaL_checkstring(L, 2))) {
             lua_pushvalue(L, 1)
@@ -1074,7 +1074,7 @@ private func saveToFile(_ L: LuaState) throws -> CInt {
 
     do {
         try fileData.write(to: URL(fileURLWithPath: (filePath as NSString).expandingTildeInPath), options: .atomic)
-        lua_pushboolean(L, 1)
+        L.push(true)
     } catch {
         throw LuaCallError("Unable to write image file: \(error.localizedDescription)")
     }
@@ -1098,7 +1098,7 @@ private func imageTemplate(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let theImage = lua_checkUserdataObject(NSImage.self, L, at: 1, metatableName: USERDATA_TAG)
     if lua_gettop(L) == 1 {
-        lua_pushboolean(L, theImage.isTemplate ? 1 : 0)
+        L.push(theImage.isTemplate)
     } else {
         theImage.isTemplate = lua_toboolean(L, 2) != 0
         lua_pushvalue(L, 1)
@@ -1252,16 +1252,16 @@ private func HSImage_toNSImage(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int
 private func image_userdata_tostring(_ L: LuaState) throws -> CInt {
     let testImage = lua_checkUserdataObject(NSImage.self, L, at: 1, metatableName: USERDATA_TAG)
     let theName = testImage.name() ?? ""
-    lua_pushstring(L, "\(USERDATA_TAG): \(theName) (\(String(describing: lua_topointer(L, 1))))")
+    L.push("\(USERDATA_TAG): \(theName) (\(String(describing: lua_topointer(L, 1))))")
     return 1
 }
 
 private func image_userdata_eq(_ L: LuaState) throws -> CInt {
     if let image1 = lua_testUserdataObject(NSImage.self, L, at: 1, metatableName: USERDATA_TAG),
        let image2 = lua_testUserdataObject(NSImage.self, L, at: 2, metatableName: USERDATA_TAG) {
-        lua_pushboolean(L, image1 === image2 ? 1 : 0)
+        L.push(image1 === image2)
     } else {
-        lua_pushboolean(L, 0)
+        L.push(false)
     }
     return 1
 }
@@ -1300,9 +1300,9 @@ public func luaopen_hs_libimage(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
         L.push(image_userdata_tostring);    lua_setfield(L, -2, "__tostring")
         L.push(image_userdata_eq);          lua_setfield(L, -2, "__eq")
         L.push(image_userdata_gc);          lua_setfield(L, -2, "__gc")
-        lua_pushstring(L, USERDATA_TAG)
+        L.push(USERDATA_TAG)
         lua_setfield(L, -2, "__type")
-        lua_pushstring(L, USERDATA_TAG)
+        L.push(USERDATA_TAG)
         lua_setfield(L, -2, "__name")
         lua_pop(L, 1)
 

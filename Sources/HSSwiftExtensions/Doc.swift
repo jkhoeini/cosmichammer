@@ -322,7 +322,7 @@ private func doc_registerJSONFile(_ L: LuaState) throws -> CInt {
     path = (path.standardizingPath as NSString).resolvingSymlinksInPath as NSString
 
     if registeredFiles[path] != nil {
-        lua_pushboolean(L, 0)
+        L.push(false)
         lua_pushany(L, "File '\(path)' already registered" as NSString)
         return 2
     }
@@ -331,7 +331,7 @@ private func doc_registerJSONFile(_ L: LuaState) throws -> CInt {
 
     // changecount function will be triggered when json built in findUnloadedDocumentationFiles for new path
 
-    lua_pushboolean(L, 1)
+    L.push(true)
     return 1
 }
 
@@ -351,7 +351,7 @@ private func doc_unregisterJSONFile(_ L: LuaState) throws -> CInt {
     let path = String(cString: luaL_checkstring(L, 1)) as NSString
 
     if registeredFiles[path] == nil {
-        lua_pushboolean(L, 0)
+        L.push(false)
         lua_pushany(L, "File '\(path)' was not registered" as NSString)
         return 2
     }
@@ -369,7 +369,7 @@ private func doc_unregisterJSONFile(_ L: LuaState) throws -> CInt {
 
     // changecount function will be triggered when json rebuilt in findUnloadedDocumentationFiles for remaining paths
 
-    lua_pushboolean(L, 1)
+    L.push(true)
     return 1
 }
 

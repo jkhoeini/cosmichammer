@@ -63,14 +63,6 @@ import Cocoa
 private let USERDATA_TAG = "hs.caffeinate.watcher"
 private var refTable: Int32 = 0
 
-// MARK: - Userdata struct
-
-private struct CaffeinateWatcherData {
-    var running: Bool
-    var obj: UnsafeMutableRawPointer?  // Retained reference to CaffeinateWatcher
-    var generation: UInt64
-}
-
 // MARK: - Event enum
 
 private enum CaffeinateEvent: Int {
@@ -90,25 +82,35 @@ private enum CaffeinateEvent: Int {
 
 // MARK: - CaffeinateWatcher class
 
-private class CaffeinateWatcher: NSObject {
-    var object: UnsafeMutablePointer<CaffeinateWatcherData>
+private class CaffeinateWatcher: NSObject, LuaTeardownable {
     var callback: LuaValue?
+    var running: Bool = false
+    var generation: UInt64 = 0
+    private var tornDown = false
 
-    init(object: UnsafeMutablePointer<CaffeinateWatcherData>, callback: LuaValue?) {
-        self.object = object
-        self.callback = callback
-        super.init()
+    func teardown() {
+        guard !tornDown else { return }
+        tornDown = true
+        if running {
+            running = false
+            unregister_observer(self)
+        }
+        callback = nil
     }
 
     // Call the lua callback function and pass the event type.
     func callbackFired(dict: [AnyHashable: Any]?, event: CaffeinateEvent) {
+        guard !tornDown else { return }
         guard let cb = callback else { return }
-        guard lua_isStateGenerationValid(object.pointee.generation) else { return }
+        guard lua_isStateGenerationValid(generation) else {
+            teardown()
+            return
+        }
 
         let L = lua_getCurrentState()!
 
         cb.push(onto: L)
-        lua_pushinteger(L, lua_Integer(event.rawValue))
+        L.push(lua_Integer(event.rawValue))
 
         if lua_pcall(L, 1, 0, 0) != LUA_OK {
             lua_pop(L, 1)
@@ -219,110 +221,10 @@ private func unregister_observer(_ observer: CaffeinateWatcher) {
     distcenter.removeObserver(observer, name: NSNotification.Name("com.apple.screenIsUnlocked"), object: nil)
 }
 
-// MARK: - Lua callbacks
-
-/// hs.caffeinate.watcher.new(fn) -> watcher
-/// Constructor
-/// Creates a watcher object for system and display sleep/wake/power events
-///
-/// Parameters:
-///  * fn - A function that will be called when system/display events happen. It should accept one parameter:
-///   * An event type (see the constants defined above)
-///
-/// Returns:
-///  * An `hs.caffeinate.watcher` object
-private func caffeinate_watcher_new(_ L: LuaState) throws -> CInt {
-    luaL_checktype(L, 1, LUA_TFUNCTION)
-
-    let watcherPtr = lua_newuserdata(L, MemoryLayout<CaffeinateWatcherData>.size)!
-        .assumingMemoryBound(to: CaffeinateWatcherData.self)
-    memset(watcherPtr, 0, MemoryLayout<CaffeinateWatcherData>.size)
-
-    let cb = L.ref(index: 1)
-    watcherPtr.pointee.running = false
-
-    let watcher = CaffeinateWatcher(object: watcherPtr, callback: cb)
-    watcherPtr.pointee.obj = Unmanaged.passRetained(watcher).toOpaque()
-    watcherPtr.pointee.generation = lua_currentStateGeneration()
-
-    luaL_getmetatable(L, USERDATA_TAG)
-    lua_setmetatable(L, -2)
-    return 1
-}
-
-/// hs.caffeinate.watcher:start()
-/// Method
-/// Starts the sleep/wake watcher
-///
-/// Parameters:
-///  * None
-///
-/// Returns:
-///  * An `hs.caffeinate.watcher` object
-private func caffeinate_watcher_start(_ L: LuaState) throws -> CInt {
-    let watcherPtr = luaL_checkudata(L, 1, USERDATA_TAG)!.assumingMemoryBound(to: CaffeinateWatcherData.self)
-    lua_settop(L, 1)
-
-    guard !watcherPtr.pointee.running else { return 1 }
-
-    watcherPtr.pointee.running = true
-    let watcher = Unmanaged<CaffeinateWatcher>.fromOpaque(watcherPtr.pointee.obj!).takeUnretainedValue()
-    register_observer(watcher)
-    return 1
-}
-
-/// hs.caffeinate.watcher:stop()
-/// Method
-/// Stops the sleep/wake watcher
-///
-/// Parameters:
-///  * None
-///
-/// Returns:
-///  * An `hs.caffeinate.watcher` object
-private func caffeinate_watcher_stop(_ L: LuaState) throws -> CInt {
-    let watcherPtr = luaL_checkudata(L, 1, USERDATA_TAG)!.assumingMemoryBound(to: CaffeinateWatcherData.self)
-    lua_settop(L, 1)
-
-    guard watcherPtr.pointee.running else { return 1 }
-
-    watcherPtr.pointee.running = false
-    let watcher = Unmanaged<CaffeinateWatcher>.fromOpaque(watcherPtr.pointee.obj!).takeUnretainedValue()
-    unregister_observer(watcher)
-    return 1
-}
-
-// Perform cleanup if the CaffeinateWatcher is not required anymore.
-private func caffeinate_watcher_gc(_ L: LuaState) throws -> CInt {
-    let watcherPtr = luaL_checkudata(L, 1, USERDATA_TAG)!.assumingMemoryBound(to: CaffeinateWatcherData.self)
-
-    _ = try caffeinate_watcher_stop(L)
-
-    // Release the retained CaffeinateWatcher (and its LuaValue callback via ARC)
-    if let obj = watcherPtr.pointee.obj {
-        let watcher = Unmanaged<CaffeinateWatcher>.fromOpaque(obj).takeRetainedValue()
-        watcher.callback = nil
-        watcherPtr.pointee.obj = nil
-    }
-
-    return 0
-}
-
-private func userdata_tostring(_ L: LuaState) throws -> CInt {
-    let ptr = lua_topointer(L, 1)
-    let desc = "\(USERDATA_TAG): (\(String(describing: ptr)))"
-    lua_pushstring(L, desc)
-    return 1
-}
-
-private func meta_gc(_ L: LuaState) throws -> CInt {
-    return 0
-}
-
 // MARK: - Event enum registration
 
 private func add_event_value(_ L: UnsafeMutablePointer<lua_State>!, _ value: CaffeinateEvent, _ name: String) {
-    lua_pushinteger(L, lua_Integer(value.rawValue))
+    L.push(lua_Integer(value.rawValue))
     lua_setfield(L, -2, name)
 }
 
@@ -351,31 +253,71 @@ public func luaopen_hs_libcaffeinatewatcher(_ L: UnsafeMutablePointer<lua_State>
         lua_newtable(L)
         refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
 
-        // Register userdata metatable
-        luaL_newmetatable(L, USERDATA_TAG)
-        lua_pushvalue(L, -1)
-        lua_setfield(L, -2, "__index")
-        L.push(caffeinate_watcher_start)
-        lua_setfield(L, -2, "start")
-        L.push(caffeinate_watcher_stop)
-        lua_setfield(L, -2, "stop")
-        L.push(caffeinate_watcher_gc)
-        lua_setfield(L, -2, "__gc")
-        L.push(userdata_tostring)
-        lua_setfield(L, -2, "__tostring")
-        lua_pop(L, 1)
+        // Register idiomatic Metatable<CaffeinateWatcher> with LuaSwift.
+        L.register(Metatable<CaffeinateWatcher>(
+            fields: [
+                "start": .closure { L in
+                    let watcher: CaffeinateWatcher = try L.checkArgument(1)
+                    lua_settop(L, 1)
+                    if !watcher.running {
+                        watcher.running = true
+                        register_observer(watcher)
+                    }
+                    return 1
+                },
+                "stop": .closure { L in
+                    let watcher: CaffeinateWatcher = try L.checkArgument(1)
+                    lua_settop(L, 1)
+                    if watcher.running {
+                        watcher.running = false
+                        unregister_observer(watcher)
+                    }
+                    return 1
+                },
+            ],
+            tostring: .closure { L in
+                let _: CaffeinateWatcher = try L.checkArgument(1)
+                let desc = "\(USERDATA_TAG): (\(String(describing: lua_topointer(L, 1)!)))"
+                L.push(desc)
+                return 1
+            }
+        ))
+        installMetatableBoilerplate(L, for: CaffeinateWatcher.self, tag: USERDATA_TAG)
 
         // Create module table
         lua_createtable(L, 0, 1)
-        L.push(caffeinate_watcher_new)
+
+        /// hs.caffeinate.watcher.new(fn) -> watcher
+        /// Constructor
+        /// Creates a watcher object for system and display sleep/wake/power events
+        ///
+        /// Parameters:
+        ///  * fn - A function that will be called when system/display events happen. It should accept one parameter:
+        ///   * An event type (see the constants defined above)
+        ///
+        /// Returns:
+        ///  * An `hs.caffeinate.watcher` object
+        L.push { (L: LuaState) throws -> CInt in
+            luaL_checktype(L, 1, LUA_TFUNCTION)
+
+            let cb = L.ref(index: 1)
+
+            let watcher = CaffeinateWatcher()
+            watcher.callback = cb
+            watcher.generation = lua_currentStateGeneration()
+
+            L.push(userdata: watcher)
+
+            return 1
+        }
         lua_setfield(L, -2, "new")
 
-        // Set module metatable (for __gc)
+        add_event_enum(L)
+
+        // Module-level metatable (Lua wrapper accesses via getmetatable)
         lua_createtable(L, 0, 1)
-        L.push(meta_gc)
+        lua_pushcclosure(L, { (_: LuaState!) -> CInt in 0 }, 0)
         lua_setfield(L, -2, "__gc")
         lua_setmetatable(L, -2)
-
-        add_event_enum(L)
     }
 }

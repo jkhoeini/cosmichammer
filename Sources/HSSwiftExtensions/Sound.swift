@@ -45,7 +45,7 @@ private class HSSoundObject: NSObject, NSSoundDelegate {
 
             if let cb = self.callback {
                 cb.push(onto: L)
-                lua_pushboolean(L, flag ? 1 : 0)
+                L.push(flag)
                 // Push the selfRef userdata so the Lua callback receives the same identity
                 if self.selfRef != LUA_NOREF {
                     lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(self.selfRef))
@@ -95,7 +95,7 @@ private func sound_getAudioEffectNames(_ L: LuaState) throws -> CInt {
         var name: Unmanaged<CFString>?
         AudioComponentCopyName(comp, &name)
         if let theName = name?.takeRetainedValue() as String? {
-            lua_pushstring(L, theName)
+            L.push(theName)
             lua_rawseti(L, -2, lua_Integer(count))
             count += 1
         }
@@ -214,10 +214,10 @@ private func sound_soundUnfilteredFileTypes(_ L: LuaState) throws -> CInt {
         }) {
             lua_pushany(L, types)
         } else {
-            lua_pushstring(L, "Deprecated selector soundUnfilteredFileTypes not supported in this OS X version.  Please use `hs.sound.soundTypes` instead.")
+            L.push("Deprecated selector soundUnfilteredFileTypes not supported in this OS X version.  Please use `hs.sound.soundTypes` instead.")
         }
     } else {
-        lua_pushstring(L, "Deprecated selector soundUnfilteredFileTypes not supported in this OS X version.  Please use `hs.sound.soundTypes` instead.")
+        L.push("Deprecated selector soundUnfilteredFileTypes not supported in this OS X version.  Please use `hs.sound.soundTypes` instead.")
     }
     return 1
 }
@@ -238,7 +238,7 @@ public func luaopen_hs_libsound(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
                         obj.selfRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
                     }
                 } else {
-                    lua_pushboolean(L, 0)
+                    L.push(false)
                 }
                 return 1
             },
@@ -247,7 +247,7 @@ public func luaopen_hs_libsound(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
                 if obj.soundObject?.pause() == true {
                     lua_pushvalue(L, 1)
                 } else {
-                    lua_pushboolean(L, 0)
+                    L.push(false)
                 }
                 return 1
             },
@@ -256,7 +256,7 @@ public func luaopen_hs_libsound(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
                 if obj.soundObject?.resume() == true {
                     lua_pushvalue(L, 1)
                 } else {
-                    lua_pushboolean(L, 0)
+                    L.push(false)
                 }
                 return 1
             },
@@ -269,7 +269,7 @@ public func luaopen_hs_libsound(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
                     obj.selfRef = LUA_NOREF
                     lua_pushvalue(L, 1)
                 } else {
-                    lua_pushboolean(L, 0)
+                    L.push(false)
                 }
                 return 1
             },
@@ -279,7 +279,7 @@ public func luaopen_hs_libsound(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
                     obj.soundObject?.loops = lua_toboolean(L, 2) != 0
                     lua_pushvalue(L, 1)
                 } else {
-                    lua_pushboolean(L, (obj.soundObject?.loops == true) ? 1 : 0)
+                    L.push(obj.soundObject?.loops == true)
                 }
                 return 1
             },
@@ -293,7 +293,7 @@ public func luaopen_hs_libsound(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
                         throw LuaCallError("you must first assign a name to this sound in order to change this attribute")
                     }
                 } else {
-                    lua_pushboolean(L, obj.stopOnRelease ? 1 : 0)
+                    L.push(obj.stopOnRelease)
                 }
                 return 1
             },
@@ -349,13 +349,13 @@ public func luaopen_hs_libsound(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
                     sound.currentTime = luaL_checknumber(L, 2)
                     lua_pushvalue(L, 1)
                 } else {
-                    lua_pushnumber(L, sound.currentTime)
+                    L.push(sound.currentTime)
                 }
                 return 1
             },
             "duration": .closure { L in
                 let obj: HSSoundObject = try L.checkArgument(1)
-                lua_pushnumber(L, obj.soundObject?.duration ?? 0)
+                L.push(obj.soundObject?.duration ?? 0)
                 return 1
             },
             "volume": .closure { L in
@@ -368,13 +368,13 @@ public func luaopen_hs_libsound(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
                     sound.volume = Float(luaL_checknumber(L, 2))
                     lua_pushvalue(L, 1)
                 } else {
-                    lua_pushnumber(L, lua_Number(sound.volume))
+                    L.push(lua_Number(sound.volume))
                 }
                 return 1
             },
             "isPlaying": .closure { L in
                 let obj: HSSoundObject = try L.checkArgument(1)
-                lua_pushboolean(L, (obj.soundObject?.isPlaying == true) ? 1 : 0)
+                L.push(obj.soundObject?.isPlaying == true)
                 return 1
             },
             "setCallback": .closure { L in
@@ -399,7 +399,7 @@ public func luaopen_hs_libsound(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
         eq: .closure { L in
             let obj1: HSSoundObject = try L.checkArgument(1)
             let obj2: HSSoundObject = try L.checkArgument(2)
-            lua_pushboolean(L, obj1.isEqual(obj2) ? 1 : 0)
+            L.push(obj1.isEqual(obj2))
             return 1
         },
         tostring: .closure { L in
@@ -414,7 +414,7 @@ public func luaopen_hs_libsound(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
     // Replace LuaSwift's default __gc with custom teardown + deinitialize
     L.pushMetatable(for: HSSoundObject.self)
 
-    lua_pushcclosure(L, { (L: LuaState!) -> CInt in
+    L.push({ (L: LuaState!) -> CInt in
         if let obj: HSSoundObject = L.touserdata(1) {
             // Release the self-ref while L is still alive
             luaL_unref(L, LUA_REGISTRYINDEX_VALUE, obj.selfRef)
@@ -424,13 +424,13 @@ public func luaopen_hs_libsound(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
         let rawptr = lua_touserdata(L, 1)!
         rawptr.assumingMemoryBound(to: Any.self).deinitialize(count: 1)
         return 0
-    }, 0)
+    })
     lua_setfield(L, -2, "__gc")
 
     // Set __type and __name for lsunit.lua assertions
-    lua_pushstring(L, USERDATA_TAG)
+    L.push(USERDATA_TAG)
     lua_setfield(L, -2, "__type")
-    lua_pushstring(L, USERDATA_TAG)
+    L.push(USERDATA_TAG)
     lua_setfield(L, -2, "__name")
 
     // Registry alias so core_getObjectMetatable("hs.sound") resolves

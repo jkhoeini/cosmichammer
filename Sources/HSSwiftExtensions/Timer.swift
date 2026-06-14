@@ -233,7 +233,7 @@ private func timer_usleep(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 private func timer_getSecondsSinceEpoch(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     var v = timeval()
     gettimeofday(&v, nil)
-    lua_pushnumber(L, Double(v.tv_sec) + Double(v.tv_usec) / 1.0e6)
+    L.push(Double(v.tv_sec) + Double(v.tv_usec) / 1.0e6)
     return 1
 }
 
@@ -254,7 +254,7 @@ private func timer_absoluteTime(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
     var timebase = mach_timebase_info_data_t()
     mach_timebase_info(&timebase)
     let absTime = mach_absolute_time()
-    lua_pushinteger(L, lua_Integer((absTime * UInt64(timebase.numer)) / UInt64(timebase.denom)))
+    L.push(lua_Integer((absTime * UInt64(timebase.numer)) / UInt64(timebase.denom)))
     return 1
 }
 
@@ -317,7 +317,7 @@ public func luaopen_hs_libtimer(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
             } else {
                 title = "not running"
             }
-            lua_pushstring(L, "\(USERDATA_TAG): \(title) (\(lua_topointer(L, 1)!))")
+            L.push("\(USERDATA_TAG): \(title) (\(lua_topointer(L, 1)!))")
             return 1
         }
     ))
@@ -346,9 +346,9 @@ public func luaopen_hs_libtimer(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
     lua_setfield(L, -2, "__gc")
 
     // Set __type and __name for lsunit.lua assertIsUserdataOfType and tostring
-    lua_pushstring(L, USERDATA_TAG)
+    L.push(USERDATA_TAG)
     lua_setfield(L, -2, "__type")
-    lua_pushstring(L, USERDATA_TAG)
+    L.push(USERDATA_TAG)
     lua_setfield(L, -2, "__name")
 
     // Alias the metatable under the legacy registry name "hs.timer" so that

@@ -41,15 +41,8 @@ private func burnTheWorld(_ L: LuaState) throws -> CInt {
 /// Notes:
 ///  * Outside of a context of a Lua pcall() (or a C lua_pcall()), this will cause Cosmic Hammer to exit. We follow the safe behaviour of terminating the app on any unhandled Objective C exception.
 private func throwTheWorld(_ L: LuaState) throws -> CInt {
-    guard lua_type(L, 1) == LUA_TSTRING else {
-        throw LuaCallError("expected string for argument 1")
-    }
-    guard lua_type(L, 2) == LUA_TSTRING else {
-        throw LuaCallError("expected string for argument 2")
-    }
-
-    let name = String(cString: lua_tostring(L, 1)!)
-    let message = String(cString: lua_tostring(L, 2)!)
+    let name: String = try L.checkArgument(1)
+    let message: String = try L.checkArgument(2)
 
     if let error = catchingObjCException({
         NSException(name: NSExceptionName(rawValue: name), reason: message, userInfo: nil).raise()
@@ -73,7 +66,7 @@ private func throwTheWorld(_ L: LuaState) throws -> CInt {
 /// Notes:
 ///  * This is probably only useful to extension developers.
 private func crashLog(_ L: LuaState) throws -> CInt {
-    let msg = String(cString: luaL_checkstring(L, 1))
+    let msg: String = try L.checkArgument(1)
     os_log(.info, "breadcrumb: %{public}s", msg)
 
     return 0
@@ -90,15 +83,8 @@ private func crashLog(_ L: LuaState) throws -> CInt {
 /// Returns:
 ///  * None
 private func crashKV(_ L: LuaState) throws -> CInt {
-    guard lua_type(L, 1) == LUA_TSTRING else {
-        throw LuaCallError("expected string for argument 1")
-    }
-    guard lua_type(L, 2) == LUA_TSTRING else {
-        throw LuaCallError("expected string for argument 2")
-    }
-
-    let _ = String(cString: lua_tostring(L, 1)!)
-    let _ = String(cString: lua_tostring(L, 2)!)
+    let _: String = try L.checkArgument(1)
+    let _: String = try L.checkArgument(2)
 
     return 0
 }
@@ -122,7 +108,7 @@ private func residentSize(_ L: LuaState) throws -> CInt {
     }
 
     if kerr == KERN_SUCCESS {
-        lua_pushinteger(L, lua_Integer(info.resident_size))
+        L.push(Int(info.resident_size))
     } else {
         lua_pushnil(L)
         os_log(.error, "Error with task_info(): %{public}s", String(cString: mach_error_string(kerr)))

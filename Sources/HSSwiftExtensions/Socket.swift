@@ -58,7 +58,7 @@ private func tcpWriteCallback(_ asyncSocket: HSAsyncTcpSocket, tag: Int) {
         if asyncSocket.writeCallback != nil {
             let L = lua_getCurrentState()!
             asyncSocket.writeCallback?.push(onto: L)
-            lua_pushinteger(L, lua_Integer(tag))
+            L.push(lua_Integer(tag))
             asyncSocket.writeCallback = nil  // single-use
             if lua_pcall(L, 1, 0, 0) != LUA_OK { lua_pop(L, 1) }
         }
@@ -75,7 +75,7 @@ private func tcpReadCallback(_ asyncSocket: HSAsyncTcpSocket, data: Data, tag: I
             let L = lua_getCurrentState()!
             asyncSocket.readCallback?.push(onto: L)
             lua_pushdata(L, data)
-            lua_pushinteger(L, lua_Integer(tag))
+            L.push(lua_Integer(tag))
             if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
         }
     }
@@ -880,7 +880,7 @@ private func socket_new(_ L: LuaState) throws -> CInt {
     lua_getglobal(L, "require")
 
 
-    lua_pushstring(L, "hs.socket")
+    L.push("hs.socket")
 
 
     lua_pcall(L, 1, 1, 0)
@@ -1293,7 +1293,7 @@ private func get_socket_connections(_ asyncSocket: HSAsyncTcpSocket) -> Int {
 private func socket_connected(_ L: LuaState) throws -> CInt {
     let asyncSocket: HSAsyncTcpSocket = try L.checkArgument(1)
 
-    lua_pushboolean(L, get_socket_connections(asyncSocket) != 0 ? 1 : 0)
+    L.push(get_socket_connections(asyncSocket) != 0)
     return 1
 }
 
@@ -1313,7 +1313,7 @@ private func socket_connected(_ L: LuaState) throws -> CInt {
 private func socket_connections(_ L: LuaState) throws -> CInt {
     let asyncSocket: HSAsyncTcpSocket = try L.checkArgument(1)
 
-    lua_pushinteger(L, lua_Integer(get_socket_connections(asyncSocket)))
+    L.push(lua_Integer(get_socket_connections(asyncSocket)))
     return 1
 }
 
@@ -1425,7 +1425,7 @@ public func luaopen_hs_libsocket(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
             let theAddress = asyncSocket.unixSocketPath ?? "\(theHost ?? ""):\(thePort)"
             let udTag = isServer ? "\(USERDATA_TAG)(server)" : USERDATA_TAG
 
-            lua_pushstring(L, "\(udTag): \(theAddress) (\(lua_topointer(L, 1)!))")
+            L.push("\(udTag): \(theAddress) (\(lua_topointer(L, 1)!))")
             return 1
         }
     ))
@@ -1447,9 +1447,9 @@ public func luaopen_hs_libsocket(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
     lua_setfield(L, -2, "__gc")
 
     // Set __type and __name for lsunit.lua assertIsUserdataOfType and tostring
-    lua_pushstring(L, USERDATA_TAG)
+    L.push(USERDATA_TAG)
     lua_setfield(L, -2, "__type")
-    lua_pushstring(L, USERDATA_TAG)
+    L.push(USERDATA_TAG)
     lua_setfield(L, -2, "__name")
 
     // Alias the metatable under the legacy registry name "hs.socket" so that

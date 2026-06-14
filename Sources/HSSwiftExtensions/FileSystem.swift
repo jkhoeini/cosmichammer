@@ -96,11 +96,11 @@ func tags_to_file(_ L: UnsafeMutablePointer<lua_State>!, _ filePath: NSString, _
 private func pusherror(_ L: UnsafeMutablePointer<lua_State>!, _ info: UnsafePointer<CChar>?) -> Int32 {
     lua_pushnil(L)
     if info == nil {
-        lua_pushstring(L, strerror(errno))
+        L.push(String(cString: strerror(errno)!))
     } else {
         let infoStr = String(cString: info!)
         let errStr = String(cString: strerror(errno)!)
-        lua_pushstring(L, "\(infoStr): \(errStr)")
+        L.push("\(infoStr): \(errStr)")
     }
     return 2
 }
@@ -124,10 +124,10 @@ private func change_dir(_ L: LuaState) throws -> CInt {
         lua_pushnil(L)
         let pathStr = String(cString: path!)
         let errStr = String(cString: strerror(errno)!)
-        lua_pushstring(L, "Unable to change working directory to '\(pathStr)'\n\(errStr)\n")
+        L.push("Unable to change working directory to '\(pathStr)'\n\(errStr)\n")
         return 2
     } else {
-        lua_pushboolean(L, 1)
+        L.push(true)
         return 1
     }
 }
@@ -154,7 +154,7 @@ private func get_dir(_ L: LuaState) throws -> CInt {
         }
         path = path2?.assumingMemoryBound(to: CChar.self)
         if getcwd(path, size) != nil {
-            lua_pushstring(L, path)
+            L.push(String(cString: path!))
             result = 1
             break
         }
@@ -243,7 +243,7 @@ private func lfs_lock_dir(_ L: LuaState) throws -> CInt {
     if symlink("lock", ln) == -1 {
         ln.deallocate()
         lua_pushnil(L)
-        lua_pushstring(L, strerror(errno))
+        L.push(String(cString: strerror(errno)!))
         return 2
     }
     lock.pointee.ln = ln
@@ -275,11 +275,11 @@ private func file_lock(_ L: LuaState) throws -> CInt {
     let start = CLong(luaL_optinteger(L, 3, 0))
     let len = CLong(luaL_optinteger(L, 4, 0))
     if _file_lock(L, fh, mode, start, len, "lock") {
-        lua_pushboolean(L, 1)
+        L.push(true)
         return 1
     } else {
         lua_pushnil(L)
-        lua_pushstring(L, strerror(errno))
+        L.push(String(cString: strerror(errno)!))
         return 2
     }
 }
@@ -300,11 +300,11 @@ private func file_unlock(_ L: LuaState) throws -> CInt {
     let start = CLong(luaL_optinteger(L, 2, 0))
     let len = CLong(luaL_optinteger(L, 3, 0))
     if _file_lock(L, fh, "u", start, len, "unlock") {
-        lua_pushboolean(L, 1)
+        L.push(true)
         return 1
     } else {
         lua_pushnil(L)
-        lua_pushstring(L, strerror(errno))
+        L.push(String(cString: strerror(errno)!))
         return 2
     }
 }
@@ -335,10 +335,10 @@ private func make_link(_ L: LuaState) throws -> CInt {
 
     if hasError {
         lua_pushnil(L)
-        lua_pushstring(L, strerror(errno))
+        L.push(String(cString: strerror(errno)!))
         return 2
     } else {
-        lua_pushboolean(L, 1)
+        L.push(true)
     }
 
     return 1
@@ -361,10 +361,10 @@ private func make_dir(_ L: LuaState) throws -> CInt {
                      S_IWGRP | S_IXGRP | S_IROTH | S_IXOTH)
     if fail != 0 {
         lua_pushnil(L)
-        lua_pushstring(L, strerror(errno))
+        L.push(String(cString: strerror(errno)!))
         return 2
     }
-    lua_pushboolean(L, 1)
+    L.push(true)
     return 1
 }
 
@@ -385,10 +385,10 @@ private func remove_dir(_ L: LuaState) throws -> CInt {
 
     if fail != 0 {
         lua_pushnil(L)
-        lua_pushstring(L, strerror(errno))
+        L.push(String(cString: strerror(errno)!))
         return 2
     }
-    lua_pushboolean(L, 1)
+    L.push(true)
     return 1
 }
 
@@ -405,7 +405,7 @@ private func dir_iter(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
                 String(cString: ptr)
             }
         }
-        lua_pushstring(L, name)
+        L.push(name)
         return 1
     } else {
         closedir(dirPtr)
@@ -553,7 +553,7 @@ private func file_utime(_ L: LuaState) throws -> CInt {
         // set to current date/time
         if utime(file, nil) != 0 {
             lua_pushnil(L)
-            lua_pushstring(L, strerror(errno))
+            L.push(String(cString: strerror(errno)!))
             return 2
         }
     } else {
@@ -562,57 +562,57 @@ private func file_utime(_ L: LuaState) throws -> CInt {
         utb.modtime = time_t(luaL_optinteger(L, 3, lua_Integer(utb.actime)))
         if utime(file, &utb) != 0 {
             lua_pushnil(L)
-            lua_pushstring(L, strerror(errno))
+            L.push(String(cString: strerror(errno)!))
             return 2
         }
     }
-    lua_pushboolean(L, 1)
+    L.push(true)
     return 1
 }
 
 // MARK: - Stat member pushers
 
 private func push_st_mode(_ L: UnsafeMutablePointer<lua_State>!, _ info: UnsafePointer<stat>) {
-    lua_pushstring(L, mode2string(info.pointee.st_mode))
+    L.push(String(cString: mode2string(info.pointee.st_mode)))
 }
 private func push_st_dev(_ L: UnsafeMutablePointer<lua_State>!, _ info: UnsafePointer<stat>) {
-    lua_pushinteger(L, lua_Integer(info.pointee.st_dev))
+    L.push(lua_Integer(info.pointee.st_dev))
 }
 private func push_st_ino(_ L: UnsafeMutablePointer<lua_State>!, _ info: UnsafePointer<stat>) {
-    lua_pushinteger(L, lua_Integer(info.pointee.st_ino))
+    L.push(lua_Integer(info.pointee.st_ino))
 }
 private func push_st_nlink(_ L: UnsafeMutablePointer<lua_State>!, _ info: UnsafePointer<stat>) {
-    lua_pushinteger(L, lua_Integer(info.pointee.st_nlink))
+    L.push(lua_Integer(info.pointee.st_nlink))
 }
 private func push_st_uid(_ L: UnsafeMutablePointer<lua_State>!, _ info: UnsafePointer<stat>) {
-    lua_pushinteger(L, lua_Integer(info.pointee.st_uid))
+    L.push(lua_Integer(info.pointee.st_uid))
 }
 private func push_st_gid(_ L: UnsafeMutablePointer<lua_State>!, _ info: UnsafePointer<stat>) {
-    lua_pushinteger(L, lua_Integer(info.pointee.st_gid))
+    L.push(lua_Integer(info.pointee.st_gid))
 }
 private func push_st_rdev(_ L: UnsafeMutablePointer<lua_State>!, _ info: UnsafePointer<stat>) {
-    lua_pushinteger(L, lua_Integer(info.pointee.st_rdev))
+    L.push(lua_Integer(info.pointee.st_rdev))
 }
 private func push_st_atime(_ L: UnsafeMutablePointer<lua_State>!, _ info: UnsafePointer<stat>) {
-    lua_pushinteger(L, lua_Integer(info.pointee.st_atimespec.tv_sec))
+    L.push(lua_Integer(info.pointee.st_atimespec.tv_sec))
 }
 private func push_st_mtime(_ L: UnsafeMutablePointer<lua_State>!, _ info: UnsafePointer<stat>) {
-    lua_pushinteger(L, lua_Integer(info.pointee.st_mtimespec.tv_sec))
+    L.push(lua_Integer(info.pointee.st_mtimespec.tv_sec))
 }
 private func push_st_ctime(_ L: UnsafeMutablePointer<lua_State>!, _ info: UnsafePointer<stat>) {
-    lua_pushinteger(L, lua_Integer(info.pointee.st_ctimespec.tv_sec))
+    L.push(lua_Integer(info.pointee.st_ctimespec.tv_sec))
 }
 private func push_st_birthtime(_ L: UnsafeMutablePointer<lua_State>!, _ info: UnsafePointer<stat>) {
-    lua_pushinteger(L, lua_Integer(info.pointee.st_birthtimespec.tv_sec))
+    L.push(lua_Integer(info.pointee.st_birthtimespec.tv_sec))
 }
 private func push_st_size(_ L: UnsafeMutablePointer<lua_State>!, _ info: UnsafePointer<stat>) {
-    lua_pushinteger(L, lua_Integer(info.pointee.st_size))
+    L.push(lua_Integer(info.pointee.st_size))
 }
 private func push_st_blocks(_ L: UnsafeMutablePointer<lua_State>!, _ info: UnsafePointer<stat>) {
-    lua_pushinteger(L, lua_Integer(info.pointee.st_blocks))
+    L.push(lua_Integer(info.pointee.st_blocks))
 }
 private func push_st_blksize(_ L: UnsafeMutablePointer<lua_State>!, _ info: UnsafePointer<stat>) {
-    lua_pushinteger(L, lua_Integer(info.pointee.st_blksize))
+    L.push(lua_Integer(info.pointee.st_blksize))
 }
 
 private func perm2string(_ mode: mode_t) -> UnsafePointer<CChar> {
@@ -634,7 +634,7 @@ private func perm2string(_ mode: mode_t) -> UnsafePointer<CChar> {
 
 private func push_st_perm(_ L: UnsafeMutablePointer<lua_State>!, _ info: UnsafePointer<stat>) {
     let perms = perm2string(info.pointee.st_mode)
-    lua_pushstring(L, perms)
+    L.push(String(cString: perms))
     perms.deallocate()
 }
 
@@ -704,7 +704,7 @@ private func _file_info_(_ L: UnsafeMutablePointer<lua_State>!, _ st: @conventio
         lua_pushnil(L)
         let fileStr = String(cString: file!)
         let errStr = String(cString: strerror(errno)!)
-        lua_pushstring(L, "cannot obtain information from file '\(fileStr)': \(errStr)")
+        L.push("cannot obtain information from file '\(fileStr)': \(errStr)")
         return 2
     }
     if lua_isstring(L, 2) {
@@ -718,7 +718,7 @@ private func _file_info_(_ L: UnsafeMutablePointer<lua_State>!, _ st: @conventio
         // member not found
         lua_pushnil(L)
         let attrName = String(cString: lua_tostring(L, 2)!)
-        lua_pushstring(L, "invalid attribute name '\(attrName)'")
+        L.push("invalid attribute name '\(attrName)'")
         return 2
     }
     // creates a table if none is given
@@ -728,7 +728,7 @@ private func _file_info_(_ L: UnsafeMutablePointer<lua_State>!, _ st: @conventio
     }
     // stores all members in table on top of the stack
     for m in members {
-        lua_pushstring(L, m.name)
+        L.push(m.name)
         m.push(L, &info)
         lua_rawset(L, -3)
     }
@@ -773,9 +773,9 @@ private func tagsGet(_ L: LuaState) throws -> CInt {
     lua_newtable(L)
     var i: lua_Integer = 1
     for tag in tags {
-        lua_pushinteger(L, i)
+        L.push(i)
         i += 1
-        lua_pushstring(L, (tag as! NSString).utf8String)
+        L.push(String(cString: (tag as! NSString).utf8String!))
         lua_settable(L, -3)
     }
 
@@ -798,7 +798,7 @@ private func tagsAdd(_ L: LuaState) throws -> CInt {
     let oldTags = NSMutableSet(array: (tags_from_file(L, path) as? [Any]) ?? [])
     let newTags = NSMutableSet(array: tags_from_lua_stack(L) as [AnyObject])
     newTags.union(oldTags as Set)
-    lua_pushboolean(L, tags_to_file(L, path, newTags.allObjects as NSArray) ? 1 : 0)
+    L.push(tags_to_file(L, path, newTags.allObjects as NSArray))
 
     return 1
 }
@@ -817,7 +817,7 @@ private func tagsSet(_ L: LuaState) throws -> CInt {
     let path = lua_tovalue(L, at: 1) as! NSString
 
     let tags = tags_from_lua_stack(L)
-    lua_pushboolean(L, tags_to_file(L, path, tags) ? 1 : 0)
+    L.push(tags_to_file(L, path, tags))
 
     return 1
 }
@@ -838,7 +838,7 @@ private func tagsRemove(_ L: LuaState) throws -> CInt {
 
     let tags = NSMutableSet(array: (tags_from_file(L, path) as? [Any]) ?? [])
     tags.minus(removeTags as Set)
-    lua_pushboolean(L, tags_to_file(L, path, tags.allObjects as NSArray) ? 1 : 0)
+    L.push(tags_to_file(L, path, tags.allObjects as NSArray))
 
     return 1
 }
@@ -855,7 +855,7 @@ private func tagsRemove(_ L: LuaState) throws -> CInt {
 /// Returns:
 ///  * The path to the system designated temporary directory for the current user.
 private func hs_temporaryDirectory(_ L: LuaState) throws -> CInt {
-    lua_pushstring(L, NSTemporaryDirectory().cString(using: .utf8))
+    L.push(NSTemporaryDirectory())
     return 1
 }
 
@@ -944,7 +944,7 @@ private func hs_pathToAbsolute(_ L: LuaState) throws -> CInt {
         return 1
     }
 
-    lua_pushstring(L, absolutePath)
+    L.push(String(cString: absolutePath))
     free(absolutePath)
     return 1
 }
@@ -1170,7 +1170,7 @@ private func fs_filesInPath(_ L: LuaState) throws -> CInt {
     if ignore == nil {
         lua_getglobal(L, "require")
 
-        lua_pushstring(L, "\(USERDATA_TAG)")
+        L.push("\(USERDATA_TAG)")
 
         lua_pcall(L, 1, 1, 0)
         lua_getfield(L, -1, "defaultPathListExcludes")
@@ -1211,8 +1211,8 @@ private func fs_filesInPath(_ L: LuaState) throws -> CInt {
         throw LuaCallError("bad argument #1 (path does not specify a reachable file or directory)")
     } else if !isDirectory.boolValue {
         lua_pushany(L, NSArray(array: [path]))
-        lua_pushinteger(L, 1)
-        lua_pushinteger(L, 0)
+        L.push(lua_Integer(1))
+        L.push(lua_Integer(0))
         return 3
     }
 
@@ -1315,8 +1315,8 @@ private func fs_filesInPath(_ L: LuaState) throws -> CInt {
     foundPaths.sort(using: [NSSortDescriptor(key: "self", ascending: true, selector: #selector(NSString.compare(_:)))])
 
     lua_pushany(L, foundPaths)
-    lua_pushinteger(L, lua_Integer(foundPaths.count))
-    lua_pushinteger(L, dirCount)
+    L.push(lua_Integer(foundPaths.count))
+    L.push(dirCount)
     return 3
 }
 

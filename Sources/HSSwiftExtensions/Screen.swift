@@ -107,10 +107,10 @@ private var notificationQueue: DispatchQueue!
 
 private func geom_pushrect(_ L: UnsafeMutablePointer<lua_State>!, _ rect: NSRect) {
     lua_newtable(L)
-    lua_pushnumber(L, lua_Number(rect.origin.x));    lua_setfield(L, -2, "x")
-    lua_pushnumber(L, lua_Number(rect.origin.y));    lua_setfield(L, -2, "y")
-    lua_pushnumber(L, lua_Number(rect.size.width));  lua_setfield(L, -2, "w")
-    lua_pushnumber(L, lua_Number(rect.size.height)); lua_setfield(L, -2, "h")
+    L.push(lua_Number(rect.origin.x));    lua_setfield(L, -2, "x")
+    L.push(lua_Number(rect.origin.y));    lua_setfield(L, -2, "y")
+    L.push(lua_Number(rect.size.width));  lua_setfield(L, -2, "w")
+    L.push(lua_Number(rect.size.height)); lua_setfield(L, -2, "h")
 }
 
 private func getScreenID(_ screen: NSScreen) -> CGDirectDisplayID {
@@ -144,7 +144,7 @@ private func screen_id(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let screen = get_screen_arg(L, 1)
-    lua_pushinteger(L, lua_Integer(getScreenID(screen)))
+    L.push(lua_Integer(getScreenID(screen)))
     return 1
 }
 
@@ -194,23 +194,23 @@ private func screen_currentMode(_ L: LuaState) throws -> CInt {
 
     lua_newtable(L)
 
-    lua_pushinteger(L, lua_Integer(mode.width))
+    L.push(lua_Integer(mode.width))
     lua_setfield(L, -2, "w")
 
-    lua_pushinteger(L, lua_Integer(mode.height))
+    L.push(lua_Integer(mode.height))
     lua_setfield(L, -2, "h")
 
-    lua_pushnumber(L, lua_Number(mode.density))
+    L.push(lua_Number(mode.density))
     lua_setfield(L, -2, "scale")
 
-    lua_pushnumber(L, lua_Number(mode.freq))
+    L.push(lua_Number(mode.freq))
     lua_setfield(L, -2, "freq")
 
-    lua_pushnumber(L, lua_Number(mode.depth))
+    L.push(lua_Number(mode.depth))
     lua_setfield(L, -2, "depth")
 
     let desc = String(format: "%ux%u@%.0fx %huHz %ubpp", mode.width, mode.height, Double(mode.density), mode.freq, mode.depth)
-    lua_pushstring(L, desc)
+    L.push(desc)
     lua_setfield(L, -2, "desc")
 
     return 1
@@ -251,19 +251,19 @@ private func screen_availableModes(_ L: LuaState) throws -> CInt {
 
         lua_newtable(L)
 
-        lua_pushinteger(L, lua_Integer(mode.width))
+        L.push(lua_Integer(mode.width))
         lua_setfield(L, -2, "w")
 
-        lua_pushinteger(L, lua_Integer(mode.height))
+        L.push(lua_Integer(mode.height))
         lua_setfield(L, -2, "h")
 
-        lua_pushnumber(L, lua_Number(mode.density))
+        L.push(lua_Number(mode.density))
         lua_setfield(L, -2, "scale")
 
-        lua_pushnumber(L, lua_Number(mode.freq))
+        L.push(lua_Number(mode.freq))
         lua_setfield(L, -2, "freq")
 
-        lua_pushnumber(L, lua_Number(mode.depth))
+        L.push(lua_Number(mode.depth))
         lua_setfield(L, -2, "depth")
 
         let key = String(format: "%ux%u@%.0fx %huHz %ubpp", mode.width, mode.height, Double(mode.density), mode.freq, mode.depth)
@@ -276,10 +276,10 @@ private func screen_availableModes(_ L: LuaState) throws -> CInt {
 private func handleDisplayUpdate(_ L: UnsafeMutablePointer<lua_State>!, _ config: CGDisplayConfigRef, _ name: String) -> Int32 {
     let anError = CGCompleteDisplayConfiguration(config, .permanently)
     if anError == .success {
-        lua_pushboolean(L, 1)
+        L.push(true)
     } else {
         os_log(.debug, "%{public}s", "\(name) failed: \(anError.rawValue)")
-        lua_pushboolean(L, 0)
+        L.push(false)
     }
     return 1
 }
@@ -326,7 +326,7 @@ private func screen_setMode(_ L: LuaState) throws -> CInt {
         }
     }
 
-    lua_pushboolean(L, 0)
+    L.push(false)
     return 1
 }
 
@@ -386,19 +386,19 @@ private func screen_gammaGet(_ L: LuaState) throws -> CInt {
 
     lua_newtable(L)
 
-    lua_pushstring(L, "blackpoint")
+    L.push("blackpoint")
     lua_newtable(L)
-    lua_pushstring(L, "red");   lua_pushnumber(L, lua_Number(redTable[0]));   lua_settable(L, -3)
-    lua_pushstring(L, "green"); lua_pushnumber(L, lua_Number(greenTable[0])); lua_settable(L, -3)
-    lua_pushstring(L, "blue");  lua_pushnumber(L, lua_Number(blueTable[0]));  lua_settable(L, -3)
-    lua_pushstring(L, "alpha"); lua_pushnumber(L, 1.0);                       lua_settable(L, -3)
+    L.push("red");   L.push(lua_Number(redTable[0]));   lua_settable(L, -3)
+    L.push("green"); L.push(lua_Number(greenTable[0])); lua_settable(L, -3)
+    L.push("blue");  L.push(lua_Number(blueTable[0]));  lua_settable(L, -3)
+    L.push("alpha"); L.push(1.0);                       lua_settable(L, -3)
     lua_settable(L, -3)
 
-    lua_pushstring(L, "whitepoint")
+    L.push("whitepoint")
     lua_newtable(L)
-    lua_pushstring(L, "red");   lua_pushnumber(L, lua_Number(redTable[Int(sampleCount) - 1]));   lua_settable(L, -3)
-    lua_pushstring(L, "green"); lua_pushnumber(L, lua_Number(greenTable[Int(sampleCount) - 1])); lua_settable(L, -3)
-    lua_pushstring(L, "blue");  lua_pushnumber(L, lua_Number(blueTable[Int(sampleCount) - 1]));  lua_settable(L, -3)
+    L.push("red");   L.push(lua_Number(redTable[Int(sampleCount) - 1]));   lua_settable(L, -3)
+    L.push("green"); L.push(lua_Number(greenTable[Int(sampleCount) - 1])); lua_settable(L, -3)
+    L.push("blue");  L.push(lua_Number(blueTable[Int(sampleCount) - 1]));  lua_settable(L, -3)
     lua_settable(L, -3)
 
     return 1
@@ -533,7 +533,7 @@ private func screen_gammaSet(_ L: LuaState) throws -> CInt {
 
     guard let originalGamma = originalGammas[NSNumber(value: screen_id)] as? NSDictionary else {
         os_log(.debug, "%{public}s", "screen_gammaSet: unable to fetch original gamma for display: \(screen_id)")
-        lua_pushboolean(L, 0)
+        L.push(false)
         return 1
     }
 
@@ -541,7 +541,7 @@ private func screen_gammaSet(_ L: LuaState) throws -> CInt {
           let greenArray = originalGamma["green"] as? [NSNumber],
           let blueArray = originalGamma["blue"] as? [NSNumber] else {
         os_log(.debug, "%{public}s", "screen_gammaSet: unable to parse gamma arrays for display: \(screen_id)")
-        lua_pushboolean(L, 0)
+        L.push(false)
         return 1
     }
     let count = redArray.count
@@ -583,11 +583,11 @@ private func screen_gammaSet(_ L: LuaState) throws -> CInt {
     let result = CGSetDisplayTransferByTable(screen_id, UInt32(count), redTable, greenTable, blueTable)
     if result != .success {
         os_log(.debug, "%{public}s", "screen_gammaSet: ERROR: \(result.rawValue) on display \(screen_id)")
-        lua_pushboolean(L, 0)
+        L.push(false)
         return 1
     }
 
-    lua_pushboolean(L, 1)
+    L.push(true)
     return 1
 }
 
@@ -609,7 +609,7 @@ private func screen_getBrightness(_ L: LuaState) throws -> CInt {
     var brightness: Float = 0
     let err = DisplayServicesGetBrightness(screen_id, &brightness)
     if err == 0 {
-        lua_pushnumber(L, lua_Number(brightness))
+        L.push(lua_Number(brightness))
     } else {
         lua_pushnil(L)
     }
@@ -717,7 +717,7 @@ private func screen_getDisplayInfo(_ L: LuaState) throws -> CInt {
 ///  * A boolean, true if the ForceToGray mode is set, otherwise false
 private func screen_getForceToGray(_ L: LuaState) throws -> CInt {
 
-    lua_pushboolean(L, CGDisplayUsesForceToGray() ? 1 : 0)
+    L.push(CGDisplayUsesForceToGray())
     return 1
 }
 
@@ -747,7 +747,7 @@ private func screen_setForceToGray(_ L: LuaState) throws -> CInt {
 ///  * A boolean, true if the InvertedPolarity mode is set, otherwise false
 private func screen_getInvertedPolarity(_ L: LuaState) throws -> CInt {
 
-    lua_pushboolean(L, CGDisplayUsesInvertedPolarity() ? 1 : 0)
+    L.push(CGDisplayUsesInvertedPolarity())
     return 1
 }
 
@@ -778,7 +778,7 @@ private func screen_gc(_ L: LuaState) throws -> CInt {
 private func screen_eq(_ L: LuaState) throws -> CInt {
     let screenA = get_screen_arg(L, 1)
     let screenB = get_screen_arg(L, 2)
-    lua_pushboolean(L, screenA.isEqual(screenB) ? 1 : 0)
+    L.push(screenA.isEqual(screenB))
     return 1
 }
 
@@ -805,7 +805,7 @@ private func screen_allScreens(_ L: LuaState) throws -> CInt {
 
     var i: lua_Integer = 1
     for screen in NSScreen.screens {
-        lua_pushinteger(L, i)
+        L.push(i)
         new_screen(L, screen)
         lua_settable(L, -3)
         i += 1
@@ -851,7 +851,7 @@ private func screen_setPrimary(_ L: LuaState) throws -> CInt {
     let mainDisplay = CGMainDisplayID()
 
     if targetDisplay == mainDisplay {
-        lua_pushboolean(L, 1)
+        L.push(true)
         return 1
     }
 
@@ -860,7 +860,7 @@ private func screen_setPrimary(_ L: LuaState) throws -> CInt {
 
     var displayCount: CGDisplayCount = 0
     if CGGetOnlineDisplayList(maxDisplays, onlineDisplays, &displayCount) != .success {
-        lua_pushboolean(L, 0)
+        L.push(false)
         return 1
     }
 
@@ -869,7 +869,7 @@ private func screen_setPrimary(_ L: LuaState) throws -> CInt {
 
     var config: CGDisplayConfigRef?
     if CGBeginDisplayConfiguration(&config) != .success {
-        lua_pushboolean(L, 0)
+        L.push(false)
         return 1
     }
 
@@ -880,14 +880,14 @@ private func screen_setPrimary(_ L: LuaState) throws -> CInt {
                                            Int32(CGDisplayBounds(dID).minY) + deltaY)
         if err != .success {
             CGCancelDisplayConfiguration(config!)
-            lua_pushboolean(L, 0)
+            L.push(false)
             return 1
         }
     }
 
     CGCompleteDisplayConfiguration(config!, .forSession)
 
-    lua_pushboolean(L, 1)
+    L.push(true)
     return 1
 }
 
@@ -919,7 +919,7 @@ private func screen_rotate(_ L: LuaState) throws -> CInt {
         case 180: rotation = Int32(kIOScaleRotate180)
         case 270: rotation = Int32(kIOScaleRotate270)
         default:
-            lua_pushboolean(L, 0)
+            L.push(false)
             return 1
         }
     }
@@ -928,7 +928,7 @@ private func screen_rotate(_ L: LuaState) throws -> CInt {
 
     if rotation == -1 {
         let currentRotation = CGDisplayRotation(screenID)
-        lua_pushinteger(L, lua_Integer(currentRotation))
+        L.push(lua_Integer(currentRotation))
         return 1
     }
 
@@ -937,7 +937,7 @@ private func screen_rotate(_ L: LuaState) throws -> CInt {
 
     var displayCount: CGDisplayCount = 0
     if CGGetOnlineDisplayList(maxDisplays, onlineDisplays, &displayCount) != .success {
-        lua_pushboolean(L, 0)
+        L.push(false)
         return 1
     }
 
@@ -965,21 +965,21 @@ private func screen_rotate(_ L: LuaState) throws -> CInt {
                 IOObjectRelease(iter)
             }
             guard service != 0 else {
-                lua_pushboolean(L, 0)
+                L.push(false)
                 return 1
             }
             let options = IOOptionBits(kIOFBSetTransform | (UInt32(rotation) << 16))
             let result = IOServiceRequestProbe(service, options)
             IOObjectRelease(service)
             if result != KERN_SUCCESS {
-                lua_pushboolean(L, 0)
+                L.push(false)
                 return 1
             }
             break
         }
     }
 
-    lua_pushboolean(L, 1)
+    L.push(true)
     return 1
 }
 
@@ -1007,7 +1007,7 @@ private func screen_setOrigin(_ L: LuaState) throws -> CInt {
 
     var displayCount: CGDisplayCount = 0
     if CGGetOnlineDisplayList(maxDisplays, onlineDisplays, &displayCount) != .success {
-        lua_pushboolean(L, 0)
+        L.push(false)
         return 1
     }
 
@@ -1047,7 +1047,7 @@ private func screen_mirrorOf(_ L: LuaState) throws -> CInt {
     let result = CGConfigureDisplayMirrorOfDisplay(config!, targetID, sourceID)
     CGCompleteDisplayConfiguration(config!, permanent ? .permanently : .forSession)
 
-    lua_pushboolean(L, result == .success ? 1 : 0)
+    L.push(result == .success)
     return 1
 }
 
@@ -1072,7 +1072,7 @@ private func screen_mirrorStop(_ L: LuaState) throws -> CInt {
     let result = CGConfigureDisplayMirrorOfDisplay(config!, screenID, kCGNullDirectDisplay)
     CGCompleteDisplayConfiguration(config!, permanent ? .permanently : .forSession)
 
-    lua_pushboolean(L, result == .success ? 1 : 0)
+    L.push(result == .success)
     return 1
 }
 
@@ -1176,7 +1176,7 @@ private func screen_desktopImageURL(_ L: LuaState) throws -> CInt {
         lua_pushvalue(L, 1)
     } else {
         let url = workspace.desktopImageURL(for: screen)
-        lua_pushstring(L, url?.absoluteString ?? "")
+        L.push(url?.absoluteString ?? "")
     }
 
     return 1
@@ -1224,7 +1224,7 @@ private func userdata_tostring(_ L: LuaState) throws -> CInt {
     let theName = screen.localizedName
     let ptr = lua_topointer(L, 1)!
     let str = "\(USERDATA_TAG): \(theName) (0x\(String(UInt(bitPattern: ptr), radix: 16)))"
-    lua_pushstring(L, str)
+    L.push(str)
     return 1
 }
 
@@ -1292,9 +1292,9 @@ public func luaopen_hs_libscreen(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
         lua_setfield(L, -2, "__eq")
 
         // Set __type and __name for lsunit.lua assertIsUserdataOfType and tostring
-        lua_pushstring(L, USERDATA_TAG)
+        L.push(USERDATA_TAG)
         lua_setfield(L, -2, "__type")
-        lua_pushstring(L, USERDATA_TAG)
+        L.push(USERDATA_TAG)
         lua_setfield(L, -2, "__name")
 
         lua_pop(L, 1)

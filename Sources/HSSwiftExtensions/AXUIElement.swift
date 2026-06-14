@@ -208,36 +208,36 @@ private func pushCFTypeHamster(
             var pt = CGPoint.zero
             AXValueGetValue(axValue, .cgPoint, &pt)
             lua_newtable(L)
-            lua_pushnumber(L, lua_Number(pt.x)); lua_setfield(L, -2, "x")
-            lua_pushnumber(L, lua_Number(pt.y)); lua_setfield(L, -2, "y")
+            L.push(lua_Number(pt.x)); lua_setfield(L, -2, "x")
+            L.push(lua_Number(pt.y)); lua_setfield(L, -2, "y")
         } else if valueType == .cgSize {
             var sz = CGSize.zero
             AXValueGetValue(axValue, .cgSize, &sz)
             lua_newtable(L)
-            lua_pushnumber(L, lua_Number(sz.height)); lua_setfield(L, -2, "h")
-            lua_pushnumber(L, lua_Number(sz.width));  lua_setfield(L, -2, "w")
+            L.push(lua_Number(sz.height)); lua_setfield(L, -2, "h")
+            L.push(lua_Number(sz.width));  lua_setfield(L, -2, "w")
         } else if valueType == .cgRect {
             var rect = CGRect.zero
             AXValueGetValue(axValue, .cgRect, &rect)
             lua_newtable(L)
-            lua_pushnumber(L, lua_Number(rect.origin.x));    lua_setfield(L, -2, "x")
-            lua_pushnumber(L, lua_Number(rect.origin.y));    lua_setfield(L, -2, "y")
-            lua_pushnumber(L, lua_Number(rect.size.height)); lua_setfield(L, -2, "h")
-            lua_pushnumber(L, lua_Number(rect.size.width));  lua_setfield(L, -2, "w")
+            L.push(lua_Number(rect.origin.x));    lua_setfield(L, -2, "x")
+            L.push(lua_Number(rect.origin.y));    lua_setfield(L, -2, "y")
+            L.push(lua_Number(rect.size.height)); lua_setfield(L, -2, "h")
+            L.push(lua_Number(rect.size.width));  lua_setfield(L, -2, "w")
         } else if valueType == .cfRange {
             var range = CFRange(location: 0, length: 0)
             AXValueGetValue(axValue, .cfRange, &range)
             lua_newtable(L)
-            lua_pushinteger(L, lua_Integer(range.location)); lua_setfield(L, -2, "location")
-            lua_pushinteger(L, lua_Integer(range.length));   lua_setfield(L, -2, "length")
+            L.push(lua_Integer(range.location)); lua_setfield(L, -2, "location")
+            L.push(lua_Integer(range.length));   lua_setfield(L, -2, "length")
         } else if valueType == .axError {
             var err: AXError = .success
             AXValueGetValue(axValue, .axError, &err)
             lua_newtable(L)
-            lua_pushinteger(L, lua_Integer(err.rawValue));           lua_setfield(L, -2, "_code")
-            lua_pushstring(L, AXErrorAsString(err)); lua_setfield(L, -2, "error")
+            L.push(lua_Integer(err.rawValue));           lua_setfield(L, -2, "_code")
+            L.push(String(cString: AXErrorAsString(err))); lua_setfield(L, -2, "error")
         } else {
-            lua_pushstring(L, "unrecognized value type (\(theItem))")
+            L.push("unrecognized value type (\(theItem))")
         }
     } else if theType == CGColor.typeID {
         lua_pushany(L, NSColor(cgColor: theItem as! CGColor))
@@ -270,7 +270,7 @@ private func pushCFTypeHamster(
     } else {
         let typeLabel = "unrecognized type: \(theType)"
         os_log(.debug, "%{public}s", "\(String(cString: USERDATA_TAG)):\(typeLabel)")
-        lua_pushstring(L, typeLabel)
+        L.push(typeLabel)
     }
     return 1
 }

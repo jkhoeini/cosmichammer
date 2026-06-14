@@ -84,7 +84,7 @@ class HSWebViewView: WKWebView, WKNavigationDelegate, WKUIDelegate {
             if self.policyCallback != nil && challenge.previousFailureCount < 3 && lua_isStateGenerationValid(self.generation) {
                 let L = lua_getCurrentState()!
                 self.policyCallback!.push(onto: L)
-                lua_pushstring(L, "authenticationChallenge")
+                L.push("authenticationChallenge")
                 wv_pushAny(L, webView.window as? HSWebViewWindow)
                 wv_pushAny(L, challenge)
 
@@ -197,7 +197,7 @@ class HSWebViewView: WKWebView, WKNavigationDelegate, WKUIDelegate {
         if self.policyCallback != nil && lua_isStateGenerationValid(self.generation) {
             let L = lua_getCurrentState()!
             self.policyCallback!.push(onto: L)
-            lua_pushstring(L, "navigationAction")
+            L.push("navigationAction")
             wv_pushAny(L, webView.window as? HSWebViewWindow)
             wv_pushAny(L, navigationAction)
 
@@ -219,7 +219,7 @@ class HSWebViewView: WKWebView, WKNavigationDelegate, WKUIDelegate {
         if self.policyCallback != nil && lua_isStateGenerationValid(self.generation) {
             let L = lua_getCurrentState()!
             self.policyCallback!.push(onto: L)
-            lua_pushstring(L, "navigationResponse")
+            L.push("navigationResponse")
             wv_pushAny(L, webView.window as? HSWebViewWindow)
             wv_pushAny(L, navigationResponse)
 
@@ -285,7 +285,7 @@ class HSWebViewView: WKWebView, WKNavigationDelegate, WKUIDelegate {
 
         if self.policyCallback != nil {
             self.policyCallback!.push(onto: L)
-            lua_pushstring(L, "newWindow")
+            L.push("newWindow")
             wv_pushAny(L, newWindow)
             wv_pushAny(L, navigationAction)
             wv_pushAny(L, windowFeatures)
@@ -393,10 +393,10 @@ class HSWebViewView: WKWebView, WKNavigationDelegate, WKUIDelegate {
             let L = lua_getCurrentState()!
             var numberOfArguments: Int32 = 3
             self.navigationCallback!.push(onto: L)
-            lua_pushstring(L, action)
+            L.push(action)
             wv_pushAny(L, theView.window as? HSWebViewWindow)
             let navStr = String(describing: Unmanaged.passUnretained(navigation as AnyObject).toOpaque())
-            lua_pushstring(L, navStr)
+            L.push(navStr)
 
             if let error = error {
                 numberOfArguments += 1

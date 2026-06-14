@@ -256,8 +256,8 @@ private func dynamicStoreConsoleUser(_ L: LuaState) throws -> CInt {
     var gid: gid_t = 0
     if let consoleUser = SCDynamicStoreCopyConsoleUser(theStore, &uid, &gid) {
         lua_pushany(L, consoleUser as String)
-        lua_pushinteger(L, lua_Integer(uid))
-        lua_pushinteger(L, lua_Integer(gid))
+        L.push(lua_Integer(uid))
+        L.push(lua_Integer(gid))
     } else {
         throw LuaCallError("** error retrieving console user:\(String(cString: SCErrorString(SCError())))")
     }
@@ -321,7 +321,7 @@ private func dynamicStoreSetLocation(_ L: LuaState) throws -> CInt {
     let status = AuthorizationCreate(nil, nil, flags, &authorization)
 
     if status != errAuthorizationSuccess {
-        lua_pushboolean(L, 0)
+        L.push(false)
         if let auth = authorization {
             AuthorizationFree(auth, [.destroyRights])
         }
@@ -332,13 +332,13 @@ private func dynamicStoreSetLocation(_ L: LuaState) throws -> CInt {
     options[kSCPreferencesOptionChangeNetworkSet] = kCFBooleanTrue
 
     guard let prefs = SCPreferencesCreateWithOptions(nil, "SystemConfiguration" as CFString, nil, authorization, options as CFDictionary) else {
-        lua_pushboolean(L, 0)
+        L.push(false)
         AuthorizationFree(authorization!, [.destroyRights])
         return 1
     }
 
     guard let locations = SCNetworkSetCopyAll(prefs) as? [SCNetworkSet] else {
-        lua_pushboolean(L, 0)
+        L.push(false)
         AuthorizationFree(authorization!, [.destroyRights])
         return 1
     }
@@ -355,7 +355,7 @@ private func dynamicStoreSetLocation(_ L: LuaState) throws -> CInt {
             break
         }
     }
-    lua_pushboolean(L, success ? 1 : 0)
+    L.push(success)
     AuthorizationFree(authorization!, [.destroyRights])
 
     return 1
@@ -612,9 +612,9 @@ public func luaopen_hs_libnetworkconfiguration(_ L: UnsafeMutablePointer<lua_Sta
                let obj2: HSDynamicStore = L.touserdata(2),
                let store1 = obj1.storeObject,
                let store2 = obj2.storeObject {
-                lua_pushboolean(L, CFEqual(store1, store2) ? 1 : 0)
+                L.push(CFEqual(store1, store2))
             } else {
-                lua_pushboolean(L, 0)
+                L.push(false)
             }
             return 1
         }, 0)
@@ -633,9 +633,9 @@ public func luaopen_hs_libnetworkconfiguration(_ L: UnsafeMutablePointer<lua_Sta
         lua_setfield(L, -2, "__gc")
 
         // Set __type and __name for core_getObjectMetatable and tostring
-        lua_pushstring(L, USERDATA_TAG)
+        L.push(USERDATA_TAG)
         lua_setfield(L, -2, "__type")
-        lua_pushstring(L, USERDATA_TAG)
+        L.push(USERDATA_TAG)
         lua_setfield(L, -2, "__name")
 
         // Alias the metatable under the legacy registry name

@@ -62,7 +62,7 @@ private func workspace_is_macos_sonoma14_5_or_newer() -> Bool {
 /// Returns:
 ///  * true or false representing the status of the "Displays Have Separate Spaces" option within Mission Control.
 private func spaces_screensHaveSeparateSpaces(_ L: LuaState) throws -> CInt {
-    lua_pushboolean(L, NSScreen.screensHaveSeparateSpaces ? 1 : 0)
+    L.push(NSScreen.screensHaveSeparateSpaces)
     return 1
 }
 
@@ -83,7 +83,7 @@ private func spaces_managedDisplaySpaces(_ L: LuaState) throws -> CInt {
         lua_pushany(L, managedDisplaySpaces as NSArray)
     } else {
         lua_pushnil(L)
-        lua_pushstring(L, "SLSCopyManagedDisplaySpaces returned NULL")
+        L.push("SLSCopyManagedDisplaySpaces returned NULL")
         return 2
     }
     return 1
@@ -102,7 +102,7 @@ private func spaces_managedDisplaySpaces(_ L: LuaState) throws -> CInt {
 /// Notes:
 ///  * *usually* the currently active screen will be returned by `hs.screen.mainScreen()`; however some full screen applications may have focus without updating which screen is considered "main". You can use this function, and look up the screen UUID with [hs.spaces.spaceDisplay](#spaceDisplay) to determine the "true" focused screen if required.
 private func spaces_getActiveSpace(_ L: LuaState) throws -> CInt {
-    lua_pushinteger(L, lua_Integer(SLSGetActiveSpace(g_connection)))
+    L.push(lua_Integer(SLSGetActiveSpace(g_connection)))
     return 1
 }
 
@@ -135,7 +135,7 @@ private func spaces_windowsForSpace(_ L: LuaState) throws -> CInt {
     let type = SLSSpaceGetType(g_connection, sid)
     if type != 0 && type != 4 {
         lua_pushnil(L)
-        lua_pushstring(L, "not a user or fullscreen managed space")
+        L.push("not a user or fullscreen managed space")
         return 2
     }
 
@@ -146,14 +146,14 @@ private func spaces_windowsForSpace(_ L: LuaState) throws -> CInt {
         lua_newtable(L)
         lua_getglobal(L, "require")
 
-        lua_pushstring(L, "hs.inspect")
+        L.push("hs.inspect")
 
         lua_pcall(L, 1, 1, 0)
         lua_setfield(L, -2, "__tostring")
         lua_setmetatable(L, -2)
     } else {
         lua_pushnil(L)
-        lua_pushstring(L, "SLSCopyWindowsWithOptionsAndTags returned NULL for \(sid)")
+        L.push("SLSCopyWindowsWithOptionsAndTags returned NULL for \(sid)")
         return 2
     }
     return 1
@@ -180,7 +180,7 @@ private func spaces_moveWindowToSpace(_ L: LuaState) throws -> CInt {
 
     if SLSSpaceGetType(g_connection, sid) != 0 && !force {
         lua_pushnil(L)
-        lua_pushstring(L, "target space ID \(sid) does not refer to a user space")
+        L.push("target space ID \(sid) does not refer to a user space")
         return 2
     }
 
@@ -192,7 +192,7 @@ private func spaces_moveWindowToSpace(_ L: LuaState) throws -> CInt {
             if let sourceSpace = spacesArray.firstObject as? NSNumber {
                 if SLSSpaceGetType(g_connection, sourceSpace.uint64Value) != 0 && !force {
                     lua_pushnil(L)
-                    lua_pushstring(L, "source space for windowID \(wid) is not a user space")
+                    L.push("source space for windowID \(wid) is not a user space")
                     return 2
                 }
             }
@@ -205,10 +205,10 @@ private func spaces_moveWindowToSpace(_ L: LuaState) throws -> CInt {
                 SLSMoveWindowsToManagedSpace(g_connection, windows, sid)
             }
         }
-        lua_pushboolean(L, 1)
+        L.push(true)
     } else {
         lua_pushnil(L)
-        lua_pushstring(L, "SLSCopySpacesForWindows returned NULL for window ID \(wid)")
+        L.push("SLSCopySpacesForWindows returned NULL for window ID \(wid)")
         return 2
     }
     return 1
@@ -239,14 +239,14 @@ private func spaces_windowSpaces(_ L: LuaState) throws -> CInt {
         lua_newtable(L)
         lua_getglobal(L, "require")
 
-        lua_pushstring(L, "hs.inspect")
+        L.push("hs.inspect")
 
         lua_pcall(L, 1, 1, 0)
         lua_setfield(L, -2, "__tostring")
         lua_setmetatable(L, -2)
     } else {
         lua_pushnil(L)
-        lua_pushstring(L, "SLSCopySpacesForWindows returned NULL for window ID \(wid)")
+        L.push("SLSCopySpacesForWindows returned NULL for window ID \(wid)")
         return 2
     }
     return 1
@@ -256,7 +256,7 @@ private func spaces_coreDesktopSendNotification(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TSTRING)
     let message = lua_tovalue(L, at: 1) as! NSString
 
-    lua_pushinteger(L, lua_Integer(CoreDockSendNotification(message as CFString, 0).rawValue))
+    L.push(lua_Integer(CoreDockSendNotification(message as CFString, 0).rawValue))
     return 1
 }
 

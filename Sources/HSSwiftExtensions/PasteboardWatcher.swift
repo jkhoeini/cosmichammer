@@ -16,23 +16,25 @@ private var pollingInterval: Double = 0.25
 private var sharedPasteboardTimerCount: Int = 0
 private var sharedPasteboardTimer: Timer?
 
-private func get_objectFromUserdata<T: AnyObject>(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32, _ tag: String) -> T? {
-    guard let ptr = luaL_checkudata(L, idx, tag) else { return nil }
-    return Unmanaged<T>.fromOpaque(ptr.load(as: UnsafeRawPointer.self)).takeUnretainedValue()
-}
-
-private func get_objectFromUserdata_transfer<T: AnyObject>(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32, _ tag: String) -> T? {
-    guard let ptr = luaL_checkudata(L, idx, tag) else { return nil }
-    return Unmanaged<T>.fromOpaque(ptr.load(as: UnsafeRawPointer.self)).takeRetainedValue()
-}
-
-class HSPasteboardTimer: NSObject {
+class HSPasteboardTimer: NSObject, LuaTeardownable {
     var t: Timer?
     var pbName: String?
     var callback: LuaValue?
     var changeCount: Int = 0
     var isRunning: Bool = false
     var generation: UInt64 = 0
+    private var tornDown = false
+
+    func teardown() {
+        guard !tornDown else { return }
+        tornDown = true
+        if isRunning {
+            stop()
+        }
+        callback = nil
+        t = nil
+        pbName = nil
+    }
 
     @objc func sharedPasteboardTimerCallback(_ timer: Timer) {
         NotificationCenter.default.post(
@@ -148,197 +150,81 @@ class HSPasteboardTimer: NSObject {
     }
 }
 
-/// hs.pasteboard.watcher.new(callbackFn[, name]) -> pasteboardWatcher
-/// Constructor
-/// Creates and starts a new `hs.pasteboard.watcher` object for watching for Pasteboard changes.
-///
-/// Parameters:
-///  * callbackFn - A function that will be called when the Pasteboard contents has changed. It should accept one parameter:
-///   * A string containing the pasteboard contents or `nil` if the contents is not a valid string.
-///  * name - An optional string containing the name of the pasteboard. Defaults to the system pasteboard.
-///
-/// Returns:
-///  * An `hs.pasteboard.watcher` object
-///
-/// Notes:
-///  * Internally this extension uses a single `NSTimer` to check for changes to the pasteboard count every half a second.
-///  * Example usage:
-///  ```lua
-///  generalPBWatcher = hs.pasteboard.watcher.new(function(v) print(string.format("General Pasteboard Contents: %s", v)) end)
-///  specialPBWatcher = hs.pasteboard.watcher.new(function(v) print(string.format("Special Pasteboard Contents: %s", v)) end, "special")
-///  hs.pasteboard.writeObjects("This is on the general pasteboard.")
-///  hs.pasteboard.writeObjects("This is on the special pasteboard.", "special")```
-private func pasteboardwatcher_new(_ L: LuaState) throws -> CInt {
-    luaL_checktype(L, 1, LUA_TFUNCTION)
-
-    let pbName: String? = (lua_type(L, 2) == LUA_TSTRING) ? String(cString: lua_tostring(L, 2)!) : nil
-
-    let cb = L.ref(index: 1)
-
-    // Create the timer object:
-    let timer = HSPasteboardTimer()
-    timer.callback = cb
-    timer.generation = lua_currentStateGeneration()
-    timer.pbName = pbName
-
-    // Start the timer:
-    timer.start()
-
-    // Wire up the timer object to Lua:
-    let userData = lua_newuserdata(L, MemoryLayout<UnsafeRawPointer>.size)!
-    let unmanaged = Unmanaged.passRetained(timer)
-    userData.storeBytes(of: unmanaged.toOpaque(), as: UnsafeRawPointer.self)
-    luaL_getmetatable(L, USERDATA_TAG)
-    lua_setmetatable(L, -2)
-
-    return 1
-}
-
-/// hs.pasteboard.watcher:start() -> timer
-/// Method
-/// Starts an `hs.pasteboard.watcher` object
-///
-/// Parameters:
-///  * None
-///
-/// Returns:
-///  * The `hs.pasteboard.watcher` object
-private func pasteboardwatcher_start(_ L: LuaState) throws -> CInt {
-    let timer: HSPasteboardTimer? = get_objectFromUserdata(L, 1, USERDATA_TAG)
-    lua_settop(L, 1)
-
-    // Start the timer:
-    timer?.start()
-
-    return 1
-}
-
-/// hs.pasteboard.watcher:running() -> boolean
-/// Method
-/// Returns a boolean indicating whether or not the Pasteboard Watcher is currently running.
-///
-/// Parameters:
-///  * None
-///
-/// Returns:
-///  * A boolean value indicating whether or not the timer is currently running.
-private func pasteboardwatcher_running(_ L: LuaState) throws -> CInt {
-    let timer: HSPasteboardTimer? = get_objectFromUserdata(L, 1, USERDATA_TAG)
-
-    lua_pushboolean(L, (timer?.isRunning ?? false) ? 1 : 0)
-
-    return 1
-}
-
-/// hs.pasteboard.watcher:stop() -> timer
-/// Method
-/// Stops an `hs.pasteboard.watcher` object
-///
-/// Parameters:
-///  * None
-///
-/// Returns:
-///  * The `hs.pasteboard.watcher` object
-private func pasteboardwatcher_stop(_ L: LuaState) throws -> CInt {
-    let timer: HSPasteboardTimer? = get_objectFromUserdata(L, 1, USERDATA_TAG)
-    lua_settop(L, 1)
-
-    // Stop the timer:
-    timer?.stop()
-
-    return 1
-}
-
-/// hs.pasteboard.watcher.interval([value]) -> number
-/// Function
-/// Gets or sets the polling interval (i.e. the frequency the pasteboard watcher checks the pasteboard).
-///
-/// Parameters:
-///  * value - an optional number to set the polling interval to.
-///
-/// Returns:
-///  * The polling interval as a number.
-///
-/// Notes:
-///  * This only affects new watchers, not existing/running ones.
-///  * The default value is 0.25.
-private func pasteboardwatcher_interval(_ L: LuaState) throws -> CInt {
-    if lua_gettop(L) == 1 && lua_type(L, 1) == LUA_TNUMBER {
-        pollingInterval = lua_tonumber(L, 1)
-    }
-    lua_pushnumber(L, pollingInterval)
-    return 1
-}
-
-private func pasteboardwatcher_gc(_ L: LuaState) throws -> CInt {
-    let timer: HSPasteboardTimer? = get_objectFromUserdata_transfer(L, 1, USERDATA_TAG)
-
-    if let timer = timer {
-        timer.stop()
-        timer.callback = nil
-        timer.t = nil
-        timer.pbName = nil
-    }
-
-    // Remove the Metatable so future use of the variable in Lua won't think its valid
-    lua_pushnil(L)
-    lua_setmetatable(L, 1)
-
-    return 0
-}
-
-private func meta_gc(_ L: LuaState) throws -> CInt {
-    if let timer = sharedPasteboardTimer {
-        timer.invalidate()
-        sharedPasteboardTimer = nil
-    }
-    return 0
-}
-
-private func userdata_tostring(_ L: LuaState) throws -> CInt {
-    let timer: HSPasteboardTimer? = get_objectFromUserdata(L, 1, USERDATA_TAG)
-
-    let title: String
-    if timer?.isRunning ?? false {
-        title = "running"
-    } else {
-        title = "not running"
-    }
-
-    let str = "\(USERDATA_TAG): \(title) (\(lua_topointer(L, 1)!))"
-    lua_pushstring(L, str)
-    return 1
-}
+// MARK: - Module entry point
 
 @_cdecl("luaopen_hs_libpasteboardwatcher")
 public func luaopen_hs_libpasteboardwatcher(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     runEntryPoint(L) { L in
-        // Register userdata metatable
-        luaL_newmetatable(L, USERDATA_TAG)
-        lua_pushvalue(L, -1)
-        lua_setfield(L, -2, "__index")  // mt.__index = mt
-        L.push(pasteboardwatcher_start)
-        lua_setfield(L, -2, "start")
-        L.push(pasteboardwatcher_stop)
-        lua_setfield(L, -2, "stop")
-        L.push(pasteboardwatcher_running)
-        lua_setfield(L, -2, "running")
-        L.push(userdata_tostring)
-        lua_setfield(L, -2, "__tostring")
-        L.push(pasteboardwatcher_gc)
-        lua_setfield(L, -2, "__gc")
-        lua_pop(L, 1)
+        L.register(Metatable<HSPasteboardTimer>(
+            fields: [
+                "start": .closure { L in
+                    let timer: HSPasteboardTimer = try L.checkArgument(1)
+                    lua_settop(L, 1)
+                    timer.start()
+                    return 1
+                },
+                "stop": .closure { L in
+                    let timer: HSPasteboardTimer = try L.checkArgument(1)
+                    lua_settop(L, 1)
+                    timer.stop()
+                    return 1
+                },
+                "running": .closure { L in
+                    let timer: HSPasteboardTimer = try L.checkArgument(1)
+                    L.push(timer.isRunning)
+                    return 1
+                },
+            ],
+            tostring: .closure { L in
+                let timer: HSPasteboardTimer = try L.checkArgument(1)
+                let title = timer.isRunning ? "running" : "not running"
+                let str = "\(USERDATA_TAG): \(title) (\(lua_topointer(L, 1)!))"
+                L.push(str)
+                return 1
+            }
+        ))
+        installMetatableBoilerplate(L, for: HSPasteboardTimer.self, tag: USERDATA_TAG)
 
         // Create module table
         lua_createtable(L, 0, 2)
-        L.push(pasteboardwatcher_new)
+
+        // new constructor
+        L.push({ (L: LuaState) throws -> CInt in
+            luaL_checktype(L, 1, LUA_TFUNCTION)
+            let pbName: String? = (lua_type(L, 2) == LUA_TSTRING) ? String(cString: lua_tostring(L, 2)!) : nil
+
+            let timer = HSPasteboardTimer()
+            timer.callback = L.ref(index: 1)
+            timer.generation = lua_currentStateGeneration()
+            timer.pbName = pbName
+
+            // Start the timer:
+            timer.start()
+
+            L.push(userdata: timer)
+            return 1
+        })
         lua_setfield(L, -2, "new")
-        L.push(pasteboardwatcher_interval)
+
+        // interval function
+        L.push({ (L: LuaState) throws -> CInt in
+            if lua_gettop(L) == 1 && lua_type(L, 1) == LUA_TNUMBER {
+                pollingInterval = lua_tonumber(L, 1)
+            }
+            L.push(pollingInterval)
+            return 1
+        })
         lua_setfield(L, -2, "interval")
 
-        // Set module metatable for __gc
+        // Set module metatable for __gc (shared timer cleanup)
         lua_createtable(L, 0, 1)
-        L.push(meta_gc)
+        lua_pushcclosure(L, { (L: LuaState!) -> CInt in
+            if let timer = sharedPasteboardTimer {
+                timer.invalidate()
+                sharedPasteboardTimer = nil
+            }
+            return 0
+        }, 0)
         lua_setfield(L, -2, "__gc")
         lua_setmetatable(L, -2)
     }

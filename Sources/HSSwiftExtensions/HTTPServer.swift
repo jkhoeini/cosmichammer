@@ -134,8 +134,8 @@ private class HSHTTPServer {
             let L = lua_getCurrentState()!
 
             cb.push(onto: L)
-            lua_pushstring(L, method)
-            lua_pushstring(L, path)
+            L.push(method)
+            L.push(path)
             lua_pushany(L, headers as NSDictionary)
             // Push body as raw Lua string (binary data)
             body.withUnsafeBytes { rawBuf in
@@ -203,7 +203,7 @@ private class HSHTTPServer {
 
             let L = lua_getCurrentState()!
             cb.push(onto: L)
-            lua_pushstring(L, message)
+            L.push(message)
 
             if lua_pcall(L, 1, 1, 0) != LUA_OK {
                 let errorMsg = lua_tostring(L, -1).map { String(cString: $0) } ?? "unknown error"
@@ -292,7 +292,7 @@ public func luaopen_hs_libhttpserver(_ L: UnsafeMutablePointer<lua_State>!) -> I
             },
             "getPort": .closure { L in
                 let server: HSHTTPServer = try L.checkArgument(1)
-                lua_pushinteger(L, lua_Integer(server.listeningPort()))
+                L.push(lua_Integer(server.listeningPort()))
                 return 1
             },
             "setPort": .closure { L in
@@ -304,7 +304,7 @@ public func luaopen_hs_libhttpserver(_ L: UnsafeMutablePointer<lua_State>!) -> I
             "getInterface": .closure { L in
                 let server: HSHTTPServer = try L.checkArgument(1)
                 if let iface = server.interface() {
-                    lua_pushstring(L, iface)
+                    L.push(iface)
                 } else {
                     lua_pushnil(L)
                 }
@@ -323,7 +323,7 @@ public func luaopen_hs_libhttpserver(_ L: UnsafeMutablePointer<lua_State>!) -> I
             "getName": .closure { L in
                 let server: HSHTTPServer = try L.checkArgument(1)
                 if let name = server.name() {
-                    lua_pushstring(L, name)
+                    L.push(name)
                 } else {
                     lua_pushnil(L)
                 }
@@ -367,7 +367,7 @@ public func luaopen_hs_libhttpserver(_ L: UnsafeMutablePointer<lua_State>!) -> I
                     server.maxBodySize = Int(lua_tointeger(L, 2))
                     lua_pushvalue(L, 1)
                 } else {
-                    lua_pushinteger(L, lua_Integer(server.maxBodySize))
+                    L.push(lua_Integer(server.maxBodySize))
                 }
                 return 1
             },
@@ -394,7 +394,7 @@ public func luaopen_hs_libhttpserver(_ L: UnsafeMutablePointer<lua_State>!) -> I
             let theName = server.name() ?? "unnamed"
             let thePort = server.listeningPort()
             let str = "\(USERDATA_TAG): \(theName):\(thePort) (\(String(describing: lua_topointer(L, 1)!)))"
-            lua_pushstring(L, str)
+            L.push(str)
             return 1
         }
     ))
@@ -419,9 +419,9 @@ public func luaopen_hs_libhttpserver(_ L: UnsafeMutablePointer<lua_State>!) -> I
     lua_setfield(L, -2, "__gc")
 
     // Set __type and __name for lsunit.lua assertIsUserdataOfType and tostring
-    lua_pushstring(L, USERDATA_TAG)
+    L.push(USERDATA_TAG)
     lua_setfield(L, -2, "__type")
-    lua_pushstring(L, USERDATA_TAG)
+    L.push(USERDATA_TAG)
     lua_setfield(L, -2, "__name")
 
     // Alias the metatable under the legacy registry name so that

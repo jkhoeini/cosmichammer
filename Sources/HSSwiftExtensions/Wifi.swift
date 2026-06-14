@@ -105,10 +105,10 @@ private func setPower(_ L: LuaState) throws -> CInt {
 
     do {
         try interface.setPower(powerState)
-        lua_pushboolean(L, 1)
+        L.push(true)
     } catch let error as NSError {
-        lua_pushboolean(L, 0)
-        lua_pushstring(L, error.localizedDescription)
+        L.push(false)
+        L.push(error.localizedDescription)
         return 2
     }
 
@@ -168,7 +168,7 @@ private func associate(_ L: LuaState) throws -> CInt {
         success = (try? interface?.associate(to: network, password: password)) != nil
     }
 
-    lua_pushboolean(L, success ? 1 : 0)
+    L.push(success)
     return 1
 }
 
@@ -221,9 +221,9 @@ private func wifi_scan(_ L: LuaState) throws -> CInt {
     lua_newtable(L)
     var i: lua_Integer = 1
     for network in availableNetworks {
-        lua_pushinteger(L, i)
+        L.push(i)
         i += 1
-        lua_pushstring(L, network.ssid ?? "")
+        L.push(network.ssid ?? "")
         lua_settable(L, -3)
     }
 
@@ -272,7 +272,7 @@ private func wifi_current_ssid(_ L: LuaState) throws -> CInt {
 
     let interface = get_wifi_interface(theName)
     if let ssid = interface?.ssid() {
-        lua_pushstring(L, ssid)
+        L.push(ssid)
     } else {
         lua_pushnil(L)
     }
@@ -395,7 +395,7 @@ private func pushWifiDictionary(
 ) {
     lua_createtable(L, 0, Int32(dict.count))
     for (key, value) in dict {
-        lua_pushstring(L, key)
+        L.push(key)
         pushWifiValue(L, value, depth: depth + 1)
         lua_settable(L, -3)
     }
@@ -407,9 +407,9 @@ private func pushCWInterface(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!)
 
     pushWifiValue(L, theInterface.wlanChannel())
     lua_setfield(L, -2, "wlanChannel")
-    lua_pushnumber(L, lua_Number(theInterface.transmitRate()))
+    L.push(lua_Number(theInterface.transmitRate()))
     lua_setfield(L, -2, "transmitRate")
-    lua_pushinteger(L, lua_Integer(theInterface.transmitPower()))
+    L.push(lua_Integer(theInterface.transmitPower()))
     lua_setfield(L, -2, "transmitPower")
     pushWifiValue(L, theInterface.supportedWLANChannels() as NSSet?)
     lua_setfield(L, -2, "supportedChannels")
@@ -417,7 +417,7 @@ private func pushCWInterface(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!)
     lua_setfield(L, -2, "ssidData")
     lua_pushany(L, theInterface.ssid() as NSString?)
     lua_setfield(L, -2, "ssid")
-    lua_pushboolean(L, theInterface.serviceActive() ? 1 : 0)
+    L.push(theInterface.serviceActive())
     lua_setfield(L, -2, "active")
 
     let securityStr: String
@@ -441,14 +441,14 @@ private func pushCWInterface(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!)
     case .unknown:             securityStr = "Unknown"
     @unknown default:          securityStr = "unrecognized (\(theInterface.security().rawValue))"
     }
-    lua_pushstring(L, securityStr)
+    L.push(securityStr)
     lua_setfield(L, -2, "security")
 
-    lua_pushinteger(L, lua_Integer(theInterface.rssiValue()))
+    L.push(lua_Integer(theInterface.rssiValue()))
     lua_setfield(L, -2, "rssi")
-    lua_pushboolean(L, theInterface.powerOn() ? 1 : 0)
+    L.push(theInterface.powerOn())
     lua_setfield(L, -2, "power")
-    lua_pushinteger(L, lua_Integer(theInterface.noiseMeasurement()))
+    L.push(lua_Integer(theInterface.noiseMeasurement()))
     lua_setfield(L, -2, "noise")
     lua_pushany(L, theInterface.interfaceName as NSString?)
     lua_setfield(L, -2, "interface")
@@ -461,7 +461,7 @@ private func pushCWInterface(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!)
     case .hostAP:  modeStr = "Host AP"
     @unknown default: modeStr = "unrecognized (\(theInterface.interfaceMode().rawValue))"
     }
-    lua_pushstring(L, modeStr)
+    L.push(modeStr)
     lua_setfield(L, -2, "interfaceMode")
 
     lua_pushany(L, theInterface.hardwareAddress() as NSString?)
@@ -487,7 +487,7 @@ private func pushCWInterface(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!)
     case .mode11be: phyStr = "BE"
     @unknown default: phyStr = "unrecognized (\(theInterface.activePHYMode().rawValue))"
     }
-    lua_pushstring(L, phyStr)
+    L.push(phyStr)
     lua_setfield(L, -2, "activePHYMode")
 
     return 1
@@ -506,10 +506,10 @@ private func pushCWChannel(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -
     case .widthUnknown:  widthStr = "unknown"
     @unknown default:    widthStr = "unrecognized (\(theChannel.channelWidth.rawValue))"
     }
-    lua_pushstring(L, widthStr)
+    L.push(widthStr)
     lua_setfield(L, -2, "width")
 
-    lua_pushinteger(L, lua_Integer(theChannel.channelNumber))
+    L.push(lua_Integer(theChannel.channelNumber))
     lua_setfield(L, -2, "number")
 
     let bandStr: String
@@ -520,7 +520,7 @@ private func pushCWChannel(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -
     case .bandUnknown: bandStr = "unknown"
     @unknown default:  bandStr = "unrecognized (\(theChannel.channelBand.rawValue))"
     }
-    lua_pushstring(L, bandStr)
+    L.push(bandStr)
     lua_setfield(L, -2, "band")
 
     return 1
@@ -529,13 +529,13 @@ private func pushCWChannel(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -
 private func pushCWConfiguration(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
     let theConfig = obj as! CWConfiguration
     lua_newtable(L)
-    lua_pushboolean(L, theConfig.requireAdministratorForPower ? 1 : 0)
+    L.push(theConfig.requireAdministratorForPower)
     lua_setfield(L, -2, "requireAdministratorForPower")
-    lua_pushboolean(L, theConfig.requireAdministratorForIBSSMode ? 1 : 0)
+    L.push(theConfig.requireAdministratorForIBSSMode)
     lua_setfield(L, -2, "requireAdministratorForIBSSMode")
-    lua_pushboolean(L, theConfig.requireAdministratorForAssociation ? 1 : 0)
+    L.push(theConfig.requireAdministratorForAssociation)
     lua_setfield(L, -2, "requireAdministratorForAssociation")
-    lua_pushboolean(L, theConfig.rememberJoinedNetworks ? 1 : 0)
+    L.push(theConfig.rememberJoinedNetworks)
     lua_setfield(L, -2, "rememberJoinedNetworks")
     pushWifiValue(L, theConfig.networkProfiles.array as NSArray)
     lua_setfield(L, -2, "networkProfiles")
@@ -553,17 +553,17 @@ private func pushCWNetwork(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -
     lua_setfield(L, -2, "ssidData")
     lua_pushany(L, theNetwork.ssid as NSString?)
     lua_setfield(L, -2, "ssid")
-    lua_pushinteger(L, lua_Integer(theNetwork.rssiValue))
+    L.push(lua_Integer(theNetwork.rssiValue))
     lua_setfield(L, -2, "rssi")
-    lua_pushinteger(L, lua_Integer(theNetwork.noiseMeasurement))
+    L.push(lua_Integer(theNetwork.noiseMeasurement))
     lua_setfield(L, -2, "noise")
-    lua_pushboolean(L, theNetwork.ibss ? 1 : 0)
+    L.push(theNetwork.ibss)
     lua_setfield(L, -2, "ibss")
     lua_pushany(L, theNetwork.countryCode as NSString?)
     lua_setfield(L, -2, "countryCode")
     lua_pushany(L, theNetwork.bssid as NSString?)
     lua_setfield(L, -2, "bssid")
-    lua_pushinteger(L, lua_Integer(theNetwork.beaconInterval))
+    L.push(lua_Integer(theNetwork.beaconInterval))
     lua_setfield(L, -2, "beaconInterval")
 
     // security table
@@ -581,7 +581,7 @@ private func pushCWNetwork(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -
     var securityIndex: lua_Integer = 1
     for (secType, name) in secTypes {
         if theNetwork.supportsSecurity(secType) {
-            lua_pushstring(L, name)
+            L.push(name)
             lua_rawseti(L, -2, securityIndex)
             securityIndex += 1
         }
@@ -598,7 +598,7 @@ private func pushCWNetwork(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -
     var phyIndex: lua_Integer = 1
     for (mode, name) in phyModes {
         if theNetwork.supportsPHYMode(mode) {
-            lua_pushstring(L, name)
+            L.push(name)
             lua_rawseti(L, -2, phyIndex)
             phyIndex += 1
         }
@@ -611,7 +611,7 @@ private func pushCWNetwork(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -
         let bytes = [UInt8](ied)
         var byteIndex: lua_Integer = 1
         for byte in bytes {
-            lua_pushinteger(L, lua_Integer(byte))
+            L.push(lua_Integer(byte))
             lua_rawseti(L, -2, byteIndex)
             byteIndex += 1
         }
@@ -651,7 +651,7 @@ private func pushCWNetworkProfile(_ L: UnsafeMutablePointer<lua_State>!, _ obj: 
     case .unknown:             securityStr = "Unknown"
     @unknown default:          securityStr = "unrecognized (\(theProfile.security.rawValue))"
     }
-    lua_pushstring(L, securityStr)
+    L.push(securityStr)
     lua_setfield(L, -2, "security")
 
     return 1
@@ -667,7 +667,7 @@ public func luaopen_hs_libwifi(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
         ],
         tostring: .closure { L in
             let scanner: HSWifiScan = try L.checkArgument(1)
-            lua_pushstring(L, "\(USERDATA_TAG): \(scanner.isDone ? "done" : "scanning") (\(lua_topointer(L, 1)!))")
+            L.push("\(USERDATA_TAG): \(scanner.isDone ? "done" : "scanning") (\(lua_topointer(L, 1)!))")
             return 1
         }
     ))
@@ -675,7 +675,7 @@ public func luaopen_hs_libwifi(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     // Post-registration __gc patch: teardown() + deinitialize the Any box
     L.pushMetatable(for: HSWifiScan.self)
 
-    lua_pushcclosure(L, { (L: LuaState!) -> CInt in
+    L.push({ (L: LuaState!) -> CInt in
         if let scanner: HSWifiScan = L.touserdata(1) {
             scanner.teardown()
         }
@@ -683,12 +683,12 @@ public func luaopen_hs_libwifi(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
         let anyPtr = rawptr.assumingMemoryBound(to: Any.self)
         anyPtr.deinitialize(count: 1)
         return 0
-    }, 0)
+    })
     lua_setfield(L, -2, "__gc")
 
-    lua_pushstring(L, USERDATA_TAG)
+    L.push(USERDATA_TAG)
     lua_setfield(L, -2, "__type")
-    lua_pushstring(L, USERDATA_TAG)
+    L.push(USERDATA_TAG)
     lua_setfield(L, -2, "__name")
 
     // Alias the metatable under the legacy registry name so that

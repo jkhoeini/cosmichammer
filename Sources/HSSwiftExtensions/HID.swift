@@ -142,7 +142,7 @@ private func accessCapslock(_ op: Int32) -> Int32 {
 // Checks the state of the caps lock via HID
 private func hid_capslock_query(_ L: LuaState) throws -> CInt {
     let state = accessCapslock(CAPSLOCK_QUERY)
-    lua_pushboolean(L, state)
+    L.push(state != 0)
     return 1
 }
 
@@ -151,7 +151,7 @@ private func hid_capslock_query(_ L: LuaState) throws -> CInt {
 // Toggles the state of caps lock via HID
 private func hid_capslock_toggle(_ L: LuaState) throws -> CInt {
     let state = accessCapslock(CAPSLOCK_TOGGLE)
-    lua_pushboolean(L, state)
+    L.push(state != 0)
     return 1
 }
 
@@ -160,7 +160,7 @@ private func hid_capslock_toggle(_ L: LuaState) throws -> CInt {
 // Assigns capslock to the desired state
 private func hid_capslock_on(_ L: LuaState) throws -> CInt {
     let state = accessCapslock(CAPSLOCK_ON)
-    lua_pushboolean(L, state)
+    L.push(state != 0)
     return 1
 }
 
@@ -169,19 +169,16 @@ private func hid_capslock_on(_ L: LuaState) throws -> CInt {
 // Assigns capslock to the desired state
 private func hid_capslock_off(_ L: LuaState) throws -> CInt {
     let state = accessCapslock(CAPSLOCK_OFF)
-    lua_pushboolean(L, state)
+    L.push(state != 0)
     return 1
 }
 
 private func hid_led_set(_ L: LuaState) throws -> CInt {
-    guard lua_type(L, 1) == LUA_TSTRING else {
-        throw LuaCallError("expected string for argument 1")
-    }
+    let name: String = try L.checkArgument(1)
     guard lua_type(L, 2) == LUA_TBOOLEAN else {
         throw LuaCallError("expected boolean for argument 2")
     }
 
-    let name = String(cString: lua_tostring(L, 1)!)
     let targetValue = Int(lua_toboolean(L, 2))
     var ret = false
 
@@ -196,7 +193,7 @@ private func hid_led_set(_ L: LuaState) throws -> CInt {
         throw LuaCallError("Unsupported LED name")
     }
 
-    lua_pushboolean(L, ret ? 1 : 0)
+    L.push(ret)
     return 1
 }
 

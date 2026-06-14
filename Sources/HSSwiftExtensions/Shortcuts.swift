@@ -71,7 +71,7 @@ private func shortcuts_list(_ L: LuaState) throws -> CInt {
 /// Returns:
 ///  * None
 private func shortcuts_run(_ L: LuaState) throws -> CInt {
-    let name = String(cString: luaL_checkstring(L, 1))
+    let name: String = try L.checkArgument(1)
 
     guard let app: ShortcutsEventsApplication = SBApplication(bundleIdentifier: "com.apple.shortcuts.events") else {
         return 0

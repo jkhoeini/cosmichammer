@@ -333,22 +333,22 @@ private func application_focusedWindow(_ L: LuaState) throws -> CInt {
 }
 
 private func application__activate(_ L: LuaState) throws -> CInt {
-    guard let app = getApp(L, at: 1) else { lua_pushboolean(L, 0); return 1 }
-    lua_pushboolean(L, app.activate(lua_toboolean(L, 2) != 0) ? 1 : 0)
+    guard let app = getApp(L, at: 1) else { L.push(false); return 1 }
+    L.push(app.activate(lua_toboolean(L, 2) != 0))
     return 1
 }
 
 private func application_isunresponsive(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
-    guard let app = getApp(L, at: 1) else { lua_pushboolean(L, 0); return 1 }
-    lua_pushboolean(L, app.isResponsive() ? 0 : 1)
+    guard let app = getApp(L, at: 1) else { L.push(false); return 1 }
+    L.push(!app.isResponsive())
     return 1
 }
 
 private func application__bringtofront(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
-    guard let app = getApp(L, at: 1) else { lua_pushboolean(L, 0); return 1 }
-    lua_pushboolean(L, app.setFrontmost(lua_toboolean(L, 2) != 0) ? 1 : 0)
+    guard let app = getApp(L, at: 1) else { L.push(false); return 1 }
+    L.push(app.setFrontmost(lua_toboolean(L, 2) != 0))
     return 1
 }
 
@@ -414,8 +414,8 @@ private func application_path(_ L: LuaState) throws -> CInt {
 ///  * If an application is terminated and re-launched, this method will still return false, as `hs.application` objects are tied to a specific instance of an application (i.e. its PID)
 private func application_isRunning(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
-    guard let app = getApp(L, at: 1) else { lua_pushboolean(L, 0); return 1 }
-    lua_pushboolean(L, app.isRunning(withState: L) ? 1 : 0)
+    guard let app = getApp(L, at: 1) else { L.push(false); return 1 }
+    L.push(app.isRunning(withState: L))
     return 1
 }
 
@@ -430,9 +430,9 @@ private func application_isRunning(_ L: LuaState) throws -> CInt {
 ///  * A boolean indicating whether the application was successfully unhidden
 private func application_unhide(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
-    guard let app = getApp(L, at: 1) else { lua_pushboolean(L, 0); return 1 }
+    guard let app = getApp(L, at: 1) else { L.push(false); return 1 }
     app.hidden = false
-    lua_pushboolean(L, app.hidden ? 0 : 1)
+    L.push(!app.hidden)
     return 1
 }
 
@@ -447,9 +447,9 @@ private func application_unhide(_ L: LuaState) throws -> CInt {
 ///  * A boolean indicating whether the application was successfully hidden
 private func application_hide(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
-    guard let app = getApp(L, at: 1) else { lua_pushboolean(L, 0); return 1 }
+    guard let app = getApp(L, at: 1) else { L.push(false); return 1 }
     app.hidden = true
-    lua_pushboolean(L, app.hidden ? 1 : 0)
+    L.push(app.hidden)
     return 1
 }
 
@@ -496,8 +496,8 @@ private func application_kill9(_ L: LuaState) throws -> CInt {
 ///  * A boolean indicating whether the application is hidden or not
 private func application_ishidden(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
-    guard let app = getApp(L, at: 1) else { lua_pushboolean(L, 0); return 1 }
-    lua_pushboolean(L, app.hidden ? 1 : 0)
+    guard let app = getApp(L, at: 1) else { L.push(false); return 1 }
+    L.push(app.hidden)
     return 1
 }
 
@@ -512,8 +512,8 @@ private func application_ishidden(_ L: LuaState) throws -> CInt {
 ///  * True if the application is the frontmost application, otherwise false
 private func application_isfrontmost(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
-    guard let app = getApp(L, at: 1) else { lua_pushboolean(L, 0); return 1 }
-    lua_pushboolean(L, app.isFrontmost() ? 1 : 0)
+    guard let app = getApp(L, at: 1) else { L.push(false); return 1 }
+    L.push(app.isFrontmost())
     return 1
 }
 
@@ -529,13 +529,13 @@ private func application_isfrontmost(_ L: LuaState) throws -> CInt {
 private func application_setfrontmost(_ L: LuaState) throws -> CInt {
     var allWindows = false
     luaL_checkudata(L, 1, USERDATA_TAG)
-    guard let app = getApp(L, at: 1) else { lua_pushboolean(L, 0); return 1 }
+    guard let app = getApp(L, at: 1) else { L.push(false); return 1 }
 
     if lua_type(L, 2) == LUA_TBOOLEAN {
         allWindows = lua_toboolean(L, 2) != 0
     }
 
-    lua_pushboolean(L, app.setFrontmost(allWindows) ? 1 : 0)
+    L.push(app.setFrontmost(allWindows))
     return 1
 }
 
@@ -550,8 +550,8 @@ private func application_setfrontmost(_ L: LuaState) throws -> CInt {
 ///  * The UNIX process identifier of the application (i.e. a number)
 private func application_pid(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
-    guard let app = getApp(L, at: 1) else { lua_pushinteger(L, 0); return 1 }
-    lua_pushinteger(L, lua_Integer(app.pid))
+    guard let app = getApp(L, at: 1) else { L.push(0); return 1 }
+    L.push(Int(app.pid))
     return 1
 }
 
@@ -566,8 +566,8 @@ private func application_pid(_ L: LuaState) throws -> CInt {
 ///  * A number that is either 1 if the app is in the dock, 0 if it is not, or -1 if the application is prohibited from having GUI elements
 private func application_kind(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
-    guard let app = getApp(L, at: 1) else { lua_pushinteger(L, -1); return 1 }
-    lua_pushinteger(L, lua_Integer(app.kind()))
+    guard let app = getApp(L, at: 1) else { L.push(-1); return 1 }
+    L.push(Int(app.kind()))
     return 1
 }
 
@@ -801,11 +801,11 @@ private func application_findmenuitem(_ L: LuaState) throws -> CInt {
     let marked = (error != .noValue)
 
     lua_newtable(L)
-    lua_pushstring(L, "enabled")
-    lua_pushboolean(L, (enabled as? NSNumber)?.boolValue == true ? 1 : 0)
+    L.push("enabled")
+    L.push((enabled as? NSNumber)?.boolValue == true)
     lua_settable(L, -3)
-    lua_pushstring(L, "ticked")
-    lua_pushboolean(L, marked ? 1 : 0)
+    L.push("ticked")
+    L.push(marked)
     lua_settable(L, -3)
 
     return 1
@@ -872,7 +872,7 @@ private func application_selectmenuitem(_ L: LuaState) throws -> CInt {
         return 1
     }
 
-    lua_pushboolean(L, 1)
+    L.push(true)
     return 1
 }
 
@@ -1068,12 +1068,12 @@ private func application_getMenus(_ L: LuaState) throws -> CInt {
 ///  * The name parameter should match the name of the application on disk, e.g. "IntelliJ IDEA", rather than "IntelliJ"
 private func application_launchorfocus(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TSTRING)
-    guard let appClass = HSuicore.applicationClass else { lua_pushboolean(L, 0); return 1 }
+    guard let appClass = HSuicore.applicationClass else { L.push(false); return 1 }
     let name = lua_tovalue(L, at: 1) as! NSString
     let result = catchingObjCException {
         (appClass as AnyObject).perform(Selector(("launchByName:")), with: name)
     }
-    lua_pushboolean(L, result != nil ? 1 : 0)
+    L.push(result != nil)
     return 1
 }
 
@@ -1091,12 +1091,12 @@ private func application_launchorfocus(_ L: LuaState) throws -> CInt {
 ///  * Bundle identifiers typically take the form of `com.company.ApplicationName`
 private func application_launchorfocusbybundleID(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TSTRING)
-    guard let appClass = HSuicore.applicationClass else { lua_pushboolean(L, 0); return 1 }
+    guard let appClass = HSuicore.applicationClass else { L.push(false); return 1 }
     let bundleID = lua_tovalue(L, at: 1) as! NSString
     let result = catchingObjCException {
         (appClass as AnyObject).perform(Selector(("launchByBundleID:")), with: bundleID)
     }
-    lua_pushboolean(L, result != nil ? 1 : 0)
+    L.push(result != nil)
     return 1
 }
 
@@ -1104,22 +1104,22 @@ private func application_launchorfocusbybundleID(_ L: LuaState) throws -> CInt {
 
 private func application_uielement_isApplication(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
-    guard let app = getApp(L, at: 1) else { lua_pushboolean(L, 0); return 1 }
+    guard let app = getApp(L, at: 1) else { L.push(false); return 1 }
     if let uiElement = app.uiElement as? HSuielementProtocol {
-        lua_pushboolean(L, uiElement.role == "AXApplication" ? 1 : 0)
+        L.push(uiElement.role == "AXApplication")
     } else {
-        lua_pushboolean(L, 0)
+        L.push(false)
     }
     return 1
 }
 
 private func application_uielement_isWindow(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
-    guard let app = getApp(L, at: 1) else { lua_pushboolean(L, 0); return 1 }
+    guard let app = getApp(L, at: 1) else { L.push(false); return 1 }
     if let uiElement = app.uiElement as? HSuielementProtocol {
-        lua_pushboolean(L, uiElement.isWindow ? 1 : 0)
+        L.push(uiElement.isWindow)
     } else {
-        lua_pushboolean(L, 0)
+        L.push(false)
     }
     return 1
 }
@@ -1211,7 +1211,7 @@ private func userdata_tostring(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let app = getApp(L, at: 1)
     let title = app?.title() ?? "?"
-    lua_pushstring(L, "\(USERDATA_TAG): \(title) (\(String(describing: lua_topointer(L, 1)!)))")
+    L.push("\(USERDATA_TAG): \(title) (\(String(describing: lua_topointer(L, 1)!)))")
     return 1
 }
 
@@ -1223,7 +1223,7 @@ private func userdata_eq(_ L: LuaState) throws -> CInt {
             isEqual = app1.runningApp.isEqual(app2.runningApp)
         }
     }
-    lua_pushboolean(L, isEqual ? 1 : 0)
+    L.push(isEqual)
     return 1
 }
 
@@ -1289,9 +1289,9 @@ public func luaopen_hs_libapplication_new(_ L: UnsafeMutablePointer<lua_State>!)
         L.push(userdata_gc); lua_setfield(L, -2, "__gc")
 
         // Set __type and __name for lsunit.lua assertIsUserdataOfType and tostring
-        lua_pushstring(L, USERDATA_TAG)
+        L.push(USERDATA_TAG)
         lua_setfield(L, -2, "__type")
-        lua_pushstring(L, USERDATA_TAG)
+        L.push(USERDATA_TAG)
         lua_setfield(L, -2, "__name")
         lua_pop(L, 1)
 

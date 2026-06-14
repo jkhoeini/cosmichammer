@@ -146,7 +146,7 @@ public func luaopen_hs_libdistributednotifications(_ L: UnsafeMutablePointer<lua
         tostring: .closure { L in
             let watcher: HSDistNotWatcher = try L.checkArgument(1)
             let ptr = lua_topointer(L, 1)!
-            lua_pushstring(L, "\(USERDATA_TAG): name: \(watcher.name ?? "nil") object: \(watcher.object ?? "nil") (\(ptr))")
+            L.push("\(USERDATA_TAG): name: \(watcher.name ?? "nil") object: \(watcher.object ?? "nil") (\(ptr))")
             return 1
         }
     ))
@@ -170,9 +170,9 @@ public func luaopen_hs_libdistributednotifications(_ L: UnsafeMutablePointer<lua
     lua_setfield(L, -2, "__gc")
 
     // Set __type and __name for lsunit.lua assertIsUserdataOfType and tostring
-    lua_pushstring(L, USERDATA_TAG)
+    L.push(USERDATA_TAG)
     lua_setfield(L, -2, "__type")
-    lua_pushstring(L, USERDATA_TAG)
+    L.push(USERDATA_TAG)
     lua_setfield(L, -2, "__name")
 
     // Alias the metatable under the legacy registry name so that

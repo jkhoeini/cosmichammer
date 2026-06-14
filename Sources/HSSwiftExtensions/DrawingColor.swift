@@ -52,12 +52,12 @@ private func colorAsRGB(_ L: LuaState) throws -> CInt {
 
     if let safeColor = safeColor {
         lua_newtable(L)
-        lua_pushnumber(L, lua_Number(safeColor.redComponent))   ; lua_setfield(L, -2, "red")
-        lua_pushnumber(L, lua_Number(safeColor.greenComponent)) ; lua_setfield(L, -2, "green")
-        lua_pushnumber(L, lua_Number(safeColor.blueComponent))  ; lua_setfield(L, -2, "blue")
-        lua_pushnumber(L, lua_Number(safeColor.alphaComponent)) ; lua_setfield(L, -2, "alpha")
+        L.push(lua_Number(safeColor.redComponent))   ; lua_setfield(L, -2, "red")
+        L.push(lua_Number(safeColor.greenComponent)) ; lua_setfield(L, -2, "green")
+        L.push(lua_Number(safeColor.blueComponent))  ; lua_setfield(L, -2, "blue")
+        L.push(lua_Number(safeColor.alphaComponent)) ; lua_setfield(L, -2, "alpha")
     } else {
-        lua_pushstring(L, "unable to convert colorspace \(theColor.colorSpace.description) to NSCalibratedRGBColorSpace")
+        L.push("unable to convert colorspace \(theColor.colorSpace.description) to NSCalibratedRGBColorSpace")
     }
 
     return 1
@@ -85,12 +85,12 @@ private func colorAsHSB(_ L: LuaState) throws -> CInt {
 
     if let safeColor = safeColor {
         lua_newtable(L)
-        lua_pushnumber(L, lua_Number(safeColor.hueComponent))        ; lua_setfield(L, -2, "hue")
-        lua_pushnumber(L, lua_Number(safeColor.saturationComponent)) ; lua_setfield(L, -2, "saturation")
-        lua_pushnumber(L, lua_Number(safeColor.brightnessComponent)) ; lua_setfield(L, -2, "brightness")
-        lua_pushnumber(L, lua_Number(safeColor.alphaComponent))      ; lua_setfield(L, -2, "alpha")
+        L.push(lua_Number(safeColor.hueComponent))        ; lua_setfield(L, -2, "hue")
+        L.push(lua_Number(safeColor.saturationComponent)) ; lua_setfield(L, -2, "saturation")
+        L.push(lua_Number(safeColor.brightnessComponent)) ; lua_setfield(L, -2, "brightness")
+        L.push(lua_Number(safeColor.alphaComponent))      ; lua_setfield(L, -2, "alpha")
     } else {
-        lua_pushstring(L, "unable to convert colorspace from \(theColor.colorSpace.description) to NSCalibratedRGBColorSpace")
+        L.push("unable to convert colorspace from \(theColor.colorSpace.description) to NSCalibratedRGBColorSpace")
     }
 
     return 1
@@ -106,27 +106,27 @@ func NSColor_tolua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 
 
     if let safeColor = safeColor {
         lua_newtable(L)
-        lua_pushnumber(L, lua_Number(safeColor.redComponent))   ; lua_setfield(L, -2, "red")
-        lua_pushnumber(L, lua_Number(safeColor.greenComponent)) ; lua_setfield(L, -2, "green")
-        lua_pushnumber(L, lua_Number(safeColor.blueComponent))  ; lua_setfield(L, -2, "blue")
-        lua_pushnumber(L, lua_Number(safeColor.alphaComponent)) ; lua_setfield(L, -2, "alpha")
-        lua_pushstring(L, "NSColor") ; lua_setfield(L, -2, "__luaSkinType")
+        L.push(lua_Number(safeColor.redComponent))   ; lua_setfield(L, -2, "red")
+        L.push(lua_Number(safeColor.greenComponent)) ; lua_setfield(L, -2, "green")
+        L.push(lua_Number(safeColor.blueComponent))  ; lua_setfield(L, -2, "blue")
+        L.push(lua_Number(safeColor.alphaComponent)) ; lua_setfield(L, -2, "alpha")
+        L.push("NSColor") ; lua_setfield(L, -2, "__luaSkinType")
     } else if theColor.colorSpaceName == .named {
         lua_newtable(L)
         lua_pushany(L, theColor.catalogNameComponent)
         lua_setfield(L, -2, "list")
         lua_pushany(L, theColor.colorNameComponent)
         lua_setfield(L, -2, "name")
-        lua_pushstring(L, "NSColor") ; lua_setfield(L, -2, "__luaSkinType")
+        L.push("NSColor") ; lua_setfield(L, -2, "__luaSkinType")
     } else if theColor.colorSpaceName == .pattern {
         lua_newtable(L)
         if NSImage_tolua(L, theColor.patternImage) == 0 {
             lua_pushnil(L)
         }
         lua_setfield(L, -2, "image")
-        lua_pushstring(L, "NSColor") ; lua_setfield(L, -2, "__luaSkinType")
+        L.push("NSColor") ; lua_setfield(L, -2, "__luaSkinType")
     } else {
-        lua_pushstring(L, "unable to convert colorspace from \(theColor.colorSpace.description) to NSCalibratedRGBColorSpace")
+        L.push("unable to convert colorspace from \(theColor.colorSpace.description) to NSCalibratedRGBColorSpace")
     }
 
     return 1

@@ -132,7 +132,7 @@ func menubarImagePosition(_ L: LuaState) throws -> CInt {
         button.imagePosition = NSControl.ImagePosition(rawValue: UInt(lua_tointegerx(L, 2, nil)))!
         lua_settop(L, 1)
     } else {
-        lua_pushinteger(L, lua_Integer(button.imagePosition.rawValue))
+        L.push(Int(button.imagePosition.rawValue))
     }
     return 1
 }
@@ -530,7 +530,7 @@ func menubar_returnToMenuBar(_ L: LuaState) throws -> CInt {
 ///  * a boolean indicating whether or not the specified menu is currently in the OS X menubar
 func menubar_isInMenubar(_ L: LuaState) throws -> CInt {
     let menuBarItem = mb_get_item_arg(L, 1)
-    lua_pushboolean(L, !menuBarItem.pointee.removed ? 1 : 0)
+    L.push(!menuBarItem.pointee.removed)
     return 1
 }
 
@@ -645,15 +645,15 @@ func menubarStateImageSize(_ L: LuaState) throws -> CInt {
 @discardableResult
 func pushImagePositionsTable(_ L: LuaState) -> CInt {
     lua_newtable(L)
-    lua_pushinteger(L, lua_Integer(NSControl.ImagePosition.noImage.rawValue));       lua_setfield(L, -2, "none")
-    lua_pushinteger(L, lua_Integer(NSControl.ImagePosition.imageOnly.rawValue));     lua_setfield(L, -2, "imageOnly")
-    lua_pushinteger(L, lua_Integer(NSControl.ImagePosition.imageLeading.rawValue));  lua_setfield(L, -2, "imageLeading")
-    lua_pushinteger(L, lua_Integer(NSControl.ImagePosition.imageTrailing.rawValue)); lua_setfield(L, -2, "imageTrailing")
-    lua_pushinteger(L, lua_Integer(NSControl.ImagePosition.imageLeft.rawValue));     lua_setfield(L, -2, "imageLeft")
-    lua_pushinteger(L, lua_Integer(NSControl.ImagePosition.imageRight.rawValue));    lua_setfield(L, -2, "imageRight")
-    lua_pushinteger(L, lua_Integer(NSControl.ImagePosition.imageBelow.rawValue));    lua_setfield(L, -2, "imageBelow")
-    lua_pushinteger(L, lua_Integer(NSControl.ImagePosition.imageAbove.rawValue));    lua_setfield(L, -2, "imageAbove")
-    lua_pushinteger(L, lua_Integer(NSControl.ImagePosition.imageOverlaps.rawValue)); lua_setfield(L, -2, "imageOverlaps")
+    L.push(Int(NSControl.ImagePosition.noImage.rawValue));       lua_setfield(L, -2, "none")
+    L.push(Int(NSControl.ImagePosition.imageOnly.rawValue));     lua_setfield(L, -2, "imageOnly")
+    L.push(Int(NSControl.ImagePosition.imageLeading.rawValue));  lua_setfield(L, -2, "imageLeading")
+    L.push(Int(NSControl.ImagePosition.imageTrailing.rawValue)); lua_setfield(L, -2, "imageTrailing")
+    L.push(Int(NSControl.ImagePosition.imageLeft.rawValue));     lua_setfield(L, -2, "imageLeft")
+    L.push(Int(NSControl.ImagePosition.imageRight.rawValue));    lua_setfield(L, -2, "imageRight")
+    L.push(Int(NSControl.ImagePosition.imageBelow.rawValue));    lua_setfield(L, -2, "imageBelow")
+    L.push(Int(NSControl.ImagePosition.imageAbove.rawValue));    lua_setfield(L, -2, "imageAbove")
+    L.push(Int(NSControl.ImagePosition.imageOverlaps.rawValue)); lua_setfield(L, -2, "imageOverlaps")
     return 1
 }
 
@@ -681,7 +681,7 @@ func mb_userdata_tostring(_ L: LuaState) throws -> CInt {
     let statusItem = Unmanaged<NSStatusItem>.fromOpaque(menuBarItem.pointee.menuBarItemObject!).takeUnretainedValue()
     let title = statusItem.button?.title ?? ""
 
-    lua_pushstring(L, "\(mb_USERDATA_TAG): \(title) (\(lua_topointer(L, 1)!))")
+    L.push("\(mb_USERDATA_TAG): \(title) (\(lua_topointer(L, 1)!))")
     return 1
 }
 

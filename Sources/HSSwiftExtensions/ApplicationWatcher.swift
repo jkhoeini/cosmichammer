@@ -19,10 +19,21 @@ private enum AppWatcherEvent: Int {
 
 // MARK: - AppWatcher class
 
-private class AppWatcher: NSObject {
+private class AppWatcher: NSObject, LuaTeardownable {
     var running: Bool = false
     var callbackRef: LuaValue?
     var generation: UInt64 = 0
+    private var tornDown = false
+
+    func teardown() {
+        guard !tornDown else { return }
+        tornDown = true
+        if running {
+            running = false
+            unregisterObserver()
+        }
+        callbackRef = nil
+    }
 
     func callback(_ dict: [AnyHashable: Any], event: AppWatcherEvent) {
         guard let app = dict["NSWorkspaceApplicationKey" as NSString] as? NSRunningApplication else { return }
@@ -42,12 +53,12 @@ private class AppWatcher: NSObject {
         cb.push(onto: L)
 
         if let name = appName {
-            lua_pushstring(L, name)
+            L.push(name)
         } else {
             lua_pushnil(L)
         }
 
-        lua_pushinteger(L, lua_Integer(event.rawValue))
+        L.push(lua_Integer(event.rawValue))
 
         if let application = HSapplication(nsRunningApplication: app, withState: L) {
             // Push HSapplication userdata directly
@@ -118,117 +129,6 @@ private class AppWatcher: NSObject {
     }
 }
 
-// MARK: - Helper to extract watcher from userdata
-
-private func getWatcher(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> AppWatcher? {
-    let ptr = luaL_checkudata(L, idx, USERDATA_TAG)!
-        .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
-    guard let rawPtr = ptr.pointee else { return nil }
-    return Unmanaged<AnyObject>.fromOpaque(rawPtr).takeUnretainedValue() as? AppWatcher
-}
-
-// MARK: - Lua functions
-
-/// hs.application.watcher.new(fn) -> watcher
-/// Constructor
-/// Creates an application event watcher
-///
-/// Parameters:
-///  * fn - A function that will be called when application events happen. It should accept three parameters:
-///   * A string containing the name of the application
-///   * An event type (see the constants defined above)
-///   * An `hs.application` object representing the application, or nil if the application couldn't be found
-///
-/// Returns:
-///  * An `hs.application.watcher` object
-///
-/// Notes:
-///  * If the function is called with an event type of `hs.application.watcher.terminated` then the application name parameter will be `nil` and the `hs.application` parameter, will only be useful for getting the UNIX process ID (i.e. the PID) of the application
-private func app_watcher_new(_ L: LuaState) throws -> CInt {
-    luaL_checktype(L, 1, LUA_TFUNCTION)
-
-    let watcher = AppWatcher()
-
-    watcher.callbackRef = L.ref(index: 1)
-    watcher.generation = lua_currentStateGeneration()
-    watcher.running = false
-
-    let valuePtr = lua_newuserdata(L, MemoryLayout<UnsafeMutableRawPointer>.size)!
-        .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
-    valuePtr.pointee = Unmanaged.passRetained(watcher as AnyObject).toOpaque()
-
-    luaL_getmetatable(L, USERDATA_TAG)
-    lua_setmetatable(L, -2)
-    return 1
-}
-
-/// hs.application.watcher:start()
-/// Method
-/// Starts the application watcher
-///
-/// Parameters:
-///  * None
-///
-/// Returns:
-///  * The `hs.application.watcher` object
-private func app_watcher_start(_ L: LuaState) throws -> CInt {
-    guard let watcher = getWatcher(L, at: 1) else { return 0 }
-    lua_settop(L, 1)
-
-    if watcher.running { return 1 }
-
-    watcher.running = true
-    watcher.registerObserver()
-
-    lua_pushvalue(L, 1)
-    return 1
-}
-
-/// hs.application.watcher:stop()
-/// Method
-/// Stops the application watcher
-///
-/// Parameters:
-///  * None
-///
-/// Returns:
-///  * The `hs.application.watcher` object
-private func app_watcher_stop(_ L: LuaState) throws -> CInt {
-    guard let watcher = getWatcher(L, at: 1) else { return 0 }
-    lua_settop(L, 1)
-
-    if !watcher.running { return 1 }
-
-    watcher.running = false
-    watcher.unregisterObserver()
-
-    lua_pushvalue(L, 1)
-    return 1
-}
-
-private func app_watcher_gc(_ L: LuaState) throws -> CInt {
-    let ptr = luaL_checkudata(L, 1, USERDATA_TAG)!
-        .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
-    if let rawPtr = ptr.pointee {
-        let watcher = Unmanaged<AnyObject>.fromOpaque(rawPtr).takeRetainedValue() as! AppWatcher
-        watcher.running = false
-        watcher.unregisterObserver()
-        watcher.callbackRef = nil
-        ptr.pointee = nil
-    }
-    return 0
-}
-
-private func userdata_tostring(_ L: LuaState) throws -> CInt {
-    let desc = "\(USERDATA_TAG): (\(String(describing: lua_topointer(L, 1)!)))"
-    lua_pushstring(L, desc)
-    return 1
-}
-
-private func meta_gc(_ L: LuaState) throws -> CInt {
-    return 0
-}
-
 // MARK: - Event enum registration
 
 private func add_event_enum(_ L: UnsafeMutablePointer<lua_State>!) {
@@ -242,7 +142,7 @@ private func add_event_enum(_ L: UnsafeMutablePointer<lua_State>!) {
         ("deactivated", .deactivated),
     ]
     for (name, value) in events {
-        lua_pushinteger(L, lua_Integer(value.rawValue))
+        L.push(lua_Integer(value.rawValue))
         lua_setfield(L, -2, name)
     }
 }
@@ -252,30 +152,50 @@ private func add_event_enum(_ L: UnsafeMutablePointer<lua_State>!) {
 @_cdecl("luaopen_hs_libapplicationwatcher")
 public func luaopen_hs_libapplicationwatcher(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     runEntryPoint(L) { L in
-        // Register userdata metatable
-        luaL_newmetatable(L, USERDATA_TAG)
-        lua_pushvalue(L, -1)
-        lua_setfield(L, -2, "__index")  // mt.__index = mt
-        L.push(app_watcher_start)
-        lua_setfield(L, -2, "start")
-        L.push(app_watcher_stop)
-        lua_setfield(L, -2, "stop")
-        L.push(userdata_tostring)
-        lua_setfield(L, -2, "__tostring")
-        L.push(app_watcher_gc)
-        lua_setfield(L, -2, "__gc")
-        lua_pop(L, 1)
+        L.register(Metatable<AppWatcher>(
+            fields: [
+                "start": .closure { L in
+                    let watcher: AppWatcher = try L.checkArgument(1)
+                    lua_settop(L, 1)
+                    if !watcher.running {
+                        watcher.running = true
+                        watcher.registerObserver()
+                    }
+                    return 1
+                },
+                "stop": .closure { L in
+                    let watcher: AppWatcher = try L.checkArgument(1)
+                    lua_settop(L, 1)
+                    if watcher.running {
+                        watcher.running = false
+                        watcher.unregisterObserver()
+                    }
+                    return 1
+                },
+            ],
+            tostring: .closure { L in
+                let _: AppWatcher = try L.checkArgument(1)
+                let desc = "\(USERDATA_TAG): (\(String(describing: lua_topointer(L, 1)!)))"
+                L.push(desc)
+                return 1
+            }
+        ))
+        installMetatableBoilerplate(L, for: AppWatcher.self, tag: USERDATA_TAG)
 
         // Create module table
-        lua_createtable(L, 0, 1)
-        L.push(app_watcher_new)
-        lua_setfield(L, -2, "new")
+        lua_createtable(L, 0, 8)
 
-        // Set module metatable for __gc
-        lua_createtable(L, 0, 1)
-        L.push(meta_gc)
-        lua_setfield(L, -2, "__gc")
-        lua_setmetatable(L, -2)
+        L.push({ (L: LuaState) throws -> CInt in
+            luaL_checktype(L, 1, LUA_TFUNCTION)
+
+            let watcher = AppWatcher()
+            watcher.callbackRef = L.ref(index: 1)
+            watcher.generation = lua_currentStateGeneration()
+
+            L.push(userdata: watcher)
+            return 1
+        })
+        lua_setfield(L, -2, "new")
 
         add_event_enum(L)
     }

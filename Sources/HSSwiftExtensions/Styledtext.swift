@@ -297,7 +297,7 @@ private func fontsForFamily(_ L: LuaState) throws -> CInt {
         let details = NSFontManager.shared.availableMembers(ofFontFamily: fontFamily)
         lua_pushany(L, details as NSArray?)
     } else {
-        lua_pushboolean(L, 0)
+        L.push(false)
     }
     return 1
 }
@@ -361,7 +361,7 @@ private func fontNamesWithTraits(_ L: LuaState) throws -> CInt {
     if let names = NSFontManager.shared.availableFontNames(with: theTraits) {
         lua_newtable(L)
         for (indFont, name) in names.enumerated() {
-            lua_pushstring(L, name)
+            L.push(name)
             lua_rawseti(L, -2, lua_Integer(indFont + 1))
         }
     } else {
@@ -375,29 +375,29 @@ private func fontNamesWithTraits(_ L: LuaState) throws -> CInt {
 /// A table for containing Font Trait masks for use with `hs.styledtext.fontNamesWithTraits(...)`
 private func fontTraits(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     lua_newtable(L)
-    lua_pushinteger(L, lua_Integer(NSFontTraitMask.boldFontMask.rawValue))
+    L.push(Int(NSFontTraitMask.boldFontMask.rawValue))
     lua_setfield(L, -2, "boldFont")
-    lua_pushinteger(L, lua_Integer(NSFontTraitMask.compressedFontMask.rawValue))
+    L.push(Int(NSFontTraitMask.compressedFontMask.rawValue))
     lua_setfield(L, -2, "compressedFont")
-    lua_pushinteger(L, lua_Integer(NSFontTraitMask.condensedFontMask.rawValue))
+    L.push(Int(NSFontTraitMask.condensedFontMask.rawValue))
     lua_setfield(L, -2, "condensedFont")
-    lua_pushinteger(L, lua_Integer(NSFontTraitMask.expandedFontMask.rawValue))
+    L.push(Int(NSFontTraitMask.expandedFontMask.rawValue))
     lua_setfield(L, -2, "expandedFont")
-    lua_pushinteger(L, lua_Integer(NSFontTraitMask.fixedPitchFontMask.rawValue))
+    L.push(Int(NSFontTraitMask.fixedPitchFontMask.rawValue))
     lua_setfield(L, -2, "fixedPitchFont")
-    lua_pushinteger(L, lua_Integer(NSFontTraitMask.italicFontMask.rawValue))
+    L.push(Int(NSFontTraitMask.italicFontMask.rawValue))
     lua_setfield(L, -2, "italicFont")
-    lua_pushinteger(L, lua_Integer(NSFontTraitMask.narrowFontMask.rawValue))
+    L.push(Int(NSFontTraitMask.narrowFontMask.rawValue))
     lua_setfield(L, -2, "narrowFont")
-    lua_pushinteger(L, lua_Integer(NSFontTraitMask.posterFontMask.rawValue))
+    L.push(Int(NSFontTraitMask.posterFontMask.rawValue))
     lua_setfield(L, -2, "posterFont")
-    lua_pushinteger(L, lua_Integer(NSFontTraitMask.smallCapsFontMask.rawValue))
+    L.push(Int(NSFontTraitMask.smallCapsFontMask.rawValue))
     lua_setfield(L, -2, "smallCapsFont")
-    lua_pushinteger(L, lua_Integer(NSFontTraitMask.nonStandardCharacterSetFontMask.rawValue))
+    L.push(Int(NSFontTraitMask.nonStandardCharacterSetFontMask.rawValue))
     lua_setfield(L, -2, "nonStandardCharacterSetFont")
-    lua_pushinteger(L, lua_Integer(NSFontTraitMask.unboldFontMask.rawValue))
+    L.push(Int(NSFontTraitMask.unboldFontMask.rawValue))
     lua_setfield(L, -2, "unboldFont")
-    lua_pushinteger(L, lua_Integer(NSFontTraitMask.unitalicFontMask.rawValue))
+    L.push(Int(NSFontTraitMask.unitalicFontMask.rawValue))
     lua_setfield(L, -2, "unitalicFont")
     return 1
 }
@@ -416,7 +416,7 @@ private func validFont(_ L: LuaState) throws -> CInt {
 
     let fontName = lua_tovalue(L, at: 1) as! String
     let theFont = NSFont(name: fontName, size: 1)
-    lua_pushboolean(L, theFont != nil ? 1 : 0)
+    L.push(theFont != nil)
     return 1
 }
 
@@ -441,45 +441,45 @@ private func fontInformation(_ L: LuaState) throws -> CInt {
     lua_setfield(L, -2, "familyName")
     lua_pushany(L, theFont.displayName as NSString?)
     lua_setfield(L, -2, "displayName")
-    lua_pushboolean(L, theFont.isFixedPitch ? 1 : 0)
+    L.push(theFont.isFixedPitch)
     lua_setfield(L, -2, "fixedPitch")
-    lua_pushnumber(L, lua_Number(theFont.ascender))
+    L.push(lua_Number(theFont.ascender))
     lua_setfield(L, -2, "ascender")
     let boundingRect = theFont.boundingRectForFont
     lua_newtable(L)
-    lua_pushnumber(L, lua_Number(boundingRect.origin.x))
+    L.push(lua_Number(boundingRect.origin.x))
     lua_setfield(L, -2, "x")
-    lua_pushnumber(L, lua_Number(boundingRect.origin.y))
+    L.push(lua_Number(boundingRect.origin.y))
     lua_setfield(L, -2, "y")
-    lua_pushnumber(L, lua_Number(boundingRect.size.height))
+    L.push(lua_Number(boundingRect.size.height))
     lua_setfield(L, -2, "h")
-    lua_pushnumber(L, lua_Number(boundingRect.size.width))
+    L.push(lua_Number(boundingRect.size.width))
     lua_setfield(L, -2, "w")
     lua_setfield(L, -2, "boundingRect")
-    lua_pushnumber(L, lua_Number(theFont.capHeight))
+    L.push(lua_Number(theFont.capHeight))
     lua_setfield(L, -2, "capHeight")
-    lua_pushnumber(L, lua_Number(theFont.descender))
+    L.push(lua_Number(theFont.descender))
     lua_setfield(L, -2, "descender")
-    lua_pushnumber(L, lua_Number(theFont.italicAngle))
+    L.push(lua_Number(theFont.italicAngle))
     lua_setfield(L, -2, "italicAngle")
-    lua_pushnumber(L, lua_Number(theFont.leading))
+    L.push(lua_Number(theFont.leading))
     lua_setfield(L, -2, "leading")
     let maxAdvance = theFont.maximumAdvancement
     lua_newtable(L)
-    lua_pushnumber(L, lua_Number(maxAdvance.height))
+    L.push(lua_Number(maxAdvance.height))
     lua_setfield(L, -2, "h")
-    lua_pushnumber(L, lua_Number(maxAdvance.width))
+    L.push(lua_Number(maxAdvance.width))
     lua_setfield(L, -2, "w")
     lua_setfield(L, -2, "maximumAdvancement")
-    lua_pushinteger(L, lua_Integer(theFont.numberOfGlyphs))
+    L.push(Int(theFont.numberOfGlyphs))
     lua_setfield(L, -2, "numberOfGlyphs")
-    lua_pushnumber(L, lua_Number(theFont.pointSize))
+    L.push(lua_Number(theFont.pointSize))
     lua_setfield(L, -2, "pointSize")
-    lua_pushnumber(L, lua_Number(theFont.underlinePosition))
+    L.push(lua_Number(theFont.underlinePosition))
     lua_setfield(L, -2, "underlinePosition")
-    lua_pushnumber(L, lua_Number(theFont.underlineThickness))
+    L.push(lua_Number(theFont.underlineThickness))
     lua_setfield(L, -2, "underlineThickness")
-    lua_pushnumber(L, lua_Number(theFont.xHeight))
+    L.push(lua_Number(theFont.xHeight))
     lua_setfield(L, -2, "xHeight")
     return 1
 }
@@ -516,13 +516,13 @@ private func fontPath(_ L: LuaState) throws -> CInt {
 /// A table of styles which apply to the line for underlining or strike-through.
 private func defineLineStyles(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     lua_newtable(L)
-    lua_pushinteger(L, 0) // NSUnderlineStyleNone
+    L.push(0) // NSUnderlineStyleNone
     lua_setfield(L, -2, "none")
-    lua_pushinteger(L, lua_Integer(NSUnderlineStyle.single.rawValue))
+    L.push(Int(NSUnderlineStyle.single.rawValue))
     lua_setfield(L, -2, "single")
-    lua_pushinteger(L, lua_Integer(NSUnderlineStyle.thick.rawValue))
+    L.push(Int(NSUnderlineStyle.thick.rawValue))
     lua_setfield(L, -2, "thick")
-    lua_pushinteger(L, lua_Integer(NSUnderlineStyle.double.rawValue))
+    L.push(Int(NSUnderlineStyle.double.rawValue))
     lua_setfield(L, -2, "double")
     return 1
 }
@@ -532,15 +532,15 @@ private func defineLineStyles(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// A table of patterns which apply to the line for underlining or strike-through.
 private func defineLinePatterns(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     lua_newtable(L)
-    lua_pushinteger(L, 0) // NSUnderlineStyle.patternSolid (rawValue 0)
+    L.push(0) // NSUnderlineStyle.patternSolid (rawValue 0)
     lua_setfield(L, -2, "solid")
-    lua_pushinteger(L, lua_Integer(NSUnderlineStyle.patternDot.rawValue))
+    L.push(Int(NSUnderlineStyle.patternDot.rawValue))
     lua_setfield(L, -2, "dot")
-    lua_pushinteger(L, lua_Integer(NSUnderlineStyle.patternDash.rawValue))
+    L.push(Int(NSUnderlineStyle.patternDash.rawValue))
     lua_setfield(L, -2, "dash")
-    lua_pushinteger(L, lua_Integer(NSUnderlineStyle.patternDashDot.rawValue))
+    L.push(Int(NSUnderlineStyle.patternDashDot.rawValue))
     lua_setfield(L, -2, "dashDot")
-    lua_pushinteger(L, lua_Integer(NSUnderlineStyle.patternDashDotDot.rawValue))
+    L.push(Int(NSUnderlineStyle.patternDashDotDot.rawValue))
     lua_setfield(L, -2, "dashDotDot")
     return 1
 }
@@ -550,9 +550,9 @@ private func defineLinePatterns(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 /// A table of values indicating how the line for underlining or strike-through are applied to the text.
 private func defineLineAppliesTo(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     lua_newtable(L)
-    lua_pushinteger(L, 0)
+    L.push(0)
     lua_setfield(L, -2, "line")
-    lua_pushinteger(L, lua_Integer(NSUnderlineStyle.byWord.rawValue))
+    L.push(Int(NSUnderlineStyle.byWord.rawValue))
     lua_setfield(L, -2, "word")
     return 1
 }
@@ -653,7 +653,7 @@ private func string_copy(_ L: LuaState) throws -> CInt {
 private func string_identical(_ L: LuaState) throws -> CInt {
     let theString1 = get_objectFromUserdata(L, at: 1)
     let theString2 = get_objectFromUserdata(L, at: 2)
-    lua_pushboolean(L, theString1.isEqual(to: theString2) ? 1 : 0)
+    L.push(theString1.isEqual(to: theString2))
     return 1
 }
 
@@ -679,16 +679,16 @@ private func string_totable(_ L: LuaState) throws -> CInt {
     let resolved = luaRangeToObjCRange(theMap, len: len, luaI: luaI, luaJ: luaJ)
 
     lua_newtable(L)
-    lua_pushstring(L, "NSAttributedString"); lua_setfield(L, -2, "__luaSkinType")
+    L.push("NSAttributedString"); lua_setfield(L, -2, "__luaSkinType")
 
     if resolved.empty {
-        lua_pushstring(L, "")
+        L.push("")
         lua_rawseti(L, -2, 1)
     } else {
         let i = resolved.i
         let j = resolved.j
         let theRange = NSRange(location: Int(i - 1), length: Int(j - (i - 1)))
-        lua_pushstring(L, theString.attributedSubstring(from: theRange).string)
+        L.push(theString.attributedSubstring(from: theRange).string)
         lua_rawseti(L, -2, 1)
 
         var limitRange = theRange
@@ -706,9 +706,9 @@ private func string_totable(_ L: LuaState) throws -> CInt {
             let pE = ((theMap.allKeys(for: NSNumber(value: NSMaxRange(effectiveRange))) as! [NSNumber])
                 .sorted { $0.compare($1) == .orderedAscending }).last!.intValue
 
-            lua_pushinteger(L, lua_Integer(pS))
+            L.push(Int(pS))
             lua_setfield(L, -2, "starts")
-            lua_pushinteger(L, lua_Integer(pE))
+            L.push(Int(pE))
             lua_setfield(L, -2, "ends")
 
             var containsUnsupportedFields = false
@@ -724,7 +724,7 @@ private func string_totable(_ L: LuaState) throws -> CInt {
             }
             lua_setfield(L, -2, "attributes")
             if containsUnsupportedFields {
-                lua_pushboolean(L, 1)
+                L.push(true)
                 lua_setfield(L, -2, "unsupportedFields")
             }
             lua_rawseti(L, -2, luaL_len(L, -2) + 1)
@@ -759,12 +759,12 @@ private func string_tostring(_ L: LuaState) throws -> CInt {
 
     let resolved = luaRangeToObjCRange(theMap, len: len, luaI: luaI, luaJ: luaJ)
     if resolved.empty {
-        lua_pushstring(L, "")
+        L.push("")
     } else {
         let i = resolved.i
         let j = resolved.j
         let theRange = NSRange(location: Int(i - 1), length: Int(j - (i - 1)))
-        lua_pushstring(L, theString.attributedSubstring(from: theRange).string)
+        L.push(theString.attributedSubstring(from: theRange).string)
     }
     return 1
 }
@@ -993,11 +993,11 @@ private func registerFontByPath(_ L: LuaState) throws -> CInt {
     CTFontManagerRegisterFontsForURL(URL(fileURLWithPath: path) as CFURL, .process, &errorRef)
     if let errorRef = errorRef {
         let error = errorRef.takeRetainedValue() as Error
-        lua_pushboolean(L, 0)
-        lua_pushstring(L, (error as NSError).localizedDescription)
+        L.push(false)
+        L.push((error as NSError).localizedDescription)
         return 2
     }
-    lua_pushboolean(L, 1)
+    L.push(true)
     return 1
 }
 
@@ -1248,9 +1248,9 @@ private func NSFont_toLua(_ L: UnsafeMutablePointer<lua_State>!, obj: Any!) -> I
     lua_newtable(L)
     lua_pushany(L, theFont.fontName as NSString)
     lua_setfield(L, -2, "name")
-    lua_pushnumber(L, lua_Number(theFont.pointSize))
+    L.push(lua_Number(theFont.pointSize))
     lua_setfield(L, -2, "size")
-    lua_pushstring(L, "NSFont"); lua_setfield(L, -2, "__luaSkinType")
+    L.push("NSFont"); lua_setfield(L, -2, "__luaSkinType")
 
     return 1
 }
@@ -1289,18 +1289,18 @@ private func NSShadow_toLua(_ L: UnsafeMutablePointer<lua_State>!, obj: Any!) ->
 
     lua_newtable(L)
     lua_newtable(L)
-    lua_pushnumber(L, lua_Number(offset.height))
+    L.push(lua_Number(offset.height))
     lua_setfield(L, -2, "h")
-    lua_pushnumber(L, lua_Number(offset.width))
+    L.push(lua_Number(offset.width))
     lua_setfield(L, -2, "w")
     lua_setfield(L, -2, "offset")
-    lua_pushnumber(L, lua_Number(theShadow.shadowBlurRadius))
+    L.push(lua_Number(theShadow.shadowBlurRadius))
     lua_setfield(L, -2, "blurRadius")
     if let color = theShadow.shadowColor {
         NSColor_tolua(L, color)
         lua_setfield(L, -2, "color")
     }
-    lua_pushstring(L, "NSShadow"); lua_setfield(L, -2, "__luaSkinType")
+    L.push("NSShadow"); lua_setfield(L, -2, "__luaSkinType")
 
     return 1
 }
@@ -1333,59 +1333,59 @@ private func NSParagraphStyle_toLua(_ L: UnsafeMutablePointer<lua_State>!, obj: 
     lua_newtable(L)
 
     switch thePS.alignment {
-    case .left:       lua_pushstring(L, "left")
-    case .right:      lua_pushstring(L, "right")
-    case .center:     lua_pushstring(L, "center")
-    case .justified:  lua_pushstring(L, "justified")
-    case .natural:    lua_pushstring(L, "natural")
-    @unknown default: lua_pushstring(L, "unknown")
+    case .left:       L.push("left")
+    case .right:      L.push("right")
+    case .center:     L.push("center")
+    case .justified:  L.push("justified")
+    case .natural:    L.push("natural")
+    @unknown default: L.push("unknown")
     }
     lua_setfield(L, -2, "alignment")
 
     switch thePS.lineBreakMode {
-    case .byWordWrapping:      lua_pushstring(L, "wordWrap")
-    case .byCharWrapping:      lua_pushstring(L, "charWrap")
-    case .byClipping:          lua_pushstring(L, "clip")
-    case .byTruncatingHead:    lua_pushstring(L, "truncateHead")
-    case .byTruncatingTail:    lua_pushstring(L, "truncateTail")
-    case .byTruncatingMiddle:  lua_pushstring(L, "truncateMiddle")
-    @unknown default:          lua_pushstring(L, "unknown")
+    case .byWordWrapping:      L.push("wordWrap")
+    case .byCharWrapping:      L.push("charWrap")
+    case .byClipping:          L.push("clip")
+    case .byTruncatingHead:    L.push("truncateHead")
+    case .byTruncatingTail:    L.push("truncateTail")
+    case .byTruncatingMiddle:  L.push("truncateMiddle")
+    @unknown default:          L.push("unknown")
     }
     lua_setfield(L, -2, "lineBreak")
 
     switch thePS.baseWritingDirection {
-    case .natural:      lua_pushstring(L, "natural")
-    case .leftToRight:  lua_pushstring(L, "leftToRight")
-    case .rightToLeft:  lua_pushstring(L, "rightToLeft")
-    @unknown default:   lua_pushstring(L, "unknown")
+    case .natural:      L.push("natural")
+    case .leftToRight:  L.push("leftToRight")
+    case .rightToLeft:  L.push("rightToLeft")
+    @unknown default:   L.push("unknown")
     }
     lua_setfield(L, -2, "baseWritingDirection")
 
-    lua_pushnumber(L, lua_Number(thePS.defaultTabInterval))
+    L.push(lua_Number(thePS.defaultTabInterval))
     lua_setfield(L, -2, "defaultTabInterval")
-    lua_pushnumber(L, lua_Number(thePS.firstLineHeadIndent))
+    L.push(lua_Number(thePS.firstLineHeadIndent))
     lua_setfield(L, -2, "firstLineHeadIndent")
-    lua_pushnumber(L, lua_Number(thePS.headIndent))
+    L.push(lua_Number(thePS.headIndent))
     lua_setfield(L, -2, "headIndent")
-    lua_pushnumber(L, lua_Number(thePS.tailIndent))
+    L.push(lua_Number(thePS.tailIndent))
     lua_setfield(L, -2, "tailIndent")
-    lua_pushnumber(L, lua_Number(thePS.maximumLineHeight))
+    L.push(lua_Number(thePS.maximumLineHeight))
     lua_setfield(L, -2, "maximumLineHeight")
-    lua_pushnumber(L, lua_Number(thePS.minimumLineHeight))
+    L.push(lua_Number(thePS.minimumLineHeight))
     lua_setfield(L, -2, "minimumLineHeight")
-    lua_pushnumber(L, lua_Number(thePS.lineSpacing))
+    L.push(lua_Number(thePS.lineSpacing))
     lua_setfield(L, -2, "lineSpacing")
-    lua_pushnumber(L, lua_Number(thePS.paragraphSpacing))
+    L.push(lua_Number(thePS.paragraphSpacing))
     lua_setfield(L, -2, "paragraphSpacing")
-    lua_pushnumber(L, lua_Number(thePS.paragraphSpacingBefore))
+    L.push(lua_Number(thePS.paragraphSpacingBefore))
     lua_setfield(L, -2, "paragraphSpacingBefore")
-    lua_pushnumber(L, lua_Number(thePS.lineHeightMultiple))
+    L.push(lua_Number(thePS.lineHeightMultiple))
     lua_setfield(L, -2, "lineHeightMultiple")
-    lua_pushnumber(L, lua_Number(thePS.hyphenationFactor))
+    L.push(lua_Number(thePS.hyphenationFactor))
     lua_setfield(L, -2, "hyphenationFactor")
-    lua_pushnumber(L, lua_Number(thePS.tighteningFactorForTruncation))
+    L.push(lua_Number(thePS.tighteningFactorForTruncation))
     lua_setfield(L, -2, "tighteningFactorForTruncation")
-    lua_pushboolean(L, thePS.allowsDefaultTighteningForTruncation ? 1 : 0)
+    L.push(thePS.allowsDefaultTighteningForTruncation)
     lua_setfield(L, -2, "allowsTighteningForTruncation")
 
     lua_createtable(L, Int32(thePS.tabStops.count), 0)
@@ -1394,9 +1394,9 @@ private func NSParagraphStyle_toLua(_ L: UnsafeMutablePointer<lua_State>!, obj: 
         lua_rawseti(L, -2, luaL_len(L, -2) + 1)
     }
     lua_setfield(L, -2, "tabStops")
-    lua_pushinteger(L, lua_Integer(thePS.headerLevel))
+    L.push(Int(thePS.headerLevel))
     lua_setfield(L, -2, "headerLevel")
-    lua_pushstring(L, "NSParagraphStyle"); lua_setfield(L, -2, "__luaSkinType")
+    L.push("NSParagraphStyle"); lua_setfield(L, -2, "__luaSkinType")
     return 1
 }
 
@@ -1596,18 +1596,18 @@ private func NSTextTab_toLua(_ L: UnsafeMutablePointer<lua_State>!, obj: Any!) -
     let theTabStop = obj as! NSTextTab
     lua_newtable(L)
 
-    lua_pushnumber(L, lua_Number(theTabStop.location))
+    L.push(lua_Number(theTabStop.location))
     lua_setfield(L, -2, "location")
 
     switch theTabStop.tabStopType {
-    case .leftTabStopType:    lua_pushstring(L, "left")
-    case .rightTabStopType:   lua_pushstring(L, "right")
-    case .centerTabStopType:  lua_pushstring(L, "center")
-    case .decimalTabStopType: lua_pushstring(L, "decimal")
-    @unknown default:         lua_pushstring(L, "unknown")
+    case .leftTabStopType:    L.push("left")
+    case .rightTabStopType:   L.push("right")
+    case .centerTabStopType:  L.push("center")
+    case .decimalTabStopType: L.push("decimal")
+    @unknown default:         L.push("unknown")
     }
     lua_setfield(L, -2, "tabStopType")
-    lua_pushstring(L, "NSTextTab"); lua_setfield(L, -2, "__luaSkinType")
+    L.push("NSTextTab"); lua_setfield(L, -2, "__luaSkinType")
 
     return 1
 }
@@ -1644,9 +1644,9 @@ private func userdata_tostring(_ L: LuaState) throws -> CInt {
     let title = get_objectFromUserdata(L, at: 1).string
     if title.count > 20 {
         let truncated = String(title.prefix(20))
-        lua_pushstring(L, "\(USERDATA_TAG): \(truncated)... (\(lua_topointer(L, 1)!))")
+        L.push("\(USERDATA_TAG): \(truncated)... (\(lua_topointer(L, 1)!))")
     } else {
-        lua_pushstring(L, "\(USERDATA_TAG): \(title) (\(lua_topointer(L, 1)!))")
+        L.push("\(USERDATA_TAG): \(title) (\(lua_topointer(L, 1)!))")
     }
     return 1
 }
@@ -1676,7 +1676,7 @@ private func userdata_eq(_ L: LuaState) throws -> CInt {
                                                           String(cString: lua_tostring(L, 1)!)
     let theString2 = (lua_type(L, 2) == LUA_TUSERDATA) ? get_objectFromUserdata(L, at: 2).string :
                                                           String(cString: lua_tostring(L, 2)!)
-    lua_pushboolean(L, theString1 == theString2 ? 1 : 0)
+    L.push(theString1 == theString2)
     return 1
 }
 
@@ -1685,7 +1685,7 @@ private func userdata_lt(_ L: LuaState) throws -> CInt {
                                                           String(cString: lua_tostring(L, 1)!)
     let theString2 = (lua_type(L, 2) == LUA_TUSERDATA) ? get_objectFromUserdata(L, at: 2).string :
                                                           String(cString: lua_tostring(L, 2)!)
-    lua_pushboolean(L, (theString1 as NSString).compare(theString2) == .orderedAscending ? 1 : 0)
+    L.push((theString1 as NSString).compare(theString2) == .orderedAscending)
     return 1
 }
 
@@ -1694,7 +1694,7 @@ private func userdata_le(_ L: LuaState) throws -> CInt {
                                                           String(cString: lua_tostring(L, 1)!)
     let theString2 = (lua_type(L, 2) == LUA_TUSERDATA) ? get_objectFromUserdata(L, at: 2).string :
                                                           String(cString: lua_tostring(L, 2)!)
-    lua_pushboolean(L, (theString1 as NSString).compare(theString2) != .orderedDescending ? 1 : 0)
+    L.push((theString1 as NSString).compare(theString2) != .orderedDescending)
     return 1
 }
 
@@ -1710,7 +1710,7 @@ private func userdata_le(_ L: LuaState) throws -> CInt {
 private func userdata_len(_ L: LuaState) throws -> CInt {
     let theString = get_objectFromUserdata(L, at: 1)
     let theMap = luaByteToObjCharMap(theString.string as NSString)
-    lua_pushinteger(L, lua_Integer(theMap.count))
+    L.push(Int(theMap.count))
     return 1
 }
 
@@ -1772,9 +1772,9 @@ public func luaopen_hs_libstyledtext(_ L: UnsafeMutablePointer<lua_State>!) -> I
         lua_setfield(L, -2, "__gc")
 
         // Set __type and __name for consistency with idiomatic modules
-        lua_pushstring(L, USERDATA_TAG)
+        L.push(USERDATA_TAG)
         lua_setfield(L, -2, "__type")
-        lua_pushstring(L, USERDATA_TAG)
+        L.push(USERDATA_TAG)
         lua_setfield(L, -2, "__name")
 
         lua_pop(L, 1)

@@ -13,7 +13,7 @@ import os.log
 /// Returns:
 ///  * The contents of the plist as a Lua table
 private func plist_read(_ L: LuaState) throws -> CInt {
-    let filePath = (String(cString: luaL_checkstring(L, 1)) as NSString).expandingTildeInPath
+    let filePath = (try L.checkArgument(1) as String as NSString).expandingTildeInPath
     let plist = NSDictionary(contentsOfFile: filePath)
     lua_pushany(L, plist)
 
@@ -88,7 +88,7 @@ private func plist_writeString(_ L: LuaState) throws -> CInt {
 
     if !PropertyListSerialization.propertyList(data, isValidFor: format) {
         os_log(.error, "hs.plist.writeString: data supplied is not in a suitable format to serialize as a plist")
-        lua_pushboolean(L, 0)
+        L.push(false)
         return 1
     }
 
@@ -126,7 +126,7 @@ private func plist_writeString(_ L: LuaState) throws -> CInt {
 ///   * Tables
 ///  * You should be careful when reading a plist, modifying and writing it - Cosmic Hammer may not be able to preserve all of the datatypes via Lua
 private func plist_write(_ L: LuaState) throws -> CInt {
-    let filePath = (String(cString: luaL_checkstring(L, 1)) as NSString).expandingTildeInPath
+    let filePath = (try L.checkArgument(1) as String as NSString).expandingTildeInPath
     luaL_checktype(L, 2, LUA_TTABLE)
     let data = lua_tovalue(L, at: 2)!
     let binary = lua_type(L, 3) == LUA_TBOOLEAN ? (lua_toboolean(L, 3) != 0) : false
@@ -134,7 +134,7 @@ private func plist_write(_ L: LuaState) throws -> CInt {
 
     if !PropertyListSerialization.propertyList(data, isValidFor: format) {
         os_log(.error, "hs.plist.write(): Data supplied is not in a suitable format to write to a plist file")
-        lua_pushboolean(L, 0)
+        L.push(false)
         return 1
     }
 
@@ -145,10 +145,10 @@ private func plist_write(_ L: LuaState) throws -> CInt {
             options: 0
         )
         try output.write(to: URL(fileURLWithPath: filePath), options: .atomic)
-        lua_pushboolean(L, 1)
+        L.push(true)
     } catch {
         os_log(.error, "error writing plist: %{public}s", error.localizedDescription)
-        lua_pushboolean(L, 0)
+        L.push(false)
     }
 
     return 1

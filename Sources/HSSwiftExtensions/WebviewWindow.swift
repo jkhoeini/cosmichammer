@@ -85,7 +85,7 @@ class HSWebViewWindow: NSPanel, NSWindowDelegate {
                 self.windowCallback!.push(onto: L)
                 lua_pushany(L, "focusChange" as NSString)
                 wv_pushAny(L, self)
-                lua_pushboolean(L, 1)
+                L.push(true)
                 if lua_pcall(L, 3, 0, 0) != LUA_OK { lua_pop(L, 1) }
             }
         }
@@ -100,7 +100,7 @@ class HSWebViewWindow: NSPanel, NSWindowDelegate {
                 self.windowCallback!.push(onto: L)
                 lua_pushany(L, "focusChange" as NSString)
                 wv_pushAny(L, self)
-                lua_pushboolean(L, 0)
+                L.push(false)
                 if lua_pcall(L, 3, 0, 0) != LUA_OK { lua_pop(L, 1) }
             }
         }

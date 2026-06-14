@@ -68,8 +68,8 @@ private func pushNSCalendar(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any) -
 
     lua_newtable(L)
     // obj-c uses zero based indexing; lua uses 1 based indexing
-    lua_pushinteger(L, lua_Integer(calendar.firstWeekday + 1));     lua_setfield(L, -2, "firstWeekday")
-    lua_pushinteger(L, lua_Integer(calendar.minimumDaysInFirstWeek)); lua_setfield(L, -2, "minimumDaysInFirstWeek")
+    L.push(lua_Integer(calendar.firstWeekday + 1));     lua_setfield(L, -2, "firstWeekday")
+    L.push(lua_Integer(calendar.minimumDaysInFirstWeek)); lua_setfield(L, -2, "minimumDaysInFirstWeek")
     lua_pushany(L, calendar.eraSymbols);                          lua_setfield(L, -2, "eraSymbols")
     lua_pushany(L, calendar.longEraSymbols);                      lua_setfield(L, -2, "longEraSymbols")
     lua_pushany(L, calendar.monthSymbols);                        lua_setfield(L, -2, "monthSymbols")
@@ -88,9 +88,9 @@ private func pushNSCalendar(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any) -
     lua_pushany(L, calendar.veryShortStandaloneWeekdaySymbols);   lua_setfield(L, -2, "veryShortStandaloneWeekdaySymbols")
     lua_pushany(L, calendar.veryShortWeekdaySymbols);             lua_setfield(L, -2, "veryShortWeekdaySymbols")
     lua_pushany(L, calendar.weekdaySymbols);                      lua_setfield(L, -2, "weekdaySymbols")
-    lua_pushstring(L, calendar.amSymbol);                         lua_setfield(L, -2, "AMSymbol")
-    lua_pushstring(L, calendar.calendarIdentifier.rawValue);      lua_setfield(L, -2, "calendarIdentifier")
-    lua_pushstring(L, calendar.pmSymbol);                         lua_setfield(L, -2, "PMSymbol")
+    L.push(calendar.amSymbol);                         lua_setfield(L, -2, "AMSymbol")
+    L.push(calendar.calendarIdentifier.rawValue);      lua_setfield(L, -2, "calendarIdentifier")
+    L.push(calendar.pmSymbol);                         lua_setfield(L, -2, "PMSymbol")
     return 1
 }
 
@@ -133,7 +133,7 @@ private func pushNSLocale(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any) -> 
     if let usesMetricSystem = locale.object(forKey: .usesMetricSystem) as? NSNumber {
         lua_pushany(L, usesMetricSystem)
     } else {
-        lua_pushboolean(L, 0)
+        L.push(false)
     }
     lua_setfield(L, -2, "usesMetricSystem")
 
@@ -155,7 +155,7 @@ private func pushNSLocale(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any) -> 
     }
 
     // see http://stackoverflow.com/a/1972487
-    lua_pushboolean(L, locale.timeIs24HourFormat ? 1 : 0); lua_setfield(L, -2, "timeFormatIs24Hour")
+    L.push(locale.timeIs24HourFormat); lua_setfield(L, -2, "timeFormatIs24Hour")
     return 1
 }
 
@@ -207,7 +207,7 @@ private func locale_preferredLanguages(_ L: LuaState) throws -> CInt {
 /// Notes:
 ///  * this value can be used with [hs.host.locale.details](#details) to get details for the returned locale.
 private func locale_currentIdentifier(_ L: LuaState) throws -> CInt {
-    lua_pushstring(L, NSLocale.current.identifier)
+    L.push(NSLocale.current.identifier)
     return 1
 }
 
@@ -297,8 +297,8 @@ private func locale_localizedString(_ L: LuaState) throws -> CInt {
     let localizedString = (theLocale as Locale).localizedString(forLanguageCode: localeCode)
     let localizedStringWithDialect = theLocale.displayName(forKey: .identifier, value: localeCode)
 
-    if let s = localizedString { lua_pushstring(L, s) } else { lua_pushnil(L) }
-    if let s = localizedStringWithDialect { lua_pushstring(L, s) } else { lua_pushnil(L) }
+    if let s = localizedString { L.push(s) } else { lua_pushnil(L) }
+    if let s = localizedStringWithDialect { L.push(s) } else { lua_pushnil(L) }
     return 2
 }
 

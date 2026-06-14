@@ -89,10 +89,8 @@ private func pushPasteboardValue(_ L: UnsafeMutablePointer<lua_State>!, _ value:
 ///  * A string containing the contents of the pasteboard, or nil if an error occurred
 private func pasteboard_getContents(_ L: LuaState) throws -> CInt {
     let str = lua_to_pasteboard(L, 1).string(forType: .string)
-    if let cStr = str?.utf8CString {
-        cStr.withUnsafeBufferPointer { buf in
-            lua_pushstring(L, buf.baseAddress)
-        }
+    if let str = str {
+        L.push(str)
     } else {
         lua_pushnil(L)
     }
@@ -126,7 +124,7 @@ private func pasteboard_setContents(_ L: LuaState) throws -> CInt {
         }
     }
 
-    lua_pushboolean(L, result ? 1 : 0)
+    L.push(result)
     return 1
 }
 
@@ -160,7 +158,7 @@ private func pasteboard_pasteboardTypes(_ L: LuaState) throws -> CInt {
     lua_newtable(L)
     if let types = thePasteboard.types {
         for type in types {
-            lua_pushstring(L, type.rawValue)
+            L.push(type.rawValue)
             lua_rawseti(L, -2, luaL_len(L, -2) + 1)
         }
     }
@@ -185,7 +183,7 @@ private func pasteboard_pasteboardItemTypes(_ L: LuaState) throws -> CInt {
     if let items = thePasteboard.pasteboardItems, items.count > 0 {
         let item = items[0]
         for type in item.types {
-            lua_pushstring(L, type.rawValue)
+            L.push(type.rawValue)
             lua_rawseti(L, -2, luaL_len(L, -2) + 1)
         }
     }
@@ -205,7 +203,7 @@ private func pasteboard_pasteboardItemTypes(_ L: LuaState) throws -> CInt {
 /// Notes:
 ///  * This is useful for seeing if the pasteboard has been updated by another process
 private func pasteboard_changeCount(_ L: LuaState) throws -> CInt {
-    lua_pushinteger(L, lua_Integer(lua_to_pasteboard(L, 1).changeCount))
+    L.push(lua_Integer(lua_to_pasteboard(L, 1).changeCount))
     return 1
 }
 
@@ -479,7 +477,7 @@ private func writeArchivedDataForType(_ L: LuaState) throws -> CInt {
         if !add {
             pb.clearContents()
         }
-        lua_pushboolean(L, pb.setData(encoded, forType: pasteboardType) ? 1 : 0)
+        L.push(pb.setData(encoded, forType: pasteboardType))
     } catch {
         throw LuaCallError(error.localizedDescription)
     }
@@ -531,7 +529,7 @@ private func writeItemForType(_ L: LuaState) throws -> CInt {
     if !add {
         pb.clearContents()
     }
-    lua_pushboolean(L, pb.setData(data, forType: pasteboardType) ? 1 : 0)
+    L.push(pb.setData(data, forType: pasteboardType))
     return 1
 }
 
@@ -581,7 +579,7 @@ private func writePropertyListForType(_ L: LuaState) throws -> CInt {
     if !add {
         pb.clearContents()
     }
-    lua_pushboolean(L, pb.setPropertyList(data, forType: pasteboardType) ? 1 : 0)
+    L.push(pb.setPropertyList(data, forType: pasteboardType))
     return 1
 }
 
@@ -883,7 +881,7 @@ private func writeObjects(_ L: LuaState) throws -> CInt {
     }
     // got objects
     pboard.clearContents()
-    lua_pushboolean(L, pboard.writeObjects(objects) ? 1 : 0)
+    L.push(pboard.writeObjects(objects))
     return 1
 }
 
@@ -929,22 +927,22 @@ private func typesOnPasteboard(_ L: LuaState) throws -> CInt {
     let pboard = lua_to_pasteboard(L, 1)
     lua_newtable(L)
     if pboard.canReadObject(forClasses: [NSString.self], options: [:]) {
-        lua_pushboolean(L, 1); lua_setfield(L, -2, "string")
+        L.push(true); lua_setfield(L, -2, "string")
     }
     if pboard.canReadObject(forClasses: [NSAttributedString.self], options: [:]) {
-        lua_pushboolean(L, 1); lua_setfield(L, -2, "styledText")
+        L.push(true); lua_setfield(L, -2, "styledText")
     }
     if pboard.canReadObject(forClasses: [NSSound.self], options: [:]) {
-        lua_pushboolean(L, 1); lua_setfield(L, -2, "sound")
+        L.push(true); lua_setfield(L, -2, "sound")
     }
     if pboard.canReadObject(forClasses: [NSImage.self], options: [:]) {
-        lua_pushboolean(L, 1); lua_setfield(L, -2, "image")
+        L.push(true); lua_setfield(L, -2, "image")
     }
     if pboard.canReadObject(forClasses: [NSURL.self], options: [:]) {
-        lua_pushboolean(L, 1); lua_setfield(L, -2, "URL")
+        L.push(true); lua_setfield(L, -2, "URL")
     }
     if pboard.canReadObject(forClasses: [NSColor.self], options: [:]) {
-        lua_pushboolean(L, 1); lua_setfield(L, -2, "color")
+        L.push(true); lua_setfield(L, -2, "color")
     }
     return 1
 }

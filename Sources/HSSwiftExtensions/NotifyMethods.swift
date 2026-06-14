@@ -329,7 +329,7 @@ func notification_hasActionButton(_ L: LuaState) throws -> CInt {
     let isLocked = (userInfo?[KEY_LOCKED] as? NSNumber)?.boolValue ?? false
 
     if lua_isnone(L, 2) {
-        lua_pushboolean(L, notification.hasActionButton ? 1 : 0)
+        L.push(notification.hasActionButton)
     } else if let _ = gus {
         if !isLocked {
             notification.hasActionButton = lua_toboolean(L, 2) != 0
@@ -369,7 +369,7 @@ func notification_alwaysPresent(_ L: LuaState) throws -> CInt {
     if lua_isnone(L, 2) {
         if gus != nil {
             let alwaysPresent = (userInfo?[KEY_ALWAYSPRESENT] as? NSNumber)?.boolValue ?? true
-            lua_pushboolean(L, alwaysPresent ? 1 : 0)
+            L.push(alwaysPresent)
         } else {
             lua_pushnil(L)
         }
@@ -439,7 +439,7 @@ func notification_autoWithdraw(_ L: LuaState) throws -> CInt {
     if lua_isnone(L, 2) {
         if gus != nil {
             let autoWithdraw = (userInfo?[KEY_AUTOWITHDRAW] as? NSNumber)?.boolValue ?? true
-            lua_pushboolean(L, autoWithdraw ? 1 : 0)
+            L.push(autoWithdraw)
         } else {
             lua_pushnil(L)
         }
@@ -580,7 +580,7 @@ func notification_hasReplyButton(_ L: LuaState) throws -> CInt {
     let isLocked = (userInfo?[KEY_LOCKED] as? NSNumber)?.boolValue ?? false
 
     if lua_isnone(L, 2) {
-        lua_pushboolean(L, notification.hasReplyButton ? 1 : 0)
+        L.push(notification.hasReplyButton)
     } else if let _ = gus {
         if !isLocked {
             notification.hasReplyButton = lua_toboolean(L, 2) != 0
@@ -619,7 +619,7 @@ func notification_alwaysShowAdditionalActions(_ L: LuaState) throws -> CInt {
     if notification.responds(to: Selector(("_alwaysShowAlternateActionMenu"))) {
         if lua_isnone(L, 2) {
             let val = notification.value(forKey: "_alwaysShowAlternateActionMenu") as? Bool ?? false
-            lua_pushboolean(L, val ? 1 : 0)
+            L.push(val)
         } else if let _ = gus {
             if !isLocked {
                 notification.setValue(lua_toboolean(L, 2), forKey: "_alwaysShowAlternateActionMenu")
@@ -845,7 +845,7 @@ func notification_presented(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, nt_USERDATA_TAG)
     let notification = nt_getNotification(L, 1)
 
-    lua_pushboolean(L, notification.isPresented ? 1 : 0)
+    L.push(notification.isPresented)
     return 1
 }
 
@@ -865,10 +865,10 @@ func notification_delivered(_ L: LuaState) throws -> CInt {
     if let gus = notification.userInfo?[KEY_ID] as? String {
         let userInfo = nt_specifics[gus] as? NSMutableDictionary
         let delivered = (userInfo?[KEY_DELIVERED] as? NSNumber)?.boolValue ?? false
-        lua_pushboolean(L, delivered ? 1 : 0)
+        L.push(delivered)
     } else {
         let deliveredNotifications = NSUserNotificationCenter.default.deliveredNotifications
-        lua_pushboolean(L, deliveredNotifications.contains(notification) ? 1 : 0)
+        L.push(deliveredNotifications.contains(notification))
     }
     return 1
 }
@@ -886,7 +886,7 @@ func notification_activationType(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, nt_USERDATA_TAG)
     let notification = nt_getNotification(L, 1)
 
-    lua_pushinteger(L, lua_Integer(notification.activationType.rawValue))
+    L.push(lua_Integer(notification.activationType.rawValue))
     return 1
 }
 

@@ -38,7 +38,7 @@ private class HSColorPanel: NSObject {
                 let cp = NSColorPanel.shared
                 cb.push(onto: L)
                 NSColor_tolua(L, cp.color)
-                lua_pushboolean(L, 1)
+                L.push(true)
                 if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
             }
         }
@@ -53,7 +53,7 @@ private class HSColorPanel: NSObject {
                 let L = lua_getCurrentState()!
                 cb.push(onto: L)
                 NSColor_tolua(L, colorPanel.color)
-                lua_pushboolean(L, 0)
+                L.push(false)
                 if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
             }
         }
@@ -117,7 +117,7 @@ private func colorPanelContinuous(_ L: LuaState) throws -> CInt {
     if lua_gettop(L) == 1 {
         cp.isContinuous = lua_toboolean(L, 1) != 0
     }
-    lua_pushboolean(L, cp.isContinuous ? 1 : 0)
+    L.push(cp.isContinuous)
     return 1
 }
 
@@ -139,7 +139,7 @@ private func colorPanelShowsAlpha(_ L: LuaState) throws -> CInt {
     if lua_gettop(L) == 1 {
         cp.showsAlpha = lua_toboolean(L, 1) != 0
     }
-    lua_pushboolean(L, cp.showsAlpha ? 1 : 0)
+    L.push(cp.showsAlpha)
     return 1
 }
 
@@ -247,7 +247,7 @@ private func colorPanelAlpha(_ L: LuaState) throws -> CInt {
         cp.color = color
     }
 
-    lua_pushnumber(L, lua_Number(NSColorPanel.shared.alpha))
+    L.push(Double(NSColorPanel.shared.alpha))
     return 1
 }
 
@@ -357,7 +357,7 @@ private func chooseFileOrFolder(_ L: LuaState) throws -> CInt {
         lua_newtable(L)
         var count: Int32 = 1
         for url in panel.urls {
-            lua_pushstring(L, url.path)
+            L.push(url.path)
             lua_setfield(L, -2, "\(count)")
             count += 1
         }
@@ -532,7 +532,7 @@ private func blockAlert(_ L: LuaState) throws -> CInt {
 
     if result == .alertFirstButtonReturn {
         if buttonOne == nil {
-            lua_pushstring(L, defaultButton)
+            L.push(defaultButton)
         } else {
             lua_pushvalue(L, 3)
         }
@@ -622,15 +622,15 @@ private func textPrompt(_ L: LuaState) throws -> CInt {
 
     if result == .alertFirstButtonReturn {
         if buttonOne == nil {
-            lua_pushstring(L, defaultButton)
-            lua_pushstring(L, input.stringValue)
+            L.push(defaultButton)
+            L.push(input.stringValue)
         } else {
             lua_pushvalue(L, 4)
-            lua_pushstring(L, input.stringValue)
+            L.push(input.stringValue)
         }
     } else if result == .alertSecondButtonReturn {
         lua_pushvalue(L, 5)
-        lua_pushstring(L, input.stringValue)
+        L.push(input.stringValue)
     } else {
         os_log(.error, "%{public}s", "hs.dialog.textPrompt() - Failed to detect which button was pressed.")
         lua_pushnil(L)

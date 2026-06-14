@@ -1,5 +1,6 @@
 import Cocoa
 import CLua
+import Lua
 import Carbon
 
 private let USERDATA_TAG = "hs.milight"
@@ -18,7 +19,7 @@ private var broadcastOption: Int32 = 1
 private let cmd_suffix: UInt8 = 0x55
 
 private func pushCommand(_ L: UnsafeMutablePointer<lua_State>!, _ cmd: UnsafePointer<CChar>, _ value: Int) {
-    lua_pushinteger(L, lua_Integer(value))
+    L.push(lua_Integer(value))
     lua_setfield(L, -2, cmd)
 }
 
@@ -174,10 +175,10 @@ private func milight_send(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     }
 
     if result == 3 {
-        lua_pushboolean(L, 1)
+        L.push(true)
         usleep(100000) // The bridge requires we sleep for 100ms after each command
     } else {
-        lua_pushboolean(L, 0)
+        L.push(false)
     }
 
     return 1
@@ -193,24 +194,9 @@ private func userdata_tostring(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let bridge = luaL_checkudata(L, 1, USERDATA_TAG)!.assumingMemoryBound(to: BridgeData.self)
     let ptr = lua_topointer(L, 1)
     let ip = bridge.pointee.ip.map { String(cString: $0) } ?? "(deleted)"
-    let str = "\(USERDATA_TAG): \(ip):\(bridge.pointee.port) (\(String(describing: ptr)))" as NSString
-    lua_pushstring(L, str.utf8String)
+    L.push("\(USERDATA_TAG): \(ip):\(bridge.pointee.port) (\(String(describing: ptr)))")
     return 1
 }
-
-private var milightlib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("_cacheCommands"), func: milight_cacheCommands),
-    luaL_Reg(name: strdup("new"), func: milight_new),
-    luaL_Reg(name: nil, func: nil),
-]
-
-private var milight_objectlib: [luaL_Reg] = [
-    luaL_Reg(name: strdup("delete"), func: milight_del),
-    luaL_Reg(name: strdup("send"), func: milight_send),
-    luaL_Reg(name: strdup("__tostring"), func: userdata_tostring),
-    luaL_Reg(name: strdup("__gc"), func: milight_metagc),
-    luaL_Reg(name: nil, func: nil),
-]
 
 @_cdecl("luaopen_hs_libmilight")
 public func luaopen_hs_libmilight(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
@@ -218,16 +204,34 @@ public func luaopen_hs_libmilight(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
     lua_newtable(L)
     refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
 
-    // Register userdata metatable
+    // Register userdata metatable (struct-based, keep luaL_newmetatable)
     luaL_newmetatable(L, USERDATA_TAG)
     lua_pushvalue(L, -1)
     lua_setfield(L, -2, "__index")  // mt.__index = mt
-    luaL_setfuncs(L, &milight_objectlib, 0)
+
+    L.push(milight_del)
+    lua_setfield(L, -2, "delete")
+    L.push(milight_send)
+    lua_setfield(L, -2, "send")
+    L.push(userdata_tostring)
+    lua_setfield(L, -2, "__tostring")
+    L.push(milight_metagc)
+    lua_setfield(L, -2, "__gc")
+
+    // Set __type and __name for legacy compat
+    L.push(USERDATA_TAG)
+    lua_setfield(L, -2, "__type")
+    L.push(USERDATA_TAG)
+    lua_setfield(L, -2, "__name")
+
     lua_pop(L, 1)
 
     // Create module table
-    lua_createtable(L, 0, Int32(milightlib.count - 1))
-    luaL_setfuncs(L, &milightlib, 0)
+    lua_createtable(L, 0, 2)
+    L.push(milight_cacheCommands)
+    lua_setfield(L, -2, "_cacheCommands")
+    L.push(milight_new)
+    lua_setfield(L, -2, "new")
 
     return 1
 }

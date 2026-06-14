@@ -117,31 +117,6 @@ private func battery_watcher_stop(_ L: LuaState) throws -> CInt {
     return 1
 }
 
-private func battery_watcher_gc(_ L: LuaState) throws -> CInt {
-    let watcher = luaL_checkudata(L, 1, USERDATA_TAG)!
-        .assumingMemoryBound(to: BatteryWatcher.self)
-
-    _ = try battery_watcher_stop(L)
-
-    callbackMap[UnsafeMutableRawPointer(watcher)] = nil
-    CFRunLoopSourceInvalidate(watcher.pointee.t)
-    // Deinitialize the struct so ARC can release the CFRunLoopSource (and any
-    // other ARC-managed fields). Without this, Lua frees the raw memory and
-    // ARC never sees the release.
-    watcher.deinitialize(count: 1)
-    return 0
-}
-
-private func meta_gc(_ L: LuaState) throws -> CInt {
-    return 0
-}
-
-private func userdata_tostring(_ L: LuaState) throws -> CInt {
-    let ptr = lua_topointer(L, 1)
-    lua_pushstring(L, "\(USERDATA_TAG): (\(String(describing: ptr)))")
-    return 1
-}
-
 @_cdecl("luaopen_hs_libbatterywatcher")
 public func luaopen_hs_libbatterywatcher(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     runEntryPoint(L) { L in
@@ -153,25 +128,52 @@ public func luaopen_hs_libbatterywatcher(_ L: UnsafeMutablePointer<lua_State>!) 
         luaL_newmetatable(L, USERDATA_TAG)
         lua_pushvalue(L, -1)
         lua_setfield(L, -2, "__index")
+
         L.push(battery_watcher_start)
         lua_setfield(L, -2, "start")
+
         L.push(battery_watcher_stop)
         lua_setfield(L, -2, "stop")
-        L.push(battery_watcher_gc)
+
+        // __gc: stop watcher, clean up callback, invalidate run loop source, deinit struct
+        L.push { (L: LuaState) throws -> CInt in
+            let watcher = luaL_checkudata(L, 1, USERDATA_TAG)!
+                .assumingMemoryBound(to: BatteryWatcher.self)
+
+            if watcher.pointee.started {
+                watcher.pointee.started = false
+                CFRunLoopRemoveSource(CFRunLoopGetMain(), watcher.pointee.t, .commonModes)
+            }
+
+            callbackMap[UnsafeMutableRawPointer(watcher)] = nil
+            CFRunLoopSourceInvalidate(watcher.pointee.t)
+            // Deinitialize the struct so ARC can release the CFRunLoopSource (and any
+            // other ARC-managed fields). Without this, Lua frees the raw memory and
+            // ARC never sees the release.
+            watcher.deinitialize(count: 1)
+            return 0
+        }
         lua_setfield(L, -2, "__gc")
-        L.push(userdata_tostring)
+
+        // __tostring
+        L.push { (L: LuaState) throws -> CInt in
+            let desc = "\(USERDATA_TAG): (\(String(describing: lua_topointer(L, 1)!)))"
+            L.push(desc)
+            return 1
+        }
         lua_setfield(L, -2, "__tostring")
+
+        // __type and __name for lsunit.lua assertIsUserdataOfType
+        L.push(USERDATA_TAG)
+        lua_setfield(L, -2, "__type")
+        L.push(USERDATA_TAG)
+        lua_setfield(L, -2, "__name")
+
         lua_pop(L, 1)
 
         // Create module table
         lua_createtable(L, 0, 1)
         L.push(battery_watcher_new)
         lua_setfield(L, -2, "new")
-
-        // Set module metatable (for __gc)
-        lua_createtable(L, 0, 1)
-        L.push(meta_gc)
-        lua_setfield(L, -2, "__gc")
-        lua_setmetatable(L, -2)
     }
 }

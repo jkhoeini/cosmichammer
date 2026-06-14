@@ -31,10 +31,10 @@ private func uielement_focusedElement(_ L: LuaState) throws -> CInt {
 private func uielement_iswindow(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     guard let element = getObject(L, at: 1) else {
-        lua_pushboolean(L, 0)
+        L.push(false)
         return 1
     }
-    lua_pushboolean(L, element.isWindow ? 1 : 0)
+    L.push(element.isWindow)
     return 1
 }
 
@@ -120,7 +120,7 @@ private func uielement_eq(_ L: LuaState) throws -> CInt {
             isEqual = CFEqual(e1.elementRef, e2.elementRef)
         }
     }
-    lua_pushboolean(L, isEqual ? 1 : 0)
+    L.push(isEqual)
     return 1
 }
 
@@ -163,9 +163,9 @@ public func luaopen_hs_libuielement(_ L: UnsafeMutablePointer<lua_State>!) -> In
         lua_setfield(L, -2, "__gc")
 
         // Set __type and __name for type identification
-        lua_pushstring(L, USERDATA_TAG)
+        L.push(USERDATA_TAG)
         lua_setfield(L, -2, "__type")
-        lua_pushstring(L, USERDATA_TAG)
+        L.push(USERDATA_TAG)
         lua_setfield(L, -2, "__name")
 
         // Alias the metatable under the registry name so that

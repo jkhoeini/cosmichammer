@@ -199,12 +199,12 @@ func wv_WKUserScript_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -
     let script = obj as! WKUserScript
 
     lua_newtable(L)
-    lua_pushboolean(L, script.isForMainFrameOnly ? 1 : 0)
+    L.push(script.isForMainFrameOnly)
     lua_setfield(L, -2, "forMainFrameOnly")
     switch script.injectionTime {
-    case .atDocumentStart: lua_pushstring(L, "documentStart")
-    case .atDocumentEnd:   lua_pushstring(L, "documentEnd")
-    @unknown default:      lua_pushstring(L, "unknown")
+    case .atDocumentStart: L.push("documentStart")
+    case .atDocumentEnd:   L.push("documentEnd")
+    @unknown default:      L.push("unknown")
     }
     lua_setfield(L, -2, "injectionTime")
     lua_pushany(L, script.source as NSString)
@@ -284,7 +284,7 @@ private func userdata_tostring(_ L: LuaState) throws -> CInt {
         name = "<deleted>"
     }
     let str = "\(USERDATA_UCC_TAG): \(name) (\(lua_topointer(L, 1)!))"
-    lua_pushstring(L, str)
+    L.push(str)
     return 1
 }
 
@@ -296,9 +296,9 @@ private func userdata_eq(_ L: LuaState) throws -> CInt {
     if let raw1 = ptr1.pointee, let raw2 = ptr2.pointee {
         let ucc1 = Unmanaged<HSUserContentController>.fromOpaque(raw1).takeUnretainedValue()
         let ucc2 = Unmanaged<HSUserContentController>.fromOpaque(raw2).takeUnretainedValue()
-        lua_pushboolean(L, ucc1 === ucc2 ? 1 : 0)
+        L.push(ucc1 === ucc2)
     } else {
-        lua_pushboolean(L, 0)
+        L.push(false)
     }
     return 1
 }

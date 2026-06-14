@@ -33,19 +33,19 @@ import os.log
 
             lua_newtable(L)
 
-            lua_pushboolean(L, isCommandKey ? 1 : 0)
+            L.push(isCommandKey)
             lua_setfield(L, -2, "cmd")
 
-            lua_pushboolean(L, isShiftKey ? 1 : 0)
+            L.push(isShiftKey)
             lua_setfield(L, -2, "shift")
 
-            lua_pushboolean(L, isOptKey ? 1 : 0)
+            L.push(isOptKey)
             lua_setfield(L, -2, "alt")
 
-            lua_pushboolean(L, isCtrlKey ? 1 : 0)
+            L.push(isCtrlKey)
             lua_setfield(L, -2, "ctrl")
 
-            lua_pushboolean(L, isFnKey ? 1 : 0)
+            L.push(isFnKey)
             lua_setfield(L, -2, "fn")
 
             if let itemRef = item {
@@ -325,9 +325,9 @@ func mb_create_or_reuse_menu(_ L: UnsafeMutablePointer<lua_State>!, _ statusItem
 // Create and push a lua geometry rect
 func mb_geom_pushrect(_ L: UnsafeMutablePointer<lua_State>!, _ rect: NSRect) {
     lua_newtable(L)
-    lua_pushnumber(L, Double(rect.origin.x));    lua_setfield(L, -2, "x")
-    lua_pushnumber(L, Double(rect.origin.y));    lua_setfield(L, -2, "y")
-    lua_pushnumber(L, Double(rect.size.width));  lua_setfield(L, -2, "w")
-    lua_pushnumber(L, Double(rect.size.height)); lua_setfield(L, -2, "h")
+    L.push(Double(rect.origin.x));    lua_setfield(L, -2, "x")
+    L.push(Double(rect.origin.y));    lua_setfield(L, -2, "y")
+    L.push(Double(rect.size.width));  lua_setfield(L, -2, "w")
+    L.push(Double(rect.size.height)); lua_setfield(L, -2, "h")
 }
 

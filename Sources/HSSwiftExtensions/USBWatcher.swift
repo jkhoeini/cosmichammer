@@ -58,20 +58,20 @@ private func DeviceNotification(refCon: UnsafeMutableRawPointer?,
             cb.push(onto: L)
 
             lua_newtable(L)
-            lua_pushstring(L, "productName")
-            lua_pushstring(L, privateDataRef.pointee.productName)
+            L.push("productName")
+            L.push(String(cString: privateDataRef.pointee.productName!))
             lua_settable(L, -3)
-            lua_pushstring(L, "vendorName")
-            lua_pushstring(L, privateDataRef.pointee.vendorName)
+            L.push("vendorName")
+            L.push(String(cString: privateDataRef.pointee.vendorName!))
             lua_settable(L, -3)
-            lua_pushstring(L, "productID")
-            lua_pushinteger(L, lua_Integer(privateDataRef.pointee.productID))
+            L.push("productID")
+            L.push(Int(privateDataRef.pointee.productID))
             lua_settable(L, -3)
-            lua_pushstring(L, "vendorID")
-            lua_pushinteger(L, lua_Integer(privateDataRef.pointee.vendorID))
+            L.push("vendorID")
+            L.push(Int(privateDataRef.pointee.vendorID))
             lua_settable(L, -3)
-            lua_pushstring(L, "eventType")
-            lua_pushstring(L, "removed")
+            L.push("eventType")
+            L.push("removed")
             lua_settable(L, -3)
 
             if lua_pcall(L, 1, 0, 0) != LUA_OK {
@@ -141,20 +141,20 @@ private func DeviceAdded(refCon: UnsafeMutableRawPointer?, iterator: io_iterator
             cb.push(onto: L)
 
             lua_newtable(L)
-            lua_pushstring(L, "productName")
-            lua_pushstring(L, privateDataRef.pointee.productName)
+            L.push("productName")
+            L.push(String(cString: privateDataRef.pointee.productName!))
             lua_settable(L, -3)
-            lua_pushstring(L, "vendorName")
-            lua_pushstring(L, privateDataRef.pointee.vendorName)
+            L.push("vendorName")
+            L.push(String(cString: privateDataRef.pointee.vendorName!))
             lua_settable(L, -3)
-            lua_pushstring(L, "productID")
-            lua_pushinteger(L, lua_Integer(privateDataRef.pointee.productID))
+            L.push("productID")
+            L.push(Int(privateDataRef.pointee.productID))
             lua_settable(L, -3)
-            lua_pushstring(L, "vendorID")
-            lua_pushinteger(L, lua_Integer(privateDataRef.pointee.vendorID))
+            L.push("vendorID")
+            L.push(Int(privateDataRef.pointee.vendorID))
             lua_settable(L, -3)
-            lua_pushstring(L, "eventType")
-            lua_pushstring(L, "added")
+            L.push("eventType")
+            L.push("added")
             lua_settable(L, -3)
 
             if lua_pcall(L, 1, 0, 0) != LUA_OK {
@@ -262,29 +262,6 @@ private func usb_watcher_stop(_ L: LuaState) throws -> CInt {
     return 1
 }
 
-private func usb_watcher_gc(_ L: LuaState) throws -> CInt {
-    let usbwatcher = luaL_checkudata(L, 1, USERDATA_TAG)!.assumingMemoryBound(to: USBWatcher.self)
-
-    _ = try usb_watcher_stop(L)
-    lua_pop(L, 1)
-
-    callbackMap[UnsafeMutableRawPointer(usbwatcher)] = nil
-
-    IONotificationPortDestroy(usbwatcher.pointee.gNotifyPort)
-
-    return 0
-}
-
-private func meta_gc(_ L: LuaState) throws -> CInt {
-    return 0
-}
-
-private func userdata_tostring(_ L: LuaState) throws -> CInt {
-    let str = "\(USERDATA_TAG): (\(String(describing: lua_topointer(L, 1)!)))"
-    lua_pushstring(L, str)
-    return 1
-}
-
 @_cdecl("luaopen_hs_libusbwatcher")
 public func luaopen_hs_libusbwatcher(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     runEntryPoint(L) { L in
@@ -294,23 +271,52 @@ public func luaopen_hs_libusbwatcher(_ L: UnsafeMutablePointer<lua_State>!) -> I
         luaL_newmetatable(L, USERDATA_TAG)
         lua_pushvalue(L, -1)
         lua_setfield(L, -2, "__index")
+
         L.push(usb_watcher_start)
         lua_setfield(L, -2, "start")
+
         L.push(usb_watcher_stop)
         lua_setfield(L, -2, "stop")
-        L.push(userdata_tostring)
-        lua_setfield(L, -2, "__tostring")
-        L.push(usb_watcher_gc)
+
+        // __gc: stop watcher, clean up callback, destroy notification port
+        L.push { (L: LuaState) throws -> CInt in
+            let usbwatcher = luaL_checkudata(L, 1, USERDATA_TAG)!
+                .assumingMemoryBound(to: USBWatcher.self)
+
+            if usbwatcher.pointee.running {
+                usbwatcher.pointee.running = false
+                IOObjectRelease(usbwatcher.pointee.gAddedIter)
+                CFRunLoopRemoveSource(CFRunLoopGetCurrent(),
+                                      usbwatcher.pointee.runLoopSource?.takeUnretainedValue(),
+                                      .defaultMode)
+            }
+
+            callbackMap[UnsafeMutableRawPointer(usbwatcher)] = nil
+            IONotificationPortDestroy(usbwatcher.pointee.gNotifyPort)
+
+            return 0
+        }
         lua_setfield(L, -2, "__gc")
+
+        // __tostring
+        L.push { (L: LuaState) throws -> CInt in
+            let desc = "\(USERDATA_TAG): (\(String(describing: lua_topointer(L, 1)!)))"
+            L.push(desc)
+            return 1
+        }
+        lua_setfield(L, -2, "__tostring")
+
+        // __type and __name for lsunit.lua assertIsUserdataOfType
+        L.push(USERDATA_TAG)
+        lua_setfield(L, -2, "__type")
+        L.push(USERDATA_TAG)
+        lua_setfield(L, -2, "__name")
+
         lua_pop(L, 1)
 
+        // Create module table
         lua_createtable(L, 0, 1)
         L.push(usb_watcher_new)
         lua_setfield(L, -2, "new")
-
-        lua_createtable(L, 0, 1)
-        L.push(meta_gc)
-        lua_setfield(L, -2, "__gc")
-        lua_setmetatable(L, -2)
     }
 }

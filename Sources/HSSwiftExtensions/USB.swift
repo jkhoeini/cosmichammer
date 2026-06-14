@@ -39,7 +39,7 @@ private func usb_attachedDevices(_ L: LuaState) throws -> CInt {
 
     var usbDevice = IOIteratorNext(iterator)
     while usbDevice != 0 {
-        lua_pushinteger(L, i)
+        L.push(i)
         i += 1
 
         var deviceData: Unmanaged<CFMutableDictionary>?
@@ -52,17 +52,17 @@ private func usb_attachedDevices(_ L: LuaState) throws -> CInt {
             let vendorID = (dict[vendorIDKey] as? NSNumber)?.intValue ?? 0
 
             lua_newtable(L)
-            lua_pushstring(L, "productName")
-            lua_pushstring(L, productName)
+            L.push("productName")
+            L.push(productName)
             lua_settable(L, -3)
-            lua_pushstring(L, "vendorName")
-            lua_pushstring(L, vendorName)
+            L.push("vendorName")
+            L.push(vendorName)
             lua_settable(L, -3)
-            lua_pushstring(L, "productID")
-            lua_pushinteger(L, lua_Integer(productID))
+            L.push("productID")
+            L.push(Int(productID))
             lua_settable(L, -3)
-            lua_pushstring(L, "vendorID")
-            lua_pushinteger(L, lua_Integer(vendorID))
+            L.push("vendorID")
+            L.push(Int(vendorID))
             lua_settable(L, -3)
         } else {
             lua_newtable(L)

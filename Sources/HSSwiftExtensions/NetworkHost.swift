@@ -56,7 +56,7 @@ private func pushQueryResults(_ L: UnsafeMutablePointer<lua_State>!, synchronous
     var argCount: Int32 = synchronous ? 1 : 2
     switch typeInfo {
     case .addresses:
-        if !synchronous { lua_pushstring(L, "addresses") }
+        if !synchronous { L.push("addresses") }
         if let theAddresses = CFHostGetAddressing(theHost, &available)?.takeUnretainedValue() as? [Data], available.boolValue {
             lua_createtable(L, 0, 0)
             for thisAddr in theAddresses {
@@ -66,37 +66,37 @@ private func pushQueryResults(_ L: UnsafeMutablePointer<lua_State>!, synchronous
                     return getnameinfo(sockaddrPtr, socklen_t(thisAddr.count), &addrStr, socklen_t(NI_MAXHOST), nil, 0, NI_NUMERICHOST | NI_WITHSCOPEID | NI_NUMERICSERV)
                 }
                 if err == 0 {
-                    lua_pushstring(L, addrStr)
+                    L.push(String(cString: addrStr))
                     lua_rawseti(L, -2, luaL_len(L, -2) + 1)
                 } else {
                     let errMsg = "** error:\(String(cString: gai_strerror(err)!))"
-                    lua_pushstring(L, errMsg)
+                    L.push(errMsg)
                 }
             }
         } else {
             lua_pushnil(L)
         }
     case .names:
-        if !synchronous { lua_pushstring(L, "names") }
+        if !synchronous { L.push("names") }
         if let theNames = CFHostGetNames(theHost, &available)?.takeUnretainedValue(), available.boolValue {
             lua_pushany(L, theNames as NSArray)
         } else {
             lua_pushnil(L)
         }
     case .reachability:
-        if !synchronous { lua_pushstring(L, "reachability") }
+        if !synchronous { L.push("reachability") }
         if let theAvailability = CFHostGetReachability(theHost, &available)?.takeUnretainedValue(), available.boolValue {
             var flags: SCNetworkReachabilityFlags = SCNetworkReachabilityFlags()
             (theAvailability as Data).withUnsafeBytes { rawPtr in
                 let src = rawPtr.baseAddress!
                 memcpy(&flags, src, MemoryLayout<SCNetworkReachabilityFlags>.size)
             }
-            lua_pushinteger(L, lua_Integer(flags.rawValue))
+            L.push(lua_Integer(flags.rawValue))
         } else {
             lua_pushnil(L)
         }
     default:
-        lua_pushstring(L, "** unknown:\(typeInfo.rawValue)")
+        L.push("** unknown:\(typeInfo.rawValue)")
         argCount = 1
     }
     return argCount
@@ -150,7 +150,7 @@ private let handleCallback: CFHostClientCallBack = { theHost, typeInfo, error, i
             if domain == 0 && errorNum == 0 {
                 argCount = pushQueryResults(L, synchronous: false, theHost: obj.theHostObj!, typeInfo: obj.resolveType)
             } else {
-                lua_pushstring(L, "resolution error:\(expandCFStreamError(domain: domain, errorNum: errorNum))")
+                L.push("resolution error:\(expandCFStreamError(domain: domain, errorNum: errorNum))")
                 argCount = 1
             }
             if lua_pcall(L, argCount, 0, 0) != LUA_OK {
@@ -170,7 +170,7 @@ private let handleCallback: CFHostClientCallBack = { theHost, typeInfo, error, i
 
 private func commonConstructor(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     guard let obj: HSHost = L.touserdata(1) else {
-        lua_pushstring(L, "\(USERDATA_TAG): internal error - could not extract host object")
+        L.push("\(USERDATA_TAG): internal error - could not extract host object")
         return lua_error(L)
     }
     var streamError = CFStreamError()
@@ -181,7 +181,7 @@ private func commonConstructor(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
             let argCount = pushQueryResults(L, synchronous: true, theHost: obj.theHostObj!, typeInfo: obj.resolveType)
             return argCount
         } else {
-            lua_pushstring(L, "resolution error:" + expandCFStreamError(domain: streamError.domain, errorNum: streamError.error))
+            L.push("resolution error:" + expandCFStreamError(domain: streamError.domain, errorNum: streamError.error))
             return lua_error(L)
         }
     } else {
@@ -200,7 +200,7 @@ private func commonConstructor(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
             } else {
                 CFHostUnscheduleFromRunLoop(obj.theHostObj!, CFRunLoopGetCurrent(), CFRunLoopMode.defaultMode!.rawValue)
                 obj.selfRefValue = nil
-                lua_pushstring(L, "resolution error:" + expandCFStreamError(domain: streamError.domain, errorNum: streamError.error))
+                L.push("resolution error:" + expandCFStreamError(domain: streamError.domain, errorNum: streamError.error))
                 return lua_error(L)
             }
         } else {
@@ -240,7 +240,7 @@ private func commonForAddress(_ L: UnsafeMutablePointer<lua_State>!, _ resolveTy
     let ecode = getaddrinfo(addrString, nil, &hints, &results)
     if ecode != 0 {
         if results != nil { freeaddrinfo(results) }
-        lua_pushstring(L, "address parse error: \(String(cString: gai_strerror(ecode)!))")
+        L.push("address parse error: \(String(cString: gai_strerror(ecode)!))")
         return lua_error(L)
     }
 
@@ -358,7 +358,7 @@ public func luaopen_hs_libnetworkhost(_ L: UnsafeMutablePointer<lua_State>!) -> 
                 ///  * true, if resolution is still in progress, or false if resolution has already completed.
                 "isRunning": .closure { L in
                     let obj: HSHost = try L.checkArgument(1)
-                    lua_pushboolean(L, obj.running ? 1 : 0)
+                    L.push(obj.running)
                     return 1
                 },
                 /// hs.network.host:cancel() -> hostObject
@@ -389,7 +389,7 @@ public func luaopen_hs_libnetworkhost(_ L: UnsafeMutablePointer<lua_State>!) -> 
             ],
             tostring: .closure { L in
                 let ptr = lua_topointer(L, 1)
-                lua_pushstring(L, "\(USERDATA_TAG): (\(String(describing: ptr)))")
+                L.push("\(USERDATA_TAG): (\(String(describing: ptr)))")
                 return 1
             }
         ))
@@ -397,7 +397,7 @@ public func luaopen_hs_libnetworkhost(_ L: UnsafeMutablePointer<lua_State>!) -> 
         // Post-registration: replace __gc with teardown + deinitialize
         L.pushMetatable(for: HSHost.self)
 
-        lua_pushcclosure(L, { (L: LuaState!) -> CInt in
+        L.push({ (L: LuaState!) -> CInt in
             if let obj: HSHost = L.touserdata(1) {
                 obj.teardown()
             }
@@ -405,25 +405,25 @@ public func luaopen_hs_libnetworkhost(_ L: UnsafeMutablePointer<lua_State>!) -> 
             let anyPtr = rawptr.assumingMemoryBound(to: Any.self)
             anyPtr.deinitialize(count: 1)
             return 0
-        }, 0)
+        })
         lua_setfield(L, -2, "__gc")
 
         // __eq: compare underlying CFHost objects
-        lua_pushcclosure(L, { (L: LuaState!) -> CInt in
+        L.push({ (L: LuaState!) -> CInt in
             if let obj1: HSHost = L.touserdata(1), let obj2: HSHost = L.touserdata(2),
                let host1 = obj1.theHostObj, let host2 = obj2.theHostObj {
-                lua_pushboolean(L, CFEqual(host1, host2) ? 1 : 0)
+                L.push(CFEqual(host1, host2))
             } else {
-                lua_pushboolean(L, 0)
+                L.push(false)
             }
             return 1
-        }, 0)
+        })
         lua_setfield(L, -2, "__eq")
 
         // Set __type and __name for compatibility
-        lua_pushstring(L, USERDATA_TAG)
+        L.push(USERDATA_TAG)
         lua_setfield(L, -2, "__type")
-        lua_pushstring(L, USERDATA_TAG)
+        L.push(USERDATA_TAG)
         lua_setfield(L, -2, "__name")
 
         // Alias the metatable under the legacy registry name

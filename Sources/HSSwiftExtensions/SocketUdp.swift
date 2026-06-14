@@ -36,7 +36,7 @@ private func udpWriteCallback(_ asyncUdpSocket: HSAsyncUdpSocket, tag: Int) {
         if let cb = asyncUdpSocket.writeCallback {
             let L = lua_getCurrentState()!
             cb.push(onto: L)
-            lua_pushinteger(L, lua_Integer(tag))
+            L.push(lua_Integer(tag))
             asyncUdpSocket.writeCallback = nil  // single-use
             if lua_pcall(L, 1, 0, 0) != LUA_OK { lua_pop(L, 1) }
         }
@@ -1270,7 +1270,7 @@ public func luaopen_hs_libsocketudp(_ L: UnsafeMutablePointer<lua_State>!) -> In
             ///
             "connected": .closure { L in
                 let asyncUdpSocket: HSAsyncUdpSocket = try L.checkArgument(1)
-                lua_pushboolean(L, asyncUdpSocket.isConnected() ? 1 : 0)
+                L.push(asyncUdpSocket.isConnected())
                 return 1
             },
 
@@ -1291,7 +1291,7 @@ public func luaopen_hs_libsocketudp(_ L: UnsafeMutablePointer<lua_State>!) -> In
             ///
             "closed": .closure { L in
                 let asyncUdpSocket: HSAsyncUdpSocket = try L.checkArgument(1)
-                lua_pushboolean(L, asyncUdpSocket.isClosed() ? 1 : 0)
+                L.push(asyncUdpSocket.isClosed())
                 return 1
             },
 
@@ -1372,7 +1372,7 @@ public func luaopen_hs_libsocketudp(_ L: UnsafeMutablePointer<lua_State>!) -> In
             let theHost = isServer ? asyncUdpSocket.localHost() : asyncUdpSocket.connectedHost()
             let thePort = isServer ? asyncUdpSocket.localPort() : asyncUdpSocket.connectedPort()
 
-            lua_pushstring(L, "\(USERDATA_TAG): \(theHost ?? ""):\(thePort) (\(lua_topointer(L, 1)!))")
+            L.push("\(USERDATA_TAG): \(theHost ?? ""):\(thePort) (\(lua_topointer(L, 1)!))")
             return 1
         }
     ))
@@ -1392,9 +1392,9 @@ public func luaopen_hs_libsocketudp(_ L: UnsafeMutablePointer<lua_State>!) -> In
     lua_setfield(L, -2, "__gc")
 
     // Set __type and __name for core_getObjectMetatable and tostring
-    lua_pushstring(L, USERDATA_TAG)
+    L.push(USERDATA_TAG)
     lua_setfield(L, -2, "__type")
-    lua_pushstring(L, USERDATA_TAG)
+    L.push(USERDATA_TAG)
     lua_setfield(L, -2, "__name")
 
     // Alias the metatable under the legacy registry name
@@ -1424,7 +1424,7 @@ public func luaopen_hs_libsocketudp(_ L: UnsafeMutablePointer<lua_State>!) -> In
         asyncUdpSocket.generation = lua_currentStateGeneration()
 
         lua_getglobal(L, "require")
-        lua_pushstring(L, "hs.socket")
+        L.push("hs.socket")
         lua_pcall(L, 1, 1, 0)
         for field in ["udp", "timeout"] {
             lua_getfield(L, -1, field)

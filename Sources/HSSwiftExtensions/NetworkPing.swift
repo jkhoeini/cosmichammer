@@ -66,15 +66,15 @@ private func pushParsedICMPPayload(_ L: UnsafeMutablePointer<lua_State>!, _ payl
                 dst.copyMemory(from: UnsafeRawBufferPointer(start: buf.baseAddress!, count: kICMPHeaderSize))
             }
         }
-        lua_pushinteger(L, lua_Integer(hdr.type))
+        L.push(lua_Integer(hdr.type))
         lua_setfield(L, -2, "type")
-        lua_pushinteger(L, lua_Integer(hdr.code))
+        L.push(lua_Integer(hdr.code))
         lua_setfield(L, -2, "code")
-        lua_pushinteger(L, lua_Integer(hdr.checksum.bigEndian))
+        L.push(lua_Integer(hdr.checksum.bigEndian))
         lua_setfield(L, -2, "checksum")
-        lua_pushinteger(L, lua_Integer(hdr.identifier.bigEndian))
+        L.push(lua_Integer(hdr.identifier.bigEndian))
         lua_setfield(L, -2, "identifier")
-        lua_pushinteger(L, lua_Integer(hdr.sequenceNumber.bigEndian))
+        L.push(lua_Integer(hdr.sequenceNumber.bigEndian))
         lua_setfield(L, -2, "sequenceNumber")
         if packetLength > kICMPHeaderSize {
             lua_pushany(L, payloadData.subdata(in: kICMPHeaderSize..<packetLength) as NSData)
@@ -82,7 +82,7 @@ private func pushParsedICMPPayload(_ L: UnsafeMutablePointer<lua_State>!, _ payl
         }
     } else {
         os_log(.debug, "%{public}s", "malformed ICMP data:\(payloadData)")
-        lua_pushstring(L, "ICMP header is too short -- malformed ICMP packet")
+        L.push("ICMP header is too short -- malformed ICMP packet")
         lua_setfield(L, -2, "error")
     }
     lua_pushany(L, payloadData as NSData)
@@ -173,7 +173,7 @@ private class PingableObject: SimplePing, SimplePingDelegate {
         L.push(userdata: pinger as! PingableObject)
         lua_pushany(L, "sendPacket" as NSString)
         _ = pushParsedICMPPayload(L, packet)
-        lua_pushinteger(L, lua_Integer(sequenceNumber))
+        L.push(lua_Integer(sequenceNumber))
         if lua_pcall(L, 4, 0, 0) != LUA_OK { lua_pop(L, 1) }
     }
 
@@ -189,7 +189,7 @@ private class PingableObject: SimplePing, SimplePingDelegate {
         L.push(userdata: pinger as! PingableObject)
         lua_pushany(L, "sendPacketFailed" as NSString)
         _ = pushParsedICMPPayload(L, packet)
-        lua_pushinteger(L, lua_Integer(sequenceNumber))
+        L.push(lua_Integer(sequenceNumber))
         lua_pushany(L, error.localizedDescription as NSString)
         if lua_pcall(L, 5, 0, 0) != LUA_OK { lua_pop(L, 1) }
     }
@@ -206,7 +206,7 @@ private class PingableObject: SimplePing, SimplePingDelegate {
         L.push(userdata: pinger as! PingableObject)
         lua_pushany(L, "receivedPacket" as NSString)
         _ = pushParsedICMPPayload(L, packet)
-        lua_pushinteger(L, lua_Integer(sequenceNumber))
+        L.push(lua_Integer(sequenceNumber))
         if lua_pcall(L, 4, 0, 0) != LUA_OK { lua_pop(L, 1) }
     }
 
@@ -345,7 +345,7 @@ public func luaopen_hs_libnetworkping(_ L: UnsafeMutablePointer<lua_State>!) -> 
                 ///  * ICMP Echo Replies which include this identifier will generate a "receivedPacket" message to the object callback, while replies which include a different identifier will generate a "receivedUnexpectedPacket" message.
                 "identifier": .closure { L in
                     let pinger: PingableObject = try L.checkArgument(1)
-                    lua_pushinteger(L, lua_Integer(pinger.identifier))
+                    L.push(lua_Integer(pinger.identifier))
                     return 1
                 },
                 /// hs.network.ping.echoRequest:nextSequenceNumber() -> integer
@@ -364,7 +364,7 @@ public func luaopen_hs_libnetworkping(_ L: UnsafeMutablePointer<lua_State>!) -> 
                 ///    * Per the comments in Apple's SimplePing.m file: Why 120?  Well, if we send one ping per second, 120 is 2 minutes, which is the standard "max time a packet can bounce around the Internet" value.
                 "nextSequenceNumber": .closure { L in
                     let pinger: PingableObject = try L.checkArgument(1)
-                    lua_pushinteger(L, lua_Integer(pinger.nextSequenceNumber))
+                    L.push(lua_Integer(pinger.nextSequenceNumber))
                     return 1
                 },
                 /// hs.network.ping.echoRequest:acceptAddressFamily([family]) -> echoRequestObject | current value
@@ -452,7 +452,7 @@ public func luaopen_hs_libnetworkping(_ L: UnsafeMutablePointer<lua_State>!) -> 
                 ///  * true if the object is currently listening for ICMP Echo Replies, or false if it is not.
                 "isRunning": .closure { L in
                     let pinger: PingableObject = try L.checkArgument(1)
-                    lua_pushboolean(L, (pinger.selfRefValue != nil) ? 1 : 0)
+                    L.push(pinger.selfRefValue != nil)
                     return 1
                 },
                 /// hs.network.ping.echoRequest:hostAddress() -> string | false | nil
@@ -472,7 +472,7 @@ public func luaopen_hs_libnetworkping(_ L: UnsafeMutablePointer<lua_State>!) -> 
                         _ = pushParsedAddress(L, hostAddress)
                     } else {
                         if pinger.selfRefValue != nil {
-                            lua_pushboolean(L, 0)
+                            L.push(false)
                         } else {
                             lua_pushnil(L)
                         }
@@ -542,7 +542,7 @@ public func luaopen_hs_libnetworkping(_ L: UnsafeMutablePointer<lua_State>!) -> 
                         lua_pushvalue(L, 1)
                     } else {
                         if pinger.selfRefValue != nil {
-                            lua_pushboolean(L, 0)
+                            L.push(false)
                         } else {
                             lua_pushnil(L)
                         }
@@ -567,7 +567,7 @@ public func luaopen_hs_libnetworkping(_ L: UnsafeMutablePointer<lua_State>!) -> 
                 "seeAllUnexpectedPackets": .closure { L in
                     let pinger: PingableObject = try L.checkArgument(1)
                     if lua_gettop(L) == 1 {
-                        lua_pushboolean(L, pinger.passAllUnexpected ? 1 : 0)
+                        L.push(pinger.passAllUnexpected)
                     } else {
                         pinger.passAllUnexpected = lua_toboolean(L, 2) != 0
                         lua_pushvalue(L, 1)
@@ -579,7 +579,7 @@ public func luaopen_hs_libnetworkping(_ L: UnsafeMutablePointer<lua_State>!) -> 
                 let pinger: PingableObject = try L.checkArgument(1)
                 let title = pinger.hostName
                 let ptr = lua_topointer(L, 1)
-                lua_pushstring(L, "\(USERDATA_TAG): \(title) (\(String(describing: ptr)))")
+                L.push("\(USERDATA_TAG): \(title) (\(String(describing: ptr)))")
                 return 1
             }
         ))
@@ -595,9 +595,9 @@ public func luaopen_hs_libnetworkping(_ L: UnsafeMutablePointer<lua_State>!) -> 
         lua_pushcclosure(L, { (L: LuaState!) -> CInt in
             if let obj1: PingableObject = L.touserdata(1),
                let obj2: PingableObject = L.touserdata(2) {
-                lua_pushboolean(L, (obj1 === obj2) ? 1 : 0)
+                L.push(obj1 === obj2)
             } else {
-                lua_pushboolean(L, 0)
+                L.push(false)
             }
             return 1
         }, 0)
@@ -616,9 +616,9 @@ public func luaopen_hs_libnetworkping(_ L: UnsafeMutablePointer<lua_State>!) -> 
         lua_setfield(L, -2, "__gc")
 
         // Set __type and __name for lsunit.lua assertIsUserdataOfType and tostring
-        lua_pushstring(L, USERDATA_TAG)
+        L.push(USERDATA_TAG)
         lua_setfield(L, -2, "__type")
-        lua_pushstring(L, USERDATA_TAG)
+        L.push(USERDATA_TAG)
         lua_setfield(L, -2, "__name")
 
         // Alias the metatable under the legacy registry name so that

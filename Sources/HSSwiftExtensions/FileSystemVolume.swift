@@ -70,7 +70,7 @@ private class VolumeWatcher: NSObject {
         guard let cb = callback else { return }
 
         cb.push(onto: L)
-        lua_pushinteger(L, lua_Integer(event.rawValue))
+        L.push(lua_Integer(event.rawValue))
 
         var tableArg = [String: Any]()
 
@@ -168,13 +168,13 @@ private func volume_eject(_ L: LuaState) throws -> CInt {
 
     do {
         try workspace.unmountAndEjectDevice(at: URL(fileURLWithPath: path))
-        lua_pushboolean(L, 1)
+        L.push(true)
     } catch {
-        lua_pushboolean(L, 0)
+        L.push(false)
         resultText = error.localizedDescription
     }
 
-    lua_pushstring(L, resultText)
+    L.push(resultText)
     return 2
 }
 
@@ -206,7 +206,7 @@ private func volume_watcher_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 // MARK: - Event enum helpers
 
 private func add_event_value(_ L: UnsafeMutablePointer<lua_State>!, _ value: VolumeEvent, _ name: String) {
-    lua_pushinteger(L, lua_Integer(value.rawValue))
+    L.push(lua_Integer(value.rawValue))
     lua_setfield(L, -2, name)
 }
 
@@ -246,7 +246,7 @@ public func luaopen_hs_libfsvolume(_ L: UnsafeMutablePointer<lua_State>!) -> Int
         tostring: .closure { L in
             let _: VolumeWatcher = try L.checkArgument(1)
             let desc = "\(USERDATA_TAG): (\(String(describing: lua_topointer(L, 1)!)))"
-            lua_pushstring(L, desc)
+            L.push(desc)
             return 1
         }
     ))
@@ -266,9 +266,9 @@ public func luaopen_hs_libfsvolume(_ L: UnsafeMutablePointer<lua_State>!) -> Int
     lua_setfield(L, -2, "__gc")
 
     // Set __type and __name for lsunit.lua assertIsUserdataOfType and tostring
-    lua_pushstring(L, USERDATA_TAG)
+    L.push(USERDATA_TAG)
     lua_setfield(L, -2, "__type")
-    lua_pushstring(L, USERDATA_TAG)
+    L.push(USERDATA_TAG)
     lua_setfield(L, -2, "__name")
 
     // Alias the metatable under the legacy registry name so that

@@ -11,35 +11,42 @@ import CoreGraphics
 
 private let USERDATA_TAG = "hs.spaces.watcher"
 
-// MARK: - Userdata Struct
-
-private struct SpaceWatcherData {
-    var selfRef: Int32
-    var running: Bool
-    var obj: UnsafeMutableRawPointer?
-}
-
 // MARK: - SpaceWatcher Class
 
-private class SpaceWatcher: NSObject {
-    var object: UnsafeMutablePointer<SpaceWatcherData>
+private class SpaceWatcher: NSObject, LuaTeardownable {
     var callback: LuaValue?
+    var running: Bool = false
+    var selfRef: Int32 = LUA_NOREF
     var generation: UInt64 = 0
+    private var tornDown = false
 
-    init(object: UnsafeMutablePointer<SpaceWatcherData>, callback: LuaValue?) {
-        self.object = object
-        self.callback = callback
-        super.init()
+    func teardown() {
+        guard !tornDown else { return }
+        tornDown = true
+        if running {
+            running = false
+            NSWorkspace.shared.notificationCenter.removeObserver(self)
+            if selfRef != LUA_NOREF {
+                let L = lua_getCurrentState()!
+                luaL_unref(L, LUA_REGISTRYINDEX_VALUE, selfRef)
+                selfRef = LUA_NOREF
+            }
+        }
+        callback = nil
     }
 
     // Call the lua callback function.
     func callbackFired(dict: NSDictionary?, space: Int32) {
-        guard lua_isStateGenerationValid(generation) else { return }
+        guard !tornDown else { return }
+        guard lua_isStateGenerationValid(generation) else {
+            teardown()
+            return
+        }
         if let cb = callback {
             let L = lua_getCurrentState()!
 
             cb.push(onto: L)
-            lua_pushinteger(L, lua_Integer(space))
+            L.push(lua_Integer(space))
             if lua_pcall(L, 1, 0, 0) != LUA_OK {
                 lua_pop(L, 1)
             }
@@ -54,141 +61,83 @@ private class SpaceWatcher: NSObject {
     }
 }
 
-// MARK: - Module Functions
-
-/// hs.spaces.watcher.new(handler) -> watcher
-/// Constructor
-/// Creates a new watcher for Space change events
-///
-/// Parameters:
-///  * handler - A function to be called when the active Space changes. It should accept one argument, which will be the number of the new Space (or -1 if the number cannot be determined)
-///
-/// Returns:
-///  * An `hs.spaces.watcher` object
-private func space_watcher_new(_ L: LuaState) throws -> CInt {
-    luaL_checktype(L, 1, LUA_TFUNCTION)
-
-    let spaceWatcher = lua_newuserdata(L, MemoryLayout<SpaceWatcherData>.size)!
-        .assumingMemoryBound(to: SpaceWatcherData.self)
-
-    let cb = L.ref(index: 1)
-    spaceWatcher.pointee.running = false
-    spaceWatcher.pointee.selfRef = LUA_NOREF
-
-    let watcher = SpaceWatcher(object: spaceWatcher, callback: cb)
-    watcher.generation = lua_currentStateGeneration()
-    spaceWatcher.pointee.obj = Unmanaged.passRetained(watcher).toOpaque()
-
-    luaL_getmetatable(L, USERDATA_TAG)
-    lua_setmetatable(L, -2)
-    return 1
-}
-
-/// hs.spaces.watcher:start()
-/// Method
-/// Starts the Spaces watcher
-///
-/// Parameters:
-///  * None
-///
-/// Returns:
-///  * The watcher object
-private func space_watcher_start(_ L: LuaState) throws -> CInt {
-    let spaceWatcher = luaL_checkudata(L, 1, USERDATA_TAG)!
-        .assumingMemoryBound(to: SpaceWatcherData.self)
-    lua_settop(L, 1)
-    lua_pushvalue(L, 1)
-
-    if spaceWatcher.pointee.running {
-        return 1
-    }
-
-    spaceWatcher.pointee.selfRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
-    spaceWatcher.pointee.running = true
-
-    let center = NSWorkspace.shared.notificationCenter
-    let observer = Unmanaged<SpaceWatcher>.fromOpaque(spaceWatcher.pointee.obj!).takeUnretainedValue()
-    center.addObserver(
-        observer,
-        selector: #selector(SpaceWatcher.spaceChanged(_:)),
-        name: NSWorkspace.activeSpaceDidChangeNotification,
-        object: nil
-    )
-
-    lua_pushvalue(L, 1)
-    return 1
-}
-
-/// hs.spaces.watcher:stop()
-/// Method
-/// Stops the Spaces watcher
-///
-/// Parameters:
-///  * None
-///
-/// Returns:
-///  * The watcher object
-private func space_watcher_stop(_ L: LuaState) throws -> CInt {
-    let spaceWatcher = luaL_checkudata(L, 1, USERDATA_TAG)!
-        .assumingMemoryBound(to: SpaceWatcherData.self)
-    lua_settop(L, 1)
-    lua_pushvalue(L, 1)
-
-    if !spaceWatcher.pointee.running {
-        return 1
-    }
-
-    spaceWatcher.pointee.running = false
-    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, spaceWatcher.pointee.selfRef)
-    spaceWatcher.pointee.selfRef = LUA_NOREF
-    let observer = Unmanaged<SpaceWatcher>.fromOpaque(spaceWatcher.pointee.obj!).takeUnretainedValue()
-    NSWorkspace.shared.notificationCenter.removeObserver(observer)
-    return 1
-}
-
-private func space_watcher_gc(_ L: LuaState) throws -> CInt {
-    let spaceWatcher = luaL_checkudata(L, 1, USERDATA_TAG)!
-        .assumingMemoryBound(to: SpaceWatcherData.self)
-
-    _ = try space_watcher_stop(L)
-    lua_pop(L, 1)  // pop stop's self-return
-
-    // Release the retained SpaceWatcher (and its LuaValue callback via ARC)
-    if let obj = spaceWatcher.pointee.obj {
-        let watcher = Unmanaged<SpaceWatcher>.fromOpaque(obj).takeRetainedValue()
-        watcher.callback = nil
-        spaceWatcher.pointee.obj = nil
-    }
-    return 0
-}
-
-private func userdata_tostring(_ L: LuaState) throws -> CInt {
-    lua_pushstring(L, "\(USERDATA_TAG): (\(lua_topointer(L, 1)!))")
-    return 1
-}
-
 // MARK: - Module Registration
 
 @_cdecl("luaopen_hs_libspaces_watcher")
 public func luaopen_hs_libspaces_watcher(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     runEntryPoint(L) { L in
-        // Register userdata metatable
-        luaL_newmetatable(L, USERDATA_TAG)
-        lua_pushvalue(L, -1)
-        lua_setfield(L, -2, "__index")  // mt.__index = mt
-        L.push(space_watcher_start)
-        lua_setfield(L, -2, "start")
-        L.push(space_watcher_stop)
-        lua_setfield(L, -2, "stop")
-        L.push(userdata_tostring)
-        lua_setfield(L, -2, "__tostring")
-        L.push(space_watcher_gc)
-        lua_setfield(L, -2, "__gc")
-        lua_pop(L, 1)
+        // Register idiomatic Metatable<SpaceWatcher> with LuaSwift.
+        L.register(Metatable<SpaceWatcher>(
+            fields: [
+                "start": .closure { L in
+                    let watcher: SpaceWatcher = try L.checkArgument(1)
+                    lua_settop(L, 1)
+
+                    if watcher.running { return 1 }
+
+                    // Pin self in registry to prevent GC while running
+                    lua_pushvalue(L, 1)
+                    watcher.selfRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+                    watcher.running = true
+
+                    let center = NSWorkspace.shared.notificationCenter
+                    center.addObserver(
+                        watcher,
+                        selector: #selector(SpaceWatcher.spaceChanged(_:)),
+                        name: NSWorkspace.activeSpaceDidChangeNotification,
+                        object: nil
+                    )
+
+                    return 1
+                },
+                "stop": .closure { L in
+                    let watcher: SpaceWatcher = try L.checkArgument(1)
+                    lua_settop(L, 1)
+
+                    if !watcher.running { return 1 }
+
+                    watcher.running = false
+                    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, watcher.selfRef)
+                    watcher.selfRef = LUA_NOREF
+                    NSWorkspace.shared.notificationCenter.removeObserver(watcher)
+
+                    return 1
+                },
+            ],
+            tostring: .closure { L in
+                let _: SpaceWatcher = try L.checkArgument(1)
+                let desc = "\(USERDATA_TAG): (\(String(describing: lua_topointer(L, 1)!)))"
+                L.push(desc)
+                return 1
+            }
+        ))
+        installMetatableBoilerplate(L, for: SpaceWatcher.self, tag: USERDATA_TAG)
 
         // Create module table
         lua_createtable(L, 0, 1)
-        L.push(space_watcher_new)
+
+        /// hs.spaces.watcher.new(handler) -> watcher
+        /// Constructor
+        /// Creates a new watcher for Space change events
+        ///
+        /// Parameters:
+        ///  * handler - A function to be called when the active Space changes. It should accept one argument, which will be the number of the new Space (or -1 if the number cannot be determined)
+        ///
+        /// Returns:
+        ///  * An `hs.spaces.watcher` object
+        L.push { (L: LuaState) throws -> CInt in
+            luaL_checktype(L, 1, LUA_TFUNCTION)
+
+            let cb = L.ref(index: 1)
+
+            let watcher = SpaceWatcher()
+            watcher.callback = cb
+            watcher.generation = lua_currentStateGeneration()
+
+            L.push(userdata: watcher)
+
+            return 1
+        }
         lua_setfield(L, -2, "new")
     }
 }

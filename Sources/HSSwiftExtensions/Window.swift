@@ -81,15 +81,15 @@ private func window_timeout(_ L: LuaState) throws -> CInt {
     let result = AXUIElementSetMessagingTimeout(systemWideElement, value)
     if result == .illegalArgument {
         os_log(.error, "%{public}s","hs.window.timeout() - One or more of the arguments is an illegal value (timeout values must be positive).")
-        lua_pushboolean(L, 0)
+        L.push(false)
         return 1
     }
     if result == .invalidUIElement {
         os_log(.error, "%{public}s","hs.window.timeout() - The AXUIElementRef is invalid.")
-        lua_pushboolean(L, 0)
+        L.push(false)
         return 1
     }
-    lua_pushboolean(L, 1)
+    L.push(true)
     return 1
 }
 
@@ -176,8 +176,8 @@ private func window_role(_ L: LuaState) throws -> CInt {
 
 private func window_isstandard(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
-    guard let win = getWindow(L, at: 1) else { lua_pushboolean(L, 0); return 1 }
-    lua_pushboolean(L, win.isStandard() ? 1 : 0)
+    guard let win = getWindow(L, at: 1) else { L.push(false); return 1 }
+    L.push(win.isStandard())
     return 1
 }
 
@@ -254,28 +254,28 @@ private func window_isMaximizable(_ L: LuaState) throws -> CInt {
         return 1
     }
 
-    lua_pushboolean(L, CFBooleanGetValue(isEnabled as! CFBoolean) ? 1 : 0)
+    L.push(CFBooleanGetValue(isEnabled as! CFBoolean))
     return 1
 }
 
 private func window__close(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
-    guard let win = getWindow(L, at: 1) else { lua_pushboolean(L, 0); return 1 }
-    lua_pushboolean(L, win.close() ? 1 : 0)
+    guard let win = getWindow(L, at: 1) else { L.push(false); return 1 }
+    L.push(win.close())
     return 1
 }
 
 private func window_focustab(_ L: LuaState) throws -> CInt {
-    guard let win = getWindow(L, at: 1) else { lua_pushboolean(L, 0); return 1 }
+    guard let win = getWindow(L, at: 1) else { L.push(false); return 1 }
     let tabIndex = Int32(lua_tointeger(L, 2))
-    lua_pushboolean(L, win.focusTab(tabIndex) ? 1 : 0)
+    L.push(win.focusTab(tabIndex))
     return 1
 }
 
 private func window_tabcount(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
-    guard let win = getWindow(L, at: 1) else { lua_pushinteger(L, 0); return 1 }
-    lua_pushinteger(L, lua_Integer(win.getTabCount()))
+    guard let win = getWindow(L, at: 1) else { L.push(0); return 1 }
+    L.push(Int(win.getTabCount()))
     return 1
 }
 
@@ -289,7 +289,7 @@ private func window__setfullscreen(_ L: LuaState) throws -> CInt {
 private func window_isfullscreen(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     guard let win = getWindow(L, at: 1) else { lua_pushnil(L); return 1 }
-    lua_pushboolean(L, win.isFullscreen() ? 1 : 0)
+    L.push(win.isFullscreen())
     return 1
 }
 
@@ -311,15 +311,15 @@ private func window__unminimize(_ L: LuaState) throws -> CInt {
 
 private func window_isminimized(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
-    guard let win = getWindow(L, at: 1) else { lua_pushboolean(L, 0); return 1 }
-    lua_pushboolean(L, win.isMinimized() ? 1 : 0)
+    guard let win = getWindow(L, at: 1) else { L.push(false); return 1 }
+    L.push(win.isMinimized())
     return 1
 }
 
 private func window_pid(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     guard let win = getWindow(L, at: 1) else { lua_pushnil(L); return 1 }
-    lua_pushinteger(L, lua_Integer(win.pid))
+    L.push(Int(win.pid))
     return 1
 }
 
@@ -356,7 +356,7 @@ private func window_raise(_ L: LuaState) throws -> CInt {
 private func window_id(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     guard let win = getWindow(L, at: 1) else { lua_pushnil(L); return 1 }
-    lua_pushinteger(L, lua_Integer(win.winID))
+    L.push(Int(win.winID))
     return 1
 }
 
@@ -404,11 +404,11 @@ private func windowCornerRadius(for windowID: CGWindowID) -> CGFloat? {
 private func window_cornerRadius(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     guard let win = getWindow(L, at: 1) else {
-        lua_pushnumber(L, 0)
+        L.push(0.0)
         return 1
     }
     let radius = windowCornerRadius(for: CGWindowID(win.winID)) ?? 0
-    lua_pushnumber(L, lua_Number(radius))
+    L.push(Double(radius))
     return 1
 }
 
@@ -429,7 +429,7 @@ private func window_cornerRadius(_ L: LuaState) throws -> CInt {
 private func window_cornerRadiusForID(_ L: LuaState) throws -> CInt {
     let windowID = CGWindowID(lua_tointeger(L, 1))
     let radius = windowCornerRadius(for: windowID) ?? 0
-    lua_pushnumber(L, lua_Number(radius))
+    L.push(Double(radius))
     return 1
 }
 
@@ -437,17 +437,17 @@ private func window_cornerRadiusForID(_ L: LuaState) throws -> CInt {
 
 private func window_uielement_isApplication(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
-    guard let win = getWindow(L, at: 1) else { lua_pushboolean(L, 0); return 1 }
+    guard let win = getWindow(L, at: 1) else { L.push(false); return 1 }
     let element = HSuielement(withElement: win.elementRef)
-    lua_pushboolean(L, element.isApplication ? 1 : 0)
+    L.push(element.isApplication)
     return 1
 }
 
 private func window_uielement_isWindow(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
-    guard let win = getWindow(L, at: 1) else { lua_pushboolean(L, 0); return 1 }
+    guard let win = getWindow(L, at: 1) else { L.push(false); return 1 }
     let element = HSuielement(withElement: win.elementRef)
-    lua_pushboolean(L, element.isWindow ? 1 : 0)
+    L.push(element.isWindow)
     return 1
 }
 
@@ -529,7 +529,7 @@ private func userdata_tostring(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let win = getWindow(L, at: 1)
     let title = win?.title() ?? "nil"
-    lua_pushstring(L, "\(USERDATA_TAG): \(title) (\(String(describing: lua_topointer(L, 1)!)))")
+    L.push("\(USERDATA_TAG): \(title) (\(String(describing: lua_topointer(L, 1)!)))")
     return 1
 }
 
@@ -541,7 +541,7 @@ private func userdata_eq(_ L: LuaState) throws -> CInt {
             isEqual = CFEqual(w1.elementRef, w2.elementRef)
         }
     }
-    lua_pushboolean(L, isEqual ? 1 : 0)
+    L.push(isEqual)
     return 1
 }
 
@@ -607,9 +607,9 @@ public func luaopen_hs_libwindow(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
         L.push(userdata_gc);                     lua_setfield(L, -2, "__gc")
 
         // Set __type and __name for lsunit.lua assertIsUserdataOfType and tostring
-        lua_pushstring(L, USERDATA_TAG)
+        L.push(USERDATA_TAG)
         lua_setfield(L, -2, "__type")
-        lua_pushstring(L, USERDATA_TAG)
+        L.push(USERDATA_TAG)
         lua_setfield(L, -2, "__name")
 
         lua_pop(L, 1)

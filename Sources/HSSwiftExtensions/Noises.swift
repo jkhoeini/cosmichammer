@@ -66,7 +66,7 @@ public func luaopen_hs_libnoises(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
         ],
         tostring: .closure { L in
             let _: HSNoisesListener = try L.checkArgument(1)
-            lua_pushstring(L, "\(USERDATA_TAG): (\(lua_topointer(L, 1)!))")
+            L.push("\(USERDATA_TAG): (\(lua_topointer(L, 1)!))")
             return 1
         }
     ))
@@ -87,9 +87,9 @@ public func luaopen_hs_libnoises(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
     lua_setfield(L, -2, "__gc")
 
     // Set __type and __name
-    lua_pushstring(L, USERDATA_TAG)
+    L.push(USERDATA_TAG)
     lua_setfield(L, -2, "__type")
-    lua_pushstring(L, USERDATA_TAG)
+    L.push(USERDATA_TAG)
     lua_setfield(L, -2, "__name")
 
     // Alias the metatable under the legacy registry name

@@ -98,10 +98,11 @@ private func expandErrno() throws -> Never {
 /// Returns:
 ///  * True if the operation succeeds; otherwise throws a Lua error with a description of reason for failure.
 private func xattr_setxattr(_ L: LuaState) throws -> CInt {
-    var path = NSString(utf8String: luaL_checkstring(L, 1))!
-    path = path.expandingTildeInPath as NSString
+    let pathArg: String = try L.checkArgument(1)
+    let path = NSString(string: pathArg).expandingTildeInPath as NSString
 
-    let attribute = NSString(utf8String: luaL_checkstring(L, 2))!
+    let attribute: String = try L.checkArgument(2)
+    let attributeNS = attribute as NSString
 
     // Get raw bytes from Lua string (not UTF-8 converted)
     var valueLen: Int = 0
@@ -111,14 +112,14 @@ private func xattr_setxattr(_ L: LuaState) throws -> CInt {
     let options = try parseOptionsTable(L, 4)
 
     let position: UInt32 = (lua_gettop(L) == 5) ? UInt32(lua_tointeger(L, 5)) : 0
-    if position != 0 && !(attribute as String == XATTR_RESOURCEFORK_NAME) {
+    if position != 0 && !(attribute == XATTR_RESOURCEFORK_NAME) {
         throw LuaCallError("bad argument #5 (position argument only valid with \(XATTR_RESOURCEFORK_NAME) attribute)")
     }
 
-    if setxattr(path.utf8String, attribute.utf8String, value.bytes, value.length, position, Int32(options)) < 0 {
+    if setxattr(path.utf8String, attributeNS.utf8String, value.bytes, value.length, position, Int32(options)) < 0 {
         try expandErrno()
     } else {
-        lua_pushboolean(L, 1)
+        L.push(true)
     }
     return 1
 }
@@ -135,17 +136,18 @@ private func xattr_setxattr(_ L: LuaState) throws -> CInt {
 /// Returns:
 ///  * True if the operation succeeds; otherwise throws a Lua error with a description of reason for failure.
 private func xattr_removexattr(_ L: LuaState) throws -> CInt {
-    var path = NSString(utf8String: luaL_checkstring(L, 1))!
-    path = path.expandingTildeInPath as NSString
+    let pathArg: String = try L.checkArgument(1)
+    let path = NSString(string: pathArg).expandingTildeInPath as NSString
 
-    let attribute = NSString(utf8String: luaL_checkstring(L, 2))!
+    let attribute: String = try L.checkArgument(2)
+    let attributeNS = attribute as NSString
 
     let options = try parseOptionsTable(L, 3)
 
-    if removexattr(path.utf8String, attribute.utf8String, Int32(options)) < 0 {
+    if removexattr(path.utf8String, attributeNS.utf8String, Int32(options)) < 0 {
         try expandErrno()
     } else {
-        lua_pushboolean(L, 1)
+        L.push(true)
     }
     return 1
 }
@@ -166,28 +168,29 @@ private func xattr_removexattr(_ L: LuaState) throws -> CInt {
 /// Notes:
 ///  * See also [hs.fs.xattr.getHumanReadable](#getHumanReadable).
 private func xattr_getxattr(_ L: LuaState) throws -> CInt {
-    var path = NSString(utf8String: luaL_checkstring(L, 1))!
-    path = path.expandingTildeInPath as NSString
+    let pathArg: String = try L.checkArgument(1)
+    let path = NSString(string: pathArg).expandingTildeInPath as NSString
 
-    let attribute = NSString(utf8String: luaL_checkstring(L, 2))!
+    let attribute: String = try L.checkArgument(2)
+    let attributeNS = attribute as NSString
 
     let options = try parseOptionsTable(L, 3)
 
     let position: UInt32 = (lua_gettop(L) == 4) ? UInt32(lua_tointeger(L, 4)) : 0
-    if position != 0 && !(attribute as String == XATTR_RESOURCEFORK_NAME) {
+    if position != 0 && !(attribute == XATTR_RESOURCEFORK_NAME) {
         throw LuaCallError("bad argument #4 (position argument only valid with \(XATTR_RESOURCEFORK_NAME) attribute)")
     }
 
-    var bufferSize = getxattr(path.utf8String, attribute.utf8String, nil, 0, position, Int32(options))
+    var bufferSize = getxattr(path.utf8String, attributeNS.utf8String, nil, 0, position, Int32(options))
     if bufferSize > 0 {
         let buffer = malloc(bufferSize)!
-        bufferSize = getxattr(path.utf8String, attribute.utf8String, buffer, bufferSize, position, Int32(options))
+        bufferSize = getxattr(path.utf8String, attributeNS.utf8String, buffer, bufferSize, position, Int32(options))
         if bufferSize > 0 {
             lua_pushlstring(L, buffer.assumingMemoryBound(to: CChar.self), bufferSize)
         }
         free(buffer)
     } else if bufferSize == 0 {
-        lua_pushboolean(L, 1)
+        L.push(true)
     }
     if bufferSize < 0 {
         if errno == ENOATTR {
@@ -210,8 +213,8 @@ private func xattr_getxattr(_ L: LuaState) throws -> CInt {
 /// Returns:
 ///  * a table containing an array of strings identifying the extended attributes currently defined for the file or directory; note that the order of the attributes is nondeterministic and is not guaranteed to be the same for future queries.  Throws a Lua error on failure with a description of the reason for the failure.
 private func xattr_listxattr(_ L: LuaState) throws -> CInt {
-    var path = NSString(utf8String: luaL_checkstring(L, 1))!
-    path = path.expandingTildeInPath as NSString
+    let pathArg: String = try L.checkArgument(1)
+    let path = NSString(string: pathArg).expandingTildeInPath as NSString
 
     let options = try parseOptionsTable(L, 2)
 
@@ -224,7 +227,7 @@ private func xattr_listxattr(_ L: LuaState) throws -> CInt {
             var j = 0
             var p = buffer
             while j < bufferSize {
-                lua_pushstring(L, p)
+                L.push(String(cString: p))
                 let t = lua_rawlen(L, -1) + 1
                 p += t
                 j += t

@@ -69,7 +69,7 @@ func webview_privateBrowsing(_ L: LuaState) throws -> CInt {
     ).takeUnretainedValue()
     let theView = theWindow.contentView as! HSWebViewView
     let theConfiguration = theView.configuration
-    lua_pushboolean(L, !theConfiguration.websiteDataStore.isPersistent ? 1 : 0)
+    L.push(!theConfiguration.websiteDataStore.isPersistent)
     return 1
 }
 
@@ -196,7 +196,7 @@ func webview_loading(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, wv_USERDATA_TAG)
     let theWindow = wv_getWindowFromUD(L, 1)
     let theView = theWindow.contentView as! HSWebViewView
-    lua_pushboolean(L, theView.isLoading ? 1 : 0)
+    L.push(theView.isLoading)
     return 1
 }
 
@@ -219,7 +219,7 @@ func webview_estimatedProgress(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, wv_USERDATA_TAG)
     let theWindow = wv_getWindowFromUD(L, 1)
     let theView = theWindow.contentView as! HSWebViewView
-    lua_pushnumber(L, theView.estimatedProgress)
+    L.push(theView.estimatedProgress)
     return 1
 }
 
@@ -230,7 +230,7 @@ func webview_isOnlySecureContent(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, wv_USERDATA_TAG)
     let theWindow = wv_getWindowFromUD(L, 1)
     let theView = theWindow.contentView as! HSWebViewView
-    lua_pushboolean(L, theView.hasOnlySecureContent ? 1 : 0)
+    L.push(theView.hasOnlySecureContent)
     return 1
 }
 
@@ -284,7 +284,7 @@ func webview_transparent(_ L: LuaState) throws -> CInt {
     let theWindow = wv_getWindowFromUD(L, 1)
 
     if lua_type(L, 2) == LUA_TNONE {
-        lua_pushboolean(L, !theWindow.isOpaque ? 1 : 0)
+        L.push(!theWindow.isOpaque)
     } else {
         let transparent = lua_toboolean(L, 2) != 0
         theWindow.isOpaque = !transparent
@@ -303,7 +303,7 @@ func webview_allowMagnificationGestures(_ L: LuaState) throws -> CInt {
     let theView = theWindow.contentView as! HSWebViewView
 
     if lua_type(L, 2) == LUA_TNONE {
-        lua_pushboolean(L, theView.allowsMagnification ? 1 : 0)
+        L.push(theView.allowsMagnification)
     } else {
         theView.allowsMagnification = lua_toboolean(L, 2) != 0
         lua_settop(L, 1)
@@ -320,7 +320,7 @@ func webview_allowNewWindows(_ L: LuaState) throws -> CInt {
     let theView = theWindow.contentView as! HSWebViewView
 
     if lua_type(L, 2) == LUA_TNONE {
-        lua_pushboolean(L, theView.allowNewWindows ? 1 : 0)
+        L.push(theView.allowNewWindows)
     } else {
         theView.allowNewWindows = lua_toboolean(L, 2) != 0
         lua_settop(L, 1)
@@ -337,7 +337,7 @@ func webview_examineInvalidCertificates(_ L: LuaState) throws -> CInt {
     let theView = theWindow.contentView as! HSWebViewView
 
     if lua_type(L, 2) == LUA_TNONE {
-        lua_pushboolean(L, theView.examineInvalidCertificates ? 1 : 0)
+        L.push(theView.examineInvalidCertificates)
     } else {
         theView.examineInvalidCertificates = lua_toboolean(L, 2) != 0
         lua_settop(L, 1)
@@ -354,7 +354,7 @@ func webview_allowNavigationGestures(_ L: LuaState) throws -> CInt {
     let theView = theWindow.contentView as! HSWebViewView
 
     if lua_type(L, 2) == LUA_TNONE {
-        lua_pushboolean(L, theView.allowsBackForwardNavigationGestures ? 1 : 0)
+        L.push(theView.allowsBackForwardNavigationGestures)
     } else {
         theView.allowsBackForwardNavigationGestures = lua_toboolean(L, 2) != 0
         lua_settop(L, 1)
@@ -371,7 +371,7 @@ func webview_magnification(_ L: LuaState) throws -> CInt {
     let theView = theWindow.contentView as! HSWebViewView
 
     if lua_type(L, 2) == LUA_TNONE {
-        lua_pushnumber(L, lua_Number(theView.magnification))
+        L.push(lua_Number(theView.magnification))
     } else {
         luaL_checktype(L, 2, LUA_TNUMBER)
         theView.setMagnification(CGFloat(lua_tonumber(L, 2)), centeredAt: .zero)
@@ -647,7 +647,7 @@ func webview_allowTextEntry(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, wv_USERDATA_TAG)
     let theWindow = wv_getWindowFromUD(L, 1)
     if lua_type(L, 2) == LUA_TNONE {
-        lua_pushboolean(L, theWindow.allowKeyboardEntry ? 1 : 0)
+        L.push(theWindow.allowKeyboardEntry)
     } else {
         theWindow.allowKeyboardEntry = lua_toboolean(L, 2) != 0
         lua_settop(L, 1)
@@ -662,7 +662,7 @@ func webview_deleteOnClose(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, wv_USERDATA_TAG)
     let theWindow = wv_getWindowFromUD(L, 1)
     if lua_type(L, 2) == LUA_TNONE {
-        lua_pushboolean(L, theWindow.deleteOnClose ? 1 : 0)
+        L.push(theWindow.deleteOnClose)
     } else {
         theWindow.deleteOnClose = lua_toboolean(L, 2) != 0
         lua_settop(L, 1)
@@ -678,7 +678,7 @@ func webview_darkMode(_ L: LuaState) throws -> CInt {
     let theWindow = wv_getWindowFromUD(L, 1)
 
     if lua_type(L, 2) == LUA_TNONE {
-        lua_pushboolean(L, theWindow.darkMode ? 1 : 0)
+        L.push(theWindow.darkMode)
     } else {
         theWindow.darkMode = lua_toboolean(L, 2) != 0
         theWindow.appearance = NSAppearance(named: theWindow.darkMode ? .vibrantDark : .vibrantLight)
@@ -694,7 +694,7 @@ func webview_closeOnEscape(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, wv_USERDATA_TAG)
     let theWindow = wv_getWindowFromUD(L, 1)
     if lua_type(L, 2) == LUA_TNONE {
-        lua_pushboolean(L, theWindow.closeOnEscape ? 1 : 0)
+        L.push(theWindow.closeOnEscape)
     } else {
         theWindow.closeOnEscape = lua_toboolean(L, 2) != 0
         lua_settop(L, 1)
@@ -711,11 +711,11 @@ func webview_hswindow(_ L: LuaState) throws -> CInt {
     let windowID = CGWindowID(theWindow.windowNumber)
     lua_getglobal(L, "require")
 
-    lua_pushstring(L, "hs.window")
+    L.push("hs.window")
 
     lua_pcall(L, 1, 1, 0)
     lua_getfield(L, -1, "windowForID")
-    lua_pushinteger(L, lua_Integer(windowID))
+    L.push(Int(windowID))
     lua_call(L, 1, 1)
     return 1
 }
@@ -726,7 +726,7 @@ func webview_hswindow(_ L: LuaState) throws -> CInt {
 func webview_isVisible(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, wv_USERDATA_TAG)
     let theWindow = wv_getWindowFromUD(L, 1)
-    lua_pushboolean(L, theWindow.isVisible ? 1 : 0)
+    L.push(theWindow.isVisible)
     return 1
 }
 
@@ -787,7 +787,7 @@ func webview_titleVisibility(_ L: LuaState) throws -> CInt {
 func webview_windowStyle(_ L: LuaState) throws -> CInt {
     let theWindow = wv_getWindowFromUD(L, 1)
     if lua_type(L, 2) == LUA_TNONE {
-        lua_pushinteger(L, lua_Integer(theWindow.styleMask.rawValue))
+        L.push(Int(theWindow.styleMask.rawValue))
     } else {
         let theTitle = theWindow.title
         theWindow.styleMask = []
@@ -805,7 +805,7 @@ func webview_level(_ L: LuaState) throws -> CInt {
     let theWindow = wv_getWindowFromUD(L, 1)
 
     if lua_gettop(L) == 1 {
-        lua_pushinteger(L, lua_Integer(theWindow.level.rawValue))
+        L.push(Int(theWindow.level.rawValue))
     } else {
         let targetLevel = lua_tointeger(L, 2)
         let minLevel = CGWindowLevelForKey(.minimumWindow)
@@ -850,7 +850,7 @@ func webview_alpha(_ L: LuaState) throws -> CInt {
     let theWindow = wv_getWindowFromUD(L, 1)
 
     if lua_gettop(L) == 1 {
-        lua_pushnumber(L, lua_Number(theWindow.alphaValue))
+        L.push(lua_Number(theWindow.alphaValue))
     } else {
         let newLevel = CGFloat(luaL_checknumber(L, 2))
         theWindow.alphaValue = min(max(newLevel, 0.0), 1.0)
@@ -867,7 +867,7 @@ func webview_shadow(_ L: LuaState) throws -> CInt {
     let theWindow = wv_getWindowFromUD(L, 1)
 
     if lua_type(L, 2) == LUA_TNONE {
-        lua_pushboolean(L, theWindow.hasShadow ? 1 : 0)
+        L.push(theWindow.hasShadow)
     } else {
         theWindow.hasShadow = lua_toboolean(L, 2) != 0
         lua_settop(L, 1)
@@ -932,7 +932,7 @@ func webview_behavior(_ L: LuaState) throws -> CInt {
     let theWindow = wv_getWindowFromUD(L, 1)
 
     if lua_gettop(L) == 1 {
-        lua_pushinteger(L, lua_Integer(theWindow.collectionBehavior.rawValue))
+        L.push(Int(theWindow.collectionBehavior.rawValue))
     } else {
         let newLevel = lua_tointeger(L, 2)
         theWindow.collectionBehavior = NSWindow.CollectionBehavior(rawValue: UInt(newLevel))
@@ -963,16 +963,16 @@ func webview_windowCallback(_ L: LuaState) throws -> CInt {
 /// A table containing valid masks for the webview window.
 func wv_windowMasksTable(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     lua_newtable(L)
-    lua_pushinteger(L, lua_Integer(NSWindow.StyleMask.borderless.rawValue));          lua_setfield(L, -2, "borderless")
-    lua_pushinteger(L, lua_Integer(NSWindow.StyleMask.titled.rawValue));              lua_setfield(L, -2, "titled")
-    lua_pushinteger(L, lua_Integer(NSWindow.StyleMask.closable.rawValue));            lua_setfield(L, -2, "closable")
-    lua_pushinteger(L, lua_Integer(NSWindow.StyleMask.miniaturizable.rawValue));      lua_setfield(L, -2, "miniaturizable")
-    lua_pushinteger(L, lua_Integer(NSWindow.StyleMask.resizable.rawValue));           lua_setfield(L, -2, "resizable")
-    lua_pushinteger(L, lua_Integer(NSWindow.StyleMask.texturedBackground.rawValue));  lua_setfield(L, -2, "texturedBackground")
-    lua_pushinteger(L, lua_Integer(NSWindow.StyleMask.fullSizeContentView.rawValue)); lua_setfield(L, -2, "fullSizeContentView")
-    lua_pushinteger(L, lua_Integer(NSWindow.StyleMask.utilityWindow.rawValue));       lua_setfield(L, -2, "utility")
-    lua_pushinteger(L, lua_Integer(NSWindow.StyleMask.nonactivatingPanel.rawValue));  lua_setfield(L, -2, "nonactivating")
-    lua_pushinteger(L, lua_Integer(NSWindow.StyleMask.hudWindow.rawValue));           lua_setfield(L, -2, "HUD")
+    L.push(Int(NSWindow.StyleMask.borderless.rawValue));          lua_setfield(L, -2, "borderless")
+    L.push(Int(NSWindow.StyleMask.titled.rawValue));              lua_setfield(L, -2, "titled")
+    L.push(Int(NSWindow.StyleMask.closable.rawValue));            lua_setfield(L, -2, "closable")
+    L.push(Int(NSWindow.StyleMask.miniaturizable.rawValue));      lua_setfield(L, -2, "miniaturizable")
+    L.push(Int(NSWindow.StyleMask.resizable.rawValue));           lua_setfield(L, -2, "resizable")
+    L.push(Int(NSWindow.StyleMask.texturedBackground.rawValue));  lua_setfield(L, -2, "texturedBackground")
+    L.push(Int(NSWindow.StyleMask.fullSizeContentView.rawValue)); lua_setfield(L, -2, "fullSizeContentView")
+    L.push(Int(NSWindow.StyleMask.utilityWindow.rawValue));       lua_setfield(L, -2, "utility")
+    L.push(Int(NSWindow.StyleMask.nonactivatingPanel.rawValue));  lua_setfield(L, -2, "nonactivating")
+    L.push(Int(NSWindow.StyleMask.hudWindow.rawValue));           lua_setfield(L, -2, "HUD")
     return 1
 }
 
@@ -1208,9 +1208,9 @@ func wv_URLRequest_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> 
     lua_pushany(L, request.httpBody as NSData?);                    lua_setfield(L, -2, "HTTPBody")
     lua_pushany(L, request.httpMethod as NSString?);                lua_setfield(L, -2, "HTTPMethod")
 
-    lua_pushnumber(L, lua_Number(request.timeoutInterval));       lua_setfield(L, -2, "timeoutInterval")
-    lua_pushboolean(L, request.httpShouldHandleCookies ? 1 : 0);  lua_setfield(L, -2, "HTTPShouldHandleCookies")
-    lua_pushboolean(L, request.httpShouldUsePipelining ? 1 : 0);  lua_setfield(L, -2, "HTTPShouldUsePipelining")
+    L.push(lua_Number(request.timeoutInterval));       lua_setfield(L, -2, "timeoutInterval")
+    L.push(request.httpShouldHandleCookies);  lua_setfield(L, -2, "HTTPShouldHandleCookies")
+    L.push(request.httpShouldUsePipelining);  lua_setfield(L, -2, "HTTPShouldUsePipelining")
 
     let cachePolicyStr: String
     switch request.cachePolicy {
@@ -1220,7 +1220,7 @@ func wv_URLRequest_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> 
     case .returnCacheDataDontLoad:      cachePolicyStr = "returnCacheDontLoad"
     default:                            cachePolicyStr = "unknown"
     }
-    lua_pushstring(L, cachePolicyStr); lua_setfield(L, -2, "cachePolicy")
+    L.push(cachePolicyStr); lua_setfield(L, -2, "cachePolicy")
 
     let networkServiceStr: String
     switch request.networkServiceType {
@@ -1231,7 +1231,7 @@ func wv_URLRequest_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> 
     case .voice:      networkServiceStr = "voice"
     default:          networkServiceStr = "unknown"
     }
-    lua_pushstring(L, networkServiceStr); lua_setfield(L, -2, "networkServiceType")
+    L.push(networkServiceStr); lua_setfield(L, -2, "networkServiceType")
 
     return 1
 }
@@ -1243,14 +1243,14 @@ func wv_URLResponse_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) ->
     }
 
     lua_newtable(L)
-    lua_pushinteger(L, lua_Integer(response.expectedContentLength)); lua_setfield(L, -2, "expectedContentLength")
+    L.push(Int(response.expectedContentLength)); lua_setfield(L, -2, "expectedContentLength")
     lua_pushany(L, response.suggestedFilename as NSString?);         lua_setfield(L, -2, "suggestedFilename")
     lua_pushany(L, response.mimeType as NSString?);                  lua_setfield(L, -2, "MIMEType")
     lua_pushany(L, response.textEncodingName as NSString?);          lua_setfield(L, -2, "textEncodingName")
     lua_pushany(L, response.url as NSURL?);                          lua_setfield(L, -2, "URL")
 
     if let httpResponse = response as? HTTPURLResponse {
-        lua_pushinteger(L, lua_Integer(httpResponse.statusCode)); lua_setfield(L, -2, "statusCode")
+        L.push(Int(httpResponse.statusCode)); lua_setfield(L, -2, "statusCode")
         lua_pushany(L, HTTPURLResponse.localizedString(forStatusCode: httpResponse.statusCode) as NSString)
         lua_setfield(L, -2, "statusCodeDescription")
         lua_pushany(L, httpResponse.allHeaderFields as NSDictionary); lua_setfield(L, -2, "allHeaderFields")
@@ -1382,27 +1382,27 @@ func wv_WKNavigationAction_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: A
     wv_pushAny(L, navAction.request);      lua_setfield(L, -2, "request")
     wv_pushAny(L, navAction.sourceFrame);  lua_setfield(L, -2, "sourceFrame")
     wv_pushAny(L, navAction.targetFrame);  lua_setfield(L, -2, "targetFrame")
-    lua_pushinteger(L, lua_Integer(navAction.buttonNumber)); lua_setfield(L, -2, "buttonNumber")
+    L.push(Int(navAction.buttonNumber)); lua_setfield(L, -2, "buttonNumber")
 
     let theFlags = navAction.modifierFlags.rawValue
     lua_newtable(L)
-    if navAction.modifierFlags.contains(.capsLock) { lua_pushboolean(L, 1); lua_setfield(L, -2, "capslock") }
-    if navAction.modifierFlags.contains(.shift)    { lua_pushboolean(L, 1); lua_setfield(L, -2, "shift") }
-    if navAction.modifierFlags.contains(.control)  { lua_pushboolean(L, 1); lua_setfield(L, -2, "ctrl") }
-    if navAction.modifierFlags.contains(.option)   { lua_pushboolean(L, 1); lua_setfield(L, -2, "alt") }
-    if navAction.modifierFlags.contains(.command)  { lua_pushboolean(L, 1); lua_setfield(L, -2, "cmd") }
-    if navAction.modifierFlags.contains(.function) { lua_pushboolean(L, 1); lua_setfield(L, -2, "fn") }
-    lua_pushinteger(L, lua_Integer(theFlags)); lua_setfield(L, -2, "_raw")
+    if navAction.modifierFlags.contains(.capsLock) { L.push(true); lua_setfield(L, -2, "capslock") }
+    if navAction.modifierFlags.contains(.shift)    { L.push(true); lua_setfield(L, -2, "shift") }
+    if navAction.modifierFlags.contains(.control)  { L.push(true); lua_setfield(L, -2, "ctrl") }
+    if navAction.modifierFlags.contains(.option)   { L.push(true); lua_setfield(L, -2, "alt") }
+    if navAction.modifierFlags.contains(.command)  { L.push(true); lua_setfield(L, -2, "cmd") }
+    if navAction.modifierFlags.contains(.function) { L.push(true); lua_setfield(L, -2, "fn") }
+    L.push(Int(theFlags)); lua_setfield(L, -2, "_raw")
     lua_setfield(L, -2, "modifierFlags")
 
     switch navAction.navigationType {
-    case .linkActivated:   lua_pushstring(L, "linkActivated")
-    case .formSubmitted:   lua_pushstring(L, "formSubmitted")
-    case .backForward:     lua_pushstring(L, "backForward")
-    case .reload:          lua_pushstring(L, "reload")
-    case .formResubmitted: lua_pushstring(L, "formResubmitted")
-    case .other:           lua_pushstring(L, "other")
-    @unknown default:      lua_pushstring(L, "unknown")
+    case .linkActivated:   L.push("linkActivated")
+    case .formSubmitted:   L.push("formSubmitted")
+    case .backForward:     L.push("backForward")
+    case .reload:          L.push("reload")
+    case .formResubmitted: L.push("formResubmitted")
+    case .other:           L.push("other")
+    @unknown default:      L.push("unknown")
     }
     lua_setfield(L, -2, "navigationType")
     return 1
@@ -1412,8 +1412,8 @@ func wv_WKNavigationResponse_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj:
     let navResponse = obj as! WKNavigationResponse
 
     lua_newtable(L)
-    lua_pushboolean(L, navResponse.canShowMIMEType ? 1 : 0); lua_setfield(L, -2, "canShowMIMEType")
-    lua_pushboolean(L, navResponse.isForMainFrame ? 1 : 0);  lua_setfield(L, -2, "forMainFrame")
+    L.push(navResponse.canShowMIMEType); lua_setfield(L, -2, "canShowMIMEType")
+    L.push(navResponse.isForMainFrame);  lua_setfield(L, -2, "forMainFrame")
     wv_pushAny(L, navResponse.response);                     lua_setfield(L, -2, "response")
     return 1
 }
@@ -1422,7 +1422,7 @@ func wv_WKFrameInfo_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) ->
     let frameInfo = obj as! WKFrameInfo
 
     lua_newtable(L)
-    lua_pushboolean(L, frameInfo.isMainFrame ? 1 : 0); lua_setfield(L, -2, "mainFrame")
+    L.push(frameInfo.isMainFrame); lua_setfield(L, -2, "mainFrame")
     wv_pushAny(L, frameInfo.request);                 lua_setfield(L, -2, "request")
     wv_pushAny(L, frameInfo.securityOrigin);          lua_setfield(L, -2, "securityOrigin")
     return 1
@@ -1451,14 +1451,14 @@ func wv_WKBackForwardList_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: An
             wv_pushAny(L, currentItem)
             lua_rawseti(L, -2, luaL_len(L, -2) + 1)
         }
-        lua_pushinteger(L, luaL_len(L, -1)); lua_setfield(L, -2, "current")
+        L.push(Int(luaL_len(L, -1))); lua_setfield(L, -2, "current")
 
         for value in theList.forwardList {
             wv_pushAny(L, value)
             lua_rawseti(L, -2, luaL_len(L, -2) + 1)
         }
     } else {
-        lua_pushinteger(L, 0); lua_setfield(L, -2, "current")
+        L.push(0); lua_setfield(L, -2, "current")
     }
     return 1
 }
@@ -1466,7 +1466,7 @@ func wv_WKBackForwardList_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: An
 func wv_WKNavigation_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int32 {
     let navID = obj as! WKNavigation
     let str = String(describing: Unmanaged.passUnretained(navID as AnyObject).toOpaque())
-    lua_pushstring(L, str)
+    L.push(str)
     return 1
 }
 
@@ -1474,7 +1474,7 @@ func wv_NSError_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) -> Int
     guard let theError = obj as? NSError else { lua_pushnil(L); return 1 }
 
     lua_newtable(L)
-    lua_pushinteger(L, lua_Integer(theError.code));                    lua_setfield(L, -2, "code")
+    L.push(Int(theError.code));                    lua_setfield(L, -2, "code")
     lua_pushany(L, theError.domain as NSString);                    lua_setfield(L, -2, "domain")
     lua_pushany(L, theError.helpAnchor as NSString?);               lua_setfield(L, -2, "helpAnchor")
     lua_pushany(L, theError.localizedDescription as NSString);      lua_setfield(L, -2, "localizedDescription")
@@ -1488,14 +1488,14 @@ func wv_WKWindowFeatures_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any
     let features = obj as! WKWindowFeatures
 
     lua_newtable(L)
-    if let v = features.menuBarVisibility   { lua_pushboolean(L, v.boolValue ? 1 : 0); lua_setfield(L, -2, "menuBarVisibility") }
-    if let v = features.statusBarVisibility { lua_pushboolean(L, v.boolValue ? 1 : 0); lua_setfield(L, -2, "statusBarVisibility") }
-    if let v = features.toolbarsVisibility  { lua_pushboolean(L, v.boolValue ? 1 : 0); lua_setfield(L, -2, "toolbarsVisibility") }
-    if let v = features.allowsResizing      { lua_pushboolean(L, v.boolValue ? 1 : 0); lua_setfield(L, -2, "allowsResizing") }
-    if let v = features.x      { lua_pushnumber(L, v.doubleValue); lua_setfield(L, -2, "x") }
-    if let v = features.y      { lua_pushnumber(L, v.doubleValue); lua_setfield(L, -2, "y") }
-    if let v = features.height { lua_pushnumber(L, v.doubleValue); lua_setfield(L, -2, "h") }
-    if let v = features.width  { lua_pushnumber(L, v.doubleValue); lua_setfield(L, -2, "w") }
+    if let v = features.menuBarVisibility   { L.push(v.boolValue); lua_setfield(L, -2, "menuBarVisibility") }
+    if let v = features.statusBarVisibility { L.push(v.boolValue); lua_setfield(L, -2, "statusBarVisibility") }
+    if let v = features.toolbarsVisibility  { L.push(v.boolValue); lua_setfield(L, -2, "toolbarsVisibility") }
+    if let v = features.allowsResizing      { L.push(v.boolValue); lua_setfield(L, -2, "allowsResizing") }
+    if let v = features.x      { L.push(v.doubleValue); lua_setfield(L, -2, "x") }
+    if let v = features.y      { L.push(v.doubleValue); lua_setfield(L, -2, "y") }
+    if let v = features.height { L.push(v.doubleValue); lua_setfield(L, -2, "h") }
+    if let v = features.width  { L.push(v.doubleValue); lua_setfield(L, -2, "w") }
     return 1
 }
 
@@ -1503,7 +1503,7 @@ func wv_NSURLAuthenticationChallenge_toLua(_ L: UnsafeMutablePointer<lua_State>!
     let challenge = obj as! URLAuthenticationChallenge
 
     lua_newtable(L)
-    lua_pushinteger(L, lua_Integer(challenge.previousFailureCount)); lua_setfield(L, -2, "previousFailureCount")
+    L.push(Int(challenge.previousFailureCount)); lua_setfield(L, -2, "previousFailureCount")
     wv_pushAny(L, challenge.error as NSError?);                     lua_setfield(L, -2, "error")
     wv_pushAny(L, challenge.failureResponse);                       lua_setfield(L, -2, "failureResponse")
     wv_pushAny(L, challenge.proposedCredential);                    lua_setfield(L, -2, "proposedCredential")
@@ -1529,9 +1529,9 @@ func wv_NSURLProtectionSpace_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj:
     let theSpace = obj as! URLProtectionSpace
 
     lua_newtable(L)
-    lua_pushboolean(L, theSpace.isProxy() ? 1 : 0);                   lua_setfield(L, -2, "isProxy")
-    lua_pushinteger(L, lua_Integer(theSpace.port));                   lua_setfield(L, -2, "port")
-    lua_pushboolean(L, theSpace.receivesCredentialSecurely ? 1 : 0);  lua_setfield(L, -2, "receivesCredentialSecurely")
+    L.push(theSpace.isProxy());                   lua_setfield(L, -2, "isProxy")
+    L.push(Int(theSpace.port));                   lua_setfield(L, -2, "port")
+    L.push(theSpace.receivesCredentialSecurely);  lua_setfield(L, -2, "receivesCredentialSecurely")
 
     let methodMap: [String: String] = [
         NSURLAuthenticationMethodDefault: "default",
@@ -1576,13 +1576,13 @@ func wv_NSURLCredential_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!
     let credential = obj as! URLCredential
 
     lua_newtable(L)
-    lua_pushboolean(L, credential.hasPassword ? 1 : 0); lua_setfield(L, -2, "hasPassword")
+    L.push(credential.hasPassword); lua_setfield(L, -2, "hasPassword")
     switch credential.persistence {
-    case .none:           lua_pushstring(L, "none")
-    case .forSession:     lua_pushstring(L, "session")
-    case .permanent:      lua_pushstring(L, "permanent")
-    case .synchronizable: lua_pushstring(L, "synchronized")
-    @unknown default:     lua_pushstring(L, "unknown")
+    case .none:           L.push("none")
+    case .forSession:     L.push("session")
+    case .permanent:      L.push("permanent")
+    case .synchronizable: L.push("synchronized")
+    @unknown default:     L.push("unknown")
     }
     lua_setfield(L, -2, "persistence")
     lua_pushany(L, credential.user as NSString?);     lua_setfield(L, -2, "user")
@@ -1595,7 +1595,7 @@ func wv_WKSecurityOrigin_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any
 
     lua_newtable(L)
     lua_pushany(L, origin.host as NSString);     lua_setfield(L, -2, "host")
-    lua_pushinteger(L, lua_Integer(origin.port));    lua_setfield(L, -2, "port")
+    L.push(Int(origin.port));    lua_setfield(L, -2, "port")
     lua_pushany(L, origin.protocol as NSString);  lua_setfield(L, -2, "protocol")
     return 1
 }
@@ -1608,14 +1608,14 @@ func wv_userdata_tostring(_ L: LuaState) throws -> CInt {
     let title = theView?.title ?? ""
     let ptr = lua_topointer(L, 1)!
     let str = "\(wv_USERDATA_TAG): \(title.isEmpty ? "" : title) (\(ptr))"
-    lua_pushstring(L, str)
+    L.push(str)
     return 1
 }
 
 func wv_userdata_eq(_ L: LuaState) throws -> CInt {
     let theWindow = wv_getWindowFromUD(L, 1)
     let otherWindow = wv_getWindowFromUD(L, 2)
-    lua_pushboolean(L, theWindow === otherWindow ? 1 : 0)
+    L.push(theWindow === otherWindow)
     return 1
 }
 

@@ -164,7 +164,7 @@ public func luaopen_hs_libbonjour(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
             "includesPeerToPeer": .closure { L in
                 let browser: HSNetServiceBrowser = try L.checkArgument(1)
                 if lua_gettop(L) == 1 {
-                    lua_pushboolean(L, browser.includesPeerToPeer ? 1 : 0)
+                    L.push(browser.includesPeerToPeer)
                 } else {
                     browser.includesPeerToPeer = lua_toboolean(L, 2) != 0
                     lua_pushvalue(L, 1)
@@ -294,14 +294,14 @@ public func luaopen_hs_libbonjour(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
         eq: .closure { L in
             if let obj1: HSNetServiceBrowser = L.touserdata(1),
                let obj2: HSNetServiceBrowser = L.touserdata(2) {
-                lua_pushboolean(L, obj1.isEqual(to: obj2) ? 1 : 0)
+                L.push(obj1.isEqual(to: obj2))
             } else {
-                lua_pushboolean(L, 0)
+                L.push(false)
             }
             return 1
         },
         tostring: .closure { L in
-            lua_pushstring(L, "\(USERDATA_TAG): (\(String(describing: lua_topointer(L, 1))))")
+            L.push("\(USERDATA_TAG): (\(String(describing: lua_topointer(L, 1))))")
             return 1
         }
     ))
@@ -327,9 +327,9 @@ public func luaopen_hs_libbonjour(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
     lua_setfield(L, -2, "__gc")
 
     // Set __type and __name for lsunit.lua assertIsUserdataOfType and tostring
-    lua_pushstring(L, USERDATA_TAG)
+    L.push(USERDATA_TAG)
     lua_setfield(L, -2, "__type")
-    lua_pushstring(L, USERDATA_TAG)
+    L.push(USERDATA_TAG)
     lua_setfield(L, -2, "__name")
 
     // Alias the metatable under the legacy registry name so that

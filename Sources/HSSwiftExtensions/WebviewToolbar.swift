@@ -655,7 +655,7 @@ private func isBoolNumber(_ value: Any?) -> Bool {
             self.pushWindowContext(L)
             let itemId = (notification.userInfo?["item"] as? NSToolbarItem)?.itemIdentifier.rawValue ?? ""
             lua_pushany(L, itemId)
-            lua_pushstring(L, "add")
+            L.push("add")
             if lua_pcall(L, 4, 0, 0) != LUA_OK { lua_pop(L, 1) }
         }
     }
@@ -672,7 +672,7 @@ private func isBoolNumber(_ value: Any?) -> Bool {
             self.pushWindowContext(L)
             let itemId = (notification.userInfo?["item"] as? NSToolbarItem)?.itemIdentifier.rawValue ?? ""
             lua_pushany(L, itemId)
-            lua_pushstring(L, "remove")
+            L.push("remove")
             if lua_pcall(L, 4, 0, 0) != LUA_OK { lua_pop(L, 1) }
         }
     }
@@ -700,7 +700,7 @@ private func toolbar_new(_ L: LuaState) throws -> CInt {
 private func toolbar_uniqueName(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TSTRING)
     let identifier = lua_tovalue(L, at: 1) as! String
-    lua_pushboolean(L, !identifiersInUse.contains(identifier) ? 1 : 0)
+    L.push(!identifiersInUse.contains(identifier))
     return 1
 }
 
@@ -790,7 +790,7 @@ private func toolbar_inTitleBar(_ L: LuaState) throws -> CInt {
     let toolbar = getToolbar(L, 1)
     let theWindow = toolbar.windowUsingToolbar
     if lua_gettop(L) == 1 {
-        lua_pushboolean(L, theWindow?.titleVisibility == .hidden ? 1 : 0)
+        L.push(theWindow?.titleVisibility == .hidden)
     } else {
         if let win = theWindow {
             win.titleVisibility = lua_toboolean(L, 2) != 0 ? .hidden : .visible
@@ -805,7 +805,7 @@ private func toolbar_inTitleBar(_ L: LuaState) throws -> CInt {
 private func toolbar_isAttached(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TB_TAG)
     let toolbar = getToolbar(L, 1)
-    lua_pushboolean(L, toolbar.isAttached ? 1 : 0)
+    L.push(toolbar.isAttached)
     return 1
 }
 
@@ -846,7 +846,7 @@ private func toolbar_separator(_ L: LuaState) throws -> CInt {
         toolbar.showsBaselineSeparator = lua_toboolean(L, 2) != 0
         lua_pushvalue(L, 1)
     } else {
-        lua_pushboolean(L, toolbar.showsBaselineSeparator ? 1 : 0)
+        L.push(toolbar.showsBaselineSeparator)
     }
     return 1
 }
@@ -858,7 +858,7 @@ private func toolbar_visible(_ L: LuaState) throws -> CInt {
         toolbar.isVisible = lua_toboolean(L, 2) != 0
         lua_pushvalue(L, 1)
     } else {
-        lua_pushboolean(L, toolbar.isVisible ? 1 : 0)
+        L.push(toolbar.isVisible)
     }
     return 1
 }
@@ -870,7 +870,7 @@ private func toolbar_notifyOnChange(_ L: LuaState) throws -> CInt {
         toolbar.notifyToolbarChanges = lua_toboolean(L, 2) != 0
         lua_pushvalue(L, 1)
     } else {
-        lua_pushboolean(L, toolbar.notifyToolbarChanges ? 1 : 0)
+        L.push(toolbar.notifyToolbarChanges)
     }
     return 1
 }
@@ -1176,13 +1176,13 @@ private func toolbar_itemDetails(_ L: LuaState) throws -> CInt {
     if ourItem == nil { ourItem = toolbar.itemDefDictionary[identifier] as? NSToolbarItem }
     wv_pushAny(L, ourItem)
 
-    lua_pushboolean(L, toolbar.selectableIdentifiers_.contains(identifier) ? 1 : 0)
+    L.push(toolbar.selectableIdentifiers_.contains(identifier))
     lua_setfield(L, -2, "selectable")
-    lua_pushboolean(L, toolbar.defaultIdentifiers.contains(identifier) ? 1 : 0)
+    L.push(toolbar.defaultIdentifiers.contains(identifier))
     lua_setfield(L, -2, "default")
-    lua_pushboolean(L, toolbar.allowedIdentifiers_.contains(identifier) ? 1 : 0)
+    L.push(toolbar.allowedIdentifiers_.contains(identifier))
     lua_setfield(L, -2, "allowedAlone")
-    lua_pushboolean(L, toolbar.fnRefDictionary[identifier] != nil ? 1 : 0)
+    L.push(toolbar.fnRefDictionary[identifier] != nil)
     lua_setfield(L, -2, "privateCallback")
 
     if ourItem != nil {
@@ -1253,7 +1253,7 @@ private func toolbar_selectSearchField(_ L: LuaState) throws -> CInt {
         (item.view as? HSToolbarSearchField)?.selectText(nil)
         lua_pushvalue(L, 1)
     } else {
-        lua_pushboolean(L, 0)
+        L.push(false)
     }
     return 1
 }
@@ -1276,7 +1276,7 @@ private func toolbar_customizePanel(_ L: LuaState) throws -> CInt {
 private func toolbar_isCustomizing(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TB_TAG)
     let toolbar = getToolbar(L, 1)
-    lua_pushboolean(L, toolbar.customizationPaletteIsRunning ? 1 : 0)
+    L.push(toolbar.customizationPaletteIsRunning)
     return 1
 }
 
@@ -1284,7 +1284,7 @@ private func toolbar_canCustomize(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TB_TAG)
     let toolbar = getToolbar(L, 1)
     if lua_gettop(L) == 1 {
-        lua_pushboolean(L, toolbar.allowsUserCustomization ? 1 : 0)
+        L.push(toolbar.allowsUserCustomization)
     } else {
         toolbar.allowsUserCustomization = lua_toboolean(L, 2) != 0
         lua_pushvalue(L, 1)
@@ -1296,7 +1296,7 @@ private func toolbar_autosaves(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TB_TAG)
     let toolbar = getToolbar(L, 1)
     if lua_gettop(L) == 1 {
-        lua_pushboolean(L, toolbar.autosavesConfiguration ? 1 : 0)
+        L.push(toolbar.autosavesConfiguration)
     } else {
         toolbar.autosavesConfiguration = lua_toboolean(L, 2) != 0
         lua_pushvalue(L, 1)
@@ -1313,13 +1313,13 @@ private func toolbar_systemItems(_ L: LuaState) throws -> CInt {
 
 private func toolbar_itemPriorities(_ L: LuaState) throws -> CInt {
     lua_newtable(L)
-    lua_pushinteger(L, lua_Integer(NSToolbarItem.VisibilityPriority.standard.rawValue))
+    L.push(Int(NSToolbarItem.VisibilityPriority.standard.rawValue))
     lua_setfield(L, -2, "standard")
-    lua_pushinteger(L, lua_Integer(NSToolbarItem.VisibilityPriority.low.rawValue))
+    L.push(Int(NSToolbarItem.VisibilityPriority.low.rawValue))
     lua_setfield(L, -2, "low")
-    lua_pushinteger(L, lua_Integer(NSToolbarItem.VisibilityPriority.high.rawValue))
+    L.push(Int(NSToolbarItem.VisibilityPriority.high.rawValue))
     lua_setfield(L, -2, "high")
-    lua_pushinteger(L, lua_Integer(NSToolbarItem.VisibilityPriority.user.rawValue))
+    L.push(Int(NSToolbarItem.VisibilityPriority.user.rawValue))
     lua_setfield(L, -2, "user")
     return 1
 }
@@ -1329,12 +1329,12 @@ private func toolbar_itemPriorities(_ L: LuaState) throws -> CInt {
 @discardableResult
 func toolbar_pushWindowContext(_ L: UnsafeMutablePointer<lua_State>!, _ window: NSWindow?) -> Int32 {
     guard let window else {
-        lua_pushstring(L, "** no window attached")
+        L.push("** no window attached")
         return 1
     }
 
     if window == consoleWindow() {
-        lua_pushstring(L, "console")
+        L.push("console")
     } else if let webview = window as? HSWebViewWindow {
         _ = wv_HSWebViewWindow_toLua(L, webview)
     } else if let chooser = window.windowController as? HSChooser {
@@ -1380,9 +1380,9 @@ private func pushNSToolbarItem(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any
     lua_pushany(L, item.label); lua_setfield(L, -2, "label")
     lua_pushany(L, item.toolTip); lua_setfield(L, -2, "tooltip")
     lua_pushany(L, item.image); lua_setfield(L, -2, "image")
-    lua_pushinteger(L, lua_Integer(item.visibilityPriority.rawValue)); lua_setfield(L, -2, "priority")
-    lua_pushboolean(L, item.isEnabled ? 1 : 0); lua_setfield(L, -2, "enable")
-    lua_pushinteger(L, lua_Integer(item.tag)); lua_setfield(L, -2, "tag")
+    L.push(Int(item.visibilityPriority.rawValue)); lua_setfield(L, -2, "priority")
+    L.push(item.isEnabled); lua_setfield(L, -2, "enable")
+    L.push(Int(item.tag)); lua_setfield(L, -2, "tag")
 
     if let group = item as? NSToolbarItemGroup {
         lua_createtable(L, Int32(group.subitems.count), 0)
@@ -1396,10 +1396,10 @@ private func pushNSToolbarItem(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any
     if let toolbar = item.toolbar as? HSToolbar {
         wv_pushAny(L, toolbar); lua_setfield(L, -2, "toolbar")
         if let sf = item.view as? HSToolbarSearchField {
-            lua_pushnumber(L, lua_Number(item.maxSize.width)); lua_setfield(L, -2, "searchWidth")
+            L.push(lua_Number(item.maxSize.width)); lua_setfield(L, -2, "searchWidth")
             lua_pushany(L, sf.stringValue); lua_setfield(L, -2, "searchText")
-            lua_pushboolean(L, sf.releaseOnCallback ? 1 : 0); lua_setfield(L, -2, "searchReleaseFocusOnCallback")
-            lua_pushinteger(L, lua_Integer((sf.cell as? NSSearchFieldCell)?.maximumRecents ?? 0)); lua_setfield(L, -2, "searchHistoryLimit")
+            L.push(sf.releaseOnCallback); lua_setfield(L, -2, "searchReleaseFocusOnCallback")
+            L.push(Int((sf.cell as? NSSearchFieldCell)?.maximumRecents ?? 0)); lua_setfield(L, -2, "searchHistoryLimit")
             lua_pushany(L, (sf.cell as? NSSearchFieldCell)?.recentSearches); lua_setfield(L, -2, "searchHistory")
             lua_pushany(L, (sf.cell as? NSSearchFieldCell)?.recentsAutosaveName); lua_setfield(L, -2, "searchHistoryAutosaveName")
         }
@@ -1420,7 +1420,7 @@ func wv_NSToolbarItem_toLua(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any!) 
 private func toolbar_tostring(_ L: LuaState) throws -> CInt {
     let toolbar = getToolbar(L, 1)
     let desc = "\(USERDATA_TB_TAG): \(toolbar.identifier) (\(String(describing: lua_topointer(L, 1)!)))"
-    lua_pushstring(L, desc)
+    L.push(desc)
     return 1
 }
 
@@ -1428,9 +1428,9 @@ private func toolbar_eq(_ L: LuaState) throws -> CInt {
     if luaL_testudata(L, 1, USERDATA_TB_TAG) != nil && luaL_testudata(L, 2, USERDATA_TB_TAG) != nil {
         let obj1 = getToolbar(L, 1)
         let obj2 = getToolbar(L, 2)
-        lua_pushboolean(L, obj1.isEqual(to: obj2) ? 1 : 0)
+        L.push(obj1.isEqual(to: obj2))
     } else {
-        lua_pushboolean(L, 0)
+        L.push(false)
     }
     return 1
 }

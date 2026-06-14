@@ -171,7 +171,7 @@ private func consoleDarkMode(_ L: LuaState) throws -> CInt {
         ctrl.perform(NSSelectorFromString("reflectDefaults"))
     }
 
-    lua_pushboolean(L, consoleDarkModeEnabled() ? 1 : 0)
+    L.push(consoleDarkModeEnabled())
     return 1
 }
 
@@ -223,7 +223,7 @@ private func console_maxOutputHistory(_ L: LuaState) throws -> CInt {
         consoleController().setValue(size, forKey: "maxConsoleOutputHistory")
     }
 
-    lua_pushinteger(L, lua_Integer(consoleMaxOutputHistory().intValue))
+    L.push(lua_Integer(consoleMaxOutputHistory().intValue))
     return 1
 }
 
@@ -324,11 +324,11 @@ private func console_asWindow(_ L: LuaState) throws -> CInt {
     let windowID = CGWindowID(console.windowNumber)
     lua_getglobal(L, "require")
 
-    lua_pushstring(L, "hs.window")
+    L.push("hs.window")
 
     lua_pcall(L, 1, 1, 0)
     lua_getfield(L, -1, "windowForID")
-    lua_pushinteger(L, lua_Integer(windowID))
+    L.push(lua_Integer(windowID))
     lua_call(L, 1, 1)
     return 1
 }
@@ -433,7 +433,7 @@ private func console_smartInsertDeleteEnabled(_ L: LuaState) throws -> CInt {
         output.smartInsertDeleteEnabled = lua_toboolean(L, 1) != 0
     }
 
-    lua_pushboolean(L, output.smartInsertDeleteEnabled ? 1 : 0)
+    L.push(output.smartInsertDeleteEnabled)
     return 1
 }
 
@@ -651,7 +651,7 @@ private func console_level(_ L: LuaState) throws -> CInt {
             throw LuaCallError("window level must be between \(minLevel) and \(maxLevel) inclusive")
         }
     }
-    lua_pushinteger(L, lua_Integer(console.level.rawValue))
+    L.push(lua_Integer(console.level.rawValue))
     return 1
 }
 
@@ -671,7 +671,7 @@ private func console_alpha(_ L: LuaState) throws -> CInt {
         let newLevel = CGFloat(luaL_checknumber(L, 1))
         console.alphaValue = min(max(newLevel, 0.0), 1.0)
     }
-    lua_pushnumber(L, lua_Number(console.alphaValue))
+    L.push(lua_Number(console.alphaValue))
     return 1
 }
 
@@ -695,7 +695,7 @@ private func console_behavior(_ L: LuaState) throws -> CInt {
         let newLevel = lua_tointeger(L, 1)
         console.collectionBehavior = NSWindow.CollectionBehavior(rawValue: UInt(newLevel))
     }
-    lua_pushinteger(L, lua_Integer(console.collectionBehavior.rawValue))
+    L.push(lua_Integer(console.collectionBehavior.rawValue))
     return 1
 }
 

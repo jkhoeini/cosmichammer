@@ -594,7 +594,7 @@ private func canvas_pushArray(_ L: UnsafeMutablePointer<lua_State>!, _ array: [A
         lua_rawseti(L, -2, lua_Integer(index + 1))
     }
     if hasHole {
-        lua_pushinteger(L, lua_Integer(array.count))
+        L.push(Int(array.count))
         lua_setfield(L, -2, "n")
     }
 }
@@ -611,52 +611,52 @@ private func canvas_pushDictionary(_ L: UnsafeMutablePointer<lua_State>!, _ dict
 private func canvas_pushColor(_ L: UnsafeMutablePointer<lua_State>!, _ color: NSColor) {
     lua_newtable(L)
     if let rgb = color.usingColorSpace(.genericRGB) {
-        lua_pushnumber(L, lua_Number(rgb.redComponent)); lua_setfield(L, -2, "red")
-        lua_pushnumber(L, lua_Number(rgb.greenComponent)); lua_setfield(L, -2, "green")
-        lua_pushnumber(L, lua_Number(rgb.blueComponent)); lua_setfield(L, -2, "blue")
-        lua_pushnumber(L, lua_Number(rgb.alphaComponent)); lua_setfield(L, -2, "alpha")
+        L.push(lua_Number(rgb.redComponent)); lua_setfield(L, -2, "red")
+        L.push(lua_Number(rgb.greenComponent)); lua_setfield(L, -2, "green")
+        L.push(lua_Number(rgb.blueComponent)); lua_setfield(L, -2, "blue")
+        L.push(lua_Number(rgb.alphaComponent)); lua_setfield(L, -2, "alpha")
     } else if color.colorSpaceName == .named {
-        lua_pushstring(L, color.catalogNameComponent); lua_setfield(L, -2, "list")
-        lua_pushstring(L, color.colorNameComponent); lua_setfield(L, -2, "name")
+        L.push(color.catalogNameComponent); lua_setfield(L, -2, "list")
+        L.push(color.colorNameComponent); lua_setfield(L, -2, "name")
     } else if color.colorSpaceName == .pattern {
         canvas_pushValue(L, color.patternImage); lua_setfield(L, -2, "image")
     }
-    lua_pushstring(L, "NSColor"); lua_setfield(L, -2, "__luaSkinType")
+    L.push("NSColor"); lua_setfield(L, -2, "__luaSkinType")
 }
 
 private func canvas_pushTransform(_ L: UnsafeMutablePointer<lua_State>!, _ transform: NSAffineTransform) {
     let structure = transform.transformStruct
     lua_newtable(L)
-    lua_pushnumber(L, lua_Number(structure.m11)); lua_setfield(L, -2, "m11")
-    lua_pushnumber(L, lua_Number(structure.m12)); lua_setfield(L, -2, "m12")
-    lua_pushnumber(L, lua_Number(structure.m21)); lua_setfield(L, -2, "m21")
-    lua_pushnumber(L, lua_Number(structure.m22)); lua_setfield(L, -2, "m22")
-    lua_pushnumber(L, lua_Number(structure.tX)); lua_setfield(L, -2, "tX")
-    lua_pushnumber(L, lua_Number(structure.tY)); lua_setfield(L, -2, "tY")
-    lua_pushstring(L, "NSAffineTransform"); lua_setfield(L, -2, "__luaSkinType")
+    L.push(lua_Number(structure.m11)); lua_setfield(L, -2, "m11")
+    L.push(lua_Number(structure.m12)); lua_setfield(L, -2, "m12")
+    L.push(lua_Number(structure.m21)); lua_setfield(L, -2, "m21")
+    L.push(lua_Number(structure.m22)); lua_setfield(L, -2, "m22")
+    L.push(lua_Number(structure.tX)); lua_setfield(L, -2, "tX")
+    L.push(lua_Number(structure.tY)); lua_setfield(L, -2, "tY")
+    L.push("NSAffineTransform"); lua_setfield(L, -2, "__luaSkinType")
     canvas_setMetatableIfAvailable(L, tag: "hs.canvas.matrix")
 }
 
 private func canvas_pushShadow(_ L: UnsafeMutablePointer<lua_State>!, _ shadow: NSShadow, depth: Int) {
     lua_newtable(L)
     lua_pushNSSize(L, shadow.shadowOffset); lua_setfield(L, -2, "offset")
-    lua_pushnumber(L, lua_Number(shadow.shadowBlurRadius)); lua_setfield(L, -2, "blurRadius")
+    L.push(lua_Number(shadow.shadowBlurRadius)); lua_setfield(L, -2, "blurRadius")
     canvas_pushValueRecursive(L, shadow.shadowColor, depth: depth + 1); lua_setfield(L, -2, "color")
-    lua_pushstring(L, "NSShadow"); lua_setfield(L, -2, "__luaSkinType")
+    L.push("NSShadow"); lua_setfield(L, -2, "__luaSkinType")
 }
 
 private func canvas_pushFont(_ L: UnsafeMutablePointer<lua_State>!, _ font: NSFont) {
     lua_newtable(L)
-    lua_pushstring(L, font.fontName); lua_setfield(L, -2, "name")
-    lua_pushnumber(L, lua_Number(font.pointSize)); lua_setfield(L, -2, "size")
-    lua_pushstring(L, "NSFont"); lua_setfield(L, -2, "__luaSkinType")
+    L.push(font.fontName); lua_setfield(L, -2, "name")
+    L.push(lua_Number(font.pointSize)); lua_setfield(L, -2, "size")
+    L.push("NSFont"); lua_setfield(L, -2, "__luaSkinType")
 }
 
 private func canvas_pushParagraphStyle(_ L: UnsafeMutablePointer<lua_State>!, _ paragraphStyle: NSParagraphStyle) {
     lua_newtable(L)
-    lua_pushinteger(L, lua_Integer(paragraphStyle.alignment.rawValue)); lua_setfield(L, -2, "alignment")
-    lua_pushinteger(L, lua_Integer(paragraphStyle.lineBreakMode.rawValue)); lua_setfield(L, -2, "lineBreak")
-    lua_pushstring(L, "NSParagraphStyle"); lua_setfield(L, -2, "__luaSkinType")
+    L.push(Int(paragraphStyle.alignment.rawValue)); lua_setfield(L, -2, "alignment")
+    L.push(Int(paragraphStyle.lineBreakMode.rawValue)); lua_setfield(L, -2, "lineBreak")
+    L.push("NSParagraphStyle"); lua_setfield(L, -2, "__luaSkinType")
 }
 
 private func canvas_pushObjectUserdata(_ L: UnsafeMutablePointer<lua_State>!, _ object: AnyObject, tag: String) {
@@ -690,7 +690,7 @@ func canvas_useCustomAccessibilitySubrole(_ L: LuaState) throws -> CInt {
     if lua_gettop(L) == 1 {
         canvas_defaultCustomSubRole = lua_toboolean(L, 1) != 0
     }
-    lua_pushboolean(L, canvas_defaultCustomSubRole ? 1 : 0)
+    L.push(canvas_defaultCustomSubRole)
     return 1
 }
 
@@ -734,7 +734,7 @@ func default_textAttributes(_ L: LuaState) throws -> CInt {
         canvas_pushValue(L, NSParagraphStyle.default)
         lua_setfield(L, -2, "paragraphStyle")
     } else {
-        return luaL_error(L, "\(canvas_USERDATA_TAG):unable to get default font name from element language dictionary")
+        throw LuaCallError("\(canvas_USERDATA_TAG):unable to get default font name from element language dictionary")
     }
     return 1
 }
@@ -853,7 +853,7 @@ func canvas_clickActivating(_ L: LuaState) throws -> CInt {
         }
         lua_pushvalue(L, 1)
     } else {
-        lua_pushboolean(L, !canvasWindow.styleMask.contains(.nonactivatingPanel) ? 1 : 0)
+        L.push(!canvasWindow.styleMask.contains(.nonactivatingPanel))
     }
 
     return 1
@@ -865,10 +865,10 @@ func canvas_canvasMouseEvents(_ L: LuaState) throws -> CInt {
     let canvasView = canvas_toHSCanvasViewFromLua(L, idx: 1) as! HSCanvasView
 
     if lua_gettop(L) == 1 {
-        lua_pushboolean(L, canvasView.canvasMouseDown ? 1 : 0)
-        lua_pushboolean(L, canvasView.canvasMouseUp ? 1 : 0)
-        lua_pushboolean(L, canvasView.canvasMouseEnterExit ? 1 : 0)
-        lua_pushboolean(L, canvasView.canvasMouseMove ? 1 : 0)
+        L.push(canvasView.canvasMouseDown)
+        L.push(canvasView.canvasMouseUp)
+        L.push(canvasView.canvasMouseEnterExit)
+        L.push(canvasView.canvasMouseMove)
         return 4
     } else {
         if lua_type(L, 2) == LUA_TBOOLEAN { canvasView.canvasMouseDown      = lua_toboolean(L, 2) != 0 }
@@ -991,9 +991,9 @@ func canvas_alpha(_ L: LuaState) throws -> CInt {
 
     if lua_gettop(L) == 1 {
         if canvas_parentIsWindow(canvasView) {
-            lua_pushnumber(L, lua_Number(canvasWindow!.alphaValue))
+            L.push(lua_Number(canvasWindow!.alphaValue))
         } else {
-            lua_pushnumber(L, lua_Number(canvasView.alphaValue))
+            L.push(lua_Number(canvasView.alphaValue))
         }
     } else {
         let newLevel = CGFloat(luaL_checknumber(L, 2))
@@ -1027,7 +1027,7 @@ func canvas_level(_ L: LuaState) throws -> CInt {
         let canvasWindow = canvasView.window!
 
         if lua_gettop(L) == 1 {
-            lua_pushinteger(L, lua_Integer(canvasWindow.level.rawValue))
+            L.push(Int(canvasWindow.level.rawValue))
         } else {
             var targetLevel: lua_Integer
             if lua_type(L, 2) == LUA_TNUMBER {
@@ -1039,7 +1039,7 @@ func canvas_level(_ L: LuaState) throws -> CInt {
                     lua_pop(L, 2)
                 } else {
                     lua_pop(L, 2)
-                    return luaL_error(L, "unrecognized window level: \(lua_tovalue(L, at: 2) ?? "unknown")")
+                    throw LuaCallError("unrecognized window level: \(lua_tovalue(L, at: 2) ?? "unknown")")
                 }
             }
 
@@ -1066,7 +1066,7 @@ func canvas_wantsLayer(_ L: LuaState) throws -> CInt {
         canvasView.needsDisplay = true
         lua_pushvalue(L, 1)
     } else {
-        lua_pushboolean(L, canvasView.wantsLayer ? 1 : 0)
+        L.push(canvasView.wantsLayer)
     }
 
     return 1
@@ -1079,7 +1079,7 @@ func canvas_behavior(_ L: LuaState) throws -> CInt {
         let canvasWindow = canvasView.window!
 
         if lua_gettop(L) == 1 {
-            lua_pushinteger(L, lua_Integer(canvasWindow.collectionBehavior.rawValue))
+            L.push(Int(canvasWindow.collectionBehavior.rawValue))
         } else {
             let newLevel = lua_tointeger(L, 2)
             canvasWindow.collectionBehavior = NSWindow.CollectionBehavior(rawValue: UInt(newLevel))
@@ -1109,9 +1109,9 @@ func canvas_isShowing(_ L: LuaState) throws -> CInt {
     let canvasView = canvas_toHSCanvasViewFromLua(L, idx: 1) as! HSCanvasView
     let canvasWindow = canvasView.window as? HSCanvasWindow
     if canvas_parentIsWindow(canvasView) {
-        lua_pushboolean(L, (canvasWindow?.isVisible ?? false) ? 1 : 0)
+        L.push(canvasWindow?.isVisible ?? false)
     } else {
-        lua_pushboolean(L, (!canvasView.isHidden && (canvasWindow?.isVisible ?? false)) ? 1 : 0)
+        L.push(!canvasView.isHidden && (canvasWindow?.isVisible ?? false))
     }
     return 1
 }
@@ -1124,10 +1124,10 @@ func canvas_isOccluded(_ L: LuaState) throws -> CInt {
     let canvasWindow = canvasView.window as? HSCanvasWindow
     if canvas_parentIsWindow(canvasView) {
         let visible = canvasWindow?.occlusionState.contains(.visible) ?? false
-        lua_pushboolean(L, visible ? 0 : 1)
+        L.push(!visible)
     } else {
         let visible = canvasWindow?.occlusionState.contains(.visible) ?? false
-        lua_pushboolean(L, (canvasView.isHidden || !visible) ? 1 : 0)
+        L.push(canvasView.isHidden || !visible)
     }
     return 1
 }
@@ -1154,7 +1154,7 @@ func canvas_canvasTransformation(_ L: LuaState) throws -> CInt {
 func canvas_elementCount(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, canvas_USERDATA_TAG)
     let canvasView = canvas_toHSCanvasViewFromLua(L, idx: 1) as! HSCanvasView
-    lua_pushinteger(L, lua_Integer(canvasView.elementList.count))
+    L.push(Int(canvasView.elementList.count))
     return 1
 }
 

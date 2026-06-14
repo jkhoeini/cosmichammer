@@ -44,7 +44,7 @@ private func axtextmarker_newMarker(_ L: LuaState) throws -> CInt {
         pushAXTextMarker(L, marker)
     } else {
         lua_pushnil(L)
-        lua_pushstring(L, "unable to create marker with specified data string")
+        L.push("unable to create marker with specified data string")
         return 2
     }
     return 1
@@ -61,33 +61,33 @@ private func axtextmarker_newRange(_ L: LuaState) throws -> CInt {
         pushAXTextMarkerRange(L, range)
     } else {
         lua_pushnil(L)
-        lua_pushstring(L, "invalid start or end marker for range")
+        L.push("invalid start or end marker for range")
         return 2
     }
     return 1
 }
 
 private func axtextmarker_AXTextMarkerGetTypeID_fn(_ L: LuaState) throws -> CInt {
-    lua_pushinteger(L, lua_Integer(AXTextMarkerGetTypeID()))
+    L.push(lua_Integer(AXTextMarkerGetTypeID()))
     return 1
 }
 
 private func axtextmarker_AXTextMarkerRangeGetTypeID_fn(_ L: LuaState) throws -> CInt {
-    lua_pushinteger(L, lua_Integer(AXTextMarkerRangeGetTypeID()))
+    L.push(lua_Integer(AXTextMarkerRangeGetTypeID()))
     return 1
 }
 
 /// hs.axuielement.axtextmarker._functionCheck() -> table
 private func axtextmarker_availabilityCheck(_ L: LuaState) throws -> CInt {
     lua_newtable(L)
-    lua_pushboolean(L, 1); lua_setfield(L, -2, "AXTextMarkerGetTypeID")
-    lua_pushboolean(L, 1); lua_setfield(L, -2, "AXTextMarkerCreate")
-    lua_pushboolean(L, 1); lua_setfield(L, -2, "AXTextMarkerGetLength")
-    lua_pushboolean(L, 1); lua_setfield(L, -2, "AXTextMarkerGetBytePtr")
-    lua_pushboolean(L, 1); lua_setfield(L, -2, "AXTextMarkerRangeGetTypeID")
-    lua_pushboolean(L, 1); lua_setfield(L, -2, "AXTextMarkerRangeCreate")
-    lua_pushboolean(L, 1); lua_setfield(L, -2, "AXTextMarkerRangeCopyStartMarker")
-    lua_pushboolean(L, 1); lua_setfield(L, -2, "AXTextMarkerRangeCopyEndMarker")
+    L.push(true); lua_setfield(L, -2, "AXTextMarkerGetTypeID")
+    L.push(true); lua_setfield(L, -2, "AXTextMarkerCreate")
+    L.push(true); lua_setfield(L, -2, "AXTextMarkerGetLength")
+    L.push(true); lua_setfield(L, -2, "AXTextMarkerGetBytePtr")
+    L.push(true); lua_setfield(L, -2, "AXTextMarkerRangeGetTypeID")
+    L.push(true); lua_setfield(L, -2, "AXTextMarkerRangeCreate")
+    L.push(true); lua_setfield(L, -2, "AXTextMarkerRangeCopyStartMarker")
+    L.push(true); lua_setfield(L, -2, "AXTextMarkerRangeCopyEndMarker")
     return 1
 }
 
@@ -112,7 +112,7 @@ private func axtextmarker_markerLength(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, axuielement_AXTEXTMARKER_TAG)
     let marker = get_axtextmarkerref(L, 1, axuielement_AXTEXTMARKER_TAG)
 
-    lua_pushinteger(L, lua_Integer(AXTextMarkerGetLength(marker)))
+    L.push(lua_Integer(AXTextMarkerGetLength(marker)))
     return 1
 }
 
@@ -125,7 +125,7 @@ private func axtextmarker_rangeStartMarker(_ L: LuaState) throws -> CInt {
         pushAXTextMarker(L, marker)
     } else {
         lua_pushnil(L)
-        lua_pushstring(L, "startMarker NULL for range")
+        L.push("startMarker NULL for range")
         return 2
     }
     return 1
@@ -140,7 +140,7 @@ private func axtextmarker_rangeEndMarker(_ L: LuaState) throws -> CInt {
         pushAXTextMarker(L, marker)
     } else {
         lua_pushnil(L)
-        lua_pushstring(L, "endMarker NULL for range")
+        L.push("endMarker NULL for range")
         return 2
     }
     return 1
@@ -152,7 +152,7 @@ private func textmarker_userdata_tostring(_ L: LuaState) throws -> CInt {
     let tag = luaL_testudata(L, 1, axuielement_AXTEXTMARKER_TAG) != nil ? axuielement_AXTEXTMARKER_TAG : axuielement_AXTEXTMRKRNG_TAG
     let tagStr = String(cString: tag)
     let desc = "\(tagStr): (\(String(describing: lua_topointer(L, 1)!)))"
-    lua_pushstring(L, desc)
+    L.push(desc)
     return 1
 }
 
@@ -161,9 +161,9 @@ private func textmarker_userdata_eq(_ L: LuaState) throws -> CInt {
        (luaL_testudata(L, 1, axuielement_AXTEXTMRKRNG_TAG) != nil && luaL_testudata(L, 2, axuielement_AXTEXTMRKRNG_TAG) != nil) {
         let ref1 = UnsafeRawPointer(lua_touserdata(L, 1))!.assumingMemoryBound(to: Unmanaged<CFTypeRef>.self).pointee.takeUnretainedValue()
         let ref2 = UnsafeRawPointer(lua_touserdata(L, 2))!.assumingMemoryBound(to: Unmanaged<CFTypeRef>.self).pointee.takeUnretainedValue()
-        lua_pushboolean(L, CFEqual(ref1, ref2) ? 1 : 0)
+        L.push(CFEqual(ref1, ref2))
     } else {
-        lua_pushboolean(L, 0)
+        L.push(false)
     }
     return 1
 }

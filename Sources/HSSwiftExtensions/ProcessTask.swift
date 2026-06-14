@@ -131,9 +131,9 @@ private func create_task(_ task: HSTask) {
 
             if let cb = task.luaCallback {
                 cb.push(onto: L)
-                lua_pushinteger(L, lua_Integer(terminatedProcess.terminationStatus))
-                if let s = stdOutStr { lua_pushstring(L, s) } else { lua_pushnil(L) }
-                if let s = stdErrStr { lua_pushstring(L, s) } else { lua_pushnil(L) }
+                L.push(lua_Integer(terminatedProcess.terminationStatus))
+                if let s = stdOutStr { L.push(s) } else { lua_pushnil(L) }
+                if let s = stdErrStr { L.push(s) } else { lua_pushnil(L) }
                 if lua_pcall(L, 3, 0, 0) != LUA_OK { lua_pop(L, 1) }
             }
 
@@ -251,17 +251,17 @@ public func luaopen_hs_libtask(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
                         lua_pushvalue(L, 1)
                     } else {
                         os_log(.info, "hs.task:setEnvironment() Unable to set environment")
-                        lua_pushboolean(L, 0)
+                        L.push(false)
                     }
                     return 1
                 },
                 "pid": .closure { L in
                     let task: HSTask = try L.checkArgument(1)
                     guard let process = task.process else {
-                        lua_pushinteger(L, 0)
+                        L.push(0 as lua_Integer)
                         return 1
                     }
-                    lua_pushinteger(L, lua_Integer(process.processIdentifier))
+                    L.push(lua_Integer(process.processIdentifier))
                     return 1
                 },
                 "start": .closure { L in
@@ -269,7 +269,7 @@ public func luaopen_hs_libtask(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
                     var result = false
                     do {
                         guard let process = task.process else {
-                            lua_pushboolean(L, 0)
+                            L.push(false)
                             return 1
                         }
                         let stdIn = process.standardInput as! Pipe
@@ -299,7 +299,7 @@ public func luaopen_hs_libtask(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
                     if result {
                         lua_pushvalue(L, 1)
                     } else {
-                        lua_pushboolean(L, 0)
+                        L.push(false)
                     }
                     return 1
                 },
@@ -321,7 +321,7 @@ public func luaopen_hs_libtask(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
                     if result {
                         lua_pushvalue(L, 1)
                     } else {
-                        lua_pushboolean(L, 0)
+                        L.push(false)
                     }
                     return 1
                 },
@@ -331,16 +331,16 @@ public func luaopen_hs_libtask(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
                     if result {
                         lua_pushvalue(L, 1)
                     } else {
-                        lua_pushboolean(L, 0)
+                        L.push(false)
                     }
                     return 1
                 },
                 "terminationStatus": .closure { L in
                     let task: HSTask = try L.checkArgument(1)
                     if task.hasTerminated, let process = task.process {
-                        lua_pushinteger(L, lua_Integer(process.terminationStatus))
+                        L.push(lua_Integer(process.terminationStatus))
                     } else {
-                        lua_pushboolean(L, 0)
+                        L.push(false)
                     }
                     return 1
                 },
@@ -349,26 +349,26 @@ public func luaopen_hs_libtask(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
                     if task.hasTerminated, let process = task.process {
                         switch process.terminationReason {
                         case .exit:
-                            lua_pushstring(L, "exit")
+                            L.push("exit")
                         case .uncaughtSignal:
-                            lua_pushstring(L, "interrupt")
+                            L.push("interrupt")
                         @unknown default:
-                            lua_pushstring(L, "unknown")
+                            L.push("unknown")
                         }
                     } else {
-                        lua_pushboolean(L, 0)
+                        L.push(false)
                     }
                     return 1
                 },
                 "isRunning": .closure { L in
                     let task: HSTask = try L.checkArgument(1)
-                    lua_pushboolean(L, (task.hasStarted && !task.hasTerminated) ? 1 : 0)
+                    L.push(task.hasStarted && !task.hasTerminated)
                     return 1
                 },
                 "setWorkingDirectory": .closure { L in
                     let task: HSTask = try L.checkArgument(1)
                     guard let process = task.process else {
-                        lua_pushboolean(L, 0)
+                        L.push(false)
                         return 1
                     }
                     let thePath = String(cString: luaL_checkstring(L, 2))
@@ -382,7 +382,7 @@ public func luaopen_hs_libtask(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
                         lua_pushnil(L)
                         return 1
                     }
-                    lua_pushstring(L, process.currentDirectoryPath)
+                    L.push(process.currentDirectoryPath)
                     return 1
                 },
                 "setCallback": .closure { L in
@@ -441,7 +441,7 @@ public func luaopen_hs_libtask(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
             tostring: .closure { L in
                 let task: HSTask = try L.checkArgument(1)
                 let args = task.arguments.joined(separator: " ")
-                lua_pushstring(L, "hs.task: \(task.launchPath) \(args) (\(lua_topointer(L, 1)!))")
+                L.push("hs.task: \(task.launchPath) \(args) (\(lua_topointer(L, 1)!))")
                 return 1
             }
         ))
@@ -450,7 +450,7 @@ public func luaopen_hs_libtask(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
         L.pushMetatable(for: HSTask.self)
 
         // Replace __gc with our explicit teardown + deinitialize
-        lua_pushcclosure(L, { (L: LuaState!) -> CInt in
+        L.push({ (L: LuaState!) -> CInt in
             if let task: HSTask = L.touserdata(1) {
                 // Remove from active tasks tracking
                 if let idx = activeTasks.firstIndex(where: { $0 === task }) {
@@ -463,13 +463,13 @@ public func luaopen_hs_libtask(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
             let anyPtr = rawptr.assumingMemoryBound(to: Any.self)
             anyPtr.deinitialize(count: 1)
             return 0
-        }, 0)
+        })
         lua_setfield(L, -2, "__gc")
 
         // Set __type and __name for lsunit.lua assertIsUserdataOfType and tostring
-        lua_pushstring(L, USERDATA_TAG)
+        L.push(USERDATA_TAG)
         lua_setfield(L, -2, "__type")
-        lua_pushstring(L, USERDATA_TAG)
+        L.push(USERDATA_TAG)
         lua_setfield(L, -2, "__name")
 
         // Alias the metatable under the legacy registry name so that
@@ -535,8 +535,8 @@ public func luaopen_hs_libtask(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
                 } else {
                     lua_pushnil(_L)
                 }
-                lua_pushstring(_L, stdOutArg)
-                lua_pushstring(_L, stdErrArg)
+                _L.push(stdOutArg)
+                _L.push(stdErrArg)
 
                 if lua_pcall(_L, 3, 1, 0) != LUA_OK {
                     lua_pop(_L, 1)

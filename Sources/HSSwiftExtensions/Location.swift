@@ -151,7 +151,7 @@ private func location_registerCallback(_ L: LuaState) throws -> CInt {
 ///  * True if Location Services are enabled, otherwise false
 private func location_locationServicesEnabled(_ L: LuaState) throws -> CInt {
     // no args to validate
-    lua_pushboolean(L, CLLocationManager.locationServicesEnabled() ? 1 : 0)
+    L.push(CLLocationManager.locationServicesEnabled())
     return 1
 }
 
@@ -207,14 +207,14 @@ private func location_distanceBetween(_ L: LuaState) throws -> CInt {
     guard let pointB = toCLLocation(L, at: 2) else {
         throw LuaCallError("bad argument #2 (expected locationTable)")
     }
-    lua_pushnumber(L, pointA.distance(from: pointB))
+    L.push(pointA.distance(from: pointB))
     return 1
 }
 
 // internally used function
 private func location_startWatching(_ L: LuaState) throws -> CInt {
     // no args to validate
-    lua_pushboolean(L, checkLocationManager() ? 1 : 0)
+    L.push(checkLocationManager())
     if lua_toboolean(L, -1) != 0 { location?.manager.startUpdatingLocation() }
     return 1
 }
@@ -269,7 +269,7 @@ private func location_dstOffset(_ L: LuaState) throws -> CInt {
         interval = tz.daylightSavingTimeOffset()
     }
 
-    lua_pushnumber(L, interval)
+    L.push(interval)
     return 1
 }
 
@@ -291,7 +291,7 @@ private func location_addMonitoredRegion(_ L: LuaState) throws -> CInt {
     }
     if checkLocationManager() {
         location?.manager.startMonitoring(for: region)
-        lua_pushboolean(L, 1)
+        L.push(true)
     } else {
         lua_pushnil(L)
     }
@@ -313,12 +313,12 @@ private func location_removeMonitoredRegion(_ L: LuaState) throws -> CInt {
         }
         if let target = targetRegion {
             loc.manager.stopMonitoring(for: target)
-            lua_pushboolean(L, 1)
+            L.push(true)
         } else {
-            lua_pushboolean(L, 0)
+            L.push(false)
         }
     } else {
-        lua_pushboolean(L, 0)
+        L.push(false)
     }
     return 1
 }
@@ -328,7 +328,7 @@ private func location_fakeLocationChange(_ L: LuaState) throws -> CInt {
     let message = lua_tovalue(L, at: 1) as! String
 
     guard let loc = location else {
-        lua_pushboolean(L, 0)
+        L.push(false)
         return 1
     }
 
@@ -385,7 +385,7 @@ private func location_fakeLocationChange(_ L: LuaState) throws -> CInt {
         throw LuaCallError("bad argument #1 (\(message) is not a recognized message)")
     }
 
-    lua_pushboolean(L, 1)
+    L.push(true)
     return 1
 }
 
@@ -459,7 +459,7 @@ private func sunturns(_ L: UnsafeMutablePointer<lua_State>!) -> EDSunriseSet? {
 ///  * For compatibility with the locationTable object returned by [hs.location.get](#get), this function can also be invoked as `hs.location.sunrise(locationTable, offset[, date])`.
 private func location_sunrise(_ L: LuaState) throws -> CInt {
     guard let suntimes = sunturns(L) else { return 0 }
-    lua_pushinteger(L, lua_Integer(suntimes.sunrise.timeIntervalSince1970))
+    L.push(lua_Integer(suntimes.sunrise.timeIntervalSince1970))
     return 1
 }
 
@@ -481,7 +481,7 @@ private func location_sunrise(_ L: LuaState) throws -> CInt {
 ///  * For compatibility with the locationTable object returned by [hs.location.get](#get), this function can also be invoked as `hs.location.sunset(locationTable, offset[, date])`.
 private func location_sunset(_ L: LuaState) throws -> CInt {
     guard let suntimes = sunturns(L) else { return 0 }
-    lua_pushinteger(L, lua_Integer(suntimes.sunset.timeIntervalSince1970))
+    L.push(lua_Integer(suntimes.sunset.timeIntervalSince1970))
     return 1
 }
 
@@ -522,7 +522,7 @@ private func clgeocoder_lookupLocation(_ L: UnsafeMutablePointer<lua_State>!) ->
         }
         if let cb = backgroundCallbacks[fnKey] {
             cb.push(onto: L)
-            lua_pushboolean(L, error == nil ? 1 : 0)
+            L.push(error == nil)
             if let error = error {
                 lua_pushany(L, error.localizedDescription as NSString)
             } else {
@@ -568,7 +568,7 @@ private func clgeocoder_lookupAddress(_ L: UnsafeMutablePointer<lua_State>!) -> 
         }
         if let cb = backgroundCallbacks[fnKey] {
             cb.push(onto: L)
-            lua_pushboolean(L, error == nil ? 1 : 0)
+            L.push(error == nil)
             if let error = error {
                 lua_pushany(L, error.localizedDescription as NSString)
             } else {
@@ -625,7 +625,7 @@ private func clgeocoder_lookupAddressNear(_ L: UnsafeMutablePointer<lua_State>!)
         }
         if let cb = backgroundCallbacks[fnKey] {
             cb.push(onto: L)
-            lua_pushboolean(L, error == nil ? 1 : 0)
+            L.push(error == nil)
             if let error = error {
                 lua_pushany(L, error.localizedDescription as NSString)
             } else {
@@ -656,15 +656,15 @@ private func pushCLLocation(_ L: UnsafeMutablePointer<lua_State>!, _ loc: CLLoca
     }
 
     lua_newtable(L)
-    lua_pushnumber(L, loc.coordinate.latitude);               lua_setfield(L, -2, "latitude")
-    lua_pushnumber(L, loc.coordinate.longitude);              lua_setfield(L, -2, "longitude")
-    lua_pushnumber(L, loc.altitude);                          lua_setfield(L, -2, "altitude")
-    lua_pushnumber(L, loc.horizontalAccuracy);                lua_setfield(L, -2, "horizontalAccuracy")
-    lua_pushnumber(L, loc.verticalAccuracy);                  lua_setfield(L, -2, "verticalAccuracy")
-    lua_pushnumber(L, loc.course);                            lua_setfield(L, -2, "course")
-    lua_pushnumber(L, loc.speed);                             lua_setfield(L, -2, "speed")
-    lua_pushnumber(L, loc.timestamp.timeIntervalSince1970);   lua_setfield(L, -2, "timestamp")
-    lua_pushstring(L, "CLLocation");                          lua_setfield(L, -2, "__luaSkinType")
+    L.push(loc.coordinate.latitude);               lua_setfield(L, -2, "latitude")
+    L.push(loc.coordinate.longitude);              lua_setfield(L, -2, "longitude")
+    L.push(loc.altitude);                          lua_setfield(L, -2, "altitude")
+    L.push(loc.horizontalAccuracy);                lua_setfield(L, -2, "horizontalAccuracy")
+    L.push(loc.verticalAccuracy);                  lua_setfield(L, -2, "verticalAccuracy")
+    L.push(loc.course);                            lua_setfield(L, -2, "course")
+    L.push(loc.speed);                             lua_setfield(L, -2, "speed")
+    L.push(loc.timestamp.timeIntervalSince1970);   lua_setfield(L, -2, "timestamp")
+    L.push("CLLocation");                          lua_setfield(L, -2, "__luaSkinType")
     return 1
 }
 
@@ -687,11 +687,11 @@ private func pushCLCircularRegion(_ L: UnsafeMutablePointer<lua_State>!, _ theRe
 
     lua_newtable(L)
     lua_pushany(L, theRegion.identifier as NSString);    lua_setfield(L, -2, "identifier")
-    lua_pushnumber(L, theRegion.center.latitude);        lua_setfield(L, -2, "latitude")
-    lua_pushnumber(L, theRegion.center.longitude);       lua_setfield(L, -2, "longitude")
-    lua_pushnumber(L, theRegion.radius);                 lua_setfield(L, -2, "radius")
-    lua_pushboolean(L, theRegion.notifyOnEntry ? 1 : 0); lua_setfield(L, -2, "notifyOnEntry")
-    lua_pushboolean(L, theRegion.notifyOnExit ? 1 : 0);  lua_setfield(L, -2, "notifyOnExit")
+    L.push(theRegion.center.latitude);        lua_setfield(L, -2, "latitude")
+    L.push(theRegion.center.longitude);       lua_setfield(L, -2, "longitude")
+    L.push(theRegion.radius);                 lua_setfield(L, -2, "radius")
+    L.push(theRegion.notifyOnEntry);          lua_setfield(L, -2, "notifyOnEntry")
+    L.push(theRegion.notifyOnExit);           lua_setfield(L, -2, "notifyOnExit")
     return 1
 }
 
@@ -708,8 +708,8 @@ private func pushCLRegion(_ L: UnsafeMutablePointer<lua_State>!, _ region: CLReg
 
     lua_newtable(L)
     lua_pushany(L, region.identifier as NSString);        lua_setfield(L, -2, "identifier")
-    lua_pushboolean(L, region.notifyOnEntry ? 1 : 0);     lua_setfield(L, -2, "notifyOnEntry")
-    lua_pushboolean(L, region.notifyOnExit ? 1 : 0);      lua_setfield(L, -2, "notifyOnExit")
+    L.push(region.notifyOnEntry);     lua_setfield(L, -2, "notifyOnEntry")
+    L.push(region.notifyOnExit);      lua_setfield(L, -2, "notifyOnExit")
     return 1
 }
 
@@ -891,7 +891,7 @@ func luaopen_hs_liblocation(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
             tostring: .closure { L in
                 let geoItem: CLGeocoder = try L.checkArgument(1)
                 let title = geoItem.isGeocoding ? "geocoding" : "idle"
-                lua_pushstring(L, "\(GEOCODE_UD_TAG): \(title) (\(lua_topointer(L, 1)!))")
+                L.push("\(GEOCODE_UD_TAG): \(title) (\(lua_topointer(L, 1)!))")
                 return 1
             }
         ))
@@ -900,32 +900,32 @@ func luaopen_hs_liblocation(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
         L.pushMetatable(for: CLGeocoder.self)
 
         // Replace __gc: cancel geocode, then deinitialize the Any box
-        lua_pushcclosure(L, { (L: LuaState!) -> CInt in
+        L.push({ (L: LuaState!) -> CInt in
             if let geoItem: CLGeocoder = L.touserdata(1) {
                 geoItem.cancelGeocode()
             }
             let rawptr = lua_touserdata(L, 1)!
             rawptr.assumingMemoryBound(to: Any.self).deinitialize(count: 1)
             return 0
-        }, 0)
+        })
         lua_setfield(L, -2, "__gc")
 
         // __eq for geocoder objects
-        lua_pushcclosure(L, { (L: LuaState!) -> CInt in
+        L.push({ (L: LuaState!) -> CInt in
             if let obj1: CLGeocoder = L.touserdata(1),
                let obj2: CLGeocoder = L.touserdata(2) {
-                lua_pushboolean(L, obj1.isEqual(obj2) ? 1 : 0)
+                L.push(obj1.isEqual(obj2))
             } else {
-                lua_pushboolean(L, 0)
+                L.push(false)
             }
             return 1
-        }, 0)
+        })
         lua_setfield(L, -2, "__eq")
 
         // Set __type and __name
-        lua_pushstring(L, GEOCODE_UD_TAG)
+        L.push(GEOCODE_UD_TAG)
         lua_setfield(L, -2, "__type")
-        lua_pushstring(L, GEOCODE_UD_TAG)
+        L.push(GEOCODE_UD_TAG)
         lua_setfield(L, -2, "__name")
 
         // Registry alias so core_getObjectMetatable("hs.location.geocode") resolves

@@ -305,7 +305,7 @@ private func datastore_removeDataFrom(_ L: LuaState) throws -> CInt {
 private func datastore_persistent(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_DS_TAG)
     let dataStore = wv_toWKWebsiteDataStore(L, 1)!
-    lua_pushboolean(L, dataStore.isPersistent ? 1 : 0)
+    L.push(dataStore.isPersistent)
     return 1
 }
 
@@ -363,7 +363,7 @@ private func userdata_tostring(_ L: LuaState) throws -> CInt {
     let title: String = (obj?.isPersistent ?? false) ? "persistent" : "non-persistent"
     let ptr = lua_topointer(L, 1)
     let ptrStr = ptr.map { String(describing: $0) } ?? "nil"
-    lua_pushstring(L, "\(USERDATA_DS_TAG): \(title) (\(ptrStr))")
+    L.push("\(USERDATA_DS_TAG): \(title) (\(ptrStr))")
     return 1
 }
 
@@ -371,9 +371,9 @@ private func userdata_eq(_ L: LuaState) throws -> CInt {
     if luaL_testudata(L, 1, USERDATA_DS_TAG) != nil && luaL_testudata(L, 2, USERDATA_DS_TAG) != nil {
         let obj1 = wv_toWKWebsiteDataStore(L, 1)
         let obj2 = wv_toWKWebsiteDataStore(L, 2)
-        lua_pushboolean(L, (obj1 != nil && obj2 != nil && obj1!.isEqual(obj2!)) ? 1 : 0)
+        L.push(obj1 != nil && obj2 != nil && obj1!.isEqual(obj2!))
     } else {
-        lua_pushboolean(L, 0)
+        L.push(false)
     }
     return 1
 }

@@ -432,7 +432,7 @@ private func stopWatcher(_ L: LuaState) throws -> CInt {
 ///  * A boolean, True if the watcher is running, otherwise False
 private func isWatcherRunning(_ L: LuaState) throws -> CInt {
 
-    lua_pushboolean(L, (deviceWatcher?.pointee.running ?? false) ? 1 : 0)
+    L.push(deviceWatcher?.pointee.running ?? false)
     return 1
 }
 
@@ -483,9 +483,9 @@ private func setWatcherCallback(_ L: LuaState) throws -> CInt {
 
 private func hsCamera_eq(_ L: LuaState) throws -> CInt {
     if let obj1: HSCamera = L.touserdata(1), let obj2: HSCamera = L.touserdata(2) {
-        lua_pushboolean(L, obj1.isEqual(to: obj2) ? 1 : 0)
+        L.push(obj1.isEqual(to: obj2))
     } else {
-        lua_pushboolean(L, 0)
+        L.push(false)
     }
     return 1
 }
@@ -546,7 +546,7 @@ public func luaopen_hs_libcamera(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
                 ///  * A number containing the connection ID of the camera
                 "connectionID": .closure { L in
                     let camera: HSCamera = try L.checkArgument(1)
-                    lua_pushinteger(L, lua_Integer(camera.deviceId))
+                    L.push(lua_Integer(camera.deviceId))
                     return 1
                 },
                 /// hs.camera:name() -> String
@@ -574,7 +574,7 @@ public func luaopen_hs_libcamera(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
                 ///  * A boolean, True if the camera is in use, otherwise False
                 "isInUse": .closure { L in
                     let camera: HSCamera = try L.checkArgument(1)
-                    lua_pushboolean(L, camera.isInUse ? 1 : 0)
+                    L.push(camera.isInUse)
                     return 1
                 },
                 /// hs.camera:setPropertyWatcherCallback(fn) -> hs.camera object
@@ -657,13 +657,13 @@ public func luaopen_hs_libcamera(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
                 ///  * A boolean, True if the property watcher is running, otherwise False
                 "isPropertyWatcherRunning": .closure { L in
                     let camera: HSCamera = try L.checkArgument(1)
-                    lua_pushboolean(L, camera.propertyWatcherRunning ? 1 : 0)
+                    L.push(camera.propertyWatcherRunning)
                     return 1
                 },
             ],
             tostring: .closure { L in
                 let camera: HSCamera = try L.checkArgument(1)
-                lua_pushstring(L, "\(USERDATA_TAG): (\(camera.uid ?? "nil"):\(camera.name ?? "nil"))")
+                L.push("\(USERDATA_TAG): (\(camera.uid ?? "nil"):\(camera.name ?? "nil"))")
                 return 1
             }
         ))
@@ -692,9 +692,9 @@ public func luaopen_hs_libcamera(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
         lua_setfield(L, -2, "__eq")
 
         // Set __type and __name for assertIsUserdataOfType and tostring
-        lua_pushstring(L, USERDATA_TAG)
+        L.push(USERDATA_TAG)
         lua_setfield(L, -2, "__type")
-        lua_pushstring(L, USERDATA_TAG)
+        L.push(USERDATA_TAG)
         lua_setfield(L, -2, "__name")
 
         // Alias the metatable under the legacy registry name so that

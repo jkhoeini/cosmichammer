@@ -51,7 +51,7 @@ private func battery_timeremaining(_ L: LuaState) throws -> CInt {
         remaining /= 60
     }
 
-    lua_pushnumber(L, remaining)
+    L.push(remaining)
     return 1
 }
 
@@ -71,7 +71,7 @@ private func battery_powerSource(_ L: LuaState) throws -> CInt {
         return 1
     } else {
         lua_pushnil(L)
-        lua_pushstring(L, "error retrieving power sources info")
+        L.push("error retrieving power sources info")
         return 2
     }
 }
@@ -95,13 +95,13 @@ private func battery_batteryWarningLevel(_ L: LuaState) throws -> CInt {
     let level = IOPSGetBatteryWarningLevel()
     switch level {
     case kIOPSLowBatteryWarningNone:
-        lua_pushstring(L, "none")
+        L.push("none")
     case kIOPSLowBatteryWarningEarly:
-        lua_pushstring(L, "low")
+        L.push("low")
     case kIOPSLowBatteryWarningFinal:
-        lua_pushstring(L, "critical")
+        L.push("critical")
     default:
-        lua_pushstring(L, "** unrecognized warning level: \(level.rawValue)")
+        L.push("** unrecognized warning level: \(level.rawValue)")
     }
     return 1
 }
@@ -254,13 +254,13 @@ private func battery_externalAdapterDetails(_ L: LuaState) throws -> CInt {
 private func battery_powerSources(_ L: LuaState) throws -> CInt {
     guard let sourcesBlob = IOPSCopyPowerSourcesInfo()?.takeRetainedValue() else {
         lua_pushnil(L)
-        lua_pushstring(L, "error retrieving power sources info")
+        L.push("error retrieving power sources info")
         return 2
     }
 
     guard let sourcesList = IOPSCopyPowerSourcesList(sourcesBlob)?.takeRetainedValue() as? [CFTypeRef] else {
         lua_pushnil(L)
-        lua_pushstring(L, "error retrieving power sources list")
+        L.push("error retrieving power sources list")
         return 2
     }
 
@@ -269,7 +269,7 @@ private func battery_powerSources(_ L: LuaState) throws -> CInt {
         if let powerSource = IOPSGetPowerSourceDescription(sourcesBlob, sourcesList[i])?.takeUnretainedValue() as? NSDictionary {
             lua_pushany(L, powerSource)
         } else {
-            lua_pushstring(L, "unable to get description of power source \(i + 1)")
+            L.push("unable to get description of power source \(i + 1)")
         }
         lua_rawseti(L, -2, luaL_len(L, -2) + 1)
     }
@@ -290,7 +290,7 @@ private func battery_appleSmartBattery(_ L: LuaState) throws -> CInt {
         return 1
     } else {
         lua_pushnil(L)
-        lua_pushstring(L, "unable to retrieve AppleSmartBattery IOService")
+        L.push("unable to retrieve AppleSmartBattery IOService")
         return 2
     }
 }
@@ -301,14 +301,14 @@ private func battery_iopmBatteryInfo(_ L: LuaState) throws -> CInt {
 
     guard IOMainPort(mach_port_t(MACH_PORT_NULL), &masterPort) == kIOReturnSuccess else {
         lua_pushnil(L)
-        lua_pushstring(L, "unable to get IO Master Port")
+        L.push("unable to get IO Master Port")
         return 2
     }
 
     guard IOPMCopyBatteryInfo(masterPort, &batteryInfo) == kIOReturnSuccess else {
         batteryInfo?.release()
         lua_pushnil(L)
-        lua_pushstring(L, "unable to get IOPM Battery Info")
+        L.push("unable to get IOPM Battery Info")
         return 2
     }
 

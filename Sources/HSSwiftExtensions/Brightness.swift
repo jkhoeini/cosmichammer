@@ -75,13 +75,13 @@ private func brightness_ambient(_ L: LuaState) throws -> CInt {
                 if let result = catchingObjCException({
                     ourDSC.perform(sel, with: key)?.takeRetainedValue() as? NSNumber
                 }) {
-                    lua_pushnumber(L, result.doubleValue)
+                    L.push(result.doubleValue)
                     return 1
                 }
             }
         }
         // Fall through to push -1
-        lua_pushinteger(L, -1)
+        L.push(Int(-1))
         return 1
     }
 
@@ -92,13 +92,13 @@ private func brightness_ambient(_ L: LuaState) throws -> CInt {
     }) {
         os_log(.error, "caught ObjC exception in IOServiceOpen: \(error, privacy: .public)")
         IOObjectRelease(serviceObject)
-        lua_pushinteger(L, -1)
+        L.push(Int(-1))
         return 1
     }
     IOObjectRelease(serviceObject)
 
     guard result == KERN_SUCCESS else {
-        lua_pushinteger(L, -1)
+        L.push(Int(-1))
         return 1
     }
 
@@ -113,19 +113,19 @@ private func brightness_ambient(_ L: LuaState) throws -> CInt {
     }) {
         os_log(.error, "caught ObjC exception in IOConnectCallMethod: \(error, privacy: .public)")
         IOServiceClose(dataPort)
-        lua_pushinteger(L, -1)
+        L.push(Int(-1))
         return 1
     }
     IOServiceClose(dataPort)
 
     guard result == KERN_SUCCESS else {
-        lua_pushinteger(L, -1)
+        L.push(Int(-1))
         return 1
     }
 
     // Take the mean of the two sensor values (note that most modern MacBooks only have one sensor, so the values are identical)
     let lux = LMUtoLux((values.0 + values.1) / 2)
-    lua_pushinteger(L, lua_Integer(lux))
+    L.push(Int(lux))
     return 1
 }
 
@@ -139,12 +139,13 @@ private func brightness_ambient(_ L: LuaState) throws -> CInt {
 /// Returns:
 ///  * True if the brightness was set, false if not
 private func brightness_set(_ L: LuaState) throws -> CInt {
-    let level = Float(min(max(luaL_checknumber(L, 1) / 100.0, 0.0), 1.0))
+    let brightness = luaL_checknumber(L, 1)
+    let level = Float(min(max(brightness / 100.0, 0.0), 1.0))
     if let setBrightness = _setBrightness {
         let err = setBrightness(CGMainDisplayID(), level)
-        lua_pushboolean(L, (err == Int32(CGError.success.rawValue)) ? 1 : 0)
+        L.push(err == Int32(CGError.success.rawValue))
     } else {
-        lua_pushboolean(L, 0)
+        L.push(false)
     }
     return 1
 }
@@ -163,7 +164,7 @@ private func brightness_get(_ L: LuaState) throws -> CInt {
     if let getBrightness = _getBrightness {
         let err = getBrightness(CGMainDisplayID(), &level)
         if err == Int32(CGError.success.rawValue) {
-            lua_pushinteger(L, lua_Integer(level * 100.0))
+            L.push(Int(level * 100.0))
         } else {
             lua_pushnil(L)
         }

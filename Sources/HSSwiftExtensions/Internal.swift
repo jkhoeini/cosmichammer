@@ -15,13 +15,7 @@ private func get_screen_arg(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32)
 }
 
 // MARK: - Helper: extract HintWindow from userdata
-
-private func get_hint_arg(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> HintWindow {
-    let ptr = luaL_checkudata(L, idx, USERDATA_TAG)!
-    return Unmanaged<HintWindow>.fromOpaque(
-        ptr.assumingMemoryBound(to: UnsafeMutableRawPointer.self).pointee
-    ).takeUnretainedValue()
-}
+// Now uses LuaSwift's checkArgument for class-based userdata.
 
 // MARK: - HintView
 
@@ -124,7 +118,9 @@ private class HintView: NSView {
 
 // MARK: - HintWindow
 
-private class HintWindow: NSWindow {
+private class HintWindow: NSWindow, LuaTeardownable {
+    private var tornDown = false
+
     convenience init(point pt: CGPoint, text txt: String,
                      forApp bundle: String, onScreen screen: NSScreen,
                      fontName: String?, fontSize: CGFloat, iconAlpha: CGFloat) {
@@ -147,49 +143,23 @@ private class HintWindow: NSWindow {
         label.text = txt
     }
 
+    func teardown() {
+        guard !tornDown else { return }
+        tornDown = true
+        close()
+    }
+
     override var canBecomeKey: Bool { true }
 }
 
-// MARK: - Push HintWindow as Lua userdata
-
-private func new_hint(_ L: UnsafeMutablePointer<lua_State>!, _ win: HintWindow) {
-    let ptr = lua_newuserdata(L, MemoryLayout<UnsafeMutableRawPointer>.size)!
-        .assumingMemoryBound(to: UnsafeMutableRawPointer.self)
-    ptr.pointee = Unmanaged.passRetained(win).toOpaque()
-
-    luaL_getmetatable(L, USERDATA_TAG)
-    lua_setmetatable(L, -2)
-}
-
 // MARK: - Module functions
-
-private func hint_close(_ L: LuaState) throws -> CInt {
-    let hint = get_hint_arg(L, 1)
-    hint.close()
-    lua_pushnil(L)
-    lua_setmetatable(L, 1)
-    return 0
-}
-
-private func hint_gc(_ L: LuaState) throws -> CInt {
-    guard let ptr = luaL_testudata(L, 1, USERDATA_TAG) else { return 0 }
-    Unmanaged<HintWindow>.fromOpaque(ptr.load(as: UnsafeRawPointer.self)).release()
-    return 0
-}
-
-private func hint_eq(_ L: LuaState) throws -> CInt {
-    let a = get_hint_arg(L, 1)
-    let b = get_hint_arg(L, 2)
-    lua_pushboolean(L, a === b ? 1 : 0)
-    return 1
-}
 
 private func hints_test(_ L: LuaState) throws -> CInt {
     let win = HintWindow(point: NSMakePoint(1000, 200), text: "J",
                          forApp: "com.kapeli.dash",
                          onScreen: NSScreen.main!,
                          fontName: nil, fontSize: 0.0, iconAlpha: 0.0)
-    new_hint(L, win)
+    L.push(userdata: win)
     return 1
 }
 
@@ -214,13 +184,7 @@ private func hints_new(_ L: LuaState) throws -> CInt {
     let win = HintWindow(point: NSMakePoint(x, y), text: msg,
                          forApp: app, onScreen: screen,
                          fontName: fontName, fontSize: fontSize, iconAlpha: iconAlpha)
-    new_hint(L, win)
-    return 1
-}
-
-private func userdata_tostring(_ L: LuaState) throws -> CInt {
-    let desc = "\(USERDATA_TAG): (\(String(describing: lua_topointer(L, 1)!)))"
-    lua_pushstring(L, desc)
+    L.push(userdata: win)
     return 1
 }
 
@@ -229,19 +193,30 @@ private func userdata_tostring(_ L: LuaState) throws -> CInt {
 @_cdecl("luaopen_hs_libhints")
 public func luaopen_hs_libhints(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     runEntryPoint(L) { L in
-        // Register userdata metatable
-        luaL_newmetatable(L, USERDATA_TAG)
-        lua_pushvalue(L, -1)
-        lua_setfield(L, -2, "__index")
-        L.push(hint_eq)
-        lua_setfield(L, -2, "__eq")
-        L.push(hint_gc)
-        lua_setfield(L, -2, "__gc")
-        L.push(userdata_tostring)
-        lua_setfield(L, -2, "__tostring")
-        L.push(hint_close)
-        lua_setfield(L, -2, "close")
-        lua_pop(L, 1)
+        // Register idiomatic Metatable<HintWindow> with LuaSwift.
+        L.register(Metatable<HintWindow>(
+            fields: [
+                "close": .closure { L in
+                    let hint: HintWindow = try L.checkArgument(1)
+                    hint.teardown()
+                    return 0
+                },
+            ],
+            eq: .closure { L in
+                let a: HintWindow = try L.checkArgument(1)
+                let b: HintWindow = try L.checkArgument(2)
+                L.push(a === b)
+                return 1
+            },
+            tostring: .closure { L in
+                let _: HintWindow = try L.checkArgument(1)
+                let desc = "\(USERDATA_TAG): (\(String(describing: lua_topointer(L, 1)!)))"
+                L.push(desc)
+                return 1
+            }
+        ))
+
+        installMetatableBoilerplate(L, for: HintWindow.self, tag: USERDATA_TAG)
 
         lua_createtable(L, 0, 2)
         L.push(hints_test)

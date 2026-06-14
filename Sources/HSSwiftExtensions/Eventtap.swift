@@ -203,31 +203,31 @@ private func checkKeyboardModifiers(_ L: LuaState) throws -> CInt {
     lua_newtable(L)
 
     if lua_isboolean(L, 1) && lua_toboolean(L, 1) != 0 {
-        lua_pushinteger(L, lua_Integer(theFlags.rawValue))
+        L.push(lua_Integer(theFlags.rawValue))
         lua_setfield(L, -2, "_raw")
     }
 
     if theFlags.contains(.command) {
-        lua_pushboolean(L, 1); lua_setfield(L, -2, "cmd")
-        lua_pushboolean(L, 1); lua_setfield(L, -2, "\u{2318}")
+        L.push(true); lua_setfield(L, -2, "cmd")
+        L.push(true); lua_setfield(L, -2, "\u{2318}")
     }
     if theFlags.contains(.shift) {
-        lua_pushboolean(L, 1); lua_setfield(L, -2, "shift")
-        lua_pushboolean(L, 1); lua_setfield(L, -2, "\u{21E7}")
+        L.push(true); lua_setfield(L, -2, "shift")
+        L.push(true); lua_setfield(L, -2, "\u{21E7}")
     }
     if theFlags.contains(.option) {
-        lua_pushboolean(L, 1); lua_setfield(L, -2, "alt")
-        lua_pushboolean(L, 1); lua_setfield(L, -2, "\u{2325}")
+        L.push(true); lua_setfield(L, -2, "alt")
+        L.push(true); lua_setfield(L, -2, "\u{2325}")
     }
     if theFlags.contains(.control) {
-        lua_pushboolean(L, 1); lua_setfield(L, -2, "ctrl")
-        lua_pushboolean(L, 1); lua_setfield(L, -2, "\u{2303}")
+        L.push(true); lua_setfield(L, -2, "ctrl")
+        L.push(true); lua_setfield(L, -2, "\u{2303}")
     }
     if theFlags.contains(.function) {
-        lua_pushboolean(L, 1); lua_setfield(L, -2, "fn")
+        L.push(true); lua_setfield(L, -2, "fn")
     }
     if theFlags.contains(.capsLock) {
-        lua_pushboolean(L, 1); lua_setfield(L, -2, "capslock")
+        L.push(true); lua_setfield(L, -2, "capslock")
     }
 
     return 1
@@ -237,7 +237,7 @@ private func checkKeyboardModifiers(_ L: LuaState) throws -> CInt {
 /// Function
 /// Checks if macOS is preventing keyboard events from being sent to event taps
 private func secureInputEnabled(_ L: LuaState) throws -> CInt {
-    lua_pushboolean(L, IsSecureEventInputEnabled() ? 1 : 0)
+    L.push(IsSecureEventInputEnabled())
     return 1
 }
 
@@ -253,15 +253,15 @@ private func checkMouseButtons(_ L: LuaState) throws -> CInt {
     while theButtons != 0 {
         if theButtons & 0x1 != 0 {
             if i == 0 {
-                lua_pushboolean(L, 1); lua_setfield(L, -2, "left")
+                L.push(true); lua_setfield(L, -2, "left")
             } else if i == 1 {
-                lua_pushboolean(L, 1); lua_setfield(L, -2, "right")
+                L.push(true); lua_setfield(L, -2, "right")
             } else if i == 2 {
-                lua_pushboolean(L, 1); lua_setfield(L, -2, "middle")
+                L.push(true); lua_setfield(L, -2, "middle")
             }
         }
-        lua_pushinteger(L, lua_Integer(i + 1))
-        lua_pushboolean(L, (theButtons & 0x1) != 0 ? 1 : 0)
+        L.push(lua_Integer(i + 1))
+        L.push((theButtons & 0x1) != 0)
         lua_settable(L, -3)
         i += 1
         theButtons >>= 1
@@ -273,7 +273,7 @@ private func checkMouseButtons(_ L: LuaState) throws -> CInt {
 /// Function
 /// Returns the system-wide setting for the interval between repeated keyboard events
 private func eventtap_keyRepeatInterval(_ L: LuaState) throws -> CInt {
-    lua_pushnumber(L, NSEvent.keyRepeatInterval)
+    L.push(NSEvent.keyRepeatInterval)
     return 1
 }
 
@@ -281,7 +281,7 @@ private func eventtap_keyRepeatInterval(_ L: LuaState) throws -> CInt {
 /// Function
 /// Returns the system-wide setting for the delay before keyboard repeat events begin
 private func eventtap_keyRepeatDelay(_ L: LuaState) throws -> CInt {
-    lua_pushnumber(L, NSEvent.keyRepeatDelay)
+    L.push(NSEvent.keyRepeatDelay)
     return 1
 }
 
@@ -289,7 +289,7 @@ private func eventtap_keyRepeatDelay(_ L: LuaState) throws -> CInt {
 /// Function
 /// Returns the system-wide setting for the delay between two clicks
 private func eventtap_doubleClickInterval(_ L: LuaState) throws -> CInt {
-    lua_pushnumber(L, NSEvent.doubleClickInterval)
+    L.push(NSEvent.doubleClickInterval)
     return 1
 }
 
@@ -345,13 +345,13 @@ public func luaopen_hs_libeventtap(_ L: UnsafeMutablePointer<lua_State>!) -> Int
             "isEnabled": .closure { L in
                 let e: HSEventtap = try L.checkArgument(1)
                 let enabled = e.tap.map { CGEvent.tapIsEnabled(tap: $0) } ?? false
-                lua_pushboolean(L, enabled ? 1 : 0)
+                L.push(enabled)
                 return 1
             },
         ],
         tostring: .closure { L in
             let e: HSEventtap = try L.checkArgument(1)
-            lua_pushstring(L, "\(USERDATA_TAG): Eventtap Mask: 0x\(String(e.mask, radix: 16)) (\(String(describing: lua_topointer(L, 1)!)))")
+            L.push("\(USERDATA_TAG): Eventtap Mask: 0x\(String(e.mask, radix: 16)) (\(String(describing: lua_topointer(L, 1)!)))")
             return 1
         }
     ))
@@ -360,20 +360,20 @@ public func luaopen_hs_libeventtap(_ L: UnsafeMutablePointer<lua_State>!) -> Int
     // Replace __gc with our explicit teardown + deinitialize
     L.pushMetatable(for: HSEventtap.self)
 
-    lua_pushcclosure(L, { (L: LuaState!) -> CInt in
+    L.push({ (L: LuaState!) -> CInt in
         if let e: HSEventtap = L.touserdata(1) {
             e.teardown()
         }
         let rawptr = lua_touserdata(L, 1)!
         rawptr.assumingMemoryBound(to: Any.self).deinitialize(count: 1)
         return 0
-    }, 0)
+    })
     lua_setfield(L, -2, "__gc")
 
     // Set __type and __name for lsunit.lua assertIsUserdataOfType and tostring
-    lua_pushstring(L, USERDATA_TAG)
+    L.push(USERDATA_TAG)
     lua_setfield(L, -2, "__type")
-    lua_pushstring(L, USERDATA_TAG)
+    L.push(USERDATA_TAG)
     lua_setfield(L, -2, "__name")
 
     // Alias the metatable under the legacy registry name so that
@@ -401,9 +401,9 @@ public func luaopen_hs_libeventtap(_ L: UnsafeMutablePointer<lua_State>!) -> Int
 
     // Set module metatable (for __gc)
     lua_createtable(L, 0, 1)
-    lua_pushcclosure(L, { (L: LuaState!) -> CInt in
+    L.push({ (L: LuaState!) -> CInt in
         return 0
-    }, 0)
+    })
     lua_setfield(L, -2, "__gc")
     lua_setmetatable(L, -2)
 

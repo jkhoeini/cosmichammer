@@ -69,7 +69,7 @@ private func errorWrapper(_ L: UnsafeMutablePointer<lua_State>!, _ where_: NSStr
     }
 
     lua_pushnil(L)
-    lua_pushstring(L, axErrMsg)
+    L.push(String(cString: axErrMsg))
     return 2
 }
 
@@ -369,7 +369,7 @@ private func axuielement_getAttributeValueCount(_ L: LuaState) throws -> CInt {
     let errorState = AXUIElementGetAttributeValueCount(theRef, attribute as CFString, &count)
     var returnCount: Int32 = 1
     if errorState == .success {
-        lua_pushinteger(L, lua_Integer(count))
+        L.push(lua_Integer(count))
     } else {
         _ = errorWrapper(L, "attributeValueCount", attribute, errorState)
         returnCount += 1
@@ -424,7 +424,7 @@ private func axuielement_isAttributeSettable(_ L: LuaState) throws -> CInt {
     let errorState = AXUIElementIsAttributeSettable(theRef, attribute as CFString, &settable)
     var returnCount: Int32 = 1
     if errorState == .success {
-        lua_pushboolean(L, settable.boolValue ? 1 : 0)
+        L.push(settable.boolValue)
     } else {
         _ = errorWrapper(L, "isAttributeSettable", attribute, errorState)
         returnCount += 1
@@ -451,9 +451,9 @@ private func axuielement_isValid(_ L: LuaState) throws -> CInt {
     let errorState = AXUIElementCopyAttributeValue(theRef, "AXRole" as CFString, &value)
     var returnCount: Int32 = 1
     if errorState == .success {
-        lua_pushboolean(L, 1)
+        L.push(true)
     } else if errorState == .invalidUIElement {
-        lua_pushboolean(L, 0)
+        L.push(false)
     } else {
         _ = errorWrapper(L, "pid", nil, errorState)
         returnCount += 1
@@ -477,7 +477,7 @@ private func axuielement_getPid(_ L: LuaState) throws -> CInt {
     let errorState = AXUIElementGetPid(theRef, &thePid)
     var returnCount: Int32 = 1
     if errorState == .success {
-        lua_pushinteger(L, lua_Integer(thePid))
+        L.push(lua_Integer(thePid))
     } else {
         _ = errorWrapper(L, "pid", nil, errorState)
         returnCount += 1
@@ -515,7 +515,7 @@ private func axuielement_performAction(_ L: LuaState) throws -> CInt {
     if errorState == .success {
         lua_pushvalue(L, 1)
     } else if errorState == .cannotComplete {
-        lua_pushboolean(L, 0)
+        L.push(false)
     } else {
         _ = errorWrapper(L, "performAction", action, errorState)
         returnCount += 1
@@ -1185,7 +1185,7 @@ private func userdata_gc(_ L: LuaState) throws -> CInt {
 private func userdata_eq(_ L: LuaState) throws -> CInt {
     let theRef1 = get_axuielementref(L, 1, USERDATA_TAG)
     let theRef2 = get_axuielementref(L, 2, USERDATA_TAG)
-    lua_pushboolean(L, CFEqual(theRef1, theRef2) ? 1 : 0)
+    L.push(CFEqual(theRef1, theRef2))
     return 1
 }
 

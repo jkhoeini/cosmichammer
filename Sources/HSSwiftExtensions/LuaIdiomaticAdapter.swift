@@ -157,6 +157,44 @@ func buildModuleTable(
     return 1
 }
 
+// MARK: - Metatable legacy boilerplate
+
+/// Conforming types get their `teardown()` called automatically by
+/// `installMetatableBoilerplate`'s `__gc` handler.
+protocol LuaTeardownable: AnyObject {
+    func teardown()
+}
+
+/// After calling `L.register(Metatable<T>(...))`, install the standard
+/// `__gc` / `__type` / `__name` fields and alias the metatable under
+/// `tag` in the registry (so `core_getObjectMetatable(tag)` resolves).
+///
+/// If `T` conforms to `LuaTeardownable`, `teardown()` is called
+/// before the userdata's `Any` box is deinitialized.
+func installMetatableBoilerplate<T: AnyObject>(
+    _ L: LuaState, for type: T.Type, tag: String
+) {
+    L.pushMetatable(for: type)
+
+    lua_pushcclosure(L, { (L: LuaState!) -> CInt in
+        let rawptr = lua_touserdata(L, 1)!
+        let anyPtr = rawptr.assumingMemoryBound(to: Any.self)
+        if let teardownable = anyPtr.pointee as? LuaTeardownable {
+            teardownable.teardown()
+        }
+        anyPtr.deinitialize(count: 1)
+        return 0
+    }, 0)
+    lua_setfield(L, -2, "__gc")
+
+    lua_pushstring(L, tag)
+    lua_setfield(L, -2, "__type")
+    lua_pushstring(L, tag)
+    lua_setfield(L, -2, "__name")
+
+    lua_setfield(L, LUA_REGISTRYINDEX_VALUE, tag)
+}
+
 // MARK: - Conversion parallels (characterization only)
 
 /// Push `value` using the idiomatic `LuaState.push(any:)`.

@@ -198,13 +198,13 @@ private func hotkey_systemAssigned(_ L: UnsafeMutablePointer<lua_State>!) -> Int
             if hotKeyCode.uint32Value == keycode && modifierFlags == mods {
                 lua_newtable(L)
                 lua_pushany(L, hotKeyCode);    lua_setfield(L, -2, "keycode")
-                lua_pushinteger(L, lua_Integer(modifierFlags)); lua_setfield(L, -2, "mods")
+                L.push(lua_Integer(modifierFlags)); lua_setfield(L, -2, "mods")
                 lua_pushany(L, hotKeyEnabled); lua_setfield(L, -2, "enabled")
                 assigned = true
                 break
             }
         }
-        if !assigned { lua_pushboolean(L, 0) }
+        if !assigned { L.push(false) }
     } else {
         os_log(.info, "hs.hotkey.assigned - unable to retrieve SymbolicHotKeys (%d)", status)
         lua_pushnil(L)
@@ -345,7 +345,7 @@ public func luaopen_hs_libhotkey(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
             let hk: HSHotkey = try L.checkArgument(1)
             let ptrStr = String(describing: lua_topointer(L, 1)!)
             let str = "\(USERDATA_TAG): keycode: \(hk.keycode), mods: 0x\(String(format: "%04x", hk.mods)) (\(ptrStr))"
-            lua_pushstring(L, str)
+            L.push(str)
             return 1
         }
     ))
@@ -369,9 +369,9 @@ public func luaopen_hs_libhotkey(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
     lua_setfield(L, -2, "__gc")
 
     // Set __type and __name for lsunit.lua assertIsUserdataOfType and tostring
-    lua_pushstring(L, USERDATA_TAG)
+    L.push(USERDATA_TAG)
     lua_setfield(L, -2, "__type")
-    lua_pushstring(L, USERDATA_TAG)
+    L.push(USERDATA_TAG)
     lua_setfield(L, -2, "__name")
 
     // Alias the metatable under the legacy registry name so that

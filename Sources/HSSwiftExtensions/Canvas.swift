@@ -870,42 +870,42 @@ func canvas_pushCompositeTypes(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
 func canvas_pushCollectionTypeTable(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     lua_newtable(L)
-    lua_pushinteger(L, lua_Integer(NSWindow.CollectionBehavior([]).rawValue));          lua_setfield(L, -2, "default")
-    lua_pushinteger(L, lua_Integer(NSWindow.CollectionBehavior.canJoinAllSpaces.rawValue)); lua_setfield(L, -2, "canJoinAllSpaces")
-    lua_pushinteger(L, lua_Integer(NSWindow.CollectionBehavior.moveToActiveSpace.rawValue)); lua_setfield(L, -2, "moveToActiveSpace")
-    lua_pushinteger(L, lua_Integer(NSWindow.CollectionBehavior.managed.rawValue));          lua_setfield(L, -2, "managed")
-    lua_pushinteger(L, lua_Integer(NSWindow.CollectionBehavior.transient.rawValue));        lua_setfield(L, -2, "transient")
-    lua_pushinteger(L, lua_Integer(NSWindow.CollectionBehavior.stationary.rawValue));       lua_setfield(L, -2, "stationary")
-    lua_pushinteger(L, lua_Integer(NSWindow.CollectionBehavior.participatesInCycle.rawValue)); lua_setfield(L, -2, "participatesInCycle")
-    lua_pushinteger(L, lua_Integer(NSWindow.CollectionBehavior.ignoresCycle.rawValue));     lua_setfield(L, -2, "ignoresCycle")
-    lua_pushinteger(L, lua_Integer(NSWindow.CollectionBehavior.fullScreenPrimary.rawValue)); lua_setfield(L, -2, "fullScreenPrimary")
-    lua_pushinteger(L, lua_Integer(NSWindow.CollectionBehavior.fullScreenAuxiliary.rawValue)); lua_setfield(L, -2, "fullScreenAuxiliary")
-    lua_pushinteger(L, lua_Integer(NSWindow.CollectionBehavior.fullScreenAllowsTiling.rawValue)); lua_setfield(L, -2, "fullScreenAllowsTiling")
-    lua_pushinteger(L, lua_Integer(NSWindow.CollectionBehavior.fullScreenDisallowsTiling.rawValue)); lua_setfield(L, -2, "fullScreenDisallowsTiling")
+    L.push(lua_Integer(NSWindow.CollectionBehavior([]).rawValue));          lua_setfield(L, -2, "default")
+    L.push(lua_Integer(NSWindow.CollectionBehavior.canJoinAllSpaces.rawValue)); lua_setfield(L, -2, "canJoinAllSpaces")
+    L.push(lua_Integer(NSWindow.CollectionBehavior.moveToActiveSpace.rawValue)); lua_setfield(L, -2, "moveToActiveSpace")
+    L.push(lua_Integer(NSWindow.CollectionBehavior.managed.rawValue));          lua_setfield(L, -2, "managed")
+    L.push(lua_Integer(NSWindow.CollectionBehavior.transient.rawValue));        lua_setfield(L, -2, "transient")
+    L.push(lua_Integer(NSWindow.CollectionBehavior.stationary.rawValue));       lua_setfield(L, -2, "stationary")
+    L.push(lua_Integer(NSWindow.CollectionBehavior.participatesInCycle.rawValue)); lua_setfield(L, -2, "participatesInCycle")
+    L.push(lua_Integer(NSWindow.CollectionBehavior.ignoresCycle.rawValue));     lua_setfield(L, -2, "ignoresCycle")
+    L.push(lua_Integer(NSWindow.CollectionBehavior.fullScreenPrimary.rawValue)); lua_setfield(L, -2, "fullScreenPrimary")
+    L.push(lua_Integer(NSWindow.CollectionBehavior.fullScreenAuxiliary.rawValue)); lua_setfield(L, -2, "fullScreenAuxiliary")
+    L.push(lua_Integer(NSWindow.CollectionBehavior.fullScreenAllowsTiling.rawValue)); lua_setfield(L, -2, "fullScreenAllowsTiling")
+    L.push(lua_Integer(NSWindow.CollectionBehavior.fullScreenDisallowsTiling.rawValue)); lua_setfield(L, -2, "fullScreenDisallowsTiling")
     return 1
 }
 
 func canvas_cg_windowLevels(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     lua_newtable(L)
-    lua_pushinteger(L, lua_Integer(CGWindowLevelForKey(.minimumWindow)));           lua_setfield(L, -2, "_MinimumWindowLevelKey")
-    lua_pushinteger(L, lua_Integer(CGWindowLevelForKey(.desktopWindow)));           lua_setfield(L, -2, "desktop")
-    lua_pushinteger(L, lua_Integer(CGWindowLevelForKey(.normalWindow)));            lua_setfield(L, -2, "normal")
-    lua_pushinteger(L, lua_Integer(CGWindowLevelForKey(.floatingWindow)));          lua_setfield(L, -2, "floating")
-    lua_pushinteger(L, lua_Integer(CGWindowLevelForKey(.tornOffMenuWindow)));       lua_setfield(L, -2, "tornOffMenu")
-    lua_pushinteger(L, lua_Integer(CGWindowLevelForKey(.dockWindow)));              lua_setfield(L, -2, "dock")
-    lua_pushinteger(L, lua_Integer(CGWindowLevelForKey(.mainMenuWindow)));          lua_setfield(L, -2, "mainMenu")
-    lua_pushinteger(L, lua_Integer(CGWindowLevelForKey(.statusWindow)));            lua_setfield(L, -2, "status")
-    lua_pushinteger(L, lua_Integer(CGWindowLevelForKey(.modalPanelWindow)));        lua_setfield(L, -2, "modalPanel")
-    lua_pushinteger(L, lua_Integer(CGWindowLevelForKey(.popUpMenuWindow)));         lua_setfield(L, -2, "popUpMenu")
-    lua_pushinteger(L, lua_Integer(CGWindowLevelForKey(.draggingWindow)));          lua_setfield(L, -2, "dragging")
-    lua_pushinteger(L, lua_Integer(CGWindowLevelForKey(.screenSaverWindow)));       lua_setfield(L, -2, "screenSaver")
-    lua_pushinteger(L, lua_Integer(CGWindowLevelForKey(.maximumWindow)));           lua_setfield(L, -2, "_MaximumWindowLevelKey")
-    lua_pushinteger(L, lua_Integer(CGWindowLevelForKey(.overlayWindow)));           lua_setfield(L, -2, "overlay")
-    lua_pushinteger(L, lua_Integer(CGWindowLevelForKey(.helpWindow)));              lua_setfield(L, -2, "help")
-    lua_pushinteger(L, lua_Integer(CGWindowLevelForKey(.utilityWindow)));           lua_setfield(L, -2, "utility")
-    lua_pushinteger(L, lua_Integer(CGWindowLevelForKey(.desktopIconWindow)));       lua_setfield(L, -2, "desktopIcon")
-    lua_pushinteger(L, lua_Integer(CGWindowLevelForKey(.cursorWindow)));            lua_setfield(L, -2, "cursor")
-    lua_pushinteger(L, lua_Integer(CGWindowLevelForKey(.assistiveTechHighWindow))); lua_setfield(L, -2, "assistiveTechHigh")
+    L.push(lua_Integer(CGWindowLevelForKey(.minimumWindow)));           lua_setfield(L, -2, "_MinimumWindowLevelKey")
+    L.push(lua_Integer(CGWindowLevelForKey(.desktopWindow)));           lua_setfield(L, -2, "desktop")
+    L.push(lua_Integer(CGWindowLevelForKey(.normalWindow)));            lua_setfield(L, -2, "normal")
+    L.push(lua_Integer(CGWindowLevelForKey(.floatingWindow)));          lua_setfield(L, -2, "floating")
+    L.push(lua_Integer(CGWindowLevelForKey(.tornOffMenuWindow)));       lua_setfield(L, -2, "tornOffMenu")
+    L.push(lua_Integer(CGWindowLevelForKey(.dockWindow)));              lua_setfield(L, -2, "dock")
+    L.push(lua_Integer(CGWindowLevelForKey(.mainMenuWindow)));          lua_setfield(L, -2, "mainMenu")
+    L.push(lua_Integer(CGWindowLevelForKey(.statusWindow)));            lua_setfield(L, -2, "status")
+    L.push(lua_Integer(CGWindowLevelForKey(.modalPanelWindow)));        lua_setfield(L, -2, "modalPanel")
+    L.push(lua_Integer(CGWindowLevelForKey(.popUpMenuWindow)));         lua_setfield(L, -2, "popUpMenu")
+    L.push(lua_Integer(CGWindowLevelForKey(.draggingWindow)));          lua_setfield(L, -2, "dragging")
+    L.push(lua_Integer(CGWindowLevelForKey(.screenSaverWindow)));       lua_setfield(L, -2, "screenSaver")
+    L.push(lua_Integer(CGWindowLevelForKey(.maximumWindow)));           lua_setfield(L, -2, "_MaximumWindowLevelKey")
+    L.push(lua_Integer(CGWindowLevelForKey(.overlayWindow)));           lua_setfield(L, -2, "overlay")
+    L.push(lua_Integer(CGWindowLevelForKey(.helpWindow)));              lua_setfield(L, -2, "help")
+    L.push(lua_Integer(CGWindowLevelForKey(.utilityWindow)));           lua_setfield(L, -2, "utility")
+    L.push(lua_Integer(CGWindowLevelForKey(.desktopIconWindow)));       lua_setfield(L, -2, "desktopIcon")
+    L.push(lua_Integer(CGWindowLevelForKey(.cursorWindow)));            lua_setfield(L, -2, "cursor")
+    L.push(lua_Integer(CGWindowLevelForKey(.assistiveTechHighWindow))); lua_setfield(L, -2, "assistiveTechHigh")
     return 1
 }
 
@@ -938,7 +938,7 @@ func canvas_userdata_tostring(_ L: LuaState) throws -> CInt {
     } else {
         title = NSStringFromRect(obj.frame)
     }
-    lua_pushstring(L, "\(canvas_USERDATA_TAG): \(title) (\(lua_topointer(L, 1)!))")
+    L.push("\(canvas_USERDATA_TAG): \(title) (\(lua_topointer(L, 1)!))")
     return 1
 }
 
@@ -983,7 +983,7 @@ public func luaopen_hs_libcanvas(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
         L.pushMetatable(for: HSCanvasView.self)
 
         // Replace __gc with our explicit teardown + deinitialize
-        lua_pushcclosure(L, { (L: LuaState!) -> CInt in
+        L.push({ (L: LuaState!) -> CInt in
             if let theView: HSCanvasView = L.touserdata(1) {
                 canvas_teardownView(theView)
             }
@@ -995,19 +995,19 @@ public func luaopen_hs_libcanvas(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
             lua_pushnil(L)
             lua_setmetatable(L, 1)
             return 0
-        }, 0)
+        })
         lua_setfield(L, -2, "__gc")
 
         // __eq
-        lua_pushcclosure(L, { (L: LuaState!) -> CInt in
+        L.push({ (L: LuaState!) -> CInt in
             if let obj1: HSCanvasView = L.touserdata(1),
                let obj2: HSCanvasView = L.touserdata(2) {
-                lua_pushboolean(L, obj1 === obj2 ? 1 : 0)
+                L.push(obj1 === obj2)
             } else {
-                lua_pushboolean(L, 0)
+                L.push(false)
             }
             return 1
-        }, 0)
+        })
         lua_setfield(L, -2, "__eq")
 
         // __index = self (metatable is its own __index)
@@ -1015,9 +1015,9 @@ public func luaopen_hs_libcanvas(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
         lua_setfield(L, -2, "__index")
 
         // Set __type and __name for assertIsUserdataOfType and tostring
-        lua_pushstring(L, canvas_USERDATA_TAG)
+        L.push(canvas_USERDATA_TAG)
         lua_setfield(L, -2, "__type")
-        lua_pushstring(L, canvas_USERDATA_TAG)
+        L.push(canvas_USERDATA_TAG)
         lua_setfield(L, -2, "__name")
 
         // Register all methods on the metatable
