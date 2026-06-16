@@ -1,4 +1,5 @@
 import Cocoa
+import HSDSTCore
 
 // MARK: - String constants (from variables.h)
 
@@ -9,22 +10,36 @@ private let MJKeepConsoleOnTopKey = "MJKeepConsoleOnTopKey"
 
 @_cdecl("ConsoleDarkModeEnabled")
 public func ConsoleDarkModeEnabled() -> Bool {
-    UserDefaults.standard.bool(forKey: HSConsoleDarkModeKey)
+    if let env = environmentGetGlobalOrNil() {
+        return env.settings.bool(forKey: HSConsoleDarkModeKey)
+    }
+    return UserDefaults.standard.bool(forKey: HSConsoleDarkModeKey)
 }
 
 @_cdecl("ConsoleDarkModeSetEnabled")
 public func ConsoleDarkModeSetEnabled(_ enabled: Bool) {
-    UserDefaults.standard.set(enabled, forKey: HSConsoleDarkModeKey)
+    if let env = environmentGetGlobalOrNil() {
+        env.settings.set(enabled, forKey: HSConsoleDarkModeKey)
+    } else {
+        UserDefaults.standard.set(enabled, forKey: HSConsoleDarkModeKey)
+    }
 }
 
 @_cdecl("MJConsoleWindowAlwaysOnTop")
 public func MJConsoleWindowAlwaysOnTop() -> Bool {
-    UserDefaults.standard.bool(forKey: MJKeepConsoleOnTopKey)
+    if let env = environmentGetGlobalOrNil() {
+        return env.settings.bool(forKey: MJKeepConsoleOnTopKey)
+    }
+    return UserDefaults.standard.bool(forKey: MJKeepConsoleOnTopKey)
 }
 
 @_cdecl("MJConsoleWindowSetAlwaysOnTop")
 public func MJConsoleWindowSetAlwaysOnTop(_ alwaysOnTop: Bool) {
-    UserDefaults.standard.set(alwaysOnTop, forKey: MJKeepConsoleOnTopKey)
+    if let env = environmentGetGlobalOrNil() {
+        env.settings.set(alwaysOnTop, forKey: MJKeepConsoleOnTopKey)
+    } else {
+        UserDefaults.standard.set(alwaysOnTop, forKey: MJKeepConsoleOnTopKey)
+    }
     MJConsoleWindowController.singleton().reflectDefaults()
 }
 
@@ -288,7 +303,13 @@ public class MJConsoleWindowController: NSWindowController, NSTextFieldDelegate 
 
         var displayStr = str
         if type == .stdout {
-            let dateStr = dateFormatter.string(from: Date())
+            let date: Date
+            if let env = environmentGetGlobalOrNil() {
+                date = Date(timeIntervalSince1970: env.clock.secondsSinceEpoch())
+            } else {
+                date = Date()
+            }
+            let dateStr = dateFormatter.string(from: date)
             displayStr = "\(dateStr): \(str)"
         }
 

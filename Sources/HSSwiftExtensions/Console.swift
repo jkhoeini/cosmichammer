@@ -1,5 +1,6 @@
 import Cocoa
 import CLua
+import HSDSTCore
 import Lua
 import os.log
 
@@ -8,11 +9,18 @@ import os.log
 private let HSConsoleDarkModeKey = "HSConsoleDarkModeKey"
 
 private func consoleDarkModeEnabled() -> Bool {
-    UserDefaults.standard.bool(forKey: HSConsoleDarkModeKey)
+    if let env = environmentGetGlobalOrNil() {
+        return env.settings.bool(forKey: HSConsoleDarkModeKey)
+    }
+    return UserDefaults.standard.bool(forKey: HSConsoleDarkModeKey)
 }
 
 private func consoleDarkModeSetEnabled(_ enabled: Bool) {
-    UserDefaults.standard.set(enabled, forKey: HSConsoleDarkModeKey)
+    if let env = environmentGetGlobalOrNil() {
+        env.settings.set(enabled, forKey: HSConsoleDarkModeKey)
+    } else {
+        UserDefaults.standard.set(enabled, forKey: HSConsoleDarkModeKey)
+    }
 }
 
 /// Returns the MJConsoleWindowController singleton via runtime lookup.
@@ -167,13 +175,14 @@ private func consoleHistoryFromLua(_ L: UnsafeMutablePointer<lua_State>!, at ind
 ///    end
 ///.   ```
 private func consoleDarkMode(_ L: LuaState) throws -> CInt {
+    let settings = environmentGet(L).settings
     if lua_isboolean(L, 1) {
-        consoleDarkModeSetEnabled(lua_toboolean(L, 1) != 0)
+        settings.set(lua_toboolean(L, 1) != 0, forKey: HSConsoleDarkModeKey)
         let ctrl = consoleController()
         ctrl.perform(NSSelectorFromString("reflectDefaults"))
     }
 
-    L.push(consoleDarkModeEnabled())
+    L.push(settings.bool(forKey: HSConsoleDarkModeKey))
     return 1
 }
 

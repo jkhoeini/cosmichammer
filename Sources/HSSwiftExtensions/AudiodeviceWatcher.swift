@@ -1,3 +1,4 @@
+import HSDSTCore
 import Cocoa
 import CLua
 import Lua
@@ -46,7 +47,7 @@ private func audiodevicewatcher_callback(
         events.append(selectorString)
     }
 
-    DispatchQueue.main.async {
+    environmentGetGlobalOrNil()?.eventLoop.async {
         let L = lua_getCurrentState()!
 
         guard let watcher = theWatcher else {

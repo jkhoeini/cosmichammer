@@ -1,5 +1,6 @@
 import Cocoa
 import CLua
+import HSDSTCore
 import Lua
 import os.log
 
@@ -213,7 +214,7 @@ class HSChooserTableView: NSTableView {
         completionCallback = nil
         rightClickCallback = nil
         invalidCallback = nil
-        isObservingThemeChanges = false
+        stopObservingThemeChanges()
         if let theWindow = window {
             if theWindow.toolbar != nil {
                 theWindow.toolbar?.isVisible = false
@@ -223,22 +224,39 @@ class HSChooserTableView: NSTableView {
     }
 
     // Keep track of whether we are observing macOS interface theme (light/dark)
-    var isObservingThemeChanges: Bool = false {
-        didSet {
-            guard oldValue != isObservingThemeChanges else { return }
-            if isObservingThemeChanges {
-                DistributedNotificationCenter.default().addObserver(
-                    self,
-                    selector: #selector(setBgLightDark(_:)),
-                    name: NSNotification.Name("AppleInterfaceThemeChangedNotification"),
-                    object: nil)
-            } else {
-                DistributedNotificationCenter.default().removeObserver(
-                    self,
-                    name: NSNotification.Name("AppleInterfaceThemeChangedNotification"),
-                    object: nil)
+    var isObservingThemeChanges: Bool { themeObserverToken != nil }
+    private var themeObserverToken: (any NotificationObserverToken)?
+    private weak var notificationRef: (any NotificationProtocol)?
+
+    func startObservingThemeChanges() {
+        guard themeObserverToken == nil else { return }
+        let L = lua_getCurrentState()!
+        let notif = environmentGet(L).notification
+        themeObserverToken = notif.addDistributedObserver(name: "AppleInterfaceThemeChangedNotification", object: nil) { [weak self] name, object, userInfo in
+            guard let self = self else { return }
+            if object == nil {
+                self.startObservingThemeChanges()
+                self.setAutoBgLightDark()
+                return
+            }
+            self.stopObservingThemeChanges()
+            if let boolStr = object, let number = NumberFormatter().number(from: boolStr) {
+                self.applyDarkSetting(number.boolValue)
             }
         }
+        notificationRef = notif
+    }
+
+    func stopObservingThemeChanges() {
+        guard let token = themeObserverToken else { return }
+        if let notif = notificationRef {
+            notif.removeObserver(token)
+        } else {
+            let L = lua_getCurrentState()!
+            environmentGet(L).notification.removeObserver(token)
+        }
+        themeObserverToken = nil
+        notificationRef = nil
     }
 
     // MARK: - Initialiser
@@ -285,7 +303,7 @@ class HSChooserTableView: NSTableView {
         guard setupWindow() else { return }
 
         // Start observing interface theme changes.
-        self.isObservingThemeChanges = true
+        startObservingThemeChanges()
     }
 
     required init?(coder: NSCoder) {
@@ -566,8 +584,12 @@ class HSChooserTableView: NSTableView {
     }
 
     func resizeWindow() {
-        guard let screen = NSScreen.main else { return }
-        let screenFrame = screen.visibleFrame
+        let L = lua_getCurrentState()!
+        guard let screenInfo = environmentGet(L).screen.mainScreen() else { return }
+        let screenFrame = NSRect(x: screenInfo.visibleFrame.x,
+                                 y: screenInfo.visibleFrame.y,
+                                 width: screenInfo.visibleFrame.width,
+                                 height: screenInfo.visibleFrame.height)
         assert(screenFrame.width > 0 && screenFrame.height > 0, "resizeWindow: screen frame must have positive dimensions")
 
         let rowHeight = choicesTableView.rowHeight
@@ -1193,18 +1215,19 @@ class HSChooserTableView: NSTableView {
     }
 
     func setAutoBgLightDark() {
-        let interfaceStyle = UserDefaults.standard.string(forKey: "AppleInterfaceStyle")
+        let L = lua_getCurrentState()!
+        let interfaceStyle = environmentGet(L).settings.string(forKey: "AppleInterfaceStyle")
         let isDark = interfaceStyle?.lowercased() == "dark"
         applyDarkSetting(isDark)
     }
 
     @objc func setBgLightDark(_ notification: Notification) {
         if notification.object == nil {
-            isObservingThemeChanges = true
+            startObservingThemeChanges()
             setAutoBgLightDark()
             return
         }
-        isObservingThemeChanges = false
+        stopObservingThemeChanges()
         if let number = notification.object as? NSNumber {
             applyDarkSetting(number.boolValue)
         }

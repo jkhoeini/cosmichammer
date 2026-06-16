@@ -2,6 +2,7 @@ import Foundation
 import CLua
 import Lua
 import Cocoa
+import HSDSTCore
 
 private let USERDATA_TAG = "hs.distributednotifications"
 
@@ -12,35 +13,19 @@ private class HSDistNotWatcher: NSObject {
     var object: String?
     var name: String?
     var generation: UInt64 = 0
+    var observerToken: (any NotificationObserverToken)?
+    weak var notificationRef: (any NotificationProtocol)?
     private var tornDown = false
 
-    /// Idempotent teardown: remove observer, drop the Lua callback reference,
-    /// mark as torn down.  Called from the explicit __gc closure while the
-    /// lua_State is still alive.
     func teardown() {
         guard !tornDown else { return }
         tornDown = true
-        let center = DistributedNotificationCenter.default()
-        let noteName: NSNotification.Name? = name.map { NSNotification.Name($0) }
-        center.removeObserver(self, name: noteName, object: object)
+        if let token = observerToken {
+            notificationRef?.removeObserver(token)
+            observerToken = nil
+        }
+        notificationRef = nil
         callback = nil
-    }
-
-    @objc func callbackFired(_ note: NSNotification) {
-        if !lua_isStateGenerationValid(generation) {
-            teardown()
-            return
-        }
-
-        guard let cb = callback else { return }
-        let L = lua_getCurrentState()!
-        cb.push(onto: L)
-        lua_pushany(L, note.name.rawValue)
-        lua_pushany(L, note.object)
-        lua_pushany(L, note.userInfo)
-        if lua_pcall(L, 3, 0, 0) != LUA_OK {
-            lua_pop(L, 1)
-        }
     }
 }
 
@@ -96,15 +81,9 @@ private func distnot_post(_ L: LuaState) throws -> CInt {
 
     let noteName = String(cString: lua_tostring(L, 1)!)
     let object: String? = (lua_type(L, 2) == LUA_TSTRING) ? String(cString: lua_tostring(L, 2)!) : nil
-    let userInfo: [AnyHashable: Any]? = (lua_type(L, 3) == LUA_TTABLE) ? (lua_tovalue(L, at: 3) as? [String: Any]) : nil
+    let userInfo: [String: Any]? = (lua_type(L, 3) == LUA_TTABLE) ? (lua_tovalue(L, at: 3) as? [String: Any]) : nil
 
-    let center = DistributedNotificationCenter.default()
-    center.postNotificationName(
-        NSNotification.Name(noteName),
-        object: object,
-        userInfo: userInfo,
-        deliverImmediately: true
-    )
+    environmentGet(L).notification.postDistributed(name: noteName, object: object, userInfo: userInfo)
 
     return 0
 }
@@ -120,15 +99,25 @@ public func luaopen_hs_libdistributednotifications(_ L: UnsafeMutablePointer<lua
                 let watcher: HSDistNotWatcher = try L.checkArgument(1)
                 lua_settop(L, 1)
 
-                let center = DistributedNotificationCenter.default()
-                let noteName: NSNotification.Name? = watcher.name.map { NSNotification.Name($0) }
-                center.addObserver(
-                    watcher,
-                    selector: #selector(HSDistNotWatcher.callbackFired(_:)),
-                    name: noteName,
-                    object: watcher.object,
-                    suspensionBehavior: .deliverImmediately
-                )
+                let notif = environmentGet(L).notification
+                let token = notif.addDistributedObserver(name: watcher.name, object: watcher.object) { [weak watcher] name, object, userInfo in
+                    guard let watcher = watcher else { return }
+                    if !lua_isStateGenerationValid(watcher.generation) {
+                        watcher.teardown()
+                        return
+                    }
+                    guard let cb = watcher.callback else { return }
+                    let L = lua_getCurrentState()!
+                    cb.push(onto: L)
+                    lua_pushany(L, name)
+                    lua_pushany(L, object)
+                    lua_pushany(L, userInfo)
+                    if lua_pcall(L, 3, 0, 0) != LUA_OK {
+                        lua_pop(L, 1)
+                    }
+                }
+                watcher.observerToken = token
+                watcher.notificationRef = notif
 
                 return 1  // return self
             },
@@ -136,9 +125,10 @@ public func luaopen_hs_libdistributednotifications(_ L: UnsafeMutablePointer<lua
                 let watcher: HSDistNotWatcher = try L.checkArgument(1)
                 lua_settop(L, 1)
 
-                let center = DistributedNotificationCenter.default()
-                let noteName: NSNotification.Name? = watcher.name.map { NSNotification.Name($0) }
-                center.removeObserver(watcher, name: noteName, object: watcher.object)
+                if let token = watcher.observerToken {
+                    environmentGet(L).notification.removeObserver(token)
+                    watcher.observerToken = nil
+                }
 
                 return 1  // return self
             },

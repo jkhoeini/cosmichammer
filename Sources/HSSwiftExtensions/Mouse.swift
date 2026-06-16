@@ -1,6 +1,7 @@
 import Cocoa
 import CLua
 import Lua
+import HSDSTCore
 import IOKit
 import IOKit.hid
 import os.log
@@ -24,7 +25,7 @@ private let enum_callback: IOHIDDeviceCallback = { context, result, sender, devi
 }
 
 // MARK: - HSmouse class
-private class HSmouse {
+class HSmouse {
     private static let RUNLOOPMODE = CFRunLoopMode("hs.mouse" as CFString)
     private static let MOUSE_TRACKING_FACTOR: Double = 65536
 
@@ -155,11 +156,11 @@ private class HSmouse {
 ///  * This function considers any mouse labelled as "Apple Internal Keyboard / Trackpad" to be an internal mouse.
 private func mouse_count(_ L: LuaState) throws -> CInt {
     let includeInternal = lua_toboolean(L, 1) != 0
+    let sysInfo = environmentGet(L).systemInfo
 
-    let mouseManager = HSmouse()
-    var mouseCount = mouseManager.count
+    var mouseCount = sysInfo.mouseDeviceCount()
 
-    if !includeInternal && mouseManager.hasInternalMouse {
+    if !includeInternal && sysInfo.hasInternalMouse() {
         mouseCount -= 1
     }
 
@@ -180,9 +181,9 @@ private func mouse_count(_ L: LuaState) throws -> CInt {
 /// Notes:
 ///  * This function leverages code from [ManyMouse](http://icculus.org/manymouse/).
 private func mouse_names(_ L: LuaState) throws -> CInt {
-    let mouseManager = HSmouse()
+    let names = environmentGet(L).systemInfo.mouseDeviceNames()
 
-    lua_pushany(L, mouseManager.getNames() as NSArray)
+    lua_pushany(L, names as NSArray)
     return 1
 }
 
@@ -199,14 +200,15 @@ private func mouse_names(_ L: LuaState) throws -> CInt {
 /// Notes:
 ///  * If no parameters are supplied, the current position will be returned. If a point table parameter is supplied, the mouse pointer position will be set and the new co-ordinates returned
 private func mouse_absolutePosition(_ L: LuaState) throws -> CInt {
-    let mouseManager = HSmouse()
+    let sysInfo = environmentGet(L).systemInfo
 
     if lua_type(L, 1) == LUA_TTABLE {
         let point = lua_tableToPoint(L, at: 1)
-        mouseManager.absolutePosition = point
+        sysInfo.setMousePosition(x: Double(point.x), y: Double(point.y))
     }
 
-    lua_pushNSPoint(L, mouseManager.absolutePosition)
+    let pos = sysInfo.mousePosition()
+    lua_pushNSPoint(L, NSPoint(x: pos.x, y: pos.y))
     return 1
 }
 
@@ -227,7 +229,7 @@ private func mouse_absolutePosition(_ L: LuaState) throws -> CInt {
 ///    * 0.0, 0.125, 0.5, 0.6875, 0.875, 1.0, 1.5, 2.0, 2.5, 3.0
 ///  * Note that changes to this value will not be noticed immediately by macOS
 private func mouse_mouseAcceleration(_ L: LuaState) throws -> CInt {
-    let mouseManager = HSmouse()
+    let sysInfo = environmentGet(L).systemInfo
 
     var isTrackpad = false
     if lua_gettop(L) > 0 {
@@ -235,16 +237,25 @@ private func mouse_mouseAcceleration(_ L: LuaState) throws -> CInt {
     }
 
     if lua_type(L, 1) == LUA_TNUMBER {
-        let result = isTrackpad ? mouseManager.setTrackpadTrackingSpeed(lua_tonumber(L, 1))
-                                : mouseManager.setTrackingSpeed(lua_tonumber(L, 1))
-
-        if result != KERN_SUCCESS {
-            os_log(.error, "Unable to set %{public}@ tracking speed: %d",
-                   isTrackpad ? "trackpad" : "mouse", result)
+        if isTrackpad {
+            let mouseManager = HSmouse()
+            let result = mouseManager.setTrackpadTrackingSpeed(lua_tonumber(L, 1))
+            if result != KERN_SUCCESS {
+                os_log(.error, "Unable to set trackpad tracking speed: %d", result)
+            }
+        } else {
+            if !sysInfo.setMouseTrackingSpeed(lua_tonumber(L, 1)) {
+                os_log(.error, "Unable to set mouse tracking speed")
+            }
         }
     }
 
-    L.push(isTrackpad ? mouseManager.trackpadTrackingSpeed : mouseManager.trackingSpeed)
+    if isTrackpad {
+        let mouseManager = HSmouse()
+        L.push(mouseManager.trackpadTrackingSpeed)
+    } else {
+        L.push(sysInfo.mouseTrackingSpeed())
+    }
     return 1
 }
 
@@ -258,9 +269,7 @@ private func mouse_mouseAcceleration(_ L: LuaState) throws -> CInt {
 /// Returns:
 ///  * A string, either "natural" or "normal"
 private func mouse_scrollDirection(_ L: LuaState) throws -> CInt {
-    let mouseManager = HSmouse()
-
-    L.push(mouseManager.isScrollDirectionNatural ? "natural" : "normal")
+    L.push(environmentGet(L).systemInfo.isScrollDirectionNatural() ? "natural" : "normal")
     return 1
 }
 

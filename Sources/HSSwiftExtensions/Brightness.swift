@@ -1,6 +1,7 @@
 import Cocoa
 import CLua
 import Lua
+import HSDSTCore
 import Carbon
 import IOKit.graphics
 import os.log
@@ -140,10 +141,10 @@ private func brightness_ambient(_ L: LuaState) throws -> CInt {
 ///  * True if the brightness was set, false if not
 private func brightness_set(_ L: LuaState) throws -> CInt {
     let brightness = luaL_checknumber(L, 1)
-    let level = Float(min(max(brightness / 100.0, 0.0), 1.0))
-    if let setBrightness = _setBrightness {
-        let err = setBrightness(CGMainDisplayID(), level)
-        L.push(err == Int32(CGError.success.rawValue))
+    let level = min(max(brightness / 100.0, 0.0), 1.0)
+    let screen = environmentGet(L).screen
+    if let main = screen.mainScreen() {
+        L.push(screen.setBrightness(level, forScreenID: main.id))
     } else {
         L.push(false)
     }
@@ -160,14 +161,8 @@ private func brightness_set(_ L: LuaState) throws -> CInt {
 /// Returns:
 ///  * A number containing the brightness of the display, between 0 and 100
 private func brightness_get(_ L: LuaState) throws -> CInt {
-    var level: Float = 0
-    if let getBrightness = _getBrightness {
-        let err = getBrightness(CGMainDisplayID(), &level)
-        if err == Int32(CGError.success.rawValue) {
-            L.push(Int(level * 100.0))
-        } else {
-            lua_pushnil(L)
-        }
+    if let main = environmentGet(L).screen.mainScreen() {
+        L.push(Int(main.brightness * 100.0))
     } else {
         lua_pushnil(L)
     }

@@ -2,6 +2,7 @@ import Foundation
 import CLua
 import Lua
 import Cocoa
+import HSDSTCore
 
 /// === hs.fs.volume ===
 ///
@@ -44,6 +45,8 @@ private class VolumeWatcher: NSObject {
     var callback: LuaValue?
     var running: Bool = false
     var generation: UInt64 = 0
+    var observerTokens: [any NotificationObserverToken] = []
+    weak var notificationRef: (any NotificationProtocol)?
     private var tornDown = false
 
     /// Idempotent teardown: stop observers, drop the Lua callback reference,
@@ -53,13 +56,17 @@ private class VolumeWatcher: NSObject {
         tornDown = true
         if running {
             running = false
-            unregister_observer(self)
+            for token in observerTokens {
+                notificationRef?.removeObserver(token)
+            }
+            observerTokens.removeAll()
         }
+        notificationRef = nil
         callback = nil
     }
 
     // Call the lua callback function and pass the event type and info dict.
-    func handleVolume(_ dict: [AnyHashable: Any], withEvent event: VolumeEvent) {
+    func handleVolume(_ dict: [String: Any], withEvent event: VolumeEvent) {
         if !lua_isStateGenerationValid(generation) {
             teardown()
             return
@@ -99,52 +106,35 @@ private class VolumeWatcher: NSObject {
             lua_pop(L, 1)
         }
     }
-
-    @objc func volumeDidMount(_ notification: Notification) {
-        handleVolume(notification.userInfo ?? [:], withEvent: .didMount)
-    }
-
-    @objc func volumeDidUnmount(_ notification: Notification) {
-        handleVolume(notification.userInfo ?? [:], withEvent: .didUnmount)
-    }
-
-    @objc func volumeWillUnmount(_ notification: Notification) {
-        handleVolume(notification.userInfo ?? [:], withEvent: .willUnmount)
-    }
-
-    @objc func volumeDidRename(_ notification: Notification) {
-        handleVolume(notification.userInfo ?? [:], withEvent: .didRename)
-    }
 }
 
 // MARK: - Observer registration
 
-private func register_observer(_ observer: VolumeWatcher) {
-    let center = NSWorkspace.shared.notificationCenter
-    center.addObserver(observer,
-                       selector: #selector(VolumeWatcher.volumeDidMount(_:)),
-                       name: NSWorkspace.didMountNotification,
-                       object: nil)
-    center.addObserver(observer,
-                       selector: #selector(VolumeWatcher.volumeDidUnmount(_:)),
-                       name: NSWorkspace.didUnmountNotification,
-                       object: nil)
-    center.addObserver(observer,
-                       selector: #selector(VolumeWatcher.volumeWillUnmount(_:)),
-                       name: NSWorkspace.willUnmountNotification,
-                       object: nil)
-    center.addObserver(observer,
-                       selector: #selector(VolumeWatcher.volumeDidRename(_:)),
-                       name: NSWorkspace.didRenameVolumeNotification,
-                       object: nil)
+private func register_observer(_ observer: VolumeWatcher, _ L: UnsafeMutablePointer<lua_State>!) {
+    let notif = environmentGet(L).notification
+
+    let events: [(String, VolumeEvent)] = [
+        (NSWorkspace.didMountNotification.rawValue, .didMount),
+        (NSWorkspace.didUnmountNotification.rawValue, .didUnmount),
+        (NSWorkspace.willUnmountNotification.rawValue, .willUnmount),
+        (NSWorkspace.didRenameVolumeNotification.rawValue, .didRename),
+    ]
+
+    for (name, event) in events {
+        let token = notif.addWorkspaceObserver(name: name, object: nil) { [weak observer] userInfo in
+            observer?.handleVolume(userInfo, withEvent: event)
+        }
+        observer.observerTokens.append(token)
+    }
+    observer.notificationRef = notif
 }
 
-private func unregister_observer(_ observer: VolumeWatcher) {
-    let center = NSWorkspace.shared.notificationCenter
-    center.removeObserver(observer, name: NSWorkspace.didMountNotification, object: nil)
-    center.removeObserver(observer, name: NSWorkspace.didUnmountNotification, object: nil)
-    center.removeObserver(observer, name: NSWorkspace.willUnmountNotification, object: nil)
-    center.removeObserver(observer, name: NSWorkspace.didRenameVolumeNotification, object: nil)
+private func unregister_observer(_ observer: VolumeWatcher, _ L: UnsafeMutablePointer<lua_State>!) {
+    let notif = environmentGet(L).notification
+    for token in observer.observerTokens {
+        notif.removeObserver(token)
+    }
+    observer.observerTokens.removeAll()
 }
 
 // MARK: - Module functions
@@ -229,7 +219,7 @@ public func luaopen_hs_libfsvolume(_ L: UnsafeMutablePointer<lua_State>!) -> Int
                 lua_settop(L, 1)
                 if !watcher.running {
                     watcher.running = true
-                    register_observer(watcher)
+                    register_observer(watcher, L)
                 }
                 return 1
             },
@@ -238,7 +228,7 @@ public func luaopen_hs_libfsvolume(_ L: UnsafeMutablePointer<lua_State>!) -> Int
                 lua_settop(L, 1)
                 if watcher.running {
                     watcher.running = false
-                    unregister_observer(watcher)
+                    unregister_observer(watcher, L)
                 }
                 return 1
             },

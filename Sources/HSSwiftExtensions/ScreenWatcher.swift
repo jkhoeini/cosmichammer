@@ -2,6 +2,7 @@ import Foundation
 import CLua
 import Lua
 import Cocoa
+import HSDSTCore
 
 /// === hs.screen.watcher ===
 ///
@@ -21,6 +22,9 @@ private class MJScreenWatcher: NSObject, LuaTeardownable {
     var includeActive: Bool = false
     var running: Bool = false
     var generation: UInt64 = 0
+    var screenParamsToken: (any NotificationObserverToken)?
+    var activeDisplayToken: (any NotificationObserverToken)?
+    weak var notificationRef: (any NotificationProtocol)?
     private var tornDown = false
 
     func teardown() {
@@ -28,23 +32,20 @@ private class MJScreenWatcher: NSObject, LuaTeardownable {
         tornDown = true
         if running {
             running = false
-            NotificationCenter.default.removeObserver(self,
-                                                      name: NSApplication.didChangeScreenParametersNotification,
-                                                      object: nil)
-            if includeActive {
-                NSWorkspace.shared.notificationCenter.removeObserver(self,
-                                                                     name: NSNotification.Name("NSWorkspaceActiveDisplayDidChangeNotification"),
-                                                                     object: nil)
+            if let token = screenParamsToken {
+                notificationRef?.removeObserver(token)
+                screenParamsToken = nil
+            }
+            if let token = activeDisplayToken {
+                notificationRef?.removeObserver(token)
+                activeDisplayToken = nil
             }
         }
+        notificationRef = nil
         callback = nil
     }
 
-    @objc func _screensChanged(_ note: Notification) {
-        performSelector(onMainThread: #selector(screensChanged(_:)), with: note, waitUntilDone: true)
-    }
-
-    @objc func screensChanged(_ note: Notification) {
+    func screensChanged(isActiveDisplayChange: Bool) {
         guard !tornDown else { return }
         guard lua_isStateGenerationValid(generation) else {
             teardown()
@@ -58,7 +59,7 @@ private class MJScreenWatcher: NSObject, LuaTeardownable {
 
         cb.push(onto: L)
         if includeActive {
-            if note.name.rawValue == "NSWorkspaceActiveDisplayDidChangeNotification" {
+            if isActiveDisplayChange {
                 L.push(true)
             } else {
                 lua_pushnil(L)
@@ -85,16 +86,23 @@ public func luaopen_hs_libscreenwatcher(_ L: UnsafeMutablePointer<lua_State>!) -
                     if watcher.running { return 1 }
                     watcher.running = true
 
-                    NotificationCenter.default.addObserver(watcher,
-                                                           selector: #selector(MJScreenWatcher._screensChanged(_:)),
-                                                           name: NSApplication.didChangeScreenParametersNotification,
-                                                           object: nil)
+                    let notif = environmentGet(L).notification
+                    watcher.notificationRef = notif
+
+                    watcher.screenParamsToken = notif.addObserver(
+                        name: NSApplication.didChangeScreenParametersNotification.rawValue,
+                        object: nil
+                    ) { [weak watcher] _ in
+                        watcher?.screensChanged(isActiveDisplayChange: false)
+                    }
 
                     if watcher.includeActive {
-                        NSWorkspace.shared.notificationCenter.addObserver(watcher,
-                                                                          selector: #selector(MJScreenWatcher._screensChanged(_:)),
-                                                                          name: NSNotification.Name("NSWorkspaceActiveDisplayDidChangeNotification"),
-                                                                          object: nil)
+                        watcher.activeDisplayToken = notif.addWorkspaceObserver(
+                            name: "NSWorkspaceActiveDisplayDidChangeNotification",
+                            object: nil
+                        ) { [weak watcher] _ in
+                            watcher?.screensChanged(isActiveDisplayChange: true)
+                        }
                     }
 
                     return 1
@@ -106,14 +114,14 @@ public func luaopen_hs_libscreenwatcher(_ L: UnsafeMutablePointer<lua_State>!) -
                     if !watcher.running { return 1 }
                     watcher.running = false
 
-                    NotificationCenter.default.removeObserver(watcher,
-                                                              name: NSApplication.didChangeScreenParametersNotification,
-                                                              object: nil)
-
-                    if watcher.includeActive {
-                        NSWorkspace.shared.notificationCenter.removeObserver(watcher,
-                                                                             name: NSNotification.Name("NSWorkspaceActiveDisplayDidChangeNotification"),
-                                                                             object: nil)
+                    let notif = environmentGet(L).notification
+                    if let token = watcher.screenParamsToken {
+                        notif.removeObserver(token)
+                        watcher.screenParamsToken = nil
+                    }
+                    if let token = watcher.activeDisplayToken {
+                        notif.removeObserver(token)
+                        watcher.activeDisplayToken = nil
                     }
 
                     return 1

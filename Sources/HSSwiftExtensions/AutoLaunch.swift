@@ -1,14 +1,22 @@
 import Foundation
 import ServiceManagement
 import os.log
+import HSDSTCore
 
 @_cdecl("MJAutoLaunchGet")
 func MJAutoLaunchGet() -> Bool {
-    SMAppService.mainApp.status == .enabled
+    if let env = environmentGetGlobalOrNil() {
+        return env.loginItem.isLoginItemEnabled()
+    }
+    return SMAppService.mainApp.status == .enabled
 }
 
 @_cdecl("MJAutoLaunchSet")
 func MJAutoLaunchSet(_ opensAtLogin: Bool) {
+    if let env = environmentGetGlobalOrNil() {
+        _ = env.loginItem.setLoginItemEnabled(opensAtLogin)
+        return
+    }
     let service = SMAppService.mainApp
     do {
         if opensAtLogin {

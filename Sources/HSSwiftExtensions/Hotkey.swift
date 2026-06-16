@@ -2,6 +2,7 @@ import Cocoa
 import CLua
 import Lua
 import Carbon
+import HSDSTCore
 import os.log
 
 // MARK: - Constants and Types
@@ -60,8 +61,8 @@ private class HSHotkey {
 
 // MARK: - HSKeyRepeatManager
 
-@objc private class HSKeyRepeatManager: NSObject {
-    private var keyRepeatTimer: Timer?
+private class HSKeyRepeatManager {
+    private var keyRepeatTimer: Foundation.Timer?
     private var eventID: Int32 = 0
     private var eventType: Int32 = 0
 
@@ -71,15 +72,11 @@ private class HSHotkey {
             stopTimer()
             return
         }
-        keyRepeatTimer = Timer.scheduledTimer(
-            timeInterval: NSEvent.keyRepeatDelay,
-            target: self,
-            selector: #selector(delayTimerFired(_:)),
-            userInfo: nil,
-            repeats: false
-        )
         eventID = theEventID
         eventType = theEventKind
+        keyRepeatTimer = Foundation.Timer.scheduledTimer(withTimeInterval: NSEvent.keyRepeatDelay, repeats: false) { [weak self] _ in
+            self?.delayTimerFired()
+        }
     }
 
     func stopTimer() {
@@ -89,20 +86,16 @@ private class HSHotkey {
         eventType = 0
     }
 
-    @objc func delayTimerFired(_ timer: Timer) {
+    private func delayTimerFired() {
         _ = trigger_hotkey_callback(eventID, eventKind: eventType, isRepeat: true)
 
         keyRepeatTimer?.invalidate()
-        keyRepeatTimer = Timer.scheduledTimer(
-            timeInterval: NSEvent.keyRepeatInterval,
-            target: self,
-            selector: #selector(repeatTimerFired(_:)),
-            userInfo: nil,
-            repeats: true
-        )
+        keyRepeatTimer = Foundation.Timer.scheduledTimer(withTimeInterval: NSEvent.keyRepeatInterval, repeats: true) { [weak self] _ in
+            self?.repeatTimerFired()
+        }
     }
 
-    @objc func repeatTimerFired(_ timer: Timer) {
+    private func repeatTimerFired() {
         _ = trigger_hotkey_callback(eventID, eventKind: eventType, isRepeat: true)
     }
 }

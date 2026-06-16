@@ -1,6 +1,7 @@
 import Cocoa
 import CLua
 import Lua
+import HSDSTCore
 import os.log
 
 // MARK: - SkyLight Private Framework Declarations
@@ -102,7 +103,8 @@ private func spaces_managedDisplaySpaces(_ L: LuaState) throws -> CInt {
 /// Notes:
 ///  * *usually* the currently active screen will be returned by `hs.screen.mainScreen()`; however some full screen applications may have focus without updating which screen is considered "main". You can use this function, and look up the screen UUID with [hs.spaces.spaceDisplay](#spaceDisplay) to determine the "true" focused screen if required.
 private func spaces_getActiveSpace(_ L: LuaState) throws -> CInt {
-    L.push(lua_Integer(SLSGetActiveSpace(g_connection)))
+    let spaces = environmentGet(L).spaces
+    L.push(lua_Integer(spaces.activeSpace() ?? 0))
     return 1
 }
 
@@ -235,23 +237,17 @@ private func spaces_windowSpaces(_ L: LuaState) throws -> CInt {
     precondition(lua_gettop(L) >= 1, "windowSpaces requires a window ID argument")
     let wid = UInt32(lua_tointeger(L, 1))
 
-    let windows = [NSNumber(value: wid)] as CFArray
-    // 0x7 : kCGSAllSpacesMask
-    if let spacesList = SLSCopySpacesForWindows(g_connection, 0x7, windows) {
-        lua_pushany(L, spacesList as NSArray)
-        lua_newtable(L)
-        lua_getglobal(L, "require")
+    let spaces = environmentGet(L).spaces
+    let spaceIDs = spaces.spaceForWindow(windowID: wid)
+    lua_pushany(L, spaceIDs.map { NSNumber(value: $0) } as NSArray)
+    lua_newtable(L)
+    lua_getglobal(L, "require")
 
-        L.push("hs.inspect")
+    L.push("hs.inspect")
 
-        lua_pcall(L, 1, 1, 0)
-        lua_setfield(L, -2, "__tostring")
-        lua_setmetatable(L, -2)
-    } else {
-        lua_pushnil(L)
-        L.push("SLSCopySpacesForWindows returned NULL for window ID \(wid)")
-        return 2
-    }
+    lua_pcall(L, 1, 1, 0)
+    lua_setfield(L, -2, "__tostring")
+    lua_setmetatable(L, -2)
     return 1
 }
 

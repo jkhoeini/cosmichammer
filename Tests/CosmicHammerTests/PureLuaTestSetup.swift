@@ -1,13 +1,34 @@
 import CLua
+import Foundation
+import HSDSTCore
+import HSDSTSimulator
 @testable import HSSwiftExtensions
+
+/// Lock serializing access to the global Environment across parallel test suites.
+/// Without this, concurrent withLuaState calls race on environmentSetGlobal / environmentClearGlobal.
+let globalEnvLock = NSLock()
 
 /// Create a standalone Lua state with standard libraries open, run the body,
 /// then close it.  This avoids the AppKit-dependent MJLuaAlloc path and
 /// works headlessly in `swift test`.
 func withLuaState(_ body: (UnsafeMutablePointer<lua_State>) throws -> Void) rethrows {
+    try withLuaState(faults: FaultConfig(), body)
+}
+
+func withLuaState(faults: FaultConfig, _ body: (UnsafeMutablePointer<lua_State>) throws -> Void) rethrows {
+    globalEnvLock.lock()
     let L = luaL_newstate()!
     luaL_openlibs(L)
-    defer { lua_close(L) }
+    let harness = SimulatorHarness(seed: 42)
+    let simEnv = harness.createEnvironment(faults: faults)
+    environmentAttach(L, simEnv)
+    environmentSetGlobal(simEnv)
+    defer {
+        environmentClearGlobal()
+        environmentDetach(L)
+        lua_close(L)
+        globalEnvLock.unlock()
+    }
     try body(L)
 }
 

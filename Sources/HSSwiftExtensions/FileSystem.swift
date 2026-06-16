@@ -23,6 +23,7 @@
 import Cocoa
 import CLua
 import Lua
+import HSDSTCore
 import os.log
 
 // MARK: - Constants
@@ -482,6 +483,7 @@ private func dir_close(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 private func dir_iter_factory(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TSTRING)
     let path = path_at_index(L, 1)
+
     lua_pushcfunction(L, dir_iter)
     let d = lua_newuserdata(L, MemoryLayout<dir_data>.size)!.assumingMemoryBound(to: dir_data.self)
     luaL_getmetatable(L, DIR_METATABLE)
@@ -888,7 +890,7 @@ private func tagsRemove(_ L: LuaState) throws -> CInt {
 /// Returns:
 ///  * The path to the system designated temporary directory for the current user.
 private func hs_temporaryDirectory(_ L: LuaState) throws -> CInt {
-    L.push(NSTemporaryDirectory())
+    L.push(environmentGet(L).fileSystem.temporaryDirectory())
     return 1
 }
 
@@ -994,8 +996,9 @@ private func hs_pathToAbsolute(_ L: LuaState) throws -> CInt {
 private func fs_displayName(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TSTRING)
     let filePath = lua_tovalue(L, at: 1) as! NSString
-    if FileManager.default.fileExists(atPath: filePath.expandingTildeInPath) {
-        lua_pushany(L, FileManager.default.displayName(atPath: filePath.expandingTildeInPath) as NSString)
+    let expandedPath = filePath.expandingTildeInPath
+    if environmentGet(L).fileSystem.fileExists(atPath: expandedPath) {
+        lua_pushany(L, FileManager.default.displayName(atPath: expandedPath) as NSString)
     } else {
         lua_pushnil(L)
     }
@@ -1153,13 +1156,13 @@ private func fs_filesInPath(_ L: LuaState) throws -> CInt {
 
     path = (path.expandingTildeInPath as NSString).resolvingSymlinksInPath as NSString
 
-    let fileManager = FileManager.default
-    var isDirectory: ObjCBool = false
-    let fileExists = fileManager.fileExists(atPath: path as String, isDirectory: &isDirectory)
+    let fs = environmentGet(L).fileSystem
+    let fileExists = fs.fileExists(atPath: path as String)
+    let isDir = fs.isDirectory(atPath: path as String)
 
     if !fileExists {
         throw LuaCallError("bad argument #1 (path does not specify a reachable file or directory)")
-    } else if !isDirectory.boolValue {
+    } else if !isDir {
         lua_pushany(L, NSArray(array: [path]))
         L.push(lua_Integer(1))
         L.push(lua_Integer(0))
@@ -1170,7 +1173,7 @@ private func fs_filesInPath(_ L: LuaState) throws -> CInt {
     let startingPathStr = (try? startingURL.resourceValues(forKeys: [.pathKey]))?.allValues[.pathKey] as? NSString ?? path
 
     let (foundPaths, dirCount) = fsWalkDirectories(
-        fileManager: fileManager, startingPathStr: startingPathStr,
+        fileManager: FileManager.default, startingPathStr: startingPathStr,
         subdirs: subdirs, followSymlinks: followSymlinks,
         expandSymlinks: expandSymlinks, relativePath: relativePath,
         excluders: excluders, exceptions: exceptions

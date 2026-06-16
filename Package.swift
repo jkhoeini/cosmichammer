@@ -31,6 +31,30 @@ let package = Package(
     ],
     targets: [
         // ---------------------------------------------------------------
+        // HSDSTCore — DST protocols, Environment, RPRNG, FaultConfig
+        // ---------------------------------------------------------------
+        .target(
+            name: "HSDSTCore",
+            dependencies: [
+                .product(name: "Lua", package: "LuaSwift"),
+            ],
+            path: "Sources/HSDSTCore",
+            swiftSettings: [
+                .swiftLanguageMode(.v5),
+            ]
+        ),
+        // ---------------------------------------------------------------
+        // HSDSTSimulator — Deterministic simulators for all DST protocols
+        // ---------------------------------------------------------------
+        .target(
+            name: "HSDSTSimulator",
+            dependencies: ["HSDSTCore"],
+            path: "Sources/HSDSTSimulator",
+            swiftSettings: [
+                .swiftLanguageMode(.v5),
+            ]
+        ),
+        // ---------------------------------------------------------------
         // HSExtensions — ObjC/C/C++ extension sources + core app headers
         // ---------------------------------------------------------------
         .target(
@@ -102,6 +126,7 @@ let package = Package(
         .target(
             name: "HSSwiftExtensions",
             dependencies: [
+                "HSDSTCore",
                 .product(name: "Lua", package: "LuaSwift"),
                 .product(name: "ORSSerial", package: "ORSSerialPort"),
                 .product(name: "Markdown", package: "swift-markdown"),
@@ -148,7 +173,7 @@ let package = Package(
         // ---------------------------------------------------------------
         .testTarget(
             name: "CosmicHammerTests",
-            dependencies: ["HSExtensions", "HSSwiftExtensions"],
+            dependencies: ["HSExtensions", "HSSwiftExtensions", "HSDSTSimulator"],
             path: "Tests/CosmicHammerTests",
             exclude: ["lsunit.lua", "testinit.lua"],
             swiftSettings: [

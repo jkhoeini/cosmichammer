@@ -4,137 +4,7 @@ import Lua
 import Cocoa
 import os.log
 import WebKit
-
-// MARK: - Constants
-
-/// Maximum allowed HTTP response body size (100 MB).  If accumulated
-/// `receivedData` exceeds this the connection is aborted and an error logged.
-private let kMaxHTTPResponseSize = 104_857_600
-
-/// Maximum number of concurrent async HTTP requests (delegates).  New requests
-/// beyond this limit are rejected with an error log.
-private let kMaxConcurrentHTTPDelegates = 1000
-
-// MARK: - Module State
-
-private var delegates: NSMutableArray = NSMutableArray()
-
-// MARK: - Helper Functions
-
-/// Convert a response body to data we can send to Lua
-private func responseBodyToId(_ httpResponse: HTTPURLResponse?, _ bodyData: Data?) -> Any? {
-    guard let httpResponse = httpResponse, let bodyData = bodyData else { return bodyData }
-    let contentType = httpResponse.allHeaderFields["Content-Type"] as? String ?? ""
-
-    // If the response falls in the text/* content type, convert it to a string, otherwise
-    // leave it as raw data
-    if contentType.hasPrefix("text/") {
-        return String(data: bodyData, encoding: .utf8)
-    }
-    return bodyData
-}
-
-// MARK: - Connection Delegate
-
-/// Definition of the connection delegate to receive callbacks from NSURLConnection
-@objc private class ConnectionDelegate: NSObject, NSURLConnectionDelegate, NSURLConnectionDataDelegate {
-    var fn: LuaValue?
-    var enableRedirect: Bool = true
-    var receivedData: NSMutableData = NSMutableData()
-    var httpResponse: HTTPURLResponse?
-    var connection: NSURLConnection?
-    var generation: UInt64 = 0
-
-    func connection(_ connection: NSURLConnection, didReceive response: URLResponse) {
-        receivedData.length = 0
-        httpResponse = response as? HTTPURLResponse
-    }
-
-    func connection(_ connection: NSURLConnection, didReceive data: Data) {
-        if receivedData.length + data.count > kMaxHTTPResponseSize {
-            os_log(.error, "HTTP response exceeded max size of %d bytes — aborting connection", kMaxHTTPResponseSize)
-            connection.cancel()
-            if lua_isStateGenerationValid(generation), let fn = fn {
-                let L = lua_getCurrentState()!
-                fn.push(onto: L)
-                L.push(-1)
-                lua_pushany(L, "HTTP response exceeded maximum allowed size (\(kMaxHTTPResponseSize) bytes)" as NSString)
-                if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
-            }
-            remove_delegate(self)
-            return
-        }
-        receivedData.append(data)
-    }
-
-    func connectionDidFinishLoading(_ connection: NSURLConnection) {
-        guard lua_isStateGenerationValid(generation) else { return }
-        guard let fn = fn else { return }
-        let L = lua_getCurrentState()!
-
-        fn.push(onto: L)
-        L.push(Int(httpResponse?.statusCode ?? 0))
-        lua_pushany(L, responseBodyToId(httpResponse, receivedData as Data) as? NSObject)
-        lua_pushany(L, httpResponse?.allHeaderFields as? NSDictionary)
-        if lua_pcall(L, 3, 0, 0) != LUA_OK { lua_pop(L, 1) }
-
-        remove_delegate(self)
-    }
-
-    func connection(_ connection: NSURLConnection, didFailWithError error: Error) {
-        guard lua_isStateGenerationValid(generation) else { return }
-        guard let fn = fn else { return }
-        let L = lua_getCurrentState()!
-
-        let errorMessage = "Connection failed: \(error.localizedDescription) - \((error as NSError).userInfo[NSURLErrorFailingURLStringErrorKey] ?? "")"
-        fn.push(onto: L)
-        L.push(-1)
-        lua_pushany(L, errorMessage as NSString)
-        if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
-        remove_delegate(self)
-    }
-
-    func connection(_ connection: NSURLConnection, willSend request: URLRequest, redirectResponse response: URLResponse?) -> URLRequest? {
-        guard lua_isStateGenerationValid(generation) else { return nil }
-        guard let fn = fn else { return nil }
-
-        if let httpResp = response as? HTTPURLResponse, !enableRedirect {
-            let L = lua_getCurrentState()!
-
-            fn.push(onto: L)
-            L.push(Int(httpResp.statusCode))
-            lua_pushany(L, responseBodyToId(httpResponse, receivedData as Data) as? NSObject)
-            lua_pushany(L, httpResp.allHeaderFields as NSDictionary)
-            if lua_pcall(L, 3, 0, 0) != LUA_OK { lua_pop(L, 1) }
-
-            remove_delegate(self)
-
-            connection.cancel()
-            return nil
-        }
-
-        return request
-    }
-}
-
-// MARK: - Delegate Storage
-
-/// Store a created delegate so we can cancel it on garbage collection
-private func store_delegate(_ delegate: ConnectionDelegate) -> Bool {
-    if delegates.count >= kMaxConcurrentHTTPDelegates {
-        os_log(.error, "HTTP async request limit (%d) reached — rejecting new request", kMaxConcurrentHTTPDelegates)
-        return false
-    }
-    delegates.add(delegate)
-    return true
-}
-
-/// Remove a delegate either if loading has finished or if it needs to be garbage collected.
-private func remove_delegate(_ delegate: ConnectionDelegate) {
-    delegate.connection?.cancel()
-    delegate.fn = nil
-    delegates.remove(delegate)
-}
+import HSDSTCore
 
 // MARK: - Request Helpers
 
@@ -246,19 +116,48 @@ private func http_doAsyncRequest(_ L: LuaState) throws -> CInt {
 
     luaL_checktype(L, 5, LUA_TFUNCTION)
 
-    let delegate = ConnectionDelegate()
-    delegate.enableRedirect = enableRedirect
-    delegate.receivedData = NSMutableData()
-    delegate.fn = L.ref(index: 5)
-    delegate.generation = lua_currentStateGeneration()
+    let fn = L.ref(index: 5)
+    let generation = lua_currentStateGeneration()
 
-    if !store_delegate(delegate) {
-        delegate.fn = nil
-        return 0
+    // Extract request fields for the protocol call
+    let url = request.url!.absoluteString
+    let method = request.httpMethod ?? "GET"
+    var headers: [String: String] = [:]
+    request.allHTTPHeaderFields?.forEach { headers[$0.key] = $0.value }
+    let body = request.httpBody
+
+    let env = environmentGet(L)
+    env.network.httpRequest(url: url, method: method, headers: headers,
+                            body: body, redirect: enableRedirect) { response, error in
+        guard lua_isStateGenerationValid(generation) else { return }
+        let L = lua_getCurrentState()!
+
+        if let error = error {
+            let errorMessage = "Connection failed: \(error.localizedDescription)"
+            fn.push(onto: L)
+            L.push(-1)
+            lua_pushany(L, errorMessage as NSString)
+            if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
+            return
+        }
+
+        guard let response = response else { return }
+
+        // Convert response body, respecting text/* content-type for string conversion
+        let contentType = response.headers["Content-Type"] ?? ""
+        let responseBody: Any?
+        if contentType.hasPrefix("text/"), let bodyData = response.body {
+            responseBody = String(data: bodyData, encoding: .utf8)
+        } else {
+            responseBody = response.body
+        }
+
+        fn.push(onto: L)
+        L.push(response.statusCode)
+        lua_pushany(L, responseBody as? NSObject)
+        lua_pushany(L, response.headers as NSDictionary)
+        if lua_pcall(L, 3, 0, 0) != LUA_OK { lua_pop(L, 1) }
     }
-
-    let connection = NSURLConnection(request: request as URLRequest, delegate: delegate)
-    delegate.connection = connection
 
     return 0
 }
@@ -293,14 +192,47 @@ private func http_doRequest(_ L: LuaState) throws -> CInt {
     getBodyFromStack(L, 3, request)
     extractHeadersFromStack(L, 4, request)
 
-    var response: URLResponse?
-    let dataReply = try? NSURLConnection.sendSynchronousRequest(request as URLRequest, returning: &response)
+    // Extract request fields for the protocol call
+    let url = request.url!.absoluteString
+    let method = request.httpMethod ?? "GET"
+    var headers: [String: String] = [:]
+    request.allHTTPHeaderFields?.forEach { headers[$0.key] = $0.value }
+    let body = request.httpBody
 
-    let httpResponse = response as? HTTPURLResponse
+    let env = environmentGet(L)
+    let sem = DispatchSemaphore(value: 0)
+    var result: HTTPResponse?
+    var resultError: Error?
 
-    L.push(Int(httpResponse?.statusCode ?? 0))
-    lua_pushany(L, responseBodyToId(httpResponse, dataReply) as? NSObject)
-    lua_pushany(L, httpResponse?.allHeaderFields as? NSDictionary)
+    env.network.httpRequest(url: url, method: method, headers: headers,
+                            body: body, redirect: true) { response, error in
+        result = response
+        resultError = error
+        sem.signal()
+    }
+    sem.wait()
+
+    if resultError != nil || result == nil {
+        L.push(0)
+        lua_pushnil(L)
+        lua_pushnil(L)
+        return 3
+    }
+
+    let response = result!
+
+    // Convert response body, respecting text/* content-type for string conversion
+    let contentType = response.headers["Content-Type"] ?? ""
+    let responseBody: Any?
+    if contentType.hasPrefix("text/"), let bodyData = response.body {
+        responseBody = String(data: bodyData, encoding: .utf8)
+    } else {
+        responseBody = response.body
+    }
+
+    L.push(response.statusCode)
+    lua_pushany(L, responseBody as? NSObject)
+    lua_pushany(L, response.headers as NSDictionary)
 
     return 3
 }
@@ -599,10 +531,6 @@ private func httpParseHeaderFields(_ L: UnsafeMutablePointer<lua_State>!, reques
 // MARK: - GC
 
 private func http_gc(_ L: LuaState) throws -> CInt {
-    let delegatesCopy = NSMutableArray(array: delegates)
-    for delegate in delegatesCopy {
-        remove_delegate(delegate as! ConnectionDelegate)
-    }
     return 0
 }
 
@@ -610,8 +538,6 @@ private func http_gc(_ L: LuaState) throws -> CInt {
 
 @_cdecl("luaopen_hs_libhttp")
 public func luaopen_hs_libhttp(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    delegates = NSMutableArray()
-
     // Create module table
     lua_createtable(L, 0, 4)
     L.push(http_doRequest)

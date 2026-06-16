@@ -1,4 +1,5 @@
 import Cocoa
+import HSDSTCore
 
 private var statusItem: NSStatusItem?
 private var menuItemMenu: NSMenu?
@@ -11,12 +12,19 @@ func MJMenuIconSetup(_ menu: NSMenu) {
 
 @_cdecl("MJMenuIconVisible")
 func MJMenuIconVisible() -> Bool {
-    UserDefaults.standard.bool(forKey: "MJShowMenuIconKey")
+    if let env = environmentGetGlobalOrNil() {
+        return env.settings.bool(forKey: "MJShowMenuIconKey")
+    }
+    return UserDefaults.standard.bool(forKey: "MJShowMenuIconKey")
 }
 
 @_cdecl("MJMenuIconSetVisible")
 func MJMenuIconSetVisible(_ visible: Bool) {
-    UserDefaults.standard.set(visible, forKey: "MJShowMenuIconKey")
+    if let env = environmentGetGlobalOrNil() {
+        env.settings.set(visible, forKey: "MJShowMenuIconKey")
+    } else {
+        UserDefaults.standard.set(visible, forKey: "MJShowMenuIconKey")
+    }
     reflectMenuDefaults()
 }
 

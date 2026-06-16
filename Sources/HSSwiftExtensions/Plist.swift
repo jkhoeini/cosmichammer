@@ -1,6 +1,7 @@
 import Cocoa
 import CLua
 import Lua
+import HSDSTCore
 import os.log
 
 /// hs.plist.read(filepath) -> table
@@ -14,7 +15,14 @@ import os.log
 ///  * The contents of the plist as a Lua table
 private func plist_read(_ L: LuaState) throws -> CInt {
     let filePath = (try L.checkArgument(1) as String as NSString).expandingTildeInPath
-    let plist = NSDictionary(contentsOfFile: filePath)
+    let plist: Any?
+    do {
+        let data = try environmentGet(L).fileSystem.contentsOfFile(atPath: filePath)
+        var format = PropertyListSerialization.PropertyListFormat.xml
+        plist = try PropertyListSerialization.propertyList(from: data, options: .mutableContainersAndLeaves, format: &format)
+    } catch {
+        plist = nil
+    }
     lua_pushany(L, plist)
 
     return 1
@@ -144,7 +152,7 @@ private func plist_write(_ L: LuaState) throws -> CInt {
             format: format,
             options: 0
         )
-        try output.write(to: URL(fileURLWithPath: filePath), options: .atomic)
+        try environmentGet(L).fileSystem.writeFile(atPath: filePath, contents: output, atomically: true)
         L.push(true)
     } catch {
         os_log(.error, "error writing plist: %{public}s", error.localizedDescription)

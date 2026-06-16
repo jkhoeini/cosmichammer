@@ -2,6 +2,7 @@ import Foundation
 import CLua
 import Lua
 import Cocoa
+import HSDSTCore
 
 /// === hs.caffeinate.watcher ===
 ///
@@ -82,10 +83,12 @@ private enum CaffeinateEvent: Int {
 
 // MARK: - CaffeinateWatcher class
 
-private class CaffeinateWatcher: NSObject, LuaTeardownable {
+private class CaffeinateWatcher: LuaTeardownable {
     var callback: LuaValue?
     var running: Bool = false
     var generation: UInt64 = 0
+    var observerTokens: [any NotificationObserverToken] = []
+    weak var notificationRef: (any NotificationProtocol)?
     private var tornDown = false
 
     func teardown() {
@@ -96,10 +99,11 @@ private class CaffeinateWatcher: NSObject, LuaTeardownable {
             unregister_observer(self)
         }
         callback = nil
+        notificationRef = nil
     }
 
     // Call the lua callback function and pass the event type.
-    func callbackFired(dict: [AnyHashable: Any]?, event: CaffeinateEvent) {
+    func callbackFired(dict: [String: Any], event: CaffeinateEvent) {
         guard !tornDown else { return }
         guard let cb = callback else { return }
         guard lua_isStateGenerationValid(generation) else {
@@ -116,109 +120,53 @@ private class CaffeinateWatcher: NSObject, LuaTeardownable {
             lua_pop(L, 1)
         }
     }
-
-    @objc func caffeinateDidWake(_ notification: Notification) {
-        callbackFired(dict: notification.userInfo, event: .didWake)
-    }
-
-    @objc func caffeinateWillSleep(_ notification: Notification) {
-        callbackFired(dict: notification.userInfo, event: .willSleep)
-    }
-
-    @objc func caffeinateWillPowerOff(_ notification: Notification) {
-        callbackFired(dict: notification.userInfo, event: .willPowerOff)
-    }
-
-    @objc func caffeinateScreensDidSleep(_ notification: Notification) {
-        callbackFired(dict: notification.userInfo, event: .screensDidSleep)
-    }
-
-    @objc func caffeinateScreensDidWake(_ notification: Notification) {
-        callbackFired(dict: notification.userInfo, event: .screensDidWake)
-    }
-
-    @objc func caffeinateSessionDidResignActive(_ notification: Notification) {
-        callbackFired(dict: notification.userInfo, event: .sessionDidResignActive)
-    }
-
-    @objc func caffeinateSessionDidBecomeActive(_ notification: Notification) {
-        callbackFired(dict: notification.userInfo, event: .sessionDidBecomeActive)
-    }
-
-    @objc func caffeinateScreensaverDidStart(_ notification: Notification) {
-        callbackFired(dict: notification.userInfo, event: .screensaverDidStart)
-    }
-
-    @objc func caffeinateScreensaverWillStop(_ notification: Notification) {
-        callbackFired(dict: notification.userInfo, event: .screensaverWillStop)
-    }
-
-    @objc func caffeinateScreensaverDidStop(_ notification: Notification) {
-        callbackFired(dict: notification.userInfo, event: .screensaverDidStop)
-    }
-
-    @objc func caffeinateScreensDidLock(_ notification: Notification) {
-        callbackFired(dict: notification.userInfo, event: .screensDidLock)
-    }
-
-    @objc func caffeinateScreensDidUnlock(_ notification: Notification) {
-        callbackFired(dict: notification.userInfo, event: .screensDidUnlock)
-    }
 }
 
 // MARK: - Observer registration
 
-private func register_observer(_ observer: CaffeinateWatcher) {
-    // It is crucial to use the shared workspace notification center here.
-    // Otherwise we will not receive the events we are interested in.
-    let center = NSWorkspace.shared.notificationCenter
-    let distcenter = DistributedNotificationCenter.default()
+private func register_observer(_ observer: CaffeinateWatcher, _ notif: any NotificationProtocol) {
+    observer.notificationRef = notif
 
-    center.addObserver(observer, selector: #selector(CaffeinateWatcher.caffeinateDidWake(_:)),
-                       name: NSWorkspace.didWakeNotification, object: nil)
-    center.addObserver(observer, selector: #selector(CaffeinateWatcher.caffeinateWillSleep(_:)),
-                       name: NSWorkspace.willSleepNotification, object: nil)
-    center.addObserver(observer, selector: #selector(CaffeinateWatcher.caffeinateWillPowerOff(_:)),
-                       name: NSWorkspace.willPowerOffNotification, object: nil)
+    // Helper to add a workspace observer and capture the token.
+    func addWorkspace(_ name: NSNotification.Name, _ event: CaffeinateEvent) {
+        let token = notif.addWorkspaceObserver(name: name.rawValue, object: nil) { [weak observer] userInfo in
+            observer?.callbackFired(dict: userInfo, event: event)
+        }
+        observer.observerTokens.append(token)
+    }
 
-    center.addObserver(observer, selector: #selector(CaffeinateWatcher.caffeinateScreensDidSleep(_:)),
-                       name: NSWorkspace.screensDidSleepNotification, object: nil)
-    center.addObserver(observer, selector: #selector(CaffeinateWatcher.caffeinateScreensDidWake(_:)),
-                       name: NSWorkspace.screensDidWakeNotification, object: nil)
+    // Helper to add a distributed observer and capture the token.
+    func addDistributed(_ name: String, _ event: CaffeinateEvent) {
+        let token = notif.addDistributedObserver(name: name, object: nil) { [weak observer] _, _, _ in
+            observer?.callbackFired(dict: [:], event: event)
+        }
+        observer.observerTokens.append(token)
+    }
 
-    center.addObserver(observer, selector: #selector(CaffeinateWatcher.caffeinateSessionDidResignActive(_:)),
-                       name: NSWorkspace.sessionDidResignActiveNotification, object: nil)
-    center.addObserver(observer, selector: #selector(CaffeinateWatcher.caffeinateSessionDidBecomeActive(_:)),
-                       name: NSWorkspace.sessionDidBecomeActiveNotification, object: nil)
+    addWorkspace(NSWorkspace.didWakeNotification, .didWake)
+    addWorkspace(NSWorkspace.willSleepNotification, .willSleep)
+    addWorkspace(NSWorkspace.willPowerOffNotification, .willPowerOff)
 
-    distcenter.addObserver(observer, selector: #selector(CaffeinateWatcher.caffeinateScreensaverDidStart(_:)),
-                           name: NSNotification.Name("com.apple.screensaver.didstart"), object: nil)
-    distcenter.addObserver(observer, selector: #selector(CaffeinateWatcher.caffeinateScreensaverWillStop(_:)),
-                           name: NSNotification.Name("com.apple.screensaver.willstop"), object: nil)
-    distcenter.addObserver(observer, selector: #selector(CaffeinateWatcher.caffeinateScreensaverDidStop(_:)),
-                           name: NSNotification.Name("com.apple.screensaver.didstop"), object: nil)
-    distcenter.addObserver(observer, selector: #selector(CaffeinateWatcher.caffeinateScreensDidLock(_:)),
-                           name: NSNotification.Name("com.apple.screenIsLocked"), object: nil)
-    distcenter.addObserver(observer, selector: #selector(CaffeinateWatcher.caffeinateScreensDidUnlock(_:)),
-                           name: NSNotification.Name("com.apple.screenIsUnlocked"), object: nil)
+    addWorkspace(NSWorkspace.screensDidSleepNotification, .screensDidSleep)
+    addWorkspace(NSWorkspace.screensDidWakeNotification, .screensDidWake)
+
+    addWorkspace(NSWorkspace.sessionDidResignActiveNotification, .sessionDidResignActive)
+    addWorkspace(NSWorkspace.sessionDidBecomeActiveNotification, .sessionDidBecomeActive)
+
+    addDistributed("com.apple.screensaver.didstart", .screensaverDidStart)
+    addDistributed("com.apple.screensaver.willstop", .screensaverWillStop)
+    addDistributed("com.apple.screensaver.didstop", .screensaverDidStop)
+    addDistributed("com.apple.screenIsLocked", .screensDidLock)
+    addDistributed("com.apple.screenIsUnlocked", .screensDidUnlock)
 }
 
 private func unregister_observer(_ observer: CaffeinateWatcher) {
-    let center = NSWorkspace.shared.notificationCenter
-    let distcenter = DistributedNotificationCenter.default()
-
-    center.removeObserver(observer, name: NSWorkspace.didWakeNotification, object: nil)
-    center.removeObserver(observer, name: NSWorkspace.willSleepNotification, object: nil)
-    center.removeObserver(observer, name: NSWorkspace.willPowerOffNotification, object: nil)
-    center.removeObserver(observer, name: NSWorkspace.screensDidSleepNotification, object: nil)
-    center.removeObserver(observer, name: NSWorkspace.screensDidWakeNotification, object: nil)
-    center.removeObserver(observer, name: NSWorkspace.sessionDidResignActiveNotification, object: nil)
-    center.removeObserver(observer, name: NSWorkspace.sessionDidBecomeActiveNotification, object: nil)
-    distcenter.removeObserver(observer, name: NSNotification.Name("com.apple.screensaver.didstart"), object: nil)
-    distcenter.removeObserver(observer, name: NSNotification.Name("com.apple.screensaver.willstop"), object: nil)
-    distcenter.removeObserver(observer, name: NSNotification.Name("com.apple.screensaver.didstop"), object: nil)
-    distcenter.removeObserver(observer, name: NSNotification.Name("com.apple.screenIsLocked"), object: nil)
-    distcenter.removeObserver(observer, name: NSNotification.Name("com.apple.screenIsUnlocked"), object: nil)
+    if let notif = observer.notificationRef {
+        for token in observer.observerTokens {
+            notif.removeObserver(token)
+        }
+    }
+    observer.observerTokens.removeAll()
 }
 
 // MARK: - Event enum registration
@@ -261,7 +209,7 @@ public func luaopen_hs_libcaffeinatewatcher(_ L: UnsafeMutablePointer<lua_State>
                     lua_settop(L, 1)
                     if !watcher.running {
                         watcher.running = true
-                        register_observer(watcher)
+                        register_observer(watcher, environmentGet(L).notification)
                     }
                     return 1
                 },

@@ -95,8 +95,8 @@ private class HSAsyncUdpSocket {
     private var ipv4Enabled: Bool = true
     private var ipv6Enabled: Bool = true
     private var preferredIPVersion: Int = 0  // 0=neutral, 4=ipv4, 6=ipv6
-    private var maxRecvIPv4Buffer: UInt16 = 9216
-    private var maxRecvIPv6Buffer: UInt32 = 9216
+    private var maxRecvIPv4Buffer: UInt16 = 65535
+    private var maxRecvIPv6Buffer: UInt32 = 65535
     private var broadcastEnabled: Bool = false
     private var reusePortEnabled: Bool = false
 
@@ -221,9 +221,8 @@ private class HSAsyncUdpSocket {
         guard !host.isEmpty else {
             throw NSError(domain: "HSAsyncUdpSocket", code: 2, userInfo: [NSLocalizedDescriptionKey: "UDP connect host must not be empty"])
         }
-        guard port > 0 else {
-            throw NSError(domain: "HSAsyncUdpSocket", code: 3, userInfo: [NSLocalizedDescriptionKey: "UDP connect port must be greater than zero"])
-        }
+        // Port 0 is treated as a no-op (matches old GCDAsyncSocket behavior).
+        guard port > 0 else { return }
         assert(!tornDown, "Cannot connect a torn-down socket")
 
         guard !_isConnected else {
@@ -1244,9 +1243,10 @@ public func luaopen_hs_libsocketudp(_ L: UnsafeMutablePointer<lua_State>!) -> In
             ///
             "setBufferSize": .closure { L in
                 let asyncUdpSocket: HSAsyncUdpSocket = try L.checkArgument(1)
-                let bufferSize = UInt(lua_tointeger(L, 2))
-                let ipv4BufferSize = bufferSize > UInt(UInt16.max) ? UInt16.max : UInt16(bufferSize)
-                let ipv6BufferSize = bufferSize > UInt(UInt32.max) ? UInt32.max : UInt32(bufferSize)
+                let rawSize = lua_tointeger(L, 2)
+                let bufferSize: UInt64 = rawSize < 0 ? UInt64(UInt32.max) : UInt64(rawSize)
+                let ipv4BufferSize = bufferSize > UInt64(UInt16.max) ? UInt16.max : UInt16(bufferSize)
+                let ipv6BufferSize = bufferSize > UInt64(UInt32.max) ? UInt32.max : UInt32(bufferSize)
 
                 if lua_type(L, 3) == LUA_TNUMBER {
                     if lua_tointeger(L, 3) == 4 {

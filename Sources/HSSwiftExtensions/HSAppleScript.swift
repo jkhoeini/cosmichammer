@@ -8,6 +8,7 @@
 
 import Foundation
 import CLua
+import HSDSTCore
 import os.log
 
 // MARK: - UserDefaults key
@@ -24,12 +25,19 @@ private let appleScriptErrorMessage =
 
 @_cdecl("HSAppleScriptEnabled")
 func HSAppleScriptEnabled() -> Bool {
-    UserDefaults.standard.bool(forKey: HSAppleScriptEnabledKey)
+    if let env = environmentGetGlobalOrNil() {
+        return env.settings.bool(forKey: HSAppleScriptEnabledKey)
+    }
+    return UserDefaults.standard.bool(forKey: HSAppleScriptEnabledKey)
 }
 
 @_cdecl("HSAppleScriptSetEnabled")
 func HSAppleScriptSetEnabled(_ enabled: Bool) {
-    UserDefaults.standard.set(enabled, forKey: HSAppleScriptEnabledKey)
+    if let env = environmentGetGlobalOrNil() {
+        env.settings.set(enabled, forKey: HSAppleScriptEnabledKey)
+    } else {
+        UserDefaults.standard.set(enabled, forKey: HSAppleScriptEnabledKey)
+    }
 }
 
 // MARK: - Run Lua string

@@ -1,5 +1,6 @@
 import Cocoa
 import CLua
+import HSDSTCore
 import Lua
 import os.log
 
@@ -52,8 +53,9 @@ private let chooserShow: LuaClosure = { L in
 
     if lua_type(L, 2) == LUA_TTABLE {
         let userTopLeft = lua_tableToPoint(L, at: 2)
+        let primaryScreenHeight = environmentGet(L).screen.allScreens().first.map { $0.frame.height } ?? 0.0
         let topLeft = NSPoint(x: userTopLeft.x,
-                              y: NSScreen.screens[0].frame.size.height - userTopLeft.y)
+                              y: primaryScreenHeight - userTopLeft.y)
         chooser.showAtPoint(topLeft)
     } else {
         chooser.show()

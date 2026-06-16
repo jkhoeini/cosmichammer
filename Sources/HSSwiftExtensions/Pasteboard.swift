@@ -1,16 +1,91 @@
 import Cocoa
 import CLua
 import Lua
+import HSDSTCore
 import os.log
+
+// MARK: - NSPasteboardAdapter: wraps NSPasteboard to conform to PasteboardProtocol
+
+/// Thin adapter so named NSPasteboards can be used through PasteboardProtocol.
+/// NSPasteboard itself cannot directly conform because its clearContents() -> Int
+/// conflicts with the protocol's clearContents() -> Void requirement.
+private final class NSPasteboardAdapter: PasteboardProtocol {
+    private let pb: NSPasteboard
+    init(_ pb: NSPasteboard) { self.pb = pb }
+
+    var changeCount: Int { pb.changeCount }
+
+    func string(forType type: String) -> String? {
+        pb.string(forType: NSPasteboard.PasteboardType(rawValue: type))
+    }
+    func data(forType type: String) -> Data? {
+        pb.data(forType: NSPasteboard.PasteboardType(rawValue: type))
+    }
+    @discardableResult
+    func setString(_ string: String, forType type: String) -> Bool {
+        pb.setString(string, forType: NSPasteboard.PasteboardType(rawValue: type))
+    }
+    @discardableResult
+    func setData(_ data: Data, forType type: String) -> Bool {
+        pb.setData(data, forType: NSPasteboard.PasteboardType(rawValue: type))
+    }
+    func clearContents() {
+        _ = pb.clearContents()
+    }
+    func availableTypes() -> [String] {
+        (pb.types ?? []).map(\.rawValue)
+    }
+    func pasteboardItems() -> [[String: Data]] {
+        guard let items = pb.pasteboardItems else { return [] }
+        return items.map { item in
+            var dict: [String: Data] = [:]
+            for t in item.types {
+                if let d = item.data(forType: t) {
+                    dict[t.rawValue] = d
+                }
+            }
+            return dict
+        }
+    }
+    func writeObjects(_ items: [[String: Data]]) -> Bool {
+        _ = pb.clearContents()
+        var result = true
+        for item in items {
+            let pbItem = NSPasteboardItem()
+            for (type, data) in item {
+                pbItem.setData(data, forType: NSPasteboard.PasteboardType(rawValue: type))
+            }
+            result = pb.writeObjects([pbItem]) && result
+        }
+        return result
+    }
+}
 
 private let kMaxPasteboardRecursionDepth = 50
 
 // MARK: - Support Functions
 
-private func lua_to_pasteboard(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> NSPasteboard {
+/// Returns a protocol-typed pasteboard: environmentGet(L).pasteboard for the default,
+/// or a named NSPasteboardAdapter for explicitly-named pasteboards.
+private func lua_to_pasteboard(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> any PasteboardProtocol {
     precondition(L != nil, "lua_State must not be nil")
     if !lua_isnoneornil(L, idx) {
         _ = luaL_checkstring(L, idx) // force number to string
+        let name = NSPasteboard.Name(lua_tostringValue(L, at: idx) ?? "")
+        return NSPasteboardAdapter(NSPasteboard(name: name))
+    } else {
+        return environmentGet(L).pasteboard
+    }
+}
+
+/// Returns a concrete NSPasteboard for functions that need NSPasteboard-specific APIs
+/// (readObjects, pasteboardItems as NSPasteboardItem, canReadObject, setPropertyList,
+/// writeObjects([NSPasteboardWriting])). Falls back to NSPasteboard.general when no
+/// name argument is given.
+private func lua_to_nspasteboard(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> NSPasteboard {
+    precondition(L != nil, "lua_State must not be nil")
+    if !lua_isnoneornil(L, idx) {
+        _ = luaL_checkstring(L, idx)
         let name = NSPasteboard.Name(lua_tostringValue(L, at: idx) ?? "")
         return NSPasteboard(name: name)
     } else {
@@ -105,7 +180,7 @@ private func pushPasteboardValue(_ L: UnsafeMutablePointer<lua_State>!, _ value:
 /// Returns:
 ///  * A string containing the contents of the pasteboard, or nil if an error occurred
 private func pasteboard_getContents(_ L: LuaState) throws -> CInt {
-    let str = lua_to_pasteboard(L, 1).string(forType: .string)
+    let str = lua_to_pasteboard(L, 1).string(forType: NSPasteboard.PasteboardType.string.rawValue)
     if let str = str {
         L.push(str)
     } else {
@@ -135,9 +210,9 @@ private func pasteboard_setContents(_ L: LuaState) throws -> CInt {
     if let ptr = ptr, len > 0 {
         let data = Data(bytes: ptr, count: len)
         if let str = String(data: data, encoding: .utf8) {
-            result = thePasteboard.setString(str, forType: .string)
+            result = thePasteboard.setString(str, forType: NSPasteboard.PasteboardType.string.rawValue)
         } else {
-            result = thePasteboard.setData(data, forType: .string)
+            result = thePasteboard.setData(data, forType: NSPasteboard.PasteboardType.string.rawValue)
         }
     }
 
@@ -173,11 +248,9 @@ private func pasteboard_pasteboardTypes(_ L: LuaState) throws -> CInt {
     let thePasteboard = lua_to_pasteboard(L, 1)
 
     lua_newtable(L)
-    if let types = thePasteboard.types {
-        for type in types {
-            L.push(type.rawValue)
-            lua_rawseti(L, -2, luaL_len(L, -2) + 1)
-        }
+    for type in thePasteboard.availableTypes() {
+        L.push(type)
+        lua_rawseti(L, -2, luaL_len(L, -2) + 1)
     }
 
     return 1
@@ -197,10 +270,10 @@ private func pasteboard_pasteboardItemTypes(_ L: LuaState) throws -> CInt {
 
     lua_newtable(L)
     // make sure there is something on the pasteboard...
-    if let items = thePasteboard.pasteboardItems, items.count > 0 {
-        let item = items[0]
-        for type in item.types {
-            L.push(type.rawValue)
+    let pbItems = thePasteboard.pasteboardItems()
+    if !pbItems.isEmpty {
+        for type in pbItems[0].keys {
+            L.push(type)
             lua_rawseti(L, -2, luaL_len(L, -2) + 1)
         }
     }
@@ -266,15 +339,13 @@ private func pasteboard_delete(_ L: LuaState) throws -> CInt {
 private func allPBItemTypes(_ L: LuaState) throws -> CInt {
     let thePasteboard = lua_to_pasteboard(L, 1)
     lua_newtable(L)
-    if let items = thePasteboard.pasteboardItems {
-        for item in items {
-            lua_newtable(L)
-            for type in item.types {
-                lua_pushany(L, type.rawValue as NSString)
-                lua_rawseti(L, -2, luaL_len(L, -2) + 1)
-            }
+    for item in thePasteboard.pasteboardItems() {
+        lua_newtable(L)
+        for type in item.keys {
+            lua_pushany(L, type as NSString)
             lua_rawseti(L, -2, luaL_len(L, -2) + 1)
         }
+        lua_rawseti(L, -2, luaL_len(L, -2) + 1)
     }
     return 1
 }
@@ -305,7 +376,7 @@ private func readStringObjects(_ L: LuaState) throws -> CInt {
         if lua_isboolean(L, 1) {
             throw LuaCallError("bad argument #1 (string or nil expected)")
         }
-        pb = lua_to_pasteboard(L, 1)
+        pb = lua_to_nspasteboard(L, 1)
     } else {
         pb = NSPasteboard.general
     }
@@ -337,18 +408,17 @@ private func readStringObjects(_ L: LuaState) throws -> CInt {
 /// Notes:
 ///  * The UTI's of the items on the pasteboard can be determined with the [hs.pasteboard.allContentTypes](#allContentTypes) and [hs.pasteboard.contentTypes](#contentTypes) functions.
 private func readItemForType(_ L: LuaState) throws -> CInt {
-    var pb: NSPasteboard
+    var pb: any PasteboardProtocol
     var type: String
     if lua_gettop(L) == 1 {
         luaL_checktype(L, 1, LUA_TSTRING)
-        pb = NSPasteboard.general
+        pb = environmentGet(L).pasteboard
         type = lua_tovalue(L, at: 1) as! String
     } else {
         pb = lua_to_pasteboard(L, 1)
         type = lua_tovalue(L, at: 2) as! String
     }
-    let pasteboardType = NSPasteboard.PasteboardType(rawValue: type)
-    if let data = pb.data(forType: pasteboardType) {
+    if let data = pb.data(forType: type) {
         lua_pushany(L, data as NSData)
     } else {
         lua_pushnil(L)
@@ -378,7 +448,7 @@ private func readPropertyListForType(_ L: LuaState) throws -> CInt {
         pb = NSPasteboard.general
         type = lua_tovalue(L, at: 1) as! String
     } else {
-        pb = lua_to_pasteboard(L, 1)
+        pb = lua_to_nspasteboard(L, 1)
         type = lua_tovalue(L, at: 2) as! String
     }
     let pasteboardType = NSPasteboard.PasteboardType(rawValue: type)
@@ -406,18 +476,17 @@ private func readPropertyListForType(_ L: LuaState) throws -> CInt {
 ///  * Only objects which have conversion functions built into Cosmic Hammer can be converted. A string representation describing unrecognized types wil be returned. If you find a common data type that you believe may be of interest to Cosmic Hammer users, feel free to contribute a conversion function or make a request in the Cosmic Hammer Google group or GitHub site.
 ///  * Some applications may define their own classes which can be archived.  Cosmic Hammer will be unable to recognize these types if the application does not make the object type available in one of its frameworks.  You *may* be able to load the necessary framework with `package.loadlib("/Applications/appname.app/Contents/Frameworks/frameworkname.framework/frameworkname", "*")` before retrieving the data, but a full representation of the data in Cosmic Hammer is probably not possible without support from the Application's developers.
 private func readArchivedDataForType(_ L: LuaState) throws -> CInt {
-    var pb: NSPasteboard
+    var pb: any PasteboardProtocol
     var type: String
     if lua_gettop(L) == 1 {
         luaL_checktype(L, 1, LUA_TSTRING)
-        pb = NSPasteboard.general
+        pb = environmentGet(L).pasteboard
         type = lua_tovalue(L, at: 1) as! String
     } else {
         pb = lua_to_pasteboard(L, 1)
         type = lua_tovalue(L, at: 2) as! String
     }
-    let pasteboardType = NSPasteboard.PasteboardType(rawValue: type)
-    guard let holding = pb.data(forType: pasteboardType) else {
+    guard let holding = pb.data(forType: type) else {
         throw LuaCallError("unable to get data for specified type")
     }
     let allowedClasses: [AnyClass] = [
@@ -463,7 +532,7 @@ private func readArchivedDataForType(_ L: LuaState) throws -> CInt {
 ///  * Only objects which have conversion functions built into Cosmic Hammer can be converted.
 ///  * A full list of NSObjects supported directly by Cosmic Hammer is planned in a future Wiki article.
 private func writeArchivedDataForType(_ L: LuaState) throws -> CInt {
-    var pb: NSPasteboard
+    var pb: any PasteboardProtocol
     var add = false
     var type: String
     var data: Any?
@@ -477,7 +546,7 @@ private func writeArchivedDataForType(_ L: LuaState) throws -> CInt {
         }
     }
     if lua_gettop(L) == 2 {
-        pb = NSPasteboard.general
+        pb = environmentGet(L).pasteboard
         type = lua_tovalue(L, at: 1) as! String
         data = lua_toArchivableObject(L, at: 2)
     } else {
@@ -488,13 +557,12 @@ private func writeArchivedDataForType(_ L: LuaState) throws -> CInt {
     guard let data = data else {
         throw LuaCallError("unable to evaluate data string")
     }
-    let pasteboardType = NSPasteboard.PasteboardType(rawValue: type)
     do {
         let encoded = try NSKeyedArchiver.archivedData(withRootObject: data, requiringSecureCoding: false)
         if !add {
             pb.clearContents()
         }
-        L.push(pb.setData(encoded, forType: pasteboardType))
+        L.push(pb.setData(encoded, forType: type))
     } catch {
         throw LuaCallError(error.localizedDescription)
     }
@@ -517,7 +585,7 @@ private func writeArchivedDataForType(_ L: LuaState) throws -> CInt {
 /// Notes:
 ///  * The UTI's of the items on the pasteboard can be determined with the [hs.pasteboard.allContentTypes](#allContentTypes) and [hs.pasteboard.contentTypes](#contentTypes) functions.
 private func writeItemForType(_ L: LuaState) throws -> CInt {
-    var pb: NSPasteboard
+    var pb: any PasteboardProtocol
     var add = false
     var type: String
     var data: Data?
@@ -531,7 +599,7 @@ private func writeItemForType(_ L: LuaState) throws -> CInt {
         }
     }
     if lua_gettop(L) == 2 {
-        pb = NSPasteboard.general
+        pb = environmentGet(L).pasteboard
         type = lua_tovalue(L, at: 1) as! String
         data = lua_todata(L, at: 2)
     } else {
@@ -542,11 +610,10 @@ private func writeItemForType(_ L: LuaState) throws -> CInt {
     guard let data = data else {
         throw LuaCallError("unable to evaluate data string")
     }
-    let pasteboardType = NSPasteboard.PasteboardType(rawValue: type)
     if !add {
         pb.clearContents()
     }
-    L.push(pb.setData(data, forType: pasteboardType))
+    L.push(pb.setData(data, forType: type))
     return 1
 }
 
@@ -585,7 +652,7 @@ private func writePropertyListForType(_ L: LuaState) throws -> CInt {
         type = lua_tovalue(L, at: 1) as! String
         data = lua_tovalue(L, at: 2)
     } else {
-        pb = lua_to_pasteboard(L, 1)
+        pb = lua_to_nspasteboard(L, 1)
         type = lua_tovalue(L, at: 2) as! String
         data = lua_tovalue(L, at: 3)
     }
@@ -594,7 +661,7 @@ private func writePropertyListForType(_ L: LuaState) throws -> CInt {
     }
     let pasteboardType = NSPasteboard.PasteboardType(rawValue: type)
     if !add {
-        pb.clearContents()
+        _ = pb.clearContents()
     }
     L.push(pb.setPropertyList(data, forType: pasteboardType))
     return 1
@@ -626,7 +693,7 @@ private func readAttributedStringObjects(_ L: LuaState) throws -> CInt {
         if lua_isboolean(L, 1) {
             throw LuaCallError("bad argument #1 (string or nil expected)")
         }
-        pb = lua_to_pasteboard(L, 1)
+        pb = lua_to_nspasteboard(L, 1)
     } else {
         pb = NSPasteboard.general
     }
@@ -667,7 +734,7 @@ private func readSoundObjects(_ L: LuaState) throws -> CInt {
         if lua_isboolean(L, 1) {
             throw LuaCallError("bad argument #1 (string or nil expected)")
         }
-        pb = lua_to_pasteboard(L, 1)
+        pb = lua_to_nspasteboard(L, 1)
     } else {
         pb = NSPasteboard.general
     }
@@ -708,7 +775,7 @@ private func readImageObjects(_ L: LuaState) throws -> CInt {
         if lua_isboolean(L, 1) {
             throw LuaCallError("bad argument #1 (string or nil expected)")
         }
-        pb = lua_to_pasteboard(L, 1)
+        pb = lua_to_nspasteboard(L, 1)
     } else {
         pb = NSPasteboard.general
     }
@@ -749,7 +816,7 @@ private func readURLObjects(_ L: LuaState) throws -> CInt {
         if lua_isboolean(L, 1) {
             throw LuaCallError("bad argument #1 (string or nil expected)")
         }
-        pb = lua_to_pasteboard(L, 1)
+        pb = lua_to_nspasteboard(L, 1)
     } else {
         pb = NSPasteboard.general
     }
@@ -790,7 +857,7 @@ private func readColorObjects(_ L: LuaState) throws -> CInt {
         if lua_isboolean(L, 1) {
             throw LuaCallError("bad argument #1 (string or nil expected)")
         }
-        pb = lua_to_pasteboard(L, 1)
+        pb = lua_to_nspasteboard(L, 1)
     } else {
         pb = NSPasteboard.general
     }
@@ -876,7 +943,7 @@ private func writeObjects(_ L: LuaState) throws -> CInt {
     var pboard: NSPasteboard
     if lua_gettop(L) == 1 {        pboard = NSPasteboard.general
     } else {
-        pboard = lua_to_pasteboard(L, 2)
+        pboard = lua_to_nspasteboard(L, 2)
     }
 
     var objects: [NSPasteboardWriting] = []
@@ -943,7 +1010,7 @@ private func newUniquePasteboard(_ L: LuaState) throws -> CInt {
 ///    * if the item on the clipboard is actually just a string, the `hs.styledtext` object representation will have no attributes set
 ///    * if the item is actually an `hs.styledtext` object, the string representation will be the text without any attributes.
 private func typesOnPasteboard(_ L: LuaState) throws -> CInt {
-    let pboard = lua_to_pasteboard(L, 1)
+    let pboard = lua_to_nspasteboard(L, 1)
     lua_newtable(L)
     if pboard.canReadObject(forClasses: [NSString.self], options: [:]) {
         L.push(true); lua_setfield(L, -2, "string")

@@ -1,6 +1,7 @@
 import Cocoa
 import UniformTypeIdentifiers
 import os.log
+import HSDSTCore
 
 // MJLuaCreate, MJLuaDestroy, MJLuaReplace, callDockIconCallback,
 // callAccessibilityStateCallback, textDroppedToDockIcon, fileDroppedToDockIcon
@@ -300,7 +301,11 @@ class MJAppDelegate: NSObject, NSApplicationDelegate {
                      restorationHandler: @escaping ([any NSUserActivityRestoring]) -> Void) -> Bool {
         if userActivity.activityType == NSUserActivityTypeBrowsingWeb,
            let url = userActivity.webpageURL {
-            NSWorkspace.shared.open(url)
+            if let ws = environmentGetGlobalOrNil()?.workspace {
+                _ = ws.openURL(url.absoluteString)
+            } else {
+                NSWorkspace.shared.open(url)
+            }
             return true
         }
         return false
@@ -357,11 +362,18 @@ class MJAppDelegate: NSObject, NSApplicationDelegate {
         alert.alertStyle = .warning
 
         if alert.runModal() == .alertFirstButtonReturn {
-            let allObjects = UserDefaults.standard.dictionaryRepresentation()
-            for key in allObjects.keys {
-                UserDefaults.standard.removeObject(forKey: key)
+            if let s = environmentGetGlobalOrNil()?.settings {
+                for key in s.allKeys() {
+                    s.removeObject(forKey: key)
+                }
+                _ = s.synchronize()
+            } else {
+                let allObjects = UserDefaults.standard.dictionaryRepresentation()
+                for key in allObjects.keys {
+                    UserDefaults.standard.removeObject(forKey: key)
+                }
+                UserDefaults.standard.synchronize()
             }
-            UserDefaults.standard.synchronize()
         }
     }
 
@@ -481,14 +493,27 @@ class MJAppDelegate: NSObject, NSApplicationDelegate {
         let path = MJConfigFileFullPath() as String
         assert(!path.isEmpty, "config file path must not be empty")
 
-        if !FileManager.default.fileExists(atPath: path) {
+        let fileExists: Bool
+        if let fs = environmentGetGlobalOrNil()?.fileSystem {
+            fileExists = fs.fileExists(atPath: path)
+        } else {
+            fileExists = FileManager.default.fileExists(atPath: path)
+        }
+        if !fileExists {
             FileManager.default.createFile(atPath: path, contents: Data(), attributes: nil)
         }
 
-        let workspace = NSWorkspace.shared
-        if !workspace.openFile(path) {
-            // No app is associated with .lua files, so fall back on TextEdit
-            workspace.openFile(path, withApplication: "TextEdit", andDeactivate: true)
+        let nsWorkspace = NSWorkspace.shared
+        if let ws = environmentGetGlobalOrNil()?.workspace {
+            if !ws.openFile(path) {
+                // No app is associated with .lua files, so fall back on TextEdit
+                nsWorkspace.openFile(path, withApplication: "TextEdit", andDeactivate: true)
+            }
+        } else {
+            if !nsWorkspace.openFile(path) {
+                // No app is associated with .lua files, so fall back on TextEdit
+                nsWorkspace.openFile(path, withApplication: "TextEdit", andDeactivate: true)
+            }
         }
     }
 }

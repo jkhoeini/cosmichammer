@@ -1,6 +1,7 @@
 import Cocoa
 import CLua
 import Lua
+import HSDSTCore
 import os.log
 import ORSSerial
 import IOKit.usb
@@ -95,6 +96,10 @@ class HSSerialPort: NSObject, ORSSerialPortDelegate, LuaTeardownable {
     var rts: Bool = false
     var dtr: Bool = false
 
+    private var deviceConnectedToken: (any NotificationObserverToken)?
+    private var deviceDisconnectedToken: (any NotificationObserverToken)?
+    weak var notificationRef: (any NotificationProtocol)?
+
     private var tornDown = false
 
     func teardown() {
@@ -113,23 +118,44 @@ class HSSerialPort: NSObject, ORSSerialPortDelegate, LuaTeardownable {
     }
 
     deinit {
-        NotificationCenter.default.removeObserver(self)
+        if let token = deviceConnectedToken {
+            notificationRef?.removeObserver(token)
+        }
+        if let token = deviceDisconnectedToken {
+            notificationRef?.removeObserver(token)
+        }
     }
 
     // MARK: - Device watching
 
-    func watchDevices() {
-        let nc = NotificationCenter.default
-        nc.addObserver(self, selector: #selector(serialPortsWereConnected(_:)),
-                       name: .ORSSerialPortsWereConnected, object: nil)
-        nc.addObserver(self, selector: #selector(serialPortsWereDisconnected(_:)),
-                       name: .ORSSerialPortsWereDisconnected, object: nil)
+    func watchDevices(_ L: UnsafeMutablePointer<lua_State>!) {
+        let notif = environmentGet(L).notification
+        notificationRef = notif
+
+        deviceConnectedToken = notif.addObserver(
+            name: Notification.Name.ORSSerialPortsWereConnected.rawValue,
+            object: nil
+        ) { [weak self] userInfo in
+            self?.serialPortsWereConnected(userInfo)
+        }
+
+        deviceDisconnectedToken = notif.addObserver(
+            name: Notification.Name.ORSSerialPortsWereDisconnected.rawValue,
+            object: nil
+        ) { [weak self] userInfo in
+            self?.serialPortsWereDisconnected(userInfo)
+        }
     }
 
     func unwatchDevices() {
-        let nc = NotificationCenter.default
-        nc.removeObserver(self, name: .ORSSerialPortsWereConnected, object: nil)
-        nc.removeObserver(self, name: .ORSSerialPortsWereDisconnected, object: nil)
+        if let token = deviceConnectedToken {
+            notificationRef?.removeObserver(token)
+            deviceConnectedToken = nil
+        }
+        if let token = deviceDisconnectedToken {
+            notificationRef?.removeObserver(token)
+            deviceDisconnectedToken = nil
+        }
     }
 
     // MARK: - ORSSerialPortDelegate
@@ -196,14 +222,14 @@ class HSSerialPort: NSObject, ORSSerialPortDelegate, LuaTeardownable {
 
     // MARK: - Device notifications
 
-    @objc func serialPortsWereConnected(_ notification: Notification) {
+    func serialPortsWereConnected(_ userInfo: [String: Any]) {
         guard deviceCallbackRef != Int32(LUA_NOREF) else { return }
         let L = lua_getCurrentState()!
         guard lua_isStateGenerationValid(lsCanary) else { return }
         lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(deviceCallbackRef))
         lua_pushany(L, "connected" as NSString)
 
-        let connectedPorts = (notification.userInfo?[ORSConnectedSerialPortsKey] as? [ORSSerialPort]) ?? []
+        let connectedPorts = (userInfo[ORSConnectedSerialPortsKey] as? [ORSSerialPort]) ?? []
         let result = NSMutableArray()
         for port in connectedPorts {
             result.add(port.name)
@@ -212,14 +238,14 @@ class HSSerialPort: NSObject, ORSSerialPortDelegate, LuaTeardownable {
         if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
     }
 
-    @objc func serialPortsWereDisconnected(_ notification: Notification) {
+    func serialPortsWereDisconnected(_ userInfo: [String: Any]) {
         guard deviceCallbackRef != Int32(LUA_NOREF) else { return }
         let L = lua_getCurrentState()!
         guard lua_isStateGenerationValid(lsCanary) else { return }
         lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(deviceCallbackRef))
         lua_pushany(L, "disconnected" as NSString)
 
-        let disconnectedPorts = (notification.userInfo?[ORSDisconnectedSerialPortsKey] as? [ORSSerialPort]) ?? []
+        let disconnectedPorts = (userInfo[ORSDisconnectedSerialPortsKey] as? [ORSSerialPort]) ?? []
         let result = NSMutableArray()
         for port in disconnectedPorts {
             result.add(port.name)
@@ -536,7 +562,7 @@ private func serial_deviceCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int
     }
 
     lua_replaceRegistryFunctionRef(L, &watcherDeviceManager!.deviceCallbackRef, at: 1)
-    watcherDeviceManager!.watchDevices()
+    watcherDeviceManager!.watchDevices(L)
 
     return 0
 }

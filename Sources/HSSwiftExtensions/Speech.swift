@@ -1,6 +1,7 @@
 import Cocoa
 import CLua
 import Lua
+import HSDSTCore
 import os.log
 
 private let USERDATA_TAG = "hs.speech"
@@ -216,10 +217,11 @@ private func parseBoundary(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32,
 ///  * All of the names that have been encountered thus far follow this pattern for their full name:  `com.apple.speech.synthesis.voice.*name*`.  This prefix is normally suppressed unless you pass in true.
 private func availableVoices(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     let displayFullName = lua_isboolean(L, 1) ? (lua_toboolean(L, 1) != 0) : false
+    let speech = environmentGet(L).speech
 
     lua_newtable(L)
-    for aVoice in NSSpeechSynthesizer.availableVoices {
-        let voiceStr = aVoice.rawValue
+    for voiceInfo in speech.availableVoices() {
+        let voiceStr = voiceInfo.id
         if displayFullName {
             lua_pushany(L, voiceStr as NSString)
         } else {

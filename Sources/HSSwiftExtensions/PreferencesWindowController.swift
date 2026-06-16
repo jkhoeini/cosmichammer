@@ -1,4 +1,5 @@
 import Cocoa
+import HSDSTCore
 
 // MARK: - String constants (from variables.h)
 
@@ -15,12 +16,19 @@ private let MJSkipDockMenuIconProblemAlertKey = "MJSkipDockMenuIconProblemAlertK
 
 @_cdecl("PreferencesDarkModeEnabled")
 func PreferencesDarkModeEnabled() -> Bool {
-    UserDefaults.standard.bool(forKey: HSPreferencesDarkModeKey)
+    if let env = environmentGetGlobalOrNil() {
+        return env.settings.bool(forKey: HSPreferencesDarkModeKey)
+    }
+    return UserDefaults.standard.bool(forKey: HSPreferencesDarkModeKey)
 }
 
 @_cdecl("PreferencesDarkModeSetEnabled")
 func PreferencesDarkModeSetEnabled(_ enabled: Bool) {
-    UserDefaults.standard.set(enabled, forKey: HSPreferencesDarkModeKey)
+    if let env = environmentGetGlobalOrNil() {
+        env.settings.set(enabled, forKey: HSPreferencesDarkModeKey)
+    } else {
+        UserDefaults.standard.set(enabled, forKey: HSPreferencesDarkModeKey)
+    }
 }
 
 // MARK: - MJPreferencesWindowController
@@ -357,7 +365,13 @@ class MJPreferencesWindowController: NSWindowController {
 
     private func maybeWarnAboutDockMenuProblem() {
         guard !MJMenuIconVisible() && !MJDockIconVisible() else { return }
-        guard !UserDefaults.standard.bool(forKey: MJSkipDockMenuIconProblemAlertKey) else { return }
+        let skipAlert: Bool
+        if let env = environmentGetGlobalOrNil() {
+            skipAlert = env.settings.bool(forKey: MJSkipDockMenuIconProblemAlertKey)
+        } else {
+            skipAlert = UserDefaults.standard.bool(forKey: MJSkipDockMenuIconProblemAlertKey)
+        }
+        guard !skipAlert else { return }
 
         let alert = NSAlert()
         alert.alertStyle = .warning
@@ -366,7 +380,11 @@ class MJPreferencesWindowController: NSWindowController {
         alert.showsSuppressionButton = true
         alert.beginSheetModal(for: window!) { _ in
             let skip = alert.suppressionButton?.state == .on
-            UserDefaults.standard.set(skip, forKey: MJSkipDockMenuIconProblemAlertKey)
+            if let env = environmentGetGlobalOrNil() {
+                env.settings.set(skip, forKey: MJSkipDockMenuIconProblemAlertKey)
+            } else {
+                UserDefaults.standard.set(skip, forKey: MJSkipDockMenuIconProblemAlertKey)
+            }
         }
     }
 }

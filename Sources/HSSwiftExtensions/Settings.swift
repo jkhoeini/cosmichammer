@@ -1,6 +1,7 @@
 import Cocoa
 import CLua
 import Lua
+import HSDSTCore
 
 // Establish a unique context for identifying our observers
 private var myKVOContext: Int = 0 // See http://nshipster.com/key-value-observing/
@@ -72,7 +73,7 @@ private func target_set(_ L: LuaState) throws -> CInt {
         val = lua_tovalue(L, at: 2)
     }
 
-    UserDefaults.standard.set(val, forKey: key)
+    environmentGet(L).settings.set(val, forKey: key)
     return 0
 }
 
@@ -98,7 +99,7 @@ private func target_setData(_ L: LuaState) throws -> CInt {
         var sz: Int = 0
         let dataPtr = lua_tolstring(L, 2, &sz)!
         let data = Data(bytes: dataPtr, count: sz)
-        UserDefaults.standard.set(data, forKey: key)
+        environmentGet(L).settings.set(data, forKey: key)
     } else {
         throw LuaCallError("second argument not (binary data encapsulated as) a string")
     }
@@ -144,7 +145,7 @@ private func target_setDate(_ L: LuaState) throws -> CInt {
     }
 
     if let date = myDate {
-        UserDefaults.standard.set(date, forKey: key)
+        environmentGet(L).settings.set(date, forKey: key)
     } else {
         throw LuaCallError("Not a date type -- Number: # of seconds since 1970-01-01 00:00:00Z or String: in the format of 'YYYY-MM-DD[T]HH:MM:SS[Z]' (rfc3339)")
     }
@@ -170,7 +171,7 @@ private func target_get(_ L: LuaState) throws -> CInt {
         throw LuaCallError("key must be a valid UTF8 string")
     }
 
-    let val = UserDefaults.standard.object(forKey: key)
+    let val = environmentGet(L).settings.object(forKey: key)
     lua_pushany(L, val)
     return 1
 }
@@ -191,9 +192,9 @@ private func target_clear(_ L: LuaState) throws -> CInt {
         throw LuaCallError("key must be a valid UTF8 string")
     }
 
-    let defaults = UserDefaults.standard
-    if defaults.object(forKey: key) != nil && !defaults.objectIsForced(forKey: key) {
-        defaults.removeObject(forKey: key)
+    let settings = environmentGet(L).settings
+    if settings.object(forKey: key) != nil && !settings.objectIsForced(forKey: key) {
+        settings.removeObject(forKey: key)
         L.push(true)
     } else {
         L.push(false)
@@ -215,8 +216,7 @@ private func target_clear(_ L: LuaState) throws -> CInt {
 ///  * Use `ipairs(hs.settings.getKeys())` to iterate over all available settings
 ///  * Use `hs.settings.getKeys()["someKey"]` to test for the existence of a particular key
 private func target_getKeys(_ L: LuaState) throws -> CInt {
-    let mainID = Bundle.main.bundleIdentifier ?? ""
-    let keys = UserDefaults.standard.persistentDomain(forName: mainID)?.keys.sorted() ?? []
+    let keys = environmentGet(L).settings.allKeys()
 
     lua_newtable(L)
     for (i, key) in keys.enumerated() {

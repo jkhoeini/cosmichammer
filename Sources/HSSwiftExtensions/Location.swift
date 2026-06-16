@@ -1,6 +1,7 @@
 import Cocoa
 import CLua
 import Lua
+import HSDSTCore
 import os.log
 import CoreLocation
 
@@ -181,15 +182,17 @@ private func location_locationServicesEnabled(_ L: LuaState) throws -> CInt {
 ///  * The first time you use a function which requires Location Services, you will be prompted to grant Cosmic Hammer access. If you wish to change this permission after the initial prompt, you may do so from the Location Services section of the Security & Privacy section in the System Preferences application.
 private func location_authorizationStatus(_ L: LuaState) throws -> CInt {
 
-    let status = CLLocationManager.authorizationStatus()
+    let status = environmentGet(L).location.authorizationStatus()
     let statusString: String
+    // Protocol returns Int matching CLAuthorizationStatus raw values:
+    // 0 = notDetermined, 1 = restricted, 2 = denied, 3 = authorized
     switch status {
-    case .notDetermined: statusString = "undefined"
-    case .restricted:    statusString = "restricted"
-    case .denied:        statusString = "denied"
-    case .authorized:    statusString = "authorized"
-    @unknown default:
-        statusString = "unrecognized CLAuthorizationStatus: \(status.rawValue), notify developers"
+    case 0: statusString = "undefined"
+    case 1: statusString = "restricted"
+    case 2: statusString = "denied"
+    case 3: statusString = "authorized"
+    default:
+        statusString = "unrecognized authorization status: \(status), notify developers"
     }
     lua_pushany(L, statusString as NSString)
     return 1
@@ -225,6 +228,10 @@ private func location_distanceBetween(_ L: LuaState) throws -> CInt {
 // internally used function
 private func location_startWatching(_ L: LuaState) throws -> CInt {
     // no args to validate
+    let env = environmentGet(L)
+    env.location.startUpdating { _, _ in
+        // Updates are delivered via CLLocationManagerDelegate callbacks below
+    }
     L.push(checkLocationManager())
     if lua_toboolean(L, -1) != 0 { location?.manager.startUpdatingLocation() }
     return 1
@@ -233,6 +240,7 @@ private func location_startWatching(_ L: LuaState) throws -> CInt {
 // internally used function
 private func location_stopWatching(_ L: LuaState) throws -> CInt {
     // no args to validate
+    environmentGet(L).location.stopUpdating()
     location?.manager.stopUpdatingLocation()
     return 0
 }
@@ -252,7 +260,16 @@ private func location_stopWatching(_ L: LuaState) throws -> CInt {
 ///  * If access to Location Services is enabled for Cosmic Hammer, this function will return the most recent cached data for the computer's location.
 ///    * Internally, the Location Services cache is updated whenever additional WiFi networks are detected or lost (not necessarily joined). When update tracking is enabled with the [hs.location.start](#start) function, calculations based upon the RSSI of all currently seen networks are preformed more often to provide a more precise fix, but it's still based on the WiFi networks near you.
 private func location_getLocation(_ L: LuaState) throws -> CInt {
-    if checkLocationManager() {
+    if let coord = environmentGet(L).location.currentLocation() {
+        lua_newtable(L)
+        L.push(coord.latitude);               lua_setfield(L, -2, "latitude")
+        L.push(coord.longitude);              lua_setfield(L, -2, "longitude")
+        L.push(coord.altitude);               lua_setfield(L, -2, "altitude")
+        L.push(coord.horizontalAccuracy);     lua_setfield(L, -2, "horizontalAccuracy")
+        L.push(coord.verticalAccuracy);       lua_setfield(L, -2, "verticalAccuracy")
+        L.push(coord.timestamp.timeIntervalSince1970); lua_setfield(L, -2, "timestamp")
+        L.push("CLLocation");                 lua_setfield(L, -2, "__luaSkinType")
+    } else if checkLocationManager() {
         pushCLLocation(L, location?.manager.location)
     } else {
         lua_pushnil(L)

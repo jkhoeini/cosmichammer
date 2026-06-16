@@ -1,6 +1,7 @@
 import Cocoa
 import CLua
 import Lua
+import HSDSTCore
 
 /// === hs.pasteboard.watcher ===
 ///
@@ -12,18 +13,16 @@ private let USERDATA_TAG = "hs.pasteboard.watcher"
 // How often we should poll the Pasteboard for changes:
 private var pollingInterval: Double = 0.25
 
-// We only use a single NSTimer for all Pasteboard Watchers:
-private var sharedPasteboardTimerCount: Int = 0
-private var sharedPasteboardTimer: Timer?
-
 class HSPasteboardTimer: NSObject, LuaTeardownable {
-    var t: Timer?
     var pbName: String?
     var callback: LuaValue?
     var changeCount: Int = 0
     var isRunning: Bool = false
     var generation: UInt64 = 0
     private var tornDown = false
+    var timerHandle: (any TimerHandle)?
+    var pasteboard: (any PasteboardProtocol)?
+    var clock: (any ClockProtocol)?
 
     func teardown() {
         guard !tornDown else { return }
@@ -32,29 +31,25 @@ class HSPasteboardTimer: NSObject, LuaTeardownable {
             stop()
         }
         callback = nil
-        t = nil
+        timerHandle = nil
         pbName = nil
+        pasteboard = nil
+        clock = nil
     }
 
-    @objc func sharedPasteboardTimerCallback(_ timer: Timer) {
-        NotificationCenter.default.post(
-            name: NSNotification.Name("sharedPasteboardNotification"),
-            object: nil
-        )
-    }
-
-    @objc func sharedPasteboardChanged(_ notification: Notification) {
+    func pollPasteboard() {
         guard lua_isStateGenerationValid(generation) else { return }
-        // Get the correct Pasteboard:
-        let pb: NSPasteboard
-        if let name = pbName {
-            pb = NSPasteboard(name: NSPasteboard.Name(rawValue: name))
-        } else {
-            pb = NSPasteboard.general
-        }
 
         // Check if the Pasteboard Change Count has changed:
-        let currentChangeCount = pb.changeCount
+        let currentChangeCount: Int
+        if pbName != nil, let pb = namedPasteboard() {
+            currentChangeCount = pb.changeCount
+        } else if let pb = pasteboard {
+            currentChangeCount = pb.changeCount
+        } else {
+            return
+        }
+
         if currentChangeCount == changeCount {
             return
         }
@@ -68,7 +63,12 @@ class HSPasteboardTimer: NSObject, LuaTeardownable {
 
             cb.push(onto: L)
 
-            let result = pb.string(forType: .string)
+            let result: String?
+            if pbName != nil, let pb = namedPasteboard() {
+                result = pb.string(forType: .string)
+            } else {
+                result = pasteboard?.string(forType: NSPasteboard.PasteboardType.string.rawValue)
+            }
             if let result = result {
                 lua_pushany(L, result)
             } else {
@@ -87,66 +87,37 @@ class HSPasteboardTimer: NSObject, LuaTeardownable {
             return
         }
 
-        // If the Shared Pasteboard Timer doesn't exist, create it:
-        if sharedPasteboardTimer == nil || !sharedPasteboardTimer!.isValid {
-            sharedPasteboardTimer = Timer(
-                timeInterval: pollingInterval,
-                target: self,
-                selector: #selector(sharedPasteboardTimerCallback(_:)),
-                userInfo: nil,
-                repeats: true
-            )
-        }
+        guard let clock = clock else { return }
 
         // Update Initial Change Count:
-        let pb: NSPasteboard
-        if let name = pbName {
-            pb = NSPasteboard(name: NSPasteboard.Name(rawValue: name))
-        } else {
-            pb = NSPasteboard.general
-        }
-        changeCount = pb.changeCount
-
-        // Start the Shared Pasteboard NSTimer if it's not already running:
-        if let timer = sharedPasteboardTimer,
-           !CFRunLoopContainsTimer(CFRunLoopGetCurrent(), timer as CFRunLoopTimer, CFRunLoopMode.defaultMode) {
-            RunLoop.current.add(timer, forMode: .common)
+        if pbName != nil, let pb = namedPasteboard() {
+            changeCount = pb.changeCount
+        } else if let pb = pasteboard {
+            changeCount = pb.changeCount
         }
 
-        // Increment the General Pasteboard Timer Counter:
-        sharedPasteboardTimerCount += 1
-
-        // Add observer:
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(sharedPasteboardChanged(_:)),
-            name: NSNotification.Name("sharedPasteboardNotification"),
-            object: nil
-        )
+        // Create a timer using the clock protocol:
+        timerHandle = clock.createTimer(interval: pollingInterval, repeats: true) { [weak self] in
+            self?.pollPasteboard()
+        }
 
         // The watcher is now running:
         isRunning = true
     }
 
     func stop() {
-        // Remove observer:
-        NotificationCenter.default.removeObserver(
-            self,
-            name: NSNotification.Name("sharedPasteboardNotification"),
-            object: nil
-        )
-
-        // Decrement the Shared Pasteboard Timer Counter:
-        sharedPasteboardTimerCount -= 1
-
-        // If no more watchers are left, destroy the NSTimer:
-        if sharedPasteboardTimerCount == 0 {
-            sharedPasteboardTimer?.invalidate()
-            sharedPasteboardTimer = nil
-        }
+        // Invalidate the timer:
+        timerHandle?.invalidate()
+        timerHandle = nil
 
         // Watcher is no longer running:
         isRunning = false
+    }
+
+    // Helper for named pasteboards (not covered by the protocol):
+    private func namedPasteboard() -> NSPasteboard? {
+        guard let name = pbName else { return nil }
+        return NSPasteboard(name: NSPasteboard.Name(rawValue: name))
     }
 }
 
@@ -193,10 +164,13 @@ public func luaopen_hs_libpasteboardwatcher(_ L: UnsafeMutablePointer<lua_State>
             luaL_checktype(L, 1, LUA_TFUNCTION)
             let pbName: String? = (lua_type(L, 2) == LUA_TSTRING) ? String(cString: lua_tostring(L, 2)!) : nil
 
+            let env = environmentGet(L)
             let timer = HSPasteboardTimer()
             timer.callback = L.ref(index: 1)
             timer.generation = lua_currentStateGeneration()
             timer.pbName = pbName
+            timer.pasteboard = env.pasteboard
+            timer.clock = env.clock
 
             // Start the timer:
             timer.start()
@@ -216,13 +190,9 @@ public func luaopen_hs_libpasteboardwatcher(_ L: UnsafeMutablePointer<lua_State>
         })
         lua_setfield(L, -2, "interval")
 
-        // Set module metatable for __gc (shared timer cleanup)
+        // Set module metatable for __gc
         lua_createtable(L, 0, 1)
-        lua_pushcclosure(L, { (L: LuaState!) -> CInt in
-            if let timer = sharedPasteboardTimer {
-                timer.invalidate()
-                sharedPasteboardTimer = nil
-            }
+        lua_pushcclosure(L, { (_: LuaState!) -> CInt in
             return 0
         }, 0)
         lua_setfield(L, -2, "__gc")

@@ -2,7 +2,7 @@ import Foundation
 import CLua
 import Lua
 import Cocoa
-import CoreGraphics
+import HSDSTCore
 
 /// === hs.spaces.watcher ===
 ///
@@ -18,6 +18,7 @@ private class SpaceWatcher: NSObject, LuaTeardownable {
     var running: Bool = false
     var selfRef: Int32 = LUA_NOREF
     var generation: UInt64 = 0
+    var observerToken: (any NotificationObserverToken)?
     private var tornDown = false
 
     func teardown() {
@@ -25,9 +26,12 @@ private class SpaceWatcher: NSObject, LuaTeardownable {
         tornDown = true
         if running {
             running = false
-            NSWorkspace.shared.notificationCenter.removeObserver(self)
+            let L = lua_getCurrentState()!
+            if let token = observerToken {
+                environmentGet(L).notification.removeObserver(token)
+                observerToken = nil
+            }
             if selfRef != LUA_NOREF {
-                let L = lua_getCurrentState()!
                 luaL_unref(L, LUA_REGISTRYINDEX_VALUE, selfRef)
                 selfRef = LUA_NOREF
             }
@@ -52,13 +56,6 @@ private class SpaceWatcher: NSObject, LuaTeardownable {
             }
         }
     }
-
-    @objc func spaceChanged(_ notification: NSNotification) {
-        let spaceID = SLSGetActiveSpace(SLSMainConnectionID())
-        let currentSpace = Int32(clamping: spaceID)
-
-        callbackFired(dict: notification.userInfo as NSDictionary?, space: currentSpace)
-    }
 }
 
 // MARK: - Module Registration
@@ -80,13 +77,16 @@ public func luaopen_hs_libspaces_watcher(_ L: UnsafeMutablePointer<lua_State>!) 
                     watcher.selfRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
                     watcher.running = true
 
-                    let center = NSWorkspace.shared.notificationCenter
-                    center.addObserver(
-                        watcher,
-                        selector: #selector(SpaceWatcher.spaceChanged(_:)),
-                        name: NSWorkspace.activeSpaceDidChangeNotification,
+                    let spacesService = environmentGet(L).spaces
+                    watcher.observerToken = environmentGet(L).notification.addWorkspaceObserver(
+                        name: NSWorkspace.activeSpaceDidChangeNotification.rawValue,
                         object: nil
-                    )
+                    ) { [weak watcher] userInfo in
+                        guard let watcher = watcher else { return }
+                        let spaceID = spacesService.activeSpace() ?? -1
+                        let currentSpace = Int32(clamping: spaceID)
+                        watcher.callbackFired(dict: userInfo as NSDictionary, space: currentSpace)
+                    }
 
                     return 1
                 },
@@ -99,7 +99,10 @@ public func luaopen_hs_libspaces_watcher(_ L: UnsafeMutablePointer<lua_State>!) 
                     watcher.running = false
                     luaL_unref(L, LUA_REGISTRYINDEX_VALUE, watcher.selfRef)
                     watcher.selfRef = LUA_NOREF
-                    NSWorkspace.shared.notificationCenter.removeObserver(watcher)
+                    if let token = watcher.observerToken {
+                        environmentGet(L).notification.removeObserver(token)
+                        watcher.observerToken = nil
+                    }
 
                     return 1
                 },

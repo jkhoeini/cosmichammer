@@ -1,6 +1,7 @@
 import Cocoa
 import CLua
 import Lua
+import HSDSTCore
 import IOKit
 import IOKit.ps
 import IOKit.pwr_mgt
@@ -45,13 +46,21 @@ import IOBluetooth
 ///   * -1 if the remaining battery life is still being calculated
 ///   * -2 if there is unlimited time remaining (i.e. the system is on AC power)
 private func battery_timeremaining(_ L: LuaState) throws -> CInt {
-    var remaining = IOPSGetTimeRemainingEstimate()
-
-    if remaining > 0 {
-        remaining /= 60
+    let info = environmentGet(L).systemInfo.batteryInfo()
+    if let info = info {
+        if info.isPluggedIn && !info.isCharging {
+            // On AC power, not charging (full or no battery) — unlimited
+            L.push(Double(-2))
+        } else if let minutes = info.timeToEmpty {
+            L.push(Double(minutes))
+        } else {
+            // Unknown / still calculating
+            L.push(Double(-1))
+        }
+    } else {
+        // No battery info available — assume AC/unlimited
+        L.push(Double(-2))
     }
-
-    L.push(remaining)
     return 1
 }
 
@@ -65,9 +74,8 @@ private func battery_timeremaining(_ L: LuaState) throws -> CInt {
 /// Returns:
 ///  * A string containing one of {AC Power, Battery Power, UPS Power}.
 private func battery_powerSource(_ L: LuaState) throws -> CInt {
-    if let sourcesBlob = IOPSCopyPowerSourcesInfo()?.takeRetainedValue() {
-        let sourceType = IOPSGetProvidingPowerSourceType(sourcesBlob)?.takeUnretainedValue() as String?
-        lua_pushany(L, sourceType)
+    if let info = environmentGet(L).systemInfo.batteryInfo() {
+        lua_pushany(L, info.powerSource as NSString)
         return 1
     } else {
         lua_pushnil(L)

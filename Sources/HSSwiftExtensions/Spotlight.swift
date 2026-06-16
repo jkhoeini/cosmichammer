@@ -1,6 +1,7 @@
 import Cocoa
 import CLua
 import Lua
+import HSDSTCore
 import os.log
 
 private let USERDATA_TAG = "hs.spotlight"
@@ -20,23 +21,37 @@ private class HSMetadataQuery: NSObject {
     var wantStart: Bool = false
     var wantUpdate: Bool = false
     private var tornDown = false
+    private let notificationService: any NotificationProtocol
+    private var observerTokens: [any NotificationObserverToken] = []
 
-    override init() {
+    init(notification: any NotificationProtocol) {
         metadataSearch = NSMetadataQuery()
+        notificationService = notification
         super.init()
 
         if moduleSearchQueue == nil { moduleSearchQueue = OperationQueue() }
         metadataSearch.operationQueue = moduleSearchQueue
 
-        let nc = NotificationCenter.default
-        nc.addObserver(self, selector: #selector(queryDidFinish(_:)),
-                       name: .NSMetadataQueryDidFinishGathering, object: metadataSearch)
-        nc.addObserver(self, selector: #selector(queryDidStart(_:)),
-                       name: .NSMetadataQueryDidStartGathering, object: metadataSearch)
-        nc.addObserver(self, selector: #selector(queryDidUpdate(_:)),
-                       name: .NSMetadataQueryDidUpdate, object: metadataSearch)
-        nc.addObserver(self, selector: #selector(queryProgress(_:)),
-                       name: .NSMetadataQueryGatheringProgress, object: metadataSearch)
+        observerTokens.append(notification.addObserver(
+            name: NSNotification.Name.NSMetadataQueryDidFinishGathering.rawValue, object: metadataSearch
+        ) { [weak self] userInfo in
+            self?.queryDidFinish(userInfo)
+        })
+        observerTokens.append(notification.addObserver(
+            name: NSNotification.Name.NSMetadataQueryDidStartGathering.rawValue, object: metadataSearch
+        ) { [weak self] userInfo in
+            self?.queryDidStart(userInfo)
+        })
+        observerTokens.append(notification.addObserver(
+            name: NSNotification.Name.NSMetadataQueryDidUpdate.rawValue, object: metadataSearch
+        ) { [weak self] userInfo in
+            self?.queryDidUpdate(userInfo)
+        })
+        observerTokens.append(notification.addObserver(
+            name: NSNotification.Name.NSMetadataQueryGatheringProgress.rawValue, object: metadataSearch
+        ) { [weak self] userInfo in
+            self?.queryProgress(userInfo)
+        })
     }
 
     /// Idempotent teardown: remove notification observers, stop query, drop the
@@ -48,32 +63,31 @@ private class HSMetadataQuery: NSObject {
             return
         }
         tornDown = true
-        let nc = NotificationCenter.default
-        nc.removeObserver(self, name: .NSMetadataQueryDidFinishGathering, object: metadataSearch)
-        nc.removeObserver(self, name: .NSMetadataQueryDidStartGathering, object: metadataSearch)
-        nc.removeObserver(self, name: .NSMetadataQueryDidUpdate, object: metadataSearch)
-        nc.removeObserver(self, name: .NSMetadataQueryGatheringProgress, object: metadataSearch)
+        for token in observerTokens {
+            notificationService.removeObserver(token)
+        }
+        observerTokens.removeAll()
         if !metadataSearch.isStopped { metadataSearch.stop() }
         callback = nil
     }
 
-    @objc func queryDidFinish(_ notification: Notification) {
-        if callback != nil && wantComplete { doCallback(for: "didFinish", with: notification) }
+    func queryDidFinish(_ userInfo: [String: Any]) {
+        if callback != nil && wantComplete { doCallback(for: "didFinish", with: userInfo) }
     }
 
-    @objc func queryDidStart(_ notification: Notification) {
-        if callback != nil && wantStart { doCallback(for: "didStart", with: notification) }
+    func queryDidStart(_ userInfo: [String: Any]) {
+        if callback != nil && wantStart { doCallback(for: "didStart", with: userInfo) }
     }
 
-    @objc func queryDidUpdate(_ notification: Notification) {
-        if callback != nil && wantUpdate { doCallback(for: "didUpdate", with: notification) }
+    func queryDidUpdate(_ userInfo: [String: Any]) {
+        if callback != nil && wantUpdate { doCallback(for: "didUpdate", with: userInfo) }
     }
 
-    @objc func queryProgress(_ notification: Notification) {
-        if callback != nil && wantProgress { doCallback(for: "inProgress", with: notification) }
+    func queryProgress(_ userInfo: [String: Any]) {
+        if callback != nil && wantProgress { doCallback(for: "inProgress", with: userInfo) }
     }
 
-    func doCallback(for message: String, with notification: Notification) {
+    func doCallback(for message: String, with userInfo: [String: Any]) {
         precondition(!message.isEmpty, "doCallback: message must not be empty")
         DispatchQueue.main.async { [weak self] in
             guard let self = self, let cb = self.callback else { return }
@@ -85,7 +99,7 @@ private class HSMetadataQuery: NSObject {
             cb.push(onto: L)
             L.push(userdata: self)
             lua_pushany(L, message as NSString)
-            lua_pushany(L, notification.userInfo as NSDictionary?)
+            lua_pushany(L, userInfo as NSDictionary)
             if lua_pcall(L, 3, 0, 0) != LUA_OK { lua_pop(L, 1) }
         }
     }
@@ -97,7 +111,7 @@ private class HSMetadataQuery: NSObject {
 /// Constructor
 /// Creates a new spotlightObject to use for Spotlight searches.
 private func spotlight_new(_ L: LuaState) throws -> CInt {
-    let query = HSMetadataQuery()
+    let query = HSMetadataQuery(notification: environmentGet(L).notification)
     query.generation = lua_currentStateGeneration()
     L.push(userdata: query)
     return 1
@@ -109,7 +123,7 @@ private func spotlight_new(_ L: LuaState) throws -> CInt {
 private func spotlight_searchWithin(_ L: LuaState) throws -> CInt {
     let query: HSMetadataQuery = try L.checkArgument(1)
 
-    let newQuery = HSMetadataQuery()
+    let newQuery = HSMetadataQuery(notification: environmentGet(L).notification)
     newQuery.generation = lua_currentStateGeneration()
     query.metadataSearch.disableUpdates()
     newQuery.metadataSearch.searchItems = query.metadataSearch.results

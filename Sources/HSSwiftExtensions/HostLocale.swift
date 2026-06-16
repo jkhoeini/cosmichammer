@@ -1,5 +1,6 @@
 import Cocoa
 import CLua
+import HSDSTCore
 import Lua
 
 // MARK: - Constants
@@ -22,12 +23,19 @@ extension NSLocale {
     }
 }
 
-private class HSLocaleChangeObserver: NSObject {
+private class HSLocaleChangeObserver {
     var generation: UInt64 = 0
+    var token: (any NotificationObserverToken)?
+    weak var notificationRef: (any NotificationProtocol)?
 
-    @objc func localeChanged(_ notification: Notification) {
-        DispatchQueue.main.async {
-            guard lua_isStateGenerationValid(self.generation) else { return }
+    func start(_ L: LuaState!) {
+        let notification = environmentGet(L).notification
+        notificationRef = notification
+        token = notification.addObserver(
+            name: NSLocale.currentLocaleDidChangeNotification.rawValue,
+            object: nil
+        ) { [weak self] _ in
+            guard let self, lua_isStateGenerationValid(self.generation) else { return }
             if let cb = callbackRef {
                 let L = lua_getCurrentState()!
                 cb.push(onto: L)
@@ -38,21 +46,12 @@ private class HSLocaleChangeObserver: NSObject {
         }
     }
 
-    func start() {
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(localeChanged(_:)),
-            name: NSLocale.currentLocaleDidChangeNotification,
-            object: nil
-        )
-    }
-
     func stop() {
-        NotificationCenter.default.removeObserver(
-            self,
-            name: NSLocale.currentLocaleDidChangeNotification,
-            object: nil
-        )
+        if let t = token, let n = notificationRef {
+            n.removeObserver(t)
+        }
+        token = nil
+        notificationRef = nil
     }
 }
 
@@ -345,6 +344,6 @@ public func luaopen_hs_libhost_locale(_ L: UnsafeMutablePointer<lua_State>!) -> 
         lua_setmetatable(L, -2)
 
         observerOfChanges = HSLocaleChangeObserver()
-        observerOfChanges?.start()
+        observerOfChanges?.start(L)
     }
 }

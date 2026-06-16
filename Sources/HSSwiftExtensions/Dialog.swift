@@ -1,5 +1,6 @@
 import Cocoa
 import CLua
+import HSDSTCore
 import Lua
 import os.log
 
@@ -13,23 +14,26 @@ private let USERDATA_TAG = "hs.dialog"
 private class HSColorPanel: NSObject {
     var callbackRef: LuaValue?
     var generation: UInt64 = 0
+    var observerToken: (any NotificationObserverToken)?
+    weak var notificationRef: (any NotificationProtocol)?
 
     override init() {
         super.init()
         let cp = NSColorPanel.shared
         cp.setTarget(self)
         cp.setAction(#selector(colorCallback(_:)))
+    }
 
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(colorClose(_:)),
-            name: NSWindow.willCloseNotification,
-            object: cp
-        )
+    func registerObserver(_ L: UnsafeMutablePointer<lua_State>!) {
+        let notif = environmentGet(L).notification
+        observerToken = notif.addObserver(name: NSWindow.willCloseNotification.rawValue, object: NSColorPanel.shared) { [weak self] _ in
+            self?.colorClose()
+        }
+        notificationRef = notif
     }
 
     // Second argument to callback is true indicating this is a close color panel event
-    @objc func colorClose(_ note: NSNotification) {
+    func colorClose() {
         if callbackRef != nil {
             DispatchQueue.main.async { [weak self] in
                 guard let self = self, let cb = self.callbackRef else { return }
@@ -313,51 +317,36 @@ private func chooseFileOrFolder(_ L: LuaState) throws -> CInt {
     // Check the Parameters:
     //              [message],                 [defaultPath],             [canChooseFiles],           [canChooseDirectories],     [allowsMultipleSelection],  [allowedFileTypes],       [resolvesAliases]
 
-    // Create new NSOpenPanel:
-    let panel = NSOpenPanel()
-
     // Allowed File Types:
+    var allowedFileTypes: [String]? = nil
     if lua_istable(L, 6) {
-        var allowedFileTypes: [String] = []
+        var types: [String] = []
         lua_pushnil(L)
         while lua_next(L, 6) != 0 {
             let item = String(cString: luaL_checkstring(L, -1))
-            allowedFileTypes.append(item)
+            types.append(item)
             lua_pop(L, 1)
         }
-        panel.allowedFileTypes = allowedFileTypes
+        allowedFileTypes = types
     }
 
-    // Message:
-    if let message = lua_tovalue(L, at: 1) as? String {
-        panel.message = message
-    }
+    let config = DialogConfig(
+        message: lua_tovalue(L, at: 1) as? String,
+        canChooseFiles: !(lua_isboolean(L, 3) && lua_toboolean(L, 3) == 0),
+        canChooseDirectories: lua_isboolean(L, 4) && lua_toboolean(L, 4) != 0,
+        allowsMultipleSelection: !(lua_isboolean(L, 5) && lua_toboolean(L, 5) == 0),
+        allowedFileTypes: allowedFileTypes,
+        initialDirectory: lua_tovalue(L, at: 2) as? String
+        // Note: resolvesAliases (arg 7) is not expressible via DialogConfig; ignored.
+    )
 
-    // Default Path:
-    if let path = lua_tovalue(L, at: 2) as? String {
-        panel.directoryURL = URL(fileURLWithPath: path)
-    }
+    let result = environmentGet(L).dialog.showOpenPanel(config: config)
 
-    // Can Choose Files:
-    panel.canChooseFiles = !(lua_isboolean(L, 3) && lua_toboolean(L, 3) == 0)
-
-    // Can Choose Directories:
-    panel.canChooseDirectories = lua_isboolean(L, 4) && lua_toboolean(L, 4) != 0
-
-    // Resolve Aliases:
-    panel.resolvesAliases = lua_isboolean(L, 7) && lua_toboolean(L, 7) != 0
-
-    // Allows Multiple Selections:
-    panel.allowsMultipleSelection = !(lua_isboolean(L, 5) && lua_toboolean(L, 5) == 0)
-
-    // Load the window and check to see when a button is clicked:
-    let clicked = panel.runModal()
-
-    if clicked == .OK {
+    if let files = result.selectedFiles, !files.isEmpty {
         lua_newtable(L)
         var count: Int32 = 1
-        for url in panel.urls {
-            L.push(url.path)
+        for path in files {
+            L.push(path)
             lua_setfield(L, -2, "\(count)")
             count += 1
         }
@@ -643,11 +632,11 @@ private func textPrompt(_ L: LuaState) throws -> CInt {
 
 private func releaseReceivers(_ L: LuaState) throws -> CInt {
     let cp = NSColorPanel.shared
-    NotificationCenter.default.removeObserver(
-        cpReceiverObject!,
-        name: NSWindow.willCloseNotification,
-        object: cp
-    )
+    if let token = cpReceiverObject!.observerToken {
+        cpReceiverObject!.notificationRef?.removeObserver(token)
+        cpReceiverObject!.observerToken = nil
+    }
+    cpReceiverObject!.notificationRef = nil
     cp.setTarget(nil)
     cp.setAction(nil)
     cpReceiverObject!.callbackRef = nil
@@ -698,5 +687,6 @@ public func luaopen_hs_libdialog(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
         lua_setfield(L, -2, "color")
         NSColorPanel.setPickerMask(NSColorPanel.Options(rawValue: 0xFFFF))
         cpReceiverObject = HSColorPanel()
+        cpReceiverObject!.registerObserver(L)
     }
 }

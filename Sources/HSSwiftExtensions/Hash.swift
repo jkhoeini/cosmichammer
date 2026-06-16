@@ -1,6 +1,7 @@
 import Cocoa
 import CLua
 import Lua
+import HSDSTCore
 import CommonCrypto
 import zlib
 
@@ -577,20 +578,19 @@ public func luaopen_hs_libhash(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
                 if object.value == nil {
                     path = (path as NSString).expandingTildeInPath
                     path = (path as NSString).resolvingSymlinksInPath
-                    // TigerStyle: pre-check file size before loading entire file for hashing
-                    let fileURL = URL(fileURLWithPath: path)
+                    let fs = environmentGet(L).fileSystem
                     do {
-                        let attrs = try FileManager.default.attributesOfItem(atPath: path)
-                        if let fileSize = attrs[.size] as? UInt64, fileSize > kMaxHashFileSize {
-                            throw LuaCallError("file '\(path)' is \(fileSize) bytes, exceeds kMaxHashFileSize (\(kMaxHashFileSize) bytes)")
+                        let attrs = try fs.attributesOfItem(atPath: path)
+                        if attrs.size > kMaxHashFileSize {
+                            throw LuaCallError("file '\(path)' is \(attrs.size) bytes, exceeds kMaxHashFileSize (\(kMaxHashFileSize) bytes)")
                         }
                     } catch let e as LuaCallError {
                         throw e
                     } catch {
-                        // If we can't stat, let the Data read attempt produce the real error
+                        // If we can't stat, let the read attempt produce the real error
                     }
                     do {
-                        let data = try Data(contentsOf: fileURL, options: .uncached)
+                        let data = try fs.contentsOfFile(atPath: path)
                         object.append(data)
                     } catch {
                         lua_pushnil(L)

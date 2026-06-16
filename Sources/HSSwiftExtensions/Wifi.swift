@@ -2,6 +2,7 @@ import Cocoa
 import CLua
 import Lua
 import CoreWLAN
+import HSDSTCore
 import os.log
 
 private let USERDATA_TAG = "hs.wifi"
@@ -270,8 +271,19 @@ private func wifi_current_ssid(_ L: LuaState) throws -> CInt {
         theName = String(cString: luaL_checkstring(L, 1))
     }
 
-    let interface = get_wifi_interface(theName)
-    if let ssid = interface?.ssid() {
+    // Named interface: fall back to CoreWLAN directly
+    if theName != nil {
+        let interface = get_wifi_interface(theName)
+        if let ssid = interface?.ssid() {
+            L.push(ssid)
+        } else {
+            lua_pushnil(L)
+        }
+        return 1
+    }
+
+    // Default interface: use environment protocol
+    if let ssid = environmentGet(L).systemInfo.wifiInfo()?.ssid {
         L.push(ssid)
     } else {
         lua_pushnil(L)
@@ -298,6 +310,23 @@ private func interfaceDetails(_ L: LuaState) throws -> CInt {
     let interface = get_wifi_interface(theName)
     if let iface = interface {
         _ = pushCWInterface(L, iface)
+    } else if theName == nil, let info = environmentGet(L).systemInfo.wifiInfo() {
+        // No CWInterface available but environment provides wifi info (e.g. simulated)
+        lua_newtable(L)
+        lua_pushany(L, info.ssid as NSString?)
+        lua_setfield(L, -2, "ssid")
+        lua_pushany(L, info.bssid as NSString?)
+        lua_setfield(L, -2, "bssid")
+        L.push(lua_Integer(info.rssi))
+        lua_setfield(L, -2, "rssi")
+        L.push(lua_Integer(info.noise))
+        lua_setfield(L, -2, "noise")
+        L.push(info.isPoweredOn)
+        lua_setfield(L, -2, "power")
+        lua_pushany(L, info.interfaceName as NSString)
+        lua_setfield(L, -2, "interface")
+        L.push(lua_Integer(info.channel))
+        lua_setfield(L, -2, "channel")
     } else {
         lua_pushnil(L)
     }

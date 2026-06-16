@@ -78,8 +78,15 @@ function testUsleep()
   return success()
 end
 
+local function cleanupTimer()
+  if testTimer then pcall(function() testTimer:stop() end) end
+  testTimer = nil
+  testTimerValue = nil
+end
+
 function testTimerValueCheck()
   if (type(testTimerValue) == "boolean" and testTimerValue == true) then
+    cleanupTimer()
     return success()
   else
     return string.format("Waiting for success...(%s != true)", tostring(testTimerValue))
@@ -87,7 +94,7 @@ function testTimerValueCheck()
 end
 
 function testDoAfterStart()
-  assertIsNil(testTimerValue)
+  cleanupTimer()
   testTimerValue = false
 
   testTimer = hs.timer.doAfter(3, function() testTimerValue = true end)
@@ -98,7 +105,7 @@ function testDoAfterStart()
 end
 
 function testDoAtStart()
-  assertIsNil(testTimerValue)
+  cleanupTimer()
   testTimerValue = false
 
   testTimer = hs.timer.doAt(hs.timer.localTime() + 2, function() print("HELLO") ; testTimerValue = true end)
@@ -109,7 +116,7 @@ function testDoAtStart()
 end
 
 function testDoEveryStart()
-  assertIsNil(testTimerValue)
+  cleanupTimer()
   testTimerValue = 0
 
   testTimer = hs.timer.doEvery(1, function()
@@ -131,7 +138,7 @@ function testDoEveryStart()
 end
 
 function testDoUntilStart()
-  assertIsNil(testTimerValue)
+  cleanupTimer()
   testTimerValue = 0
 
   testTimer = hs.timer.doUntil(function()
@@ -149,7 +156,7 @@ function testDoUntilStart()
 end
 
 function testDoWhileStart()
-  assertIsNil(testTimerValue)
+  cleanupTimer()
   testTimerValue = 0
 
   testTimer = hs.timer.doWhile(function()
@@ -168,7 +175,7 @@ function testDoWhileStart()
 end
 
 function testWaitUntilStart()
-  assertIsNil(testTimerValue)
+  cleanupTimer()
   testTimerValue = 0
 
   testTimer = hs.timer.waitUntil(function()
@@ -186,7 +193,7 @@ function testWaitUntilStart()
 end
 
 function testWaitWhileStart()
-  assertIsNil(testTimerValue)
+  cleanupTimer()
   testTimerValue = 0
 
   testTimer = hs.timer.waitWhile(function()

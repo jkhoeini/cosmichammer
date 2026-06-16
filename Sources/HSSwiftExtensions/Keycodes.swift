@@ -2,6 +2,7 @@ import Cocoa
 import CLua
 import Lua
 import Carbon
+import HSDSTCore
 
 private let USERDATA_TAG = "hs.keycodes.callback"
 private var refTable: Int32 = LUA_NOREF
@@ -208,17 +209,19 @@ class MJKeycodesObserver: NSObject, LuaTeardownable {
     var lsCanary: UInt64 = UInt64()
     private var running = false
     private var tornDown = false
+    private var observerToken: (any NotificationObserverToken)?
 
     func teardown() {
         guard !tornDown else { return }
         tornDown = true
         if running {
             running = false
-            NotificationCenter.default.removeObserver(
-                self,
-                name: NSTextInputContext.keyboardSelectionDidChangeNotification,
-                object: nil
-            )
+            if let token = observerToken {
+                if let L = lua_getCurrentState() {
+                    environmentGet(L).notification.removeObserver(token)
+                }
+                observerToken = nil
+            }
         }
         if ref != LUA_NOREF {
             if let L = lua_getCurrentState() {
@@ -228,8 +231,14 @@ class MJKeycodesObserver: NSObject, LuaTeardownable {
         }
     }
 
-    @objc func inputSourceChanged(_ note: Notification) {
-        DispatchQueue.main.async { [weak self] in
+    func start() {
+        guard !running else { return }
+        running = true
+        let L = lua_getCurrentState()!
+        observerToken = environmentGet(L).notification.addObserver(
+            name: NSTextInputContext.keyboardSelectionDidChangeNotification.rawValue,
+            object: nil
+        ) { [weak self] userInfo in
             guard let self = self, self.ref != LUA_NOREF else { return }
             let L = lua_getCurrentState()!
             guard lua_isStateGenerationValid(self.lsCanary) else { return }
@@ -238,25 +247,14 @@ class MJKeycodesObserver: NSObject, LuaTeardownable {
         }
     }
 
-    func start() {
-        guard !running else { return }
-        running = true
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(inputSourceChanged(_:)),
-            name: NSTextInputContext.keyboardSelectionDidChangeNotification,
-            object: nil
-        )
-    }
-
     func stop() {
         guard running else { return }
         running = false
-        NotificationCenter.default.removeObserver(
-            self,
-            name: NSTextInputContext.keyboardSelectionDidChangeNotification,
-            object: nil
-        )
+        if let token = observerToken {
+            let L = lua_getCurrentState()!
+            environmentGet(L).notification.removeObserver(token)
+            observerToken = nil
+        }
     }
 }
 

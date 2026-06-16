@@ -1,6 +1,10 @@
 import Foundation
 import CLua
+import HSDSTCore
+import HSDSTSimulator
 @testable import HSSwiftExtensions
+
+@MainActor var testHarness: SimulatorHarness?
 
 @_silgen_name("MJLuaAlloc")
 func MJLuaAlloc()
@@ -52,7 +56,14 @@ private func doLuaString(_ L: UnsafeMutablePointer<lua_State>, _ s: String) -> I
 @MainActor
 func luaRunString(_ code: String) -> String? {
     bootstrapLuaForTesting()
+    globalEnvLock.lock()
+    defer {
+        environmentClearGlobal()
+        globalEnvLock.unlock()
+    }
     let L = lua_getCurrentState()!
+    let env = environmentGet(L)
+    environmentSetGlobal(env)
     let top = lua_gettop(L)
 
     let firstResult = top + 1
@@ -146,6 +157,14 @@ func bootstrapLuaForTesting() {
 
     let L = lua_getCurrentState()!
 
+    // Replace the production Environment with a simulated one for deterministic tests.
+    environmentDetach(L)
+    let harness = SimulatorHarness(seed: 42)
+    testHarness = harness
+    let simEnv = harness.createEnvironment()
+    environmentAttach(L, simEnv)
+    environmentSetGlobal(simEnv)
+
     // Create the "hs" global table with essential core functions
     var corelib: [luaL_Reg] = [
         luaL_Reg(name: strdup("getObjectMetatable"), func: test_getObjectMetatable),
@@ -157,6 +176,16 @@ func bootstrapLuaForTesting() {
 
     installLuaSkinCompatibilityGlobals(L)
     HSExtensionsRegisterAll(L)
+
+    // Register a C function that reads simulated clock time, so Lua can
+    // override os.time/os.date BEFORE any modules capture them at load time.
+    let simEpochTime: lua_CFunction = { L in
+        let env = environmentGet(L)
+        lua_pushnumber(L, lua_Number(env.clock.secondsSinceEpoch()))
+        return 1
+    }
+    lua_pushcfunction(L, simEpochTime)
+    lua_setglobal(L, "_simulated_epoch_time")
 
     let setupPath = appResources.appendingPathComponent("setup.lua").path
     let srcExtensions = repoRoot.appendingPathComponent("extensions").path
@@ -209,6 +238,19 @@ func bootstrapLuaForTesting() {
 
     package.preload['hs.notify'] = function()
         return { register = noop, show = noop }
+    end
+
+    -- Override os.time/os.date BEFORE setup.lua loads any modules that
+    -- capture these functions into locals (e.g. timer.lua line 12).
+    local _real_os_time = os.time
+    local _real_os_date = os.date
+    os.time = function(t)
+        if t then return _real_os_time(t) end
+        return math.floor(_simulated_epoch_time())
+    end
+    os.date = function(fmt, t)
+        if t then return _real_os_date(fmt, t) end
+        return _real_os_date(fmt, math.floor(_simulated_epoch_time()))
     end
     """
     let preBootResult = doLuaString(L, preBootLua)
@@ -263,4 +305,8 @@ func bootstrapLuaForTesting() {
         lua_settop(L, lua_gettop(L) - 1)
     }
     lua_settop(L, 0)
+
+    // Clear the global environment after bootstrap completes.
+    // luaRunString() will re-set it under globalEnvLock for each call.
+    environmentClearGlobal()
 }

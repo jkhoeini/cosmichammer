@@ -1574,6 +1574,75 @@ LuaSkin → LuaSwift).
     - Startup/reload callbacks cannot crash only because Lua state is nil/stale.
     - Config/defaults ordering is documented and covered by tests.
 
+* TODO — DST Userdata Migration (6 remaining extensions)
+
+  Six extensions store real OS objects as Lua userdata, bypassing the DST
+  protocol layer. Each needs its userdata rewritten to use handle-based
+  or selective protocol routing so tests run deterministically.
+
+  Architecture plan: ~.claude-plans/userdata-dst-architecture.md~
+
+  Safeguards:
+  - Production protocol implementations must be behavioral clones of direct OS calls.
+  - Run full test suite after each phase — 687 tests must not regress.
+  - Side-table state (~deviceCallbacks~, ~originalGammas~) must move to protocol layer.
+  - No new protocol methods should have default implementations.
+
+** TODO Phase 1: Audiodevice — Handle-Based (LOW risk, ~720 lines)
+   Replace ~25 direct ~AudioObjectGetPropertyData~ calls with
+   ~environmentGet(L).audio.method()~. Userdata already stores
+   ~AudioDeviceID~ (UInt32) — just needs routing through protocol.
+
+   Expand ~AudioProtocol~ with ~12 new methods (UID, manufacturer,
+   transport type, sample rate ranges, balance/pan). Handle
+   ~audiodevice_callback~ which receives raw AudioDeviceID from CoreAudio;
+   data source sub-userdata needs protocol expansion.
+
+** TODO Phase 2: Screen — Handle-Based (MODERATE risk, ~440 lines)
+   Replace ~NSScreen~ userdata with ~UInt32~ screen ID. Change
+   ~new_screen(L, NSScreen)~ to ~new_screen(L, UInt32)~, rewrite ~18
+   instance methods.
+
+   Expand ~ScreenProtocol~ with 6 new methods (UUID, display info, mirror,
+   setPrimary, setOrigin, desktopImageURL). Risk:
+   ~screen_desktopImageURL~ needs real NSScreen; module-level gamma state
+   needs coordination.
+
+** TODO Phase 3: Window — Handle-Based (MODERATE risk, ~400 lines)
+   Replace ~HSwindow~ userdata with ~UInt32~ window ID. Rewrite ~20
+   instance methods to call ~environmentGet(L).window.method(forWindowID:)~.
+
+   Must coordinate with Phase 4 (accessibility) since HSwindow is shared.
+   Cross-extension coupling: ~application:allWindows()~ returns HSwindow
+   objects.
+
+** TODO Phase 4: Accessibility/UIElement — Phased Adapter (HIGH risk, ~500 lines)
+   Most deeply coupled: HSuielement/HSwindow/HSapplication store AXUIElement
+   refs. 72+ direct AXUIElement API calls in ~HSuicore.swift~.
+
+   3 sub-phases: add optional protocol handle → dual-path methods →
+   test-only protocol path. Risk: ~HSuicoreProtocols.swift~ used by ObjC
+   runtime; watcher callbacks create objects from raw AX refs;
+   ~NSRunningApplication~ not covered by any protocol.
+
+** TODO Phase 5: Eventtap — Selective+Handle Hybrid (HIGH risk, ~580 lines)
+   CGEvent is mutable reference type with ~60 properties; full simulation
+   impractical. Migrate tap management + event creation + posting through
+   protocol. Leave CGEvent property access via handle indirection.
+
+   Expand ~InputProtocol~ with ~15 new handle-based methods. Risk:
+   ~NSEvent(cgEvent:)~ bridge cannot be simulated; ~eventtapCallback~
+   receives raw CGEvent from OS.
+
+** TODO Phase 6: WebView — Selective (LOW risk, ~200 lines)
+   Only migrate ~10 core operations (create, navigate, eval JS, show/hide).
+   Leave unsimulated: Toolbar (1,629 lines), user content, data store,
+   navigation delegate callbacks, certificate inspection.
+
+** TODO Production implementation stubs (5 remaining)
+   Five production protocol implementations are stub-only and need real OS
+   API wrappers: StatusBar, Bonjour, Drawing, Certificate, Media.
+
 * Investigated — not worth doing
 
 ** SKIP Make generators Xcode build-time phases
@@ -1662,3 +1731,32 @@ LuaSkin → LuaSwift).
 ** DONE Fix LuaSkin pushNSObject for private Swift classes
 ** DONE Fix unsafe force casts in FSEvents and CF callbacks
 ** DONE Evaluate LuaSkin's long-term role → removed entirely
+
+* DONE — DST Protocol Coverage (2026-06-16)
+  Completed 2026-06-16.
+  Created 15 new DST protocols, 15 simulators, and 15 production stubs
+  covering all remaining uncovered OS API categories. Updated
+  ~Environment.swift~, ~SimulatorHarness.swift~, ~FaultConfig.swift~,
+  and ~ProductionEnvironment.swift~ to wire all 27 subsystems (12
+  existing + 15 new). Build verified green.
+
+** CRITICAL (directly unblock failing tests)
+*** DONE WindowProtocol — CGWindowListCopy*, window positioning/sizing/minimizing/closing, window level, window screenshots
+*** DONE AccessibilityProtocol — AXUIElementCreate*, AXObserver*, attribute get/set, action performance
+*** DONE InputProtocol — CGEventTapCreate, CGEventPost, keyboard/mouse/scroll event creation
+*** DONE AudioProtocol — AudioObject property data, device listing/volume/mute/sample rate/data source
+*** DONE SocketProtocol — NWConnection, NWListener, TCP/UDP socket creation/connect/send/receive
+
+** HIGH
+*** DONE SpeechProtocol — NSSpeechSynthesizer, NSSpeechRecognizer, speaking/listening/voices
+*** DONE SpacesProtocol — CGSSpaceGetType, space enumeration, active space, window-to-space mapping
+*** DONE WebViewProtocol — WKWebView creation/navigation/JS execution, data store, user content
+*** DONE AutomationProtocol — NSAppleScript, OSAScript execution, Apple Events, URL handling
+*** DONE FileWatchingProtocol — FSEventStreamCreate, start/stop/paths, callback delivery
+
+** MEDIUM
+*** DONE DeviceProtocol — USB enumeration/watching, serial port management, MIDI devices
+*** DONE CameraProtocol — AVCaptureSession/Device, sample buffer, snapshot
+*** DONE SearchProtocol — MDQueryCreate/Execute, Spotlight search results
+*** DONE LoginItemProtocol — SMLoginItemSetEnabled, login item state
+*** DONE DialogProtocol — NSSavePanel, NSOpenPanel, NSAlert, color panel, text input

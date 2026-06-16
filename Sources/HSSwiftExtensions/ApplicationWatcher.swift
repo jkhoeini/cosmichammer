@@ -1,6 +1,7 @@
 import Cocoa
 import CLua
 import Lua
+import HSDSTCore
 
 // MARK: - Module constants
 
@@ -24,19 +25,21 @@ private class AppWatcher: NSObject, LuaTeardownable {
     var callbackRef: LuaValue?
     var generation: UInt64 = 0
     private var tornDown = false
+    private var observerTokens: [any NotificationObserverToken] = []
+    private weak var notificationRef: (any NotificationProtocol)?
 
     func teardown() {
         guard !tornDown else { return }
         tornDown = true
         if running {
             running = false
-            unregisterObserver()
+            unregisterObservers()
         }
         callbackRef = nil
     }
 
-    func callback(_ dict: [AnyHashable: Any], event: AppWatcherEvent) {
-        guard let app = dict["NSWorkspaceApplicationKey" as NSString] as? NSRunningApplication else { return }
+    func callback(_ dict: [String: Any], event: AppWatcherEvent) {
+        guard let app = dict["NSWorkspaceApplicationKey"] as? NSRunningApplication else { return }
         guard running else { return }
         guard lua_isStateGenerationValid(generation) else { return }
 
@@ -46,7 +49,7 @@ private class AppWatcher: NSObject, LuaTeardownable {
         // Fallback to the application name provided directly in the notification dict.
         var appName = app.localizedName
         if appName == nil {
-            appName = dict["NSApplicationName" as NSString] as? String
+            appName = dict["NSApplicationName"] as? String
         }
 
         guard let cb = callbackRef else { return }
@@ -77,55 +80,33 @@ private class AppWatcher: NSObject, LuaTeardownable {
         }
     }
 
-    func registerObserver() {
-        let center = NSWorkspace.shared.notificationCenter
-        center.addObserver(self, selector: #selector(applicationWillLaunch(_:)),
-                           name: NSWorkspace.willLaunchApplicationNotification, object: nil)
-        center.addObserver(self, selector: #selector(applicationLaunched(_:)),
-                           name: NSWorkspace.didLaunchApplicationNotification, object: nil)
-        center.addObserver(self, selector: #selector(applicationTerminated(_:)),
-                           name: NSWorkspace.didTerminateApplicationNotification, object: nil)
-        center.addObserver(self, selector: #selector(applicationHidden(_:)),
-                           name: NSWorkspace.didHideApplicationNotification, object: nil)
-        center.addObserver(self, selector: #selector(applicationUnhidden(_:)),
-                           name: NSWorkspace.didUnhideApplicationNotification, object: nil)
-        center.addObserver(self, selector: #selector(applicationActivated(_:)),
-                           name: NSWorkspace.didActivateApplicationNotification, object: nil)
-        center.addObserver(self, selector: #selector(applicationDeactivated(_:)),
-                           name: NSWorkspace.didDeactivateApplicationNotification, object: nil)
+    func registerObservers(_ L: UnsafeMutablePointer<lua_State>!) {
+        let notification = environmentGet(L).notification
+        notificationRef = notification
+
+        let events: [(String, AppWatcherEvent)] = [
+            (NSWorkspace.willLaunchApplicationNotification.rawValue, .launching),
+            (NSWorkspace.didLaunchApplicationNotification.rawValue, .launched),
+            (NSWorkspace.didTerminateApplicationNotification.rawValue, .terminated),
+            (NSWorkspace.didHideApplicationNotification.rawValue, .hidden),
+            (NSWorkspace.didUnhideApplicationNotification.rawValue, .unhidden),
+            (NSWorkspace.didActivateApplicationNotification.rawValue, .activated),
+            (NSWorkspace.didDeactivateApplicationNotification.rawValue, .deactivated),
+        ]
+
+        for (name, event) in events {
+            let token = notification.addWorkspaceObserver(name: name, object: nil) { [weak self] userInfo in
+                self?.callback(userInfo, event: event)
+            }
+            observerTokens.append(token)
+        }
     }
 
-    func unregisterObserver() {
-        let center = NSWorkspace.shared.notificationCenter
-        center.removeObserver(self, name: NSWorkspace.willLaunchApplicationNotification, object: nil)
-        center.removeObserver(self, name: NSWorkspace.didLaunchApplicationNotification, object: nil)
-        center.removeObserver(self, name: NSWorkspace.didTerminateApplicationNotification, object: nil)
-        center.removeObserver(self, name: NSWorkspace.didHideApplicationNotification, object: nil)
-        center.removeObserver(self, name: NSWorkspace.didUnhideApplicationNotification, object: nil)
-        center.removeObserver(self, name: NSWorkspace.didActivateApplicationNotification, object: nil)
-        center.removeObserver(self, name: NSWorkspace.didDeactivateApplicationNotification, object: nil)
-    }
-
-    @objc private func applicationWillLaunch(_ notification: Notification) {
-        callback((notification.userInfo ?? [:]) as [AnyHashable: Any], event: .launching)
-    }
-    @objc private func applicationLaunched(_ notification: Notification) {
-        callback((notification.userInfo ?? [:]) as [AnyHashable: Any], event: .launched)
-    }
-    @objc private func applicationTerminated(_ notification: Notification) {
-        callback((notification.userInfo ?? [:]) as [AnyHashable: Any], event: .terminated)
-    }
-    @objc private func applicationHidden(_ notification: Notification) {
-        callback((notification.userInfo ?? [:]) as [AnyHashable: Any], event: .hidden)
-    }
-    @objc private func applicationUnhidden(_ notification: Notification) {
-        callback((notification.userInfo ?? [:]) as [AnyHashable: Any], event: .unhidden)
-    }
-    @objc private func applicationActivated(_ notification: Notification) {
-        callback((notification.userInfo ?? [:]) as [AnyHashable: Any], event: .activated)
-    }
-    @objc private func applicationDeactivated(_ notification: Notification) {
-        callback((notification.userInfo ?? [:]) as [AnyHashable: Any], event: .deactivated)
+    func unregisterObservers() {
+        for token in observerTokens {
+            notificationRef?.removeObserver(token)
+        }
+        observerTokens.removeAll()
     }
 }
 
@@ -159,7 +140,7 @@ public func luaopen_hs_libapplicationwatcher(_ L: UnsafeMutablePointer<lua_State
                     lua_settop(L, 1)
                     if !watcher.running {
                         watcher.running = true
-                        watcher.registerObserver()
+                        watcher.registerObservers(L)
                     }
                     return 1
                 },
@@ -168,7 +149,7 @@ public func luaopen_hs_libapplicationwatcher(_ L: UnsafeMutablePointer<lua_State
                     lua_settop(L, 1)
                     if watcher.running {
                         watcher.running = false
-                        watcher.unregisterObserver()
+                        watcher.unregisterObservers()
                     }
                     return 1
                 },

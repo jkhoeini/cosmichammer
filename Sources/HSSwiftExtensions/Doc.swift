@@ -1,5 +1,6 @@
 import Cocoa
 import CLua
+import HSDSTCore
 import Lua
 import os.log
 
@@ -79,7 +80,7 @@ private extension String {
 
 private func processRegisteredFile(_ L: UnsafeMutablePointer<lua_State>!, _ path: NSString) -> Bool {
 
-    guard let obj = loadAndParseJSON(path) else { return false }
+    guard let obj = loadAndParseJSON(L, path) else { return false }
 
     (registeredFiles[path] as! NSMutableDictionary)["json"] = obj
 
@@ -103,20 +104,21 @@ private func processRegisteredFile(_ L: UnsafeMutablePointer<lua_State>!, _ path
 }
 
 /// Loads a file and parses it as JSON, returning nil on failure.
-private func loadAndParseJSON(_ path: NSString) -> Any? {
+private func loadAndParseJSON(_ L: UnsafeMutablePointer<lua_State>!, _ path: NSString) -> Any? {
+    let fs = environmentGet(L).fileSystem
     // TigerStyle: pre-check file size before loading entire doc JSON file
     do {
-        let attrs = try FileManager.default.attributesOfItem(atPath: path as String)
-        if let fileSize = attrs[.size] as? UInt64, fileSize > kMaxDocFileSize {
-            os_log(.error, "%{public}s", "\(USERDATA_TAG).processRegisteredFile - file '\(path)' is \(fileSize) bytes, exceeds kMaxDocFileSize (\(kMaxDocFileSize) bytes)")
+        let attrs = try fs.attributesOfItem(atPath: path as String)
+        if attrs.size > kMaxDocFileSize {
+            os_log(.error, "%{public}s", "\(USERDATA_TAG).processRegisteredFile - file '\(path)' is \(attrs.size) bytes, exceeds kMaxDocFileSize (\(kMaxDocFileSize) bytes)")
             return nil
         }
     } catch {
-        // If stat fails, let the Data read attempt produce the real error below
+        // If stat fails, let the contentsOfFile attempt produce the real error below
     }
     let rawFile: Data
     do {
-        rawFile = try Data(contentsOf: URL(fileURLWithPath: path as String), options: .mappedIfSafe)
+        rawFile = try fs.contentsOfFile(atPath: path as String)
     } catch let e as NSError {
         os_log(.error, "%{public}s", "\(USERDATA_TAG).processRegisteredFile - unable to open '\(path)' (\(e.localizedDescription))")
         return nil

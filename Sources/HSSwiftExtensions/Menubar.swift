@@ -3,6 +3,7 @@ import CLua
 import Lua
 import Carbon
 import os.log
+import HSDSTCore
 
 // MARK: - Definitions
 
@@ -53,10 +54,10 @@ func menubarNew(_ L: LuaState) throws -> CInt {
 
         let preferredPositionString = "NSStatusItem Preferred Position"
         var key = "HS\(preferredPositionString) \(autosaveName)"
-        let autosaveValue = UserDefaults.standard.object(forKey: key) as? NSNumber
+        let autosaveValue = environmentGet(L).settings.object(forKey: key) as? NSNumber
 
         key = "\(preferredPositionString) \(autosaveName)"
-        UserDefaults.standard.set(autosaveValue, forKey: key)
+        environmentGet(L).settings.set(autosaveValue, forKey: key)
 
         statusItem.autosaveName = NSStatusItem.AutosaveName(autosaveName)
     }
@@ -100,10 +101,10 @@ func menubar_autosaveName(_ L: LuaState) throws -> CInt {
 
         let preferredPositionString = "NSStatusItem Preferred Position"
         var key = "HS\(preferredPositionString) \(autosaveName)"
-        let autosaveValue = UserDefaults.standard.object(forKey: key) as? NSNumber
+        let autosaveValue = environmentGet(L).settings.object(forKey: key) as? NSNumber
 
         key = "\(preferredPositionString) \(autosaveName)"
-        UserDefaults.standard.set(autosaveValue, forKey: key)
+        environmentGet(L).settings.set(autosaveValue, forKey: key)
 
         menuItem.autosaveName = NSStatusItem.AutosaveName(autosaveName)
 
@@ -358,10 +359,10 @@ func menubar_delete(_ L: LuaState) throws -> CInt {
     if let autosaveName = statusItem.autosaveName {
         let preferredPositionString = "NSStatusItem Preferred Position"
         var key = "\(preferredPositionString) \(autosaveName)"
-        let autosaveValue = UserDefaults.standard.object(forKey: key) as? NSNumber
+        let autosaveValue = environmentGet(L).settings.object(forKey: key) as? NSNumber
 
         key = "HS\(preferredPositionString) \(autosaveName)"
-        UserDefaults.standard.set(autosaveValue, forKey: key)
+        environmentGet(L).settings.set(autosaveValue, forKey: key)
     }
 
     // Remove any click callback the menubar item has
@@ -412,7 +413,7 @@ func menubar_render(_ L: LuaState) throws -> CInt {
             if lua_type(L, 3) == LUA_TBOOLEAN {
                 darkMode = lua_toboolean(L, 3) != 0
             } else {
-                let ifStyle = UserDefaults.standard.string(forKey: "AppleInterfaceStyle")
+                let ifStyle = environmentGet(L).settings.string(forKey: "AppleInterfaceStyle")
                 darkMode = ifStyle == "Dark"
             }
             lua_remove(L, 3)
@@ -446,7 +447,9 @@ func menubar_render(_ L: LuaState) throws -> CInt {
         return 1
     }
 
-    menuPoint.y = NSScreen.screens[0].frame.size.height - menuPoint.y
+    let env = environmentGet(L)
+    let screenHeight = env.screen.allScreens().first?.frame.height ?? NSScreen.screens[0].frame.size.height
+    menuPoint.y = screenHeight - menuPoint.y
 
     (menu as AnyObject).popUpMenuPositioningItem?(nil, atLocation: menuPoint, in: nil, appearance: appearance)
 

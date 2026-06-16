@@ -1,6 +1,7 @@
 import Cocoa
 import CLua
 import Lua
+import HSDSTCore
 import os.log
 
 // TigerStyle bounds: maximum JSON file size (100 MB)
@@ -44,7 +45,7 @@ class HSjson {
         }
     }
 
-    func encodeToFile(_ obj: Any, filePath path: String, replace: Bool, prettyPrint: Bool) -> Bool {
+    func encodeToFile(_ obj: Any, filePath path: String, replace: Bool, prettyPrint: Bool, fs: any FileSystemProtocol) -> Bool {
         guard let json = encode(obj, prettyPrint: prettyPrint) else {
             os_log(.error, "Failed to write object to JSON file")
             return false
@@ -55,11 +56,12 @@ class HSjson {
             return false
         }
 
-        // Note to future optimisers: We can't use NSString's file writing method
-        //  because it unconditionally overwrites files.
         do {
-            let options: NSData.WritingOptions = replace ? .atomic : .withoutOverwriting
-            try data.write(to: URL(fileURLWithPath: path), options: options)
+            if !replace && fs.fileExists(atPath: path) {
+                os_log(.error, "File already exists at %{public}s and replace is false", path)
+                return false
+            }
+            try fs.writeFile(atPath: path, contents: data, atomically: replace)
             return true
         } catch {
             os_log(.error, "Error writing JSON to file: %{public}s", error.localizedDescription)
@@ -67,19 +69,18 @@ class HSjson {
         }
     }
 
-    func decodeFromFile(_ path: String) -> Any? {
-        // TigerStyle: pre-check file size before loading entire JSON file
+    func decodeFromFile(_ path: String, fs: any FileSystemProtocol) -> Any? {
         do {
-            let attrs = try FileManager.default.attributesOfItem(atPath: path)
-            if let fileSize = attrs[.size] as? UInt64, fileSize > kMaxJSONFileSize {
-                os_log(.error, "JSON file '%{public}s' is %llu bytes, exceeds kMaxJSONFileSize (%llu bytes)", path, fileSize, kMaxJSONFileSize)
+            let attrs = try fs.attributesOfItem(atPath: path)
+            if attrs.size > kMaxJSONFileSize {
+                os_log(.error, "JSON file '%{public}s' is %llu bytes, exceeds kMaxJSONFileSize (%llu bytes)", path, attrs.size, kMaxJSONFileSize)
                 return nil
             }
         } catch {
-            // If stat fails, let the Data read attempt produce the real error below
+            // If stat fails, let the read attempt produce the real error below
         }
         do {
-            let json = try Data(contentsOf: URL(fileURLWithPath: path))
+            let json = try fs.contentsOfFile(atPath: path)
             return decode(json)
         } catch {
             os_log(.error, "Error reading JSON from file: %{public}s", error.localizedDescription)
@@ -170,7 +171,7 @@ private func json_write(_ L: LuaState) throws -> CInt {
     let prettyPrint = lua_toboolean(L, 3) != 0
     let replace = lua_toboolean(L, 4) != 0
 
-    let result = jsonManager.encodeToFile(table, filePath: filePath, replace: replace, prettyPrint: prettyPrint)
+    let result = jsonManager.encodeToFile(table, filePath: filePath, replace: replace, prettyPrint: prettyPrint, fs: environmentGet(L).fileSystem)
 
     L.push(result)
     return 1
@@ -192,7 +193,7 @@ private func json_read(_ L: LuaState) throws -> CInt {
 
     let filePath = (pathStr as NSString).expandingTildeInPath
 
-    let table = jsonManager.decodeFromFile(filePath)
+    let table = jsonManager.decodeFromFile(filePath, fs: environmentGet(L).fileSystem)
     lua_pushany(L, table)
     return 1
 }

@@ -2,6 +2,7 @@ import Cocoa
 import CLua
 import Lua
 import Foundation
+import HSDSTCore
 import os.log
 
 private let USERDATA_TAG = "hs.task"
@@ -44,7 +45,8 @@ private class HSTask: NSObject {
 }
 
 private var activeTasks: [HSTask] = []
-private var fileReadObserver: Any?
+private var fileReadObserver: (any NotificationObserverToken)?
+private weak var fileReadNotificationRef: (any NotificationProtocol)?
 
 // MARK: - Helper functions
 
@@ -245,7 +247,7 @@ private func task_metagc(_ L: LuaState) throws -> CInt {
     precondition(L != nil, "Lua state must not be nil")
     activeTasks.removeAll()
     if let observer = fileReadObserver {
-        NotificationCenter.default.removeObserver(observer)
+        fileReadNotificationRef?.removeObserver(observer)
         fileReadObserver = nil
     }
     assert(activeTasks.isEmpty, "activeTasks must be empty after module gc")
@@ -516,10 +518,14 @@ public func luaopen_hs_libtask(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 
         activeTasks = []
 
-        let nc = NotificationCenter.default
-        fileReadObserver = nc.addObserver(forName: FileHandle.readCompletionNotification, object: nil, queue: nil) { note in
-            guard let fh = note.object as? FileHandle,
-                  let fhData = note.userInfo?[NSFileHandleNotificationDataItem] as? Data,
+        let notif = environmentGet(L).notification
+        fileReadNotificationRef = notif
+        fileReadObserver = notif.addObserver(
+            name: FileHandle.readCompletionNotification.rawValue,
+            object: nil
+        ) { userInfo in
+            guard let fh = userInfo["__notificationObject"] as? FileHandle,
+                  let fhData = userInfo[NSFileHandleNotificationDataItem as String] as? Data,
                   !fhData.isEmpty else {
                 return
             }

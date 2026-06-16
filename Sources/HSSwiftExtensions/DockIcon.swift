@@ -1,4 +1,5 @@
 import Cocoa
+import HSDSTCore
 
 @_cdecl("MJDockIconSetup")
 func MJDockIconSetup() {
@@ -7,23 +8,37 @@ func MJDockIconSetup() {
 
 @_cdecl("MJDockIconVisible")
 func MJDockIconVisible() -> Bool {
-    UserDefaults.standard.bool(forKey: "MJShowDockIconKey")
+    if let env = environmentGetGlobalOrNil() {
+        return env.settings.bool(forKey: "MJShowDockIconKey")
+    }
+    return UserDefaults.standard.bool(forKey: "MJShowDockIconKey")
 }
 
 @_cdecl("MJDockIconSetVisible")
 func MJDockIconSetVisible(_ visible: Bool) {
-    UserDefaults.standard.set(visible, forKey: "MJShowDockIconKey")
+    if let env = environmentGetGlobalOrNil() {
+        env.settings.set(visible, forKey: "MJShowDockIconKey")
+    } else {
+        UserDefaults.standard.set(visible, forKey: "MJShowDockIconKey")
+    }
     reflectDockDefaults()
 }
 
 @_cdecl("HSOpenConsoleOnDockClickEnabled")
 func HSOpenConsoleOnDockClickEnabled() -> Bool {
-    UserDefaults.standard.bool(forKey: "HSOpenConsoleOnDockClickKey")
+    if let env = environmentGetGlobalOrNil() {
+        return env.settings.bool(forKey: "HSOpenConsoleOnDockClickKey")
+    }
+    return UserDefaults.standard.bool(forKey: "HSOpenConsoleOnDockClickKey")
 }
 
 @_cdecl("HSOpenConsoleOnDockClickSetEnabled")
 func HSOpenConsoleOnDockClickSetEnabled(_ enabled: Bool) {
-    UserDefaults.standard.set(enabled, forKey: "HSOpenConsoleOnDockClickKey")
+    if let env = environmentGetGlobalOrNil() {
+        env.settings.set(enabled, forKey: "HSOpenConsoleOnDockClickKey")
+    } else {
+        UserDefaults.standard.set(enabled, forKey: "HSOpenConsoleOnDockClickKey")
+    }
 }
 
 private func reflectDockDefaults() {

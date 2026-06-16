@@ -10,6 +10,7 @@ import Foundation
 import AppKit
 import CLua
 import os.log
+import HSDSTCore
 
 // Log level constants (formerly from LuaSkin's Skin.h)
 private let LS_LOG_ERROR: Int32      = 1
@@ -70,12 +71,21 @@ class HSLogger: NSObject {
     }
 
     func handleCatastrophe(_ message: String) {
-        let alert = NSAlert()
-        alert.messageText = message
-        alert.informativeText = "Cosmic Hammer critical error."
-        alert.addButton(withTitle: "Quit")
-        alert.alertStyle = .critical
-        alert.runModal()
+        let config = DialogConfig(
+            message: message,
+            informativeText: "Cosmic Hammer critical error.",
+            buttons: ["Quit"]
+        )
+        if let env = environmentGetGlobalOrNil() {
+            env.dialog.showAlert(config: config)
+        } else {
+            let alert = NSAlert()
+            alert.messageText = message
+            alert.informativeText = "Cosmic Hammer critical error."
+            alert.addButton(withTitle: "Quit")
+            alert.alertStyle = .critical
+            alert.runModal()
+        }
         exit(1)
     }
 

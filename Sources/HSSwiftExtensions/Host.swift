@@ -1,6 +1,7 @@
 import Cocoa
 import CLua
 import Lua
+import HSDSTCore
 import Darwin.sys.sysctl
 import Darwin.POSIX.sys.types
 import Darwin.Mach
@@ -21,10 +22,7 @@ import IOKit
 /// Notes:
 ///  * The results will include IPv4 and IPv6 addresses
 private func hostAddresses(_ L: LuaState) throws -> CInt {
-    guard let addresses = Host.current().addresses as [String]? else {
-        lua_pushnil(L)
-        return 1
-    }
+    let addresses = environmentGet(L).systemInfo.addresses()
 
     lua_newtable(L)
     var i: lua_Integer = 1
@@ -344,14 +342,15 @@ private func hs_operatingSystemVersionString(_ L: LuaState) throws -> CInt {
 /// Returns:
 ///  * The system's thermal state as a human readable string
 private func hs_thermalStateString(_ L: LuaState) throws -> CInt {
-    let state = ProcessInfo.processInfo.thermalState
+    let state = environmentGet(L).systemInfo.thermalState()
+    // Protocol returns Int: 0=nominal, 1=fair, 2=serious, 3=critical
     let returnState: String
     switch state {
-    case .nominal:  returnState = "nominal"
-    case .fair:     returnState = "fair"
-    case .serious:  returnState = "serious"
-    case .critical: returnState = "critical"
-    @unknown default: returnState = "unknown"
+    case 0:  returnState = "nominal"
+    case 1:  returnState = "fair"
+    case 2:  returnState = "serious"
+    case 3:  returnState = "critical"
+    default: returnState = "unknown"
     }
 
     L.push(returnState)
@@ -373,13 +372,13 @@ private func hs_thermalStateString(_ L: LuaState) throws -> CInt {
 ///    * for OS X versions prior to 10.10, the version number is approximately determined by evaluating the AppKitVersionNumber.  For these operating systems, the `approximate` key is defined and set to true, as the exact patch level cannot be definitively determined.
 ///    * for OS X Versions starting at 10.10 and going forward, an exact value for the version number can be determined with NSProcessingInfo's `operatingSystemVersion` selector and the `exact` key is defined and set to true if this method is used.
 private func hs_operatingSystemVersion(_ L: LuaState) throws -> CInt {
-    let osv = ProcessInfo.processInfo.operatingSystemVersion
+    let osv = environmentGet(L).systemInfo.operatingSystemVersion()
 
     lua_newtable(L)
-    L.push(lua_Integer(osv.majorVersion)); lua_setfield(L, -2, "major")
-    L.push(lua_Integer(osv.minorVersion)); lua_setfield(L, -2, "minor")
-    L.push(lua_Integer(osv.patchVersion)); lua_setfield(L, -2, "patch")
-    L.push(true);                          lua_setfield(L, -2, "exact")
+    L.push(lua_Integer(osv.major)); lua_setfield(L, -2, "major")
+    L.push(lua_Integer(osv.minor)); lua_setfield(L, -2, "minor")
+    L.push(lua_Integer(osv.patch)); lua_setfield(L, -2, "patch")
+    L.push(true);                   lua_setfield(L, -2, "exact")
 
     return 1
 }
@@ -397,7 +396,7 @@ private func hs_operatingSystemVersion(_ L: LuaState) throws -> CInt {
 /// Notes:
 ///  * As of OS X 10.10.4, other than the default style, only "Dark" is recognized as a valid style.
 private func hs_interfaceStyle(_ L: LuaState) throws -> CInt {
-    if let style = UserDefaults.standard.string(forKey: "AppleInterfaceStyle") {
+    if let style = environmentGet(L).settings.string(forKey: "AppleInterfaceStyle") {
         L.push(style)
     } else {
         lua_pushnil(L)

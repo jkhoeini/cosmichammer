@@ -4,6 +4,7 @@ import Lua
 import Carbon
 import IOKit.graphics
 import os.log
+import HSDSTCore
 
 private let USERDATA_TAG = "hs.screen"
 
@@ -83,19 +84,6 @@ private func CGSGetDisplayModeDescriptionOfLength(_ display: CGDirectDisplayID, 
 
 // IOKit private constant
 private let kIOFBSetTransform: UInt32 = 0x00000400
-
-// CoreGraphics private APIs
-@_silgen_name("CGDisplayUsesForceToGray")
-private func CGDisplayUsesForceToGray() -> Bool
-
-@_silgen_name("CGDisplayForceToGray")
-private func CGDisplayForceToGray(_ forceToGray: Bool)
-
-@_silgen_name("CGDisplayUsesInvertedPolarity")
-private func CGDisplayUsesInvertedPolarity() -> Bool
-
-@_silgen_name("CGDisplaySetInvertedPolarity")
-private func CGDisplaySetInvertedPolarity(_ invertedPolarity: Bool)
 
 // MARK: - Module-level state
 
@@ -349,7 +337,7 @@ private func screen_setMode(_ L: LuaState) throws -> CInt {
 ///  * This returns all displays to the gamma tables specified by the user's selected ColorSync display profiles
 private func screen_gammaRestore(_ L: LuaState) throws -> CInt {
 
-    CGDisplayRestoreColorSyncSettings()
+    environmentGet(L).screen.restoreGamma()
     currentGammas.removeAllObjects()
 
     return 0
@@ -727,7 +715,7 @@ private func screen_getDisplayInfo(_ L: LuaState) throws -> CInt {
 ///  * A boolean, true if the ForceToGray mode is set, otherwise false
 private func screen_getForceToGray(_ L: LuaState) throws -> CInt {
 
-    L.push(CGDisplayUsesForceToGray())
+    L.push(environmentGet(L).screen.usesForceToGray())
     return 1
 }
 
@@ -742,7 +730,7 @@ private func screen_getForceToGray(_ L: LuaState) throws -> CInt {
 ///  * None
 private func screen_setForceToGray(_ L: LuaState) throws -> CInt {
 
-    CGDisplayForceToGray(lua_toboolean(L, 1) != 0)
+    environmentGet(L).screen.setForceToGray(lua_toboolean(L, 1) != 0)
     return 0
 }
 
@@ -757,7 +745,7 @@ private func screen_setForceToGray(_ L: LuaState) throws -> CInt {
 ///  * A boolean, true if the InvertedPolarity mode is set, otherwise false
 private func screen_getInvertedPolarity(_ L: LuaState) throws -> CInt {
 
-    L.push(CGDisplayUsesInvertedPolarity())
+    L.push(environmentGet(L).screen.usesInvertedPolarity())
     return 1
 }
 
@@ -772,7 +760,7 @@ private func screen_getInvertedPolarity(_ L: LuaState) throws -> CInt {
 ///  * None
 private func screen_setInvertedPolarity(_ L: LuaState) throws -> CInt {
 
-    CGDisplaySetInvertedPolarity(lua_toboolean(L, 1) != 0)
+    environmentGet(L).screen.setInvertedPolarity(lua_toboolean(L, 1) != 0)
     return 0
 }
 

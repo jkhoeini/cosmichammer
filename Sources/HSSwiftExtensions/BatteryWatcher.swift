@@ -2,6 +2,7 @@ import Cocoa
 import CLua
 import Lua
 import IOKit.ps
+import HSDSTCore
 
 /// === hs.battery.watcher ===
 ///

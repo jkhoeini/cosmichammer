@@ -1,5 +1,6 @@
 import Cocoa
 import CLua
+import HSDSTCore
 import Lua
 import os.log
 import AVFoundation
@@ -602,8 +603,8 @@ private func imageFromApp(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TSTRING)
 
     var imagePath = ""
-    if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: lua_tovalue(L, at: 1) as! String) {
-        imagePath = url.path
+    if let path = environmentGet(L).workspace.urlForApplicationWithBundleIdentifier(lua_tovalue(L, at: 1) as! String) {
+        imagePath = path
     }
 
     let iconImage = !imagePath.isEmpty ? NSWorkspace.shared.icon(forFile: imagePath) : missingIconForFile
@@ -698,9 +699,11 @@ private func imageFromMediaFile(_ L: LuaState) throws -> CInt {
     var theImage: NSImage?
 
     // Bail if bad path
-    guard FileManager.default.fileExists(atPath: theFilePath, isDirectory: &isDirectory) else {
+    let fs = environmentGet(L).fileSystem
+    guard fs.fileExists(atPath: theFilePath) else {
         return try imageForFiles(L)
     }
+    isDirectory = ObjCBool(fs.isDirectory(atPath: theFilePath))
 
     // If file has a movie UTI, try to generate an image from it
     let ext = (theFilePath as NSString).pathExtension
@@ -719,9 +722,7 @@ private func imageFromMediaFile(_ L: LuaState) throws -> CInt {
     if theImage == nil {
         if !isDirectory.boolValue {
             let fileParent = (URL(fileURLWithPath: theFilePath).deletingLastPathComponent()).path
-            var isDirCheck: ObjCBool = false
-            FileManager.default.fileExists(atPath: fileParent, isDirectory: &isDirCheck)
-            if isDirCheck.boolValue { theDirectory = fileParent }
+            if fs.isDirectory(atPath: fileParent) { theDirectory = fileParent }
         } else {
             theDirectory = theFilePath
         }
@@ -729,7 +730,7 @@ private func imageFromMediaFile(_ L: LuaState) throws -> CInt {
         // Attempt to get image from very common album artwork filenames
         for coverArtFile in ["cover", "front", "art", "album", "folder"] {
             let imagePath = "\(theDirectory ?? "")/\(coverArtFile).jpg"
-            if FileManager.default.fileExists(atPath: imagePath) {
+            if fs.fileExists(atPath: imagePath) {
                 let img = NSImage(byReferencingFile: imagePath)
                 if let img = img, img.isValid {
                     theImage = img

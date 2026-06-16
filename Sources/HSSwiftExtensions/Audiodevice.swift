@@ -1,3 +1,4 @@
+import HSDSTCore
 import Cocoa
 import CLua
 import Lua
@@ -87,7 +88,7 @@ private func audiodevice_callback(
         events.append(["mSelector": mSelector, "mScope": mScope, "mElement": mElement])
     }
 
-    DispatchQueue.main.async {
+    environmentGetGlobalOrNil()?.eventLoop.async {
         guard let clientData = clientData else { return }
         let userData = clientData.assumingMemoryBound(to: AudioDeviceUserData.self)
         let L = lua_getCurrentState()!

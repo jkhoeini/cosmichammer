@@ -9,6 +9,7 @@
 import Cocoa
 import CLua
 import Lua
+import HSDSTCore
 import AVFoundation
 import os.log
 
@@ -306,8 +307,7 @@ private func core_open(_ L: LuaState) throws -> CInt {
         return 1
     }
     let path = String(cString: cStr)
-    let pathURL = URL(fileURLWithPath: path)
-    let result = NSWorkspace.shared.open(pathURL)
+    let result = environmentGet(L).workspace.openFile(path)
 
     lua_pushboolean(L, result ? 1 : 0)
     return 1
@@ -368,8 +368,8 @@ private func push_hammerAppInfo(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
         "isRosetta": false,
         "buildTime": {
             if let execPath = Bundle.main.executablePath,
-               let attrs = try? FileManager.default.attributesOfItem(atPath: execPath),
-               let modDate = attrs[.modificationDate] as? Date {
+               let attrs = try? environmentGet(L).fileSystem.attributesOfItem(atPath: execPath),
+               let modDate = attrs.modificationDate {
                 let fmt = DateFormatter()
                 fmt.dateFormat = "MMM dd yyyy, HH:mm:ss"
                 return fmt.string(from: modDate)
@@ -824,6 +824,9 @@ func MJLuaAlloc() {
     if L == nil {
         L = luaL_newstate()
         luaL_openlibs(L)
+        let env = createProductionEnvironment()
+        environmentAttach(L, env)
+        environmentSetGlobal(env)
         lua_setCurrentState(L)
         lua_bumpStateGeneration()
     }
@@ -849,7 +852,7 @@ func MJLuaInit() {
         return
     }
 
-    let context = buildBootContext(extensionsPath: extensionsPath, docsPath: docsPath)
+    let context = buildBootContext(L, extensionsPath: extensionsPath, docsPath: docsPath)
     runSetupOrTerminate(L, setupPath: setupPath, context: context)
 }
 
@@ -918,7 +921,7 @@ private func terminateWithCorruptInstallationAlert() {
     NSApplication.shared.terminate(nil)
 }
 
-private func buildBootContext(extensionsPath: String, docsPath: String) -> LuaBoot.Context {
+private func buildBootContext(_ L: UnsafeMutablePointer<lua_State>, extensionsPath: String, docsPath: String) -> LuaBoot.Context {
     LuaBoot.Context(
         extensionsPath: extensionsPath,
         configFileDisplayPath: MJConfigFileGet() as String,
@@ -926,8 +929,8 @@ private func buildBootContext(extensionsPath: String, docsPath: String) -> LuaBo
         configDir: MJConfigDir() as String,
         dataDir: XDGPaths.dataHome,
         docsJSONPath: docsPath,
-        hasInitFile: FileManager.default.fileExists(atPath: MJConfigFileFullPath() as String),
-        autoloadExtensions: UserDefaults.standard.bool(forKey: HSAutoLoadExtensions)
+        hasInitFile: environmentGet(L).fileSystem.fileExists(atPath: MJConfigFileFullPath() as String),
+        autoloadExtensions: environmentGet(L).settings.bool(forKey: HSAutoLoadExtensions)
     )
 }
 
@@ -1108,6 +1111,8 @@ func MJLuaDeinit() {
 @_cdecl("MJLuaDealloc")
 func MJLuaDealloc() {
     if let L = lua_getCurrentState() {
+        environmentClearGlobal()
+        environmentDetach(L)
         lua_close(L)
         lua_setCurrentState(nil)
         lua_bumpStateGeneration()

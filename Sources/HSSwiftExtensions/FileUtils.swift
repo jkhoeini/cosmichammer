@@ -1,8 +1,13 @@
 import Foundation
+import HSDSTCore
 import os.log
 
 func MJEnsureDirectoryExistsOrThrow(_ dir: String) throws {
-    try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true, attributes: nil)
+    if let env = environmentGetGlobalOrNil() {
+        try env.fileSystem.createDirectory(atPath: dir, withIntermediateDirectories: true)
+    } else {
+        try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true, attributes: nil)
+    }
 }
 
 @_cdecl("MJEnsureDirectoryExists")

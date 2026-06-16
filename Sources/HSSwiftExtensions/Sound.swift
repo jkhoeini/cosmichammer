@@ -1,6 +1,7 @@
 import Cocoa
 import CLua
 import Lua
+import HSDSTCore
 import os.log
 import AVFoundation
 
@@ -180,12 +181,11 @@ private func sound_systemSounds(_ L: LuaState) throws -> CInt {
     let librarySources = NSSearchPathForDirectoriesInDomains(.libraryDirectory, .allDomainsMask, true)
     for sourcePath in librarySources {
         let soundsPath = (sourcePath as NSString).appendingPathComponent("Sounds")
-        if let soundSource = FileManager.default.enumerator(atPath: soundsPath) {
+        let fs = environmentGet(L).fileSystem
+        if let soundFiles = try? fs.contentsOfDirectory(atPath: soundsPath) {
             // TigerStyle: bounded directory traversal
-            var soundEntryCount = 0
-            while let soundFile = soundSource.nextObject() as? String {
-                soundEntryCount += 1
-                if soundEntryCount > kMaxSoundFileEntries {
+            for (idx, soundFile) in soundFiles.enumerated() {
+                if idx >= kMaxSoundFileEntries {
                     os_log(.error, "hs.sound: sound file enumeration exceeded %d entries in %{public}s — breaking", kMaxSoundFileEntries, soundsPath)
                     break
                 }

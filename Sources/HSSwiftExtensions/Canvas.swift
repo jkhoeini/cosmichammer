@@ -1,5 +1,6 @@
 import Cocoa
 import CLua
+import HSDSTCore
 import Lua
 import os.log
 
@@ -782,8 +783,15 @@ func canvas_convertPercentageStringToNumber(_ stringValue: String) -> NSNumber? 
 }
 
 func canvas_RectWithFlippedYCoordinate(_ theRect: NSRect) -> NSRect {
+    let primaryHeight: Double
+    if let env = environmentGetGlobalOrNil(),
+       let primary = env.screen.primaryScreen() {
+        primaryHeight = primary.frame.height
+    } else {
+        primaryHeight = NSScreen.screens[0].frame.size.height
+    }
     return NSMakeRect(theRect.origin.x,
-                      NSScreen.screens[0].frame.size.height - theRect.origin.y - theRect.size.height,
+                      primaryHeight - theRect.origin.y - theRect.size.height,
                       theRect.size.width,
                       theRect.size.height)
 }

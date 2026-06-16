@@ -7,6 +7,7 @@ import CLua
 import Lua
 import Cocoa
 import CoreWLAN
+import HSDSTCore
 import os.log
 
 private let USERDATA_TAG = "hs.wifi.watcher"
@@ -19,29 +20,34 @@ private var manager: HSWifiWatcherManager?
 private class HSWifiWatcherManager: NSObject {
     var interface: CWInterface?
     var watchers: NSMutableSet = NSMutableSet()
+    private var observerTokens: [any NotificationObserverToken] = []
+    private weak var notificationRef: (any NotificationProtocol)?
 
-    override init() {
+    init(notification: any NotificationProtocol) {
         super.init()
         interface = CWWiFiClient.shared().interface()
+        notificationRef = notification
 
-        let nc = NotificationCenter.default
         for (_, value) in watchableTypes {
-            nc.addObserver(self,
-                           selector: #selector(identifyNotification(_:)),
-                           name: NSNotification.Name(value),
-                           object: nil)
+            let token = notification.addObserver(name: value, object: nil) { [weak self] userInfo in
+                self?.identifyNotification(name: value, userInfo: userInfo)
+            }
+            observerTokens.append(token)
         }
     }
 
     deinit {
-        let nc = NotificationCenter.default
-        for (_, value) in watchableTypes {
-            nc.removeObserver(self, name: NSNotification.Name(value), object: nil)
-        }
+        removeAllObservers()
     }
 
-    @objc func identifyNotification(_ notification: Notification) {
-        let type = notification.name.rawValue
+    func removeAllObservers() {
+        for token in observerTokens {
+            notificationRef?.removeObserver(token)
+        }
+        observerTokens.removeAll()
+    }
+
+    func identifyNotification(name type: String, userInfo: [String: Any]) {
         let iface = interface?.interfaceName ?? ""
 
         switch type {
@@ -56,8 +62,8 @@ private class HSWifiWatcherManager: NSObject {
         case NSNotification.Name.CWLinkDidChange.rawValue:
             invokeCallbacks(for: "linkChange", withDetails: [iface])
         case NSNotification.Name.CWLinkQualityDidChange.rawValue:
-            let rssi = notification.userInfo?[CWLinkQualityNotificationRSSIKey] as? NSNumber ?? NSNumber(value: 0)
-            let transmitRate = notification.userInfo?[CWLinkQualityNotificationTransmitRateKey] as? NSNumber ?? NSNumber(value: 0.0)
+            let rssi = userInfo[CWLinkQualityNotificationRSSIKey] as? NSNumber ?? NSNumber(value: 0)
+            let transmitRate = userInfo[CWLinkQualityNotificationTransmitRateKey] as? NSNumber ?? NSNumber(value: 0.0)
             invokeCallbacks(for: "linkQualityChange", withDetails: [iface, rssi, transmitRate])
         case NSNotification.Name.CWModeDidChange.rawValue:
             invokeCallbacks(for: "modeChange", withDetails: [iface])
@@ -272,6 +278,7 @@ public func luaopen_hs_libwifiwatcher(_ L: UnsafeMutablePointer<lua_State>!) -> 
         lua_createtable(L, 0, 1)
         lua_pushcclosure(L, { (L: LuaState!) -> CInt in
             manager?.watchers.removeAllObjects()
+            manager?.removeAllObservers()
             manager = nil
             return 0
         }, 0)
@@ -289,7 +296,7 @@ public func luaopen_hs_libwifiwatcher(_ L: UnsafeMutablePointer<lua_State>!) -> 
             "scanCacheUpdated":  NSNotification.Name.CWScanCacheDidUpdate.rawValue,
         ]
 
-        manager = HSWifiWatcherManager()
+        manager = HSWifiWatcherManager(notification: environmentGet(L).notification)
 
         pushEventTypes(L)
         lua_setfield(L, -2, "eventTypes")

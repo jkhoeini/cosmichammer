@@ -3,6 +3,7 @@ import CLua
 import Lua
 import os.log
 import Network
+import HSDSTCore
 
 // MARK: - Common Code
 
@@ -168,7 +169,14 @@ private class HSAsyncTcpSocket {
         return isConnectedFlag
     }
 
-    var isDisconnected: Bool { !isConnected }
+    var isDisconnected: Bool {
+        // A listening server (NWListener or Unix) is neither connected nor
+        // disconnected -- it is "listening".  Only report disconnected when
+        // the socket has no listener AND is not connected.
+        if listener != nil { return !isListeningFlag }
+        if role == .server && unixListenFD >= 0 { return false }
+        return !isConnectedFlag
+    }
 
     var isSecure: Bool { isSecureFlag }
 
@@ -447,8 +455,13 @@ private class HSAsyncTcpSocket {
     private var unixListenFD: Int32 = -1
     private var unixAcceptSource: DispatchSourceRead?
 
+    /// Track whether the listener is actively listening (ready and not cancelled).
+    private(set) var isListeningFlag: Bool = false
+
     private func setupListener(_ nwListener: NWListener) {
         assert(listener == nil, "Listener already set; cannot setup a second listener")
+
+        let semaphore = DispatchSemaphore(value: 0)
 
         nwListener.stateUpdateHandler = { [weak self] state in
             guard let self = self else { return }
@@ -458,10 +471,15 @@ private class HSAsyncTcpSocket {
                     self.localPort = port.rawValue
                 }
                 self.localHost = "0.0.0.0"
+                self.isListeningFlag = true
                 os_log(.debug,"TCP server listening")
+                semaphore.signal()
             case .failed(let err):
+                self.isListeningFlag = false
                 os_log(.debug, "%{public}s", "TCP server failed: \(err)")
+                semaphore.signal()
             case .cancelled:
+                self.isListeningFlag = false
                 os_log(.debug,"TCP server disconnected")
                 self.lock.lock()
                 let clients = self.connectedSockets
@@ -486,6 +504,7 @@ private class HSAsyncTcpSocket {
         self.listener = nwListener
         self.role = .server
         nwListener.start(queue: delegateQueue)
+        semaphore.wait()
     }
 
     private func handleNewConnection(_ newConn: NWConnection) {
@@ -532,6 +551,7 @@ private class HSAsyncTcpSocket {
         _ = previousRole // suppress unused warning; used in postcondition below
 
         if role == .server {
+            isListeningFlag = false
             listener?.cancel()
             listener = nil
             unixAcceptSource?.cancel()
