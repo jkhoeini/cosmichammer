@@ -38,11 +38,14 @@ extension CosmicHammerTests {
         @Test func testTransportType() { runLuaTest() }
         @Test func testWatcher() { runLuaTest() }
 
-        @Test(.skipInHeadless) func testWatcherCallback() {
+        @Test func testWatcherCallback() {
             _ = runLua("testWatcherCallback()")
+            // Drain the simulated event loop so the async watcher callback is delivered.
+            testHarness?.eventLoop.drain()
             let deadline = Date(timeIntervalSinceNow: 5)
             while Date() < deadline {
                 RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.5))
+                testHarness?.eventLoop.drain()
                 if runLua("testWatcherCallbackResult()") == "Success" { return }
             }
             Issue.record("hs.audiodevice watcher callback failed")

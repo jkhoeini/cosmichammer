@@ -5,11 +5,12 @@ public final class SimulatedWindow: WindowProtocol {
     private var rng: RPRNG
     private let faults: FaultConfig
 
-    public var windows: [AXWindowInfo] = [AXWindowInfo()]
-    public var focusedWindowID: UInt32 = 1
+    public var windows: [AXWindowInfo] = []
+    private var focusStack: [UInt32] = []
+    private var nextWindowID: UInt32 = 1
     public var shadowsEnabled: Bool = true
     public var timeoutValue: Float = 0
-    public var windowSpaces: [UInt32: [Int]] = [1: [1]]
+    public var windowSpaces: [UInt32: [Int]] = [:]
 
     // MARK: - Call tracking for verification
 
@@ -27,13 +28,49 @@ public final class SimulatedWindow: WindowProtocol {
         self.faults = faults
     }
 
+    // MARK: - Window creation
+
+    public func createWindow(title: String, pid: Int32, role: String, subrole: String?,
+                             frame: (x: Double, y: Double, width: Double, height: Double)) -> UInt32 {
+        let id = nextWindowID
+        nextWindowID += 1
+        let info = AXWindowInfo(
+            id: id, title: title, role: role, subrole: subrole,
+            frame: frame, pid: pid,
+            isMinimized: false, isFullScreen: false,
+            level: 0, alpha: 1.0,
+            isStandard: subrole == "AXStandardWindow",
+            isVisible: true, isMaximizable: true,
+            tabCount: 0, cornerRadius: 10.0
+        )
+        windows.append(info)
+        windowSpaces[id] = [1]
+        // Push to front of focus stack
+        focusStack.insert(id, at: 0)
+        return id
+    }
+
+    // MARK: - Desktop
+
+    public func desktopWindow() -> AXWindowInfo? {
+        AXWindowInfo(
+            id: UInt32.max, title: nil, role: "AXScrollArea", subrole: nil,
+            frame: (0, 0, 1920, 1080), pid: 1,
+            isMinimized: false, isFullScreen: false,
+            level: -2147483623, alpha: 1.0,
+            isStandard: false, isVisible: true,
+            isMaximizable: false, tabCount: 0, cornerRadius: 0
+        )
+    }
+
     // MARK: - Listing and lookup
 
     public func allWindows() -> [AXWindowInfo] { windows }
 
     public func focusedWindow() -> AXWindowInfo? {
         if faults.accessibilityPermissionDenied { return nil }
-        return windows.first { $0.id == focusedWindowID }
+        guard let topID = focusStack.first else { return nil }
+        return windows.first { $0.id == topID }
     }
 
     public func orderedWindowIDs() -> [UInt32] {
@@ -42,6 +79,8 @@ public final class SimulatedWindow: WindowProtocol {
 
     public func windowInfo(forID id: UInt32) -> AXWindowInfo? {
         if faults.accessibilityPermissionDenied { return nil }
+        // Check for the special desktop window ID
+        if id == UInt32.max { return desktopWindow() }
         return windows.first { $0.id == id }
     }
 
@@ -111,6 +150,8 @@ public final class SimulatedWindow: WindowProtocol {
             isVisible: false, isMaximizable: w.isMaximizable,
             tabCount: w.tabCount, cornerRadius: w.cornerRadius
         )
+        // Minimized windows lose focus
+        focusStack.removeAll { $0 == windowID }
         return true
     }
 
@@ -126,6 +167,9 @@ public final class SimulatedWindow: WindowProtocol {
             isVisible: true, isMaximizable: w.isMaximizable,
             tabCount: w.tabCount, cornerRadius: w.cornerRadius
         )
+        // Unminimized window gets focus back
+        focusStack.removeAll { $0 == windowID }
+        focusStack.insert(windowID, at: 0)
         return true
     }
 
@@ -134,6 +178,8 @@ public final class SimulatedWindow: WindowProtocol {
         guard windows.contains(where: { $0.id == windowID }) else { return false }
         closedWindowIDs.append(windowID)
         windows.removeAll { $0.id == windowID }
+        focusStack.removeAll { $0 == windowID }
+        windowSpaces.removeValue(forKey: windowID)
         return true
     }
 
@@ -148,14 +194,26 @@ public final class SimulatedWindow: WindowProtocol {
         if faults.accessibilityPermissionDenied { return false }
         guard windows.contains(where: { $0.id == windowID }) else { return false }
         focusedWindowIDs.append(windowID)
-        focusedWindowID = windowID
+        focusStack.removeAll { $0 == windowID }
+        focusStack.insert(windowID, at: 0)
         return true
     }
 
     public func toggleZoom(windowID: UInt32) -> Bool {
         if faults.accessibilityPermissionDenied { return false }
-        guard windows.contains(where: { $0.id == windowID }) else { return false }
+        guard let idx = windows.firstIndex(where: { $0.id == windowID }) else { return false }
         zoomToggledWindowIDs.append(windowID)
+        let w = windows[idx]
+        if w.isMaximizable {
+            windows[idx] = AXWindowInfo(
+                id: windowID, title: w.title, role: w.role, subrole: w.subrole,
+                frame: w.frame, pid: w.pid, isMinimized: w.isMinimized,
+                isFullScreen: !w.isFullScreen,
+                level: w.level, alpha: w.alpha, isStandard: w.isStandard,
+                isVisible: w.isVisible, isMaximizable: w.isMaximizable,
+                tabCount: w.tabCount, cornerRadius: w.cornerRadius
+            )
+        }
         return true
     }
 
@@ -223,6 +281,51 @@ public final class SimulatedWindow: WindowProtocol {
 
     public func spaces(forWindowID id: UInt32) -> [Int] {
         windowSpaces[id] ?? []
+    }
+
+    // MARK: - Additional window operations
+
+    public var becameMainWindowIDs: [UInt32] = []
+
+    public func becomeMain(windowID: UInt32) -> Bool {
+        if faults.accessibilityPermissionDenied { return false }
+        guard windows.contains(where: { $0.id == windowID }) else { return false }
+        becameMainWindowIDs.append(windowID)
+        return true
+    }
+
+    public func zoomButtonRect(forWindowID id: UInt32) -> (x: Double, y: Double, width: Double, height: Double)? {
+        guard let w = windows.first(where: { $0.id == id }) else { return nil }
+        // Simulated zoom button at top-left of window frame, 14x14
+        return (w.frame.x + 7, w.frame.y + 7, 14, 14)
+    }
+
+    public func isMaximizable(forWindowID id: UInt32) -> Bool? {
+        guard let w = windows.first(where: { $0.id == id }) else { return nil }
+        return w.isMaximizable
+    }
+
+    /// Simulated CGWindowList info dictionaries.
+    public var cgWindowListInfo: [[String: Any]] = []
+
+    public func listWindowInfo(allWindows: Bool) -> [[String: Any]] {
+        if cgWindowListInfo.isEmpty {
+            // Auto-generate from windows array
+            return windows.filter { $0.isVisible && !$0.isMinimized }.map { w in
+                [
+                    "kCGWindowNumber": NSNumber(value: w.id),
+                    "kCGWindowOwnerPID": NSNumber(value: w.pid),
+                    "kCGWindowName": w.title ?? "" as Any,
+                    "kCGWindowLayer": NSNumber(value: w.level),
+                    "kCGWindowAlpha": NSNumber(value: w.alpha),
+                    "kCGWindowBounds": [
+                        "X": w.frame.x, "Y": w.frame.y,
+                        "Width": w.frame.width, "Height": w.frame.height
+                    ] as [String: Any]
+                ] as [String: Any]
+            }
+        }
+        return cgWindowListInfo
     }
 
     // MARK: - Private helpers

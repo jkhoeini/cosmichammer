@@ -2,9 +2,6 @@ import HSDSTCore
 import Cocoa
 import CLua
 import Lua
-import Carbon
-import CoreAudio
-import AudioToolbox
 import Foundation
 import os.log
 
@@ -15,8 +12,9 @@ private let USERDATA_DATASOURCE_TAG = "hs.audiodevice.datasource"
 
 // Define a datatype for hs.audiodevice objects
 struct AudioDeviceUserData {
-    var deviceId: AudioDeviceID
+    var deviceId: UInt32
     var watcherRunning: Bool
+    var watcherListenerID: UInt64
     var lsCanary: UInt64
 }
 
@@ -28,7 +26,7 @@ private var deviceCallbacks: [UnsafeMutableRawPointer: LuaValue] = [:]
 
 // Define a datatype for hs.audiodevice.datasource objects
 struct DataSourceUserData {
-    var hostDevice: AudioDeviceID
+    var hostDevice: UInt32
     var dataSource: UInt32
 }
 
@@ -40,125 +38,38 @@ private func userdataToDataSource(_ L: UnsafeMutablePointer<lua_State>!, _ idx: 
     return luaL_checkudata(L, idx, USERDATA_DATASOURCE_TAG).assumingMemoryBound(to: DataSourceUserData.self)
 }
 
-private let watchSelectors: [AudioObjectPropertySelector] = [
-    kAudioDevicePropertyMute,
-    kAudioDevicePropertyJackIsConnected,
-    kAudioDevicePropertyDeviceHasChanged,
-    kAudioDevicePropertyStereoPan,
-    kAudioHardwareServiceDeviceProperty_VirtualMainVolume,
-    kAudioDevicePropertyDeviceIsRunningSomewhere,
-]
-
-
-// MARK: - Function forward declarations (not needed in Swift, but noting for parity)
-
-// MARK: - CoreAudio helper functions
-
-private func audiodevice_callback(
-    deviceID: AudioDeviceID,
-    numAddresses: UInt32,
-    addressList: UnsafePointer<AudioObjectPropertyAddress>,
-    clientData: UnsafeMutableRawPointer?
-) -> OSStatus {
-    // Get the UID of the device, to pass into the callback
-    var deviceUIDNS: String? = nil
-
-    var propertyAddress = AudioObjectPropertyAddress(
-        mSelector: kAudioDevicePropertyDeviceUID,
-        mScope: kAudioObjectPropertyScopeGlobal,
-        mElement: kAudioObjectPropertyElementMain
-    )
-    var deviceUID: Unmanaged<CFString>?
-    var propertySize = UInt32(MemoryLayout<CFString>.size)
-
-    let result = withUnsafeMutablePointer(to: &deviceUID) { ptr in
-        AudioObjectGetPropertyData(deviceID, &propertyAddress, 0, nil, &propertySize, ptr)
-    }
-    if result == noErr, let uid = deviceUID?.takeRetainedValue() {
-        deviceUIDNS = uid as String
-    }
-
-    var events: [[String: Any]] = []
-
-    for i in 0..<numAddresses {
-        let addr = addressList[Int(i)]
-        let mSelector = UTCreateStringForOSType(addr.mSelector).takeRetainedValue() as String
-        let mScope = UTCreateStringForOSType(addr.mScope).takeRetainedValue() as String
-        let mElement = NSNumber(value: addr.mElement)
-        events.append(["mSelector": mSelector, "mScope": mScope, "mElement": mElement])
-    }
-
-    environmentGetGlobalOrNil()?.eventLoop.async {
-        guard let clientData = clientData else { return }
-        let userData = clientData.assumingMemoryBound(to: AudioDeviceUserData.self)
-        let L = lua_getCurrentState()!
-        if !lua_isStateGenerationValid(userData.pointee.lsCanary) {
-            return
-        }
-        guard let cb = deviceCallbacks[clientData] else {
-            os_log(.error, "%{public}s", "hs.audiodevice.watcher callback fired, but no function has been set with hs.audiodevice:watcherCallback()")
-            return
-        }
-        for event in events {
-            cb.push(onto: L)
-
-            if let uid = deviceUIDNS {
-                L.push(uid)
-            } else {
-                lua_pushnil(L)
-            }
-
-            lua_pushany(L, event["mSelector"] as? String)
-            lua_pushany(L, event["mScope"] as? String)
-            lua_pushany(L, event["mElement"])
-            if lua_pcall(L, 4, 0, 0) != LUA_OK { lua_pop(L, 1) }
-        }
-    }
-    return noErr
-}
-
 // MARK: - Helper functions to identify the type of device
 
-private func _check_audio_device_has_streams(_ deviceId: AudioDeviceID, _ scope: AudioObjectPropertyScope) -> Bool {
-    var dataSize: UInt32 = 0
-
-    var propertyAddress = AudioObjectPropertyAddress(
-        mSelector: kAudioDevicePropertyStreams,
-        mScope: scope,
-        mElement: kAudioObjectPropertyElementMain
-    )
-
-    if AudioObjectGetPropertyDataSize(deviceId, &propertyAddress, 0, nil, &dataSize) == noErr {
-        return (dataSize / UInt32(MemoryLayout<AudioStreamID>.size)) > 0
-    } else {
-        return true
-    }
+private func isOutputDevice(_ L: UnsafeMutablePointer<lua_State>!, _ deviceId: UInt32) -> Bool {
+    environmentGet(L).audio.isOutputDevice(deviceID: deviceId)
 }
 
-private func isOutputDevice(_ deviceID: AudioDeviceID) -> Bool {
-    return _check_audio_device_has_streams(deviceID, kAudioObjectPropertyScopeOutput)
+private func isInputDevice(_ L: UnsafeMutablePointer<lua_State>!, _ deviceId: UInt32) -> Bool {
+    environmentGet(L).audio.isInputDevice(deviceID: deviceId)
 }
 
-private func isInputDevice(_ deviceID: AudioDeviceID) -> Bool {
-    return _check_audio_device_has_streams(deviceID, kAudioObjectPropertyScopeInput)
+/// Determine the preferred scope for a device: output if it's an output device, input otherwise.
+private func preferredScope(_ L: UnsafeMutablePointer<lua_State>!, _ deviceId: UInt32) -> AudioScope {
+    isOutputDevice(L, deviceId) ? .output : .input
 }
 
 // MARK: - Helper functions for creating userdata objects
 
-func new_device(_ L: UnsafeMutablePointer<lua_State>!, _ deviceId: AudioDeviceID) {
+func new_device(_ L: UnsafeMutablePointer<lua_State>!, _ deviceId: UInt32) {
     precondition(L != nil, "lua_State must not be nil")
     precondition(deviceId != 0, "AudioDeviceID must not be kAudioObjectUnknown (0)")
     let ptr = lua_newuserdata(L, MemoryLayout<AudioDeviceUserData>.size)!
     let audioDevice = ptr.assumingMemoryBound(to: AudioDeviceUserData.self)
     audioDevice.pointee.deviceId = deviceId
     audioDevice.pointee.watcherRunning = false
+    audioDevice.pointee.watcherListenerID = 0
     audioDevice.pointee.lsCanary = lua_currentStateGeneration()
 
     luaL_getmetatable(L, USERDATA_TAG)
     lua_setmetatable(L, -2)
 }
 
-func new_dataSource(_ L: UnsafeMutablePointer<lua_State>!, _ deviceID: AudioDeviceID, _ dataSource: UInt32) {
+func new_dataSource(_ L: UnsafeMutablePointer<lua_State>!, _ deviceID: UInt32, _ dataSource: UInt32) {
     precondition(L != nil, "lua_State must not be nil")
     precondition(deviceID != 0, "AudioDeviceID must not be kAudioObjectUnknown (0)")
     let ptr = lua_newuserdata(L, MemoryLayout<DataSourceUserData>.size)!
@@ -182,38 +93,14 @@ func new_dataSource(_ L: UnsafeMutablePointer<lua_State>!, _ deviceID: AudioDevi
 /// Returns:
 ///  * A table of zero or more audio devices connected to the system
 private func audiodevice_alldevices(_ L: LuaState) throws -> CInt {
-
-    var propertyAddress = AudioObjectPropertyAddress(
-        mSelector: kAudioHardwarePropertyDevices,
-        mScope: kAudioObjectPropertyScopeWildcard,
-        mElement: kAudioObjectPropertyElementWildcard
-    )
-    var deviceListPropertySize: UInt32 = 0
-
-    guard AudioObjectGetPropertyDataSize(AudioObjectID(kAudioObjectSystemObject), &propertyAddress, 0, nil, &deviceListPropertySize) == noErr else {
-        lua_pushnil(L)
-        return 1
-    }
-
-    let numDevices = Int(deviceListPropertySize) / MemoryLayout<AudioDeviceID>.size
-    let deviceList = UnsafeMutablePointer<AudioDeviceID>.allocate(capacity: numDevices)
-    defer { deviceList.deallocate() }
-    deviceList.initialize(repeating: 0, count: numDevices)
-
-    guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &propertyAddress, 0, nil, &deviceListPropertySize, deviceList) == noErr else {
-        lua_pushnil(L)
-        return 1
-    }
+    let audio = environmentGet(L).audio
+    let devices = audio.allDevices()
 
     lua_newtable(L)
-
-    var tableIndex: Int32 = 1
-    for i in 0..<numDevices {
-        let deviceId = deviceList[i]
-        L.push(lua_Integer(tableIndex))
-        new_device(L, deviceId)
+    for (i, device) in devices.enumerated() {
+        L.push(lua_Integer(i + 1))
+        new_device(L, device.id)
         lua_settable(L, -3)
-        tableIndex += 1
     }
 
     return 1
@@ -229,22 +116,12 @@ private func audiodevice_alldevices(_ L: LuaState) throws -> CInt {
 /// Returns:
 ///  * An hs.audiodevice object, or nil if no suitable device could be found
 private func audiodevice_defaultoutputdevice(_ L: LuaState) throws -> CInt {
-
-    var propertyAddress = AudioObjectPropertyAddress(
-        mSelector: kAudioHardwarePropertyDefaultOutputDevice,
-        mScope: kAudioObjectPropertyScopeGlobal,
-        mElement: kAudioObjectPropertyElementMain
-    )
-
-    var deviceId: AudioDeviceID = 0
-    var deviceIdSize = UInt32(MemoryLayout<AudioDeviceID>.size)
-
-    if AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &propertyAddress, 0, nil, &deviceIdSize, &deviceId) == noErr && isOutputDevice(deviceId) {
-        new_device(L, deviceId)
+    let audio = environmentGet(L).audio
+    if let device = audio.defaultOutputDevice(), device.isOutput {
+        new_device(L, device.id)
     } else {
         lua_pushnil(L)
     }
-
     return 1
 }
 
@@ -258,22 +135,12 @@ private func audiodevice_defaultoutputdevice(_ L: LuaState) throws -> CInt {
 /// Returns:
 ///  * An hs.audiodevice object, or nil if no suitable device could be found
 private func audiodevice_defaultinputdevice(_ L: LuaState) throws -> CInt {
-
-    var propertyAddress = AudioObjectPropertyAddress(
-        mSelector: kAudioHardwarePropertyDefaultInputDevice,
-        mScope: kAudioObjectPropertyScopeGlobal,
-        mElement: kAudioObjectPropertyElementMain
-    )
-
-    var deviceId: AudioDeviceID = 0
-    var deviceIdSize = UInt32(MemoryLayout<AudioDeviceID>.size)
-
-    if AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &propertyAddress, 0, nil, &deviceIdSize, &deviceId) == noErr && isInputDevice(deviceId) {
-        new_device(L, deviceId)
+    let audio = environmentGet(L).audio
+    if let device = audio.defaultInputDevice(), device.isInput {
+        new_device(L, device.id)
     } else {
         lua_pushnil(L)
     }
-
     return 1
 }
 
@@ -287,22 +154,12 @@ private func audiodevice_defaultinputdevice(_ L: LuaState) throws -> CInt {
 /// Returns:
 ///  * An hs.audiodevice object, or nil if no suitable device could be found
 private func audiodevice_defaulteffectdevice(_ L: LuaState) throws -> CInt {
-
-    var propertyAddress = AudioObjectPropertyAddress(
-        mSelector: kAudioHardwarePropertyDefaultSystemOutputDevice,
-        mScope: kAudioObjectPropertyScopeGlobal,
-        mElement: kAudioObjectPropertyElementMain
-    )
-
-    var deviceId: AudioDeviceID = 0
-    var deviceIdSize = UInt32(MemoryLayout<AudioDeviceID>.size)
-
-    if AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &propertyAddress, 0, nil, &deviceIdSize, &deviceId) == noErr && isOutputDevice(deviceId) {
-        new_device(L, deviceId)
+    let audio = environmentGet(L).audio
+    if let device = audio.defaultEffectDevice(), device.isOutput {
+        new_device(L, device.id)
     } else {
         lua_pushnil(L)
     }
-
     return 1
 }
 
@@ -321,17 +178,10 @@ private func audiodevice_setdefaultoutputdevice(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let audioDevice = userdataToAudioDevice(L, 1)
-    var deviceId = audioDevice.pointee.deviceId
+    let deviceId = audioDevice.pointee.deviceId
+    let audio = environmentGet(L).audio
 
-    var propertyAddress = AudioObjectPropertyAddress(
-        mSelector: kAudioHardwarePropertyDefaultOutputDevice,
-        mScope: kAudioObjectPropertyScopeGlobal,
-        mElement: kAudioObjectPropertyElementMain
-    )
-
-    let deviceIdSize = UInt32(MemoryLayout<AudioDeviceID>.size)
-
-    if isOutputDevice(deviceId) && AudioObjectSetPropertyData(AudioObjectID(kAudioObjectSystemObject), &propertyAddress, 0, nil, deviceIdSize, &deviceId) == noErr {
+    if isOutputDevice(L, deviceId) && audio.setDefaultOutputDevice(id: deviceId) {
         L.push(true)
     } else {
         L.push(false)
@@ -353,17 +203,10 @@ private func audiodevice_setdefaulteffectdevice(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let audioDevice = userdataToAudioDevice(L, 1)
-    var deviceId = audioDevice.pointee.deviceId
+    let deviceId = audioDevice.pointee.deviceId
+    let audio = environmentGet(L).audio
 
-    var propertyAddress = AudioObjectPropertyAddress(
-        mSelector: kAudioHardwarePropertyDefaultSystemOutputDevice,
-        mScope: kAudioObjectPropertyScopeGlobal,
-        mElement: kAudioObjectPropertyElementMain
-    )
-
-    let deviceIdSize = UInt32(MemoryLayout<AudioDeviceID>.size)
-
-    if isOutputDevice(deviceId) && AudioObjectSetPropertyData(AudioObjectID(kAudioObjectSystemObject), &propertyAddress, 0, nil, deviceIdSize, &deviceId) == noErr {
+    if isOutputDevice(L, deviceId) && audio.setDefaultEffectDevice(id: deviceId) {
         L.push(true)
     } else {
         L.push(false)
@@ -385,17 +228,10 @@ private func audiodevice_setdefaultinputdevice(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let audioDevice = userdataToAudioDevice(L, 1)
-    var deviceId = audioDevice.pointee.deviceId
+    let deviceId = audioDevice.pointee.deviceId
+    let audio = environmentGet(L).audio
 
-    var propertyAddress = AudioObjectPropertyAddress(
-        mSelector: kAudioHardwarePropertyDefaultInputDevice,
-        mScope: kAudioObjectPropertyScopeGlobal,
-        mElement: kAudioObjectPropertyElementMain
-    )
-
-    let deviceIdSize = UInt32(MemoryLayout<AudioDeviceID>.size)
-
-    if isInputDevice(deviceId) && AudioObjectSetPropertyData(AudioObjectID(kAudioObjectSystemObject), &propertyAddress, 0, nil, deviceIdSize, &deviceId) == noErr {
+    if isInputDevice(L, deviceId) && audio.setDefaultInputDevice(id: deviceId) {
         L.push(true)
     } else {
         L.push(false)
@@ -417,20 +253,10 @@ private func audiodevice_name(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let audioDevice = userdataToAudioDevice(L, 1)
-    let deviceId = audioDevice.pointee.deviceId
+    let audio = environmentGet(L).audio
 
-    var propertyAddress = AudioObjectPropertyAddress(
-        mSelector: kAudioObjectPropertyName,
-        mScope: kAudioObjectPropertyScopeGlobal,
-        mElement: kAudioObjectPropertyElementMain
-    )
-    var deviceName: Unmanaged<CFString>?
-    var propertySize = UInt32(MemoryLayout<CFString>.size)
-
-    if withUnsafeMutablePointer(to: &deviceName, { ptr in
-        AudioObjectGetPropertyData(deviceId, &propertyAddress, 0, nil, &propertySize, ptr)
-    }) == noErr, let name = deviceName?.takeRetainedValue() {
-        L.push(name as String)
+    if let name = audio.deviceName(deviceID: audioDevice.pointee.deviceId) {
+        L.push(name)
     } else {
         lua_pushnil(L)
     }
@@ -451,27 +277,10 @@ private func audiodevice_uid(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let audioDevice = userdataToAudioDevice(L, 1)
-    let deviceId = audioDevice.pointee.deviceId
+    let audio = environmentGet(L).audio
 
-    var propertyAddress = AudioObjectPropertyAddress(
-        mSelector: kAudioDevicePropertyDeviceUID,
-        mScope: kAudioObjectPropertyScopeGlobal,
-        mElement: kAudioObjectPropertyElementMain
-    )
-    var deviceUID: Unmanaged<CFString>?
-    var propertySize = UInt32(MemoryLayout<CFString>.size)
-
-    let result = withUnsafeMutablePointer(to: &deviceUID) { ptr in
-        AudioObjectGetPropertyData(deviceId, &propertyAddress, 0, nil, &propertySize, ptr)
-    }
-    if result != noErr {
-        lua_pushnil(L)
-        return 1
-    }
-
-    if let uid = deviceUID {
-        let uidString = uid.takeRetainedValue() as String
-        L.push(uidString)
+    if let uid = audio.deviceUID(deviceID: audioDevice.pointee.deviceId) {
+        L.push(uid)
     } else {
         lua_pushnil(L)
     }
@@ -492,31 +301,14 @@ private func audiodevice_inUse(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let audioDevice = userdataToAudioDevice(L, 1)
-    let deviceId = audioDevice.pointee.deviceId
-    var dataSize: UInt32 = 0
-    var isUsed: Int32 = 0
+    let audio = environmentGet(L).audio
 
-    var prop = AudioObjectPropertyAddress(
-        mSelector: kAudioDevicePropertyDeviceIsRunningSomewhere,
-        mScope: kAudioObjectPropertyScopeGlobal,
-        mElement: kAudioObjectPropertyElementMain
-    )
-
-    var err = AudioObjectGetPropertyDataSize(deviceId, &prop, 0, nil, &dataSize)
-    if err != kAudioHardwareNoError {
-        os_log(.error, "getAudioDeviceIsUsed(): get data size error: %d", err)
+    if let inUse = audio.isInUse(deviceID: audioDevice.pointee.deviceId) {
+        L.push(inUse)
+    } else {
         lua_pushnil(L)
-        return 1
     }
 
-    err = AudioObjectGetPropertyData(deviceId, &prop, 0, nil, &dataSize, &isUsed)
-    if err != kAudioHardwareNoError {
-        os_log(.error, "getAudioDeviceIsUsed(): get data error: %d", err)
-        lua_pushnil(L)
-        return 1
-    }
-
-    L.push(isUsed != 0)
     return 1
 }
 
@@ -533,18 +325,10 @@ private func audiodevice_inputMuted(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let audioDevice = userdataToAudioDevice(L, 1)
-    let deviceId = audioDevice.pointee.deviceId
-    var muted: UInt32 = 0
-    var mutedSize = UInt32(MemoryLayout<UInt32>.size)
+    let audio = environmentGet(L).audio
 
-    var propertyAddress = AudioObjectPropertyAddress(
-        mSelector: kAudioDevicePropertyMute,
-        mScope: kAudioObjectPropertyScopeInput,
-        mElement: kAudioObjectPropertyElementMain
-    )
-
-    if AudioObjectHasProperty(deviceId, &propertyAddress) && AudioObjectGetPropertyData(deviceId, &propertyAddress, 0, nil, &mutedSize, &muted) == noErr {
-        L.push(muted != 0)
+    if let muted = audio.isMuted(deviceID: audioDevice.pointee.deviceId, scope: .input) {
+        L.push(muted)
     } else {
         lua_pushnil(L)
     }
@@ -565,18 +349,10 @@ private func audiodevice_outputMuted(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let audioDevice = userdataToAudioDevice(L, 1)
-    let deviceId = audioDevice.pointee.deviceId
-    var muted: UInt32 = 0
-    var mutedSize = UInt32(MemoryLayout<UInt32>.size)
+    let audio = environmentGet(L).audio
 
-    var propertyAddress = AudioObjectPropertyAddress(
-        mSelector: kAudioDevicePropertyMute,
-        mScope: kAudioObjectPropertyScopeOutput,
-        mElement: kAudioObjectPropertyElementMain
-    )
-
-    if AudioObjectHasProperty(deviceId, &propertyAddress) && AudioObjectGetPropertyData(deviceId, &propertyAddress, 0, nil, &mutedSize, &muted) == noErr {
-        L.push(muted != 0)
+    if let muted = audio.isMuted(deviceID: audioDevice.pointee.deviceId, scope: .output) {
+        L.push(muted)
     } else {
         lua_pushnil(L)
     }
@@ -601,19 +377,11 @@ private func audiodevice_muted(_ L: LuaState) throws -> CInt {
 
     let audioDevice = userdataToAudioDevice(L, 1)
     let deviceId = audioDevice.pointee.deviceId
-    var muted: UInt32 = 0
-    var mutedSize = UInt32(MemoryLayout<UInt32>.size)
+    let audio = environmentGet(L).audio
+    let scope = preferredScope(L, deviceId)
 
-    let scope: AudioObjectPropertyScope = isOutputDevice(deviceId) ? kAudioObjectPropertyScopeOutput : kAudioObjectPropertyScopeInput
-
-    var propertyAddress = AudioObjectPropertyAddress(
-        mSelector: kAudioDevicePropertyMute,
-        mScope: scope,
-        mElement: kAudioObjectPropertyElementMain
-    )
-
-    if AudioObjectHasProperty(deviceId, &propertyAddress) && AudioObjectGetPropertyData(deviceId, &propertyAddress, 0, nil, &mutedSize, &muted) == noErr {
-        L.push(muted != 0)
+    if let muted = audio.isMuted(deviceID: deviceId, scope: scope) {
+        L.push(muted)
     } else {
         lua_pushnil(L)
     }
@@ -633,21 +401,10 @@ private func audiodevice_muted(_ L: LuaState) throws -> CInt {
 private func audiodevice_setInputMuted(_ L: LuaState) throws -> CInt {
 
     let audioDevice = userdataToAudioDevice(L, 1)
-    let deviceId = audioDevice.pointee.deviceId
-    var muted = UInt32(lua_toboolean(L, 2))
-    let mutedSize = UInt32(MemoryLayout<UInt32>.size)
+    let muted = lua_toboolean(L, 2) != 0
+    let audio = environmentGet(L).audio
 
-    var propertyAddress = AudioObjectPropertyAddress(
-        mSelector: kAudioDevicePropertyMute,
-        mScope: kAudioObjectPropertyScopeInput,
-        mElement: kAudioObjectPropertyElementMain
-    )
-
-    if AudioObjectHasProperty(deviceId, &propertyAddress) && AudioObjectSetPropertyData(deviceId, &propertyAddress, 0, nil, mutedSize, &muted) == noErr {
-        L.push(true)
-    } else {
-        L.push(false)
-    }
+    L.push(audio.setMuted(deviceID: audioDevice.pointee.deviceId, muted: muted, scope: .input))
 
     return 1
 }
@@ -664,21 +421,10 @@ private func audiodevice_setInputMuted(_ L: LuaState) throws -> CInt {
 private func audiodevice_setOutputMuted(_ L: LuaState) throws -> CInt {
 
     let audioDevice = userdataToAudioDevice(L, 1)
-    let deviceId = audioDevice.pointee.deviceId
-    var muted = UInt32(lua_toboolean(L, 2))
-    let mutedSize = UInt32(MemoryLayout<UInt32>.size)
+    let muted = lua_toboolean(L, 2) != 0
+    let audio = environmentGet(L).audio
 
-    var propertyAddress = AudioObjectPropertyAddress(
-        mSelector: kAudioDevicePropertyMute,
-        mScope: kAudioObjectPropertyScopeOutput,
-        mElement: kAudioObjectPropertyElementMain
-    )
-
-    if AudioObjectHasProperty(deviceId, &propertyAddress) && AudioObjectSetPropertyData(deviceId, &propertyAddress, 0, nil, mutedSize, &muted) == noErr {
-        L.push(true)
-    } else {
-        L.push(false)
-    }
+    L.push(audio.setMuted(deviceID: audioDevice.pointee.deviceId, muted: muted, scope: .output))
 
     return 1
 }
@@ -699,22 +445,11 @@ private func audiodevice_setmuted(_ L: LuaState) throws -> CInt {
 
     let audioDevice = userdataToAudioDevice(L, 1)
     let deviceId = audioDevice.pointee.deviceId
-    var muted = UInt32(lua_toboolean(L, 2))
-    let mutedSize = UInt32(MemoryLayout<UInt32>.size)
+    let muted = lua_toboolean(L, 2) != 0
+    let audio = environmentGet(L).audio
+    let scope = preferredScope(L, deviceId)
 
-    let scope: AudioObjectPropertyScope = isOutputDevice(deviceId) ? kAudioObjectPropertyScopeOutput : kAudioObjectPropertyScopeInput
-
-    var propertyAddress = AudioObjectPropertyAddress(
-        mSelector: kAudioDevicePropertyMute,
-        mScope: scope,
-        mElement: kAudioObjectPropertyElementMain
-    )
-
-    if AudioObjectHasProperty(deviceId, &propertyAddress) && AudioObjectSetPropertyData(deviceId, &propertyAddress, 0, nil, mutedSize, &muted) == noErr {
-        L.push(true)
-    } else {
-        L.push(false)
-    }
+    L.push(audio.setMuted(deviceID: deviceId, muted: muted, scope: scope))
 
     return 1
 }
@@ -736,21 +471,14 @@ private func audiodevice_inputVolume(_ L: LuaState) throws -> CInt {
 
     let audioDevice = userdataToAudioDevice(L, 1)
     let deviceId = audioDevice.pointee.deviceId
-    var volume: Float32 = 0
-    var volumeSize = UInt32(MemoryLayout<Float32>.size)
+    let audio = environmentGet(L).audio
 
-    if !isInputDevice(deviceId) {
+    if !isInputDevice(L, deviceId) {
         lua_pushnil(L)
         return 1
     }
 
-    var propertyAddress = AudioObjectPropertyAddress(
-        mSelector: kAudioHardwareServiceDeviceProperty_VirtualMainVolume,
-        mScope: kAudioObjectPropertyScopeInput,
-        mElement: kAudioObjectPropertyElementMain
-    )
-
-    if AudioObjectHasProperty(deviceId, &propertyAddress) && AudioObjectGetPropertyData(deviceId, &propertyAddress, 0, nil, &volumeSize, &volume) == noErr {
+    if let volume = audio.getVolume(deviceID: deviceId, scope: .input) {
         L.push(lua_Number(volume * 100.0))
     } else {
         lua_pushnil(L)
@@ -776,21 +504,14 @@ private func audiodevice_outputVolume(_ L: LuaState) throws -> CInt {
 
     let audioDevice = userdataToAudioDevice(L, 1)
     let deviceId = audioDevice.pointee.deviceId
-    var volume: Float32 = 0
-    var volumeSize = UInt32(MemoryLayout<Float32>.size)
+    let audio = environmentGet(L).audio
 
-    if !isOutputDevice(deviceId) {
+    if !isOutputDevice(L, deviceId) {
         lua_pushnil(L)
         return 1
     }
 
-    var propertyAddress = AudioObjectPropertyAddress(
-        mSelector: kAudioHardwareServiceDeviceProperty_VirtualMainVolume,
-        mScope: kAudioObjectPropertyScopeOutput,
-        mElement: kAudioObjectPropertyElementMain
-    )
-
-    if AudioObjectHasProperty(deviceId, &propertyAddress) && AudioObjectGetPropertyData(deviceId, &propertyAddress, 0, nil, &volumeSize, &volume) == noErr {
+    if let volume = audio.getVolume(deviceID: deviceId, scope: .output) {
         L.push(lua_Number(volume * 100.0))
     } else {
         lua_pushnil(L)
@@ -817,18 +538,10 @@ private func audiodevice_volume(_ L: LuaState) throws -> CInt {
 
     let audioDevice = userdataToAudioDevice(L, 1)
     let deviceId = audioDevice.pointee.deviceId
-    var volume: Float32 = 0
-    var volumeSize = UInt32(MemoryLayout<Float32>.size)
+    let audio = environmentGet(L).audio
+    let scope = preferredScope(L, deviceId)
 
-    let scope: AudioObjectPropertyScope = isOutputDevice(deviceId) ? kAudioObjectPropertyScopeOutput : kAudioObjectPropertyScopeInput
-
-    var propertyAddress = AudioObjectPropertyAddress(
-        mSelector: kAudioHardwareServiceDeviceProperty_VirtualMainVolume,
-        mScope: scope,
-        mElement: kAudioObjectPropertyElementMain
-    )
-
-    if AudioObjectHasProperty(deviceId, &propertyAddress) && AudioObjectGetPropertyData(deviceId, &propertyAddress, 0, nil, &volumeSize, &volume) == noErr {
+    if let volume = audio.getVolume(deviceID: deviceId, scope: scope) {
         L.push(lua_Number(volume * 100.0))
     } else {
         lua_pushnil(L)
@@ -851,28 +564,15 @@ private func audiodevice_volume(_ L: LuaState) throws -> CInt {
 ///  * The volume level is a floating point number. Depending on your audio hardware, it may not be possible to increase volume in single digit increments
 private func audiodevice_setInputVolume(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
-
     luaL_checktype(L, 2, LUA_TNUMBER)
 
     let audioDevice = userdataToAudioDevice(L, 1)
-    let deviceId = audioDevice.pointee.deviceId
+    let audio = environmentGet(L).audio
     var value = Float32(lua_tonumber(L, 2))
     value = max(0, min(100, value))
+    let volume = value / 100.0
 
-    var volume = value / 100.0
-    let volumeSize = UInt32(MemoryLayout<Float32>.size)
-
-    var propertyAddress = AudioObjectPropertyAddress(
-        mSelector: kAudioHardwareServiceDeviceProperty_VirtualMainVolume,
-        mScope: kAudioObjectPropertyScopeInput,
-        mElement: kAudioObjectPropertyElementMain
-    )
-
-    if AudioObjectHasProperty(deviceId, &propertyAddress) && AudioObjectSetPropertyData(deviceId, &propertyAddress, 0, nil, volumeSize, &volume) == noErr {
-        L.push(true)
-    } else {
-        L.push(false)
-    }
+    L.push(audio.setVolume(deviceID: audioDevice.pointee.deviceId, volume: volume, scope: .input))
 
     return 1
 }
@@ -891,28 +591,15 @@ private func audiodevice_setInputVolume(_ L: LuaState) throws -> CInt {
 ///  * The volume level is a floating point number. Depending on your audio hardware, it may not be possible to increase volume in single digit increments
 private func audiodevice_setOutputVolume(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
-
     luaL_checktype(L, 2, LUA_TNUMBER)
 
     let audioDevice = userdataToAudioDevice(L, 1)
-    let deviceId = audioDevice.pointee.deviceId
+    let audio = environmentGet(L).audio
     var value = Float32(lua_tonumber(L, 2))
     value = max(0, min(100, value))
+    let volume = value / 100.0
 
-    var volume = value / 100.0
-    let volumeSize = UInt32(MemoryLayout<Float32>.size)
-
-    var propertyAddress = AudioObjectPropertyAddress(
-        mSelector: kAudioHardwareServiceDeviceProperty_VirtualMainVolume,
-        mScope: kAudioObjectPropertyScopeOutput,
-        mElement: kAudioObjectPropertyElementMain
-    )
-
-    if AudioObjectHasProperty(deviceId, &propertyAddress) && AudioObjectSetPropertyData(deviceId, &propertyAddress, 0, nil, volumeSize, &volume) == noErr {
-        L.push(true)
-    } else {
-        L.push(false)
-    }
+    L.push(audio.setVolume(deviceID: audioDevice.pointee.deviceId, volume: volume, scope: .output))
 
     return 1
 }
@@ -932,30 +619,17 @@ private func audiodevice_setOutputVolume(_ L: LuaState) throws -> CInt {
 ///  * This method will inspect the device to determine if it is an input or output device, and set the appropriate volume. For devices that are both input and output devices, see `:setInputVolume()` and `:setOutputVolume()`
 private func audiodevice_setvolume(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
-
     luaL_checktype(L, 2, LUA_TNUMBER)
 
     let audioDevice = userdataToAudioDevice(L, 1)
     let deviceId = audioDevice.pointee.deviceId
+    let audio = environmentGet(L).audio
     var value = Float32(lua_tonumber(L, 2))
     value = max(0, min(100, value))
+    let volume = value / 100.0
+    let scope = preferredScope(L, deviceId)
 
-    var volume = value / 100.0
-    let volumeSize = UInt32(MemoryLayout<Float32>.size)
-
-    let scope: AudioObjectPropertyScope = isOutputDevice(deviceId) ? kAudioObjectPropertyScopeOutput : kAudioObjectPropertyScopeInput
-
-    var propertyAddress = AudioObjectPropertyAddress(
-        mSelector: kAudioHardwareServiceDeviceProperty_VirtualMainVolume,
-        mScope: scope,
-        mElement: kAudioObjectPropertyElementMain
-    )
-
-    if AudioObjectHasProperty(deviceId, &propertyAddress) && AudioObjectSetPropertyData(deviceId, &propertyAddress, 0, nil, volumeSize, &volume) == noErr {
-        L.push(true)
-    } else {
-        L.push(false)
-    }
+    L.push(audio.setVolume(deviceID: deviceId, volume: volume, scope: scope))
 
     return 1
 }
@@ -978,18 +652,10 @@ private func audiodevice_balance(_ L: LuaState) throws -> CInt {
 
     let audioDevice = userdataToAudioDevice(L, 1)
     let deviceId = audioDevice.pointee.deviceId
-    var balance: Float32 = 0
-    var balanceSize = UInt32(MemoryLayout<Float32>.size)
+    let audio = environmentGet(L).audio
+    let scope = preferredScope(L, deviceId)
 
-    let scope: AudioObjectPropertyScope = isOutputDevice(deviceId) ? kAudioObjectPropertyScopeOutput : kAudioObjectPropertyScopeInput
-
-    var propertyAddress = AudioObjectPropertyAddress(
-        mSelector: kAudioHardwareServiceDeviceProperty_VirtualMainBalance,
-        mScope: scope,
-        mElement: kAudioObjectPropertyElementMain
-    )
-
-    if AudioObjectHasProperty(deviceId, &propertyAddress) && AudioObjectGetPropertyData(deviceId, &propertyAddress, 0, nil, &balanceSize, &balance) == noErr {
+    if let balance = audio.getBalance(deviceID: deviceId, scope: scope) {
         L.push(lua_Number(balance))
     } else {
         lua_pushnil(L)
@@ -1012,30 +678,16 @@ private func audiodevice_balance(_ L: LuaState) throws -> CInt {
 ///  * This method will inspect the device to determine if it is an input or output device, and set the appropriate volume. For devices that are both input and output devices, see `:setInputVolume()` and `:setOutputVolume()`
 private func audiodevice_setbalance(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
-
     luaL_checktype(L, 2, LUA_TNUMBER)
 
     let audioDevice = userdataToAudioDevice(L, 1)
     let deviceId = audioDevice.pointee.deviceId
+    let audio = environmentGet(L).audio
     var value = Float32(lua_tonumber(L, 2))
     value = max(0, min(1, value))
+    let scope = preferredScope(L, deviceId)
 
-    var balance = value
-    let balanceSize = UInt32(MemoryLayout<Float32>.size)
-
-    let scope: AudioObjectPropertyScope = isOutputDevice(deviceId) ? kAudioObjectPropertyScopeOutput : kAudioObjectPropertyScopeInput
-
-    var propertyAddress = AudioObjectPropertyAddress(
-        mSelector: kAudioHardwareServiceDeviceProperty_VirtualMainBalance,
-        mScope: scope,
-        mElement: kAudioObjectPropertyElementMain
-    )
-
-    if AudioObjectHasProperty(deviceId, &propertyAddress) && AudioObjectSetPropertyData(deviceId, &propertyAddress, 0, nil, balanceSize, &balance) == noErr {
-        L.push(true)
-    } else {
-        L.push(false)
-    }
+    L.push(audio.setBalance(deviceID: deviceId, balance: value, scope: scope))
 
     return 1
 }
@@ -1058,19 +710,11 @@ private func audiodevice_thru(_ L: LuaState) throws -> CInt {
 
     let audioDevice = userdataToAudioDevice(L, 1)
     let deviceId = audioDevice.pointee.deviceId
-    var thru: UInt32 = 0
-    var thruSize = UInt32(MemoryLayout<UInt32>.size)
+    let audio = environmentGet(L).audio
+    let scope = preferredScope(L, deviceId)
 
-    let scope: AudioObjectPropertyScope = isOutputDevice(deviceId) ? kAudioObjectPropertyScopeOutput : kAudioObjectPropertyScopeInput
-
-    var propertyAddress = AudioObjectPropertyAddress(
-        mSelector: kAudioDevicePropertyPlayThru,
-        mScope: scope,
-        mElement: kAudioObjectPropertyElementMain
-    )
-
-    if AudioObjectHasProperty(deviceId, &propertyAddress) && AudioObjectGetPropertyData(deviceId, &propertyAddress, 0, nil, &thruSize, &thru) == noErr {
-        L.push(thru != 0)
+    if let thru = audio.getPlayThrough(deviceID: deviceId, scope: scope) {
+        L.push(thru)
     } else {
         lua_pushnil(L)
     }
@@ -1095,22 +739,11 @@ private func audiodevice_setThru(_ L: LuaState) throws -> CInt {
 
     let audioDevice = userdataToAudioDevice(L, 1)
     let deviceId = audioDevice.pointee.deviceId
-    var thru = UInt32(lua_toboolean(L, 2))
-    let thruSize = UInt32(MemoryLayout<UInt32>.size)
+    let enabled = lua_toboolean(L, 2) != 0
+    let audio = environmentGet(L).audio
+    let scope = preferredScope(L, deviceId)
 
-    let scope: AudioObjectPropertyScope = isOutputDevice(deviceId) ? kAudioObjectPropertyScopeOutput : kAudioObjectPropertyScopeInput
-
-    var propertyAddress = AudioObjectPropertyAddress(
-        mSelector: kAudioDevicePropertyPlayThru,
-        mScope: scope,
-        mElement: kAudioObjectPropertyElementMain
-    )
-
-    if AudioObjectHasProperty(deviceId, &propertyAddress) && AudioObjectSetPropertyData(deviceId, &propertyAddress, 0, nil, thruSize, &thru) == noErr {
-        L.push(true)
-    } else {
-        L.push(false)
-    }
+    L.push(audio.setPlayThrough(deviceID: deviceId, enabled: enabled, scope: scope))
 
     return 1
 }
@@ -1128,7 +761,7 @@ private func audiodevice_isOutputDevice(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let audioDevice = userdataToAudioDevice(L, 1)
-    L.push(isOutputDevice(audioDevice.pointee.deviceId))
+    L.push(isOutputDevice(L, audioDevice.pointee.deviceId))
 
     return 1
 }
@@ -1146,7 +779,7 @@ private func audiodevice_isInputDevice(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let audioDevice = userdataToAudioDevice(L, 1)
-    L.push(isInputDevice(audioDevice.pointee.deviceId))
+    L.push(isInputDevice(L, audioDevice.pointee.deviceId))
 
     return 1
 }
@@ -1164,38 +797,31 @@ private func audiodevice_transportType(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let audioDevice = userdataToAudioDevice(L, 1)
-    let deviceId = audioDevice.pointee.deviceId
-    var transportType: UInt32 = 0
-    var transportTypeSize = UInt32(MemoryLayout<UInt32>.size)
+    let audio = environmentGet(L).audio
 
-    var propertyAddress = AudioObjectPropertyAddress(
-        mSelector: kAudioDevicePropertyTransportType,
-        mScope: kAudioObjectPropertyScopeOutput,
-        mElement: kAudioObjectPropertyElementMain
-    )
-
-    if AudioObjectHasProperty(deviceId, &propertyAddress) && AudioObjectGetPropertyData(deviceId, &propertyAddress, 0, nil, &transportTypeSize, &transportType) == noErr {
-        let transportTypeName: String
-        switch transportType {
-        case kAudioDeviceTransportTypeBuiltIn:       transportTypeName = "Built-in"
-        case kAudioDeviceTransportTypeAggregate:      transportTypeName = "Aggregate"
-        case kAudioDeviceTransportTypeAutoAggregate:   transportTypeName = "Auto Aggregate"
-        case kAudioDeviceTransportTypeVirtual:        transportTypeName = "Virtual"
-        case kAudioDeviceTransportTypePCI:            transportTypeName = "PCI"
-        case kAudioDeviceTransportTypeUSB:            transportTypeName = "USB"
-        case kAudioDeviceTransportTypeFireWire:       transportTypeName = "FireWire"
-        case kAudioDeviceTransportTypeBluetooth:      transportTypeName = "Bluetooth"
-        case kAudioDeviceTransportTypeHDMI:           transportTypeName = "HDMI"
-        case kAudioDeviceTransportTypeDisplayPort:    transportTypeName = "DisplayPort"
-        case kAudioDeviceTransportTypeAirPlay:        transportTypeName = "AirPlay"
-        case kAudioDeviceTransportTypeAVB:            transportTypeName = "AVB"
-        case kAudioDeviceTransportTypeThunderbolt:    transportTypeName = "Thunderbolt"
-        default:                                      transportTypeName = "UNKNOWN"
-        }
-        L.push(transportTypeName)
-    } else {
+    guard let transportType = audio.transportType(deviceID: audioDevice.pointee.deviceId) else {
         lua_pushnil(L)
+        return 1
     }
+
+    let transportTypeName: String
+    switch transportType {
+    case 0x626C746E /* kAudioDeviceTransportTypeBuiltIn */: transportTypeName = "Built-in"
+    case 0x67727570 /* kAudioDeviceTransportTypeAggregate */: transportTypeName = "Aggregate"
+    case 0x66677270 /* kAudioDeviceTransportTypeAutoAggregate */: transportTypeName = "Auto Aggregate"
+    case 0x76697274 /* kAudioDeviceTransportTypeVirtual */: transportTypeName = "Virtual"
+    case 0x70636920 /* kAudioDeviceTransportTypePCI */: transportTypeName = "PCI"
+    case 0x75736220 /* kAudioDeviceTransportTypeUSB */: transportTypeName = "USB"
+    case 0x31333934 /* kAudioDeviceTransportTypeFireWire */: transportTypeName = "FireWire"
+    case 0x626C7565 /* kAudioDeviceTransportTypeBluetooth */: transportTypeName = "Bluetooth"
+    case 0x68646D69 /* kAudioDeviceTransportTypeHDMI */: transportTypeName = "HDMI"
+    case 0x64707274 /* kAudioDeviceTransportTypeDisplayPort */: transportTypeName = "DisplayPort"
+    case 0x61697270 /* kAudioDeviceTransportTypeAirPlay */: transportTypeName = "AirPlay"
+    case 0x61766232 /* kAudioDeviceTransportTypeAVB */: transportTypeName = "AVB"
+    case 0x74686E64 /* kAudioDeviceTransportTypeThunderbolt */: transportTypeName = "Thunderbolt"
+    default: transportTypeName = "UNKNOWN"
+    }
+    L.push(transportTypeName)
 
     return 1
 }
@@ -1214,20 +840,13 @@ private func audiodevice_jackConnected(_ L: LuaState) throws -> CInt {
 
     let audioDevice = userdataToAudioDevice(L, 1)
     let deviceId = audioDevice.pointee.deviceId
-    var jackConnected: UInt32 = 0
-    var jackConnectedSize = UInt32(MemoryLayout<UInt32>.size)
-    let scope: AudioObjectPropertyScope = isOutputDevice(deviceId) ? kAudioObjectPropertyScopeOutput : kAudioObjectPropertyScopeInput
+    let audio = environmentGet(L).audio
+    let scope = preferredScope(L, deviceId)
 
-    var propertyAddress = AudioObjectPropertyAddress(
-        mSelector: kAudioDevicePropertyJackIsConnected,
-        mScope: scope,
-        mElement: kAudioObjectPropertyElementMain
-    )
-
-    if AudioObjectGetPropertyData(deviceId, &propertyAddress, 0, nil, &jackConnectedSize, &jackConnected) != noErr {
-        lua_pushnil(L)
+    if let connected = audio.jackConnected(deviceID: deviceId, scope: scope) {
+        L.push(connected)
     } else {
-        L.push(jackConnected != 0)
+        lua_pushnil(L)
     }
 
     return 1
@@ -1246,15 +865,9 @@ private func audiodevice_supportsInputDataSources(_ L: LuaState) throws -> CInt 
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let audioDevice = userdataToAudioDevice(L, 1)
-    let deviceId = audioDevice.pointee.deviceId
+    let audio = environmentGet(L).audio
 
-    var propertyAddress = AudioObjectPropertyAddress(
-        mSelector: kAudioDevicePropertyDataSources,
-        mScope: kAudioObjectPropertyScopeInput,
-        mElement: kAudioObjectPropertyElementMain
-    )
-
-    L.push(AudioObjectHasProperty(deviceId, &propertyAddress))
+    L.push(audio.supportsDataSources(deviceID: audioDevice.pointee.deviceId, scope: .input))
 
     return 1
 }
@@ -1272,15 +885,9 @@ private func audiodevice_supportsOutputDataSources(_ L: LuaState) throws -> CInt
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let audioDevice = userdataToAudioDevice(L, 1)
-    let deviceId = audioDevice.pointee.deviceId
+    let audio = environmentGet(L).audio
 
-    var propertyAddress = AudioObjectPropertyAddress(
-        mSelector: kAudioDevicePropertyDataSources,
-        mScope: kAudioObjectPropertyScopeOutput,
-        mElement: kAudioObjectPropertyElementMain
-    )
-
-    L.push(AudioObjectHasProperty(deviceId, &propertyAddress))
+    L.push(audio.supportsDataSources(deviceID: audioDevice.pointee.deviceId, scope: .output))
 
     return 1
 }
@@ -1302,18 +909,10 @@ private func audiodevice_currentInputDataSource(_ L: LuaState) throws -> CInt {
 
     let audioDevice = userdataToAudioDevice(L, 1)
     let deviceId = audioDevice.pointee.deviceId
+    let audio = environmentGet(L).audio
 
-    var propertyAddress = AudioObjectPropertyAddress(
-        mSelector: kAudioDevicePropertyDataSource,
-        mScope: kAudioObjectPropertyScopeInput,
-        mElement: kAudioObjectPropertyElementMain
-    )
-
-    var dataSourceId: UInt32 = 0
-    var dataSourceIdSize = UInt32(MemoryLayout<UInt32>.size)
-
-    if AudioObjectGetPropertyData(deviceId, &propertyAddress, 0, nil, &dataSourceIdSize, &dataSourceId) == noErr {
-        new_dataSource(L, deviceId, dataSourceId)
+    if let source = audio.currentDataSource(forDeviceID: deviceId, scope: .input) {
+        new_dataSource(L, deviceId, source.id)
     } else {
         lua_pushnil(L)
     }
@@ -1338,18 +937,10 @@ private func audiodevice_currentOutputDataSource(_ L: LuaState) throws -> CInt {
 
     let audioDevice = userdataToAudioDevice(L, 1)
     let deviceId = audioDevice.pointee.deviceId
+    let audio = environmentGet(L).audio
 
-    var propertyAddress = AudioObjectPropertyAddress(
-        mSelector: kAudioDevicePropertyDataSource,
-        mScope: kAudioObjectPropertyScopeOutput,
-        mElement: kAudioObjectPropertyElementMain
-    )
-
-    var dataSourceId: UInt32 = 0
-    var dataSourceIdSize = UInt32(MemoryLayout<UInt32>.size)
-
-    if AudioObjectGetPropertyData(deviceId, &propertyAddress, 0, nil, &dataSourceIdSize, &dataSourceId) == noErr {
-        new_dataSource(L, deviceId, dataSourceId)
+    if let source = audio.currentDataSource(forDeviceID: deviceId, scope: .output) {
+        new_dataSource(L, deviceId, source.id)
     } else {
         lua_pushnil(L)
     }
@@ -1371,33 +962,13 @@ private func audiodevice_allOutputDataSources(_ L: LuaState) throws -> CInt {
 
     let audioDevice = userdataToAudioDevice(L, 1)
     let deviceId = audioDevice.pointee.deviceId
-    var datasourceListPropertySize: UInt32 = 0
-
-    var propertyAddress = AudioObjectPropertyAddress(
-        mSelector: kAudioDevicePropertyDataSources,
-        mScope: kAudioObjectPropertyScopeOutput,
-        mElement: kAudioObjectPropertyElementMain
-    )
-
-    guard AudioObjectGetPropertyDataSize(deviceId, &propertyAddress, 0, nil, &datasourceListPropertySize) == noErr else {
-        lua_pushnil(L)
-        return 1
-    }
-
-    let numSources = Int(datasourceListPropertySize) / MemoryLayout<UInt32>.size
-    let datasourceList = UnsafeMutablePointer<UInt32>.allocate(capacity: numSources)
-    defer { datasourceList.deallocate() }
-
-    guard AudioObjectGetPropertyData(deviceId, &propertyAddress, 0, nil, &datasourceListPropertySize, datasourceList) == noErr else {
-        lua_pushnil(L)
-        return 1
-    }
+    let audio = environmentGet(L).audio
+    let sources = audio.dataSources(forDeviceID: deviceId, scope: .output)
 
     lua_newtable(L)
-
-    for i in 0..<numSources {
+    for (i, source) in sources.enumerated() {
         L.push(lua_Integer(i + 1))
-        new_dataSource(L, deviceId, datasourceList[i])
+        new_dataSource(L, deviceId, source.id)
         lua_settable(L, -3)
     }
 
@@ -1418,33 +989,13 @@ private func audiodevice_allInputDataSources(_ L: LuaState) throws -> CInt {
 
     let audioDevice = userdataToAudioDevice(L, 1)
     let deviceId = audioDevice.pointee.deviceId
-    var datasourceListPropertySize: UInt32 = 0
-
-    var propertyAddress = AudioObjectPropertyAddress(
-        mSelector: kAudioDevicePropertyDataSources,
-        mScope: kAudioObjectPropertyScopeInput,
-        mElement: kAudioObjectPropertyElementMain
-    )
-
-    guard AudioObjectGetPropertyDataSize(deviceId, &propertyAddress, 0, nil, &datasourceListPropertySize) == noErr else {
-        lua_pushnil(L)
-        return 1
-    }
-
-    let numSources = Int(datasourceListPropertySize) / MemoryLayout<UInt32>.size
-    let datasourceList = UnsafeMutablePointer<UInt32>.allocate(capacity: numSources)
-    defer { datasourceList.deallocate() }
-
-    guard AudioObjectGetPropertyData(deviceId, &propertyAddress, 0, nil, &datasourceListPropertySize, datasourceList) == noErr else {
-        lua_pushnil(L)
-        return 1
-    }
+    let audio = environmentGet(L).audio
+    let sources = audio.dataSources(forDeviceID: deviceId, scope: .input)
 
     lua_newtable(L)
-
-    for i in 0..<numSources {
+    for (i, source) in sources.enumerated() {
         L.push(lua_Integer(i + 1))
-        new_dataSource(L, deviceId, datasourceList[i])
+        new_dataSource(L, deviceId, source.id)
         lua_settable(L, -3)
     }
 
@@ -1492,7 +1043,7 @@ private func audiodevice_watcherSetCallback(_ L: LuaState) throws -> CInt {
     case LUA_TFUNCTION:
         deviceCallbacks[udPtr] = L.ref(index: 2)
     case LUA_TNIL:
-        watcherStop(audioDevice)
+        watcherStop(L, audioDevice)
     default:
         break
     }
@@ -1527,17 +1078,44 @@ private func audiodevice_watcherStart(_ L: LuaState) throws -> CInt {
         return 1
     }
 
-    var propertyAddress = AudioObjectPropertyAddress(
-        mSelector: 0,
-        mScope: kAudioObjectPropertyScopeWildcard,
-        mElement: kAudioObjectPropertyElementWildcard
-    )
+    let audio = environmentGet(L).audio
+    let deviceId = audioDevice.pointee.deviceId
+    let lsCanary = audioDevice.pointee.lsCanary
 
-    for selector in watchSelectors {
-        propertyAddress.mSelector = selector
-        AudioObjectAddPropertyListener(audioDevice.pointee.deviceId, &propertyAddress, audiodevice_callback, audioDevice)
+    // Capture the userdata pointer for the closure, NOT the audioDevice pointer
+    // (which could be invalidated by Lua GC moving memory)
+    let capturedUdPtr = udPtr
+
+    let listenerID = audio.addPropertyListener(deviceID: deviceId) { [weak audio] callbackDeviceID, eventName, eventScope, element in
+        // Get the UID of the device
+        let deviceUIDNS = audio?.deviceUID(deviceID: callbackDeviceID)
+
+        environmentGetGlobalOrNil()?.eventLoop.async {
+            let L = lua_getCurrentState()!
+            if !lua_isStateGenerationValid(lsCanary) {
+                return
+            }
+            guard let cb = deviceCallbacks[capturedUdPtr] else {
+                os_log(.error, "%{public}s", "hs.audiodevice.watcher callback fired, but no function has been set with hs.audiodevice:watcherCallback()")
+                return
+            }
+
+            cb.push(onto: L)
+
+            if let uid = deviceUIDNS {
+                L.push(uid)
+            } else {
+                lua_pushnil(L)
+            }
+
+            lua_pushany(L, eventName as NSString)
+            lua_pushany(L, eventScope as NSString)
+            lua_pushany(L, NSNumber(value: element))
+            if lua_pcall(L, 4, 0, 0) != LUA_OK { lua_pop(L, 1) }
+        }
     }
 
+    audioDevice.pointee.watcherListenerID = listenerID
     audioDevice.pointee.watcherRunning = true
 
     lua_pushvalue(L, 1)
@@ -1545,24 +1123,17 @@ private func audiodevice_watcherStart(_ L: LuaState) throws -> CInt {
     return 1
 }
 
-func watcherStop(_ audioDevice: UnsafeMutablePointer<AudioDeviceUserData>) {
+func watcherStop(_ L: UnsafeMutablePointer<lua_State>!, _ audioDevice: UnsafeMutablePointer<AudioDeviceUserData>) {
     precondition(audioDevice.pointee.deviceId != 0, "Cannot stop watcher on unknown device")
     if !audioDevice.pointee.watcherRunning {
         return
     }
 
-    var propertyAddress = AudioObjectPropertyAddress(
-        mSelector: 0,
-        mScope: kAudioObjectPropertyScopeWildcard,
-        mElement: kAudioObjectPropertyElementWildcard
-    )
-
-    for selector in watchSelectors {
-        propertyAddress.mSelector = selector
-        AudioObjectRemovePropertyListener(audioDevice.pointee.deviceId, &propertyAddress, audiodevice_callback, audioDevice)
-    }
+    let audio = environmentGet(L).audio
+    _ = audio.removePropertyListener(id: audioDevice.pointee.watcherListenerID)
 
     audioDevice.pointee.watcherRunning = false
+    audioDevice.pointee.watcherListenerID = 0
 }
 
 /// hs.audiodevice:watcherStop() -> hs.audiodevice
@@ -1579,7 +1150,7 @@ private func audiodevice_watcherStop(_ L: LuaState) throws -> CInt {
 
     let audioDevice = userdataToAudioDevice(L, 1)
 
-    watcherStop(audioDevice)
+    watcherStop(L, audioDevice)
 
     lua_pushvalue(L, 1)
 
@@ -1609,24 +1180,8 @@ private func audiodevice_tostring(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
 
     let audioDevice = userdataToAudioDevice(L, 1)
-    let deviceId = audioDevice.pointee.deviceId
-    var deviceName: Unmanaged<CFString>?
-    var propertySize = UInt32(MemoryLayout<CFString>.size)
-
-    var propertyAddress = AudioObjectPropertyAddress(
-        mSelector: kAudioObjectPropertyName,
-        mScope: kAudioObjectPropertyScopeGlobal,
-        mElement: kAudioObjectPropertyElementMain
-    )
-
-    let deviceNameNS: String
-    if withUnsafeMutablePointer(to: &deviceName, { ptr in
-        AudioObjectGetPropertyData(deviceId, &propertyAddress, 0, nil, &propertySize, ptr)
-    }) == noErr, let name = deviceName?.takeRetainedValue() {
-        deviceNameNS = name as String
-    } else {
-        deviceNameNS = "(un-named audiodevice)"
-    }
+    let audio = environmentGet(L).audio
+    let deviceNameNS = audio.deviceName(deviceID: audioDevice.pointee.deviceId) ?? "(un-named audiodevice)"
 
     let ptr = lua_topointer(L, 1)
     lua_pushany(L, "\(USERDATA_TAG): \(deviceNameNS) (\(String(describing: ptr)))" as NSString)
@@ -1656,42 +1211,20 @@ private func audiodevice_gc(_ L: LuaState) throws -> CInt {
 
 // MARK: - hs.audiodevice.datasource object methods
 
-func get_datasource_name(_ hostDevice: AudioDeviceID, _ dataSource: UInt32) -> String {
+func get_datasource_name(_ L: UnsafeMutablePointer<lua_State>!, _ hostDevice: UInt32, _ dataSource: UInt32) -> String {
     precondition(hostDevice != 0, "hostDevice must not be kAudioObjectUnknown (0)")
-    var name = "(un-named datasource)"
-    var dataSourceName: Unmanaged<CFString>?
-    let scope: AudioObjectPropertyScope
+    let audio = environmentGet(L).audio
 
-    if isOutputDevice(hostDevice) {
-        scope = kAudioObjectPropertyScopeOutput
-    } else if isInputDevice(hostDevice) {
-        scope = kAudioObjectPropertyScopeInput
+    let scope: AudioScope
+    if audio.isOutputDevice(deviceID: hostDevice) {
+        scope = .output
+    } else if audio.isInputDevice(deviceID: hostDevice) {
+        scope = .input
     } else {
-        return name
+        return "(un-named datasource)"
     }
 
-    var propertyAddress = AudioObjectPropertyAddress(
-        mSelector: kAudioDevicePropertyDataSourceNameForIDCFString,
-        mScope: scope,
-        mElement: kAudioObjectPropertyElementMain
-    )
-
-    var mutableDataSource = dataSource
-    var avt = AudioValueTranslation(
-        mInputData: &mutableDataSource,
-        mInputDataSize: UInt32(MemoryLayout<UInt32>.size),
-        mOutputData: &dataSourceName,
-        mOutputDataSize: UInt32(MemoryLayout<CFString>.size)
-    )
-
-    var avtSize = UInt32(MemoryLayout<AudioValueTranslation>.size)
-
-    if AudioObjectGetPropertyData(hostDevice, &propertyAddress, 0, nil, &avtSize, &avt) == noErr,
-       let cfName = dataSourceName?.takeRetainedValue() {
-        name = cfName as String
-    }
-
-    return name
+    return audio.dataSourceName(deviceID: hostDevice, dataSourceID: dataSource, scope: scope) ?? "(un-named datasource)"
 }
 
 /// hs.audiodevice.datasource:name() -> string
@@ -1707,7 +1240,7 @@ private func datasource_name(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_DATASOURCE_TAG)
 
     let dataSource = userdataToDataSource(L, 1)
-    let name = get_datasource_name(dataSource.pointee.hostDevice, dataSource.pointee.dataSource)
+    let name = get_datasource_name(L, dataSource.pointee.hostDevice, dataSource.pointee.dataSource)
 
     L.push(name)
 
@@ -1727,26 +1260,20 @@ private func datasource_setDefault(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_DATASOURCE_TAG)
 
     let dataSource = userdataToDataSource(L, 1)
-    let scope: AudioObjectPropertyScope
+    let audio = environmentGet(L).audio
+    let scope: AudioScope
 
-    if isOutputDevice(dataSource.pointee.hostDevice) {
-        scope = kAudioObjectPropertyScopeOutput
-    } else if isInputDevice(dataSource.pointee.hostDevice) {
-        scope = kAudioObjectPropertyScopeInput
+    if audio.isOutputDevice(deviceID: dataSource.pointee.hostDevice) {
+        scope = .output
+    } else if audio.isInputDevice(deviceID: dataSource.pointee.hostDevice) {
+        scope = .input
     } else {
         os_log(.error, "ERROR: datasource host device is neither input nor output")
         lua_pushvalue(L, 1)
         return 1
     }
 
-    var propertyAddress = AudioObjectPropertyAddress(
-        mSelector: kAudioDevicePropertyDataSource,
-        mScope: scope,
-        mElement: kAudioObjectPropertyElementMain
-    )
-
-    var ds = dataSource.pointee.dataSource
-    AudioObjectSetPropertyData(dataSource.pointee.hostDevice, &propertyAddress, 0, nil, UInt32(MemoryLayout<UInt32>.size), &ds)
+    _ = audio.setDataSource(deviceID: dataSource.pointee.hostDevice, dataSourceID: dataSource.pointee.dataSource, scope: scope)
 
     lua_pushvalue(L, 1)
 
@@ -1757,7 +1284,7 @@ private func datasource_tostring(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_DATASOURCE_TAG)
 
     let dataSource = userdataToDataSource(L, 1)
-    let name = get_datasource_name(dataSource.pointee.hostDevice, dataSource.pointee.dataSource)
+    let name = get_datasource_name(L, dataSource.pointee.hostDevice, dataSource.pointee.dataSource)
 
     let ptr = lua_topointer(L, 1)
     L.push("\(USERDATA_DATASOURCE_TAG): \(name) (\(String(describing: ptr)))")

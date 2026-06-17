@@ -1,124 +1,63 @@
 import Cocoa
 import CLua
 import Lua
-import Carbon
-import IOKit.graphics
 import os.log
 import HSDSTCore
 
 private let USERDATA_TAG = "hs.screen"
 
-// MARK: - Helper: get NSScreen from Lua userdata
+// MARK: - Userdata: UInt32 screen ID (like Audiodevice)
 
-private func get_screen_arg(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> NSScreen {
-    let ptr = luaL_checkudata(L, idx, USERDATA_TAG)!
-    return Unmanaged<NSScreen>.fromOpaque(ptr.assumingMemoryBound(to: UnsafeMutableRawPointer.self).pointee).takeUnretainedValue()
+struct ScreenUserData {
+    var screenID: UInt32
 }
 
-// MARK: - Dynamic load for CGDisplayCreateImageForRect
-
-// CGDisplayCreateImageForRect is marked obsoleted in macOS 15 SDK but still works at runtime.
-// We load it dynamically to bypass the SDK's availability annotation until ScreenCaptureKit migration.
-private typealias CGDisplayCreateImageForRectFunc = @convention(c) (CGDirectDisplayID, CGRect) -> Unmanaged<CGImage>?
-private let hs_CGDisplayCreateImageForRect: CGDisplayCreateImageForRectFunc? = {
-    guard let sym = dlsym(nil, "CGDisplayCreateImageForRect") else { return nil }
-    return unsafeBitCast(sym, to: CGDisplayCreateImageForRectFunc.self)
-}()
-
-// MARK: - Private API declarations
-
-@_silgen_name("CoreDisplay_Display_SetUserBrightness")
-private func CoreDisplay_Display_SetUserBrightness(_ display: CGDirectDisplayID, _ brightness: Double)
-
-@_silgen_name("CoreDisplay_Display_GetUserBrightness")
-private func CoreDisplay_Display_GetUserBrightness(_ display: CGDirectDisplayID) -> Double
-
-@_silgen_name("DisplayServicesGetBrightness")
-private func DisplayServicesGetBrightness(_ display: CGDirectDisplayID, _ brightness: UnsafeMutablePointer<Float>) -> Int32
-
-@_silgen_name("DisplayServicesSetBrightness")
-private func DisplayServicesSetBrightness(_ display: CGDirectDisplayID, _ brightness: Float) -> Int32
-
-// MARK: - CoreGraphics private display mode APIs
-
-private struct CGSDisplayMode {
-    var modeNumber: UInt32 = 0
-    var flags: UInt32 = 0
-    var width: UInt32 = 0
-    var height: UInt32 = 0
-    var depth: UInt32 = 0
-    var unknown: (UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-                  UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-                  UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-                  UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-                  UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-                  UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-                  UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-                  UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-                  UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-                  UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-                  UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-                  UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-                  UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-                  UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-                  UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-                  UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-                  UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8) = (0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0) // 170 bytes
-    var freq: UInt16 = 0
-    var more_unknown: (UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-                       UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8) = (0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0) // 16 bytes
-    var density: Float = 0
+private func userdataToScreen(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> UnsafeMutablePointer<ScreenUserData> {
+    return luaL_checkudata(L, idx, USERDATA_TAG).assumingMemoryBound(to: ScreenUserData.self)
 }
-
-@_silgen_name("CGSGetCurrentDisplayMode")
-private func CGSGetCurrentDisplayMode(_ display: CGDirectDisplayID, _ modeNum: UnsafeMutablePointer<Int32>)
-
-@_silgen_name("CGSConfigureDisplayMode")
-private func CGSConfigureDisplayMode(_ config: CGDisplayConfigRef, _ display: CGDirectDisplayID, _ modeNum: Int32)
-
-@_silgen_name("CGSGetNumberOfDisplayModes")
-private func CGSGetNumberOfDisplayModes(_ display: CGDirectDisplayID, _ nModes: UnsafeMutablePointer<Int32>)
-
-@_silgen_name("CGSGetDisplayModeDescriptionOfLength")
-private func CGSGetDisplayModeDescriptionOfLength(_ display: CGDirectDisplayID, _ idx: Int32, _ mode: UnsafeMutablePointer<CGSDisplayMode>, _ length: Int32)
-
-// IOKit private constant
-private let kIOFBSetTransform: UInt32 = 0x00000400
 
 // MARK: - Module-level state
 
+/// Original gamma tables stored at module init for gamma set/restore.
+/// Keyed by display ID as NSNumber.
 private var originalGammas = NSMutableDictionary()
+/// Currently applied gamma tables. Keyed by display ID as NSNumber.
 private var currentGammas = NSMutableDictionary()
-private var notificationQueue: DispatchQueue!
 
 // MARK: - Helpers
 
-private func geom_pushrect(_ L: UnsafeMutablePointer<lua_State>!, _ rect: NSRect) {
+private func geom_pushrect(_ L: UnsafeMutablePointer<lua_State>!, _ rect: (x: Double, y: Double, width: Double, height: Double)) {
     precondition(L != nil, "geom_pushrect: L must not be nil")
     let previousTop = lua_gettop(L)
     lua_newtable(L)
-    L.push(lua_Number(rect.origin.x));    lua_setfield(L, -2, "x")
-    L.push(lua_Number(rect.origin.y));    lua_setfield(L, -2, "y")
-    L.push(lua_Number(rect.size.width));  lua_setfield(L, -2, "w")
-    L.push(lua_Number(rect.size.height)); lua_setfield(L, -2, "h")
+    L.push(lua_Number(rect.x));      lua_setfield(L, -2, "x")
+    L.push(lua_Number(rect.y));      lua_setfield(L, -2, "y")
+    L.push(lua_Number(rect.width));  lua_setfield(L, -2, "w")
+    L.push(lua_Number(rect.height)); lua_setfield(L, -2, "h")
     assert(lua_gettop(L) == previousTop + 1, "geom_pushrect: stack should grow by exactly 1 (table)")
-}
-
-private func getScreenID(_ screen: NSScreen) -> CGDirectDisplayID {
-    (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as! NSNumber).uint32Value
 }
 
 // MARK: - Lua callbacks
 
 private func screen_frame(_ L: LuaState) throws -> CInt {
-    let screen = get_screen_arg(L, 1)
-    geom_pushrect(L, screen.frame)
+    let ud = userdataToScreen(L, 1)
+    let scr = environmentGet(L).screen
+    guard let info = scr.screenInfo(forScreenID: ud.pointee.screenID) else {
+        lua_pushnil(L)
+        return 1
+    }
+    geom_pushrect(L, info.frame)
     return 1
 }
 
 private func screen_visibleframe(_ L: LuaState) throws -> CInt {
-    let screen = get_screen_arg(L, 1)
-    geom_pushrect(L, screen.visibleFrame)
+    let ud = userdataToScreen(L, 1)
+    let scr = environmentGet(L).screen
+    guard let info = scr.screenInfo(forScreenID: ud.pointee.screenID) else {
+        lua_pushnil(L)
+        return 1
+    }
+    geom_pushrect(L, info.visibleFrame)
     return 1
 }
 
@@ -132,10 +71,8 @@ private func screen_visibleframe(_ L: LuaState) throws -> CInt {
 /// Returns:
 ///  * A number containing the ID of the screen
 private func screen_id(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
-
-    let screen = get_screen_arg(L, 1)
-    L.push(lua_Integer(getScreenID(screen)))
+    let ud = userdataToScreen(L, 1)
+    L.push(lua_Integer(ud.pointee.screenID))
     return 1
 }
 
@@ -149,10 +86,13 @@ private func screen_id(_ L: LuaState) throws -> CInt {
 /// Returns:
 ///  * A string containing the name of the screen, or nil if an error occurred
 private func screen_name(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
-
-    let screen = get_screen_arg(L, 1)
-    lua_pushany(L, screen.localizedName as NSString)
+    let ud = userdataToScreen(L, 1)
+    let scr = environmentGet(L).screen
+    if let info = scr.screenInfo(forScreenID: ud.pointee.screenID) {
+        lua_pushany(L, info.name as NSString)
+    } else {
+        lua_pushnil(L)
+    }
     return 1
 }
 
@@ -172,16 +112,13 @@ private func screen_name(_ L: LuaState) throws -> CInt {
 ///   * depth - A number containing the bit depth
 ///   * desc - A string containing a representation of the mode as used in `hs.screen:availableModes()` - e.g. "1920x1080@2x 60Hz 4bpp"
 private func screen_currentMode(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
+    let ud = userdataToScreen(L, 1)
+    let scr = environmentGet(L).screen
 
-    let screen = get_screen_arg(L, 1)
-    let screen_id = getScreenID(screen)
-
-    var currentModeNumber: Int32 = 0
-    CGSGetCurrentDisplayMode(screen_id, &currentModeNumber)
-
-    var mode = CGSDisplayMode()
-    CGSGetDisplayModeDescriptionOfLength(screen_id, currentModeNumber, &mode, Int32(MemoryLayout<CGSDisplayMode>.size))
+    guard let mode = scr.currentDisplayMode(forScreenID: ud.pointee.screenID) else {
+        lua_pushnil(L)
+        return 1
+    }
 
     lua_newtable(L)
 
@@ -194,13 +131,13 @@ private func screen_currentMode(_ L: LuaState) throws -> CInt {
     L.push(lua_Number(mode.density))
     lua_setfield(L, -2, "scale")
 
-    L.push(lua_Number(mode.freq))
+    L.push(lua_Number(mode.frequency))
     lua_setfield(L, -2, "freq")
 
     L.push(lua_Number(mode.depth))
     lua_setfield(L, -2, "depth")
 
-    let desc = String(format: "%ux%u@%.0fx %huHz %ubpp", mode.width, mode.height, Double(mode.density), mode.freq, mode.depth)
+    let desc = String(format: "%ux%u@%.0fx %huHz %ubpp", mode.width, mode.height, Double(mode.density), mode.frequency, mode.depth)
     L.push(desc)
     lua_setfield(L, -2, "desc")
 
@@ -226,20 +163,13 @@ private func screen_currentMode(_ L: LuaState) throws -> CInt {
 ///  * Prior to 0.9.83, only 32-bit colour modes would be returned, but now all colour depths are returned. This has necessitated changing the naming of the modes in the returned table.
 ///  * "points" are not necessarily the same as pixels, because they take the scale factor into account (e.g. "1440x900@2x" is a 2880x1800 screen resolution, with a scaling factor of 2, i.e. with HiDPI pixel-doubled rendering enabled), however, they are far more useful to work with than native pixel modes, when a Retina screen is involved. For non-retina screens, points and pixels are equivalent.
 private func screen_availableModes(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
-
-    let screen = get_screen_arg(L, 1)
-    let screen_id = getScreenID(screen)
-
-    var numberOfDisplayModes: Int32 = 0
-    CGSGetNumberOfDisplayModes(screen_id, &numberOfDisplayModes)
+    let ud = userdataToScreen(L, 1)
+    let scr = environmentGet(L).screen
+    let modes = scr.availableDisplayModes(forScreenID: ud.pointee.screenID)
 
     lua_newtable(L)
 
-    for i in 0..<numberOfDisplayModes {
-        var mode = CGSDisplayMode()
-        CGSGetDisplayModeDescriptionOfLength(screen_id, i, &mode, Int32(MemoryLayout<CGSDisplayMode>.size))
-
+    for mode in modes {
         lua_newtable(L)
 
         L.push(lua_Integer(mode.width))
@@ -251,29 +181,16 @@ private func screen_availableModes(_ L: LuaState) throws -> CInt {
         L.push(lua_Number(mode.density))
         lua_setfield(L, -2, "scale")
 
-        L.push(lua_Number(mode.freq))
+        L.push(lua_Number(mode.frequency))
         lua_setfield(L, -2, "freq")
 
         L.push(lua_Number(mode.depth))
         lua_setfield(L, -2, "depth")
 
-        let key = String(format: "%ux%u@%.0fx %huHz %ubpp", mode.width, mode.height, Double(mode.density), mode.freq, mode.depth)
+        let key = String(format: "%ux%u@%.0fx %huHz %ubpp", mode.width, mode.height, Double(mode.density), mode.frequency, mode.depth)
         lua_setfield(L, -2, key)
     }
 
-    return 1
-}
-
-private func handleDisplayUpdate(_ L: UnsafeMutablePointer<lua_State>!, _ config: CGDisplayConfigRef, _ name: String) -> Int32 {
-    precondition(L != nil, "handleDisplayUpdate: L must not be nil")
-    precondition(!name.isEmpty, "handleDisplayUpdate: name must not be empty")
-    let anError = CGCompleteDisplayConfiguration(config, .permanently)
-    if anError == .success {
-        L.push(true)
-    } else {
-        os_log(.debug, "%{public}s", "\(name) failed: \(anError.rawValue)")
-        L.push(false)
-    }
     return 1
 }
 
@@ -294,28 +211,21 @@ private func handleDisplayUpdate(_ L: UnsafeMutablePointer<lua_State>!, _ config
 /// Notes:
 ///  * The available widths/heights/scales can be seen in the output of `hs.screen:availableModes()`, however, it should be noted that the CoreGraphics subsystem seems to list more modes for a given screen than it is actually prepared to set, so you may find that seemingly valid modes still return false. It is not currently understood why this is so!
 private func screen_setMode(_ L: LuaState) throws -> CInt {
-
-    let screen = get_screen_arg(L, 1)
+    let ud = userdataToScreen(L, 1)
     let width = lua_tointeger(L, 2)
     let height = lua_tointeger(L, 3)
     let scale = lua_tonumber(L, 4)
     let freq = UInt16(lua_tointeger(L, 5))
     let depth = UInt32(lua_tointeger(L, 6))
 
-    let screen_id = getScreenID(screen)
+    let scr = environmentGet(L).screen
+    let screenID = ud.pointee.screenID
+    let modes = scr.availableDisplayModes(forScreenID: screenID)
 
-    var numberOfDisplayModes: Int32 = 0
-    CGSGetNumberOfDisplayModes(screen_id, &numberOfDisplayModes)
-
-    for i in 0..<numberOfDisplayModes {
-        var mode = CGSDisplayMode()
-        CGSGetDisplayModeDescriptionOfLength(screen_id, i, &mode, Int32(MemoryLayout<CGSDisplayMode>.size))
-
-        if mode.depth == depth && mode.freq == freq && mode.width == UInt32(width) && mode.height == UInt32(height) && Int(mode.density) == Int(scale) {
-            var config: CGDisplayConfigRef?
-            CGBeginDisplayConfiguration(&config)
-            CGSConfigureDisplayMode(config!, screen_id, i)
-            return handleDisplayUpdate(L, config!, "CGConfigureDisplayOrigin")
+    for mode in modes {
+        if mode.depth == depth && mode.frequency == freq && mode.width == UInt32(width) && mode.height == UInt32(height) && Int(mode.density) == Int(scale) {
+            L.push(scr.setDisplayMode(mode.modeNumber, forScreenID: screenID))
+            return 1
         }
     }
 
@@ -356,23 +266,15 @@ private func screen_gammaRestore(_ L: LuaState) throws -> CInt {
 ///   * green
 ///   * blue
 private func screen_gammaGet(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
+    let ud = userdataToScreen(L, 1)
+    let scr = environmentGet(L).screen
 
-    let screen = get_screen_arg(L, 1)
-    let screen_id = getScreenID(screen)
-    let gammaCapacity = CGDisplayGammaTableCapacity(screen_id)
-    var sampleCount: UInt32 = 0
-
-    let redTable = UnsafeMutablePointer<CGGammaValue>.allocate(capacity: Int(gammaCapacity))
-    let greenTable = UnsafeMutablePointer<CGGammaValue>.allocate(capacity: Int(gammaCapacity))
-    let blueTable = UnsafeMutablePointer<CGGammaValue>.allocate(capacity: Int(gammaCapacity))
-    defer {
-        redTable.deallocate()
-        greenTable.deallocate()
-        blueTable.deallocate()
+    guard let gamma = scr.getGammaTable(forScreenID: ud.pointee.screenID) else {
+        lua_pushnil(L)
+        return 1
     }
 
-    if CGGetDisplayTransferByTable(screen_id, gammaCapacity, redTable, greenTable, blueTable, &sampleCount) != .success {
+    guard !gamma.red.isEmpty else {
         lua_pushnil(L)
         return 1
     }
@@ -381,70 +283,47 @@ private func screen_gammaGet(_ L: LuaState) throws -> CInt {
 
     L.push("blackpoint")
     lua_newtable(L)
-    L.push("red");   L.push(lua_Number(redTable[0]));   lua_settable(L, -3)
-    L.push("green"); L.push(lua_Number(greenTable[0])); lua_settable(L, -3)
-    L.push("blue");  L.push(lua_Number(blueTable[0]));  lua_settable(L, -3)
-    L.push("alpha"); L.push(1.0);                       lua_settable(L, -3)
+    L.push("red");   L.push(lua_Number(gamma.red[0]));   lua_settable(L, -3)
+    L.push("green"); L.push(lua_Number(gamma.green[0])); lua_settable(L, -3)
+    L.push("blue");  L.push(lua_Number(gamma.blue[0]));  lua_settable(L, -3)
+    L.push("alpha"); L.push(1.0);                        lua_settable(L, -3)
     lua_settable(L, -3)
 
     L.push("whitepoint")
     lua_newtable(L)
-    L.push("red");   L.push(lua_Number(redTable[Int(sampleCount) - 1]));   lua_settable(L, -3)
-    L.push("green"); L.push(lua_Number(greenTable[Int(sampleCount) - 1])); lua_settable(L, -3)
-    L.push("blue");  L.push(lua_Number(blueTable[Int(sampleCount) - 1]));  lua_settable(L, -3)
+    L.push("red");   L.push(lua_Number(gamma.red[gamma.red.count - 1]));     lua_settable(L, -3)
+    L.push("green"); L.push(lua_Number(gamma.green[gamma.green.count - 1])); lua_settable(L, -3)
+    L.push("blue");  L.push(lua_Number(gamma.blue[gamma.blue.count - 1]));   lua_settable(L, -3)
     lua_settable(L, -3)
 
     return 1
 }
 
-func storeInitialScreenGamma(_ display: CGDirectDisplayID) {
-    precondition(display != kCGNullDirectDisplay, "storeInitialScreenGamma: display must not be kCGNullDirectDisplay")
-    let capacity = CGDisplayGammaTableCapacity(display)
-    precondition(capacity > 0, "storeInitialScreenGamma: gamma table capacity must be positive")
-    var count: UInt32 = 0
+func storeInitialScreenGamma(_ display: UInt32, using scr: any ScreenProtocol) {
+    precondition(display != 0, "storeInitialScreenGamma: display must not be kCGNullDirectDisplay")
 
-    let redTable = UnsafeMutablePointer<CGGammaValue>.allocate(capacity: Int(capacity))
-    let greenTable = UnsafeMutablePointer<CGGammaValue>.allocate(capacity: Int(capacity))
-    let blueTable = UnsafeMutablePointer<CGGammaValue>.allocate(capacity: Int(capacity))
-    defer {
-        redTable.deallocate()
-        greenTable.deallocate()
-        blueTable.deallocate()
+    guard let gamma = scr.getGammaTable(forScreenID: display) else {
+        os_log(.default, "%{public}s", "storeInitialScreenGamma: could not read gamma for display \(display)")
+        return
     }
+    guard !gamma.red.isEmpty else { return }
 
-    let result = CGGetDisplayTransferByTable(display, capacity, redTable, greenTable, blueTable, &count)
-    if result == .success {
-        var red = [NSNumber]()
-        var green = [NSNumber]()
-        var blue = [NSNumber]()
+    let red = gamma.red.map { NSNumber(value: $0) }
+    let green = gamma.green.map { NSNumber(value: $0) }
+    let blue = gamma.blue.map { NSNumber(value: $0) }
 
-        for i in 0..<Int(capacity) {
-            red.append(NSNumber(value: redTable[i]))
-            green.append(NSNumber(value: greenTable[i]))
-            blue.append(NSNumber(value: blueTable[i]))
-        }
+    let gammas: NSDictionary = ["red": red, "green": green, "blue": blue]
+    originalGammas[NSNumber(value: display)] = gammas
+}
 
-        let gammas: NSDictionary = ["red": red, "green": green, "blue": blue]
-        originalGammas[NSNumber(value: display)] = gammas
-    } else {
-        os_log(.default, "%{public}s","storeInitialScreenGamma: ERROR \(result.rawValue) on display \(display)")
+func getAllInitialScreenGammas(using scr: any ScreenProtocol) {
+    let screens = scr.allScreens()
+    for screen in screens {
+        storeInitialScreenGamma(screen.id, using: scr)
     }
 }
 
-func getAllInitialScreenGammas() {
-    var numDisplays: CGDisplayCount = 0
-    CGGetActiveDisplayList(0, nil, &numDisplays)
-
-    let displays = UnsafeMutablePointer<CGDirectDisplayID>.allocate(capacity: Int(numDisplays))
-    defer { displays.deallocate() }
-    CGGetActiveDisplayList(numDisplays, displays, nil)
-
-    for i in 0..<Int(numDisplays) {
-        storeInitialScreenGamma(displays[i])
-    }
-}
-
-func screen_gammaReapply(_ display: CGDirectDisplayID) {
+func screen_gammaReapply(_ display: UInt32, using scr: any ScreenProtocol) {
     guard let gammas = currentGammas[NSNumber(value: display)] as? NSDictionary else { return }
 
     guard let red = gammas["red"] as? [NSNumber],
@@ -456,41 +335,14 @@ func screen_gammaReapply(_ display: CGDirectDisplayID) {
     precondition(green.count == count, "screen_gammaReapply: green table length must match red")
     precondition(blue.count == count, "screen_gammaReapply: blue table length must match red")
 
-    let redTable = UnsafeMutablePointer<CGGammaValue>.allocate(capacity: count)
-    let greenTable = UnsafeMutablePointer<CGGammaValue>.allocate(capacity: count)
-    let blueTable = UnsafeMutablePointer<CGGammaValue>.allocate(capacity: count)
-    defer {
-        redTable.deallocate()
-        greenTable.deallocate()
-        blueTable.deallocate()
-    }
+    let table = GammaTable(
+        red: red.map { $0.floatValue },
+        green: green.map { $0.floatValue },
+        blue: blue.map { $0.floatValue }
+    )
 
-    for i in 0..<count {
-        redTable[i] = red[i].floatValue
-        greenTable[i] = green[i].floatValue
-        blueTable[i] = blue[i].floatValue
-    }
-
-    let result = CGSetDisplayTransferByTable(display, UInt32(count), redTable, greenTable, blueTable)
-    if result != .success {
-        os_log(.default, "%{public}s","screen_gammaReapply: ERROR: \(result.rawValue) on display: \(display)")
-    }
-}
-
-private func displayReconfigurationCallback(_ display: CGDirectDisplayID, _ flags: CGDisplayChangeSummaryFlags, _ userInfo: UnsafeMutableRawPointer?) {
-    if flags.contains(.addFlag) {
-        storeInitialScreenGamma(display)
-    } else if flags.contains(.removeFlag) {
-        originalGammas.removeObject(forKey: NSNumber(value: display))
-        currentGammas.removeObject(forKey: NSNumber(value: display))
-    } else if flags.contains(.disabledFlag) {
-        currentGammas.removeObject(forKey: NSNumber(value: display))
-    } else if flags.contains(.enabledFlag) || flags.contains(.beginConfigurationFlag) {
-        // NOOP
-    } else {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-            screen_gammaReapply(display)
-        }
+    if !scr.setGammaTable(table, forScreenID: display) {
+        os_log(.default, "%{public}s", "screen_gammaReapply: failed on display: \(display)")
     }
 }
 
@@ -514,9 +366,9 @@ private func displayReconfigurationCallback(_ display: CGDirectDisplayID, _ flag
 /// Notes:
 ///  * If the whitepoint and blackpoint specified, are very similar, it will be impossible to read the screen. You should exercise caution, and may wish to bind a hotkey to `hs.screen.restoreGamma()` when experimenting
 private func screen_gammaSet(_ L: LuaState) throws -> CInt {
-
-    let screen = get_screen_arg(L, 1)
-    let screen_id = getScreenID(screen)
+    let ud = userdataToScreen(L, 1)
+    let screenID = ud.pointee.screenID
+    let scr = environmentGet(L).screen
 
     var whitePoint: [Float] = [0, 0, 0]
     var blackPoint: [Float] = [0, 0, 0]
@@ -529,8 +381,8 @@ private func screen_gammaSet(_ L: LuaState) throws -> CInt {
     lua_getfield(L, 3, "green"); blackPoint[1] = Float(lua_tonumber(L, -1)); lua_pop(L, 1)
     lua_getfield(L, 3, "blue");  blackPoint[2] = Float(lua_tonumber(L, -1)); lua_pop(L, 1)
 
-    guard let originalGamma = originalGammas[NSNumber(value: screen_id)] as? NSDictionary else {
-        os_log(.debug, "%{public}s", "screen_gammaSet: unable to fetch original gamma for display: \(screen_id)")
+    guard let originalGamma = originalGammas[NSNumber(value: screenID)] as? NSDictionary else {
+        os_log(.debug, "%{public}s", "screen_gammaSet: unable to fetch original gamma for display: \(screenID)")
         L.push(false)
         return 1
     }
@@ -538,24 +390,19 @@ private func screen_gammaSet(_ L: LuaState) throws -> CInt {
     guard let redArray = originalGamma["red"] as? [NSNumber],
           let greenArray = originalGamma["green"] as? [NSNumber],
           let blueArray = originalGamma["blue"] as? [NSNumber] else {
-        os_log(.debug, "%{public}s", "screen_gammaSet: unable to parse gamma arrays for display: \(screen_id)")
+        os_log(.debug, "%{public}s", "screen_gammaSet: unable to parse gamma arrays for display: \(screenID)")
         L.push(false)
         return 1
     }
     let count = redArray.count
 
-    let redTable = UnsafeMutablePointer<CGGammaValue>.allocate(capacity: count)
-    let greenTable = UnsafeMutablePointer<CGGammaValue>.allocate(capacity: count)
-    let blueTable = UnsafeMutablePointer<CGGammaValue>.allocate(capacity: count)
-    defer {
-        redTable.deallocate()
-        greenTable.deallocate()
-        blueTable.deallocate()
-    }
-
     var red = [NSNumber]()
     var green = [NSNumber]()
     var blue = [NSNumber]()
+
+    var newRedValues = [Float]()
+    var newGreenValues = [Float]()
+    var newBlueValues = [Float]()
 
     for i in 0..<count {
         let origRed = redArray[i].floatValue
@@ -566,26 +413,26 @@ private func screen_gammaSet(_ L: LuaState) throws -> CInt {
         let newGreen = blackPoint[1] + (whitePoint[1] - blackPoint[1]) * origGreen
         let newBlue = blackPoint[2] + (whitePoint[2] - blackPoint[2]) * origBlue
 
-        redTable[i] = newRed
-        greenTable[i] = newGreen
-        blueTable[i] = newBlue
+        newRedValues.append(newRed)
+        newGreenValues.append(newGreen)
+        newBlueValues.append(newBlue)
 
-        red.append(NSNumber(value: redTable[i]))
-        green.append(NSNumber(value: greenTable[i]))
-        blue.append(NSNumber(value: blueTable[i]))
-
-        let gammas: NSDictionary = ["red": red, "green": green, "blue": blue]
-        currentGammas[NSNumber(value: screen_id)] = gammas
+        red.append(NSNumber(value: newRed))
+        green.append(NSNumber(value: newGreen))
+        blue.append(NSNumber(value: newBlue))
     }
 
-    let result = CGSetDisplayTransferByTable(screen_id, UInt32(count), redTable, greenTable, blueTable)
-    if result != .success {
-        os_log(.debug, "%{public}s", "screen_gammaSet: ERROR: \(result.rawValue) on display \(screen_id)")
-        L.push(false)
-        return 1
+    let table = GammaTable(red: newRedValues, green: newGreenValues, blue: newBlueValues)
+    let success = scr.setGammaTable(table, forScreenID: screenID)
+
+    if success {
+        let gammasDict: NSDictionary = ["red": red, "green": green, "blue": blue]
+        currentGammas[NSNumber(value: screenID)] = gammasDict
+    } else {
+        os_log(.debug, "%{public}s", "screen_gammaSet: failed on display \(screenID)")
     }
 
-    L.push(true)
+    L.push(success)
     return 1
 }
 
@@ -599,14 +446,10 @@ private func screen_gammaSet(_ L: LuaState) throws -> CInt {
 /// Returns:
 ///  * A floating point number between 0 and 1, containing the current brightness level, or nil if the display does not support brightness queries
 private func screen_getBrightness(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
+    let ud = userdataToScreen(L, 1)
+    let scr = environmentGet(L).screen
 
-    let screen = get_screen_arg(L, 1)
-    let screen_id = getScreenID(screen)
-
-    var brightness: Float = 0
-    let err = DisplayServicesGetBrightness(screen_id, &brightness)
-    if err == 0 {
+    if let brightness = scr.getBrightness(forScreenID: ud.pointee.screenID) {
         L.push(lua_Number(brightness))
     } else {
         lua_pushnil(L)
@@ -624,15 +467,12 @@ private func screen_getBrightness(_ L: LuaState) throws -> CInt {
 /// Returns:
 ///  * The `hs.screen` object
 private func screen_setBrightness(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
-
     luaL_checktype(L, 2, LUA_TNUMBER)
 
-    let screen = get_screen_arg(L, 1)
-    let screen_id = getScreenID(screen)
-
-    let brightness = Float(lua_tonumber(L, 2))
-    _ = DisplayServicesSetBrightness(screen_id, brightness)
+    let ud = userdataToScreen(L, 1)
+    let scr = environmentGet(L).screen
+    let brightness = lua_tonumber(L, 2)
+    _ = scr.setBrightness(brightness, forScreenID: ud.pointee.screenID)
 
     lua_pushvalue(L, 1)
     return 1
@@ -648,19 +488,14 @@ private func screen_setBrightness(_ L: LuaState) throws -> CInt {
 /// Returns:
 ///  * A string containing the UUID, or nil if an error occurred.
 private func screen_getUUID(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
+    let ud = userdataToScreen(L, 1)
+    let scr = environmentGet(L).screen
 
-    let screen = get_screen_arg(L, 1)
-    let screen_id = getScreenID(screen)
-
-    guard let cfUUID = CGDisplayCreateUUIDFromDisplayID(screen_id) else {
+    if let uuid = scr.getUUID(forScreenID: ud.pointee.screenID) {
+        lua_pushany(L, uuid as NSString)
+    } else {
         lua_pushnil(L)
-        return 1
     }
-
-    let uuid = CFUUIDCreateString(nil, cfUUID.takeRetainedValue()) as String? ?? ""
-
-    lua_pushany(L, uuid as NSString)
     return 1
 }
 
@@ -674,33 +509,14 @@ private func screen_getUUID(_ L: LuaState) throws -> CInt {
 /// Returns:
 ///  *  A table containing various information, or nil if an error occurred.
 private func screen_getDisplayInfo(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
+    let ud = userdataToScreen(L, 1)
+    let scr = environmentGet(L).screen
 
-    let screen = get_screen_arg(L, 1)
-    let screen_id = getScreenID(screen)
-
-    var deviceInfo: NSDictionary? = nil
-    var iter: io_iterator_t = 0
-    let matching = IOServiceMatching("IODisplayConnect")
-    if IOServiceGetMatchingServices(kIOMainPortDefault, matching, &iter) == KERN_SUCCESS {
-        var service = IOIteratorNext(iter)
-        while service != 0 {
-            if let info = IODisplayCreateInfoDictionary(service, UInt32(kIODisplayOnlyPreferredName))?.takeRetainedValue() as NSDictionary? {
-                if let vendorID = info[kDisplayVendorID] as? UInt32,
-                   let productID = info[kDisplayProductID] as? UInt32,
-                   vendorID == CGDisplayVendorNumber(screen_id),
-                   productID == CGDisplayModelNumber(screen_id) {
-                    deviceInfo = info
-                    IOObjectRelease(service)
-                    break
-                }
-            }
-            IOObjectRelease(service)
-            service = IOIteratorNext(iter)
-        }
-        IOObjectRelease(iter)
+    if let info = scr.getDisplayInfo(forScreenID: ud.pointee.screenID) {
+        lua_pushany(L, info as NSDictionary)
+    } else {
+        lua_pushnil(L)
     }
-    lua_pushany(L, deviceInfo)
     return 1
 }
 
@@ -765,26 +581,26 @@ private func screen_setInvertedPolarity(_ L: LuaState) throws -> CInt {
 }
 
 private func screen_gc(_ L: LuaState) throws -> CInt {
-    let ptr = luaL_checkudata(L, 1, USERDATA_TAG)!.assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
-    guard let rawPtr = ptr.pointee else { return 0 }
-    let _ = Unmanaged<NSScreen>.fromOpaque(rawPtr).takeRetainedValue()
-    // Zero the pointer so a hypothetical double-gc won't double-free.
-    ptr.pointee = nil
+    // ScreenUserData is a plain struct — no ARC objects to release.
+    // Zero the screen ID to guard against double-gc.
+    let ud = userdataToScreen(L, 1)
+    ud.pointee.screenID = 0
     return 0
 }
 
 private func screen_eq(_ L: LuaState) throws -> CInt {
-    let screenA = get_screen_arg(L, 1)
-    let screenB = get_screen_arg(L, 2)
-    L.push(screenA.isEqual(screenB))
+    let a = userdataToScreen(L, 1)
+    let b = userdataToScreen(L, 2)
+    L.push(a.pointee.screenID == b.pointee.screenID)
     return 1
 }
 
-func new_screen(_ L: UnsafeMutablePointer<lua_State>!, _ screen: NSScreen) {
+func new_screen(_ L: UnsafeMutablePointer<lua_State>!, _ screenID: UInt32) {
     precondition(L != nil, "new_screen: L must not be nil")
+    precondition(screenID != 0, "new_screen: screenID must not be 0")
     let previousTop = lua_gettop(L)
-    let screenPtr = lua_newuserdata(L, MemoryLayout<UnsafeMutableRawPointer>.size)!.assumingMemoryBound(to: UnsafeMutableRawPointer.self)
-    screenPtr.pointee = Unmanaged.passRetained(screen).toOpaque()
+    let ptr = lua_newuserdata(L, MemoryLayout<ScreenUserData>.size)!.assumingMemoryBound(to: ScreenUserData.self)
+    ptr.pointee.screenID = screenID
 
     luaL_getmetatable(L, USERDATA_TAG)
     lua_setmetatable(L, -2)
@@ -801,15 +617,15 @@ func new_screen(_ L: UnsafeMutablePointer<lua_State>!, _ screen: NSScreen) {
 /// Returns:
 ///  * A table containing one or more `hs.screen` objects
 private func screen_allScreens(_ L: LuaState) throws -> CInt {
+    let scr = environmentGet(L).screen
+    let screens = scr.allScreens()
 
     lua_newtable(L)
 
-    var i: lua_Integer = 1
-    for screen in NSScreen.screens {
-        L.push(i)
-        new_screen(L, screen)
+    for (i, screen) in screens.enumerated() {
+        L.push(lua_Integer(i + 1))
+        new_screen(L, screen.id)
         lua_settable(L, -3)
-        i += 1
     }
 
     return 1
@@ -825,9 +641,10 @@ private func screen_allScreens(_ L: LuaState) throws -> CInt {
 /// Returns:
 ///  * An `hs.screen` object
 private func screen_mainScreen(_ L: LuaState) throws -> CInt {
+    let scr = environmentGet(L).screen
 
-    if let main = NSScreen.main {
-        new_screen(L, main)
+    if let main = scr.mainScreen() {
+        new_screen(L, main.id)
     } else {
         lua_pushnil(L)
     }
@@ -844,51 +661,9 @@ private func screen_mainScreen(_ L: LuaState) throws -> CInt {
 /// Returns:
 ///  * A boolean, true if the operation succeeded, otherwise false
 private func screen_setPrimary(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
-
-    let maxDisplays: CGDisplayCount = 32
-    let screen = get_screen_arg(L, 1)
-    let targetDisplay = getScreenID(screen)
-    let mainDisplay = CGMainDisplayID()
-
-    if targetDisplay == mainDisplay {
-        L.push(true)
-        return 1
-    }
-
-    let onlineDisplays = UnsafeMutablePointer<CGDirectDisplayID>.allocate(capacity: Int(maxDisplays))
-    defer { onlineDisplays.deallocate() }
-
-    var displayCount: CGDisplayCount = 0
-    if CGGetOnlineDisplayList(maxDisplays, onlineDisplays, &displayCount) != .success {
-        L.push(false)
-        return 1
-    }
-
-    let deltaX = -Int32(CGDisplayBounds(targetDisplay).minX)
-    let deltaY = -Int32(CGDisplayBounds(targetDisplay).minY)
-
-    var config: CGDisplayConfigRef?
-    if CGBeginDisplayConfiguration(&config) != .success {
-        L.push(false)
-        return 1
-    }
-
-    for i in 0..<Int(displayCount) {
-        let dID = onlineDisplays[i]
-        let err = CGConfigureDisplayOrigin(config!, dID,
-                                           Int32(CGDisplayBounds(dID).minX) + deltaX,
-                                           Int32(CGDisplayBounds(dID).minY) + deltaY)
-        if err != .success {
-            CGCancelDisplayConfiguration(config!)
-            L.push(false)
-            return 1
-        }
-    }
-
-    CGCompleteDisplayConfiguration(config!, .forSession)
-
-    L.push(true)
+    let ud = userdataToScreen(L, 1)
+    let scr = environmentGet(L).screen
+    L.push(scr.setPrimary(screenID: ud.pointee.screenID))
     return 1
 }
 
@@ -906,95 +681,25 @@ private func screen_setPrimary(_ L: LuaState) throws -> CInt {
 /// Returns:
 ///  * If the rotation is being set, a boolean, true if the operation succeeded, otherwise false. If the rotation is being queried, a number will be returned
 private func screen_rotate(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
+    let ud = userdataToScreen(L, 1)
+    let scr = environmentGet(L).screen
+    let screenID = ud.pointee.screenID
 
-    let screen = get_screen_arg(L, 1)
+    // No argument -> query
+    if lua_type(L, 2) != LUA_TNUMBER {
+        let rotation = scr.getRotation(forScreenID: screenID)
+        L.push(lua_Integer(Int(rotation)))
+        return 1
+    }
 
-    let rotation = parseRotationArgument(L)
-    if rotation == nil {
+    let degrees = lua_tointeger(L, 2)
+    switch degrees {
+    case 0, 90, 180, 270:
+        L.push(scr.setRotation(Double(degrees), forScreenID: screenID))
+    default:
         L.push(false)
-        return 1
     }
-
-    let screenID = getScreenID(screen)
-
-    if rotation == -1 {
-        let currentRotation = CGDisplayRotation(screenID)
-        L.push(lua_Integer(currentRotation))
-        return 1
-    }
-
-    let success = applyRotation(rotation!, to: screenID)
-    L.push(success)
     return 1
-}
-
-/// Returns the rotation value, -1 for query mode, or nil for invalid input.
-private func parseRotationArgument(_ L: LuaState) -> Int32? {
-    guard lua_type(L, 2) == LUA_TNUMBER else { return -1 }
-    switch Int(lua_tointeger(L, 2)) {
-    case 0:   return Int32(kIOScaleRotate0)
-    case 90:  return Int32(kIOScaleRotate90)
-    case 180: return Int32(kIOScaleRotate180)
-    case 270: return Int32(kIOScaleRotate270)
-    default:  return nil
-    }
-}
-
-private func applyRotation(_ rotation: Int32, to screenID: CGDirectDisplayID) -> Bool {
-    let maxDisplays: CGDisplayCount = 32
-    let onlineDisplays = UnsafeMutablePointer<CGDirectDisplayID>.allocate(capacity: Int(maxDisplays))
-    defer { onlineDisplays.deallocate() }
-
-    var displayCount: CGDisplayCount = 0
-    guard CGGetOnlineDisplayList(maxDisplays, onlineDisplays, &displayCount) == .success else {
-        return false
-    }
-
-    for i in 0..<Int(displayCount) {
-        let dID = onlineDisplays[i]
-        if dID == screenID {
-            return applyRotationToService(rotation, displayID: dID)
-        }
-    }
-
-    return true
-}
-
-private func applyRotationToService(_ rotation: Int32, displayID: CGDirectDisplayID) -> Bool {
-    guard let service = findIODisplayService(for: displayID) else {
-        return false
-    }
-
-    let options = IOOptionBits(kIOFBSetTransform | (UInt32(rotation) << 16))
-    let result = IOServiceRequestProbe(service, options)
-    IOObjectRelease(service)
-    return result == KERN_SUCCESS
-}
-
-private func findIODisplayService(for displayID: CGDirectDisplayID) -> io_service_t? {
-    var iter: io_iterator_t = 0
-    let matching = IOServiceMatching("IODisplayConnect")
-    guard IOServiceGetMatchingServices(kIOMainPortDefault, matching, &iter) == KERN_SUCCESS else {
-        return nil
-    }
-
-    var s = IOIteratorNext(iter)
-    while s != 0 {
-        if let info = IODisplayCreateInfoDictionary(s, UInt32(kIODisplayOnlyPreferredName))?.takeRetainedValue() as NSDictionary? {
-            if let vendorID = info[kDisplayVendorID] as? UInt32,
-               let productID = info[kDisplayProductID] as? UInt32,
-               vendorID == CGDisplayVendorNumber(displayID),
-               productID == CGDisplayModelNumber(displayID) {
-                IOObjectRelease(iter)
-                return s
-            }
-        }
-        IOObjectRelease(s)
-        s = IOIteratorNext(iter)
-    }
-    IOObjectRelease(iter)
-    return nil
 }
 
 /// hs.screen:setOrigin(x, y) -> bool
@@ -1008,33 +713,13 @@ private func findIODisplayService(for displayID: CGDirectDisplayID) -> io_servic
 /// Returns:
 ///  * true if the operation succeeded, otherwise false
 private func screen_setOrigin(_ L: LuaState) throws -> CInt {
-
-    let screen = get_screen_arg(L, 1)
+    let ud = userdataToScreen(L, 1)
     let x = Int32(lua_tointeger(L, 2))
     let y = Int32(lua_tointeger(L, 3))
+    let scr = environmentGet(L).screen
 
-    let maxDisplays: CGDisplayCount = 32
-    let screenID = getScreenID(screen)
-
-    let onlineDisplays = UnsafeMutablePointer<CGDirectDisplayID>.allocate(capacity: Int(maxDisplays))
-    defer { onlineDisplays.deallocate() }
-
-    var displayCount: CGDisplayCount = 0
-    if CGGetOnlineDisplayList(maxDisplays, onlineDisplays, &displayCount) != .success {
-        L.push(false)
-        return 1
-    }
-
-    var config: CGDisplayConfigRef?
-    CGBeginDisplayConfiguration(&config)
-    for i in 0..<Int(displayCount) {
-        let dID = onlineDisplays[i]
-        if dID == screenID {
-            CGConfigureDisplayOrigin(config!, dID, x, y)
-        }
-    }
-
-    return handleDisplayUpdate(L, config!, "CGConfigureDisplayOrigin")
+    L.push(scr.setOrigin(screenID: ud.pointee.screenID, x: x, y: y))
+    return 1
 }
 
 /// hs.screen:mirrorOf(aScreen[, permanent]) -> bool
@@ -1048,20 +733,14 @@ private func screen_setOrigin(_ L: LuaState) throws -> CInt {
 /// Returns:
 ///  * true if the operation succeeded, otherwise false
 private func screen_mirrorOf(_ L: LuaState) throws -> CInt {
-
-    let mirrorTarget = get_screen_arg(L, 1)
-    let mirrorSource = get_screen_arg(L, 2)
+    let mirrorTarget = userdataToScreen(L, 1)
+    let mirrorSource = userdataToScreen(L, 2)
     let permanent = lua_toboolean(L, 3) != 0
+    let scr = environmentGet(L).screen
 
-    let sourceID = getScreenID(mirrorSource)
-    let targetID = getScreenID(mirrorTarget)
-
-    var config: CGDisplayConfigRef?
-    CGBeginDisplayConfiguration(&config)
-    let result = CGConfigureDisplayMirrorOfDisplay(config!, targetID, sourceID)
-    CGCompleteDisplayConfiguration(config!, permanent ? .permanently : .forSession)
-
-    L.push(result == .success)
+    L.push(scr.mirrorOf(targetScreenID: mirrorTarget.pointee.screenID,
+                         sourceScreenID: mirrorSource.pointee.screenID,
+                         permanent: permanent))
     return 1
 }
 
@@ -1075,18 +754,11 @@ private func screen_mirrorOf(_ L: LuaState) throws -> CInt {
 /// Returns:
 ///  * true if the operation succeeded, otherwise false
 private func screen_mirrorStop(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
-
-    let screen = get_screen_arg(L, 1)
+    let ud = userdataToScreen(L, 1)
     let permanent = lua_toboolean(L, 2) != 0
-    let screenID = getScreenID(screen)
+    let scr = environmentGet(L).screen
 
-    var config: CGDisplayConfigRef?
-    CGBeginDisplayConfiguration(&config)
-    let result = CGConfigureDisplayMirrorOfDisplay(config!, screenID, kCGNullDirectDisplay)
-    CGCompleteDisplayConfiguration(config!, permanent ? .permanently : .forSession)
-
-    L.push(result == .success)
+    L.push(scr.mirrorStop(screenID: ud.pointee.screenID, permanent: permanent))
     return 1
 }
 
@@ -1117,30 +789,6 @@ func screenRectToNSRect(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> 
     return NSMakeRect(x, y, w, h)
 }
 
-func screenToNSImage(_ screen: NSScreen, _ screenRect: NSRect) -> NSImage? {
-    let screenID = getScreenID(screen)
-    assert(screenID != kCGNullDirectDisplay, "screenToNSImage: screenID must not be null display")
-
-    let captureRect: CGRect
-    if NSIsEmptyRect(screenRect) {
-        captureRect = CGDisplayBounds(screenID)
-    } else {
-        let displayBounds = CGDisplayBounds(screenID)
-        captureRect = CGRect(x: displayBounds.origin.x + screenRect.origin.x,
-                             y: displayBounds.origin.y + screenRect.origin.y,
-                             width: screenRect.size.width,
-                             height: screenRect.size.height)
-    }
-
-    guard let func_ = hs_CGDisplayCreateImageForRect,
-          let cgImageRef = func_(screenID, captureRect) else {
-        return nil
-    }
-
-    let cgImage = cgImageRef.takeRetainedValue()
-    return NSImage(cgImage: cgImage, size: NSZeroSize)
-}
-
 /// hs.screen:snapshot([rect]) -> object
 /// Method
 /// Captures an image of the screen
@@ -1151,11 +799,29 @@ func screenToNSImage(_ screen: NSScreen, _ screenRect: NSRect) -> NSImage? {
 /// Returns:
 ///  * An `hs.image` object, or nil if an error occurred
 private func screen_snapshot(_ L: LuaState) throws -> CInt {
+    let ud = userdataToScreen(L, 1)
+    let scr = environmentGet(L).screen
+    let screenID = ud.pointee.screenID
 
-    let screen = get_screen_arg(L, 1)
-    let rect = screenRectToNSRect(L, 2)
-    if let image = screenToNSImage(screen, rect) {
-        lua_pushany(L, image)
+    let luaRect = screenRectToNSRect(L, 2)
+    let bounds = scr.displayBounds(forScreenID: screenID)
+
+    let captureRect: (x: Double, y: Double, width: Double, height: Double)
+    if NSIsEmptyRect(luaRect) {
+        captureRect = bounds
+    } else {
+        captureRect = (bounds.x + Double(luaRect.origin.x),
+                       bounds.y + Double(luaRect.origin.y),
+                       Double(luaRect.size.width),
+                       Double(luaRect.size.height))
+    }
+
+    if let data = scr.captureScreenRect(displayID: screenID, rect: captureRect) {
+        if let nsImage = NSImage(data: data) {
+            lua_pushany(L, nsImage)
+        } else {
+            lua_pushnil(L)
+        }
     } else {
         lua_pushnil(L)
     }
@@ -1175,24 +841,17 @@ private func screen_snapshot(_ L: LuaState) throws -> CInt {
 /// Notes:
 ///  * If the user has set a folder of pictures to be alternated as the desktop background, the path to that folder will be returned.
 private func screen_desktopImageURL(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
-
-    let workspace = NSWorkspace.shared
-    let screen = get_screen_arg(L, 1)
+    let ud = userdataToScreen(L, 1)
+    let scr = environmentGet(L).screen
+    let screenID = ud.pointee.screenID
 
     if lua_type(L, 2) == LUA_TSTRING {
         let urlString = lua_tovalue(L, at: 2) as! String
-        if let realURL = URL(string: urlString) {
-            do {
-                try workspace.setDesktopImageURL(realURL, for: screen, options: [:])
-            } catch {
-                os_log(.error, "%{public}s", error.localizedDescription)
-            }
-        }
+        _ = scr.setDesktopImageURL(urlString, forScreenID: screenID)
         lua_pushvalue(L, 1)
     } else {
-        let url = workspace.desktopImageURL(for: screen)
-        L.push(url?.absoluteString ?? "")
+        let url = scr.desktopImageURL(forScreenID: screenID) ?? ""
+        L.push(url)
     }
 
     return 1
@@ -1213,17 +872,15 @@ private func screen_desktopImageURL(_ L: LuaState) throws -> CInt {
 ///    * InvertColors (only available on macOS 10.12 or later)
 ///    * DifferentiateWithoutColor
 private func screen_accessibilitySettings(_ L: LuaState) throws -> CInt {
+    let scr = environmentGet(L).screen
+    let settings = scr.accessibilityDisplaySettings()
 
-    let ws = NSWorkspace.shared
-    let settings = NSMutableDictionary(capacity: 5)
+    let nsDict = NSMutableDictionary(capacity: settings.count)
+    for (key, value) in settings {
+        nsDict[key] = NSNumber(value: value)
+    }
 
-    settings["InvertColors"] = NSNumber(value: ws.accessibilityDisplayShouldInvertColors)
-    settings["ReduceMotion"] = NSNumber(value: ws.accessibilityDisplayShouldReduceMotion)
-    settings["ReduceTransparency"] = NSNumber(value: ws.accessibilityDisplayShouldReduceTransparency)
-    settings["IncreaseContrast"] = NSNumber(value: ws.accessibilityDisplayShouldIncreaseContrast)
-    settings["DifferentiateWithoutColor"] = NSNumber(value: ws.accessibilityDisplayShouldDifferentiateWithoutColor)
-
-    lua_pushany(L, settings)
+    lua_pushany(L, nsDict)
     return 1
 }
 
@@ -1234,14 +891,39 @@ private func screens_gc(_ L: LuaState) throws -> CInt {
 }
 
 private func userdata_tostring(_ L: LuaState) throws -> CInt {
-    luaL_checkudata(L, 1, USERDATA_TAG)
-
-    let screen = get_screen_arg(L, 1)
-    let theName = screen.localizedName
+    let ud = userdataToScreen(L, 1)
+    let scr = environmentGet(L).screen
+    let theName = scr.screenInfo(forScreenID: ud.pointee.screenID)?.name ?? "(unknown)"
     let ptr = lua_topointer(L, 1)!
     let str = "\(USERDATA_TAG): \(theName) (0x\(String(UInt(bitPattern: ptr), radix: 16)))"
     L.push(str)
     return 1
+}
+
+// MARK: - Display reconfiguration callback (gamma reapply)
+
+/// This callback runs on the CG notification thread. It accesses module-level
+/// gamma dictionaries (originalGammas / currentGammas) and uses the global
+/// environment to call into the protocol layer for gamma reapply.
+private func displayReconfigurationCallback(_ display: CGDirectDisplayID, _ flags: CGDisplayChangeSummaryFlags, _ userInfo: UnsafeMutableRawPointer?) {
+    if flags.contains(.addFlag) {
+        if let scr = environmentGetGlobalOrNil()?.screen {
+            storeInitialScreenGamma(display, using: scr)
+        }
+    } else if flags.contains(.removeFlag) {
+        originalGammas.removeObject(forKey: NSNumber(value: display))
+        currentGammas.removeObject(forKey: NSNumber(value: display))
+    } else if flags.contains(.disabledFlag) {
+        currentGammas.removeObject(forKey: NSNumber(value: display))
+    } else if flags.contains(.enabledFlag) || flags.contains(.beginConfigurationFlag) {
+        // NOOP
+    } else {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+            if let scr = environmentGetGlobalOrNil()?.screen {
+                screen_gammaReapply(display, using: scr)
+            }
+        }
+    }
 }
 
 // MARK: - Module entry point
@@ -1253,8 +935,7 @@ public func luaopen_hs_libscreen(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
         // Initialize gamma structures, populate them, and register callbacks
         originalGammas = NSMutableDictionary()
         currentGammas = NSMutableDictionary()
-        getAllInitialScreenGammas()
-        notificationQueue = DispatchQueue(label: "org.cosmic-hammer.CosmicHammer.gammaReapplyNotificationQueue")
+        getAllInitialScreenGammas(using: environmentGet(L).screen)
         CGDisplayRegisterReconfigurationCallback(displayReconfigurationCallback, nil)
 
         // Register userdata metatable

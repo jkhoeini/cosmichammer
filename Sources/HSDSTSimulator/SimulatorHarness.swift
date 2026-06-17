@@ -18,7 +18,7 @@ public final class SimulatorHarness {
         // Original 12 simulators
         let clockSim = clock
         let eventLoopSim = eventLoop
-        let fsSim = SimulatedFileSystem(rng: rng.fork(), faults: faults)
+        let fsSim = SimulatedFileSystem(rng: rng.fork(), faults: faults, clock: clockSim)
         let netSim = SimulatedNetwork(rng: rng.fork(), faults: faults, clock: clockSim)
         let wsSim = SimulatedWorkspace(rng: rng.fork(), faults: faults)
         let pbSim = SimulatedPasteboard(rng: rng.fork(), faults: faults)
@@ -27,7 +27,7 @@ public final class SimulatorHarness {
         let sysSim = SimulatedSystemInfo(rng: rng.fork(), faults: faults)
         let locSim = SimulatedLocation(rng: rng.fork(), faults: faults)
         let notSim = SimulatedNotification(rng: rng.fork(), faults: faults)
-        let procSim = SimulatedProcess(rng: rng.fork(), faults: faults)
+        let procSim = SimulatedProcess(rng: rng.fork(), faults: faults, eventLoop: eventLoopSim)
 
         // New 15 simulators
         let winSim = SimulatedWindow(rng: rng.fork(), faults: faults)

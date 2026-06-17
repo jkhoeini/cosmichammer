@@ -290,5 +290,91 @@ extension CosmicHammerTests {
             #expect(env1.fileSystem.homeDirectory() == env2.fileSystem.homeDirectory())
             #expect(env1.fileSystem.currentDirectoryPath() == env2.fileSystem.currentDirectoryPath())
         }
+
+        // MARK: - Timestamp tests
+
+        @Test func writeFileSetsCreationAndModificationDate() throws {
+            let harness = SimulatorHarness(seed: 42)
+            let env = harness.createEnvironment()
+            let fs = env.fileSystem
+
+            try fs.writeFile(atPath: "/ts/test.txt", contents: "hello".data(using: .utf8)!, atomically: true)
+            let attrs = try fs.attributesOfItem(atPath: "/ts/test.txt")
+            #expect(attrs.creationDate != nil)
+            #expect(attrs.modificationDate != nil)
+            #expect(attrs.creationDate == attrs.modificationDate)
+        }
+
+        @Test func overwriteFilePreservesCreationDateUpdatesModificationDate() throws {
+            let harness = SimulatorHarness(seed: 42)
+            let env = harness.createEnvironment()
+            let fs = env.fileSystem
+
+            try fs.writeFile(atPath: "/ts/overwrite.txt", contents: "v1".data(using: .utf8)!, atomically: true)
+            let attrsV1 = try fs.attributesOfItem(atPath: "/ts/overwrite.txt")
+
+            harness.advanceTime(by: 10)
+
+            try fs.writeFile(atPath: "/ts/overwrite.txt", contents: "v2".data(using: .utf8)!, atomically: true)
+            let attrsV2 = try fs.attributesOfItem(atPath: "/ts/overwrite.txt")
+
+            #expect(attrsV2.creationDate == attrsV1.creationDate)
+            #expect(attrsV2.modificationDate! > attrsV1.modificationDate!)
+        }
+
+        @Test func createDirectorySetsTimestamps() throws {
+            let harness = SimulatorHarness(seed: 42)
+            let env = harness.createEnvironment()
+            let fs = env.fileSystem
+
+            try fs.createDirectory(atPath: "/ts/mydir", withIntermediateDirectories: true)
+            let attrs = try fs.attributesOfItem(atPath: "/ts/mydir")
+            #expect(attrs.creationDate != nil)
+            #expect(attrs.modificationDate != nil)
+        }
+
+        @Test func moveItemPreservesCreationDateUpdatesModificationDate() throws {
+            let harness = SimulatorHarness(seed: 42)
+            let env = harness.createEnvironment()
+            let fs = env.fileSystem
+
+            try fs.writeFile(atPath: "/ts/src.txt", contents: "data".data(using: .utf8)!, atomically: true)
+            let srcAttrs = try fs.attributesOfItem(atPath: "/ts/src.txt")
+
+            harness.advanceTime(by: 5)
+
+            try fs.moveItem(from: "/ts/src.txt", to: "/ts/dst.txt")
+            let dstAttrs = try fs.attributesOfItem(atPath: "/ts/dst.txt")
+
+            #expect(dstAttrs.creationDate == srcAttrs.creationDate)
+            #expect(dstAttrs.modificationDate! > srcAttrs.modificationDate!)
+        }
+
+        @Test func createAdvanceModifyShowsCreationBeforeModification() throws {
+            let harness = SimulatorHarness(seed: 42)
+            let env = harness.createEnvironment()
+            let fs = env.fileSystem
+
+            try fs.writeFile(atPath: "/ts/timeline.txt", contents: "initial".data(using: .utf8)!, atomically: true)
+
+            harness.advanceTime(by: 60)
+
+            try fs.writeFile(atPath: "/ts/timeline.txt", contents: "updated".data(using: .utf8)!, atomically: true)
+            let attrs = try fs.attributesOfItem(atPath: "/ts/timeline.txt")
+
+            #expect(attrs.creationDate! < attrs.modificationDate!)
+        }
+
+        @Test func seededFilesHaveNoTimestampsByDefault() throws {
+            let harness = SimulatorHarness(seed: 42)
+            let env = harness.createEnvironment()
+            let fs = env.fileSystem as! SimulatedFileSystem
+            fs.seed(path: "/ts/seeded.txt", node: .file("seeded".data(using: .utf8)!))
+
+            let attrs = try fs.attributesOfItem(atPath: "/ts/seeded.txt")
+            // seed() bypasses clock -- no timestamps set
+            #expect(attrs.creationDate == nil)
+            #expect(attrs.modificationDate == nil)
+        }
     }
 }

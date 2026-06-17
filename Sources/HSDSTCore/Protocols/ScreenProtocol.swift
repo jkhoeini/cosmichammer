@@ -11,7 +11,7 @@ public struct ScreenInfo: Sendable {
     public var brightness: Double
     public var colorSpaceName: String
 
-    public init(id: UInt32 = 1, name: String = "Built-in Retina Display",
+    public init(id: UInt32 = 1, name: String = "Builtin Retina Display",
                 frame: (x: Double, y: Double, width: Double, height: Double) = (0, 0, 1440, 900),
                 visibleFrame: (x: Double, y: Double, width: Double, height: Double) = (0, 25, 1440, 875),
                 scaleFactor: Double = 2.0, isBuiltIn: Bool = true,
@@ -64,25 +64,61 @@ public struct GammaTable: Sendable {
 }
 
 public protocol ScreenProtocol: AnyObject {
+    // MARK: - Screen enumeration
     func allScreens() -> [ScreenInfo]
     func mainScreen() -> ScreenInfo?
     func primaryScreen() -> ScreenInfo?
-    func setBrightness(_ value: Double, forScreenID id: UInt32) -> Bool
-    func setRotation(_ degrees: Double, forScreenID id: UInt32) -> Bool
-    func currentSpaceID(forScreenID id: UInt32) -> Int?
+    func screenInfo(forScreenID id: UInt32) -> ScreenInfo?
 
+    // MARK: - Brightness
+    func getBrightness(forScreenID id: UInt32) -> Float?
+    func setBrightness(_ value: Double, forScreenID id: UInt32) -> Bool
+
+    // MARK: - Rotation
+    func getRotation(forScreenID id: UInt32) -> Double
+    func setRotation(_ degrees: Double, forScreenID id: UInt32) -> Bool
+
+    // MARK: - Display modes
     func availableDisplayModes(forScreenID id: UInt32) -> [DisplayModeInfo]
     func currentDisplayMode(forScreenID id: UInt32) -> DisplayModeInfo?
     func setDisplayMode(_ modeNumber: Int32, forScreenID id: UInt32) -> Bool
 
+    // MARK: - Gamma
     func getGammaTable(forScreenID id: UInt32) -> GammaTable?
     func setGammaTable(_ table: GammaTable, forScreenID id: UInt32) -> Bool
     func restoreGamma()
 
+    // MARK: - Accessibility display settings
     func usesForceToGray() -> Bool
     func setForceToGray(_ enabled: Bool)
     func usesInvertedPolarity() -> Bool
     func setInvertedPolarity(_ enabled: Bool)
+    func accessibilityDisplaySettings() -> [String: Bool]
 
+    // MARK: - Screen capture
     func captureScreenRect(displayID: UInt32, rect: (x: Double, y: Double, width: Double, height: Double)) -> Data?
+
+    // MARK: - UUID
+    func getUUID(forScreenID id: UInt32) -> String?
+
+    // MARK: - Display info (IOKit-derived)
+    func getDisplayInfo(forScreenID id: UInt32) -> [String: Any]?
+
+    // MARK: - Display topology (setPrimary, setOrigin, mirroring)
+    func setPrimary(screenID: UInt32) -> Bool
+    func setOrigin(screenID: UInt32, x: Int32, y: Int32) -> Bool
+    func mirrorOf(targetScreenID: UInt32, sourceScreenID: UInt32, permanent: Bool) -> Bool
+    func mirrorStop(screenID: UInt32, permanent: Bool) -> Bool
+
+    // MARK: - Desktop image
+    func desktopImageURL(forScreenID id: UInt32) -> String?
+    func setDesktopImageURL(_ url: String, forScreenID id: UInt32) -> Bool
+
+    // MARK: - Spaces
+    func currentSpaceID(forScreenID id: UInt32) -> Int?
+
+    // MARK: - Display bounds (for coordinate calculations in setPrimary)
+    func displayBounds(forScreenID id: UInt32) -> (x: Double, y: Double, width: Double, height: Double)
+    func mainDisplayID() -> UInt32
+    func onlineDisplayIDs() -> [UInt32]
 }

@@ -46,6 +46,10 @@ window.animationDuration = 0.2
 ---  * The desktop window has no id, a role of `AXScrollArea` and no subrole
 ---  * The desktop is filtered out from `hs.window.allWindows()` (and downstream uses)
 function window.desktop()
+  -- Use the native _desktop function which routes through the WindowProtocol
+  -- (supports both production AX lookup and simulated desktop window)
+  if window._desktop then return window._desktop() end
+  -- Fallback for legacy: look through Finder's windows
   local finder = application.get('com.apple.finder')
   if not finder then return nil end
   for _,w in ipairs(finder:allWindows()) do if w:role()=='AXScrollArea' then return w end end
@@ -89,15 +93,30 @@ local SKIP_APPS={
 -- Karabiner's AXNotifier and Adobe Update Notifier fail in that fashion
 function window.allWindows()
   local r={}
+  local seen={}
+  -- Include windows from the WindowProtocol (covers simulated windows in DST mode)
+  if window._allWindows then
+    for _,w in ipairs(window._allWindows()) do
+      local wid=w:id()
+      if wid then seen[wid]=true end
+      r[#r+1]=w
+    end
+  end
   for _,app in ipairs(application.runningApplications()) do
     if app:kind()>=0 then
       local bid=app:bundleID() or 'N/A' --just for safety; universalaccessd has no bundleid (but it's kind()==-1 anyway)
       if bid=='com.apple.finder' then --exclude the desktop "window"
         -- check the role explicitly, instead of relying on absent :id() - sometimes minimized windows have no :id() (El Cap Notes.app)
-        for _,w in ipairs(app:allWindows()) do if w:role()=='AXWindow' then r[#r+1]=w end end
+        for _,w in ipairs(app:allWindows()) do
+          if w:role()=='AXWindow' then
+            local wid=w:id()
+            if not wid or not seen[wid] then r[#r+1]=w; if wid then seen[wid]=true end end
+          end
+        end
       elseif not SKIP_APPS[bid] then
         for _,w in ipairs(app:allWindows()) do
-          r[#r+1]=w
+          local wid=w:id()
+          if not wid or not seen[wid] then r[#r+1]=w; if wid then seen[wid]=true end end
         end
       end
     end

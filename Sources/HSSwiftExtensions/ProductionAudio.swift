@@ -1,17 +1,40 @@
 import AudioToolbox
 import CoreAudio
+import Carbon
 import Foundation
 import HSDSTCore
 
 final class ProductionAudio: AudioProtocol {
     private var nextCallbackID: UInt64 = 1
-    private var callbacks: [UInt64: AudioCallbackState] = [:]
+    private var deviceChangeCallbacks: [UInt64: AudioCallbackState] = [:]
+    private var propertyListenerCallbacks: [UInt64: PropertyListenerState] = [:]
+    private var systemHardwareCallbacks: [UInt64: SystemHardwareListenerState] = [:]
 
     private class AudioCallbackState {
         let callback: (UInt32) -> Void
         var listenerProc: AudioObjectPropertyListenerProc?
 
         init(callback: @escaping (UInt32) -> Void) {
+            self.callback = callback
+        }
+    }
+
+    private class PropertyListenerState {
+        let deviceID: UInt32
+        let callback: (_ deviceID: UInt32, _ eventName: String, _ eventScope: String, _ element: UInt32) -> Void
+        var listenerProc: AudioObjectPropertyListenerProc?
+
+        init(deviceID: UInt32, callback: @escaping (_ deviceID: UInt32, _ eventName: String, _ eventScope: String, _ element: UInt32) -> Void) {
+            self.deviceID = deviceID
+            self.callback = callback
+        }
+    }
+
+    private class SystemHardwareListenerState {
+        let callback: (_ eventName: String) -> Void
+        var listenerProc: AudioObjectPropertyListenerProc?
+
+        init(callback: @escaping (_ eventName: String) -> Void) {
             self.callback = callback
         }
     }
@@ -60,6 +83,21 @@ final class ProductionAudio: AudioProtocol {
         return buildAudioDevice(deviceID: deviceID)
     }
 
+    func defaultEffectDevice() -> AudioDevice? {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDefaultSystemOutputDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain)
+        var deviceID: AudioDeviceID = 0
+        var size = UInt32(MemoryLayout<AudioDeviceID>.size)
+        guard AudioObjectGetPropertyData(
+            AudioObjectID(kAudioObjectSystemObject), &address,
+            0, nil, &size, &deviceID) == noErr,
+            deviceID != kAudioObjectUnknown
+        else { return nil }
+        return buildAudioDevice(deviceID: deviceID)
+    }
+
     func setDefaultOutputDevice(id: UInt32) -> Bool {
         var address = AudioObjectPropertyAddress(
             mSelector: kAudioHardwarePropertyDefaultOutputDevice,
@@ -82,13 +120,74 @@ final class ProductionAudio: AudioProtocol {
             0, nil, UInt32(MemoryLayout<AudioDeviceID>.size), &deviceID) == noErr
     }
 
-    // MARK: - Volume
+    func setDefaultEffectDevice(id: UInt32) -> Bool {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDefaultSystemOutputDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain)
+        var deviceID = AudioDeviceID(id)
+        return AudioObjectSetPropertyData(
+            AudioObjectID(kAudioObjectSystemObject), &address,
+            0, nil, UInt32(MemoryLayout<AudioDeviceID>.size), &deviceID) == noErr
+    }
+
+    // MARK: - Device info
+
+    func deviceName(deviceID: UInt32) -> String? {
+        getStringProperty(AudioDeviceID(deviceID), kAudioObjectPropertyName)
+    }
+
+    func deviceUID(deviceID: UInt32) -> String? {
+        getStringProperty(AudioDeviceID(deviceID), kAudioDevicePropertyDeviceUID)
+    }
+
+    func isInputDevice(deviceID: UInt32) -> Bool {
+        hasStreams(AudioDeviceID(deviceID), kAudioDevicePropertyScopeInput)
+    }
+
+    func isOutputDevice(deviceID: UInt32) -> Bool {
+        hasStreams(AudioDeviceID(deviceID), kAudioDevicePropertyScopeOutput)
+    }
+
+    func transportType(deviceID: UInt32) -> UInt32? {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyTransportType,
+            mScope: kAudioObjectPropertyScopeOutput,
+            mElement: kAudioObjectPropertyElementMain)
+        guard AudioObjectHasProperty(AudioObjectID(deviceID), &address) else { return nil }
+        var type: UInt32 = 0
+        var size = UInt32(MemoryLayout<UInt32>.size)
+        guard AudioObjectGetPropertyData(
+            AudioObjectID(deviceID), &address, 0, nil, &size, &type) == noErr
+        else { return nil }
+        return type
+    }
+
+    func jackConnected(deviceID: UInt32, scope: AudioScope) -> Bool? {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyJackIsConnected,
+            mScope: coreAudioScope(scope),
+            mElement: kAudioObjectPropertyElementMain)
+        var jack: UInt32 = 0
+        var size = UInt32(MemoryLayout<UInt32>.size)
+        guard AudioObjectGetPropertyData(
+            AudioObjectID(deviceID), &address, 0, nil, &size, &jack) == noErr
+        else { return nil }
+        return jack != 0
+    }
+
+    // MARK: - Volume (scope-aware)
 
     func getVolume(deviceID: UInt32) -> Float? {
+        getVolume(deviceID: deviceID, scope: .output)
+    }
+
+    func getVolume(deviceID: UInt32, scope: AudioScope) -> Float? {
         var address = AudioObjectPropertyAddress(
             mSelector: kAudioHardwareServiceDeviceProperty_VirtualMainVolume,
-            mScope: kAudioDevicePropertyScopeOutput,
+            mScope: coreAudioScope(scope),
             mElement: kAudioObjectPropertyElementMain)
+        guard AudioObjectHasProperty(AudioObjectID(deviceID), &address) else { return nil }
         var volume: Float32 = 0
         var size = UInt32(MemoryLayout<Float32>.size)
         guard AudioObjectGetPropertyData(
@@ -98,21 +197,33 @@ final class ProductionAudio: AudioProtocol {
     }
 
     func setVolume(deviceID: UInt32, volume: Float) -> Bool {
+        setVolume(deviceID: deviceID, volume: volume, scope: .output)
+    }
+
+    func setVolume(deviceID: UInt32, volume: Float, scope: AudioScope) -> Bool {
         var address = AudioObjectPropertyAddress(
             mSelector: kAudioHardwareServiceDeviceProperty_VirtualMainVolume,
-            mScope: kAudioDevicePropertyScopeOutput,
+            mScope: coreAudioScope(scope),
             mElement: kAudioObjectPropertyElementMain)
+        guard AudioObjectHasProperty(AudioObjectID(deviceID), &address) else { return false }
         var vol = Float32(volume)
         return AudioObjectSetPropertyData(
             AudioObjectID(deviceID), &address, 0, nil,
             UInt32(MemoryLayout<Float32>.size), &vol) == noErr
     }
 
+    // MARK: - Mute (scope-aware)
+
     func isMuted(deviceID: UInt32) -> Bool? {
+        isMuted(deviceID: deviceID, scope: .output)
+    }
+
+    func isMuted(deviceID: UInt32, scope: AudioScope) -> Bool? {
         var address = AudioObjectPropertyAddress(
             mSelector: kAudioDevicePropertyMute,
-            mScope: kAudioDevicePropertyScopeOutput,
+            mScope: coreAudioScope(scope),
             mElement: kAudioObjectPropertyElementMain)
+        guard AudioObjectHasProperty(AudioObjectID(deviceID), &address) else { return nil }
         var muted: UInt32 = 0
         var size = UInt32(MemoryLayout<UInt32>.size)
         guard AudioObjectGetPropertyData(
@@ -122,14 +233,75 @@ final class ProductionAudio: AudioProtocol {
     }
 
     func setMuted(deviceID: UInt32, muted: Bool) -> Bool {
+        setMuted(deviceID: deviceID, muted: muted, scope: .output)
+    }
+
+    func setMuted(deviceID: UInt32, muted: Bool, scope: AudioScope) -> Bool {
         var address = AudioObjectPropertyAddress(
             mSelector: kAudioDevicePropertyMute,
-            mScope: kAudioDevicePropertyScopeOutput,
+            mScope: coreAudioScope(scope),
             mElement: kAudioObjectPropertyElementMain)
+        guard AudioObjectHasProperty(AudioObjectID(deviceID), &address) else { return false }
         var muteValue: UInt32 = muted ? 1 : 0
         return AudioObjectSetPropertyData(
             AudioObjectID(deviceID), &address, 0, nil,
             UInt32(MemoryLayout<UInt32>.size), &muteValue) == noErr
+    }
+
+    // MARK: - Balance
+
+    func getBalance(deviceID: UInt32, scope: AudioScope) -> Float? {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwareServiceDeviceProperty_VirtualMainBalance,
+            mScope: coreAudioScope(scope),
+            mElement: kAudioObjectPropertyElementMain)
+        guard AudioObjectHasProperty(AudioObjectID(deviceID), &address) else { return nil }
+        var balance: Float32 = 0
+        var size = UInt32(MemoryLayout<Float32>.size)
+        guard AudioObjectGetPropertyData(
+            AudioObjectID(deviceID), &address, 0, nil, &size, &balance) == noErr
+        else { return nil }
+        return balance
+    }
+
+    func setBalance(deviceID: UInt32, balance: Float, scope: AudioScope) -> Bool {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwareServiceDeviceProperty_VirtualMainBalance,
+            mScope: coreAudioScope(scope),
+            mElement: kAudioObjectPropertyElementMain)
+        guard AudioObjectHasProperty(AudioObjectID(deviceID), &address) else { return false }
+        var bal = Float32(balance)
+        return AudioObjectSetPropertyData(
+            AudioObjectID(deviceID), &address, 0, nil,
+            UInt32(MemoryLayout<Float32>.size), &bal) == noErr
+    }
+
+    // MARK: - Play-through
+
+    func getPlayThrough(deviceID: UInt32, scope: AudioScope) -> Bool? {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyPlayThru,
+            mScope: coreAudioScope(scope),
+            mElement: kAudioObjectPropertyElementMain)
+        guard AudioObjectHasProperty(AudioObjectID(deviceID), &address) else { return nil }
+        var thru: UInt32 = 0
+        var size = UInt32(MemoryLayout<UInt32>.size)
+        guard AudioObjectGetPropertyData(
+            AudioObjectID(deviceID), &address, 0, nil, &size, &thru) == noErr
+        else { return nil }
+        return thru != 0
+    }
+
+    func setPlayThrough(deviceID: UInt32, enabled: Bool, scope: AudioScope) -> Bool {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyPlayThru,
+            mScope: coreAudioScope(scope),
+            mElement: kAudioObjectPropertyElementMain)
+        guard AudioObjectHasProperty(AudioObjectID(deviceID), &address) else { return false }
+        var thruValue: UInt32 = enabled ? 1 : 0
+        return AudioObjectSetPropertyData(
+            AudioObjectID(deviceID), &address, 0, nil,
+            UInt32(MemoryLayout<UInt32>.size), &thruValue) == noErr
     }
 
     // MARK: - Sample rate
@@ -158,12 +330,16 @@ final class ProductionAudio: AudioProtocol {
             UInt32(MemoryLayout<Float64>.size), &newRate) == noErr
     }
 
-    // MARK: - Data sources
+    // MARK: - Data sources (scope-aware)
 
     func dataSources(forDeviceID deviceID: UInt32) -> [AudioDataSourceInfo] {
+        dataSources(forDeviceID: deviceID, scope: .output)
+    }
+
+    func dataSources(forDeviceID deviceID: UInt32, scope: AudioScope) -> [AudioDataSourceInfo] {
         var address = AudioObjectPropertyAddress(
             mSelector: kAudioDevicePropertyDataSources,
-            mScope: kAudioDevicePropertyScopeOutput,
+            mScope: coreAudioScope(scope),
             mElement: kAudioObjectPropertyElementMain)
         var size: UInt32 = 0
         guard AudioObjectGetPropertyDataSize(
@@ -179,36 +355,73 @@ final class ProductionAudio: AudioProtocol {
 
         return (0..<count).compactMap { i -> AudioDataSourceInfo? in
             let sourceID = sources[i]
-            let name = dataSourceName(deviceID: deviceID, sourceID: sourceID)
+            let name = dataSourceName(deviceID: deviceID, dataSourceID: sourceID, scope: scope)
             return AudioDataSourceInfo(id: sourceID, name: name ?? "Source \(sourceID)",
                                        deviceID: deviceID)
         }
     }
 
     func currentDataSource(forDeviceID deviceID: UInt32) -> AudioDataSourceInfo? {
+        currentDataSource(forDeviceID: deviceID, scope: .output)
+    }
+
+    func currentDataSource(forDeviceID deviceID: UInt32, scope: AudioScope) -> AudioDataSourceInfo? {
         var address = AudioObjectPropertyAddress(
             mSelector: kAudioDevicePropertyDataSource,
-            mScope: kAudioDevicePropertyScopeOutput,
+            mScope: coreAudioScope(scope),
             mElement: kAudioObjectPropertyElementMain)
         var sourceID: UInt32 = 0
         var size = UInt32(MemoryLayout<UInt32>.size)
         guard AudioObjectGetPropertyData(
             AudioObjectID(deviceID), &address, 0, nil, &size, &sourceID) == noErr
         else { return nil }
-        let name = dataSourceName(deviceID: deviceID, sourceID: sourceID)
+        let name = dataSourceName(deviceID: deviceID, dataSourceID: sourceID, scope: scope)
         return AudioDataSourceInfo(id: sourceID, name: name ?? "Source \(sourceID)",
                                    deviceID: deviceID)
     }
 
     func setDataSource(deviceID: UInt32, dataSourceID: UInt32) -> Bool {
+        setDataSource(deviceID: deviceID, dataSourceID: dataSourceID, scope: .output)
+    }
+
+    func setDataSource(deviceID: UInt32, dataSourceID: UInt32, scope: AudioScope) -> Bool {
         var address = AudioObjectPropertyAddress(
             mSelector: kAudioDevicePropertyDataSource,
-            mScope: kAudioDevicePropertyScopeOutput,
+            mScope: coreAudioScope(scope),
             mElement: kAudioObjectPropertyElementMain)
         var sourceID = dataSourceID
         return AudioObjectSetPropertyData(
             AudioObjectID(deviceID), &address, 0, nil,
             UInt32(MemoryLayout<UInt32>.size), &sourceID) == noErr
+    }
+
+    func supportsDataSources(deviceID: UInt32, scope: AudioScope) -> Bool {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyDataSources,
+            mScope: coreAudioScope(scope),
+            mElement: kAudioObjectPropertyElementMain)
+        return AudioObjectHasProperty(AudioObjectID(deviceID), &address)
+    }
+
+    func dataSourceName(deviceID: UInt32, dataSourceID: UInt32, scope: AudioScope) -> String? {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyDataSourceNameForIDCFString,
+            mScope: coreAudioScope(scope),
+            mElement: kAudioObjectPropertyElementMain)
+        var dataSourceName: Unmanaged<CFString>?
+        var mutableDataSource = dataSourceID
+        var avt = AudioValueTranslation(
+            mInputData: &mutableDataSource,
+            mInputDataSize: UInt32(MemoryLayout<UInt32>.size),
+            mOutputData: &dataSourceName,
+            mOutputDataSize: UInt32(MemoryLayout<CFString>.size)
+        )
+        var size = UInt32(MemoryLayout<AudioValueTranslation>.size)
+        guard AudioObjectGetPropertyData(
+            AudioObjectID(deviceID), &address, 0, nil, &size, &avt) == noErr,
+            let cfName = dataSourceName?.takeRetainedValue()
+        else { return nil }
+        return cfName as String
     }
 
     // MARK: - In use
@@ -224,6 +437,79 @@ final class ProductionAudio: AudioProtocol {
             AudioObjectID(deviceID), &address, 0, nil, &size, &running) == noErr
         else { return nil }
         return running != 0
+    }
+
+    // MARK: - Per-device property watcher
+
+    private let propertyWatchSelectors: [AudioObjectPropertySelector] = [
+        kAudioDevicePropertyMute,
+        kAudioDevicePropertyJackIsConnected,
+        kAudioDevicePropertyDeviceHasChanged,
+        kAudioDevicePropertyStereoPan,
+        kAudioHardwareServiceDeviceProperty_VirtualMainVolume,
+        kAudioDevicePropertyDeviceIsRunningSomewhere,
+    ]
+
+    func addPropertyListener(deviceID: UInt32, callback: @escaping (_ deviceID: UInt32, _ eventName: String, _ eventScope: String, _ element: UInt32) -> Void) -> UInt64 {
+        let id = nextCallbackID
+        nextCallbackID += 1
+        let state = PropertyListenerState(deviceID: deviceID, callback: callback)
+
+        let listenerProc: AudioObjectPropertyListenerProc = {
+            objID, numAddresses, addressList, clientData -> OSStatus in
+            guard let clientData = clientData else { return noErr }
+            let st = Unmanaged<PropertyListenerState>.fromOpaque(clientData).takeUnretainedValue()
+            for i in 0..<Int(numAddresses) {
+                let addr = addressList[i]
+                let eventName = UTCreateStringForOSType(addr.mSelector).takeRetainedValue() as String
+                let eventScope = UTCreateStringForOSType(addr.mScope).takeRetainedValue() as String
+                let element = addr.mElement
+                DispatchQueue.main.async {
+                    st.callback(objID, eventName, eventScope, element)
+                }
+            }
+            return noErr
+        }
+
+        state.listenerProc = listenerProc
+        propertyListenerCallbacks[id] = state
+
+        let unmanaged = Unmanaged.passRetained(state)
+        var address = AudioObjectPropertyAddress(
+            mSelector: 0,
+            mScope: kAudioObjectPropertyScopeWildcard,
+            mElement: kAudioObjectPropertyElementWildcard)
+
+        for selector in propertyWatchSelectors {
+            address.mSelector = selector
+            AudioObjectAddPropertyListener(
+                AudioObjectID(deviceID), &address,
+                listenerProc, unmanaged.toOpaque())
+        }
+
+        return id
+    }
+
+    func removePropertyListener(id: UInt64) -> Bool {
+        guard let state = propertyListenerCallbacks.removeValue(forKey: id),
+              let proc = state.listenerProc
+        else { return false }
+
+        var address = AudioObjectPropertyAddress(
+            mSelector: 0,
+            mScope: kAudioObjectPropertyScopeWildcard,
+            mElement: kAudioObjectPropertyElementWildcard)
+
+        let unmanaged = Unmanaged.passUnretained(state)
+        for selector in propertyWatchSelectors {
+            address.mSelector = selector
+            AudioObjectRemovePropertyListener(
+                AudioObjectID(state.deviceID), &address,
+                proc, unmanaged.toOpaque())
+        }
+        // Balance the passRetained from addPropertyListener
+        unmanaged.release()
+        return true
     }
 
     // MARK: - Device change callbacks
@@ -242,7 +528,7 @@ final class ProductionAudio: AudioProtocol {
         }
 
         state.listenerProc = listenerProc
-        callbacks[id] = state
+        deviceChangeCallbacks[id] = state
 
         var address = AudioObjectPropertyAddress(
             mSelector: kAudioHardwarePropertyDevices,
@@ -258,7 +544,7 @@ final class ProductionAudio: AudioProtocol {
     }
 
     func removeDeviceChangeCallback(id: UInt64) -> Bool {
-        guard let state = callbacks.removeValue(forKey: id),
+        guard let state = deviceChangeCallbacks.removeValue(forKey: id),
               let proc = state.listenerProc
         else { return false }
 
@@ -267,13 +553,91 @@ final class ProductionAudio: AudioProtocol {
             mScope: kAudioObjectPropertyScopeGlobal,
             mElement: kAudioObjectPropertyElementMain)
 
+        let unmanaged = Unmanaged.passUnretained(state)
         AudioObjectRemovePropertyListener(
             AudioObjectID(kAudioObjectSystemObject), &address,
-            proc, Unmanaged.passUnretained(state).toOpaque())
+            proc, unmanaged.toOpaque())
+        // Balance the passRetained from addDeviceChangeCallback
+        unmanaged.release()
         return true
     }
 
-    // MARK: - Private
+    // MARK: - System-level audio hardware watcher
+
+    private let systemWatchSelectors: [AudioObjectPropertySelector] = [
+        kAudioHardwarePropertyDevices,
+        kAudioHardwarePropertyDefaultInputDevice,
+        kAudioHardwarePropertyDefaultOutputDevice,
+        kAudioHardwarePropertyDefaultSystemOutputDevice,
+    ]
+
+    func addSystemAudioHardwareListener(callback: @escaping (_ eventName: String) -> Void) -> UInt64 {
+        let id = nextCallbackID
+        nextCallbackID += 1
+        let state = SystemHardwareListenerState(callback: callback)
+
+        let listenerProc: AudioObjectPropertyListenerProc = {
+            _, numAddresses, addressList, clientData -> OSStatus in
+            guard let clientData = clientData else { return noErr }
+            let st = Unmanaged<SystemHardwareListenerState>.fromOpaque(clientData).takeUnretainedValue()
+            for i in 0..<Int(numAddresses) {
+                let eventName = UTCreateStringForOSType(addressList[i].mSelector).takeRetainedValue() as String
+                DispatchQueue.main.async {
+                    st.callback(eventName)
+                }
+            }
+            return noErr
+        }
+
+        state.listenerProc = listenerProc
+        systemHardwareCallbacks[id] = state
+
+        let unmanaged = Unmanaged.passRetained(state)
+        var address = AudioObjectPropertyAddress(
+            mSelector: 0,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain)
+
+        for selector in systemWatchSelectors {
+            address.mSelector = selector
+            AudioObjectAddPropertyListener(
+                AudioObjectID(kAudioObjectSystemObject), &address,
+                listenerProc, unmanaged.toOpaque())
+        }
+
+        return id
+    }
+
+    func removeSystemAudioHardwareListener(id: UInt64) -> Bool {
+        guard let state = systemHardwareCallbacks.removeValue(forKey: id),
+              let proc = state.listenerProc
+        else { return false }
+
+        let unmanaged = Unmanaged.passUnretained(state)
+        var address = AudioObjectPropertyAddress(
+            mSelector: 0,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain)
+
+        for selector in systemWatchSelectors {
+            address.mSelector = selector
+            AudioObjectRemovePropertyListener(
+                AudioObjectID(kAudioObjectSystemObject), &address,
+                proc, unmanaged.toOpaque())
+        }
+        // Balance the passRetained from addSystemAudioHardwareListener
+        unmanaged.release()
+        return true
+    }
+
+    // MARK: - Private helpers
+
+    private func coreAudioScope(_ scope: AudioScope) -> AudioObjectPropertyScope {
+        switch scope {
+        case .input: return kAudioObjectPropertyScopeInput
+        case .output: return kAudioObjectPropertyScopeOutput
+        }
+    }
 
     private func getDeviceIDs() -> [AudioDeviceID] {
         var address = AudioObjectPropertyAddress(
@@ -367,27 +731,5 @@ final class ProductionAudio: AudioProtocol {
         var size: UInt32 = 0
         return AudioObjectGetPropertyDataSize(
             AudioObjectID(deviceID), &address, 0, nil, &size) == noErr && size > 0
-    }
-
-    private func dataSourceName(deviceID: UInt32, sourceID: UInt32) -> String? {
-        var address = AudioObjectPropertyAddress(
-            mSelector: kAudioDevicePropertyDataSourceNameForIDCFString,
-            mScope: kAudioDevicePropertyScopeOutput,
-            mElement: kAudioObjectPropertyElementMain)
-        var translation = AudioValueTranslation(
-            mInputData: UnsafeMutableRawPointer(mutating: [sourceID]).bindMemory(
-                to: UInt32.self, capacity: 1),
-            mInputDataSize: UInt32(MemoryLayout<UInt32>.size),
-            mOutputData: UnsafeMutableRawPointer.allocate(
-                byteCount: MemoryLayout<CFString?>.size, alignment: MemoryLayout<CFString?>.alignment),
-            mOutputDataSize: UInt32(MemoryLayout<CFString?>.size)
-        )
-        defer { translation.mOutputData.deallocate() }
-        var size = UInt32(MemoryLayout<AudioValueTranslation>.size)
-        guard AudioObjectGetPropertyData(
-            AudioObjectID(deviceID), &address, 0, nil, &size, &translation) == noErr
-        else { return nil }
-        let cfStr = translation.mOutputData.load(as: CFString?.self)
-        return cfStr as String?
     }
 }

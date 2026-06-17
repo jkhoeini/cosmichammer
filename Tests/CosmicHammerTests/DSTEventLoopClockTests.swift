@@ -257,6 +257,127 @@ extension CosmicHammerTests {
             #expect(ran)
         }
 
+        @Test func emptyDrainIsNoOp() {
+            let harness = SimulatorHarness(seed: 42)
+            let loop = harness.eventLoop
+            #expect(loop.pendingCount == 0)
+            loop.drain()
+            #expect(loop.pendingCount == 0)
+        }
+
+        @Test func futureItemsPreservedAfterDrain() {
+            let harness = SimulatorHarness(seed: 42)
+            let loop = harness.eventLoop
+            var ranImmediate = false
+            var ranFuture = false
+            loop.async { ranImmediate = true }
+            loop.after(seconds: 5.0) { ranFuture = true }
+            loop.drain()
+            #expect(ranImmediate)
+            #expect(!ranFuture)
+            #expect(loop.pendingCount == 1)
+        }
+
+        @Test func multipleAfterItemsAtSameDeadlineExecuteInInsertionOrder() {
+            let harness = SimulatorHarness(seed: 42)
+            let loop = harness.eventLoop
+            var order: [Int] = []
+            loop.after(seconds: 1.0) { order.append(1) }
+            loop.after(seconds: 1.0) { order.append(2) }
+            loop.after(seconds: 1.0) { order.append(3) }
+            harness.clock.advance(by: 1.0)
+            loop.drain()
+            #expect(order == [1, 2, 3])
+        }
+
+        @Test func asyncInsideHandlerProcessedInSameDrainCycle() {
+            let harness = SimulatorHarness(seed: 42)
+            let loop = harness.eventLoop
+            var innerRan = false
+            loop.async {
+                loop.async {
+                    innerRan = true
+                }
+            }
+            loop.drain()
+            #expect(innerRan)
+        }
+
+        @Test func safetyLimitExactlyTenThousand() {
+            let harness = SimulatorHarness(seed: 42)
+            let loop = harness.eventLoop
+            var iterations = 0
+            func enqueue() {
+                iterations += 1
+                loop.async { enqueue() }
+            }
+            loop.async { enqueue() }
+            loop.drain()
+            #expect(iterations == 10_000)
+        }
+
+        @Test func afterItemRunsExactlyAtDeadline() {
+            let harness = SimulatorHarness(seed: 42)
+            let loop = harness.eventLoop
+            var ran = false
+            loop.after(seconds: 3.0) { ran = true }
+
+            // Advance to just before the deadline
+            harness.clock.advance(by: 2.999)
+            loop.drain()
+            #expect(!ran)
+
+            // Advance to exactly the deadline
+            harness.clock.advance(by: 0.001)
+            loop.drain()
+            #expect(ran)
+        }
+
+        @Test func multipleDrainCallsProcessNewlyAddedItems() {
+            let harness = SimulatorHarness(seed: 42)
+            let loop = harness.eventLoop
+            var results: [String] = []
+
+            loop.async { results.append("first") }
+            loop.drain()
+
+            loop.async { results.append("second") }
+            loop.drain()
+
+            #expect(results == ["first", "second"])
+            #expect(loop.pendingCount == 0)
+        }
+
+        @Test func asyncItemsExecuteBeforeFutureAfterItems() {
+            let harness = SimulatorHarness(seed: 42)
+            let loop = harness.eventLoop
+            var order: [String] = []
+            loop.after(seconds: 10.0) { order.append("future") }
+            loop.async { order.append("immediate") }
+            loop.drain()
+            #expect(order == ["immediate"])
+            #expect(loop.pendingCount == 1)
+        }
+
+        @Test func drainAfterClockAdvanceProcessesBecomeReadyItems() {
+            let harness = SimulatorHarness(seed: 42)
+            let loop = harness.eventLoop
+            var results: [Int] = []
+            loop.after(seconds: 1.0) { results.append(1) }
+            loop.after(seconds: 2.0) { results.append(2) }
+            loop.after(seconds: 3.0) { results.append(3) }
+
+            harness.clock.advance(by: 2.0)
+            loop.drain()
+            #expect(results == [1, 2])
+            #expect(loop.pendingCount == 1)
+
+            harness.clock.advance(by: 1.0)
+            loop.drain()
+            #expect(results == [1, 2, 3])
+            #expect(loop.pendingCount == 0)
+        }
+
         // MARK: - Clock + EventLoop integration
 
         @Test func eventLoopAndClockIntegrate() {

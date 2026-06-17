@@ -7,6 +7,9 @@ public final class SimulatedSettings: SettingsProtocol {
 
     public var store: [String: Any] = [:]
 
+    private var nextObserverID: UInt64 = 1
+    private var observers: [(id: UInt64, key: String, handler: (String) -> Void)] = []
+
     public init(rng: RPRNG, faults: FaultConfig) {
         self.rng = rng
         self.faults = faults
@@ -23,10 +26,18 @@ public final class SimulatedSettings: SettingsProtocol {
         } else {
             store.removeValue(forKey: key)
         }
+        notifyObservers(forKey: key)
     }
 
     public func removeObject(forKey key: String) {
         store.removeValue(forKey: key)
+        notifyObservers(forKey: key)
+    }
+
+    private func notifyObservers(forKey key: String) {
+        for entry in observers where entry.key == key {
+            entry.handler(key)
+        }
     }
 
     public func bool(forKey key: String) -> Bool { (object(forKey: key) as? Bool) ?? false }
@@ -38,4 +49,15 @@ public final class SimulatedSettings: SettingsProtocol {
     public func synchronize() -> Bool { true }
     public func allKeys() -> [String] { Array(store.keys).sorted() }
     public func objectIsForced(forKey key: String) -> Bool { false }
+
+    public func addObserver(forKey key: String, handler: @escaping (String) -> Void) -> UInt64 {
+        let id = nextObserverID
+        nextObserverID += 1
+        observers.append((id: id, key: key, handler: handler))
+        return id
+    }
+
+    public func removeObserver(id: UInt64) {
+        observers.removeAll { $0.id == id }
+    }
 }

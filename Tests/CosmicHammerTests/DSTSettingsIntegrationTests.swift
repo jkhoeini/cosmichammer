@@ -118,4 +118,120 @@ struct DSTSettingsIntegrationTests {
             #expect(settings.bool(forKey: "HSAppleScriptEnabledKey") == false)
         }
     }
+
+    // MARK: - Observer protocol tests
+
+    @Test func testObserverFiresOnSet() {
+        withLuaState { L in
+            let settings = environmentGet(L).settings as! SimulatedSettings
+            var fired: [String] = []
+
+            let id = settings.addObserver(forKey: "testKey") { key in
+                fired.append(key)
+            }
+
+            settings.set("hello", forKey: "testKey")
+            #expect(fired == ["testKey"])
+
+            settings.set("world", forKey: "testKey")
+            #expect(fired == ["testKey", "testKey"])
+
+            settings.removeObserver(id: id)
+            settings.set("gone", forKey: "testKey")
+            #expect(fired.count == 2, "Observer should not fire after removal")
+        }
+    }
+
+    @Test func testObserverFiresOnRemoveObject() {
+        withLuaState { L in
+            let settings = environmentGet(L).settings as! SimulatedSettings
+            var fired = false
+
+            settings.set("value", forKey: "removeMe")
+            let id = settings.addObserver(forKey: "removeMe") { _ in
+                fired = true
+            }
+
+            settings.removeObject(forKey: "removeMe")
+            #expect(fired == true)
+
+            settings.removeObserver(id: id)
+        }
+    }
+
+    @Test func testObserverOnlyFiresForMatchingKey() {
+        withLuaState { L in
+            let settings = environmentGet(L).settings as! SimulatedSettings
+            var firedKeys: [String] = []
+
+            let id = settings.addObserver(forKey: "keyA") { key in
+                firedKeys.append(key)
+            }
+
+            settings.set("x", forKey: "keyB")
+            #expect(firedKeys.isEmpty, "Observer for keyA should not fire when keyB changes")
+
+            settings.set("y", forKey: "keyA")
+            #expect(firedKeys == ["keyA"])
+
+            settings.removeObserver(id: id)
+        }
+    }
+
+    @Test func testMultipleObserversSameKey() {
+        withLuaState { L in
+            let settings = environmentGet(L).settings as! SimulatedSettings
+            var countA = 0
+            var countB = 0
+
+            let idA = settings.addObserver(forKey: "shared") { _ in countA += 1 }
+            let idB = settings.addObserver(forKey: "shared") { _ in countB += 1 }
+
+            settings.set(42, forKey: "shared")
+            #expect(countA == 1)
+            #expect(countB == 1)
+
+            settings.removeObserver(id: idA)
+            settings.set(99, forKey: "shared")
+            #expect(countA == 1, "Removed observer A should not fire")
+            #expect(countB == 2)
+
+            settings.removeObserver(id: idB)
+        }
+    }
+
+    @Test func testSetNilFiresObserver() {
+        withLuaState { L in
+            let settings = environmentGet(L).settings as! SimulatedSettings
+            var fired = false
+
+            settings.set("initial", forKey: "nilTest")
+            let id = settings.addObserver(forKey: "nilTest") { _ in
+                fired = true
+            }
+
+            settings.set(nil, forKey: "nilTest")
+            #expect(fired == true, "Setting nil should fire observer")
+
+            settings.removeObserver(id: id)
+        }
+    }
+
+    @Test func testObserverIDsAreUnique() {
+        withLuaState { L in
+            let settings = environmentGet(L).settings as! SimulatedSettings
+
+            let id1 = settings.addObserver(forKey: "a") { _ in }
+            let id2 = settings.addObserver(forKey: "b") { _ in }
+            let id3 = settings.addObserver(forKey: "a") { _ in }
+
+            #expect(id1 != id2)
+            #expect(id2 != id3)
+            #expect(id1 != id3)
+
+            settings.removeObserver(id: id1)
+            settings.removeObserver(id: id2)
+            settings.removeObserver(id: id3)
+        }
+    }
 }

@@ -17,21 +17,45 @@ public final class SimulatedScreen: ScreenProtocol {
         ]
     ]
     public var currentModes: [UInt32: Int32] = [1: 0]
-    public var gammaTables: [UInt32: GammaTable] = [:]
+    public var gammaTables: [UInt32: GammaTable] = [1: SimulatedScreen.linearGammaRamp()]
     public var forceToGray: Bool = false
     public var invertedPolarity: Bool = false
     public var capturedRects: [(displayID: UInt32, rect: (x: Double, y: Double, width: Double, height: Double))] = []
+    public var desktopImages: [UInt32: String] = [:]
+    public var uuids: [UInt32: String] = [1: "37D8832A-2D66-02CA-B9F7-8F30A301B230"]
+    public var displayInfos: [UInt32: [String: Any]] = [:]
+    public var primaryScreenID: UInt32 = 1
 
     public init(rng: RPRNG, faults: FaultConfig) {
         self.rng = rng
         self.faults = faults
     }
 
+    /// Returns a 256-entry linear gamma ramp (0.0 ... 1.0) for R/G/B,
+    /// matching a typical uncalibrated display's default gamma table.
+    public static func linearGammaRamp(sampleCount: Int = 256) -> GammaTable {
+        let ramp = (0..<sampleCount).map { Float($0) / Float(sampleCount - 1) }
+        return GammaTable(red: ramp, green: ramp, blue: ramp)
+    }
+
+    // MARK: - Screen enumeration
+
     public func allScreens() -> [ScreenInfo] { screens }
 
     public func mainScreen() -> ScreenInfo? { screens.first { $0.id == mainScreenID } }
 
     public func primaryScreen() -> ScreenInfo? { screens.first }
+
+    public func screenInfo(forScreenID id: UInt32) -> ScreenInfo? {
+        screens.first { $0.id == id }
+    }
+
+    // MARK: - Brightness
+
+    public func getBrightness(forScreenID id: UInt32) -> Float? {
+        guard let screen = screens.first(where: { $0.id == id }) else { return nil }
+        return Float(screen.brightness)
+    }
 
     public func setBrightness(_ value: Double, forScreenID id: UInt32) -> Bool {
         if rng.boolean(probability: faults.brightnessSetFailProbability) { return false }
@@ -45,6 +69,12 @@ public final class SimulatedScreen: ScreenProtocol {
         return true
     }
 
+    // MARK: - Rotation
+
+    public func getRotation(forScreenID id: UInt32) -> Double {
+        screens.first(where: { $0.id == id })?.rotation ?? 0
+    }
+
     public func setRotation(_ degrees: Double, forScreenID id: UInt32) -> Bool {
         guard let idx = screens.firstIndex(where: { $0.id == id }) else { return false }
         screens[idx] = ScreenInfo(
@@ -56,7 +86,7 @@ public final class SimulatedScreen: ScreenProtocol {
         return true
     }
 
-    public func currentSpaceID(forScreenID id: UInt32) -> Int? { spaceIDs[id] }
+    // MARK: - Display modes
 
     public func availableDisplayModes(forScreenID id: UInt32) -> [DisplayModeInfo] {
         displayModes[id] ?? []
@@ -73,6 +103,8 @@ public final class SimulatedScreen: ScreenProtocol {
         return true
     }
 
+    // MARK: - Gamma
+
     public func getGammaTable(forScreenID id: UInt32) -> GammaTable? {
         gammaTables[id]
     }
@@ -83,8 +115,12 @@ public final class SimulatedScreen: ScreenProtocol {
     }
 
     public func restoreGamma() {
-        gammaTables.removeAll()
+        for id in screens.map(\.id) {
+            gammaTables[id] = SimulatedScreen.linearGammaRamp()
+        }
     }
+
+    // MARK: - Accessibility
 
     public func usesForceToGray() -> Bool { forceToGray }
 
@@ -93,6 +129,18 @@ public final class SimulatedScreen: ScreenProtocol {
     public func usesInvertedPolarity() -> Bool { invertedPolarity }
 
     public func setInvertedPolarity(_ enabled: Bool) { invertedPolarity = enabled }
+
+    public func accessibilityDisplaySettings() -> [String: Bool] {
+        [
+            "InvertColors": false,
+            "ReduceMotion": false,
+            "ReduceTransparency": false,
+            "IncreaseContrast": false,
+            "DifferentiateWithoutColor": false,
+        ]
+    }
+
+    // MARK: - Screen capture
 
     public func captureScreenRect(displayID: UInt32, rect: (x: Double, y: Double, width: Double, height: Double)) -> Data? {
         capturedRects.append((displayID: displayID, rect: rect))
@@ -108,5 +156,78 @@ public final class SimulatedScreen: ScreenProtocol {
             0x44, 0xAE, 0x42, 0x60, 0x82,
         ]
         return Data(pngStub)
+    }
+
+    // MARK: - UUID
+
+    public func getUUID(forScreenID id: UInt32) -> String? {
+        uuids[id]
+    }
+
+    // MARK: - Display info
+
+    public func getDisplayInfo(forScreenID id: UInt32) -> [String: Any]? {
+        displayInfos[id]
+    }
+
+    // MARK: - Display topology
+
+    public func setPrimary(screenID: UInt32) -> Bool {
+        primaryScreenID = screenID
+        return true
+    }
+
+    public func setOrigin(screenID: UInt32, x: Int32, y: Int32) -> Bool {
+        guard let idx = screens.firstIndex(where: { $0.id == screenID }) else { return false }
+        let s = screens[idx]
+        screens[idx] = ScreenInfo(
+            id: s.id, name: s.name,
+            frame: (Double(x), Double(y), s.frame.width, s.frame.height),
+            visibleFrame: (Double(x), Double(y) + 25, s.visibleFrame.width, s.visibleFrame.height),
+            scaleFactor: s.scaleFactor, isBuiltIn: s.isBuiltIn, rotation: s.rotation,
+            brightness: s.brightness, colorSpaceName: s.colorSpaceName
+        )
+        return true
+    }
+
+    public func mirrorOf(targetScreenID: UInt32, sourceScreenID: UInt32, permanent: Bool) -> Bool {
+        return screens.contains(where: { $0.id == targetScreenID }) &&
+               screens.contains(where: { $0.id == sourceScreenID })
+    }
+
+    public func mirrorStop(screenID: UInt32, permanent: Bool) -> Bool {
+        return screens.contains(where: { $0.id == screenID })
+    }
+
+    // MARK: - Desktop image
+
+    public func desktopImageURL(forScreenID id: UInt32) -> String? {
+        desktopImages[id]
+    }
+
+    public func setDesktopImageURL(_ url: String, forScreenID id: UInt32) -> Bool {
+        desktopImages[id] = url
+        return true
+    }
+
+    // MARK: - Spaces
+
+    public func currentSpaceID(forScreenID id: UInt32) -> Int? { spaceIDs[id] }
+
+    // MARK: - Display bounds / topology helpers
+
+    public func displayBounds(forScreenID id: UInt32) -> (x: Double, y: Double, width: Double, height: Double) {
+        guard let screen = screens.first(where: { $0.id == id }) else {
+            return (0, 0, 0, 0)
+        }
+        return screen.frame
+    }
+
+    public func mainDisplayID() -> UInt32 {
+        primaryScreenID
+    }
+
+    public func onlineDisplayIDs() -> [UInt32] {
+        screens.map { $0.id }
     }
 }

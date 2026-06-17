@@ -100,6 +100,7 @@ class HSPasteboardTimer: NSObject, LuaTeardownable {
         timerHandle = clock.createTimer(interval: pollingInterval, repeats: true) { [weak self] in
             self?.pollPasteboard()
         }
+        timerHandle?.schedule()
 
         // The watcher is now running:
         isRunning = true

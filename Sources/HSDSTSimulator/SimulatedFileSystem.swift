@@ -4,6 +4,7 @@ import HSDSTCore
 public final class SimulatedFileSystem: FileSystemProtocol {
     private var rng: RPRNG
     private let faults: FaultConfig
+    private let clock: any ClockProtocol
 
     public struct FSNode {
         public var isDirectory: Bool
@@ -27,13 +28,18 @@ public final class SimulatedFileSystem: FileSystemProtocol {
     public var home: String = "/Users/test"
     public var tmp: String = "/tmp"
 
-    public init(rng: RPRNG, faults: FaultConfig) {
+    public init(rng: RPRNG, faults: FaultConfig, clock: any ClockProtocol) {
         self.rng = rng
         self.faults = faults
+        self.clock = clock
     }
 
     public func seed(path: String, node: FSNode) {
         setNode(atPath: path, node: node)
+    }
+
+    private func clockDate() -> Date {
+        Date(timeIntervalSince1970: clock.now())
     }
 
     // MARK: - FileSystemProtocol
@@ -63,7 +69,15 @@ public final class SimulatedFileSystem: FileSystemProtocol {
         if rng.boolean(probability: faults.diskFullProbability) {
             throw SimulatedError.injectedFault("Disk full (simulated)")
         }
-        setNode(atPath: path, node: .file(contents))
+        let now = clockDate()
+        var node = FSNode.file(contents)
+        if let existing = resolveNode(atPath: path) {
+            node.attributes.creationDate = existing.attributes.creationDate
+        } else {
+            node.attributes.creationDate = now
+        }
+        node.attributes.modificationDate = now
+        setNode(atPath: path, node: node)
     }
 
     public func removeItem(atPath path: String) throws {
@@ -71,9 +85,10 @@ public final class SimulatedFileSystem: FileSystemProtocol {
     }
 
     public func moveItem(from src: String, to dst: String) throws {
-        guard let node = resolveNode(atPath: src) else {
+        guard var node = resolveNode(atPath: src) else {
             throw SimulatedError.fileNotFound(src)
         }
+        node.attributes.modificationDate = clockDate()
         setNode(atPath: dst, node: node)
         removeNode(atPath: src)
     }
@@ -86,16 +101,23 @@ public final class SimulatedFileSystem: FileSystemProtocol {
     }
 
     public func createDirectory(atPath path: String, withIntermediateDirectories: Bool) throws {
+        let now = clockDate()
         if withIntermediateDirectories {
             var current = ""
             for component in pathComponents(path) {
                 current += "/" + component
                 if resolveNode(atPath: current) == nil {
-                    setNode(atPath: current, node: .directory())
+                    var node = FSNode.directory()
+                    node.attributes.creationDate = now
+                    node.attributes.modificationDate = now
+                    setNode(atPath: current, node: node)
                 }
             }
         } else {
-            setNode(atPath: path, node: .directory())
+            var node = FSNode.directory()
+            node.attributes.creationDate = now
+            node.attributes.modificationDate = now
+            setNode(atPath: path, node: node)
         }
     }
 

@@ -22,8 +22,54 @@ private let _productionCGWindowListCreateImage: (
 
 private let _prodSystemWideElement: AXUIElement = AXUIElementCreateSystemWide()
 
+// SkyLight private API for querying window corner radii via the window iterator.
+@_silgen_name("SLSWindowQueryWindows")
+private func _prodSLSWindowQueryWindows(_ cid: Int32, _ windows: CFArray,
+                                        _ options: UInt32) -> CFTypeRef?
+@_silgen_name("SLSWindowQueryResultCopyWindows")
+private func _prodSLSWindowQueryResultCopyWindows(_ query: CFTypeRef) -> CFTypeRef?
+@_silgen_name("SLSWindowIteratorGetCount")
+private func _prodSLSWindowIteratorGetCount(_ iterator: CFTypeRef) -> Int32
+@_silgen_name("SLSWindowIteratorAdvance")
+private func _prodSLSWindowIteratorAdvance(_ iterator: CFTypeRef) -> Bool
+@_silgen_name("SLSWindowIteratorGetCornerRadii")
+private func _prodSLSWindowIteratorGetCornerRadii(_ iterator: CFTypeRef) -> CFArray?
+
 final class ProductionWindow: WindowProtocol {
     private var timeoutSeconds: Float = 2.0
+
+    // MARK: - Window creation (no-op in production)
+
+    func createWindow(title: String, pid: Int32, role: String, subrole: String?,
+                      frame: (x: Double, y: Double, width: Double, height: Double)) -> UInt32 {
+        // Production windows are created by the OS, not by us.
+        return 0
+    }
+
+    // MARK: - Desktop
+
+    func desktopWindow() -> AXWindowInfo? {
+        // Find Finder and look for the AXScrollArea (desktop) window
+        guard let finder = NSWorkspace.shared.runningApplications.first(where: {
+            $0.bundleIdentifier == "com.apple.finder"
+        }) else { return nil }
+        let appElement = AXUIElementCreateApplication(finder.processIdentifier)
+        var windowsRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(
+            appElement, kAXWindowsAttribute as CFString, &windowsRef) == .success,
+            let windowsRef = windowsRef
+        else { return nil }
+        let windowsArray = unsafeBitCast(windowsRef, to: CFArray.self)
+        let count = CFArrayGetCount(windowsArray)
+        for i in 0..<count {
+            guard let raw = CFArrayGetValueAtIndex(windowsArray, i) else { continue }
+            let winElement = unsafeBitCast(raw, to: AXUIElement.self)
+            if let info = axWindowInfoFromElement(winElement), info.role == "AXScrollArea" {
+                return info
+            }
+        }
+        return nil
+    }
 
     // MARK: - Listing and lookup
 
@@ -280,7 +326,90 @@ final class ProductionWindow: WindowProtocol {
         return nsImage.tiffRepresentation
     }
 
-    func cornerRadius(forWindowID id: UInt32) -> Double { 10.0 }
+    func cornerRadius(forWindowID id: UInt32) -> Double {
+        guard id != 0 else { return 0 }
+        let cid = SLSMainConnectionID()
+        let windowArray = [NSNumber(value: id)] as CFArray
+        guard let query = _prodSLSWindowQueryWindows(cid, windowArray, 0x0) else { return 0 }
+        guard let iterator = _prodSLSWindowQueryResultCopyWindows(query) else { return 0 }
+        guard _prodSLSWindowIteratorGetCount(iterator) > 0 else { return 0 }
+        guard _prodSLSWindowIteratorAdvance(iterator) else { return 0 }
+        guard let radiiRef = _prodSLSWindowIteratorGetCornerRadii(iterator) else { return 0 }
+        let radii = radiiRef as NSArray
+        guard radii.count > 0, let value = radii[0] as? NSNumber else { return 0 }
+        let radius = CGFloat(value.doubleValue)
+        return radius > 0 ? Double(radius) : 0
+    }
+
+    func becomeMain(windowID: UInt32) -> Bool {
+        guard let winElement = findWindowElement(id: windowID) else { return false }
+        return AXUIElementSetAttributeValue(
+            winElement, NSAccessibility.Attribute.main.rawValue as CFString,
+            NSNumber(value: true)) == .success
+    }
+
+    func zoomButtonRect(forWindowID id: UInt32) -> (x: Double, y: Double, width: Double, height: Double)? {
+        guard let winElement = findWindowElement(id: id) else { return nil }
+        var buttonRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(
+            winElement, kAXZoomButtonAttribute as CFString, &buttonRef) == .success,
+            let buttonRef = buttonRef
+        else { return nil }
+        let button = unsafeBitCast(buttonRef, to: AXUIElement.self)
+
+        var pointRef: CFTypeRef?
+        var sizeRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(
+            button, kAXPositionAttribute as CFString, &pointRef) == .success,
+            AXUIElementCopyAttributeValue(
+                button, kAXSizeAttribute as CFString, &sizeRef) == .success,
+            let pointRef = pointRef, let sizeRef = sizeRef
+        else { return nil }
+
+        var point = CGPoint.zero
+        var size = CGSize.zero
+        AXValueGetValue(unsafeBitCast(pointRef, to: AXValue.self), .cgPoint, &point)
+        AXValueGetValue(unsafeBitCast(sizeRef, to: AXValue.self), .cgSize, &size)
+        return (Double(point.x), Double(point.y), Double(size.width), Double(size.height))
+    }
+
+    func isMaximizable(forWindowID id: UInt32) -> Bool? {
+        guard let winElement = findWindowElement(id: id) else { return nil }
+        var buttonRef: CFTypeRef?
+        var isEnabled: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(
+            winElement, kAXZoomButtonAttribute as CFString, &buttonRef) == .success,
+            let buttonElement = buttonRef,
+            AXUIElementCopyAttributeValue(
+                buttonElement as! AXUIElement, kAXEnabledAttribute as CFString,
+                &isEnabled) == .success
+        else { return nil }
+        guard let boolVal = isEnabled else { return nil }
+        return CFBooleanGetValue(unsafeBitCast(boolVal, to: CFBoolean.self))
+    }
+
+    func listWindowInfo(allWindows: Bool) -> [[String: Any]] {
+        var windows = CGWindowListCopyWindowInfo(
+            .optionOnScreenOnly, kCGNullWindowID) as? [NSDictionary] ?? []
+
+        if !allWindows {
+            var dockWindowNumber: CGWindowID = 0
+            for win in windows {
+                if let name = win[kCGWindowName as String] as? String, name == "Dock",
+                   let num = win[kCGWindowNumber as String] as? NSNumber {
+                    dockWindowNumber = CGWindowID(num.uint32Value)
+                    break
+                }
+            }
+            if dockWindowNumber != 0 {
+                windows = CGWindowListCopyWindowInfo(
+                    [.optionOnScreenBelowWindow, .excludeDesktopElements],
+                    dockWindowNumber) as? [NSDictionary] ?? []
+            }
+        }
+
+        return windows.map { $0 as! [String: Any] }
+    }
 
     func spaces(forWindowID id: UInt32) -> [Int] {
         let cid = SLSMainConnectionID()

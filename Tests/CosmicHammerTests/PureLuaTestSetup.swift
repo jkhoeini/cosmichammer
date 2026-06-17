@@ -25,8 +25,14 @@ func withLuaState(faults: FaultConfig, _ body: (UnsafeMutablePointer<lua_State>)
     environmentSetGlobal(simEnv)
     defer {
         environmentClearGlobal()
-        environmentDetach(L)
+        // lua_close triggers __gc which may call environmentGet(L),
+        // so close before detaching the environment.
+        let extra = lua_getextraspace(L)!
+        let envRaw = extra.load(as: UnsafeMutableRawPointer?.self)
         lua_close(L)
+        if let envRaw = envRaw {
+            Unmanaged<Environment>.fromOpaque(envRaw).release()
+        }
         globalEnvLock.unlock()
     }
     try body(L)

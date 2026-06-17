@@ -5,13 +5,16 @@ import Carbon
 
 private let USERDATA_TAG = "hs.hints.hint"
 
-// MARK: - Helper: extract NSScreen from hs.screen userdata
+// MARK: - Helper: extract NSScreen from hs.screen userdata (ID-based)
 
 private func get_screen_arg(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> NSScreen {
     let ptr = luaL_checkudata(L, idx, "hs.screen")!
-    return Unmanaged<NSScreen>.fromOpaque(
-        ptr.assumingMemoryBound(to: UnsafeMutableRawPointer.self).pointee
-    ).takeUnretainedValue()
+    let screenID = ptr.assumingMemoryBound(to: ScreenUserData.self).pointee.screenID
+    // Look up the NSScreen by its CGDirectDisplayID
+    return NSScreen.screens.first { screen in
+        let id = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? UInt32
+        return id == screenID
+    } ?? NSScreen.main!
 }
 
 // MARK: - Helper: extract HintWindow from userdata

@@ -2,9 +2,6 @@ import HSDSTCore
 import Cocoa
 import CLua
 import Lua
-import Carbon
-import CoreAudio
-import AudioToolbox
 import Foundation
 import os.log
 
@@ -17,61 +14,15 @@ import os.log
 // Define a datatype for hs.audiodevice.watcher objects
 struct AudioDeviceWatcher {
     var running: Bool
+    var listenerID: UInt64
     var lsCanary: UInt64
 }
 
 /// Module-level LuaValue for the single watcher callback.
 private var watcherCallback: LuaValue? = nil
 
-private let watcherWatchSelectors: [AudioObjectPropertySelector] = [
-    kAudioHardwarePropertyDevices,
-    kAudioHardwarePropertyDefaultInputDevice,
-    kAudioHardwarePropertyDefaultOutputDevice,
-    kAudioHardwarePropertyDefaultSystemOutputDevice,
-]
-
 private var watcherRefTable: Int32 = 0
 private var theWatcher: UnsafeMutablePointer<AudioDeviceWatcher>? = nil
-
-// MARK: - CoreAudio helper functions
-
-private func audiodevicewatcher_callback(
-    deviceID: AudioDeviceID,
-    numAddresses: UInt32,
-    addressList: UnsafePointer<AudioObjectPropertyAddress>,
-    clientData: UnsafeMutableRawPointer?
-) -> OSStatus {
-    var events: [String] = []
-    for i in 0..<numAddresses {
-        let selectorString = UTCreateStringForOSType(addressList[Int(i)].mSelector).takeRetainedValue() as String
-        events.append(selectorString)
-    }
-
-    environmentGetGlobalOrNil()?.eventLoop.async {
-        let L = lua_getCurrentState()!
-
-        guard let watcher = theWatcher else {
-            os_log(.info, "%{public}s", "hs.audiodevice.watcher callback fired, but theWatcher is nil. This is a bug")
-            return
-        }
-
-        if !lua_isStateGenerationValid(watcher.pointee.lsCanary) {
-            return
-        }
-
-        guard let cb = watcherCallback else {
-            os_log(.info, "%{public}s", "hs.audiodevice.watcher callback fired, but there is no callback. This is a bug")
-            return
-        }
-
-        for event in events {
-            cb.push(onto: L)
-            lua_pushany(L, event as NSString)
-            if lua_pcall(L, 1, 0, 0) != LUA_OK { lua_pop(L, 1) }
-        }
-    }
-    return noErr
-}
 
 // MARK: - hs.audiodevice.watcher library functions
 
@@ -101,6 +52,7 @@ private func audiodevicewatcher_setCallback(_ L: LuaState) throws -> CInt {
         theWatcher = UnsafeMutablePointer<AudioDeviceWatcher>.allocate(capacity: 1)
         theWatcher!.initialize(to: AudioDeviceWatcher(
             running: false,
+            listenerID: 0,
             lsCanary: lua_currentStateGeneration()
         ))
     }
@@ -138,17 +90,34 @@ private func audiodevicewatcher_start(_ L: LuaState) throws -> CInt {
         return 0
     }
 
-    var propertyAddress = AudioObjectPropertyAddress(
-        mSelector: 0,
-        mScope: kAudioObjectPropertyScopeGlobal,
-        mElement: kAudioObjectPropertyElementMain
-    )
+    let audio = environmentGet(L).audio
+    let lsCanary = watcher.pointee.lsCanary
 
-    for selector in watcherWatchSelectors {
-        propertyAddress.mSelector = selector
-        AudioObjectAddPropertyListener(AudioObjectID(kAudioObjectSystemObject), &propertyAddress, audiodevicewatcher_callback, nil)
+    let listenerID = audio.addSystemAudioHardwareListener { eventName in
+        environmentGetGlobalOrNil()?.eventLoop.async {
+            let L = lua_getCurrentState()!
+
+            guard let watcher = theWatcher else {
+                os_log(.info, "%{public}s", "hs.audiodevice.watcher callback fired, but theWatcher is nil. This is a bug")
+                return
+            }
+
+            if !lua_isStateGenerationValid(watcher.pointee.lsCanary) {
+                return
+            }
+
+            guard let cb = watcherCallback else {
+                os_log(.info, "%{public}s", "hs.audiodevice.watcher callback fired, but there is no callback. This is a bug")
+                return
+            }
+
+            cb.push(onto: L)
+            lua_pushany(L, eventName as NSString)
+            if lua_pcall(L, 1, 0, 0) != LUA_OK { lua_pop(L, 1) }
+        }
     }
 
+    watcher.pointee.listenerID = listenerID
     watcher.pointee.running = true
 
     return 0
@@ -168,18 +137,11 @@ private func audiodevicewatcher_stop(_ L: LuaState) throws -> CInt {
         return 0
     }
 
-    var propertyAddress = AudioObjectPropertyAddress(
-        mSelector: 0,
-        mScope: kAudioObjectPropertyScopeWildcard,
-        mElement: kAudioObjectPropertyElementWildcard
-    )
-
-    for selector in watcherWatchSelectors {
-        propertyAddress.mSelector = selector
-        AudioObjectRemovePropertyListener(AudioObjectID(kAudioObjectSystemObject), &propertyAddress, audiodevicewatcher_callback, nil)
-    }
+    let audio = environmentGet(L).audio
+    _ = audio.removeSystemAudioHardwareListener(id: watcher.pointee.listenerID)
 
     watcher.pointee.running = false
+    watcher.pointee.listenerID = 0
 
     return 0
 }

@@ -13,5 +13,12 @@ public protocol SettingsProtocol: AnyObject {
     func synchronize() -> Bool
     func allKeys() -> [String]
     func objectIsForced(forKey key: String) -> Bool
+
+    /// Register a handler invoked when the value for `key` changes.
+    /// Returns a monotonic observer ID that can be passed to `removeObserver(id:)`.
+    func addObserver(forKey key: String, handler: @escaping (String) -> Void) -> UInt64
+
+    /// Remove a previously registered observer by its ID.
+    func removeObserver(id: UInt64)
 }
 

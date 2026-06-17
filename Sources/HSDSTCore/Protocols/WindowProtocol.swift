@@ -24,7 +24,7 @@ public struct AXWindowInfo: Sendable {
                 isMinimized: Bool = false, isFullScreen: Bool = false,
                 level: Int = 0, alpha: Double = 1.0,
                 isStandard: Bool = true, isVisible: Bool = true,
-                isMaximizable: Bool = true, tabCount: Int32 = 1,
+                isMaximizable: Bool = true, tabCount: Int32 = 0,
                 cornerRadius: Double = 10.0) {
         self.id = id
         self.title = title
@@ -45,6 +45,15 @@ public struct AXWindowInfo: Sendable {
 }
 
 public protocol WindowProtocol: AnyObject {
+    // MARK: - Window creation (simulator only; production returns 0)
+
+    func createWindow(title: String, pid: Int32, role: String, subrole: String?,
+                      frame: (x: Double, y: Double, width: Double, height: Double)) -> UInt32
+
+    // MARK: - Desktop
+
+    func desktopWindow() -> AXWindowInfo?
+
     // MARK: - Listing and lookup
 
     func allWindows() -> [AXWindowInfo]
@@ -93,4 +102,17 @@ public protocol WindowProtocol: AnyObject {
     // MARK: - Spaces
 
     func spaces(forWindowID id: UInt32) -> [Int]
+
+    // MARK: - Additional window operations
+
+    func becomeMain(windowID: UInt32) -> Bool
+    func zoomButtonRect(forWindowID id: UInt32) -> (x: Double, y: Double, width: Double, height: Double)?
+    func isMaximizable(forWindowID id: UInt32) -> Bool?
+
+    // MARK: - CGWindowList-based listing (non-AX)
+
+    /// Returns raw CGWindowList info dictionaries for on-screen windows.
+    /// When `allWindows` is true, returns all on-screen windows.
+    /// When false, returns only windows below the Dock (excluding desktop elements).
+    func listWindowInfo(allWindows: Bool) -> [[String: Any]]
 }

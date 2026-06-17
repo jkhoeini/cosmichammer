@@ -174,6 +174,69 @@ func bootstrapLuaForTesting() {
     luaL_setfuncs(L, &corelib, 0)
     lua_setglobal(L, "hs")
 
+    // Register simulated window creation functions on the hs table.
+    // These must be set BEFORE preBootLua which used to override them with noop.
+    let sim_openConsole: lua_CFunction = { L in
+        guard let L = L else { return 0 }
+        let env = environmentGet(L)
+        let pid = ProcessInfo.processInfo.processIdentifier
+        // Only create if not already open; always focus it
+        if let existing = env.window.allWindows().first(where: { $0.title == "Cosmic Hammer Console" && $0.pid == pid }) {
+            _ = env.window.focus(windowID: existing.id)
+        } else {
+            _ = env.window.createWindow(
+                title: "Cosmic Hammer Console", pid: pid,
+                role: "AXWindow", subrole: "AXStandardWindow",
+                frame: (100, 100, 800, 600)
+            )
+        }
+        return 0
+    }
+    let sim_closeConsole: lua_CFunction = { L in
+        guard let L = L else { return 0 }
+        let env = environmentGet(L)
+        let pid = ProcessInfo.processInfo.processIdentifier
+        if let w = env.window.allWindows().first(where: { $0.title == "Cosmic Hammer Console" && $0.pid == pid }) {
+            _ = env.window.close(windowID: w.id)
+        }
+        return 0
+    }
+    let sim_openPreferences: lua_CFunction = { L in
+        guard let L = L else { return 0 }
+        let env = environmentGet(L)
+        let pid = ProcessInfo.processInfo.processIdentifier
+        if let existing = env.window.allWindows().first(where: { $0.title == "Cosmic Hammer Preferences" && $0.pid == pid }) {
+            _ = env.window.focus(windowID: existing.id)
+        } else {
+            _ = env.window.createWindow(
+                title: "Cosmic Hammer Preferences", pid: pid,
+                role: "AXWindow", subrole: "AXStandardWindow",
+                frame: (200, 200, 600, 400)
+            )
+        }
+        return 0
+    }
+    let sim_closePreferences: lua_CFunction = { L in
+        guard let L = L else { return 0 }
+        let env = environmentGet(L)
+        let pid = ProcessInfo.processInfo.processIdentifier
+        if let w = env.window.allWindows().first(where: { $0.title == "Cosmic Hammer Preferences" && $0.pid == pid }) {
+            _ = env.window.close(windowID: w.id)
+        }
+        return 0
+    }
+
+    lua_getglobal(L, "hs")
+    lua_pushcfunction(L, sim_openConsole)
+    lua_setfield(L, -2, "openConsole")
+    lua_pushcfunction(L, sim_closeConsole)
+    lua_setfield(L, -2, "closeConsole")
+    lua_pushcfunction(L, sim_openPreferences)
+    lua_setfield(L, -2, "openPreferences")
+    lua_pushcfunction(L, sim_closePreferences)
+    lua_setfield(L, -2, "closePreferences")
+    lua_pop(L, 1) // pop hs table
+
     installLuaSkinCompatibilityGlobals(L)
     HSExtensionsRegisterAll(L)
 
@@ -213,7 +276,8 @@ func bootstrapLuaForTesting() {
     hs.accessibilityState = function() return true end
     hs.cleanUTF8forConsole = function(value) return value end
     hs.focus = noop
-    hs.openConsole = noop
+    -- hs.openConsole, hs.closeConsole, hs.openPreferences, hs.closePreferences
+    -- are registered as C functions above (sim_openConsole etc.)
     hs._notify = noop
     local toggles = { autoLaunch = false, consoleOnTop = false, dockIcon = true, menuIcon = true }
     hs.autoLaunch = function(value)

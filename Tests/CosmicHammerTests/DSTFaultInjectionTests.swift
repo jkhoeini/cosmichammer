@@ -563,6 +563,7 @@ extension CosmicHammerTests {
                                 environment: nil, currentDirectory: nil) { r in
                 result = r
             }
+            harness.drainEventLoop()
             #expect(result?.exitCode == 127)
         }
 
@@ -577,6 +578,7 @@ extension CosmicHammerTests {
                                 environment: nil, currentDirectory: nil) { r in
                 result = r
             }
+            harness.drainEventLoop()
             #expect(result?.exitCode == -11)
         }
 
@@ -594,6 +596,7 @@ extension CosmicHammerTests {
                                 environment: nil, currentDirectory: nil) { r in
                 result = r
             }
+            harness.drainEventLoop()
             #expect(result?.exitCode == 0)
             #expect(String(data: result!.stdout, encoding: .utf8) == "hello\n")
         }
@@ -632,8 +635,78 @@ extension CosmicHammerTests {
                 onExit: { exitCode = $0 }
             )
 
+            harness.drainEventLoop()
             #expect(!stdoutChunks.isEmpty)
             #expect(exitCode == 0)
+        }
+
+        @Test func processCompletionIsAsync() {
+            let harness = SimulatorHarness(seed: 42)
+            let env = harness.createEnvironment()
+            var result: ProcessResult?
+
+            let handle = env.process.run(executablePath: "/usr/bin/true", arguments: [],
+                                         environment: nil, currentDirectory: nil) { r in
+                result = r
+            }
+
+            // Before draining: completion has not fired, process still "running"
+            #expect(result == nil)
+            #expect(handle.isRunning == true)
+
+            // After draining: completion fires, process finishes
+            harness.drainEventLoop()
+            #expect(result != nil)
+            #expect(result?.exitCode == 0)
+            #expect(handle.isRunning == false)
+        }
+
+        @Test func processStreamingRunIsAsync() {
+            let harness = SimulatorHarness(seed: 42)
+            let env = harness.createEnvironment()
+            let proc = env.process as! SimulatedProcess
+            proc.defaultResult = ProcessResult(
+                exitCode: 0,
+                stdout: "out".data(using: .utf8)!,
+                stderr: "err".data(using: .utf8)!
+            )
+
+            var stdoutChunks: [Data] = []
+            var stderrChunks: [Data] = []
+            var exitCode: Int32?
+
+            let handle = env.process.streamingRun(
+                executablePath: "/usr/bin/test", arguments: [],
+                environment: nil, currentDirectory: nil,
+                onStdout: { stdoutChunks.append($0) },
+                onStderr: { stderrChunks.append($0) },
+                onExit: { exitCode = $0 }
+            )
+
+            // Before draining: no callbacks fired
+            #expect(stdoutChunks.isEmpty)
+            #expect(stderrChunks.isEmpty)
+            #expect(exitCode == nil)
+            #expect(handle.isRunning == true)
+
+            // After draining: all callbacks fire
+            harness.drainEventLoop()
+            #expect(stdoutChunks.count == 1)
+            #expect(stderrChunks.count == 1)
+            #expect(exitCode == 0)
+            #expect(handle.isRunning == false)
+        }
+
+        @Test func processHandlesGetUniquePIDs() {
+            let harness = SimulatorHarness(seed: 42)
+            let env = harness.createEnvironment()
+
+            let handle1 = env.process.run(executablePath: "/usr/bin/a", arguments: [],
+                                          environment: nil, currentDirectory: nil) { _ in }
+            let handle2 = env.process.run(executablePath: "/usr/bin/b", arguments: [],
+                                          environment: nil, currentDirectory: nil) { _ in }
+
+            #expect(handle1.processIdentifier != handle2.processIdentifier)
         }
 
         // MARK: - Network

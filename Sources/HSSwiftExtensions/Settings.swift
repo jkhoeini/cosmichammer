@@ -3,38 +3,16 @@ import CLua
 import Lua
 import HSDSTCore
 
-// Establish a unique context for identifying our observers
-private var myKVOContext: Int = 0 // See http://nshipster.com/key-value-observing/
+// MARK: - Settings watcher state
 
-// MARK: - HSUserDefaultKVOWatcher
-
-private class HSUserDefaultKVOWatcher: NSObject {
-    var watchedKeys = [String: [String: LuaValue]]()
+/// Tracks per-key, per-identifier Lua callbacks and the underlying protocol observer IDs.
+private class SettingsWatcherManager {
+    /// For each watched key: the protocol observer ID and the per-identifier Lua callbacks.
+    var watchedKeys: [String: (observerID: UInt64, callbacks: [String: LuaValue])] = [:]
     var generation: UInt64 = 0
-
-    override func observeValue(forKeyPath keyPath: String?, of object: Any?, change: [NSKeyValueChangeKey: Any]?, context: UnsafeMutableRawPointer?) {
-        guard context == &myKVOContext else {
-            super.observeValue(forKeyPath: keyPath, of: object, change: change, context: context)
-            return
-        }
-
-        guard let keyPath = keyPath, let fnCallbacks = watchedKeys[keyPath] else { return }
-
-        DispatchQueue.main.async { [self] in
-            guard lua_isStateGenerationValid(self.generation) else { return }
-            let L = lua_getCurrentState()!
-            for (_, cb) in fnCallbacks {
-                cb.push(onto: L)
-                lua_pushany(L, keyPath)
-                if lua_pcall(L, 1, 0, 0) != LUA_OK {
-                    lua_pop(L, 1)
-                }
-            }
-        }
-    }
 }
 
-private var watcherManager: HSUserDefaultKVOWatcher!
+private var watcherManager: SettingsWatcherManager!
 
 // MARK: - Lua callbacks
 
@@ -252,16 +230,28 @@ private func target_watchKey(_ L: LuaState) throws -> CInt {
 
     let watcherID = String(cString: lua_tostring(L, 1)!)
     let keyPath = String(cString: lua_tostring(L, 2)!)
+    let settings = environmentGet(L).settings
 
     if watcherManager.watchedKeys[keyPath] == nil {
-        watcherManager.watchedKeys[keyPath] = [String: LuaValue]()
-        _ = catchingObjCException {
-            UserDefaults.standard.addObserver(watcherManager, forKeyPath: keyPath,
-                                              options: .new, context: &myKVOContext)
+        let obsID = settings.addObserver(forKey: keyPath) { [weak watcherManager] changedKey in
+            guard let mgr = watcherManager else { return }
+            guard let entry = mgr.watchedKeys[changedKey] else { return }
+            DispatchQueue.main.async {
+                guard lua_isStateGenerationValid(mgr.generation) else { return }
+                let L = lua_getCurrentState()!
+                for (_, cb) in entry.callbacks {
+                    cb.push(onto: L)
+                    lua_pushany(L, changedKey)
+                    if lua_pcall(L, 1, 0, 0) != LUA_OK {
+                        lua_pop(L, 1)
+                    }
+                }
+            }
         }
+        watcherManager.watchedKeys[keyPath] = (observerID: obsID, callbacks: [:])
     }
 
-    let existingCb = watcherManager.watchedKeys[keyPath]?[watcherID]
+    let existingCb = watcherManager.watchedKeys[keyPath]?.callbacks[watcherID]
 
     if lua_gettop(L) == 2 {
         if let cb = existingCb {
@@ -270,9 +260,9 @@ private func target_watchKey(_ L: LuaState) throws -> CInt {
             lua_pushnil(L)
         }
     } else {
-        watcherManager.watchedKeys[keyPath]?[watcherID] = nil
+        watcherManager.watchedKeys[keyPath]?.callbacks[watcherID] = nil
         if lua_type(L, 3) != LUA_TNIL {
-            watcherManager.watchedKeys[keyPath]?[watcherID] = L.ref(index: 3)
+            watcherManager.watchedKeys[keyPath]?.callbacks[watcherID] = L.ref(index: 3)
             watcherManager.generation = lua_currentStateGeneration()
         }
         lua_pushvalue(L, 1)
@@ -283,9 +273,9 @@ private func target_watchKey(_ L: LuaState) throws -> CInt {
 // For debugging
 private func output_watchers(_ L: LuaState) throws -> CInt {
     lua_newtable(L)
-    for (keyPath, watchers) in watcherManager.watchedKeys {
+    for (keyPath, entry) in watcherManager.watchedKeys {
         lua_newtable(L)
-        for (watcherID, cb) in watchers {
+        for (watcherID, cb) in entry.callbacks {
             cb.push(onto: L)
             lua_setfield(L, -2, watcherID)
         }
@@ -295,10 +285,9 @@ private func output_watchers(_ L: LuaState) throws -> CInt {
 }
 
 private func meta_gc(_ L: LuaState) throws -> CInt {
-    for (keyPath, _) in watcherManager.watchedKeys {
-        _ = catchingObjCException {
-            UserDefaults.standard.removeObserver(watcherManager!, forKeyPath: keyPath, context: &myKVOContext)
-        }
+    let settings = environmentGet(L).settings
+    for (_, entry) in watcherManager.watchedKeys {
+        settings.removeObserver(id: entry.observerID)
     }
     // Setting to empty releases all LuaValue refs via their deinit
     watcherManager.watchedKeys.removeAll()
@@ -335,7 +324,7 @@ public func luaopen_hs_libsettings(_ L: UnsafeMutablePointer<lua_State>!) -> Int
         lua_setfield(L, -2, "__gc")
         lua_setmetatable(L, -2)
 
-        watcherManager = HSUserDefaultKVOWatcher()
+        watcherManager = SettingsWatcherManager()
 
         /// hs.settings.dateFormat
         /// Constant
