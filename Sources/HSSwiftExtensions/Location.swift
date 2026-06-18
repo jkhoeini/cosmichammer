@@ -229,11 +229,10 @@ private func location_distanceBetween(_ L: LuaState) throws -> CInt {
 private func location_startWatching(_ L: LuaState) throws -> CInt {
     // no args to validate
     let env = environmentGet(L)
-    env.location.startUpdating { _, _ in
-        // Updates are delivered via CLLocationManagerDelegate callbacks below
-    }
-    L.push(checkLocationManager())
-    if lua_toboolean(L, -1) != 0 { location?.manager.startUpdatingLocation() }
+    env.location.startUpdating { _, _ in }
+    let ok = checkLocationManager()
+    if ok { location?.manager.startUpdatingLocation() }
+    L.push(ok)
     return 1
 }
 
@@ -269,8 +268,6 @@ private func location_getLocation(_ L: LuaState) throws -> CInt {
         L.push(coord.verticalAccuracy);       lua_setfield(L, -2, "verticalAccuracy")
         L.push(coord.timestamp.timeIntervalSince1970); lua_setfield(L, -2, "timestamp")
         L.push("CLLocation");                 lua_setfield(L, -2, "__luaSkinType")
-    } else if checkLocationManager() {
-        pushCLLocation(L, location?.manager.location)
     } else {
         lua_pushnil(L)
     }

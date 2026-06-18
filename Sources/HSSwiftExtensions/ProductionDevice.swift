@@ -68,15 +68,14 @@ final class ProductionDevice: DeviceProtocol {
     }
 
     func addUSBWatcher(callback: @escaping (USBDeviceInfo, Bool) -> Void) -> UInt64 {
+        assertionFailure("addUSBWatcher not routed through protocol; Usb.swift uses IOKit directly")
         let id = nextWatcherID
         nextWatcherID += 1
-        // USB hotplug watching requires IOKit notification ports which need
-        // careful lifecycle management with the run loop.
-        // TODO: Implement full IOServiceAddMatchingNotification for connect/disconnect
         return id
     }
 
     func removeUSBWatcher(id: UInt64) -> Bool {
+        assertionFailure("removeUSBWatcher not routed through protocol; Usb.swift uses IOKit directly")
         guard let entry = usbWatchers.removeValue(forKey: id) else { return false }
         IONotificationPortDestroy(entry.port)
         IOObjectRelease(entry.iterator)
@@ -187,10 +186,7 @@ final class ProductionDevice: DeviceProtocol {
     }
 
     func sendMIDI(deviceID: UInt32, data: Data) -> Bool {
-        // Sending MIDI requires creating a MIDIClient and MIDIOutputPort,
-        // finding the destination endpoint, and sending via MIDISend.
-        // This is stateful and requires lifecycle management.
-        // TODO: Implement full MIDI send with client/port management
+        assertionFailure("sendMIDI not routed through protocol; Midi.swift uses CoreMIDI directly")
         return false
     }
 }

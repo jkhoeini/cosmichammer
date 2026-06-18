@@ -36,21 +36,17 @@ final class ProductionCamera: CameraProtocol {
     func startCapture(cameraID: String,
                       callback: @escaping (Data) -> Void) -> Bool
     {
-        // Full capture requires AVCaptureSession + AVCaptureVideoDataOutput which
-        // is stateful and needs delegate management. This is a lightweight wrapper;
-        // the real extension (Camera.swift) handles the full lifecycle.
-        // TODO: Implement full capture session management
+        assertionFailure("startCapture not routed through protocol; Camera.swift uses AVCaptureSession directly")
         return false
     }
 
     func stopCapture(cameraID: String) -> Bool {
-        // TODO: Paired with startCapture session management
+        assertionFailure("stopCapture not routed through protocol; Camera.swift uses AVCaptureSession directly")
         return false
     }
 
     func snapshotImage(cameraID: String) -> Data? {
-        // Taking a snapshot requires setting up a brief capture session.
-        // TODO: Implement one-shot capture with AVCaptureStillImageOutput
+        assertionFailure("snapshotImage not routed through protocol; Camera.swift uses AVCaptureSession directly")
         return nil
     }
 

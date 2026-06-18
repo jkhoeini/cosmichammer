@@ -36,9 +36,10 @@ LuaSkin → LuaSwift).
     justfile already ~sed~-replaces them. Use a simpler template format.
 
 *** TODO Fix remaining ~60 failing tests that need macOS system APIs
-    725 tests run, ~60 issues remain. DST protocol layer now covers
+    788 tests run, ~60 issues remain. DST protocol layer now covers
     Audiodevice, Screen, Window, Settings, Process, FileSystem,
-    Pasteboard, EventLoop, and Clock — those extensions run headlessly.
+    Pasteboard, EventLoop, Clock, Location, Network, and WebView —
+    those extensions run headlessly.
 
     Untestable without hardware/host app (by design — not a code issue):
     - Brightness (IOKit display sensor), HID (IOKit HID device),
@@ -1627,15 +1628,30 @@ LuaSkin → LuaSwift).
    Leave unsimulated: Toolbar (1,629 lines), user content, data store,
    navigation delegate callbacks, certificate inspection.
 
-** TODO Production implementation stubs (partial — 7 files)
-   Seven production implementations have TODO stubs for advanced features:
-   - Automation (2): URL handler registration/unregistration
-   - Camera (3): capture session start/stop, one-shot snapshot
-   - Device (2): USB connect/disconnect notification, MIDI send
-   - Spaces (2): move window to space, toggle Mission Control
-   - Window (1): global shadow control via private CGS API
-   - Location (1): geocode fallback
-   - Network (1): listener callback
+** DONE Production implementation stubs — restore original OS API calls
+   The DST migration was a pure refactoring. Production stubs mean the
+   original implementation was not moved into the production wrapper.
+
+   LIVE BUGS — FIXED:
+   - Window ~setShadows~: restored ~CGSSetDebugOptions~ with
+     ~kCGSDebugOptionNoShadows = 16384~ in ProductionWindow.swift.
+   - Location: full rewrite of ProductionLocation.swift with
+     CLLocationManager, CLLocationManagerDelegate, CLGeocoder.
+   - Codex review caught: removing ~location?.manager.startUpdatingLocation()~
+     from Location.swift broke Lua callback delivery (HSLocation's
+     CLLocationManager was never started). Restored both start/stop calls.
+
+   MASKED STUBS — FIXED:
+   - Removed double-dispatch fallbacks in Location.swift for
+     ~startUpdating~, ~stopUpdating~, ~currentLocation~ — protocol
+     handles the OS interaction, HSLocation handles Lua callbacks.
+
+   DEAD CODE — GUARDED:
+   - 11 protocol methods not routed by any extension (Spaces, Network
+     TCP/UDP/Listener, Automation URL handlers, Camera capture, Device
+     USB/MIDI). All production stubs now have ~assertionFailure~ guards
+     that crash in debug if accidentally called. Protocol surface and
+     simulator implementations preserved for future migration phases.
 
 * Investigated — not worth doing
 

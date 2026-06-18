@@ -285,8 +285,14 @@ final class ProductionWindow: WindowProtocol {
             fullScreen ? kCFBooleanTrue : kCFBooleanFalse) == .success
     }
 
+    @_silgen_name("CGSSetDebugOptions")
+    private static func cgsSetDebugOptions(_ options: Int32)
+
+    private static let kCGSDebugOptionNormal: Int32 = 0
+    private static let kCGSDebugOptionNoShadows: Int32 = 16384
+
     func setShadows(_ enabled: Bool) {
-        // TODO: Global shadow control requires per-window CGS private API calls
+        ProductionWindow.cgsSetDebugOptions(enabled ? ProductionWindow.kCGSDebugOptionNormal : ProductionWindow.kCGSDebugOptionNoShadows)
     }
 
     func setTimeout(_ seconds: Float) -> Bool {

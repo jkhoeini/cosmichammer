@@ -97,7 +97,7 @@ final class ProductionSpaces: SpacesProtocol {
     }
 
     func removeWindowFromSpace(windowID: UInt32, spaceID: Int) -> Bool {
-        // TODO: Requires SLSSetWindowListWorkspace with workspace 0
+        assertionFailure("removeWindowFromSpace not routed through protocol by any extension")
         return false
     }
 
@@ -114,7 +114,7 @@ final class ProductionSpaces: SpacesProtocol {
     }
 
     func setActiveSpace(spaceID: Int) -> Bool {
-        // TODO: Requires CoreDockSendNotification or similar private API
+        assertionFailure("setActiveSpace not routed through protocol by any extension")
         return false
     }
 

@@ -43,14 +43,19 @@ final class ProductionNetwork: NetworkProtocol {
 
     func createTCPConnection(host: String, port: UInt16,
                              connected: @escaping (Error?) -> Void) -> any TCPConnectionHandle {
-        ProductionTCPStub(connected: connected)
+        assertionFailure("createTCPConnection not routed through protocol; Socket.swift uses NWConnection directly")
+        return ProductionTCPStub(connected: connected)
     }
 
-    func createUDPSocket() -> any UDPSocketHandle { ProductionUDPStub() }
+    func createUDPSocket() -> any UDPSocketHandle {
+        assertionFailure("createUDPSocket not routed through protocol; Socket.swift uses NWConnection directly")
+        return ProductionUDPStub()
+    }
 
     func createTCPListener(port: UInt16,
                            onNewConnection: @escaping (any TCPConnectionHandle) -> Void) throws -> any ListenerHandle {
-        ProductionListenerStub(port: port)
+        assertionFailure("createTCPListener not routed through protocol; Socket.swift uses NWListener directly")
+        return ProductionListenerStub(port: port)
     }
 }
 
@@ -64,21 +69,21 @@ private final class NoRedirectDelegate: NSObject, URLSessionTaskDelegate {
     }
 }
 
+private let stubError = NSError(domain: "HSDSTCore", code: -1,
+                                userInfo: [NSLocalizedDescriptionKey: "Not routed through DST protocol"])
+
 private final class ProductionTCPStub: TCPConnectionHandle {
     var isConnected = false
-    init(connected: @escaping (Error?) -> Void) {
-        connected(NSError(domain: "HSDSTCore", code: -1,
-                          userInfo: [NSLocalizedDescriptionKey: "TCP not yet migrated to DST protocol"]))
-    }
-    func send(_ data: Data, completion: @escaping (Error?) -> Void) { completion(nil) }
-    func receive(minimumLength: Int, maximumLength: Int, completion: @escaping (Data?, Error?) -> Void) { completion(nil, nil) }
+    init(connected: @escaping (Error?) -> Void) { connected(stubError) }
+    func send(_ data: Data, completion: @escaping (Error?) -> Void) { completion(stubError) }
+    func receive(minimumLength: Int, maximumLength: Int, completion: @escaping (Data?, Error?) -> Void) { completion(nil, stubError) }
     func cancel() {}
 }
 
 private final class ProductionUDPStub: UDPSocketHandle {
-    func send(_ data: Data, toHost host: String, port: UInt16, completion: @escaping (Error?) -> Void) { completion(nil) }
-    func receive(completion: @escaping (Data?, String?, UInt16, Error?) -> Void) { completion(nil, nil, 0, nil) }
-    func bind(port: UInt16) throws {}
+    func send(_ data: Data, toHost host: String, port: UInt16, completion: @escaping (Error?) -> Void) { completion(stubError) }
+    func receive(completion: @escaping (Data?, String?, UInt16, Error?) -> Void) { completion(nil, nil, 0, stubError) }
+    func bind(port: UInt16) throws { throw stubError }
     func close() {}
 }
 

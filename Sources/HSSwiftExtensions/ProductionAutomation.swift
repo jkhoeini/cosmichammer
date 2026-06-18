@@ -38,14 +38,12 @@ final class ProductionAutomation: AutomationProtocol {
 
     func registerURLHandler(scheme: String,
                             callback: @escaping (String, [String: String]) -> Void) -> Bool {
-        // URL scheme handling requires NSAppleEventManager integration which is
-        // tightly coupled to the app's main event loop and NSApplicationDelegate.
-        // TODO: Requires app-level integration to forward kAEGetURL events.
+        assertionFailure("registerURLHandler not routed through protocol; Urlevent.swift uses NSAppleEventManager directly")
         return false
     }
 
     func unregisterURLHandler(scheme: String) -> Bool {
-        // TODO: Paired with registerURLHandler
+        assertionFailure("unregisterURLHandler not routed through protocol; Urlevent.swift uses NSAppleEventManager directly")
         return false
     }
 
