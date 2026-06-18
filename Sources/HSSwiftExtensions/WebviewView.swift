@@ -4,6 +4,7 @@ import Lua
 import Cocoa
 import WebKit
 import os.log
+import HSDSTCore
 
 // MARK: - HSWebViewView
 
@@ -61,7 +62,13 @@ class HSWebViewView: WKWebView, WKNavigationDelegate, WKUIDelegate {
         if navigationCallbackFor("didFailProvisionalNavigation", forView: webView, withNavigation: navigation, withError: nsError) {
             if nsError.code == NSURLErrorUnsupportedURL {
                 if let destinationURL = nsError.userInfo[NSURLErrorFailingURLErrorKey] as? URL {
-                    if NSWorkspace.shared.open(destinationURL) { return }
+                    let opened: Bool
+                    if let env = environmentGetGlobalOrNil() {
+                        opened = env.workspace.openURL(destinationURL.absoluteString)
+                    } else {
+                        opened = NSWorkspace.shared.open(destinationURL)
+                    }
+                    if opened { return }
                 } else {
                     os_log(.default, "%{public}s","\(wv_USERDATA_TAG):didFailProvisionalNavigation missing NSURLErrorFailingURLErrorKey")
                 }

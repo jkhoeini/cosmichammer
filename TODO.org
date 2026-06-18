@@ -35,30 +35,22 @@ LuaSkin → LuaSwift).
     (~$(MARKETING_VERSION)~, ~${EXECUTABLE_NAME}~, etc.) even though the
     justfile already ~sed~-replaces them. Use a simpler template format.
 
-*** TODO Fix remaining 79 failing tests that need macOS system APIs
-    89 tests now pass (up from ~30) after adding pure-Lua-state tests.
-    79 tests still fail because they call AppKit, accessibility, audio,
-    screen, or window APIs that return nil without ~NSApplication~.
+*** TODO Fix remaining ~60 failing tests that need macOS system APIs
+    725 tests run, ~60 issues remain. DST protocol layer now covers
+    Audiodevice, Screen, Window, Settings, Process, FileSystem,
+    Pasteboard, EventLoop, and Clock — those extensions run headlessly.
 
     Untestable without hardware/host app (by design — not a code issue):
     - Brightness (IOKit display sensor), HID (IOKit HID device),
-      Camera (AVCaptureDevice), Audiodevice (CoreAudio hardware),
-      Screen (NSScreen), Razer/StreamDeck (USB hardware),
+      Camera (AVCaptureDevice), Razer/StreamDeck (USB hardware),
       Location (CoreLocation)
 
     Testable with host app refactoring:
-    - Window/Application/Uielement/AXUIElement: need ~NSApplication~ +
+    - Application/Uielement/AXUIElement: need ~NSApplication~ +
       accessibility permissions. Consider a hosted test target.
     - Canvas/Webview/Menubar/Chooser/Dialog: need AppKit window server.
       Consider ~.skipInHeadless~ trait.
     - Hotkey/Eventtap: need CGEvent permissions. Skip in CI.
-
-    Testable NOW but blocked by missing stubs:
-    - Coresetup (11 failures): ~hs.consoleOnTop~, ~hs.menuIcon~, etc.
-      are not registered in test bootstrap. Fix by stubbing them in
-      ~LuaTestSetup.swift~.
-    - Image (1 failure): needs ~hs.drawing.color~ module to load.
-      Fix by registering the dependency chain.
 
 *** TODO Remove unnecessary ~@objc~ annotations
     482 ~@objc~ usages across ~Sources/HSSwiftExtensions/~ were required
@@ -66,10 +58,11 @@ LuaSkin → LuaSwift).
     most can be deleted. Keep only those needed for ObjC interop
     (NSNotification selectors, KVO, delegate callbacks from AppKit).
 
-*** TODO Adopt LuaSwift Swift APIs in extensions → see dedicated effort
+*** DONE Adopt LuaSwift Swift APIs in extensions → see dedicated effort
     Superseded by the dedicated top-level effort
     "Migrate raw Lua C API (CLua) to idiomatic LuaSwift API" below, which
     carries the full inventory, ordered plan, and verification strategy.
+    WP0 (adapter), WP1 (Math+Base64), WP3 (Timer) completed; WP2+ pending.
 
 * TODO — Migrate raw Lua C API (CLua) to idiomatic LuaSwift API
 :PROPERTIES:
@@ -206,8 +199,8 @@ LuaSkin → LuaSwift).
           FINDING: LuaSwift always installs gcUserdata as __gc in
           doRegisterMetatable (LuaState.swift:3178) — future userdata WPs must
           use the same post-registration patch pattern.
-    - [~] implement WP0 — green, but codex review found fixes (fix-up in progress)
-          CODEX IMPL REVIEW (2026-06-11) — must-fix before WP1:
+    - [x] implement WP0 — green, codex review fixes applied
+          CODEX IMPL REVIEW (2026-06-11) — fixed before WP1:
           1. CRITICAL/UB: `runEntryPoint` calls `lua_error` from Swift
              (LuaIdiomaticAdapter.swift:73) → longjmp skips ARC cleanup of the
              `error`/`message` locals. LuaSwift avoids this via a C trampoline
@@ -231,7 +224,7 @@ LuaSkin → LuaSwift).
              prove a REAL repo userdata (e.g. hs.image) survives collectgarbage.
           5. Minor: NSValue divergence asserted only for point — add size/rect/range;
              fix test-only retained-userdata leaks (install __gc or balance retain).
-    - [~] (was) implement WP0 (expanded equivalence matrix incl. Foundation/AppKit types) → codex review impl → iterate to green
+    - [x] (was) implement WP0 (expanded equivalence matrix incl. Foundation/AppKit types) → codex review impl → iterate to green
           Files: Sources/HSSwiftExtensions/LuaIdiomaticAdapter.swift,
           Tests/CosmicHammerTests/IdiomaticEquivalenceTests.swift (27 pass),
           IdiomaticCoexistenceTests.swift (5 pass). Regression unchanged
@@ -1584,37 +1577,32 @@ LuaSkin → LuaSwift).
 
   Safeguards:
   - Production protocol implementations must be behavioral clones of direct OS calls.
-  - Run full test suite after each phase — 687 tests must not regress.
+  - Run full test suite after each phase — 725 tests / 60 issues baseline.
   - Side-table state (~deviceCallbacks~, ~originalGammas~) must move to protocol layer.
   - No new protocol methods should have default implementations.
 
-** TODO Phase 1: Audiodevice — Handle-Based (LOW risk, ~720 lines)
-   Replace ~25 direct ~AudioObjectGetPropertyData~ calls with
-   ~environmentGet(L).audio.method()~. Userdata already stores
-   ~AudioDeviceID~ (UInt32) — just needs routing through protocol.
+** DONE Phase 1: Audiodevice — Handle-Based
+   Completed 2026-06-17.
+   Replaced all ~45 direct CoreAudio calls with ~environmentGet(L).audio.*~.
+   Expanded AudioProtocol from 17 to 38 methods (scope enum, volume/mute/balance,
+   data sources, property/system listeners with monotonic-counter IDs).
+   SimulatedAudio auto-fires property listeners on state mutations.
 
-   Expand ~AudioProtocol~ with ~12 new methods (UID, manufacturer,
-   transport type, sample rate ranges, balance/pan). Handle
-   ~audiodevice_callback~ which receives raw AudioDeviceID from CoreAudio;
-   data source sub-userdata needs protocol expansion.
+** DONE Phase 2: Screen — Handle-Based
+   Completed 2026-06-17.
+   Replaced NSScreen userdata with ~ScreenUserData { screenID: UInt32 }~.
+   Expanded ScreenProtocol to 23 methods. Reduced Screen.swift from ~1345
+   to ~720 lines. SimulatedScreen pre-populates gamma tables with 256-entry
+   linear ramp; fixed screen name from "Built-in" to "Builtin" (Lua pattern
+   modifier bug).
 
-** TODO Phase 2: Screen — Handle-Based (MODERATE risk, ~440 lines)
-   Replace ~NSScreen~ userdata with ~UInt32~ screen ID. Change
-   ~new_screen(L, NSScreen)~ to ~new_screen(L, UInt32)~, rewrite ~18
-   instance methods.
-
-   Expand ~ScreenProtocol~ with 6 new methods (UUID, display info, mirror,
-   setPrimary, setOrigin, desktopImageURL). Risk:
-   ~screen_desktopImageURL~ needs real NSScreen; module-level gamma state
-   needs coordination.
-
-** TODO Phase 3: Window — Handle-Based (MODERATE risk, ~400 lines)
-   Replace ~HSwindow~ userdata with ~UInt32~ window ID. Rewrite ~20
-   instance methods to call ~environmentGet(L).window.method(forWindowID:)~.
-
-   Must coordinate with Phase 4 (accessibility) since HSwindow is shared.
-   Cross-extension coupling: ~application:allWindows()~ returns HSwindow
-   objects.
+** DONE Phase 3: Window — Handle-Based
+   Completed 2026-06-17.
+   Replaced HSwindow userdata with ~WindowUserData~ struct. All 28 instance
+   methods route through protocol. SimulatedWindow rewritten from mock to
+   proper state machine with focus stack, window lifecycle, desktop window,
+   and state-mutating toggleZoom. Added native ~_desktop~/_allWindows~ Lua
+   functions.
 
 ** TODO Phase 4: Accessibility/UIElement — Phased Adapter (HIGH risk, ~500 lines)
    Most deeply coupled: HSuielement/HSwindow/HSapplication store AXUIElement
@@ -1634,14 +1622,20 @@ LuaSkin → LuaSwift).
    ~NSEvent(cgEvent:)~ bridge cannot be simulated; ~eventtapCallback~
    receives raw CGEvent from OS.
 
-** TODO Phase 6: WebView — Selective (LOW risk, ~200 lines)
+** IN-PROGRESS Phase 6: WebView — Selective (LOW risk, ~200 lines)
    Only migrate ~10 core operations (create, navigate, eval JS, show/hide).
    Leave unsimulated: Toolbar (1,629 lines), user content, data store,
    navigation delegate callbacks, certificate inspection.
 
-** TODO Production implementation stubs (5 remaining)
-   Five production protocol implementations are stub-only and need real OS
-   API wrappers: StatusBar, Bonjour, Drawing, Certificate, Media.
+** TODO Production implementation stubs (partial — 7 files)
+   Seven production implementations have TODO stubs for advanced features:
+   - Automation (2): URL handler registration/unregistration
+   - Camera (3): capture session start/stop, one-shot snapshot
+   - Device (2): USB connect/disconnect notification, MIDI send
+   - Spaces (2): move window to space, toggle Mission Control
+   - Window (1): global shadow control via private CGS API
+   - Location (1): geocode fallback
+   - Network (1): listener callback
 
 * Investigated — not worth doing
 
@@ -1737,8 +1731,9 @@ LuaSkin → LuaSwift).
   Created 15 new DST protocols, 15 simulators, and 15 production stubs
   covering all remaining uncovered OS API categories. Updated
   ~Environment.swift~, ~SimulatorHarness.swift~, ~FaultConfig.swift~,
-  and ~ProductionEnvironment.swift~ to wire all 27 subsystems (12
-  existing + 15 new). Build verified green.
+  and ~ProductionEnvironment.swift~ to wire all 32 subsystems (12
+  existing + 15 new + 5 added during simulator quality upgrades).
+  Build verified green.
 
 ** CRITICAL (directly unblock failing tests)
 *** DONE WindowProtocol — CGWindowListCopy*, window positioning/sizing/minimizing/closing, window level, window screenshots

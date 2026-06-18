@@ -4,6 +4,7 @@ import Lua
 import Cocoa
 import WebKit
 import os.log
+import HSDSTCore
 
 let wv_USERDATA_TAG = "hs.webview"
 private let kMaxWebviewRecursionDepth = 50
@@ -16,8 +17,15 @@ var wv_ProcessPool: WKProcessPool?
 var wv_delayTimers: NSMapTable<HSWebViewView, Timer>?
 
 func wv_RectWithFlippedYCoordinate(_ theRect: NSRect) -> NSRect {
+    let screenHeight: CGFloat
+    if let env = environmentGetGlobalOrNil(),
+       let primary = env.screen.primaryScreen() {
+        screenHeight = CGFloat(primary.frame.height)
+    } else {
+        screenHeight = NSScreen.screens[0].frame.size.height
+    }
     return NSMakeRect(theRect.origin.x,
-                      NSScreen.screens[0].frame.size.height - theRect.origin.y - theRect.size.height,
+                      screenHeight - theRect.origin.y - theRect.size.height,
                       theRect.size.width,
                       theRect.size.height)
 }
