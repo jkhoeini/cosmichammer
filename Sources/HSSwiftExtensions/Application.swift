@@ -3,16 +3,10 @@ import CLua
 import Lua
 import Carbon
 import Carbon.HIToolbox
+import HSDSTCore
 import os.log
 
 private let USERDATA_TAG = "hs.application"
-
-// Carbon enum constants not bridged to Swift
-private let kAXMenuItemModifierNone: Int      = 0
-private let kAXMenuItemModifierShift: Int     = 1 << 0
-private let kAXMenuItemModifierOption: Int    = 1 << 1
-private let kAXMenuItemModifierControl: Int   = 1 << 2
-private let kAXMenuItemModifierNoCommand: Int = 1 << 3
 
 private var backgroundCallbacks = [Int32: LuaValue]()
 /// Monotonic key generator for backgroundCallbacks dictionary.
@@ -26,6 +20,112 @@ private func nextBackgroundKey() -> Int32 {
 
 private func getApp(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> HSapplicationProtocol? {
     return toHSapplicationFromLua(L, idx) as? HSapplicationProtocol
+}
+
+/// Extract the PID from an hs.application userdata.
+/// Works with both legacy HSapplication objects and lightweight PID-only userdata.
+private func getAppPID(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> Int32? {
+    guard luaL_testudata(L, idx, USERDATA_TAG) != nil else { return nil }
+    let ptr = luaL_checkudata(L, idx, USERDATA_TAG)!
+        .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
+    guard let rawPtr = ptr.pointee else { return nil }
+
+    // Check if this is an HSapplication (NSObject) or a lightweight PID box
+    if let tag = lua_getAssociatedTag(L, idx), tag == APPLICATION_TAG_PID_ONLY {
+        // Lightweight: raw pointer is actually an integer (PID)
+        return Int32(Int(bitPattern: rawPtr))
+    }
+
+    // Legacy HSapplication
+    let obj = Unmanaged<NSObject>.fromOpaque(rawPtr).takeUnretainedValue()
+    if let app = obj as? HSapplicationProtocol {
+        return app.pid
+    }
+    return nil
+}
+
+/// Tag value stored in Lua registry to distinguish lightweight PID-only userdata.
+private let APPLICATION_TAG_PID_ONLY = "hs.application.pidonly"
+
+/// Helper to check for a lightweight tag on userdata (stored in the user value slot).
+private func lua_getAssociatedTag(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> String? {
+    guard lua_getiuservalue(L, idx, 1) == LUA_TSTRING else {
+        lua_pop(L, 1)
+        return nil
+    }
+    let tag = String(cString: lua_tostring(L, -1))
+    lua_pop(L, 1)
+    return tag
+}
+
+/// Push an ApplicationInfo as an hs.application userdata.
+/// In production (when HSapplication is available), creates a real HSapplication wrapper.
+/// In test/simulator mode, creates a lightweight PID-only userdata.
+func pushApplicationInfo(_ L: UnsafeMutablePointer<lua_State>!, _ info: ApplicationInfo) {
+    // Try production path first: create real HSapplication if possible
+    if let app = HSapplication(pid: info.pid, withState: L) {
+        pushHSapplication(L, app)
+        return
+    }
+    // Lightweight path: store PID directly as the pointer value
+    pushLightweightAppUserdata(L, pid: info.pid)
+}
+
+/// Push multiple ApplicationInfo values as a Lua table.
+private func pushApplicationInfos(_ L: UnsafeMutablePointer<lua_State>!, _ infos: [ApplicationInfo]) {
+    lua_createtable(L, Int32(infos.count), 0)
+    var index: lua_Integer = 1
+    for info in infos {
+        let top = lua_gettop(L)
+        pushApplicationInfo(L, info)
+        if lua_gettop(L) > top {
+            lua_rawseti(L, -2, index)
+            index += 1
+        }
+    }
+}
+
+/// Create a lightweight hs.application userdata that stores only a PID.
+private func pushLightweightAppUserdata(_ L: UnsafeMutablePointer<lua_State>!, pid: Int32) {
+    let valuePtr = lua_newuserdatauv(L, MemoryLayout<UnsafeMutableRawPointer>.size, 1)!
+        .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
+    valuePtr.pointee = UnsafeMutableRawPointer(bitPattern: Int(pid))
+    luaL_getmetatable(L, USERDATA_TAG)
+    lua_setmetatable(L, -2)
+    // Tag this as PID-only so getAppPID can distinguish it
+    L.push(APPLICATION_TAG_PID_ONLY)
+    lua_setiuservalue(L, -2, 1)
+}
+
+/// Push an array of AXWindowInfo as hs.window userdata.
+/// In production, tries the legacy HSapplication path first. Falls back to lightweight userdata.
+private func pushAXWindowInfos(_ L: UnsafeMutablePointer<lua_State>!, _ windows: [AXWindowInfo]) {
+    lua_createtable(L, Int32(windows.count), 0)
+    var index: lua_Integer = 1
+    for winInfo in windows {
+        pushLightweightWindowUserdata(L, winInfo)
+        lua_rawseti(L, -2, index)
+        index += 1
+    }
+}
+
+/// Push a single AXWindowInfo as an hs.window userdata.
+private func pushAXWindowInfoAsHSwindow(_ L: UnsafeMutablePointer<lua_State>!, _ winInfo: AXWindowInfo) {
+    pushLightweightWindowUserdata(L, winInfo)
+}
+
+/// Create a lightweight hs.window userdata from AXWindowInfo (for test/simulator use).
+/// Uses the same WindowUserData layout as Window.swift's new_window() so that
+/// getWindowID() recognises it as the new ID-based format.
+private let WINDOW_USERDATA_TAG = "hs.window"
+
+private func pushLightweightWindowUserdata(_ L: UnsafeMutablePointer<lua_State>!, _ winInfo: AXWindowInfo) {
+    let ptr = lua_newuserdata(L, MemoryLayout<WindowUserData>.size)!
+        .assumingMemoryBound(to: WindowUserData.self)
+    ptr.pointee.windowID = winInfo.id
+    ptr.pointee.lsCanary = lua_currentStateGeneration()
+    luaL_getmetatable(L, WINDOW_USERDATA_TAG)
+    lua_setmetatable(L, -2)
 }
 
 private func appClassMethod(_ sel: String, with arg1: Any? = nil) -> Any? {
@@ -56,8 +156,9 @@ private func application_gc(_ L: LuaState) throws -> CInt {
 /// Returns:
 ///  * An hs.application object
 private func application_frontmostapplication(_ L: LuaState) throws -> CInt {
-    let result = HSapplication.frontmostApplication(withState: L)
-    pushHSapplicationOrNil(L, result)
+    let appProto = environmentGet(L).application
+    guard let info = appProto.frontmostApplication() else { lua_pushnil(L); return 1 }
+    pushApplicationInfo(L, info)
     return 1
 }
 
@@ -71,8 +172,9 @@ private func application_frontmostapplication(_ L: LuaState) throws -> CInt {
 /// Returns:
 ///  * A table containing zero or more hs.application objects currently running on the system
 private func application_runningapplications(_ L: LuaState) throws -> CInt {
-    let result = HSapplication.runningApplications(withState: L)
-    pushHSapplications(L, result)
+    let appProto = environmentGet(L).application
+    let infos = appProto.runningApplications()
+    pushApplicationInfos(L, infos)
     return 1
 }
 
@@ -88,8 +190,9 @@ private func application_runningapplications(_ L: LuaState) throws -> CInt {
 private func application_applicationforpid(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TNUMBER)
     let pid = pid_t(lua_tointegerx(L, 1, nil))
-    let result = HSapplication.application(forPID: pid, withState: L)
-    pushHSapplicationOrNil(L, result)
+    let appProto = environmentGet(L).application
+    guard let info = appProto.applicationForPID(pid) else { lua_pushnil(L); return 1 }
+    pushApplicationInfo(L, info)
     return 1
 }
 
@@ -105,8 +208,9 @@ private func application_applicationforpid(_ L: LuaState) throws -> CInt {
 private func application_applicationsForBundleID(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TSTRING)
     let bundleID = lua_tovalue(L, at: 1) as! String
-    let result = HSapplication.applications(forBundleID: bundleID, withState: L)
-    pushHSapplications(L, result)
+    let appProto = environmentGet(L).application
+    let infos = appProto.applicationsForBundleID(bundleID)
+    pushApplicationInfos(L, infos)
     return 1
 }
 
@@ -122,8 +226,8 @@ private func application_applicationsForBundleID(_ L: LuaState) throws -> CInt {
 private func application_nameForBundleID(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TSTRING)
     let bundleID = lua_tovalue(L, at: 1) as! String
-    let result = appClassMethod("nameForBundleID:", with: bundleID as NSString)
-    lua_pushany(L, result)
+    let appProto = environmentGet(L).application
+    lua_pushany(L, appProto.nameForBundleID(bundleID) as NSString?)
     return 1
 }
 
@@ -139,8 +243,8 @@ private func application_nameForBundleID(_ L: LuaState) throws -> CInt {
 private func application_pathForBundleID(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TSTRING)
     let bundleID = lua_tovalue(L, at: 1) as! String
-    let result = appClassMethod("pathForBundleID:", with: bundleID as NSString)
-    lua_pushany(L, result)
+    let appProto = environmentGet(L).application
+    lua_pushany(L, appProto.pathForBundleID(bundleID) as NSString?)
     return 1
 }
 
@@ -156,8 +260,8 @@ private func application_pathForBundleID(_ L: LuaState) throws -> CInt {
 private func application_infoForBundleID(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TSTRING)
     let bundleID = lua_tovalue(L, at: 1) as! String
-    let result = appClassMethod("infoForBundleID:", with: bundleID as NSString)
-    lua_pushany(L, result)
+    let appProto = environmentGet(L).application
+    lua_pushany(L, appProto.infoForBundleID(bundleID) as NSDictionary?)
     return 1
 }
 
@@ -173,8 +277,8 @@ private func application_infoForBundleID(_ L: LuaState) throws -> CInt {
 private func application_preferredLocalizationsForBundleID(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TSTRING)
     let bundleID = lua_tovalue(L, at: 1) as! String
-    let result = appClassMethod("preferredLocalizationsForBundleID:", with: bundleID as NSString)
-    lua_pushany(L, result)
+    let appProto = environmentGet(L).application
+    lua_pushany(L, appProto.preferredLocalizationsForBundleID(bundleID) as NSArray?)
     return 1
 }
 
@@ -190,8 +294,8 @@ private func application_preferredLocalizationsForBundleID(_ L: LuaState) throws
 private func application_preferredLocalizationsForBundlePath(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TSTRING)
     let bundlePath = lua_tovalue(L, at: 1) as! String
-    let result = appClassMethod("preferredLocalizationsForBundlePath:", with: bundlePath as NSString)
-    lua_pushany(L, result)
+    let appProto = environmentGet(L).application
+    lua_pushany(L, appProto.preferredLocalizationsForBundlePath(bundlePath) as NSArray?)
     return 1
 }
 
@@ -207,8 +311,8 @@ private func application_preferredLocalizationsForBundlePath(_ L: LuaState) thro
 private func application_localizationsForBundleID(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TSTRING)
     let bundleID = lua_tovalue(L, at: 1) as! String
-    let result = appClassMethod("localizationsForBundleID:", with: bundleID as NSString)
-    lua_pushany(L, result)
+    let appProto = environmentGet(L).application
+    lua_pushany(L, appProto.localizationsForBundleID(bundleID) as NSArray?)
     return 1
 }
 
@@ -224,8 +328,8 @@ private func application_localizationsForBundleID(_ L: LuaState) throws -> CInt 
 private func application_localizationsForBundlePath(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TSTRING)
     let bundlePath = lua_tovalue(L, at: 1) as! String
-    let result = appClassMethod("localizationsForBundlePath:", with: bundlePath as NSString)
-    lua_pushany(L, result)
+    let appProto = environmentGet(L).application
+    lua_pushany(L, appProto.localizationsForBundlePath(bundlePath) as NSArray?)
     return 1
 }
 
@@ -241,8 +345,8 @@ private func application_localizationsForBundlePath(_ L: LuaState) throws -> CIn
 private func application_infoForBundlePath(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TSTRING)
     let bundlePath = lua_tovalue(L, at: 1) as! String
-    let result = appClassMethod("infoForBundlePath:", with: bundlePath as NSString)
-    lua_pushany(L, result)
+    let appProto = environmentGet(L).application
+    lua_pushany(L, appProto.infoForBundlePath(bundlePath) as NSDictionary?)
     return 1
 }
 
@@ -257,20 +361,13 @@ private func application_infoForBundlePath(_ L: LuaState) throws -> CInt {
 ///  * A string containing a bundle ID, or nil if none could be found
 private func application_bundleForUTI(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TSTRING)
-
-    let uti = lua_tovalue(L, at: 1) as! NSString
-
-    var cfhandler: Unmanaged<CFString>? = LSCopyDefaultRoleHandlerForContentType(uti as CFString, LSRolesMask.all)
-    if cfhandler == nil {
-        cfhandler = LSCopyDefaultHandlerForURLScheme(uti as CFString)
-        if cfhandler == nil {
-            lua_pushnil(L)
-            return 1
-        }
+    let uti = lua_tovalue(L, at: 1) as! String
+    let appProto = environmentGet(L).application
+    if let handler = appProto.defaultAppForUTI(uti) {
+        lua_pushany(L, handler as NSString)
+    } else {
+        lua_pushnil(L)
     }
-
-    let handler = cfhandler!.takeRetainedValue()
-    lua_pushany(L, handler as NSString)
     return 1
 }
 
@@ -295,8 +392,10 @@ private func application_bundleForUTI(_ L: LuaState) throws -> CInt {
 ///      to be in the current Space
 private func application_allWindows(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
-    guard let app = getApp(L, at: 1) else { lua_pushnil(L); return 1 }
-    pushHSwindows(L, app.allWindows())
+    guard let pid = getAppPID(L, at: 1) else { lua_pushnil(L); return 1 }
+    let appProto = environmentGet(L).application
+    let wins = appProto.allWindows(pid: pid)
+    pushAXWindowInfos(L, wins)
     return 1
 }
 
@@ -311,8 +410,13 @@ private func application_allWindows(_ L: LuaState) throws -> CInt {
 ///  * An hs.window object representing the main window of the application, or nil if it has no windows
 private func application_mainWindow(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
-    guard let app = getApp(L, at: 1) else { lua_pushnil(L); return 1 }
-    pushHSwindowOrNil(L, app.mainWindow())
+    guard let pid = getAppPID(L, at: 1) else { lua_pushnil(L); return 1 }
+    let appProto = environmentGet(L).application
+    if let win = appProto.mainWindow(pid: pid) {
+        pushAXWindowInfoAsHSwindow(L, win)
+    } else {
+        lua_pushnil(L)
+    }
     return 1
 }
 
@@ -327,28 +431,36 @@ private func application_mainWindow(_ L: LuaState) throws -> CInt {
 ///  * An hs.window object representing the window of the application that currently has focus, or nil if there are none
 private func application_focusedWindow(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
-    guard let app = getApp(L, at: 1) else { lua_pushnil(L); return 1 }
-    pushHSwindowOrNil(L, app.focusedWindow())
+    guard let pid = getAppPID(L, at: 1) else { lua_pushnil(L); return 1 }
+    let appProto = environmentGet(L).application
+    if let win = appProto.focusedWindow(pid: pid) {
+        pushAXWindowInfoAsHSwindow(L, win)
+    } else {
+        lua_pushnil(L)
+    }
     return 1
 }
 
 private func application__activate(_ L: LuaState) throws -> CInt {
-    guard let app = getApp(L, at: 1) else { L.push(false); return 1 }
-    L.push(app.activate(lua_toboolean(L, 2) != 0))
+    guard let pid = getAppPID(L, at: 1) else { L.push(false); return 1 }
+    let appProto = environmentGet(L).application
+    L.push(appProto.activate(pid: pid, allWindows: lua_toboolean(L, 2) != 0))
     return 1
 }
 
 private func application_isunresponsive(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
-    guard let app = getApp(L, at: 1) else { L.push(false); return 1 }
-    L.push(!app.isResponsive())
+    guard let pid = getAppPID(L, at: 1) else { L.push(false); return 1 }
+    let appProto = environmentGet(L).application
+    L.push(!appProto.isResponsive(pid: pid))
     return 1
 }
 
 private func application__bringtofront(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
-    guard let app = getApp(L, at: 1) else { L.push(false); return 1 }
-    L.push(app.setFrontmost(lua_toboolean(L, 2) != 0))
+    guard let pid = getAppPID(L, at: 1) else { L.push(false); return 1 }
+    let appProto = environmentGet(L).application
+    L.push(appProto.setFrontmost(pid: pid, allWindows: lua_toboolean(L, 2) != 0))
     return 1
 }
 
@@ -363,8 +475,9 @@ private func application__bringtofront(_ L: LuaState) throws -> CInt {
 ///  * A string containing the name of the application
 private func application_title(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
-    guard let app = getApp(L, at: 1) else { lua_pushnil(L); return 1 }
-    lua_pushany(L, app.title())
+    guard let pid = getAppPID(L, at: 1) else { lua_pushnil(L); return 1 }
+    let appProto = environmentGet(L).application
+    lua_pushany(L, appProto.title(pid: pid) as NSString?)
     return 1
 }
 
@@ -379,8 +492,9 @@ private func application_title(_ L: LuaState) throws -> CInt {
 ///  * A string containing the bundle identifier of the application
 private func application_bundleID(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
-    guard let app = getApp(L, at: 1) else { lua_pushnil(L); return 1 }
-    lua_pushany(L, app.bundleID())
+    guard let pid = getAppPID(L, at: 1) else { lua_pushnil(L); return 1 }
+    let appProto = environmentGet(L).application
+    lua_pushany(L, appProto.bundleID(pid: pid) as NSString?)
     return 1
 }
 
@@ -395,8 +509,9 @@ private func application_bundleID(_ L: LuaState) throws -> CInt {
 ///  * A string containing the filesystem path of the application or nil if the path could not be determined (e.g. if the application has terminated).
 private func application_path(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
-    guard let app = getApp(L, at: 1) else { lua_pushnil(L); return 1 }
-    lua_pushany(L, app.path())
+    guard let pid = getAppPID(L, at: 1) else { lua_pushnil(L); return 1 }
+    let appProto = environmentGet(L).application
+    lua_pushany(L, appProto.path(pid: pid) as NSString?)
     return 1
 }
 
@@ -414,8 +529,9 @@ private func application_path(_ L: LuaState) throws -> CInt {
 ///  * If an application is terminated and re-launched, this method will still return false, as `hs.application` objects are tied to a specific instance of an application (i.e. its PID)
 private func application_isRunning(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
-    guard let app = getApp(L, at: 1) else { L.push(false); return 1 }
-    L.push(app.isRunning(withState: L))
+    guard let pid = getAppPID(L, at: 1) else { L.push(false); return 1 }
+    let appProto = environmentGet(L).application
+    L.push(appProto.isRunning(pid: pid))
     return 1
 }
 
@@ -430,9 +546,9 @@ private func application_isRunning(_ L: LuaState) throws -> CInt {
 ///  * A boolean indicating whether the application was successfully unhidden
 private func application_unhide(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
-    guard let app = getApp(L, at: 1) else { L.push(false); return 1 }
-    app.hidden = false
-    L.push(!app.hidden)
+    guard let pid = getAppPID(L, at: 1) else { L.push(false); return 1 }
+    let appProto = environmentGet(L).application
+    L.push(appProto.unhide(pid: pid))
     return 1
 }
 
@@ -447,9 +563,9 @@ private func application_unhide(_ L: LuaState) throws -> CInt {
 ///  * A boolean indicating whether the application was successfully hidden
 private func application_hide(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
-    guard let app = getApp(L, at: 1) else { L.push(false); return 1 }
-    app.hidden = true
-    L.push(app.hidden)
+    guard let pid = getAppPID(L, at: 1) else { L.push(false); return 1 }
+    let appProto = environmentGet(L).application
+    L.push(appProto.hide(pid: pid))
     return 1
 }
 
@@ -464,8 +580,8 @@ private func application_hide(_ L: LuaState) throws -> CInt {
 ///  * None
 private func application_kill(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
-    guard let app = getApp(L, at: 1) else { return 0 }
-    app.kill()
+    guard let pid = getAppPID(L, at: 1) else { return 0 }
+    environmentGet(L).application.kill(pid: pid)
     return 0
 }
 
@@ -480,8 +596,8 @@ private func application_kill(_ L: LuaState) throws -> CInt {
 ///  * None
 private func application_kill9(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
-    guard let app = getApp(L, at: 1) else { return 0 }
-    app.kill9()
+    guard let pid = getAppPID(L, at: 1) else { return 0 }
+    environmentGet(L).application.kill9(pid: pid)
     return 0
 }
 
@@ -496,8 +612,8 @@ private func application_kill9(_ L: LuaState) throws -> CInt {
 ///  * A boolean indicating whether the application is hidden or not
 private func application_ishidden(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
-    guard let app = getApp(L, at: 1) else { L.push(false); return 1 }
-    L.push(app.hidden)
+    guard let pid = getAppPID(L, at: 1) else { L.push(false); return 1 }
+    L.push(environmentGet(L).application.isHidden(pid: pid))
     return 1
 }
 
@@ -512,8 +628,8 @@ private func application_ishidden(_ L: LuaState) throws -> CInt {
 ///  * True if the application is the frontmost application, otherwise false
 private func application_isfrontmost(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
-    guard let app = getApp(L, at: 1) else { L.push(false); return 1 }
-    L.push(app.isFrontmost())
+    guard let pid = getAppPID(L, at: 1) else { L.push(false); return 1 }
+    L.push(environmentGet(L).application.isFrontmost(pid: pid))
     return 1
 }
 
@@ -529,13 +645,13 @@ private func application_isfrontmost(_ L: LuaState) throws -> CInt {
 private func application_setfrontmost(_ L: LuaState) throws -> CInt {
     var allWindows = false
     luaL_checkudata(L, 1, USERDATA_TAG)
-    guard let app = getApp(L, at: 1) else { L.push(false); return 1 }
+    guard let pid = getAppPID(L, at: 1) else { L.push(false); return 1 }
 
     if lua_type(L, 2) == LUA_TBOOLEAN {
         allWindows = lua_toboolean(L, 2) != 0
     }
 
-    L.push(app.setFrontmost(allWindows))
+    L.push(environmentGet(L).application.setFrontmost(pid: pid, allWindows: allWindows))
     return 1
 }
 
@@ -550,8 +666,8 @@ private func application_setfrontmost(_ L: LuaState) throws -> CInt {
 ///  * The UNIX process identifier of the application (i.e. a number)
 private func application_pid(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
-    guard let app = getApp(L, at: 1) else { L.push(0); return 1 }
-    L.push(Int(app.pid))
+    guard let pid = getAppPID(L, at: 1) else { L.push(0); return 1 }
+    L.push(Int(pid))
     return 1
 }
 
@@ -566,180 +682,12 @@ private func application_pid(_ L: LuaState) throws -> CInt {
 ///  * A number that is either 1 if the app is in the dock, 0 if it is not, or -1 if the application is prohibited from having GUI elements
 private func application_kind(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
-    guard let app = getApp(L, at: 1) else { L.push(-1); return 1 }
-    L.push(Int(app.kind()))
+    guard let pid = getAppPID(L, at: 1) else { L.push(-1); return 1 }
+    L.push(Int(environmentGet(L).application.kind(pid: pid)))
     return 1
 }
 
-// MARK: - Menu helpers
-
-private func _findmenuitembyname(_ L: UnsafeMutablePointer<lua_State>!, _ app: AXUIElement, _ name: String, _ nameIsRegex: Bool) -> AXUIElement? {
-    precondition(L != nil, "_findmenuitembyname: L must not be nil")
-    precondition(!name.isEmpty, "_findmenuitembyname: name must not be empty")
-
-    var menuBarRef: CFTypeRef?
-    var error = AXUIElementCopyAttributeValue(app, kAXMenuBarAttribute as CFString, &menuBarRef)
-    guard error == .success, let menuBar = menuBarRef else { return nil }
-
-    var count: CFIndex = -1
-    error = AXUIElementGetAttributeValueCount(menuBar as! AXUIElement, kAXChildrenAttribute as CFString, &count)
-    guard error == .success else { return nil }
-
-    var cfChildren: CFArray?
-    error = AXUIElementCopyAttributeValues(menuBar as! AXUIElement, kAXChildrenAttribute as CFString, 0, count, &cfChildren)
-    guard error == .success, let children = cfChildren else { return nil }
-
-    let toCheck = NSMutableArray()
-    toCheck.addObjects(from: (children as? [Any]) ?? [])
-
-    var i = 5000
-    while i > 0 {
-        i -= 1
-        if toCheck.count == 0 { break }
-
-        let firstObject = toCheck[0]
-        let element = firstObject as! AXUIElement
-        toCheck.remove(firstObject)
-
-        var cfTitle: CFTypeRef?
-        AXUIElementCopyAttributeValue(element, kAXTitleAttribute as CFString, &cfTitle)
-        let title = cfTitle as? String
-
-        var childcount: CFIndex = -1
-        let childError = AXUIElementGetAttributeValueCount(element, kAXChildrenAttribute as CFString, &childcount)
-        if childError != .success {
-            os_log(.debug, "%{public}s", "Got an error (\(childError.rawValue)) checking child count, skipping")
-            continue
-        }
-        if childcount > 0 {
-            var cfMenuchildren: CFArray?
-            let menuChildError = AXUIElementCopyAttributeValues(element, kAXChildrenAttribute as CFString, 0, childcount, &cfMenuchildren)
-            if menuChildError != .success {
-                os_log(.debug, "%{public}s", "Got an error (\(menuChildError.rawValue)) fetching menu children, skipping")
-                continue
-            }
-            if let menuchildren = cfMenuchildren {
-                toCheck.addObjects(from: (menuchildren as? [Any]) ?? [])
-            }
-        } else if childcount == 0 {
-            if !nameIsRegex && name == title {
-                return element
-            } else {
-                let matchTest = NSPredicate(format: "SELF MATCHES %@", name)
-                if matchTest.evaluate(with: title) {
-                    return element
-                }
-            }
-        }
-    }
-
-    if i == 0 {
-        os_log(.info, "%{public}s", "_findmenuitembyname() overflowed 5000 iteration guard. This is either a Cosmic Hammer bug, or your menus are too deep")
-    }
-    return nil
-}
-
-private func _findmenuitembypath(_ L: UnsafeMutablePointer<lua_State>!, _ app: AXUIElement, _ _path: [String]) -> AXUIElement? {
-    precondition(L != nil, "_findmenuitembypath: L must not be nil")
-    precondition(!_path.isEmpty, "_findmenuitembypath: path must not be empty")
-
-    let path = NSMutableArray(array: _path)
-
-    var menuBarRef: CFTypeRef?
-    let error = AXUIElementCopyAttributeValue(app, kAXMenuBarAttribute as CFString, &menuBarRef)
-    guard error == .success, let menuBar = menuBarRef else { return nil }
-
-    var searchItem: AXUIElement = menuBar as! AXUIElement
-
-    var i = 5000
-    while i > 0 {
-        i -= 1
-
-        guard let children = fetchChildrenUnwrappingMenu(searchItem) else { break }
-
-        let nextMenuItem = path[0] as! String
-        path.removeObject(at: 0)
-
-        guard let matched = findChildByTitle(children, nextMenuItem) else {
-            os_log(.debug, "%{public}s", "Unable to resolve complete search path")
-            break
-        }
-        searchItem = matched
-
-        if path.count == 0 { return searchItem }
-    }
-
-    return nil
-}
-
-/// Fetches the children of `element`. If the first child has AXMenu role,
-/// unwraps one level to return the menu's children instead.
-private func fetchChildrenUnwrappingMenu(_ element: AXUIElement) -> CFArray? {
-    var count: CFIndex = -1
-    var axError = AXUIElementGetAttributeValueCount(element, kAXChildrenAttribute as CFString, &count)
-    guard axError == .success else {
-        os_log(.debug, "%{public}s", "Failed to get child count")
-        return nil
-    }
-
-    var cfChildren: CFArray?
-    axError = AXUIElementCopyAttributeValues(element, kAXChildrenAttribute as CFString, 0, count, &cfChildren)
-    guard axError == .success, var children = cfChildren else {
-        os_log(.debug, "%{public}s", "Failed to get children")
-        return nil
-    }
-
-    if count > 0, let unwrapped = unwrapAXMenuChildren(children) {
-        children = unwrapped
-    }
-    return children
-}
-
-/// If the first element in `children` has the AXMenu role, returns that menu's
-/// children (one level deeper). Otherwise returns nil.
-private func unwrapAXMenuChildren(_ children: CFArray) -> CFArray? {
-    guard let firstPtr = CFArrayGetValueAtIndex(children, 0) else { return nil }
-    let firstElement = Unmanaged<AXUIElement>.fromOpaque(firstPtr).takeUnretainedValue()
-
-    var cfRole: CFTypeRef?
-    guard AXUIElementCopyAttributeValue(firstElement, kAXRoleAttribute as CFString, &cfRole) == .success else {
-        os_log(.debug, "%{public}s", "Failed to get role")
-        return nil
-    }
-    guard CFStringCompare(cfRole as! CFString, kAXMenuRole as CFString, []) == .compareEqualTo else {
-        return nil
-    }
-
-    var axMenuCount: CFIndex = -1
-    guard AXUIElementGetAttributeValueCount(firstElement, kAXChildrenAttribute as CFString, &axMenuCount) == .success else {
-        os_log(.debug, "%{public}s", "Failed to get AXMenu child count")
-        return nil
-    }
-    var axMenuChildren: CFArray?
-    guard AXUIElementCopyAttributeValues(firstElement, kAXChildrenAttribute as CFString, 0, axMenuCount, &axMenuChildren) == .success,
-          let result = axMenuChildren else {
-        os_log(.debug, "%{public}s", "Failed to get AXMenu children")
-        return nil
-    }
-    return result
-}
-
-/// Searches `children` for the first element whose AXTitle matches `title`.
-private func findChildByTitle(_ children: CFArray, _ title: String) -> AXUIElement? {
-    let childCount = CFArrayGetCount(children)
-    for j in 0..<childCount {
-        let ptr = CFArrayGetValueAtIndex(children, j)!
-        let element = Unmanaged<AXUIElement>.fromOpaque(ptr).takeUnretainedValue()
-        var cfTitle: CFTypeRef?
-        let err = AXUIElementCopyAttributeValue(element, kAXTitleAttribute as CFString, &cfTitle)
-        if err != .success {
-            os_log(.debug, "%{public}s", "Unable to get menu item title")
-            continue
-        }
-        if title == (cfTitle as? String ?? "") { return element }
-    }
-    return nil
-}
+// MARK: - Menu queries
 
 /// hs.application:findMenuItem(menuItem[, isRegex]) -> table or nil
 /// Method
@@ -757,19 +705,18 @@ private func findChildByTitle(_ children: CFArray, _ title: String) -> AXUIEleme
 /// Notes:
 ///  * This can only search for menu items that don't have children - i.e. you can't search for the name of a submenu
 private func application_findmenuitem(_ L: LuaState) throws -> CInt {
-    guard let app = getApp(L, at: 1) else { lua_pushnil(L); return 1 }
+    guard let pid = getAppPID(L, at: 1) else { lua_pushnil(L); return 1 }
+    let appProto = environmentGet(L).application
 
-    var foundItem: AXUIElement?
-    var name: String?
-    var path: [String]?
+    var result: (enabled: Bool, marked: Bool)?
 
     if lua_isstring(L, 2) {
         var nameIsRegex = false
         if lua_type(L, 3) == LUA_TBOOLEAN {
             nameIsRegex = lua_toboolean(L, 3) != 0
         }
-        name = String(cString: luaL_checklstring(L, 2, nil))
-        foundItem = _findmenuitembyname(L, app.elementRef, name!, nameIsRegex)
+        let name = String(cString: luaL_checklstring(L, 2, nil))
+        result = appProto.findMenuItemByName(pid: pid, name: name, isRegex: nameIsRegex)
     } else if lua_istable(L, 2) {
         var pathArray: [String] = []
         lua_pushnil(L)
@@ -778,48 +725,24 @@ private func application_findmenuitem(_ L: LuaState) throws -> CInt {
             pathArray.append(item)
             lua_pop(L, 1)
         }
-        path = pathArray
-        foundItem = _findmenuitembypath(L, app.elementRef, pathArray)
+        result = appProto.findMenuItemByPath(pid: pid, path: pathArray)
     } else {
         os_log(.info, "%{public}s", "hs.application:findMenuItem() Unrecognised type for menuItem argument. Expecting string or table")
         lua_pushnil(L)
         return 1
     }
 
-    guard let foundItem = foundItem else {
-        if let name = name {
-            os_log(.debug, "%{public}s", "Couldn't find menu item \(name)")
-        } else if path != nil {
-            os_log(.debug, "%{public}s", "Couldn't find menu item")
-        }
+    guard let result = result else {
         lua_pushnil(L)
         return 1
     }
-
-    var enabled: CFTypeRef?
-    var error = AXUIElementCopyAttributeValue(foundItem, kAXEnabledAttribute as CFString, &enabled)
-    if error != .success {
-        os_log(.debug, "%{public}s", "hs.application:findMenuItem: AXEnabled Error: \(error.rawValue)")
-        lua_pushnil(L)
-        return 1
-    }
-
-    var markchar: CFTypeRef?
-    error = AXUIElementCopyAttributeValue(foundItem, kAXMenuItemMarkCharAttribute as CFString, &markchar)
-    if error != .success && error != .noValue {
-        os_log(.debug, "%{public}s", "hs.application:findMenuItem: AXMenuItemMarkChar: \(error.rawValue)")
-        lua_pushnil(L)
-        return 1
-    }
-
-    let marked = (error != .noValue)
 
     lua_newtable(L)
     L.push("enabled")
-    L.push((enabled as? NSNumber)?.boolValue == true)
+    L.push(result.enabled)
     lua_settable(L, -3)
     L.push("ticked")
-    L.push(marked)
+    L.push(result.marked)
     lua_settable(L, -3)
 
     return 1
@@ -839,18 +762,18 @@ private func application_findmenuitem(_ L: LuaState) throws -> CInt {
 /// Notes:
 ///  * Depending on the type of menu item involved, this will either activate or tick/untick the menu item
 private func application_selectmenuitem(_ L: LuaState) throws -> CInt {
-    guard let app = getApp(L, at: 1) else { lua_pushnil(L); return 1 }
+    guard let pid = getAppPID(L, at: 1) else { lua_pushnil(L); return 1 }
+    let appProto = environmentGet(L).application
 
-    var foundItem: AXUIElement?
-    var name: String?
+    var success = false
 
     if lua_isstring(L, 2) {
         var nameIsRegex = false
         if lua_type(L, 3) == LUA_TBOOLEAN {
             nameIsRegex = lua_toboolean(L, 3) != 0
         }
-        name = String(cString: luaL_checklstring(L, 2, nil))
-        foundItem = _findmenuitembyname(L, app.elementRef, name!, nameIsRegex)
+        let name = String(cString: luaL_checklstring(L, 2, nil))
+        success = appProto.selectMenuItemByName(pid: pid, name: name, isRegex: nameIsRegex)
     } else if lua_istable(L, 2) {
         var path: [String] = []
         lua_pushnil(L)
@@ -859,144 +782,19 @@ private func application_selectmenuitem(_ L: LuaState) throws -> CInt {
             path.append(item)
             lua_pop(L, 1)
         }
-        foundItem = _findmenuitembypath(L, app.elementRef, path)
+        success = appProto.selectMenuItemByPath(pid: pid, path: path)
     } else {
         os_log(.info, "%{public}s", "hs.application:selectMenuItem(): Unrecognised type for menuItem argument, expecting string or table")
         lua_pushnil(L)
         return 1
     }
 
-    guard let foundItem = foundItem else {
-        os_log(.debug, "%{public}s", "Couldn't find \(name ?? "")")
-        lua_pushnil(L)
-        return 1
-    }
-
-    var axError: AXError = .success
-    if let exMsg = catchingObjCException({
-        axError = AXUIElementPerformAction(foundItem, kAXPressAction as CFString)
-    }) {
-        os_log(.error, "caught ObjC exception in AXUIElementPerformAction: %{public}s", exMsg)
-        lua_pushnil(L)
-        return 1
-    }
-    if axError != .success {
-        os_log(.debug, "%{public}s", "hs.application:selectMenuItem(): AXPress error: \(axError.rawValue)")
-        lua_pushnil(L)
-        return 1
-    }
-
-    L.push(true)
-    return 1
-}
-
-// MARK: - Menu structure
-
-private func _getMenuStructure(_ menuItem: AXUIElement) -> Any {
-    let initialAttributeCount = 7
-    let attributeNames = NSMutableArray(array: [
-        kAXTitleAttribute as String,
-        kAXRoleAttribute as String,
-        kAXMenuItemMarkCharAttribute as String,
-        kAXMenuItemCmdCharAttribute as String,
-        kAXMenuItemCmdModifiersAttribute as String,
-        kAXEnabledAttribute as String,
-        kAXMenuItemCmdGlyphAttribute as String,
-    ])
-    assert(attributeNames.count == initialAttributeCount, "_getMenuStructure: expected \(initialAttributeCount) attribute names, got \(attributeNames.count)")
-
-    var cfAttributeValues: CFArray?
-    let result = AXUIElementCopyMultipleAttributeValues(menuItem, attributeNames as CFArray, AXCopyMultipleAttributeOptions(rawValue: 0), &cfAttributeValues)
-
-    if result != AXError.success {
-        os_log(.default, "%{public}s","Unable to fetch menu structure")
-    } else if isAppleMenuItem(cfAttributeValues) {
-        return NSNull()
-    }
-
-    guard let cfValues = cfAttributeValues else { return NSNull() }
-
-    let attributeValues = NSMutableArray(array: (cfValues as? [Any]) ?? [])
-    replaceAXErrorValues(attributeValues)
-    replaceModifiersWithArray(attributeValues, attributeNames)
-
-    let children = collectMenuChildren(menuItem)
-    if let children = children, children.count > 0 {
-        attributeNames.add(kAXChildrenAttribute as String)
-        attributeValues.add(children)
-    }
-
-    return buildMenuResult(attributeValues, attributeNames, children)
-}
-
-/// Returns true if the first attribute value is the string "Apple" (the Apple menu).
-private func isAppleMenuItem(_ cfValues: CFArray?) -> Bool {
-    guard let cfValues = cfValues,
-          let firstElement = CFArrayGetValueAtIndex(cfValues, 0) else { return false }
-    let typeID = CFGetTypeID(Unmanaged<CFTypeRef>.fromOpaque(firstElement).takeUnretainedValue())
-    guard typeID == CFStringGetTypeID() else { return false }
-    let firstStr = Unmanaged<CFString>.fromOpaque(firstElement).takeUnretainedValue()
-    return CFStringCompare(firstStr, "Apple" as CFString, []) == .compareEqualTo
-}
-
-/// Replaces any AXValue entries of type .axError with empty strings.
-private func replaceAXErrorValues(_ attributeValues: NSMutableArray) {
-    for j in 0..<attributeValues.count {
-        let val = attributeValues[j]
-        if CFGetTypeID(val as CFTypeRef) == AXValueGetTypeID() {
-            if AXValueGetType(val as! AXValue) == .axError {
-                attributeValues[j] = ""
-            }
-        }
-    }
-}
-
-/// Converts the raw modifier integer into an array of modifier name strings.
-private func replaceModifiersWithArray(_ attributeValues: NSMutableArray, _ attributeNames: NSMutableArray) {
-    let modifiersIndex = attributeNames.index(of: kAXMenuItemCmdModifiersAttribute as String)
-    guard let modsNum = attributeValues[modifiersIndex] as? NSNumber else {
-        attributeValues[modifiersIndex] = NSNull()
-        return
-    }
-    let modsInt = modsNum.intValue
-    let modsArr = NSMutableArray()
-    if (modsInt & kAXMenuItemModifierNoCommand) == 0 { modsArr.add("cmd") }
-    if (modsInt & kAXMenuItemModifierShift) != 0     { modsArr.add("shift") }
-    if (modsInt & kAXMenuItemModifierOption) != 0    { modsArr.add("alt") }
-    if (modsInt & kAXMenuItemModifierControl) != 0   { modsArr.add("ctrl") }
-    attributeValues[modifiersIndex] = modsArr
-}
-
-/// Recursively collects non-null child menu structures.
-private func collectMenuChildren(_ menuItem: AXUIElement) -> NSMutableArray? {
-    var cfChildren: CFArray?
-    guard AXUIElementCopyAttributeValues(menuItem, kAXChildrenAttribute as CFString, 0, CFIndex(INT32_MAX), &cfChildren) == .success else {
-        return nil
-    }
-    let result = NSMutableArray()
-    if let cfChildren = cfChildren {
-        let numChildren = CFArrayGetCount(cfChildren)
-        for i in 0..<numChildren {
-            let childPtr = CFArrayGetValueAtIndex(cfChildren, i)!
-            let child = Unmanaged<AXUIElement>.fromOpaque(childPtr).takeUnretainedValue()
-            let childValues = _getMenuStructure(child)
-            if !(childValues is NSNull) { result.add(childValues) }
-        }
-    }
-    return result
-}
-
-/// Builds the final menu item dictionary or returns the children array.
-private func buildMenuResult(_ attributeValues: NSMutableArray, _ attributeNames: NSMutableArray,
-                             _ children: NSMutableArray?) -> Any {
-    let roleValue = attributeValues[1] as? String ?? ""
-    if roleValue == "AXMenuItem" || roleValue == "AXMenuBarItem" {
-        let thisMenuItem = NSMutableDictionary(objects: attributeValues as! [Any], forKeys: attributeNames as! [NSCopying])
-        if thisMenuItem.count > 0 { return thisMenuItem }
+    if success {
+        L.push(true)
     } else {
-        if let children = children, children.count > 0 { return children }
+        lua_pushnil(L)
     }
-    return NSNull()
+    return 1
 }
 
 /// hs.application:getMenuItems([fn]) -> table or nil | hs.application object
@@ -1022,50 +820,38 @@ private func buildMenuResult(_ attributeValues: NSMutableArray, _ attributeNames
 ///   * AXMenuItemCmdGlyph - An integer, corresponding to one of the defined glyphs in `hs.application.menuGlyphs` if the keyboard shortcut is a special character usually represented by a pictorial representation (think arrow keys, return, etc), or an empty string if no glyph is used in presenting the keyboard shortcut.
 ///  * Using `hs.inspect()` on these tables, while useful for exploration, can be extremely slow, taking several minutes to correctly render very complex menus
 private func application_getMenus(_ L: LuaState) throws -> CInt {
-    guard let app = getApp(L, at: 1) else { lua_pushnil(L); return 1 }
+    guard let pid = getAppPID(L, at: 1) else { lua_pushnil(L); return 1 }
+    let appProto = environmentGet(L).application
 
     if lua_gettop(L) == 1 {
-        var menus: NSMutableDictionary? = nil
-        var menuBarRef: CFTypeRef?
-
-        if AXUIElementCopyAttributeValue(app.elementRef, kAXMenuBarAttribute as CFString, &menuBarRef) == .success {
-            let menuBar = menuBarRef as! AXUIElement
-            menus = _getMenuStructure(menuBar) as? NSMutableDictionary
-        }
-
-        lua_pushany(L, menus)
-    } else {
-        let fnRef = L.ref(index: 2)
-        let fnKey = nextBackgroundKey()
-        backgroundCallbacks[fnKey] = fnRef
-
-        let elementRef = app.elementRef
-        let generation = lua_currentStateGeneration()
-
-        DispatchQueue.main.async {
-            guard lua_isStateGenerationValid(generation) else {
-                backgroundCallbacks.removeValue(forKey: fnKey)
-                return
-            }
-            if backgroundCallbacks[fnKey] != nil {
-                var menus: NSMutableDictionary? = nil
-                var menuBarRef: CFTypeRef?
-
-                if AXUIElementCopyAttributeValue(elementRef, kAXMenuBarAttribute as CFString, &menuBarRef) == .success {
-                    let menuBar = menuBarRef as! AXUIElement
-                    menus = _getMenuStructure(menuBar) as? NSMutableDictionary
-                }
-
-                let L = lua_getCurrentState()!
-                backgroundCallbacks[fnKey]!.push(onto: L)
-                lua_pushany(L, menus)
-                if lua_pcall(L, 1, 0, 0) != LUA_OK { lua_pop(L, 1) }
-                backgroundCallbacks.removeValue(forKey: fnKey)
-            }
-        }
-        lua_pushvalue(L, 1)
+        let menus = appProto.getMenuItems(pid: pid)
+        lua_pushany(L, menus as NSArray?)
+        return 1
     }
 
+    // Async path with callback
+    let fnRef = L.ref(index: 2)
+    let fnKey = nextBackgroundKey()
+    backgroundCallbacks[fnKey] = fnRef
+    let generation = lua_currentStateGeneration()
+
+    // Use RunLoop.main.perform so the callback fires during RunLoop.main.run(until:)
+    // in tests.  DispatchQueue.main.async blocks are not drained by RunLoop spinning.
+    RunLoop.main.perform {
+        guard lua_isStateGenerationValid(generation) else {
+            backgroundCallbacks.removeValue(forKey: fnKey)
+            return
+        }
+        if backgroundCallbacks[fnKey] != nil {
+            let menus = appProto.getMenuItems(pid: pid)
+            let L = lua_getCurrentState()!
+            backgroundCallbacks[fnKey]!.push(onto: L)
+            lua_pushany(L, menus as NSArray?)
+            if lua_pcall(L, 1, 0, 0) != LUA_OK { lua_pop(L, 1) }
+            backgroundCallbacks.removeValue(forKey: fnKey)
+        }
+    }
+    lua_pushvalue(L, 1)
     return 1
 }
 
@@ -1085,12 +871,8 @@ private func application_getMenus(_ L: LuaState) throws -> CInt {
 ///  * The name parameter should match the name of the application on disk, e.g. "IntelliJ IDEA", rather than "IntelliJ"
 private func application_launchorfocus(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TSTRING)
-    guard let appClass = HSuicore.applicationClass else { L.push(false); return 1 }
-    let name = lua_tovalue(L, at: 1) as! NSString
-    let result = catchingObjCException {
-        (appClass as AnyObject).perform(Selector(("launchByName:")), with: name)
-    }
-    L.push(result != nil)
+    let name = lua_tovalue(L, at: 1) as! String
+    L.push(environmentGet(L).application.launchOrFocus(name))
     return 1
 }
 
@@ -1108,12 +890,8 @@ private func application_launchorfocus(_ L: LuaState) throws -> CInt {
 ///  * Bundle identifiers typically take the form of `com.company.ApplicationName`
 private func application_launchorfocusbybundleID(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 1, LUA_TSTRING)
-    guard let appClass = HSuicore.applicationClass else { L.push(false); return 1 }
-    let bundleID = lua_tovalue(L, at: 1) as! NSString
-    let result = catchingObjCException {
-        (appClass as AnyObject).perform(Selector(("launchByBundleID:")), with: bundleID)
-    }
-    L.push(result != nil)
+    let bundleID = lua_tovalue(L, at: 1) as! String
+    L.push(environmentGet(L).application.launchOrFocusByBundleID(bundleID))
     return 1
 }
 
@@ -1121,56 +899,59 @@ private func application_launchorfocusbybundleID(_ L: LuaState) throws -> CInt {
 
 private func application_uielement_isApplication(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
-    guard let app = getApp(L, at: 1) else { L.push(false); return 1 }
-    if let uiElement = app.uiElement as? HSuielementProtocol {
-        L.push(uiElement.role == "AXApplication")
-    } else {
-        L.push(false)
+    // uiElement methods require legacy HSapplication (not available in test mode)
+    guard let app = getApp(L, at: 1),
+          let uiElement = app.uiElement as? HSuielementProtocol else {
+        // For lightweight/test userdata, applications are always "AXApplication"
+        L.push(true)
+        return 1
     }
+    L.push(uiElement.role == "AXApplication")
     return 1
 }
 
 private func application_uielement_isWindow(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
-    guard let app = getApp(L, at: 1) else { L.push(false); return 1 }
-    if let uiElement = app.uiElement as? HSuielementProtocol {
-        L.push(uiElement.isWindow)
-    } else {
+    guard let app = getApp(L, at: 1),
+          let uiElement = app.uiElement as? HSuielementProtocol else {
         L.push(false)
+        return 1
     }
+    L.push(uiElement.isWindow)
     return 1
 }
 
 private func application_uielement_role(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
-    guard let app = getApp(L, at: 1) else { lua_pushnil(L); return 1 }
-    if let uiElement = app.uiElement as? HSuielementProtocol {
-        lua_pushany(L, uiElement.role as NSString)
-    } else {
-        lua_pushnil(L)
+    guard let app = getApp(L, at: 1),
+          let uiElement = app.uiElement as? HSuielementProtocol else {
+        // For lightweight userdata, return "AXApplication"
+        lua_pushany(L, "AXApplication" as NSString)
+        return 1
     }
+    lua_pushany(L, uiElement.role as NSString)
     return 1
 }
 
 private func application_uielement_selectedText(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
-    guard let app = getApp(L, at: 1) else { lua_pushnil(L); return 1 }
-    if let uiElement = app.uiElement as? HSuielementProtocol {
-        lua_pushany(L, uiElement.selectedText as NSString?)
-    } else {
+    guard let app = getApp(L, at: 1),
+          let uiElement = app.uiElement as? HSuielementProtocol else {
         lua_pushnil(L)
+        return 1
     }
+    lua_pushany(L, uiElement.selectedText as NSString?)
     return 1
 }
 
 private func application_uielement_newWatcher(_ L: LuaState) throws -> CInt {
-    guard let app = getApp(L, at: 1) else { lua_pushnil(L); return 1 }
-    if let uiElement = app.uiElement as? HSuielementProtocol {
-        let watcher = uiElement.newWatcher(atIndex: 2, withUserdataAtIndex: 3, withLuaState: L)
-        pushHSuielementWatcherOrNil(L, watcher)
-    } else {
+    guard let app = getApp(L, at: 1),
+          let uiElement = app.uiElement as? HSuielementProtocol else {
         lua_pushnil(L)
+        return 1
     }
+    let watcher = uiElement.newWatcher(atIndex: 2, withUserdataAtIndex: 3, withLuaState: L)
+    pushHSuielementWatcherOrNil(L, watcher)
     return 1
 }
 
@@ -1220,6 +1001,9 @@ private func toHSapplicationFromLua(_ L: UnsafeMutablePointer<lua_State>!, _ idx
     precondition(L != nil, "toHSapplicationFromLua: L must not be nil")
     precondition(idx != 0, "toHSapplicationFromLua: idx must not be 0")
     if luaL_testudata(L, idx, USERDATA_TAG) != nil {
+        if let tag = lua_getAssociatedTag(L, idx), tag == APPLICATION_TAG_PID_ONLY {
+            return nil
+        }
         let ptr = luaL_checkudata(L, idx, USERDATA_TAG)!
             .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
         guard let rawPtr = ptr.pointee else { return nil }
@@ -1234,8 +1018,8 @@ private func toHSapplicationFromLua(_ L: UnsafeMutablePointer<lua_State>!, _ idx
 
 private func userdata_tostring(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
-    let app = getApp(L, at: 1)
-    let title = app?.title() ?? "?"
+    let pid = getAppPID(L, at: 1)
+    let title = pid.flatMap { environmentGet(L).application.title(pid: $0) } ?? "?"
     L.push("\(USERDATA_TAG): \(title) (\(String(describing: lua_topointer(L, 1)!)))")
     return 1
 }
@@ -1243,10 +1027,9 @@ private func userdata_tostring(_ L: LuaState) throws -> CInt {
 private func userdata_eq(_ L: LuaState) throws -> CInt {
     var isEqual = false
     if luaL_testudata(L, 1, USERDATA_TAG) != nil && luaL_testudata(L, 2, USERDATA_TAG) != nil {
-        if let app1 = toHSapplicationFromLua(L, 1) as? HSapplicationProtocol,
-           let app2 = toHSapplicationFromLua(L, 2) as? HSapplicationProtocol {
-            isEqual = app1.runningApp.isEqual(app2.runningApp)
-        }
+        let pid1 = getAppPID(L, at: 1)
+        let pid2 = getAppPID(L, at: 2)
+        isEqual = (pid1 != nil && pid1 == pid2)
     }
     L.push(isEqual)
     return 1
@@ -1254,6 +1037,18 @@ private func userdata_eq(_ L: LuaState) throws -> CInt {
 
 private func userdata_gc(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
+    // Check if this is a lightweight PID-only userdata
+    if let tag = lua_getAssociatedTag(L, 1), tag == APPLICATION_TAG_PID_ONLY {
+        // No retained object to release -- just clear the pointer
+        let ptr = luaL_checkudata(L, 1, USERDATA_TAG)!
+            .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
+        ptr.pointee = nil
+        lua_pushnil(L)
+        lua_setmetatable(L, 1)
+        return 0
+    }
+
+    // Legacy HSapplication path
     let ptr = luaL_checkudata(L, 1, USERDATA_TAG)!
         .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
     if let rawPtr = ptr.pointee {

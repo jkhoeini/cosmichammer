@@ -165,6 +165,67 @@ func bootstrapLuaForTesting() {
     environmentAttach(L, simEnv)
     environmentSetGlobal(simEnv)
 
+    // Seed the SimulatedApplication with the current process and commonly-needed bundle info.
+    if let appSim = simEnv.application as? SimulatedApplication {
+        let currentPID = ProcessInfo.processInfo.processIdentifier
+        appSim.addApp(ApplicationInfo(
+            pid: currentPID,
+            bundleID: "org.cosmic-hammer.CosmicHammer",
+            name: "Cosmic Hammer",
+            path: Bundle.main.bundlePath,
+            isFrontmost: true,
+            isRunning: true,
+            kind: 1,
+            isResponsive: true
+        ))
+        appSim.frontmostPID = currentPID
+
+        // Add a Dock process (background-only, no menus) so tests see >1 running app.
+        // Use large fake PIDs that won't collide with real OS processes.
+        appSim.addApp(ApplicationInfo(
+            pid: 99901, bundleID: "com.apple.dock",
+            name: "Dock", path: "/System/Library/CoreServices/Dock.app",
+            isRunning: true, kind: -1, isResponsive: true
+        ))
+        // Add Finder as a second regular app.
+        appSim.addApp(ApplicationInfo(
+            pid: 99902, bundleID: "com.apple.finder",
+            name: "Finder", path: "/System/Library/CoreServices/Finder.app",
+            isRunning: true, kind: 1, isResponsive: true
+        ))
+
+        // Seed bundle registry for Safari (used by many tests)
+        appSim.registerBundle(
+            bundleID: "com.apple.Safari", name: "Safari",
+            path: "/Applications/Safari.app",
+            info: ["CFBundleExecutable": "Safari", "CFBundleName": "Safari",
+                   "CFBundleIdentifier": "com.apple.Safari"],
+            localizations: ["en", "fr", "de", "ja", "es", "it", "pt", "nl", "sv", "da", "fi", "nb", "ko", "zh_CN", "zh_TW", "ru", "pl", "tr", "uk", "ar", "hr", "cs", "el", "he", "ro", "sk", "th", "id", "ms", "en_AU", "en_GB", "ca", "hu", "vi"],
+            preferredLocalizations: ["en"]
+        )
+
+        // Seed UTI handlers
+        appSim.utiHandlers["public.jpeg"] = "com.apple.Preview"
+        appSim.utiHandlers["public.png"] = "com.apple.Preview"
+
+        // Set up menus for the current app (Cosmic Hammer)
+        appSim.setMenus(forPID: currentPID, [
+            AppMenuItemInfo(title: "Cosmic Hammer", role: "AXMenuBarItem", children: [
+                AppMenuItemInfo(title: "About Cosmic Hammer"),
+                AppMenuItemInfo(title: "Preferences..."),
+                AppMenuItemInfo(title: "Quit Cosmic Hammer", cmdChar: "q", cmdModifiers: ["cmd"]),
+            ]),
+            AppMenuItemInfo(title: "Edit", role: "AXMenuBarItem", children: [
+                AppMenuItemInfo(title: "Undo", cmdChar: "z", cmdModifiers: ["cmd"]),
+                AppMenuItemInfo(title: "Redo", cmdChar: "z", cmdModifiers: ["cmd", "shift"]),
+                AppMenuItemInfo(title: "Cut", cmdChar: "x", cmdModifiers: ["cmd"]),
+                AppMenuItemInfo(title: "Copy", cmdChar: "c", cmdModifiers: ["cmd"]),
+                AppMenuItemInfo(title: "Paste", cmdChar: "v", cmdModifiers: ["cmd"]),
+                AppMenuItemInfo(title: "Select All", cmdChar: "a", cmdModifiers: ["cmd"]),
+            ]),
+        ])
+    }
+
     // Create the "hs" global table with essential core functions
     var corelib: [luaL_Reg] = [
         luaL_Reg(name: strdup("getObjectMetatable"), func: test_getObjectMetatable),

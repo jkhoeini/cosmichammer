@@ -34,6 +34,7 @@ func createProductionEnvironment() -> Environment {
         bonjour: ProductionBonjour(),
         drawing: ProductionDrawing(),
         certificate: ProductionCertificate(),
-        media: ProductionMedia()
+        media: ProductionMedia(),
+        application: ProductionApplication()
     )
 }

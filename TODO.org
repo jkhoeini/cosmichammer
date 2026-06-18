@@ -35,23 +35,55 @@ LuaSkin → LuaSwift).
     (~$(MARKETING_VERSION)~, ~${EXECUTABLE_NAME}~, etc.) even though the
     justfile already ~sed~-replaces them. Use a simpler template format.
 
-*** TODO Fix remaining ~60 failing tests that need macOS system APIs
-    788 tests run, ~60 issues remain. DST protocol layer now covers
-    Audiodevice, Screen, Window, Settings, Process, FileSystem,
-    Pasteboard, EventLoop, Clock, Location, Network, and WebView —
-    those extensions run headlessly.
+*** TODO Fix remaining ~51 failing tests via DST simulators
+    816 tests run, ~51 issues remain across 15 suites. All are solvable
+    by migrating the extension to route through DST protocols and using
+    simulators — same pattern that already fixed Audiodevice/Screen/Window/
+    Settings/Process/FileSystem/Pasteboard/EventLoop/Clock/Location/
+    Network/WebView/Application.
 
-    Untestable without hardware/host app (by design — not a code issue):
-    - Brightness (IOKit display sensor), HID (IOKit HID device),
-      Camera (AVCaptureDevice), Razer/StreamDeck (USB hardware),
-      Location (CoreLocation)
+    Failing suites by category:
 
-    Testable with host app refactoring:
-    - Application/Uielement/AXUIElement: need ~NSApplication~ +
-      accessibility permissions. Consider a hosted test target.
-    - Canvas/Webview/Menubar/Chooser/Dialog: need AppKit window server.
-      Consider ~.skipInHeadless~ trait.
-    - Hotkey/Eventtap: need CGEvent permissions. Skip in CI.
+    NETWORKING (22 issues):
+    - Socket (19): TCP/UDP tests need real NWConnection/NWListener.
+      Fix: migrate Socket.swift to use ~NetworkProtocol~ for TCP/UDP/
+      Listener; SimulatedNetwork already has state machine handles.
+    - Websocket (3): echo server timeouts.
+      Fix: add WebSocket support to ~NetworkProtocol~ + simulator.
+
+    PROCESS / TASK (6 issues):
+    - Task (6): needs ~hs~ CLI binary for process spawning.
+      Fix: migrate Task.swift to ~ProcessProtocol~ for command execution;
+      SimulatedProcess can return scripted stdout/exit codes.
+
+    AUDIO / INPUT (11 issues):
+    - Audiodevice (7): needs real audio hardware for data sources.
+      Fix: already migrated to ~AudioProtocol~; tests need rewrite to
+      use SimulatedAudio instead of Lua-level integration tests.
+    - Hotkey (3): needs Accessibility for CGEvent taps.
+      Fix: migrate to ~InputProtocol~ (Phase 5 Eventtap scope).
+    - Mouse (1): needs CGEvent for mouse state.
+      Fix: same as Hotkey — ~InputProtocol~ migration.
+
+    UI ELEMENT (4 issues):
+    - Uielement (2): needs AX permissions + running UI.
+    - Window (1): needs visible windows (tabs).
+    - Appfinder (1): needs specific apps running.
+      Fix: Phase 4 Accessibility/UIElement + ~ApplicationProtocol~.
+
+    MISC (8 issues):
+    - Serial (2): needs serial port hardware.
+      Fix: migrate to ~DeviceProtocol~; simulator returns scripted data.
+    - FS (1): sandbox restriction on watched paths.
+      Fix: use SimulatedFileSystem for watched-path tests.
+    - Http (1): redirect behavior needs real HTTP server.
+      Fix: already routed through ~NetworkProtocol~; test needs rewrite.
+    - Math (1): random seed determinism.
+      Fix: use RPRNG from DST for deterministic random in tests.
+    - Noises (1): needs microphone hardware.
+      Fix: add to ~MediaProtocol~ simulator.
+    - RequireAll (1): extension load ordering.
+      Fix: SimulatedFileSystem with full extension tree.
 
 *** TODO Remove unnecessary ~@objc~ annotations
     482 ~@objc~ usages across ~Sources/HSSwiftExtensions/~ were required

@@ -40,6 +40,9 @@ public final class Environment {
     public let certificate: any CertificateProtocol
     public let media: any MediaProtocol
 
+    // MARK: - Round 4 protocols
+    public let application: any ApplicationProtocol
+
     public init(
         clock: any ClockProtocol,
         eventLoop: any EventLoopProtocol,
@@ -72,7 +75,8 @@ public final class Environment {
         bonjour: any BonjourProtocol,
         drawing: any DrawingProtocol,
         certificate: any CertificateProtocol,
-        media: any MediaProtocol
+        media: any MediaProtocol,
+        application: any ApplicationProtocol
     ) {
         self.clock = clock
         self.eventLoop = eventLoop
@@ -106,6 +110,7 @@ public final class Environment {
         self.drawing = drawing
         self.certificate = certificate
         self.media = media
+        self.application = application
     }
 }
 

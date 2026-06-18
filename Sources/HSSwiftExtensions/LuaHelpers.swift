@@ -711,6 +711,10 @@ func lua_toAnyObject(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -> An
     guard lua_type(L, idx) == LUA_TUSERDATA else { return nil }
     guard let ptr = lua_touserdata(L, idx) else { return nil }
     guard let opaque = ptr.assumingMemoryBound(to: UnsafeMutableRawPointer?.self).pointee else { return nil }
+    // Guard against lightweight userdata that stores a small integer (e.g. a PID) instead of
+    // a real heap pointer.  On arm64 macOS, valid heap pointers are always above 4 GB.
+    let address = UInt(bitPattern: opaque)
+    guard address > 0x1_0000_0000 else { return nil }
     return Unmanaged<AnyObject>.fromOpaque(UnsafeRawPointer(opaque)).takeUnretainedValue()
 }
 

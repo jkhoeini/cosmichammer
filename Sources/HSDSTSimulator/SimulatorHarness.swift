@@ -53,6 +53,10 @@ public final class SimulatorHarness {
         let certificateSim = SimulatedCertificate(rng: rng.fork(), faults: faults)
         let mediaSim = SimulatedMedia(rng: rng.fork(), faults: faults)
 
+        // Round 4 simulators
+        let appSim = SimulatedApplication(rng: rng.fork(), faults: faults)
+        appSim.windowSim = winSim
+
         return Environment(
             clock: clockSim,
             eventLoop: eventLoopSim,
@@ -85,7 +89,8 @@ public final class SimulatorHarness {
             bonjour: bonjourSim,
             drawing: drawingSim,
             certificate: certificateSim,
-            media: mediaSim
+            media: mediaSim,
+            application: appSim
         )
     }
 

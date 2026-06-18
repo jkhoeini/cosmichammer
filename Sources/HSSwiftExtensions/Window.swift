@@ -430,8 +430,11 @@ private func window_application(_ L: LuaState) throws -> CInt {
     let winProto = environmentGet(L).window
     if let info = winProto.windowInfo(forID: wid) {
         lua_settop(L, 0)
+        // Try production HSapplication first, fall back to protocol-based lookup
         if let app = HSapplication(pid: info.pid, withState: L) {
             pushHSapplicationOrNil(L, app)
+        } else if let appInfo = environmentGet(L).application.applicationForPID(info.pid) {
+            pushApplicationInfo(L, appInfo)
         } else {
             lua_pushnil(L)
         }
