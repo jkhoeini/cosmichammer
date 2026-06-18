@@ -68,6 +68,16 @@ struct DSTSettingsIntegrationTests {
         }
     }
 
+    @Test func testPreferencesDarkModeViaSimulator() {
+        withLuaState { L in
+            let settings = environmentGet(L).settings as! SimulatedSettings
+            settings.set(true, forKey: "HSPreferencesDarkModeKey")
+            #expect(PreferencesDarkModeEnabled() == true)
+            settings.set(false, forKey: "HSPreferencesDarkModeKey")
+            #expect(PreferencesDarkModeEnabled() == false)
+        }
+    }
+
     @Test func testFallbackToUserDefaultsWhenNoGlobalEnv() {
         // When no global environment is set, @_cdecl functions should
         // fall back to UserDefaults without crashing.
@@ -92,6 +102,7 @@ struct DSTSettingsIntegrationTests {
         _ = ConsoleDarkModeEnabled()
         _ = MJConsoleWindowAlwaysOnTop()
         _ = HSAppleScriptEnabled()
+        _ = PreferencesDarkModeEnabled()
     }
 
     @Test func testSettingsSetterViaSimulator() {
@@ -116,6 +127,12 @@ struct DSTSettingsIntegrationTests {
             #expect(settings.bool(forKey: "HSAppleScriptEnabledKey") == true)
             HSAppleScriptSetEnabled(false)
             #expect(settings.bool(forKey: "HSAppleScriptEnabledKey") == false)
+
+            // PreferencesDarkModeSetEnabled has no UI side effects
+            PreferencesDarkModeSetEnabled(true)
+            #expect(settings.bool(forKey: "HSPreferencesDarkModeKey") == true)
+            PreferencesDarkModeSetEnabled(false)
+            #expect(settings.bool(forKey: "HSPreferencesDarkModeKey") == false)
         }
     }
 

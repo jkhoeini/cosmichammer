@@ -8,21 +8,6 @@ import os.log
 
 private let HSConsoleDarkModeKey = "HSConsoleDarkModeKey"
 
-private func consoleDarkModeEnabled() -> Bool {
-    if let env = environmentGetGlobalOrNil() {
-        return env.settings.bool(forKey: HSConsoleDarkModeKey)
-    }
-    return UserDefaults.standard.bool(forKey: HSConsoleDarkModeKey)
-}
-
-private func consoleDarkModeSetEnabled(_ enabled: Bool) {
-    if let env = environmentGetGlobalOrNil() {
-        env.settings.set(enabled, forKey: HSConsoleDarkModeKey)
-    } else {
-        UserDefaults.standard.set(enabled, forKey: HSConsoleDarkModeKey)
-    }
-}
-
 /// Returns the MJConsoleWindowController singleton via runtime lookup.
 private func consoleController() -> NSObject {
     let cls: AnyClass = NSClassFromString("MJConsoleWindowController")!
