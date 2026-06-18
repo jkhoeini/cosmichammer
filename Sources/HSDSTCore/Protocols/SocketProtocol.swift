@@ -9,6 +9,8 @@ public enum SocketEvent: Sendable {
     case connected
     case disconnected
     case data(Data)
+    /// UDP data with sender address (used by simulated sockets to propagate sockaddr).
+    case dataWithAddress(Data, Data)
     case error(String)
 }
 
@@ -50,4 +52,55 @@ public protocol SocketProtocol: AnyObject {
     func socketInfo(socketID: UInt64) -> SocketHandle?
     func startHTTPServer(port: UInt16) -> UInt64?
     func stopHTTPServer(serverID: UInt64) -> Bool
+
+    // MARK: - TCP server accept (returns list of connected client IDs)
+    func connectedClients(serverID: UInt64) -> [UInt64]
+
+    // MARK: - TCP write to specific client
+    func sendToClient(serverID: UInt64, clientID: UInt64, data: Data) -> Bool
+
+    // MARK: - TCP receive from specific client
+    func receiveFromClient(serverID: UInt64, clientID: UInt64, length: Int) -> Data?
+
+    // MARK: - TCP delimiter-based receive
+    func receiveUntilDelimiter(socketID: UInt64, delimiter: Data) -> Data?
+    func receiveFromClientUntilDelimiter(serverID: UInt64, clientID: UInt64, delimiter: Data) -> Data?
+
+    // MARK: - TCP Unix domain socket
+    func connectUnix(socketID: UInt64, path: String) -> Bool
+    func listenUnix(socketID: UInt64, path: String) -> Bool
+
+    // MARK: - UDP configuration
+    func udpBind(socketID: UInt64, port: UInt16) -> Bool
+    func udpSetBroadcast(socketID: UInt64, enabled: Bool)
+    func udpSetReusePort(socketID: UInt64, enabled: Bool)
+    func udpSetIPv4Enabled(socketID: UInt64, enabled: Bool)
+    func udpSetIPv6Enabled(socketID: UInt64, enabled: Bool)
+    func udpSetPreferredIPVersion(socketID: UInt64, version: Int)
+    func udpSetBufferSize(socketID: UInt64, size: UInt64, ipVersion: Int?)
+    func udpBeginReceiving(socketID: UInt64, continuous: Bool) -> Bool
+
+    /// Whether this is a simulated socket provider (used by extensions to decide routing).
+    var isSimulated: Bool { get }
+}
+
+// Default implementations so existing conformances don't break
+public extension SocketProtocol {
+    var isSimulated: Bool { false }
+
+    func connectedClients(serverID: UInt64) -> [UInt64] { [] }
+    func sendToClient(serverID: UInt64, clientID: UInt64, data: Data) -> Bool { false }
+    func receiveFromClient(serverID: UInt64, clientID: UInt64, length: Int) -> Data? { nil }
+    func receiveUntilDelimiter(socketID: UInt64, delimiter: Data) -> Data? { nil }
+    func receiveFromClientUntilDelimiter(serverID: UInt64, clientID: UInt64, delimiter: Data) -> Data? { nil }
+    func connectUnix(socketID: UInt64, path: String) -> Bool { false }
+    func listenUnix(socketID: UInt64, path: String) -> Bool { false }
+    func udpBind(socketID: UInt64, port: UInt16) -> Bool { false }
+    func udpSetBroadcast(socketID: UInt64, enabled: Bool) {}
+    func udpSetReusePort(socketID: UInt64, enabled: Bool) {}
+    func udpSetIPv4Enabled(socketID: UInt64, enabled: Bool) {}
+    func udpSetIPv6Enabled(socketID: UInt64, enabled: Bool) {}
+    func udpSetPreferredIPVersion(socketID: UInt64, version: Int) {}
+    func udpSetBufferSize(socketID: UInt64, size: UInt64, ipVersion: Int?) {}
+    func udpBeginReceiving(socketID: UInt64, continuous: Bool) -> Bool { false }
 }

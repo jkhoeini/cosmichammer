@@ -71,7 +71,11 @@ extension CosmicHammerTests {
             var lastValueResult: String?
             while Date() < deadline {
                 RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.5))
-                sawRequest = sawRequest || localSocketHTTPServerRequestCount() > before
+                testHarness?.advanceTime(by: 0.5)
+                // Count real HTTP requests OR simulated socket writes as "requests"
+                let realRequests = localSocketHTTPServerRequestCount() > before
+                let simRequests = simulatedSocketWriteCount() > 0
+                sawRequest = sawRequest || realRequests || simRequests
                 lastValueResult = runLua("testTcpConnectAndWriteUsesLocalServerValues()")
                 if sawRequest && lastValueResult == "Success" { return }
             }
@@ -99,5 +103,6 @@ extension CosmicHammerTests {
         @Test func testUdpEnabledIpVersion() { runSocketTwoPartLuaTest(timeout: 2) }
         @Test func testUdpPreferredIpVersion() { runSocketTwoPartLuaTest(timeout: 2) }
         @Test func testUdpBufferSize() { runSocketTwoPartLuaTest(timeout: 2) }
+
     }
 }

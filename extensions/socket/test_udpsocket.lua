@@ -381,6 +381,11 @@ function testUdpBufferSizeValues()
 end
 
 function testUdpBufferSize()
+  -- Clear globals from prior tests to avoid contamination (e.g. testUdpReusePort)
+  server1ReadData = nil
+  server2ReadData = nil
+  server3ReadData = nil
+  server4ReadData = nil
   local function server1Callback(data) server1ReadData = data end
   local function server2Callback(data) server2ReadData = data end
   local function server3Callback(data) server3ReadData = data end

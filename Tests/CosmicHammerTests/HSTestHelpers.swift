@@ -2,6 +2,10 @@ import Testing
 import Foundation
 import Darwin
 import Network
+import CLua
+import HSDSTCore
+import HSDSTSimulator
+@testable import HSSwiftExtensions
 
 let isHeadless: Bool = ProcessInfo.processInfo.environment["HEADLESS"] != nil
 let externalNetworkTestsEnabled: Bool = ProcessInfo.processInfo.environment["EXTERNAL_NETWORK_TESTS"] != nil
@@ -444,6 +448,18 @@ func configureHttpTestEnvironment() throws {
 @MainActor
 func localSocketHTTPServerRequestCount() -> Int {
     localSocketHTTPServer?.requestCount() ?? 0
+}
+
+@MainActor
+func simulatedSocketWriteCount() -> Int {
+    // Access the simulated socket from the lua_State's environment
+    let L = lua_getCurrentState()
+    guard let L = L else { return 0 }
+    let env = environmentGet(L)
+    if let simSocket = env.socket as? SimulatedSocket {
+        return simSocket.sentData.count
+    }
+    return 0
 }
 
 @MainActor

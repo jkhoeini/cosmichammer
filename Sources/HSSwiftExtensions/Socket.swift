@@ -11,6 +11,15 @@ private func mainThreadDispatch(_ block: @escaping () -> Void) {
     DispatchQueue.main.async { autoreleasepool { block() } }
 }
 
+/// Dispatch that fires during RunLoop.main.run (used by simulated callbacks to
+/// ensure events are processed by test harness RunLoop draining).
+private func runLoopDispatch(_ block: @escaping () -> Void) {
+    CFRunLoopPerformBlock(CFRunLoopGetMain(), CFRunLoopMode.defaultMode.rawValue) {
+        autoreleasepool { block() }
+    }
+    CFRunLoopWakeUp(CFRunLoopGetMain())
+}
+
 private enum SocketRole: String {
     case `default` = "DEFAULT"
     case server = "SERVER"
@@ -92,6 +101,57 @@ private func tcpReadCallback(_ asyncSocket: HSAsyncTcpSocket, data: Data, tag: I
     }
 }
 
+/// Simulated-mode connect callback that dispatches via RunLoop (not GCD) so
+/// test-harness RunLoop.main.run(until:) can drain it.  Falls back to
+/// mainThreadDispatch when not in a test environment.
+private func simScheduleConnectCallback(_ asyncSocket: HSAsyncTcpSocket) {
+    runLoopDispatch {
+        guard lua_isStateGenerationValid(asyncSocket.generation) else {
+            asyncSocket.teardown()
+            return
+        }
+        guard asyncSocket.connectCallback != nil else { return }
+        let L = lua_getCurrentState()!
+        asyncSocket.connectCallback?.push(onto: L)
+        asyncSocket.connectCallback = nil
+        if lua_pcall(L, 0, 0, 0) != LUA_OK { lua_pop(L, 1) }
+    }
+}
+
+/// Simulated-mode write callback that dispatches via RunLoop (not GCD).
+private func simScheduleWriteCallback(_ asyncSocket: HSAsyncTcpSocket, tag: Int) {
+    runLoopDispatch {
+        guard lua_isStateGenerationValid(asyncSocket.generation) else {
+            asyncSocket.teardown()
+            return
+        }
+        if asyncSocket.writeCallback != nil {
+            let L = lua_getCurrentState()!
+            asyncSocket.writeCallback?.push(onto: L)
+            L.push(lua_Integer(tag))
+            asyncSocket.writeCallback = nil
+            if lua_pcall(L, 1, 0, 0) != LUA_OK { lua_pop(L, 1) }
+        }
+    }
+}
+
+/// Simulated-mode read callback that dispatches via RunLoop (not GCD).
+private func simScheduleReadCallback(_ asyncSocket: HSAsyncTcpSocket, data: Data, tag: Int) {
+    runLoopDispatch {
+        guard lua_isStateGenerationValid(asyncSocket.generation) else {
+            asyncSocket.teardown()
+            return
+        }
+        if asyncSocket.readCallback != nil {
+            let L = lua_getCurrentState()!
+            asyncSocket.readCallback?.push(onto: L)
+            lua_pushdata(L, data)
+            L.push(lua_Integer(tag))
+            if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
+        }
+    }
+}
+
 // MARK: - TCP Socket Class (Network.framework)
 
 private class HSAsyncTcpSocket {
@@ -101,6 +161,11 @@ private class HSAsyncTcpSocket {
     var generation: UInt64 = 0
     var socketTimeout: TimeInterval = -1
     var unixSocketPath: String?
+
+    /// When non-nil, all operations route through the simulated socket protocol.
+    var socketSim: (any SocketProtocol)?
+    /// The simulated socket ID (valid only when socketSim is non-nil).
+    var simSocketID: UInt64 = 0
 
     private var tornDown = false
 
@@ -159,7 +224,29 @@ private class HSAsyncTcpSocket {
         delegateQueue = DispatchQueue(label: label)
     }
 
+    /// Sync local state from the simulator (e.g. after server-side disconnect).
+    func syncFromSim() {
+        guard let sim = socketSim, sim.isSimulated else { return }
+        guard role != .server else { return }
+        if let info = sim.socketInfo(socketID: simSocketID), !info.isConnected && isConnectedFlag {
+            isConnectedFlag = false
+            connectedPort = 0
+            connectedHost = nil
+            connectedAddress = nil
+            localPort = 0
+            localHost = nil
+            localAddress = nil
+        }
+    }
+
     var isConnected: Bool {
+        if let sim = socketSim, sim.isSimulated {
+            if role == .server {
+                return sim.connectedClients(serverID: simSocketID).count > 0
+            }
+            syncFromSim()
+            return isConnectedFlag
+        }
         if role == .server {
             lock.lock()
             let count = connectedSockets.count
@@ -170,6 +257,12 @@ private class HSAsyncTcpSocket {
     }
 
     var isDisconnected: Bool {
+        if let sim = socketSim, sim.isSimulated {
+            if isListeningFlag { return false }
+            if unixSocketPath != nil && role == .server { return false }
+            syncFromSim()
+            return !isConnectedFlag
+        }
         // A listening server (NWListener or Unix) is neither connected nor
         // disconnected -- it is "listening".  Only report disconnected when
         // the socket has no listener AND is not connected.
@@ -191,6 +284,39 @@ private class HSAsyncTcpSocket {
         }
         guard role == .default || role == .client else {
             throw NSError(domain: "HSAsyncTcpSocket", code: 4, userInfo: [NSLocalizedDescriptionKey: "Cannot connect a server socket"])
+        }
+
+        // Simulated path
+        if let sim = socketSim, sim.isSimulated {
+            // Register data callback for later receives
+            sim.setCallback(socketID: simSocketID) { [weak self] event in
+                guard let self = self else { return }
+                switch event {
+                case .data(let data):
+                    self.simReceiveBuffer.append(data)
+                    self.drainSimPendingReads()
+                default:
+                    break
+                }
+            }
+            let result = sim.connect(socketID: simSocketID, host: host, port: port)
+            if result {
+                isConnectedFlag = true
+                connectedHost = host
+                connectedPort = port
+                localHost = "127.0.0.1"
+                localPort = UInt16(truncatingIfNeeded: 10000 + simSocketID % 50000)
+                isIPv4Flag = true
+                connectedAddress = sockaddrData(host: "127.0.0.1", port: port)
+                localAddress = sockaddrData(host: "127.0.0.1", port: localPort)
+                // Fire connect callback via RunLoop (not GCD) so test harness can drain it
+                if self.connectCallback != nil {
+                    simScheduleConnectCallback(self)
+                }
+            } else {
+                throw NSError(domain: "HSAsyncTcpSocket", code: 2, userInfo: [NSLocalizedDescriptionKey: "Simulated connection failed"])
+            }
+            return
         }
 
         let tcpOptions = NWProtocolTCP.Options()
@@ -244,6 +370,78 @@ private class HSAsyncTcpSocket {
         conn.start(queue: delegateQueue)
     }
 
+    // MARK: - Simulated receive buffer and pending reads
+
+    /// Buffer for data received via simulated callbacks.
+    var simReceiveBuffer = Data()
+
+    /// Pending simulated read requests.
+    private var simPendingReads: [(kind: SimReadKind, tag: Int)] = []
+
+    /// Timer for simulated read timeout (disconnects the socket if reads can't be fulfilled).
+    private var simReadTimeoutTimer: Timer?
+
+    private enum SimReadKind {
+        case bytes(Int)
+        case delimiter(Data)
+    }
+
+    /// Schedule a simulated read timeout. If reads are still pending after `socketTimeout`,
+    /// disconnect the socket (matching real NWConnection timeout behavior).
+    func scheduleSimReadTimeout() {
+        guard socketTimeout >= 0 else { return }
+        // Cancel any existing timer
+        simReadTimeoutTimer?.invalidate()
+        simReadTimeoutTimer = Timer.scheduledTimer(withTimeInterval: socketTimeout, repeats: false) { [weak self] _ in
+            guard let self = self else { return }
+            if !self.simPendingReads.isEmpty {
+                self.simPendingReads.removeAll()
+                self.disconnect()
+            }
+        }
+    }
+
+    /// Drain pending simulated reads against the receive buffer.
+    /// For server sockets, also pulls data from connected client buffers.
+    func drainSimPendingReads() {
+        // For server sockets, collect data from sim's connected clients
+        if role == .server, let sim = socketSim {
+            let clientIDs = sim.connectedClients(serverID: simSocketID)
+            for clientID in clientIDs {
+                // Pull all available data from each client's receive buffer
+                while let data = sim.receiveFromClient(serverID: simSocketID, clientID: clientID, length: 0) {
+                    guard !data.isEmpty else { break }
+                    simReceiveBuffer.append(data)
+                }
+            }
+        }
+
+        while !simPendingReads.isEmpty {
+            let pending = simPendingReads[0]
+            switch pending.kind {
+            case .bytes(let length):
+                guard simReceiveBuffer.count >= length else { return }
+                let data = Data(simReceiveBuffer.prefix(length))
+                simReceiveBuffer.removeFirst(length)
+                simPendingReads.removeFirst()
+                simScheduleReadCallback(self, data: data, tag: pending.tag)
+            case .delimiter(let delim):
+                guard let range = simReceiveBuffer.range(of: delim) else { return }
+                let endIndex = range.upperBound
+                let chunk = Data(simReceiveBuffer.prefix(upTo: endIndex))
+                simReceiveBuffer.removeSubrange(simReceiveBuffer.startIndex..<endIndex)
+                simPendingReads.removeFirst()
+                simScheduleReadCallback(self, data: chunk, tag: pending.tag)
+            }
+        }
+
+        // Cancel the timeout timer if all reads are fulfilled
+        if simPendingReads.isEmpty {
+            simReadTimeoutTimer?.invalidate()
+            simReadTimeoutTimer = nil
+        }
+    }
+
     // MARK: Client connect (Unix domain socket)
 
     func connect(toURL url: URL, withTimeout timeout: TimeInterval) throws {
@@ -253,6 +451,33 @@ private class HSAsyncTcpSocket {
         }
         guard role == .default || role == .client else {
             throw NSError(domain: "HSAsyncTcpSocket", code: 4, userInfo: [NSLocalizedDescriptionKey: "Cannot connect a server socket to a Unix path"])
+        }
+
+        // Simulated path
+        if let sim = socketSim, sim.isSimulated {
+            // Register data callback for later receives
+            sim.setCallback(socketID: simSocketID) { [weak self] event in
+                guard let self = self else { return }
+                switch event {
+                case .data(let data):
+                    self.simReceiveBuffer.append(data)
+                    self.drainSimPendingReads()
+                default:
+                    break
+                }
+            }
+            let result = sim.connectUnix(socketID: simSocketID, path: path)
+            if result {
+                isConnectedFlag = true
+                unixSocketPath = path
+                // Fire connect callback via RunLoop (not GCD) so test harness can drain it
+                if self.connectCallback != nil {
+                    simScheduleConnectCallback(self)
+                }
+            } else {
+                throw NSError(domain: "HSAsyncTcpSocket", code: 5, userInfo: [NSLocalizedDescriptionKey: "Simulated Unix connect failed"])
+            }
+            return
         }
 
         let params = NWParameters(tls: nil, tcp: NWProtocolTCP.Options())
@@ -312,6 +537,20 @@ private class HSAsyncTcpSocket {
             throw NSError(domain: "HSAsyncTcpSocket", code: 11, userInfo: [NSLocalizedDescriptionKey: "Cannot listen on a connected socket"])
         }
 
+        // Simulated path
+        if let sim = socketSim, sim.isSimulated {
+            let result = sim.listen(socketID: simSocketID, port: port)
+            if result {
+                role = .server
+                localHost = "0.0.0.0"
+                localPort = port
+                isListeningFlag = true
+            } else {
+                throw NSError(domain: "HSAsyncTcpSocket", code: 10, userInfo: [NSLocalizedDescriptionKey: "Simulated listen failed"])
+            }
+            return
+        }
+
         let tcpOptions = NWProtocolTCP.Options()
         let params = NWParameters(tls: nil, tcp: tcpOptions)
         let nwListener = try NWListener(using: params, on: NWEndpoint.Port(rawValue: port)!)
@@ -332,6 +571,19 @@ private class HSAsyncTcpSocket {
         }
         guard !isConnectedFlag else {
             throw NSError(domain: "HSAsyncTcpSocket", code: 11, userInfo: [NSLocalizedDescriptionKey: "Cannot listen on a connected socket"])
+        }
+
+        // Simulated path
+        if let sim = socketSim, sim.isSimulated {
+            let result = sim.listenUnix(socketID: simSocketID, path: path)
+            if result {
+                role = .server
+                unixSocketPath = path
+                isListeningFlag = true
+            } else {
+                throw NSError(domain: "HSAsyncTcpSocket", code: 12, userInfo: [NSLocalizedDescriptionKey: "Simulated Unix listen failed"])
+            }
+            return
         }
 
         // Remove stale socket file if present
@@ -550,6 +802,30 @@ private class HSAsyncTcpSocket {
         let previousRole = role
         _ = previousRole // suppress unused warning; used in postcondition below
 
+        // Simulated path
+        if let sim = socketSim, sim.isSimulated {
+            _ = sim.close(socketID: simSocketID)
+            isListeningFlag = false
+            isConnectedFlag = false
+            localPort = 0
+            localHost = nil
+            connectedHost = nil
+            connectedPort = 0
+            connectedAddress = nil
+            localAddress = nil
+            unixSocketPath = nil
+            role = .default
+            isIPv4Flag = false
+            isIPv6Flag = false
+            simReceiveBuffer.removeAll()
+            simPendingReads.removeAll()
+            simReadTimeoutTimer?.invalidate()
+            simReadTimeoutTimer = nil
+            // Re-create a fresh simulated socket ID for reuse
+            simSocketID = sim.createTCPSocket()
+            return
+        }
+
         if role == .server {
             isListeningFlag = false
             listener?.cancel()
@@ -587,6 +863,18 @@ private class HSAsyncTcpSocket {
 
     func readData(toLength length: UInt, withTimeout timeout: TimeInterval, tag: Int) {
         guard length > 0 else { return }
+
+        // Simulated path -- server sockets skip here because socket_read
+        // also calls readDataFromClients which handles the pending read.
+        // Queueing in both would double-read data.
+        if socketSim != nil && socketSim!.isSimulated {
+            if role == .server { return }
+            simPendingReads.append((.bytes(Int(length)), tag))
+            drainSimPendingReads()
+            if !simPendingReads.isEmpty { scheduleSimReadTimeout() }
+            return
+        }
+
         guard let conn = connection else { return }
         receiveExactly(from: conn, length: Int(length), timeout: timeout, buffer: Data()) { [weak self] data in
             guard let self = self else { return }
@@ -643,6 +931,13 @@ private class HSAsyncTcpSocket {
 
     /// Read from all server clients (length-based).
     func readDataFromClients(toLength length: UInt, withTimeout timeout: TimeInterval, tag: Int) {
+        // Simulated path: reads go through the server socket's own pending reads
+        if socketSim != nil && socketSim!.isSimulated {
+            simPendingReads.append((.bytes(Int(length)), tag))
+            drainSimPendingReads()
+            return
+        }
+
         lock.lock()
         let clients = connectedSockets
         lock.unlock()
@@ -659,6 +954,17 @@ private class HSAsyncTcpSocket {
 
     func readData(to separator: Data, withTimeout timeout: TimeInterval, tag: Int) {
         guard !separator.isEmpty else { return }
+
+        // Simulated path -- server sockets skip here because socket_read
+        // also calls readDataFromClients which handles the pending read.
+        if socketSim != nil && socketSim!.isSimulated {
+            if role == .server { return }
+            simPendingReads.append((.delimiter(separator), tag))
+            drainSimPendingReads()
+            if !simPendingReads.isEmpty { scheduleSimReadTimeout() }
+            return
+        }
+
         guard let conn = connection else { return }
         receiveUntilDelimiter(from: conn, separator: separator, timeout: timeout, buffer: &readBuffer) { [weak self] data in
             guard let self = self else { return }
@@ -722,6 +1028,13 @@ private class HSAsyncTcpSocket {
 
     /// Read from all server clients (delimiter-based).
     func readDataFromClients(to separator: Data, withTimeout timeout: TimeInterval, tag: Int) {
+        // Simulated path: reads go through the server socket's own pending reads
+        if socketSim != nil && socketSim!.isSimulated {
+            simPendingReads.append((.delimiter(separator), tag))
+            drainSimPendingReads()
+            return
+        }
+
         lock.lock()
         let clients = connectedSockets
         lock.unlock()
@@ -788,6 +1101,16 @@ private class HSAsyncTcpSocket {
 
     func write(_ data: Data, withTimeout timeout: TimeInterval, tag: Int) {
         guard !data.isEmpty else { return }
+
+        // Simulated path
+        if let sim = socketSim, sim.isSimulated {
+            _ = sim.send(socketID: simSocketID, data: data)
+            if self.writeCallback != nil {
+                simScheduleWriteCallback(self, tag: tag)
+            }
+            return
+        }
+
         guard let conn = connection else { return }
         sendData(data, on: conn, timeout: timeout) { [weak self] in
             guard let self = self else { return }
@@ -800,6 +1123,18 @@ private class HSAsyncTcpSocket {
     func writeToClients(_ data: Data, withTimeout timeout: TimeInterval, tag: Int) {
         guard !data.isEmpty else { return }
         guard role == .server else { return }
+
+        // Simulated path
+        if let sim = socketSim, sim.isSimulated {
+            let clientIDs = sim.connectedClients(serverID: simSocketID)
+            for clientID in clientIDs {
+                _ = sim.sendToClient(serverID: simSocketID, clientID: clientID, data: data)
+            }
+            if self.writeCallback != nil {
+                simScheduleWriteCallback(self, tag: tag)
+            }
+            return
+        }
 
         lock.lock()
         let clients = connectedSockets
@@ -987,6 +1322,13 @@ private extension NWConnection {
 ///
 private func socket_new(_ L: LuaState) throws -> CInt {
     let asyncSocket = HSAsyncTcpSocket()
+
+    // Attach simulated socket protocol if available
+    let env = environmentGet(L)
+    if env.socket.isSimulated {
+        asyncSocket.socketSim = env.socket
+        asyncSocket.simSocketID = env.socket.createTCPSocket()
+    }
 
     if lua_type(L, 1) == LUA_TFUNCTION {
         asyncSocket.readCallback = L.ref(index: 1)
@@ -1394,10 +1736,16 @@ private func socket_startTLS(_ L: LuaState) throws -> CInt {
 }
 
 private func get_socket_connections(_ asyncSocket: HSAsyncTcpSocket) -> Int {
+    if let sim = asyncSocket.socketSim, sim.isSimulated {
+        if asyncSocket.role == .server {
+            return sim.connectedClients(serverID: asyncSocket.simSocketID).count
+        }
+        return asyncSocket.isConnected ? 1 : 0
+    }
     if asyncSocket.role == .server {
-        asyncSocket.connectedSockets.count
+        return asyncSocket.connectedSockets.count
     } else {
-        asyncSocket.isConnected ? 1 : 0
+        return asyncSocket.isConnected ? 1 : 0
     }
 }
 
@@ -1473,6 +1821,9 @@ private func socket_connections(_ L: LuaState) throws -> CInt {
 private func socket_info(_ L: LuaState) throws -> CInt {
     let asyncSocket: HSAsyncTcpSocket = try L.checkArgument(1)
 
+    // Sync sim state before reading properties
+    asyncSocket.syncFromSim()
+
     let info: NSDictionary = [
         "connectedAddress": asyncSocket.connectedAddress ?? Data(),
         "connectedHost": asyncSocket.connectedHost ?? "",
@@ -1492,7 +1843,7 @@ private func socket_info(_ L: LuaState) throws -> CInt {
         "localPort": NSNumber(value: asyncSocket.localPort),
         "timeout": NSNumber(value: asyncSocket.socketTimeout),
         "unixSocketPath": asyncSocket.unixSocketPath ?? "",
-        "userData": asyncSocket.role.rawValue,
+        "userData": asyncSocket.role == .default ? "" : asyncSocket.role.rawValue,
     ]
 
     lua_pushany(L, info)

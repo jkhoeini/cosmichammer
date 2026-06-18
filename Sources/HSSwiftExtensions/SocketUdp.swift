@@ -3,9 +3,18 @@ import CLua
 import Lua
 import os.log
 import Network
+import HSDSTCore
 
 private func mainThreadDispatch(_ block: @escaping () -> Void) {
     DispatchQueue.main.async { autoreleasepool { block() } }
+}
+
+/// Dispatch that fires during RunLoop.main.run (used by simulated callbacks).
+private func runLoopDispatch(_ block: @escaping () -> Void) {
+    CFRunLoopPerformBlock(CFRunLoopGetMain(), CFRunLoopMode.defaultMode.rawValue) {
+        autoreleasepool { block() }
+    }
+    CFRunLoopWakeUp(CFRunLoopGetMain())
 }
 
 private let USERDATA_TAG = "hs.socket.udp"
@@ -56,6 +65,46 @@ private func udpReadCallback(_ asyncUdpSocket: HSAsyncUdpSocket, data: Data, add
     }
 }
 
+// MARK: - Simulated callback dispatchers (RunLoop-based)
+
+private func simScheduleUdpConnectCallback(_ asyncUdpSocket: HSAsyncUdpSocket) {
+    runLoopDispatch {
+        guard lua_isStateGenerationValid(asyncUdpSocket.generation) else { return }
+        if let cb = asyncUdpSocket.connectCallback {
+            let L = lua_getCurrentState()!
+            cb.push(onto: L)
+            asyncUdpSocket.connectCallback = nil
+            if lua_pcall(L, 0, 0, 0) != LUA_OK { lua_pop(L, 1) }
+        }
+    }
+}
+
+private func simScheduleUdpWriteCallback(_ asyncUdpSocket: HSAsyncUdpSocket, tag: Int) {
+    runLoopDispatch {
+        guard lua_isStateGenerationValid(asyncUdpSocket.generation) else { return }
+        if let cb = asyncUdpSocket.writeCallback {
+            let L = lua_getCurrentState()!
+            cb.push(onto: L)
+            L.push(lua_Integer(tag))
+            asyncUdpSocket.writeCallback = nil
+            if lua_pcall(L, 1, 0, 0) != LUA_OK { lua_pop(L, 1) }
+        }
+    }
+}
+
+private func simScheduleUdpReadCallback(_ asyncUdpSocket: HSAsyncUdpSocket, data: Data, address: Data) {
+    runLoopDispatch {
+        guard lua_isStateGenerationValid(asyncUdpSocket.generation) else { return }
+        if let cb = asyncUdpSocket.readCallback {
+            let L = lua_getCurrentState()!
+            cb.push(onto: L)
+            lua_pushdata(L, data)
+            lua_pushdata(L, address)
+            if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
+        }
+    }
+}
+
 // MARK: - UDP Socket Class (Network.framework + POSIX)
 
 /// Hybrid UDP socket implementation.
@@ -76,6 +125,11 @@ private class HSAsyncUdpSocket {
     var generation: UInt64 = 0
     var socketTimeout: TimeInterval = -1
     var role: UdpRole = .default
+
+    /// When non-nil, all operations route through the simulated socket protocol.
+    var socketSim: (any SocketProtocol)?
+    /// The simulated socket ID (valid only when socketSim is non-nil).
+    var simSocketID: UInt64 = 0
 
     // NWConnection for connected mode
     private var connection: NWConnection?
@@ -128,6 +182,10 @@ private class HSAsyncUdpSocket {
     func isConnected() -> Bool { return _isConnected }
     func isClosed() -> Bool { return _isClosed }
     func isIPv4() -> Bool {
+        if socketSim != nil && socketSim!.isSimulated {
+            if _isConnected { return preferredIPVersion != 6 }
+            return ipv4Enabled && !ipv6Enabled
+        }
         if let conn = connection {
             if case .hostPort(let host, _) = conn.currentPath?.remoteEndpoint {
                 return "\(host)".contains(".")
@@ -136,6 +194,10 @@ private class HSAsyncUdpSocket {
         return fd4 >= 0
     }
     func isIPv6() -> Bool {
+        if socketSim != nil && socketSim!.isSimulated {
+            if _isConnected { return preferredIPVersion == 6 }
+            return !ipv4Enabled && ipv6Enabled
+        }
         if let conn = connection {
             if case .hostPort(let host, _) = conn.currentPath?.remoteEndpoint {
                 return "\(host)".contains(":")
@@ -167,42 +229,85 @@ private class HSAsyncUdpSocket {
     }
 
     func localHost_IPv4() -> String? {
+        if socketSim != nil && socketSim!.isSimulated {
+            return ipv4Enabled && isBound ? (_localHost ?? "0.0.0.0") : nil
+        }
         if fd4 >= 0 { return hostFromFd(fd4, family: AF_INET) }
         return nil
     }
     func localHost_IPv6() -> String? {
+        if socketSim != nil && socketSim!.isSimulated {
+            return ipv6Enabled && isBound ? "::0" : nil
+        }
         if fd6 >= 0 { return hostFromFd(fd6, family: AF_INET6) }
         return nil
     }
     func localPort_IPv4() -> UInt16 {
+        if socketSim != nil && socketSim!.isSimulated {
+            return ipv4Enabled && isBound ? _localPort : 0
+        }
         if fd4 >= 0 { return portFromFd(fd4, family: AF_INET) }
         return 0
     }
     func localPort_IPv6() -> UInt16 {
+        if socketSim != nil && socketSim!.isSimulated {
+            return ipv6Enabled && isBound ? _localPort : 0
+        }
         if fd6 >= 0 { return portFromFd(fd6, family: AF_INET6) }
         return 0
     }
     func localAddress_IPv4() -> Data? {
+        if socketSim != nil && socketSim!.isSimulated {
+            return ipv4Enabled && isBound ? sockaddrData(host: _localHost ?? "0.0.0.0", port: _localPort, family: AF_INET) : nil
+        }
         if fd4 >= 0 { return sockaddrDataFromFd(fd4, family: AF_INET) }
         return nil
     }
     func localAddress_IPv6() -> Data? {
+        if socketSim != nil && socketSim!.isSimulated {
+            return ipv6Enabled && isBound ? sockaddrData(host: "::0", port: _localPort, family: AF_INET6) : nil
+        }
         if fd6 >= 0 { return sockaddrDataFromFd(fd6, family: AF_INET6) }
         return nil
     }
 
     // MARK: Configuration
 
-    func setIPv4Enabled(_ flag: Bool) { ipv4Enabled = flag }
-    func setIPv6Enabled(_ flag: Bool) { ipv6Enabled = flag }
-    func setPreferIPv4() { preferredIPVersion = 4 }
-    func setPreferIPv6() { preferredIPVersion = 6 }
-    func setIPVersionNeutral() { preferredIPVersion = 0 }
-    func setMaxReceiveIPv4BufferSize(_ size: UInt16) { maxRecvIPv4Buffer = size }
-    func setMaxReceiveIPv6BufferSize(_ size: UInt32) { maxRecvIPv6Buffer = size }
+    func setIPv4Enabled(_ flag: Bool) {
+        ipv4Enabled = flag
+        socketSim?.udpSetIPv4Enabled(socketID: simSocketID, enabled: flag)
+    }
+    func setIPv6Enabled(_ flag: Bool) {
+        ipv6Enabled = flag
+        socketSim?.udpSetIPv6Enabled(socketID: simSocketID, enabled: flag)
+    }
+    func setPreferIPv4() {
+        preferredIPVersion = 4
+        socketSim?.udpSetPreferredIPVersion(socketID: simSocketID, version: 4)
+    }
+    func setPreferIPv6() {
+        preferredIPVersion = 6
+        socketSim?.udpSetPreferredIPVersion(socketID: simSocketID, version: 6)
+    }
+    func setIPVersionNeutral() {
+        preferredIPVersion = 0
+        socketSim?.udpSetPreferredIPVersion(socketID: simSocketID, version: 0)
+    }
+    func setMaxReceiveIPv4BufferSize(_ size: UInt16) {
+        maxRecvIPv4Buffer = size
+        socketSim?.udpSetBufferSize(socketID: simSocketID, size: UInt64(size), ipVersion: 4)
+    }
+    func setMaxReceiveIPv6BufferSize(_ size: UInt32) {
+        maxRecvIPv6Buffer = size
+        socketSim?.udpSetBufferSize(socketID: simSocketID, size: UInt64(size), ipVersion: 6)
+    }
 
     func enableBroadcast(_ flag: Bool) throws {
         broadcastEnabled = flag
+        if let sim = socketSim, sim.isSimulated {
+            sim.udpSetBroadcast(socketID: simSocketID, enabled: flag)
+            return
+        }
         // Apply to existing POSIX sockets immediately
         if fd4 >= 0 { applyBroadcast(fd4) }
         if fd6 >= 0 { applyBroadcast(fd6) }
@@ -210,6 +315,10 @@ private class HSAsyncUdpSocket {
 
     func enableReusePort(_ flag: Bool) throws {
         reusePortEnabled = flag
+        if let sim = socketSim, sim.isSimulated {
+            sim.udpSetReusePort(socketID: simSocketID, enabled: flag)
+            return
+        }
         // Apply to existing POSIX sockets immediately
         if fd4 >= 0 { applyReusePort(fd4) }
         if fd6 >= 0 { applyReusePort(fd6) }
@@ -227,6 +336,41 @@ private class HSAsyncUdpSocket {
 
         guard !_isConnected else {
             throw NSError(domain: "HSAsyncUdpSocket", code: 1, userInfo: [NSLocalizedDescriptionKey: "Already connected"])
+        }
+
+        // Simulated path
+        if let sim = socketSim, sim.isSimulated {
+            // Register data callback for later receives
+            sim.setCallback(socketID: simSocketID) { [weak self] event in
+                guard let self = self else { return }
+                switch event {
+                case .dataWithAddress(let data, let address):
+                    if self.readCallback != nil {
+                        simScheduleUdpReadCallback(self, data: data, address: address)
+                    }
+                case .data(let data):
+                    if self.readCallback != nil {
+                        let address = self.connectedAddress() ?? Data()
+                        simScheduleUdpReadCallback(self, data: data, address: address)
+                    }
+                default:
+                    break
+                }
+            }
+            let result = sim.connect(socketID: simSocketID, host: host, port: port)
+            if result {
+                _isConnected = true
+                _isClosed = false
+                _connectedHost = host
+                _connectedPort = port
+                _localHost = "127.0.0.1"
+                _localPort = UInt16(truncatingIfNeeded: 20000 + simSocketID % 40000)
+                // Fire connect callback via RunLoop (not GCD)
+                if self.connectCallback != nil {
+                    simScheduleUdpConnectCallback(self)
+                }
+            }
+            return
         }
 
         let params = NWParameters.udp
@@ -289,11 +433,43 @@ private class HSAsyncUdpSocket {
 
     func bind(toPort port: UInt16) throws {
         assert(!tornDown, "Cannot bind a torn-down socket")
-        assert(fd4 < 0 && fd6 < 0, "POSIX sockets already exist before bind")
 
         guard !isBound && !_isConnected else {
             throw NSError(domain: "HSAsyncUdpSocket", code: 3, userInfo: [NSLocalizedDescriptionKey: "Socket already bound or connected"])
         }
+
+        // Simulated path
+        if let sim = socketSim, sim.isSimulated {
+            // Register data callback before bind (uses RunLoop dispatch)
+            sim.setCallback(socketID: simSocketID) { [weak self] event in
+                guard let self = self else { return }
+                switch event {
+                case .dataWithAddress(let data, let address):
+                    if self.readCallback != nil {
+                        simScheduleUdpReadCallback(self, data: data, address: address)
+                    }
+                case .data(let data):
+                    if self.readCallback != nil {
+                        let address = self.localAddress() ?? Data()
+                        simScheduleUdpReadCallback(self, data: data, address: address)
+                    }
+                default:
+                    break
+                }
+            }
+            let result = sim.udpBind(socketID: simSocketID, port: port)
+            if result {
+                isBound = true
+                _isClosed = false
+                _localHost = "0.0.0.0"
+                _localPort = port
+            } else {
+                throw NSError(domain: "HSAsyncUdpSocket", code: 5, userInfo: [NSLocalizedDescriptionKey: "Simulated bind failed"])
+            }
+            return
+        }
+
+        assert(fd4 < 0 && fd6 < 0, "POSIX sockets already exist before bind")
 
         if ipv4Enabled {
             fd4 = Darwin.socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)
@@ -378,9 +554,41 @@ private class HSAsyncUdpSocket {
     func beginReceiving() throws {
         assert(!tornDown, "Cannot receive on a torn-down socket")
 
-        guard isBound else {
+        // Simulated path: allow receiving on sockets that have sent data (they
+        // get a synthetic local port and are registered for routing even without
+        // an explicit bind, matching real POSIX sendto behavior).
+        if let sim = socketSim, sim.isSimulated {
+            guard isBound || _isConnected || _localPort > 0 else {
+                throw NSError(domain: "HSAsyncUdpSocket", code: 7, userInfo: [NSLocalizedDescriptionKey: "Socket not bound"])
+            }
+            // Ensure a data callback is registered (may not have been set if the
+            // socket was never explicitly bound/connected, e.g. after sendTo).
+            sim.setCallback(socketID: simSocketID) { [weak self] event in
+                guard let self = self else { return }
+                switch event {
+                case .dataWithAddress(let data, let address):
+                    if self.readCallback != nil {
+                        simScheduleUdpReadCallback(self, data: data, address: address)
+                    }
+                case .data(let data):
+                    if self.readCallback != nil {
+                        let address = self.localAddress() ?? Data()
+                        simScheduleUdpReadCallback(self, data: data, address: address)
+                    }
+                default:
+                    break
+                }
+            }
+            continuousReceive = true
+            receiveActive = true
+            _ = sim.udpBeginReceiving(socketID: simSocketID, continuous: true)
+            return
+        }
+
+        guard isBound || _isConnected else {
             throw NSError(domain: "HSAsyncUdpSocket", code: 7, userInfo: [NSLocalizedDescriptionKey: "Socket not bound"])
         }
+
         continuousReceive = true
         receiveActive = true
         installReadSources()
@@ -391,9 +599,38 @@ private class HSAsyncUdpSocket {
     func receiveOnce() throws {
         assert(!tornDown, "Cannot receive on a torn-down socket")
 
-        guard isBound else {
+        // Simulated path: same relaxed guard as beginReceiving.
+        if let sim = socketSim, sim.isSimulated {
+            guard isBound || _isConnected || _localPort > 0 else {
+                throw NSError(domain: "HSAsyncUdpSocket", code: 7, userInfo: [NSLocalizedDescriptionKey: "Socket not bound"])
+            }
+            // Ensure a data callback is registered (see beginReceiving comment).
+            sim.setCallback(socketID: simSocketID) { [weak self] event in
+                guard let self = self else { return }
+                switch event {
+                case .dataWithAddress(let data, let address):
+                    if self.readCallback != nil {
+                        simScheduleUdpReadCallback(self, data: data, address: address)
+                    }
+                case .data(let data):
+                    if self.readCallback != nil {
+                        let address = self.localAddress() ?? Data()
+                        simScheduleUdpReadCallback(self, data: data, address: address)
+                    }
+                default:
+                    break
+                }
+            }
+            continuousReceive = false
+            receiveActive = true
+            _ = sim.udpBeginReceiving(socketID: simSocketID, continuous: false)
+            return
+        }
+
+        guard isBound || _isConnected else {
             throw NSError(domain: "HSAsyncUdpSocket", code: 7, userInfo: [NSLocalizedDescriptionKey: "Socket not bound"])
         }
+
         continuousReceive = false
         receiveActive = true
         installReadSources()
@@ -462,6 +699,14 @@ private class HSAsyncUdpSocket {
     // MARK: Receive (NWConnection mode)
 
     func receiveFromConnection(continuous: Bool) {
+        // Simulated path: no real connection, just set up receive state
+        if let sim = socketSim, sim.isSimulated {
+            continuousReceive = continuous
+            receiveActive = true
+            _ = sim.udpBeginReceiving(socketID: simSocketID, continuous: continuous)
+            return
+        }
+
         guard let conn = connection else { return }
         continuousReceive = continuous
         receiveActive = true
@@ -492,6 +737,15 @@ private class HSAsyncUdpSocket {
         guard !data.isEmpty else { return }
         guard _isConnected else { return }
 
+        // Simulated path
+        if let sim = socketSim, sim.isSimulated {
+            _ = sim.send(socketID: simSocketID, data: data)
+            if self.writeCallback != nil {
+                simScheduleUdpWriteCallback(self, tag: tag)
+            }
+            return
+        }
+
         guard let conn = connection else {
             os_log(.error,"UDP send failed: not connected")
             return
@@ -518,6 +772,21 @@ private class HSAsyncUdpSocket {
         guard !data.isEmpty else { return }
         guard !host.isEmpty else { return }
         guard port > 0 else { return }
+
+        // Simulated path
+        if let sim = socketSim, sim.isSimulated {
+            _ = sim.sendTo(socketID: simSocketID, data: data, host: host, port: port)
+            // Sync back local port (sim auto-assigns on first send)
+            if _localPort == 0, let info = sim.socketInfo(socketID: simSocketID) {
+                _localPort = info.localPort
+                _localHost = info.localHost
+                _isClosed = false
+            }
+            if self.writeCallback != nil {
+                simScheduleUdpWriteCallback(self, tag: tag)
+            }
+            return
+        }
 
         // Ensure at least one POSIX socket exists
         ensurePosixSocket()
@@ -673,6 +942,24 @@ private class HSAsyncUdpSocket {
     func close() {
         let wasBound = isBound
         _ = wasBound
+
+        // Simulated path
+        if let sim = socketSim, sim.isSimulated {
+            _ = sim.close(socketID: simSocketID)
+            _isConnected = false
+            _isClosed = true
+            isBound = false
+            _localPort = 0
+            _localHost = nil
+            _connectedHost = nil
+            _connectedPort = 0
+            role = .default
+            continuousReceive = false
+            receiveActive = false
+            // Re-create a fresh simulated socket ID for reuse
+            simSocketID = sim.createUDPSocket()
+            return
+        }
 
         pauseReceiving()
 
@@ -1416,7 +1703,7 @@ public func luaopen_hs_libsocketudp(_ L: UnsafeMutablePointer<lua_State>!) -> In
                     "maxReceiveIPv4BufferSize": NSNumber(value: asyncUdpSocket.maxReceiveIPv4BufferSize()),
                     "maxReceiveIPv6BufferSize": NSNumber(value: asyncUdpSocket.maxReceiveIPv6BufferSize()),
                     "timeout": NSNumber(value: asyncUdpSocket.socketTimeout),
-                    "userData": asyncUdpSocket.role.rawValue,
+                    "userData": asyncUdpSocket.role == .default ? "" : asyncUdpSocket.role.rawValue,
                 ]
 
                 lua_pushany(L, info)
@@ -1429,8 +1716,10 @@ public func luaopen_hs_libsocketudp(_ L: UnsafeMutablePointer<lua_State>!) -> In
             let isServer = asyncUdpSocket.role == .server
             let theHost = isServer ? asyncUdpSocket.localHost() : asyncUdpSocket.connectedHost()
             let thePort = isServer ? asyncUdpSocket.localPort() : asyncUdpSocket.connectedPort()
+            // Match GCDAsyncUdpSocket behavior: nil host renders as "(null)"
+            let hostStr = theHost ?? "(null)"
 
-            L.push("\(USERDATA_TAG): \(theHost ?? ""):\(thePort) (\(lua_topointer(L, 1)!))")
+            L.push("\(USERDATA_TAG): \(hostStr):\(thePort) (\(lua_topointer(L, 1)!))")
             return 1
         }
     ))
@@ -1474,6 +1763,13 @@ public func luaopen_hs_libsocketudp(_ L: UnsafeMutablePointer<lua_State>!) -> In
     L.push { (L: LuaState) throws -> CInt in
         let udpDelegateQueue = DispatchQueue(label: "udpDelegateQueue")
         let asyncUdpSocket = HSAsyncUdpSocket(queue: udpDelegateQueue)
+
+        // Attach simulated socket protocol if available
+        let env = environmentGet(L)
+        if env.socket.isSimulated {
+            asyncUdpSocket.socketSim = env.socket
+            asyncUdpSocket.simSocketID = env.socket.createUDPSocket()
+        }
 
         if lua_type(L, 1) == LUA_TFUNCTION {
             asyncUdpSocket.readCallback = L.ref(index: 1)
