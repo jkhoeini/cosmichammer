@@ -241,6 +241,14 @@ func bootstrapLuaForTesting() {
         ])
     }
 
+    // Seed the SimulatedProcess with scripted results for task tests.
+    if let procSim = simEnv.process as? SimulatedProcess {
+        // /usr/bin/false exits with code 1
+        procSim.scriptedResults["/usr/bin/false"] = ProcessResult(
+            exitCode: 1, stdout: Data(), stderr: Data()
+        )
+    }
+
     // Create the "hs" global table with essential core functions
     var corelib: [luaL_Reg] = [
         luaL_Reg(name: strdup("getObjectMetatable"), func: test_getObjectMetatable),

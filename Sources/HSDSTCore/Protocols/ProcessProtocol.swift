@@ -12,13 +12,26 @@ public struct ProcessResult {
     }
 }
 
+public enum ProcessTerminationReason: Sendable {
+    case exit
+    case uncaughtSignal
+}
+
 public protocol ProcessHandle: AnyObject {
     var isRunning: Bool { get }
+    var hasTerminated: Bool { get }
     var processIdentifier: Int32 { get }
+    var terminationStatus: Int32 { get }
+    var terminationReason: ProcessTerminationReason { get }
+    var environment: [String: String]? { get set }
+    var currentDirectoryPath: String? { get set }
     func terminate()
     func interrupt()
+    func suspend() -> Bool
+    func resume() -> Bool
     func writeToStdin(_ data: Data)
     func closeStdin()
+    func waitUntilExit()
 }
 
 public protocol ProcessProtocol: AnyObject {

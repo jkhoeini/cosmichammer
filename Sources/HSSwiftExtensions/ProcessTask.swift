@@ -13,7 +13,8 @@ private let kMaxProcessOutputSize = 104_857_600
 // MARK: - HSTask class
 
 private class HSTask: NSObject {
-    var process: Process?
+    var handle: (any ProcessHandle)?
+    var processProvider: (any ProcessProtocol)?
     var isStream: Bool = false
     var hasStarted: Bool = false
     var hasTerminated: Bool = false
@@ -24,21 +25,23 @@ private class HSTask: NSObject {
     var inputData: Data?
     var selfRef: LuaValue?
     var generation: UInt64 = 0
+    var customEnvironment: [String: String]?
+    var workingDirectory: String?
     private var tornDown = false
 
     func teardown() {
         guard !tornDown else { return }
         tornDown = true
-        if let task = process, task.isRunning {
-            task.terminationHandler = nil
-            task.terminate()
+        if let h = handle, h.isRunning {
+            h.terminate()
         }
-        process = nil
+        handle = nil
+        processProvider = nil
         luaCallback = nil
         luaStreamCallback = nil
         selfRef = nil
         inputData = nil
-        assert(process == nil, "process must be nil after teardown")
+        assert(handle == nil, "handle must be nil after teardown")
         assert(luaCallback == nil, "luaCallback must be nil after teardown")
         assert(selfRef == nil, "selfRef must be nil after teardown")
     }
@@ -47,123 +50,6 @@ private class HSTask: NSObject {
 private var activeTasks: [HSTask] = []
 private var fileReadObserver: (any NotificationObserverToken)?
 private weak var fileReadNotificationRef: (any NotificationProtocol)?
-
-// MARK: - Helper functions
-
-private func findTask(for fileHandle: FileHandle) -> HSTask? {
-    activeTasks.first { task in
-        guard let process = task.process else { return false }
-        let stdOutFH = (process.standardOutput as? Pipe)?.fileHandleForReading
-        let stdErrFH = (process.standardError as? Pipe)?.fileHandleForReading
-        let stdInFH = (process.standardInput as? Pipe)?.fileHandleForWriting
-        return stdOutFH === fileHandle || stdErrFH === fileHandle || stdInFH === fileHandle
-    }
-}
-
-private let writerBlock: (FileHandle) -> Void = { stdInFH in
-    DispatchQueue.main.sync {
-        // Immediately prevent being called again
-        stdInFH.writeabilityHandler = nil
-
-        guard let task = findTask(for: stdInFH) else {
-            os_log(.info, "ERROR: Unable to get task in writerBlock")
-            return
-        }
-
-        guard let inputData = task.inputData else {
-            os_log(.info, "ERROR: in writerBlock without any data to write")
-            return
-        }
-
-        task.inputData = nil
-
-        do {
-            try stdInFH.write(contentsOf: inputData)
-        } catch {
-            os_log(.info, "Exception while writing to hs.task handle")
-        }
-
-        // If we're not a streaming task, we can close the file handle now
-        if !task.isStream {
-            stdInFH.closeFile()
-        }
-    }
-}
-
-private func create_task(_ task: HSTask) {
-    precondition(!task.launchPath.isEmpty, "launchPath must not be empty")
-    precondition(!task.hasStarted, "cannot create_task for an already-started task")
-    let process = Process()
-    let stdOut = Pipe()
-    let stdErr = Pipe()
-    let stdIn = Pipe()
-
-    task.process = process
-    process.standardOutput = stdOut
-    process.standardError = stdErr
-    process.standardInput = stdIn
-
-    process.launchPath = task.launchPath
-    process.arguments = task.arguments
-    process.terminationHandler = { [weak task] terminatedProcess in
-        // Ensure this callback happens on the main thread
-        DispatchQueue.main.sync {
-            guard let task = task else { return }
-            guard lua_isStateGenerationValid(task.generation) else {
-                task.teardown()
-                return
-            }
-
-            let L = lua_getCurrentState()!
-
-            let stdOutFH = (terminatedProcess.standardOutput as? Pipe)?.fileHandleForReading
-            let stdErrFH = (terminatedProcess.standardError as? Pipe)?.fileHandleForReading
-            let stdInFH = (terminatedProcess.standardInput as? Pipe)?.fileHandleForWriting
-
-            var stdOutStr: String?
-            var stdErrStr: String?
-
-            // TigerStyle: read process output in bounded chunks to prevent unbounded memory growth
-            func readBounded(_ fh: FileHandle?) -> Data {
-                guard let fh = fh else { return Data() }
-                var accumulated = Data()
-                let chunkSize = 65_536
-                while true {
-                    let chunk = fh.readData(ofLength: chunkSize)
-                    if chunk.isEmpty { break }
-                    accumulated.append(chunk)
-                    if accumulated.count > kMaxProcessOutputSize {
-                        os_log(.error, "hs.task: process output exceeded kMaxProcessOutputSize (%d bytes), truncating", kMaxProcessOutputSize)
-                        break
-                    }
-                }
-                return accumulated
-            }
-            stdOutStr = String(data: readBounded(stdOutFH), encoding: .utf8)
-            stdErrStr = String(data: readBounded(stdErrFH), encoding: .utf8)
-            stdOutFH?.closeFile()
-            stdErrFH?.closeFile()
-
-            task.hasTerminated = true
-
-            // We only need to close stdin on streaming tasks
-            if task.isStream {
-                stdInFH?.closeFile()
-            }
-
-            if let cb = task.luaCallback {
-                cb.push(onto: L)
-                L.push(lua_Integer(terminatedProcess.terminationStatus))
-                if let s = stdOutStr { L.push(s) } else { lua_pushnil(L) }
-                if let s = stdErrStr { L.push(s) } else { lua_pushnil(L) }
-                if lua_pcall(L, 3, 0, 0) != LUA_OK { lua_pop(L, 1) }
-            }
-
-            // Release self-reference, allowing GC
-            task.selfRef = nil
-        }
-    }
-}
 
 // MARK: - Lua functions
 
@@ -195,6 +81,7 @@ private func task_new(_ L: LuaState) throws -> CInt {
 
     let task = HSTask()
     task.generation = lua_currentStateGeneration()
+    task.processProvider = environmentGet(L).process
 
     // Capture callback
     if lua_type(L, 2) == LUA_TFUNCTION {
@@ -227,17 +114,12 @@ private func task_new(_ L: LuaState) throws -> CInt {
         task.arguments = args
     }
 
-    // Create and populate the Process object
-    create_task(task)
-
     // Push userdata onto stack
     L.push(userdata: task)
 
-    // Track the task (selfRef is created later in :start() to avoid
-    // leaking never-started tasks)
+    // Track the task
     activeTasks.append(task)
 
-    assert(task.process != nil, "task.process must be set after create_task")
     assert(!task.hasStarted, "newly created task must not be marked as started")
     assert(!task.hasTerminated, "newly created task must not be marked as terminated")
     return 1
@@ -265,7 +147,7 @@ public func luaopen_hs_libtask(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
             fields: [
                 "environment": .closure { L in
                     let task: HSTask = try L.checkArgument(1)
-                    if let process = task.process, let env = process.environment {
+                    if let env = task.handle?.environment ?? task.customEnvironment {
                         lua_pushany(L, env as NSDictionary)
                     } else {
                         lua_pushany(L, ProcessInfo.processInfo.environment as NSDictionary)
@@ -275,9 +157,18 @@ public func luaopen_hs_libtask(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
                 "setEnvironment": .closure { L in
                     luaL_checktype(L, 2, LUA_TTABLE)
                     let task: HSTask = try L.checkArgument(1)
-                    if let process = task.process, let env = lua_tovalue(L, at: 2) as? [String: String] {
-                        process.environment = env
-                        lua_pushvalue(L, 1)
+                    if let env = lua_tovalue(L, at: 2) as? [String: String] {
+                        if task.hasStarted {
+                            // Cannot change environment after start
+                            os_log(.info, "hs.task:setEnvironment() Unable to set environment after start")
+                            L.push(false)
+                        } else {
+                            task.customEnvironment = env
+                            if let handle = task.handle {
+                                handle.environment = env
+                            }
+                            lua_pushvalue(L, 1)
+                        }
                     } else {
                         os_log(.info, "hs.task:setEnvironment() Unable to set environment")
                         L.push(false)
@@ -286,67 +177,171 @@ public func luaopen_hs_libtask(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
                 },
                 "pid": .closure { L in
                     let task: HSTask = try L.checkArgument(1)
-                    guard let process = task.process else {
+                    guard let handle = task.handle else {
                         L.push(0 as lua_Integer)
                         return 1
                     }
-                    L.push(lua_Integer(process.processIdentifier))
+                    L.push(lua_Integer(handle.processIdentifier))
                     return 1
                 },
                 "start": .closure { L in
                     let task: HSTask = try L.checkArgument(1)
-                    var result = false
-                    do {
-                        guard let process = task.process else {
-                            L.push(false)
-                            return 1
-                        }
-                        let stdIn = process.standardInput as! Pipe
-                        let stdInFH = stdIn.fileHandleForWriting
-                        if !task.isStream && task.inputData == nil {
-                            stdInFH.closeFile()
-                        }
-                        try process.run()
-                        result = true
-                        task.hasStarted = true
-                        // Create self-reference now that the task is running,
-                        // preventing GC until termination releases it.
-                        if task.selfRef == nil {
-                            lua_pushvalue(L, 1)
-                            task.selfRef = L.ref(index: -1)
-                            lua_pop(L, 1)
-                        }
-                        if task.isStream {
-                            let stdOut = process.standardOutput as! Pipe
-                            let stdErr = process.standardError as! Pipe
-                            stdOut.fileHandleForReading.readInBackgroundAndNotify()
-                            stdErr.fileHandleForReading.readInBackgroundAndNotify()
-                        }
-                    } catch {
-                        os_log(.info, "hs.task:launch() Unable to launch hs.task process: %{public}s", "\(error)")
-                    }
-                    if result {
-                        lua_pushvalue(L, 1)
-                    } else {
+                    guard !task.hasStarted else {
                         L.push(false)
+                        return 1
                     }
+                    guard let provider = task.processProvider else {
+                        L.push(false)
+                        return 1
+                    }
+
+                    // Create self-reference now to prevent GC during execution
+                    if task.selfRef == nil {
+                        lua_pushvalue(L, 1)
+                        task.selfRef = L.ref(index: -1)
+                        lua_pop(L, 1)
+                    }
+
+                    task.hasStarted = true
+
+                    if task.isStream {
+                        // Streaming mode: use streamingRun
+                        let handle = provider.streamingRun(
+                            executablePath: task.launchPath,
+                            arguments: task.arguments,
+                            environment: task.customEnvironment,
+                            currentDirectory: task.workingDirectory,
+                            onStdout: { [weak task] data in
+                                guard let task = task else { return }
+                                guard lua_isStateGenerationValid(task.generation) else {
+                                    task.teardown()
+                                    return
+                                }
+                                guard let streamCb = task.luaStreamCallback else { return }
+                                let _L = lua_getCurrentState()!
+                                let dataString = String(data: data, encoding: .utf8) ?? ""
+                                let notLastGasp = (task.selfRef != nil)
+                                streamCb.push(onto: _L)
+                                if notLastGasp {
+                                    _L.push(userdata: task)
+                                } else {
+                                    lua_pushnil(_L)
+                                }
+                                _L.push(dataString)
+                                _L.push("")
+                                if lua_pcall(_L, 3, 1, 0) != LUA_OK {
+                                    lua_pop(_L, 1)
+                                } else {
+                                    lua_pop(_L, 1) // pop result
+                                }
+                            },
+                            onStderr: { [weak task] data in
+                                guard let task = task else { return }
+                                guard lua_isStateGenerationValid(task.generation) else {
+                                    task.teardown()
+                                    return
+                                }
+                                guard let streamCb = task.luaStreamCallback else { return }
+                                let _L = lua_getCurrentState()!
+                                let dataString = String(data: data, encoding: .utf8) ?? ""
+                                let notLastGasp = (task.selfRef != nil)
+                                streamCb.push(onto: _L)
+                                if notLastGasp {
+                                    _L.push(userdata: task)
+                                } else {
+                                    lua_pushnil(_L)
+                                }
+                                _L.push("")
+                                _L.push(dataString)
+                                if lua_pcall(_L, 3, 1, 0) != LUA_OK {
+                                    lua_pop(_L, 1)
+                                } else {
+                                    lua_pop(_L, 1) // pop result
+                                }
+                            },
+                            onExit: { [weak task] exitCode in
+                                guard let task = task else { return }
+                                guard lua_isStateGenerationValid(task.generation) else {
+                                    task.teardown()
+                                    return
+                                }
+                                task.hasTerminated = true
+                                if let cb = task.luaCallback {
+                                    let _L = lua_getCurrentState()!
+                                    cb.push(onto: _L)
+                                    _L.push(lua_Integer(exitCode))
+                                    _L.push("")  // stdout already delivered via stream
+                                    _L.push("")  // stderr already delivered via stream
+                                    if lua_pcall(_L, 3, 0, 0) != LUA_OK { lua_pop(_L, 1) }
+                                }
+                                task.selfRef = nil
+                            }
+                        )
+                        task.handle = handle
+
+                        // Send initial input data if any
+                        if let inputData = task.inputData {
+                            task.inputData = nil
+                            handle.writeToStdin(inputData)
+                        }
+                    } else {
+                        // Non-streaming mode: use run with completion
+                        let handle = provider.run(
+                            executablePath: task.launchPath,
+                            arguments: task.arguments,
+                            environment: task.customEnvironment,
+                            currentDirectory: task.workingDirectory
+                        ) { [weak task] result in
+                            guard let task = task else { return }
+                            guard lua_isStateGenerationValid(task.generation) else {
+                                task.teardown()
+                                return
+                            }
+                            task.hasTerminated = true
+
+                            if let cb = task.luaCallback {
+                                let _L = lua_getCurrentState()!
+                                cb.push(onto: _L)
+                                _L.push(lua_Integer(result.exitCode))
+                                let stdOutStr = String(data: result.stdout, encoding: .utf8) ?? ""
+                                let stdErrStr = String(data: result.stderr, encoding: .utf8) ?? ""
+                                _L.push(stdOutStr)
+                                _L.push(stdErrStr)
+                                if lua_pcall(_L, 3, 0, 0) != LUA_OK { lua_pop(_L, 1) }
+                            }
+                            task.selfRef = nil
+                        }
+                        task.handle = handle
+
+                        // Send initial input data if any, then close stdin
+                        // for non-streaming tasks
+                        if let inputData = task.inputData {
+                            task.inputData = nil
+                            handle.writeToStdin(inputData)
+                        }
+                        if !task.isStream {
+                            handle.closeStdin()
+                        }
+                    }
+
+                    lua_pushvalue(L, 1)
                     return 1
                 },
                 "terminate": .closure { L in
                     let task: HSTask = try L.checkArgument(1)
-                    task.process?.terminate()
+                    task.handle?.terminate()
                     lua_pushvalue(L, 1)
                     return 1
                 },
                 "interrupt": .closure { L in
                     let task: HSTask = try L.checkArgument(1)
-                    task.process?.interrupt()
+                    task.handle?.interrupt()
                     lua_pushvalue(L, 1)
                     return 1
                 },
                 "pause": .closure { L in
                     let task: HSTask = try L.checkArgument(1)
-                    let result = task.process?.suspend() ?? false
+                    let result = task.handle?.suspend() ?? false
                     if result {
                         lua_pushvalue(L, 1)
                     } else {
@@ -356,7 +351,7 @@ public func luaopen_hs_libtask(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
                 },
                 "resume": .closure { L in
                     let task: HSTask = try L.checkArgument(1)
-                    let result = task.process?.resume() ?? false
+                    let result = task.handle?.resume() ?? false
                     if result {
                         lua_pushvalue(L, 1)
                     } else {
@@ -366,8 +361,8 @@ public func luaopen_hs_libtask(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
                 },
                 "terminationStatus": .closure { L in
                     let task: HSTask = try L.checkArgument(1)
-                    if task.hasTerminated, let process = task.process {
-                        L.push(lua_Integer(process.terminationStatus))
+                    if task.hasTerminated, let handle = task.handle {
+                        L.push(lua_Integer(handle.terminationStatus))
                     } else {
                         L.push(false)
                     }
@@ -375,14 +370,12 @@ public func luaopen_hs_libtask(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
                 },
                 "terminationReason": .closure { L in
                     let task: HSTask = try L.checkArgument(1)
-                    if task.hasTerminated, let process = task.process {
-                        switch process.terminationReason {
+                    if task.hasTerminated, let handle = task.handle {
+                        switch handle.terminationReason {
                         case .exit:
                             L.push("exit")
                         case .uncaughtSignal:
                             L.push("interrupt")
-                        @unknown default:
-                            L.push("unknown")
                         }
                     } else {
                         L.push(false)
@@ -396,22 +389,21 @@ public func luaopen_hs_libtask(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
                 },
                 "setWorkingDirectory": .closure { L in
                     let task: HSTask = try L.checkArgument(1)
-                    guard let process = task.process else {
-                        L.push(false)
-                        return 1
-                    }
                     let thePath = String(cString: luaL_checkstring(L, 2))
-                    process.currentDirectoryPath = thePath
+                    task.workingDirectory = thePath
+                    if let handle = task.handle {
+                        handle.currentDirectoryPath = thePath
+                    }
                     lua_pushvalue(L, 1)
                     return 1
                 },
                 "workingDirectory": .closure { L in
                     let task: HSTask = try L.checkArgument(1)
-                    guard let process = task.process else {
+                    if let dir = task.handle?.currentDirectoryPath ?? task.workingDirectory {
+                        L.push(dir)
+                    } else {
                         lua_pushnil(L)
-                        return 1
                     }
-                    L.push(process.currentDirectoryPath)
                     return 1
                 },
                 "setCallback": .closure { L in
@@ -435,16 +427,16 @@ public func luaopen_hs_libtask(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
                 "setInput": .closure { L in
                     let task: HSTask = try L.checkArgument(1)
                     if !task.hasTerminated {
-                        guard let process = task.process else {
-                            lua_pushvalue(L, 1)
-                            return 1
-                        }
-                        let stdIn = process.standardInput as! Pipe
-                        let stdInFH = stdIn.fileHandleForWriting
                         _ = luaL_checkstring(L, 2)
                         let inputStr = String(cString: lua_tostring(L, 2)!)
-                        task.inputData = inputStr.data(using: .utf8)
-                        stdInFH.writeabilityHandler = writerBlock
+                        let data = inputStr.data(using: .utf8)!
+                        if let handle = task.handle {
+                            // Process is running, write directly
+                            handle.writeToStdin(data)
+                        } else {
+                            // Not started yet, buffer
+                            task.inputData = data
+                        }
                     } else {
                         os_log(.info, "hs.task:setInput() called on a task that has already terminated")
                     }
@@ -453,16 +445,17 @@ public func luaopen_hs_libtask(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
                 },
                 "closeInput": .closure { L in
                     let task: HSTask = try L.checkArgument(1)
-                    if let process = task.process {
-                        let stdIn = process.standardInput as! Pipe
-                        stdIn.fileHandleForWriting.closeFile()
-                    }
+                    task.handle?.closeStdin()
                     lua_pushvalue(L, 1)
                     return 1
                 },
                 "waitUntilExit": .closure { L in
                     let task: HSTask = try L.checkArgument(1)
-                    task.process?.waitUntilExit()
+                    task.handle?.waitUntilExit()
+                    // After waitUntilExit, sync our state
+                    if let handle = task.handle, handle.hasTerminated {
+                        task.hasTerminated = true
+                    }
                     lua_pushvalue(L, 1)
                     return 1
                 },
@@ -517,75 +510,5 @@ public func luaopen_hs_libtask(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
         lua_setmetatable(L, -2)
 
         activeTasks = []
-
-        let notif = environmentGet(L).notification
-        fileReadNotificationRef = notif
-        fileReadObserver = notif.addObserver(
-            name: FileHandle.readCompletionNotification.rawValue,
-            object: nil
-        ) { userInfo in
-            guard let fh = userInfo["__notificationObject"] as? FileHandle,
-                  let fhData = userInfo[NSFileHandleNotificationDataItem as String] as? Data,
-                  !fhData.isEmpty else {
-                return
-            }
-
-            let dataString = String(data: fhData, encoding: .utf8)
-
-            guard let task = findTask(for: fh) else {
-                os_log(.info, "hs.task received output data from an unknown task. This may be a bug")
-                return
-            }
-
-            guard lua_isStateGenerationValid(task.generation) else {
-                task.teardown()
-                return
-            }
-
-            if let streamCb = task.luaStreamCallback {
-                let _L = lua_getCurrentState()!
-
-                guard let process = task.process else { return }
-                let stdOutFH = (process.standardOutput as? Pipe)?.fileHandleForReading
-                let stdErrFH = (process.standardError as? Pipe)?.fileHandleForReading
-
-                var stdOutArg: String = ""
-                var stdErrArg: String = ""
-
-                if fh === stdOutFH {
-                    stdOutArg = dataString ?? ""
-                } else if fh === stdErrFH {
-                    stdErrArg = dataString ?? ""
-                } else {
-                    os_log(.error, "hs.task:setStreamingCallback() Received data from an unknown file handle")
-                    return
-                }
-
-                let notLastGasp = (task.selfRef != nil)
-                streamCb.push(onto: _L)
-                if notLastGasp {
-                    _L.push(userdata: task)
-                } else {
-                    lua_pushnil(_L)
-                }
-                _L.push(stdOutArg)
-                _L.push(stdErrArg)
-
-                if lua_pcall(_L, 3, 1, 0) != LUA_OK {
-                    lua_pop(_L, 1)
-                } else {
-                    if lua_type(_L, -1) != LUA_TBOOLEAN {
-                        os_log(.error, "hs.task:setStreamingCallback() callback did not return a boolean")
-                    } else {
-                        let continueStreaming = lua_toboolean(_L, -1) != 0
-
-                        if continueStreaming && notLastGasp {
-                            fh.readInBackgroundAndNotify()
-                        }
-                    }
-                    lua_pop(_L, 1) // result
-                }
-            }
-        }
     }
 }
