@@ -59,7 +59,6 @@ extension CosmicHammerTests {
         @Test func testTcpUnixClientServerReadWriteBytes() { runSocketTwoPartLuaTest(timeout: 2) }
         @Test func testTcpConnectAndWriteUsesLocalServer() {
             configureLuaSocketFixture()
-            let before = localSocketHTTPServerRequestCount()
             let setupResult = runLua("testTcpConnectAndWriteUsesLocalServer()")
             guard setupResult == "Success" else {
                 Issue.record("Setup failed: testTcpConnectAndWriteUsesLocalServer() returned \(setupResult ?? "nil")")
@@ -67,21 +66,17 @@ extension CosmicHammerTests {
             }
 
             let deadline = Date(timeIntervalSinceNow: 5)
-            var sawRequest = false
+            var sawWrite = false
             var lastValueResult: String?
             while Date() < deadline {
                 RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.5))
                 testHarness?.advanceTime(by: 0.5)
-                // Count real HTTP requests OR simulated socket writes as "requests"
-                let realRequests = localSocketHTTPServerRequestCount() > before
-                let simRequests = simulatedSocketWriteCount() > 0
-                sawRequest = sawRequest || realRequests || simRequests
+                sawWrite = sawWrite || simulatedSocketWriteCount() > 0
                 lastValueResult = runLua("testTcpConnectAndWriteUsesLocalServerValues()")
-                if sawRequest && lastValueResult == "Success" { return }
+                if sawWrite && lastValueResult == "Success" { return }
             }
 
-            let requestCount = localSocketHTTPServerRequestCount() - before
-            Issue.record("Timed out after 5.0s waiting for local socket HTTP request; local HTTP requests: \(requestCount); last value result: \(lastValueResult ?? "nil")")
+            Issue.record("Timed out after 5.0s waiting for simulated socket write; writes: \(simulatedSocketWriteCount()); last value result: \(lastValueResult ?? "nil")")
         }
         @Test(.enabled(if: false, "Real TCP read/read-tag coverage is blocked by current hs.socket read callback behavior"))
         func testTcpTagging() {}

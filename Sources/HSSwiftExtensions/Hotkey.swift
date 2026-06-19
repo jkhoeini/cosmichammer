@@ -404,20 +404,22 @@ public func luaopen_hs_libhotkey(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
     lua_setfield(L, -2, "__gc")
     lua_setmetatable(L, -2)
 
-    // watch for hotkey events
-    var hotKeyPressedSpec: [EventTypeSpec] = [
-        EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed)),
-        EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyReleased)),
-    ]
+    // watch for hotkey events — skip real Carbon handler in DST simulator mode
+    if !(environmentGetGlobalOrNil()?.input.isSimulated == true) {
+        var hotKeyPressedSpec: [EventTypeSpec] = [
+            EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed)),
+            EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyReleased)),
+        ]
 
-    InstallEventHandler(
-        GetEventDispatcherTarget(),
-        hotkey_callback,
-        hotKeyPressedSpec.count,
-        &hotKeyPressedSpec,
-        nil,
-        &eventhandler
-    )
+        InstallEventHandler(
+            GetEventDispatcherTarget(),
+            hotkey_callback,
+            hotKeyPressedSpec.count,
+            &hotKeyPressedSpec,
+            nil,
+            &eventhandler
+        )
+    }
 
     return 1
 }

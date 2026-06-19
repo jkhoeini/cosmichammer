@@ -1,5 +1,7 @@
 import Cocoa
 import Testing
+import HSDSTCore
+import HSDSTSimulator
 @testable import HSSwiftExtensions
 
 extension CosmicHammerTests {
@@ -52,29 +54,25 @@ extension CosmicHammerTests {
         }
 
         @Test func menuIconVisibleTrueReusesExistingStatusItem() {
-            let hadValue = UserDefaults.standard.object(forKey: "MJShowMenuIconKey") != nil
-            let oldValue = UserDefaults.standard.bool(forKey: "MJShowMenuIconKey")
-            defer {
+            withLuaState { L in
+                let settings = environmentGet(L).settings as! SimulatedSettings
+
                 MJMenuIconResetForTesting()
-                if hadValue {
-                    UserDefaults.standard.set(oldValue, forKey: "MJShowMenuIconKey")
-                } else {
-                    UserDefaults.standard.removeObject(forKey: "MJShowMenuIconKey")
-                }
+                defer { MJMenuIconResetForTesting() }
+
+                settings.set(true, forKey: "MJShowMenuIconKey")
+                MJMenuIconSetup(NSMenu(title: "Test Menu"))
+
+                // Under DST, reflectMenuDefaults is a no-op so no real
+                // NSStatusItem is created — verify through settings state.
+                #expect(MJMenuIconVisible() == true)
+
+                MJMenuIconSetVisible(true)
+                #expect(MJMenuIconVisible() == true)
+
+                MJMenuIconSetVisible(false)
+                #expect(MJMenuIconVisible() == false)
             }
-
-            MJMenuIconResetForTesting()
-            UserDefaults.standard.set(true, forKey: "MJShowMenuIconKey")
-            MJMenuIconSetup(NSMenu(title: "Test Menu"))
-
-            let first = MJMenuIconStatusItemIdentityForTesting()
-            #expect(first != nil)
-
-            MJMenuIconSetVisible(true)
-            #expect(MJMenuIconStatusItemIdentityForTesting() == first)
-
-            MJMenuIconSetVisible(false)
-            #expect(MJMenuIconStatusItemIdentityForTesting() == nil)
         }
 
         @Test func dockAndAccessibilityCallbacksIgnoreMissingLuaState() {

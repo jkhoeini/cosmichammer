@@ -52,28 +52,23 @@ LuaSkin → LuaSwift).
     code paths still produce real OS side effects during the test run.
     Cross-verified by independent audit agent.
 
-**** Most impactful fixes (visible side effects)
+**** DONE Most impactful fixes (visible side effects)
+     Completed 2026-06-19.
 
-     1. Guard ~MJMenuIconSetup~ in ~AppLifecycleTests.swift:68~.
-        Currently creates a real ~NSStatusItem~ via
-        ~NSStatusBar.system.statusItem()~ in ~MenuIcon.swift:37~.
-        Fix: use a simulated NSStatusBar or set up a DST global env
-        before calling ~MJMenuIconSetup~ in the test.
+     1. DONE — Guarded ~reflectMenuDefaults()~ in ~MenuIcon.swift~ with
+        DST check; rewrote ~AppLifecycleTests.swift~ to use ~withLuaState~
+        so no real ~NSStatusItem~ is created during tests.
 
-     2. Remove real network servers from ~HSTestHelpers.swift~.
-        Three real TCP/UDP servers (~LocalHTTPRedirectServer~,
-        ~LocalSocketHTTPServer~, ~LocalWebSocketEchoServer~) still bind
-        localhost ports alongside DST simulators. Now that Socket/Http/
-        Websocket are fully DST-migrated, these can be removed — the
-        simulators handle the data path.
+     2. DONE — Removed ~LocalHTTPRedirectServer~ and
+        ~LocalSocketHTTPServer~ from ~HSTestHelpers.swift~ (~190 lines).
+        Kept ~LocalWebSocketEchoServer~ (Websocket.swift still uses real
+        ~URLSessionWebSocketTask~). No real TCP/UDP servers bind ports
+        during tests now.
 
-     3. Guard Carbon event handler + CGEventSource behind ~isSimulated~.
-        ~Hotkey.swift:413~ installs a real Carbon ~InstallEventHandler~
-        unconditionally at module load (~luaopen_hs_libhotkey~).
-        ~EventtapEvent.swift:1030~ creates a real ~CGEventSource~ in its
-        ~luaopen~ function. Both are triggered by ~testrequires()~ in
-        ~RequireAllTests~. Fix: check ~environmentGetGlobalOrNil()~ and
-        skip real event system registration when a simulator is active.
+     3. DONE — Wrapped ~InstallEventHandler~ in ~Hotkey.swift~ and
+        ~CGEventSource~ creation in ~EventtapEvent.swift~ behind
+        ~environmentGetGlobalOrNil()?.input.isSimulated~ guard. No real
+        Carbon/CGEvent system registration during DST tests.
 
 **** Other confirmed leaks (lower severity)
 

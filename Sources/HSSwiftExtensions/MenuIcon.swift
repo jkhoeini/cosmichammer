@@ -29,6 +29,10 @@ func MJMenuIconSetVisible(_ visible: Bool) {
 }
 
 private func reflectMenuDefaults() {
+    // Under DST, skip real NSStatusBar calls — visibility state is
+    // managed entirely through the simulated SettingsProtocol.
+    if environmentGetGlobalOrNil() != nil { return }
+
     if MJMenuIconVisible() {
         let item: NSStatusItem
         if let existingItem = statusItem {

@@ -1027,7 +1027,10 @@ public func luaopen_hs_libeventtapevent(_ L: UnsafeMutablePointer<lua_State>!) -
         _ = pushFlagMasks(L)
         lua_setfield(L, -2, "rawFlagMasks")
 
-        eventSource = CGEventSource(stateID: .privateState)
+        // Skip real CGEventSource in DST simulator mode — nil is accepted by all CGEvent initializers
+        if !(environmentGetGlobalOrNil()?.input.isSimulated == true) {
+            eventSource = CGEventSource(stateID: .privateState)
+        }
 
         luaL_newmetatable(L, FLAGS_TAG)
         lua_newtable(L)
