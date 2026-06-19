@@ -32,6 +32,7 @@ extension CosmicHammerTests {
             var lastValueResult: String?
             while Date() < deadline {
                 RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.5))
+                testHarness?.advanceTime(by: 0.5)
                 sawFrame = sawFrame || currentCount() > initialCount
                 lastValueResult = runLua(valueCheck)
                 if sawFrame && lastValueResult == "Success" { return }
