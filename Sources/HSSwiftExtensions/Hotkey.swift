@@ -45,7 +45,10 @@ private class HSHotkey {
         guard enabled else { return }
         enabled = false
 
-        if carbonHotKey == nil {
+        // Unregister from simulated input if in DST mode.
+        if let input = environmentGetGlobalOrNil()?.input, input.isSimulated {
+            input.unregisterHotkey(id: UInt32(monotonicID))
+        } else if carbonHotKey == nil {
             os_log(.info, "hs.hotkey stop() we think the hotkey is enabled, but it has no Carbon event. Refusing to unregister.")
         } else {
             let result = UnregisterEventHotKey(carbonHotKey)
@@ -305,24 +308,41 @@ public func luaopen_hs_libhotkey(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
                     return 1
                 }
 
-                if hk.carbonHotKey != nil {
-                    os_log(.info, "hs.hotkey:enable() we think the hotkey is disabled, but it has a Carbon event. Proceeding, but this is a leak.")
-                }
+                let input = environmentGet(L).input
 
-                let hotKeyID = EventHotKeyID(signature: OSType(0x484D5350), id: UInt32(hk.monotonicID)) // 'HMSP'
-                var carbonHotKey: EventHotKeyRef?
-                let result = RegisterEventHotKey(hk.keycode, hk.mods, hotKeyID, GetEventDispatcherTarget(), OptionBits(kEventHotKeyExclusive), &carbonHotKey)
-
-                if result == noErr {
-                    hk.carbonHotKey = carbonHotKey
-                    hk.enabled = true
-                    lua_pushvalue(L, 1)
-                } else {
-                    os_log(.error, "hs.hotkey:enable() keycode: %u, mods: 0x%04x, RegisterEventHotKey failed: %d", hk.keycode, hk.mods, result)
-                    if result == OSStatus(eventHotKeyExistsErr) {
-                        os_log(.error, "This hotkey is already registered. It may be a duplicate in your Cosmic Hammer config, or it may be registered by macOS. See System Preferences->Keyboard->Shortcuts")
+                if input.isSimulated {
+                    // In DST mode, register the hotkey with the simulated input
+                    // so posted keyboard events trigger the callback.
+                    let hotkeyID = hk.monotonicID
+                    let registered = input.registerHotkey(id: UInt32(hotkeyID), keyCode: hk.keycode, mods: hk.mods) { eventUID, eventKind in
+                        _ = trigger_hotkey_callback(eventUID, eventKind: eventKind, isRepeat: false)
                     }
-                    lua_pushnil(L)
+                    if registered {
+                        hk.enabled = true
+                        lua_pushvalue(L, 1)
+                    } else {
+                        lua_pushnil(L)
+                    }
+                } else {
+                    if hk.carbonHotKey != nil {
+                        os_log(.info, "hs.hotkey:enable() we think the hotkey is disabled, but it has a Carbon event. Proceeding, but this is a leak.")
+                    }
+
+                    let hotKeyID = EventHotKeyID(signature: OSType(0x484D5350), id: UInt32(hk.monotonicID)) // 'HMSP'
+                    var carbonHotKey: EventHotKeyRef?
+                    let result = RegisterEventHotKey(hk.keycode, hk.mods, hotKeyID, GetEventDispatcherTarget(), OptionBits(kEventHotKeyExclusive), &carbonHotKey)
+
+                    if result == noErr {
+                        hk.carbonHotKey = carbonHotKey
+                        hk.enabled = true
+                        lua_pushvalue(L, 1)
+                    } else {
+                        os_log(.error, "hs.hotkey:enable() keycode: %u, mods: 0x%04x, RegisterEventHotKey failed: %d", hk.keycode, hk.mods, result)
+                        if result == OSStatus(eventHotKeyExistsErr) {
+                            os_log(.error, "This hotkey is already registered. It may be a duplicate in your Cosmic Hammer config, or it may be registered by macOS. See System Preferences->Keyboard->Shortcuts")
+                        }
+                        lua_pushnil(L)
+                    }
                 }
 
                 return 1

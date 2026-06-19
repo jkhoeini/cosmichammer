@@ -15,6 +15,54 @@ public final class SimulatedInput: InputProtocol {
     /// Simulated event properties keyed by (eventType, property).
     private var eventProperties: [UInt64: Int64] = [:]
 
+    // MARK: - Hotkey simulation
+
+    public var isSimulated: Bool { true }
+
+    private struct HotkeyEntry {
+        let keyCode: UInt32
+        let mods: UInt32 // Carbon modifier flags
+        let callback: (_ hotkeyID: Int32, _ eventKind: Int32) -> Void
+    }
+    private var registeredHotkeys: [UInt32: HotkeyEntry] = [:]
+
+    /// Key combos reserved by the system (keyCode, carbonMods).
+    /// Mirrors the most common macOS Mission Control / Spaces shortcuts
+    /// that RegisterEventHotKey would reject with eventHotKeyExistsErr.
+    public var systemReservedHotkeys: Set<SystemHotkeyCombo> = {
+        // Carbon modifier constants: controlKey = 4096
+        let ctrl: UInt32 = 4096
+        // Virtual keycodes: Up = 126, Down = 125, Left = 123, Right = 124
+        return [
+            SystemHotkeyCombo(keyCode: 126, mods: ctrl),  // Ctrl+Up (Mission Control)
+            SystemHotkeyCombo(keyCode: 125, mods: ctrl),  // Ctrl+Down (App Exposé)
+            SystemHotkeyCombo(keyCode: 123, mods: ctrl),  // Ctrl+Left (Space left)
+            SystemHotkeyCombo(keyCode: 124, mods: ctrl),  // Ctrl+Right (Space right)
+        ]
+    }()
+
+    public struct SystemHotkeyCombo: Hashable {
+        public let keyCode: UInt32
+        public let mods: UInt32
+        public init(keyCode: UInt32, mods: UInt32) {
+            self.keyCode = keyCode
+            self.mods = mods
+        }
+    }
+
+    /// Convert CGEvent modifier flags to Carbon modifier flags.
+    private static func cgFlagsToCarbonMods(_ cgFlags: UInt64) -> UInt32 {
+        // CGEventFlags: maskCommand=0x100000, maskControl=0x40000,
+        //               maskAlternate=0x80000, maskShift=0x20000
+        // Carbon: cmdKey=256, controlKey=4096, optionKey=2048, shiftKey=512
+        var mods: UInt32 = 0
+        if cgFlags & 0x100000 != 0 { mods |= 256 }   // cmdKey
+        if cgFlags & 0x40000  != 0 { mods |= 4096 }  // controlKey
+        if cgFlags & 0x80000  != 0 { mods |= 2048 }  // optionKey
+        if cgFlags & 0x20000  != 0 { mods |= 512 }   // shiftKey
+        return mods
+    }
+
     public init(rng: RPRNG, faults: FaultConfig) {
         self.rng = rng
         self.faults = faults
@@ -49,6 +97,21 @@ public final class SimulatedInput: InputProtocol {
         )
     }
 
+    @discardableResult
+    public func registerHotkey(id: UInt32, keyCode: UInt32, mods: UInt32,
+                               callback: @escaping (_ hotkeyID: Int32, _ eventKind: Int32) -> Void) -> Bool {
+        // Reject combos reserved by the system (same as Carbon's eventHotKeyExistsErr).
+        if systemReservedHotkeys.contains(SystemHotkeyCombo(keyCode: keyCode, mods: mods)) {
+            return false
+        }
+        registeredHotkeys[id] = HotkeyEntry(keyCode: keyCode, mods: mods, callback: callback)
+        return true
+    }
+
+    public func unregisterHotkey(id: UInt32) {
+        registeredHotkeys.removeValue(forKey: id)
+    }
+
     public func postEvent(_ event: InputEvent, tapLocation: Int32) -> Bool {
         if faults.accessibilityPermissionDenied { return false }
 
@@ -65,6 +128,19 @@ public final class SimulatedInput: InputProtocol {
             let mask: UInt64 = 1 << UInt64(event.eventType)
             if info.eventsOfInterest & mask != 0, let callback = tapCallbacks[tapID] {
                 _ = callback(event)
+            }
+        }
+
+        // Dispatch to registered hotkeys for keyboard events.
+        // CGEventType: keyDown = 10, keyUp = 11
+        if event.eventType == 10 || event.eventType == 11 {
+            let carbonMods = SimulatedInput.cgFlagsToCarbonMods(event.flags)
+            // Carbon: kEventHotKeyPressed = 5, kEventHotKeyReleased = 6
+            let eventKind: Int32 = (event.eventType == 10) ? 5 : 6
+            for (id, entry) in registeredHotkeys {
+                if entry.keyCode == UInt32(event.keyCode) && entry.mods == carbonMods {
+                    entry.callback(Int32(id), eventKind)
+                }
             }
         }
 

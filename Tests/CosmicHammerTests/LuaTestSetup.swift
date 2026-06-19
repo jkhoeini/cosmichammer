@@ -180,6 +180,12 @@ func bootstrapLuaForTesting() {
         audioSim.currentDataSourceIDs[2] = [.input: 201]
     }
 
+    // Seed the SimulatedSystemInfo with an external mouse so hs.mouse.count() returns > 0
+    // even when includeInternal is false (the default).
+    if let sysInfoSim = simEnv.systemInfo as? SimulatedSystemInfo {
+        sysInfoSim.mouseDevices.append("Logitech::Logitech USB Mouse")
+    }
+
     // Seed the SimulatedApplication with the current process and commonly-needed bundle info.
     if let appSim = simEnv.application as? SimulatedApplication {
         let currentPID = ProcessInfo.processInfo.processIdentifier

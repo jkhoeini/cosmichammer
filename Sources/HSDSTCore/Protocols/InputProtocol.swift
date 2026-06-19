@@ -54,4 +54,24 @@ public protocol InputProtocol: AnyObject {
     func getEventProperty(_ event: InputEvent, property: UInt32) -> Int64?
     func setEventProperty(_ event: inout InputEvent, property: UInt32, value: Int64) -> Bool
     func currentMousePosition() -> (x: Double, y: Double)
+
+    /// Whether this is a simulated (DST) input provider.
+    var isSimulated: Bool { get }
+
+    /// Register a hotkey so that ``postEvent`` can dispatch keyboard events
+    /// matching `keyCode`/`mods` to the provided callback.
+    /// Returns false if the key combo is reserved by the system.
+    func registerHotkey(id: UInt32, keyCode: UInt32, mods: UInt32,
+                        callback: @escaping (_ hotkeyID: Int32, _ eventKind: Int32) -> Void) -> Bool
+    /// Remove a previously registered hotkey.
+    func unregisterHotkey(id: UInt32)
+}
+
+// Default implementations so existing conformers don't break.
+public extension InputProtocol {
+    var isSimulated: Bool { false }
+    @discardableResult
+    func registerHotkey(id: UInt32, keyCode: UInt32, mods: UInt32,
+                        callback: @escaping (_ hotkeyID: Int32, _ eventKind: Int32) -> Void) -> Bool { true }
+    func unregisterHotkey(id: UInt32) {}
 }
