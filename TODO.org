@@ -47,6 +47,85 @@ LuaSkin → LuaSwift).
     hardware, ramdisk, window tabs) are properly skipped via
     ~.requiresRealOS~ trait — not masked, just inapplicable under DST.
 
+*** TODO Eliminate remaining real OS side effects during tests
+    Audited 2026-06-19. 816 tests pass with 0 issues, but 6 confirmed
+    code paths still produce real OS side effects during the test run.
+    Cross-verified by independent audit agent.
+
+**** Most impactful fixes (visible side effects)
+
+     1. Guard ~MJMenuIconSetup~ in ~AppLifecycleTests.swift:68~.
+        Currently creates a real ~NSStatusItem~ via
+        ~NSStatusBar.system.statusItem()~ in ~MenuIcon.swift:37~.
+        Fix: use a simulated NSStatusBar or set up a DST global env
+        before calling ~MJMenuIconSetup~ in the test.
+
+     2. Remove real network servers from ~HSTestHelpers.swift~.
+        Three real TCP/UDP servers (~LocalHTTPRedirectServer~,
+        ~LocalSocketHTTPServer~, ~LocalWebSocketEchoServer~) still bind
+        localhost ports alongside DST simulators. Now that Socket/Http/
+        Websocket are fully DST-migrated, these can be removed — the
+        simulators handle the data path.
+
+     3. Guard Carbon event handler + CGEventSource behind ~isSimulated~.
+        ~Hotkey.swift:413~ installs a real Carbon ~InstallEventHandler~
+        unconditionally at module load (~luaopen_hs_libhotkey~).
+        ~EventtapEvent.swift:1030~ creates a real ~CGEventSource~ in its
+        ~luaopen~ function. Both are triggered by ~testrequires()~ in
+        ~RequireAllTests~. Fix: check ~environmentGetGlobalOrNil()~ and
+        skip real event system registration when a simulator is active.
+
+**** Other confirmed leaks (lower severity)
+
+     4. ~ObjectConversionRegressionTests.swift:423~ creates a real
+        ~NSSound~ object (not played — no audible effect, but real OS
+        object allocation). Could use a stub or skip.
+
+     5. ~Pasteboard.swift~ — ~10 functions (~readObjects~, ~writeObjects~,
+        ~pasteboardItems~, etc.) bypass DST and fall back to
+        ~NSPasteboard.general~ for NSPasteboard-specific APIs.
+        Fix: route these through ~PasteboardProtocol~ or add
+        ~NSPasteboard~-compatible methods to the protocol.
+
+     6. ~AXUIElementCreateSystemWide()~ in ~HSuicore.swift:44~ — a
+        module-level ~private let~ that may initialize eagerly. Harmless
+        (no TCC prompt, no side effects beyond creating a token), but
+        could be made lazy behind a protocol check.
+
+*** TODO Migrate remaining unmigrated extension surfaces to DST
+    Six extension files have ZERO ~environmentGet~ calls — entirely
+    unabstracted from real OS APIs. While their tests are mostly
+    ~.requiresRealOS~ or don't exist, migrating them would enable
+    full DST test coverage.
+
+    HIGH priority (large API surface, active tests nearby):
+    - ~HSuicore.swift~ — AXUIElement, NSWorkspace, NSRunningApplication.
+      ~72+ direct OS calls. Phase 4 UIElement migration scope.
+    - ~Eventtap.swift~ — CGEvent synthesis, NSEvent queries, event taps.
+      Phase 5 Eventtap migration scope.
+
+    MEDIUM priority (functional but untested under DST):
+    - ~Camera.swift~ — CMIOObject, AVCaptureDevice. CameraProtocol
+      exists but Camera.swift doesn't use it.
+    - ~Notify.swift~ / ~NotifyMethods.swift~ — NSUserNotificationCenter.
+      NotificationProtocol exists but Notify.swift doesn't use it.
+    - ~Urlevent.swift~ — NSAppleEventManager, LSSetDefaultHandlerForURLScheme,
+      NSWorkspace.shared.open(). AutomationProtocol exists but unused.
+    - ~Sound.swift~ — NSSound. No protocol exists yet.
+
+    LOW priority (hardware-dependent or rarely tested):
+    - ~NetworkReachability.swift~, ~NetworkConfiguration.swift~,
+      ~NetworkHost.swift~, ~NetworkPing.swift~ — SCNetwork*, CFHost, ICMP.
+    - ~Caffeinate.swift~ — IOPMAssertionCreate.
+    - ~HID.swift~ — IOHIDManager (caps lock, keyboard LEDs).
+    - ~Sharing.swift~ — NSSharingService.
+    - ~Midi.swift~ — CoreMIDI.
+    - ~Serial.swift~ — IOKit serial enumeration.
+    - ~Osascript.swift~ — OSAScript execution.
+    - ~Dialog.swift~ — NSAlert, NSColorPanel, NSSavePanel.
+    - ~Menubar.swift~ — NSStatusBar.system.statusItem.
+    - ~Spotlight.swift~ — NSMetadataQuery.
+
 *** TODO Remove unnecessary ~@objc~ annotations
     482 ~@objc~ usages across ~Sources/HSSwiftExtensions/~ were required
     by LuaSkin's ObjC runtime dispatch. Now that LuaSkin is removed,
