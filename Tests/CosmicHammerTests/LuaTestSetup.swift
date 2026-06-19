@@ -165,6 +165,21 @@ func bootstrapLuaForTesting() {
     environmentAttach(L, simEnv)
     environmentSetGlobal(simEnv)
 
+    // Seed the SimulatedAudio with data sources so audiodevice data-source tests pass.
+    if let audioSim = simEnv.audio as? SimulatedAudio {
+        // Output device (id 1) has an output data source (mimics "Internal Speakers")
+        audioSim.dataSources[1] = [
+            .output: [AudioDataSourceInfo(id: 101, name: "Internal Speakers", deviceID: 1)]
+        ]
+        audioSim.currentDataSourceIDs[1] = [.output: 101]
+
+        // Input device (id 2) has an input data source (mimics "Internal Microphone")
+        audioSim.dataSources[2] = [
+            .input: [AudioDataSourceInfo(id: 201, name: "Internal Microphone", deviceID: 2)]
+        ]
+        audioSim.currentDataSourceIDs[2] = [.input: 201]
+    }
+
     // Seed the SimulatedApplication with the current process and commonly-needed bundle info.
     if let appSim = simEnv.application as? SimulatedApplication {
         let currentPID = ProcessInfo.processInfo.processIdentifier

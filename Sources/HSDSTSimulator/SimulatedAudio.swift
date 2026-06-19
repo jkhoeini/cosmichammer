@@ -6,10 +6,10 @@ public final class SimulatedAudio: AudioProtocol {
     private let faults: FaultConfig
 
     public var devices: [AudioDevice] = [
-        AudioDevice(id: 1, uid: "BuiltInSpeakerDevice", name: "MacBook Pro Speakers",
+        AudioDevice(id: 1, uid: "BuiltInSpeakerDevice", name: "Built-in Output",
                         manufacturer: "Apple Inc.", isInput: false, isOutput: true,
                         sampleRate: 44100.0, volume: 0.75, isMuted: false),
-        AudioDevice(id: 2, uid: "BuiltInMicrophoneDevice", name: "MacBook Pro Microphone",
+        AudioDevice(id: 2, uid: "BuiltInMicrophoneDevice", name: "Built-in Microphone",
                         manufacturer: "Apple Inc.", isInput: true, isOutput: false,
                         sampleRate: 44100.0, volume: 0.80, isMuted: false),
     ]
