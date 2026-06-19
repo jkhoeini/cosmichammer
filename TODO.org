@@ -35,19 +35,16 @@ LuaSkin → LuaSwift).
     (~$(MARKETING_VERSION)~, ~${EXECUTABLE_NAME}~, etc.) even though the
     justfile already ~sed~-replaces them. Use a simpler template format.
 
-*** TODO Fix remaining ~51 failing tests via DST simulators
-    816 tests run, ~51 issues remain across 15 suites. All are solvable
+*** TODO Fix remaining ~33 failing tests via DST simulators
+    816 tests run, ~33 issues remain across 13 suites. All are solvable
     by migrating the extension to route through DST protocols and using
     simulators — same pattern that already fixed Audiodevice/Screen/Window/
     Settings/Process/FileSystem/Pasteboard/EventLoop/Clock/Location/
-    Network/WebView/Application.
+    Network/WebView/Application/Socket.
 
     Failing suites by category:
 
-    NETWORKING (22 issues):
-    - Socket (19): TCP/UDP tests need real NWConnection/NWListener.
-      Fix: migrate Socket.swift to use ~NetworkProtocol~ for TCP/UDP/
-      Listener; SimulatedNetwork already has state machine handles.
+    NETWORKING (3 issues):
     - Websocket (3): echo server timeouts.
       Fix: add WebSocket support to ~NetworkProtocol~ + simulator.
 
