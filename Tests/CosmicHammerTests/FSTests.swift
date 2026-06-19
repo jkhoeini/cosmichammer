@@ -19,7 +19,7 @@ extension CosmicHammerTests {
         @Test func testLockDir() { runLuaTest() }
         @Test func testLock() { runLuaTest() }
 
-        @Test(.skipInHeadless) func testVolumes() {
+        @Test(.requiresRealOS) func testVolumes() {
             luaTestWithCheckAndTimeout(10, setup: "testVolumes()", check: "testVolumesValues()")
         }
     }

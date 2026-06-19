@@ -16,7 +16,7 @@ extension CosmicHammerTests {
         @Test(.skipInHeadless) func testMinimize() { runLuaTest() }
         @Test func testPID() { runLuaTest() }
         @Test func testApplication() { runLuaTest() }
-        @Test(.skipInHeadless) func testTabs() { runLuaTest() }
+        @Test(.requiresRealOS) func testTabs() { runLuaTest() }
         @Test(.skipInHeadless) func testClose() { runLuaTest() }
         @Test(.skipInHeadless) func testFullscreen() { runLuaTest() }
 

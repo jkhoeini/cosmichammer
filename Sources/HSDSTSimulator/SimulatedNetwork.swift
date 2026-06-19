@@ -51,7 +51,13 @@ public final class SimulatedNetwork: NetworkProtocol {
             completion(nil, SimulatedError.connectionFailed("Connection failed (simulated)"))
             return
         }
-        let response = httpResponses[url] ?? defaultHTTPResponse
+        var response = httpResponses[url] ?? defaultHTTPResponse
+        // Follow redirects when enabled: if the response is a 3xx with a Location
+        // header, look up the redirect target in httpResponses.
+        if redirect, (300...399).contains(response.statusCode),
+           let location = response.headers["Location"] {
+            response = httpResponses[location] ?? defaultHTTPResponse
+        }
         completion(response, nil)
     }
 

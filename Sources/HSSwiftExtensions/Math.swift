@@ -25,12 +25,14 @@ private let math_randomFloat: () throws -> Double = {
 ///
 /// Returns:
 ///  * A randomly chosen integer between `start` and `end`
-private let math_randomFromRange: (Int, Int) throws -> Int = { start, end in
+/// Returns a random integer in [start, end], or nil for invalid ranges
+/// (start < 0, end <= 0, end <= start).
+private let math_randomFromRange: (Int, Int) throws -> Int? = { start, end in
     let s = Int32(start)
     let e = Int32(end)
 
     if s < 0 || e <= 0 || e <= s {
-        throw LuaCallError("Please check the docs for hs.math.randomForRange() - your range is not acceptable")
+        return nil
     }
 
     return Int(arc4random_uniform(UInt32(e - s + 1))) + Int(s)

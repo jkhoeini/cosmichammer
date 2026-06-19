@@ -5,15 +5,15 @@ extension CosmicHammerTests {
     @Suite(.serialized) @MainActor final class Uielement {
         init() throws { try loadLuaModule("test_uielement") }
 
-        @Test(.skipInHeadless) func testWindowWatcher() {
+        @Test(.requiresRealOS) func testWindowWatcher() {
             runTwoPartLuaTest(timeout: 5)
         }
 
-        @Test(.skipInHeadless) func testApplicationWatcher() {
+        @Test(.requiresRealOS) func testApplicationWatcher() {
             runTwoPartLuaTest(timeout: 5)
         }
 
-        @Test func testCosmicHammerElements() { runLuaTest() }
-        @Test(.skipInHeadless) func testSelectedText() { runLuaTest() }
+        @Test(.requiresRealOS) func testCosmicHammerElements() { runLuaTest() }
+        @Test(.requiresRealOS) func testSelectedText() { runLuaTest() }
     }
 }

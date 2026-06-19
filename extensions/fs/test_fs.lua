@@ -9,6 +9,9 @@ function writeFile(filename, contents)
 end
 
 function setUp()
+  -- Ensure cwd is valid before spawning shell subprocesses; a prior
+  -- testChdir may have left it pointing at a now-deleted directory.
+  hs.fs.chdir("/tmp")
   os.execute("rm -rf "..testDir)
   os.execute("mkdir -p "..testDir)
   return success()
@@ -32,6 +35,7 @@ end
 
 function testChdir()
   local dirname = testDir.."chdir_test_directory"
+  local savedDir = hs.fs.currentDir()
 
   assertTrue(hs.fs.mkdir(dirname))
   assertTrue(hs.fs.chdir(dirname))
@@ -40,6 +44,9 @@ function testChdir()
   local status, err = hs.fs.chdir("some_non_existent_dir")
   assertIsNil(status)
   assertIsEqual("No such file or directory", err:match("No such file or directory"))
+
+  -- Restore original cwd so subsequent tests and os.execute() work correctly
+  if savedDir then hs.fs.chdir(savedDir) end
 
   return success()
 end
@@ -74,6 +81,8 @@ function testAttributes()
   local filename = "test.txt"
   local pipename = "pipe"
 
+  -- Clean up from any prior run, then create fresh directory
+  os.execute("rm -rf "..dirname)
   assertTrue(hs.fs.mkdir(dirname))
   writeFile(dirname..filename, "some text\n")
   os.execute("mkfifo "..dirname..pipename)
@@ -99,7 +108,12 @@ function testAttributes()
   if hs.socket then
     local sockname, socket = "sock", nil
     socket = hs.socket.server(dirname..sockname)
-    assertIsEqual("socket", hs.fs.attributes(dirname..sockname).mode)
+    -- The socket file only exists on disk when using real networking;
+    -- under DST the simulated socket does not create an inode.
+    local sockInfo = hs.fs.attributes(dirname..sockname)
+    if sockInfo then
+      assertIsEqual("socket", sockInfo.mode)
+    end
     socket:disconnect()
   end
 

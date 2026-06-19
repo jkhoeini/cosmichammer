@@ -59,8 +59,14 @@ local getDockExitTemplates = function()
     if #locale == 0 then locale = "en" end -- fallback to english
 
     local contents = plist.read(path .. "/" .. locale .. ".lproj/Accessibility.strings")
-    AXExitToDesktop           = "^" .. contents.AXExitToDesktop:gsub("%%@", "(.-)") .. "$"
-    AXExitToFullscreenDesktop = "^" .. contents.AXExitToFullscreenDesktop:gsub("%%@", "(.-)") .. "$"
+    if contents and contents.AXExitToDesktop and contents.AXExitToFullscreenDesktop then
+        AXExitToDesktop           = "^" .. contents.AXExitToDesktop:gsub("%%@", "(.-)") .. "$"
+        AXExitToFullscreenDesktop = "^" .. contents.AXExitToFullscreenDesktop:gsub("%%@", "(.-)") .. "$"
+    else
+        -- Fallback patterns when plist is not available (e.g. DST / sandbox)
+        AXExitToDesktop           = "^exit to desktop (.-)$"
+        AXExitToFullscreenDesktop = "^exit to fullscreen desktop (.-)$"
+    end
 end
 
 local localeChange_identifier = host.locale.registerCallback(getDockExitTemplates)

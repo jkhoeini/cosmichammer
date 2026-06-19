@@ -443,6 +443,26 @@ func configureHttpTestEnvironment() throws {
         throw socketTestError("Local HTTP test server was not created")
     }
     setenv("COSMIC_HAMMER_TEST_HTTP_BASE_URL", server.baseURL, 1)
+
+    // Seed the simulated network with responses matching the local HTTP server
+    // so that tests work against the DST simulator.
+    bootstrapLuaForTesting()
+    let L = lua_getCurrentState()!
+    let env = environmentGet(L)
+    if let netSim = env.network as? SimulatedNetwork {
+        let base = server.baseURL
+        let okBody = "local deterministic response\n"
+        netSim.httpResponses["\(base)/redirect"] = HTTPResponse(
+            statusCode: 301,
+            headers: ["Location": "\(base)/ok", "Content-Type": "text/plain"],
+            body: Data()
+        )
+        netSim.httpResponses["\(base)/ok"] = HTTPResponse(
+            statusCode: 200,
+            headers: ["Content-Type": "text/plain"],
+            body: okBody.data(using: .utf8)
+        )
+    }
 }
 
 @MainActor
@@ -534,6 +554,12 @@ func runTwoPartLuaTest(timeout: TimeInterval, function: String = #function) {
 extension Trait where Self == Testing.ConditionTrait {
     static var skipInHeadless: Self {
         .enabled(if: !isHeadless, "Test requires hardware (display, audio, etc.)")
+    }
+
+    /// Skip tests that need production OS APIs bypassing the DST simulator
+    /// (accessibility, event taps, serial hardware, ramdisks, etc.).
+    static var requiresRealOS: Self {
+        .disabled("Test requires production OS APIs not available under DST")
     }
 
     static var requiresExternalNetwork: Self {

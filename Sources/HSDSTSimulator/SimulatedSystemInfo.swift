@@ -12,7 +12,7 @@ public final class SimulatedSystemInfo: SystemInfoProtocol {
     public var addressList: [String] = ["192.168.1.100", "::1"]
     public var osVersion: (major: Int, minor: Int, patch: Int) = (26, 0, 0)
     public var uptime: TimeInterval = 86400
-    public var mouseDevices: [String] = ["Apple Internal::Apple Internal Keyboard / Trackpad"]
+    public var mouseDevices: [String] = ["Apple Internal::Apple Internal Keyboard / Trackpad", "Logitech::USB Receiver"]
     public var mousePos: (x: Double, y: Double) = (500, 400)
     public var scrollDirectionNatural: Bool = true
     public var trackingSpeed: Double = 0.6875
