@@ -629,6 +629,160 @@ LuaSkin → LuaSwift).
     ~__attribute__((used))~ registration arrays. May no longer be
     required now that LuaSkin is removed — needs investigation.
 
+* TODO — Single-binary migration (drop .app bundle)
+:PROPERTIES:
+:STATUS: PLANNED
+:PLAN: .claude/plans/generic-imagining-wreath.md
+:END:
+
+  Eliminate the ~.app~ bundle entirely. Ship a single ~CosmicHammer~
+  binary with all Lua extensions, resources, and Info.plist embedded.
+  Drop documentation (docs.json, lua.json, hsdocs), the ~hs~ CLI, app
+  icon, AppleScript support, and man pages. URL schemes registered at
+  runtime via ~LSRegisterURL~.
+
+** TODO Phase 1: Embed Lua files as Swift constants
+   Extend ~scripts/generate-hsextensions.sh~ to read each Lua source file
+   from ~_loader_copy_map.tsv~ and emit its content as a Swift multiline
+   string literal in a new generated file
+   ~Sources/HSSwiftExtensions/HSEmbeddedLua.swift~. Dictionary keyed by
+   module name (e.g., ~"hs.alert"~ → source). Also embed ~setup.lua~.
+
+   Files:
+   - ~scripts/generate-hsextensions.sh~ — extend with Lua embedding pass
+   - ~Sources/HSSwiftExtensions/HSEmbeddedLua.swift~ — new generated file
+
+** TODO Phase 2: Embed non-Lua resources as Swift constants
+   Create ~scripts/build/embed-resources.sh~ that generates
+   ~Sources/HSSwiftExtensions/HSEmbeddedResources.swift~ containing:
+   - ~statusicon.pdf~ as base64-decoded ~Data~ constant
+   - ~timeout3~ as ~String~ constant (httpserver needs it on disk)
+
+   Files:
+   - ~scripts/build/embed-resources.sh~ — new script
+   - ~Sources/HSSwiftExtensions/HSEmbeddedResources.swift~ — new generated file
+
+** TODO Phase 3: Install custom Lua ~package.searchers~ entry
+   Add ~installEmbeddedLuaSearcher(_ L:)~ in ~LuaRuntime.swift~ that
+   inserts a C-closure searcher at position 2 in ~package.searchers~.
+   Looks up module name in ~HSEmbeddedLua.modules~; if found, calls
+   ~luaL_loadbuffer~ with the source; otherwise pushes nil to fall through
+   to filesystem searchers (user code still loads from XDG config/data dirs).
+
+   Call in ~MJLuaInit()~ after ~hsExtensionsRegisterAll(L)~, before
+   ~setup.lua~ runs.
+
+   Files:
+   - ~Sources/HSSwiftExtensions/LuaRuntime.swift~ — add searcher installation
+
+** TODO Phase 4: Refactor ~MJLuaInit()~ and boot context
+   Replace ~Bundle.main.path(forResource:)~ calls (lines 848–851) with
+   embedded resource access:
+   - Load ~setup.lua~ from ~HSEmbeddedLua.setupLua~ via ~luaL_loadbuffer~
+   - Make ~extensionsPath~ empty — custom searcher handles built-in modules
+   - Remove ~docsJSONPath~ from ~LuaBoot.Context~ entirely
+
+   Update ~setup.lua~ to skip adding ~modpath~ to ~package.path~ when
+   empty. Update ~_boot.lua~ to remove ~docsJSONPath~ from required
+   fields. Set ~hs.docstrings_json_file = nil~ in ~_coresetup.lua~.
+
+   Files:
+   - ~Sources/HSSwiftExtensions/LuaRuntime.swift~ — ~MJLuaInit~, ~buildBootContext~,
+     ~LuaBoot.Context~, ~LuaBoot.pushContext~, ~LuaBoot.runSetup~
+   - ~CosmicHammer/setup.lua~ — conditionally skip modpath
+   - ~extensions/_coresetup/_boot.lua~ — remove docsJSONPath requirement
+   - ~extensions/_coresetup/_coresetup.lua~ — nil out docstrings_json_file
+
+** TODO Phase 5: Replace remaining ~Bundle.main~ resource access
+
+*** TODO 5a: Status icon (~MenuIcon.swift:45~)
+    Replace ~NSImage(named: "statusicon")~ with
+    ~NSImage(data: HSEmbeddedResources.statusiconPDF)~.
+
+*** TODO 5b: App icon (~AppDelegate.swift:346–349~)
+    Remove ~setFallbackAppIcon()~ — no app icon needed.
+
+*** TODO 5c: processInfo paths (~LuaRuntime.swift:358–364~)
+    Replace ~bundle.resourcePath!~, ~bundle.privateFrameworksPath!~ etc.
+    with executable-relative paths. Set ~resourcePath~ to XDG cache dir
+    (for timeout3 extraction). Keep ~version~/~build~/~bundleID~ reading
+    from ~Bundle.main.infoDictionary~ (works with embedded plist).
+
+*** TODO 5d: ~hs.relaunch()~ (~_coresetup.lua:111~)
+    Replace ~open -a "..bundlePath.."~ with direct exec:
+    ~"..hs.processInfo.executablePath.."~.
+
+*** TODO 5e: timeout3 extraction
+    At startup, extract ~timeout3~ from ~HSEmbeddedResources~ to
+    ~XDGPaths.cacheHome + "/timeout3"~, chmod +x. Point ~resourcePath~
+    in processInfo to ~XDGPaths.cacheHome~ so
+    ~httpserver_hsminweb.lua:42~ resolves it.
+
+** TODO Phase 6: Embed Info.plist via ~-sectcreate~
+   Generate resolved ~build/Info.plist~ from template with version strings
+   injected, then pass ~-Xlinker -sectcreate -Xlinker __TEXT -Xlinker
+   __info_plist -Xlinker build/Info.plist~ to ~swift build~.
+
+   Strip from the plist: ~CFBundleIconFile~, ~OSAScriptingDefinition~,
+   ~NSAppleScriptEnabled~.
+
+   Keep: ~CFBundleURLTypes~, ~LSUIElement~, privacy usage descriptions,
+   ~CFBundleIdentifier~, version strings.
+
+   Files:
+   - ~Package.swift~ or ~scripts/build/spm-binary.sh~ — add ~-sectcreate~ flags
+   - ~scripts/build/resolve-info-plist.sh~ — new script to generate resolved plist
+
+** TODO Phase 7: URL scheme registration
+   In ~applicationDidFinishLaunching~, add:
+   ~LSRegisterURL(Bundle.main.bundleURL as CFURL, true)~
+
+   Files:
+   - ~Sources/HSSwiftExtensions/AppDelegate.swift~
+
+** TODO Phase 8: Simplify build system
+   New build flow: ~build-version~ → ~generate~ (hsextensions + embedded
+   lua + embedded resources) → ~resolve-info-plist~ → ~spm-binary~ →
+   ~codesign~.
+
+*** TODO 8a: Simplify justfile
+    Remove recipes: ~app-bundle~, ~copy-resources~, ~bundle-smoke~,
+    ~hs-cli~, ~docs-json~. Build output = ~build/CosmicHammer~.
+    Replace DMG release with tarball or direct binary upload.
+
+*** TODO 8b: Delete obsolete build scripts
+    - ~scripts/build/app-bundle.sh~
+    - ~scripts/build/copy-resources.sh~
+    - ~scripts/copy-extension-lua-files.sh~
+    - ~scripts/build/smoke-resources.sh~
+
+*** TODO 8c: Update test infrastructure
+    Update ~test-resources~ and ~test~ recipes to match new resource
+    resolution (embedded resources, binary-relative paths).
+
+** TODO Phase 9: Cleanup
+   - Remove ~CosmicHammer/CosmicHammer.icns~
+   - Remove ~CosmicHammer/CosmicHammer.sdef~
+   - Remove ~CosmicHammer/Credits.rtf~
+   - Remove ~Sources/hs/~ and ~Sources/CEditline/~ from Package.swift
+   - Remove ~extensions/doc/hsdocs/~ directory
+   - Remove ~extensions/doc/lua.json~
+   - Remove ~CosmicHammer/man/hs.man~ (if present)
+   - Remove ~ipc.lua~ CLI installation helpers
+   - Update ~extensions.manifest~ to remove ~doc_hsdocs~ entry
+   - Re-run ~scripts/generate-hsextensions.sh~
+   - Update tests referencing bundle paths
+
+   Verification:
+   - ~just build~ produces a single binary at ~build/CosmicHammer~
+   - Binary runs: menu bar icon appears, console opens
+   - ~print(hs.processInfo.version)~ returns version string
+   - ~require("hs.alert"); hs.alert.show("hello")~ works
+   - ~hs.hotkey.bind({"cmd"}, "e", function() print("hotkey!") end)~ works
+   - ~hs.relaunch()~ relaunches without ~open -a~
+   - ~cosmichammer://~ URL received by running process
+   - ~just test~ passes
+
 * TODO — Tech debt review (2026-06-01)
 
 *** DONE Fix generated HSExtensions glue checks and jj/CI enforcement
