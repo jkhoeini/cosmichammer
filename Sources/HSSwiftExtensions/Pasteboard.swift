@@ -59,6 +59,49 @@ private final class NSPasteboardAdapter: PasteboardProtocol {
         }
         return result
     }
+
+    // MARK: Rich-object operations (adapter delegates to NSPasteboard)
+
+    private static let classMap: [String: AnyClass] = [
+        "NSString": NSString.self,
+        "NSAttributedString": NSAttributedString.self,
+        "NSImage": NSImage.self,
+        "NSSound": NSSound.self,
+        "NSURL": NSURL.self,
+        "NSColor": NSColor.self,
+    ]
+
+    private func resolveClasses(_ classNames: [String]) -> [AnyClass] {
+        classNames.compactMap { Self.classMap[$0] }
+    }
+
+    func readObjects(forClassNames classNames: [String]) -> [Any] {
+        let classes = resolveClasses(classNames)
+        guard !classes.isEmpty else { return [] }
+        return pb.readObjects(forClasses: classes, options: [:]) ?? []
+    }
+
+    func canReadObject(forClassNames classNames: [String]) -> Bool {
+        let classes = resolveClasses(classNames)
+        guard !classes.isEmpty else { return false }
+        return pb.canReadObject(forClasses: classes, options: [:])
+    }
+
+    func propertyList(forType type: String) -> Any? {
+        pb.propertyList(forType: NSPasteboard.PasteboardType(rawValue: type))
+    }
+
+    @discardableResult
+    func setPropertyList(_ plist: Any, forType type: String) -> Bool {
+        pb.setPropertyList(plist, forType: NSPasteboard.PasteboardType(rawValue: type))
+    }
+
+    @discardableResult
+    func writeRichObjects(_ objects: [Any]) -> Bool {
+        guard let writers = objects as? [NSPasteboardWriting] else { return false }
+        _ = pb.clearContents()
+        return pb.writeObjects(writers)
+    }
 }
 
 private let kMaxPasteboardRecursionDepth = 50
@@ -75,21 +118,6 @@ private func lua_to_pasteboard(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int
         return NSPasteboardAdapter(NSPasteboard(name: name))
     } else {
         return environmentGet(L).pasteboard
-    }
-}
-
-/// Returns a concrete NSPasteboard for functions that need NSPasteboard-specific APIs
-/// (readObjects, pasteboardItems as NSPasteboardItem, canReadObject, setPropertyList,
-/// writeObjects([NSPasteboardWriting])). Falls back to NSPasteboard.general when no
-/// name argument is given.
-private func lua_to_nspasteboard(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> NSPasteboard {
-    precondition(L != nil, "lua_State must not be nil")
-    if !lua_isnoneornil(L, idx) {
-        _ = luaL_checkstring(L, idx)
-        let name = NSPasteboard.Name(lua_tostringValue(L, at: idx) ?? "")
-        return NSPasteboard(name: name)
-    } else {
-        return NSPasteboard.general
     }
 }
 
@@ -365,7 +393,7 @@ private func allPBItemTypes(_ L: LuaState) throws -> CInt {
 ///  * almost all string and styledText objects are internally convertible and will be available with this method as well as [hs.pasteboard.readStyledText](#readStyledText). If the item is actually an `hs.styledtext` object, the string will be just the text of the object.
 private func readStringObjects(_ L: LuaState) throws -> CInt {
 
-    var pb: NSPasteboard
+    var pb: any PasteboardProtocol
     var getAll = false
 
     if lua_gettop(L) >= 1 && lua_isboolean(L, -1) {
@@ -376,13 +404,13 @@ private func readStringObjects(_ L: LuaState) throws -> CInt {
         if lua_isboolean(L, 1) {
             throw LuaCallError("bad argument #1 (string or nil expected)")
         }
-        pb = lua_to_nspasteboard(L, 1)
+        pb = lua_to_pasteboard(L, 1)
     } else {
-        pb = NSPasteboard.general
+        pb = environmentGet(L).pasteboard
     }
 
-    let results = pb.readObjects(forClasses: [NSString.self], options: [:])
-    if let results = results, !results.isEmpty {
+    let results = pb.readObjects(forClassNames: ["NSString"])
+    if !results.isEmpty {
         if getAll {
             lua_pushany(L, results as NSArray)
         } else {
@@ -441,18 +469,17 @@ private func readItemForType(_ L: LuaState) throws -> CInt {
 ///  * The UTI's of the items on the pasteboard can be determined with the [hs.pasteboard.allContentTypes](#allContentTypes) and [hs.pasteboard.contentTypes](#contentTypes) functions.
 ///  * Property lists consist only of certain types of data: tables, strings, numbers, dates, binary data, and Boolean values.
 private func readPropertyListForType(_ L: LuaState) throws -> CInt {
-    var pb: NSPasteboard
+    var pb: any PasteboardProtocol
     var type: String
     if lua_gettop(L) == 1 {
         luaL_checktype(L, 1, LUA_TSTRING)
-        pb = NSPasteboard.general
+        pb = environmentGet(L).pasteboard
         type = lua_tovalue(L, at: 1) as! String
     } else {
-        pb = lua_to_nspasteboard(L, 1)
+        pb = lua_to_pasteboard(L, 1)
         type = lua_tovalue(L, at: 2) as! String
     }
-    let pasteboardType = NSPasteboard.PasteboardType(rawValue: type)
-    if let plist = pb.propertyList(forType: pasteboardType) as? NSObject {
+    if let plist = pb.propertyList(forType: type) as? NSObject {
         lua_pushany(L, plist)
     } else {
         lua_pushnil(L)
@@ -634,7 +661,7 @@ private func writeItemForType(_ L: LuaState) throws -> CInt {
 ///  * The UTI's of the items on the pasteboard can be determined with the [hs.pasteboard.allContentTypes](#allContentTypes) and [hs.pasteboard.contentTypes](#contentTypes) functions.
 ///  * Property lists consist only of certain types of data: tables, strings, numbers, dates, binary data, and Boolean values.
 private func writePropertyListForType(_ L: LuaState) throws -> CInt {
-    var pb: NSPasteboard
+    var pb: any PasteboardProtocol
     var add = false
     var type: String
     var data: Any?
@@ -648,22 +675,21 @@ private func writePropertyListForType(_ L: LuaState) throws -> CInt {
         }
     }
     if lua_gettop(L) == 2 {
-        pb = NSPasteboard.general
+        pb = environmentGet(L).pasteboard
         type = lua_tovalue(L, at: 1) as! String
         data = lua_tovalue(L, at: 2)
     } else {
-        pb = lua_to_nspasteboard(L, 1)
+        pb = lua_to_pasteboard(L, 1)
         type = lua_tovalue(L, at: 2) as! String
         data = lua_tovalue(L, at: 3)
     }
     guard let data = data else {
         throw LuaCallError("unable to evaluate data string")
     }
-    let pasteboardType = NSPasteboard.PasteboardType(rawValue: type)
     if !add {
-        _ = pb.clearContents()
+        pb.clearContents()
     }
-    L.push(pb.setPropertyList(data, forType: pasteboardType))
+    L.push(pb.setPropertyList(data, forType: type))
     return 1
 }
 
@@ -682,7 +708,7 @@ private func writePropertyListForType(_ L: LuaState) throws -> CInt {
 ///  * almost all string and styledText objects are internally convertible and will be available with this method as well as [hs.pasteboard.readString](#readString). If the item on the clipboard is actually just a string, the `hs.styledtext` object representation will have no attributes set
 private func readAttributedStringObjects(_ L: LuaState) throws -> CInt {
 
-    var pb: NSPasteboard
+    var pb: any PasteboardProtocol
     var getAll = false
 
     if lua_gettop(L) >= 1 && lua_isboolean(L, -1) {
@@ -693,13 +719,13 @@ private func readAttributedStringObjects(_ L: LuaState) throws -> CInt {
         if lua_isboolean(L, 1) {
             throw LuaCallError("bad argument #1 (string or nil expected)")
         }
-        pb = lua_to_nspasteboard(L, 1)
+        pb = lua_to_pasteboard(L, 1)
     } else {
-        pb = NSPasteboard.general
+        pb = environmentGet(L).pasteboard
     }
 
-    let results = pb.readObjects(forClasses: [NSAttributedString.self], options: [:])
-    if let results = results, !results.isEmpty {
+    let results = pb.readObjects(forClassNames: ["NSAttributedString"])
+    if !results.isEmpty {
         if getAll {
             pushPasteboardValue(L, results as NSArray)
         } else {
@@ -723,7 +749,7 @@ private func readAttributedStringObjects(_ L: LuaState) throws -> CInt {
 ///  * By default the first sound on the clipboard, or a table of all sounds on the clipboard if the `all` parameter is provided and set to true.  Returns nil if no sounds are present.
 private func readSoundObjects(_ L: LuaState) throws -> CInt {
 
-    var pb: NSPasteboard
+    var pb: any PasteboardProtocol
     var getAll = false
 
     if lua_gettop(L) >= 1 && lua_isboolean(L, -1) {
@@ -734,13 +760,13 @@ private func readSoundObjects(_ L: LuaState) throws -> CInt {
         if lua_isboolean(L, 1) {
             throw LuaCallError("bad argument #1 (string or nil expected)")
         }
-        pb = lua_to_nspasteboard(L, 1)
+        pb = lua_to_pasteboard(L, 1)
     } else {
-        pb = NSPasteboard.general
+        pb = environmentGet(L).pasteboard
     }
 
-    let results = pb.readObjects(forClasses: [NSSound.self], options: [:])
-    if let results = results, !results.isEmpty {
+    let results = pb.readObjects(forClassNames: ["NSSound"])
+    if !results.isEmpty {
         if getAll {
             lua_pushany(L, results as NSArray)
         } else {
@@ -764,7 +790,7 @@ private func readSoundObjects(_ L: LuaState) throws -> CInt {
 ///  * By default the first image on the clipboard, or a table of all images on the clipboard if the `all` parameter is provided and set to true.  Returns nil if no images are present.
 private func readImageObjects(_ L: LuaState) throws -> CInt {
 
-    var pb: NSPasteboard
+    var pb: any PasteboardProtocol
     var getAll = false
 
     if lua_gettop(L) >= 1 && lua_isboolean(L, -1) {
@@ -775,13 +801,13 @@ private func readImageObjects(_ L: LuaState) throws -> CInt {
         if lua_isboolean(L, 1) {
             throw LuaCallError("bad argument #1 (string or nil expected)")
         }
-        pb = lua_to_nspasteboard(L, 1)
+        pb = lua_to_pasteboard(L, 1)
     } else {
-        pb = NSPasteboard.general
+        pb = environmentGet(L).pasteboard
     }
 
-    let results = pb.readObjects(forClasses: [NSImage.self], options: [:])
-    if let results = results, !results.isEmpty {
+    let results = pb.readObjects(forClassNames: ["NSImage"])
+    if !results.isEmpty {
         if getAll {
             pushPasteboardValue(L, results as NSArray)
         } else {
@@ -805,7 +831,7 @@ private func readImageObjects(_ L: LuaState) throws -> CInt {
 ///  * By default the first url on the clipboard, or a table of all urls on the clipboard if the `all` parameter is provided and set to true.  Returns nil if no urls are present.
 private func readURLObjects(_ L: LuaState) throws -> CInt {
 
-    var pb: NSPasteboard
+    var pb: any PasteboardProtocol
     var getAll = false
 
     if lua_gettop(L) >= 1 && lua_isboolean(L, -1) {
@@ -816,13 +842,13 @@ private func readURLObjects(_ L: LuaState) throws -> CInt {
         if lua_isboolean(L, 1) {
             throw LuaCallError("bad argument #1 (string or nil expected)")
         }
-        pb = lua_to_nspasteboard(L, 1)
+        pb = lua_to_pasteboard(L, 1)
     } else {
-        pb = NSPasteboard.general
+        pb = environmentGet(L).pasteboard
     }
 
-    let results = pb.readObjects(forClasses: [NSURL.self], options: [:])
-    if let results = results, !results.isEmpty {
+    let results = pb.readObjects(forClassNames: ["NSURL"])
+    if !results.isEmpty {
         if getAll {
             lua_pushany(L, results as NSArray)
         } else {
@@ -846,7 +872,7 @@ private func readURLObjects(_ L: LuaState) throws -> CInt {
 ///  * By default the first color on the clipboard, or a table of all colors on the clipboard if the `all` parameter is provided and set to true.  Returns nil if no colors are present.
 private func readColorObjects(_ L: LuaState) throws -> CInt {
 
-    var pb: NSPasteboard
+    var pb: any PasteboardProtocol
     var getAll = false
 
     if lua_gettop(L) >= 1 && lua_isboolean(L, -1) {
@@ -857,13 +883,13 @@ private func readColorObjects(_ L: LuaState) throws -> CInt {
         if lua_isboolean(L, 1) {
             throw LuaCallError("bad argument #1 (string or nil expected)")
         }
-        pb = lua_to_nspasteboard(L, 1)
+        pb = lua_to_pasteboard(L, 1)
     } else {
-        pb = NSPasteboard.general
+        pb = environmentGet(L).pasteboard
     }
 
-    let results = pb.readObjects(forClasses: [NSColor.self], options: [:])
-    if let results = results, !results.isEmpty {
+    let results = pb.readObjects(forClassNames: ["NSColor"])
+    if !results.isEmpty {
         if getAll {
             pushPasteboardValue(L, results as NSArray)
         } else {
@@ -940,10 +966,11 @@ private func convertToPasteboardWritableObject(_ L: UnsafeMutablePointer<lua_Sta
 /// Notes:
 ///  * Most applications can only receive the first item on the clipboard.  Multiple items on a clipboard are most often used for intra-application communication where the sender and receiver are specifically written with multiple objects in mind.
 private func writeObjects(_ L: LuaState) throws -> CInt {
-    var pboard: NSPasteboard
-    if lua_gettop(L) == 1 {        pboard = NSPasteboard.general
+    var pboard: any PasteboardProtocol
+    if lua_gettop(L) == 1 {
+        pboard = environmentGet(L).pasteboard
     } else {
-        pboard = lua_to_nspasteboard(L, 2)
+        pboard = lua_to_pasteboard(L, 2)
     }
 
     var objects: [NSPasteboardWriting] = []
@@ -967,7 +994,7 @@ private func writeObjects(_ L: LuaState) throws -> CInt {
     }
     // got objects
     pboard.clearContents()
-    L.push(pboard.writeObjects(objects))
+    L.push(pboard.writeRichObjects(objects))
     return 1
 }
 
@@ -1010,24 +1037,24 @@ private func newUniquePasteboard(_ L: LuaState) throws -> CInt {
 ///    * if the item on the clipboard is actually just a string, the `hs.styledtext` object representation will have no attributes set
 ///    * if the item is actually an `hs.styledtext` object, the string representation will be the text without any attributes.
 private func typesOnPasteboard(_ L: LuaState) throws -> CInt {
-    let pboard = lua_to_nspasteboard(L, 1)
+    let pboard = lua_to_pasteboard(L, 1)
     lua_newtable(L)
-    if pboard.canReadObject(forClasses: [NSString.self], options: [:]) {
+    if pboard.canReadObject(forClassNames: ["NSString"]) {
         L.push(true); lua_setfield(L, -2, "string")
     }
-    if pboard.canReadObject(forClasses: [NSAttributedString.self], options: [:]) {
+    if pboard.canReadObject(forClassNames: ["NSAttributedString"]) {
         L.push(true); lua_setfield(L, -2, "styledText")
     }
-    if pboard.canReadObject(forClasses: [NSSound.self], options: [:]) {
+    if pboard.canReadObject(forClassNames: ["NSSound"]) {
         L.push(true); lua_setfield(L, -2, "sound")
     }
-    if pboard.canReadObject(forClasses: [NSImage.self], options: [:]) {
+    if pboard.canReadObject(forClassNames: ["NSImage"]) {
         L.push(true); lua_setfield(L, -2, "image")
     }
-    if pboard.canReadObject(forClasses: [NSURL.self], options: [:]) {
+    if pboard.canReadObject(forClassNames: ["NSURL"]) {
         L.push(true); lua_setfield(L, -2, "URL")
     }
-    if pboard.canReadObject(forClasses: [NSColor.self], options: [:]) {
+    if pboard.canReadObject(forClassNames: ["NSColor"]) {
         L.push(true); lua_setfield(L, -2, "color")
     }
     return 1

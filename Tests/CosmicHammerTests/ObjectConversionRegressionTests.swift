@@ -1,5 +1,4 @@
 import AppKit
-import AVFoundation
 import Foundation
 import CLua
 import Testing
@@ -12,25 +11,6 @@ extension CosmicHammerTests {
                 .replacingOccurrences(of: "\\", with: "\\\\")
                 .replacingOccurrences(of: "'", with: "\\'")
                 .replacingOccurrences(of: "\n", with: "\\n") + "'"
-        }
-
-        private func makeSilentSoundFile() throws -> URL {
-            let url = FileManager.default.temporaryDirectory
-                .appendingPathComponent("cosmic-hammer-sound-\(UUID().uuidString)")
-                .appendingPathExtension("caf")
-            let settings: [String: Any] = [
-                AVFormatIDKey: kAudioFormatLinearPCM,
-                AVSampleRateKey: 8_000.0,
-                AVNumberOfChannelsKey: 1,
-                AVLinearPCMBitDepthKey: 16,
-                AVLinearPCMIsFloatKey: false,
-                AVLinearPCMIsBigEndianKey: false,
-            ]
-            let file = try AVAudioFile(forWriting: url, settings: settings)
-            let buffer = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: 800)!
-            buffer.frameLength = 800
-            try file.write(from: buffer)
-            return url
         }
 
         private func withLibNotifyState(_ body: (UnsafeMutablePointer<lua_State>) throws -> Void) rethrows {
@@ -420,51 +400,32 @@ extension CosmicHammerTests {
             }
         }
 
-        @Test func testSoundFileConstructorAndMethodsUseUserdata() throws {
-            let soundURL = try makeSilentSoundFile()
-            defer { try? FileManager.default.removeItem(at: soundURL) }
-
-            let soundPath = luaStringLiteral(soundURL.path)
-            let soundName = luaStringLiteral("cosmic-hammer-sound-\(UUID().uuidString)")
+        @Test func testTimerConstructorAndMethodsUseUserdata() {
             let result = runLua("""
-                local sound = require('hs.sound')
-                local s = sound.getByFile(\(soundPath))
-                if s == nil then return 'nil' end
-                local sameVolume = s:volume(0.25)
-                local sameLoop = s:loopSound(true)
-                local sameTime = s:currentTime(0)
-                local sameName = s:name(\(soundName))
-                local currentName = s:name()
-                local sameDevice = s:device(nil)
-                local sameCallback = s:setCallback(function() end)
-                local sameNilCallback = s:setCallback(nil)
-                local sameClearName = s:name(nil)
+                local timer = require('hs.timer')
+                local t = timer.new(2, function() end)
+                if t == nil then return 'nil' end
+                local sameStart = t:start()
+                local sameStop = t:stop()
+                local sameTrigger = t:setNextTrigger(1)
+                local sameFire = t:fire()
+                t:stop()
                 return table.concat({
-                    type(s),
-                    type(sameVolume),
-                    tostring(sameVolume == s),
-                    tostring(sameLoop == s),
-                    tostring(sameTime == s),
-                    tostring(sameName == s),
-                    type(currentName),
-                    tostring(sameDevice == s),
-                    tostring(sameCallback == s),
-                    tostring(sameNilCallback == s),
-                    tostring(sameClearName == s),
-                    type(s:duration()),
-                    type(s:isPlaying()),
-                    tostring(s == s),
-                    tostring(s):match('^hs.sound') and 'tostring' or 'bad',
+                    type(t),
+                    type(sameStart),
+                    tostring(sameStart == t),
+                    tostring(sameStop == t),
+                    tostring(sameTrigger == t),
+                    tostring(sameFire == t),
+                    type(t:nextTrigger()),
+                    type(t:running()),
+                    tostring(t == t),
+                    tostring(t):match('^hs.timer') and 'tostring' or 'bad',
                 }, ':')
                 """)
             #expect(result == [
                 "userdata",
                 "userdata",
-                "true",
-                "true",
-                "true",
-                "true",
-                "string",
                 "true",
                 "true",
                 "true",

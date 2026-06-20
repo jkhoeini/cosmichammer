@@ -47,10 +47,10 @@ LuaSkin → LuaSwift).
     hardware, ramdisk, window tabs) are properly skipped via
     ~.requiresRealOS~ trait — not masked, just inapplicable under DST.
 
-*** TODO Eliminate remaining real OS side effects during tests
-    Audited 2026-06-19. 816 tests pass with 0 issues, but 6 confirmed
-    code paths still produce real OS side effects during the test run.
-    Cross-verified by independent audit agent.
+*** DONE Eliminate remaining real OS side effects during tests
+    Audited 2026-06-19. All 6 confirmed OS side-effect leaks fixed
+    (2026-06-20). 816 tests pass with 0 issues, no real OS objects
+    created during DST test runs. Cross-verified by independent audit.
 
 **** DONE Most impactful fixes (visible side effects)
      Completed 2026-06-19.
@@ -70,22 +70,24 @@ LuaSkin → LuaSwift).
         ~environmentGetGlobalOrNil()?.input.isSimulated~ guard. No real
         Carbon/CGEvent system registration during DST tests.
 
-**** Other confirmed leaks (lower severity)
+**** DONE Other confirmed leaks (lower severity)
+     Completed 2026-06-20.
 
-     4. ~ObjectConversionRegressionTests.swift:423~ creates a real
-        ~NSSound~ object (not played — no audible effect, but real OS
-        object allocation). Could use a stub or skip.
+     4. DONE — Replaced ~testSoundFileConstructorAndMethodsUseUserdata~
+        (which created a real ~NSSound~ via ~AVAudioFile~) with
+        ~testTimerConstructorAndMethodsUseUserdata~ that tests the same
+        userdata conversion patterns through ~hs.timer~ (DST-safe).
 
-     5. ~Pasteboard.swift~ — ~10 functions (~readObjects~, ~writeObjects~,
-        ~pasteboardItems~, etc.) bypass DST and fall back to
-        ~NSPasteboard.general~ for NSPasteboard-specific APIs.
-        Fix: route these through ~PasteboardProtocol~ or add
-        ~NSPasteboard~-compatible methods to the protocol.
+     5. DONE — Routed all ~10 ~NSPasteboard.general~ calls in
+        ~Pasteboard.swift~ through ~PasteboardProtocol~. Added 5 new
+        protocol methods (~readObjects~, ~canReadObject~,
+        ~propertyList~, ~setPropertyList~, ~writeRichObjects~) with
+        implementations in ~ProductionPasteboard~ and
+        ~SimulatedPasteboard~. Zero ~NSPasteboard.general~ remains.
 
-     6. ~AXUIElementCreateSystemWide()~ in ~HSuicore.swift:44~ — a
-        module-level ~private let~ that may initialize eagerly. Harmless
-        (no TCC prompt, no side effects beyond creating a token), but
-        could be made lazy behind a protocol check.
+     6. DONE — Made ~AXUIElementCreateSystemWide()~ in ~HSuicore.swift~
+        lazy behind ~environmentGetGlobalOrNil()~ DST check. Returns a
+        dummy ~AXUIElementCreateApplication(0)~ in DST mode.
 
 *** TODO Migrate remaining unmigrated extension surfaces to DST
     Six extension files have ZERO ~environmentGet~ calls — entirely

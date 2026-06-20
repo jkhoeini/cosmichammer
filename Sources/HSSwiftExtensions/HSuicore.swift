@@ -6,6 +6,7 @@ import Foundation
 import AppKit
 import ApplicationServices
 import CLua
+import HSDSTCore
 import CoreGraphics
 import Lua
 import Darwin
@@ -39,9 +40,22 @@ private let hs_CGWindowListCreateImage: ((CGRect, CGWindowListOption, CGWindowID
     return unsafeBitCast(sym, to: Fn.self)
 }()
 
-// MARK: - System-wide AX element singleton
+// MARK: - System-wide AX element (lazy, DST-safe)
 
-private let _systemWideElement: AXUIElement = AXUIElementCreateSystemWide()
+private nonisolated(unsafe) var _cachedSystemWideElement: AXUIElement?
+
+private func systemWideElement() -> AXUIElement {
+    if let cached = _cachedSystemWideElement { return cached }
+    if environmentGetGlobalOrNil()?.input.isSimulated == true {
+        // DST mode: return a dummy element that will fail gracefully on attribute queries.
+        let dummy = AXUIElementCreateApplication(0)
+        _cachedSystemWideElement = dummy
+        return dummy
+    }
+    let element = AXUIElementCreateSystemWide()
+    _cachedSystemWideElement = element
+    return element
+}
 
 // MARK: - get_window_tabs helper
 
@@ -650,7 +664,7 @@ private let watcherCallback: AXObserverCallback = { _, element, notificationName
 
     @objc static func focusedWindow() -> HSwindow? {
         var appRef: CFTypeRef?
-        AXUIElementCopyAttributeValue(_systemWideElement, kAXFocusedApplicationAttribute as CFString, &appRef)
+        AXUIElementCopyAttributeValue(systemWideElement(), kAXFocusedApplicationAttribute as CFString, &appRef)
         guard let appRef = appRef else { return nil }
 
         let appElement = unsafeBitCast(appRef, to: AXUIElement.self)

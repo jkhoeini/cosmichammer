@@ -51,4 +51,47 @@ final class ProductionPasteboard: PasteboardProtocol {
         }
         return true
     }
+
+    // MARK: - Rich-object operations
+
+    private static let classMap: [String: AnyClass] = [
+        "NSString": NSString.self,
+        "NSAttributedString": NSAttributedString.self,
+        "NSImage": NSImage.self,
+        "NSSound": NSSound.self,
+        "NSURL": NSURL.self,
+        "NSColor": NSColor.self,
+    ]
+
+    private func resolveClasses(_ classNames: [String]) -> [AnyClass] {
+        classNames.compactMap { Self.classMap[$0] }
+    }
+
+    func readObjects(forClassNames classNames: [String]) -> [Any] {
+        let classes = resolveClasses(classNames)
+        guard !classes.isEmpty else { return [] }
+        return pb.readObjects(forClasses: classes, options: [:]) ?? []
+    }
+
+    func canReadObject(forClassNames classNames: [String]) -> Bool {
+        let classes = resolveClasses(classNames)
+        guard !classes.isEmpty else { return false }
+        return pb.canReadObject(forClasses: classes, options: [:])
+    }
+
+    func propertyList(forType type: String) -> Any? {
+        pb.propertyList(forType: NSPasteboard.PasteboardType(type))
+    }
+
+    @discardableResult
+    func setPropertyList(_ plist: Any, forType type: String) -> Bool {
+        pb.setPropertyList(plist, forType: NSPasteboard.PasteboardType(type))
+    }
+
+    @discardableResult
+    func writeRichObjects(_ objects: [Any]) -> Bool {
+        guard let writers = objects as? [NSPasteboardWriting] else { return false }
+        pb.clearContents()
+        return pb.writeObjects(writers)
+    }
 }
