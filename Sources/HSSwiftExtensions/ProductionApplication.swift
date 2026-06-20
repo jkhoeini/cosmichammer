@@ -16,7 +16,9 @@ public final class ProductionApplication: ApplicationProtocol {
     }
 
     public func runningApplications() -> [ApplicationInfo] {
-        NSWorkspace.shared.runningApplications.map { appInfo(from: $0) }
+        let traceState = CHTrace.signposter.beginInterval("RunningApplications")
+        defer { CHTrace.signposter.endInterval("RunningApplications", traceState) }
+        return NSWorkspace.shared.runningApplications.map { appInfo(from: $0) }
     }
 
     public func applicationForPID(_ pid: Int32) -> ApplicationInfo? {
@@ -271,25 +273,6 @@ public final class ProductionApplication: ApplicationProtocol {
     // MARK: - Private helpers
 
     private func appInfo(from app: NSRunningApplication) -> ApplicationInfo {
-        let elementRef = AXUIElementCreateApplication(app.processIdentifier)
-        var frontmostRef: CFTypeRef?
-        var isFront = false
-        if AXUIElementCopyAttributeValue(elementRef,
-                                         NSAccessibility.Attribute.frontmost.rawValue as CFString,
-                                         &frontmostRef) == .success,
-           let num = frontmostRef as? NSNumber {
-            isFront = num.boolValue
-        }
-
-        var hiddenRef: CFTypeRef?
-        var isHid = false
-        if AXUIElementCopyAttributeValue(elementRef,
-                                         NSAccessibility.Attribute.hidden.rawValue as CFString,
-                                         &hiddenRef) == .success,
-           let num = hiddenRef as? NSNumber {
-            isHid = num.boolValue
-        }
-
         let kindVal: Int32
         switch app.activationPolicy {
         case .accessory:   kindVal = 0
@@ -302,8 +285,8 @@ public final class ProductionApplication: ApplicationProtocol {
             bundleID: app.bundleIdentifier,
             name: app.localizedName,
             path: app.bundleURL.flatMap { Bundle(url: $0)?.bundlePath },
-            isHidden: isHid,
-            isFrontmost: isFront,
+            isHidden: app.isHidden,
+            isFrontmost: app.isActive,
             isRunning: true,
             kind: kindVal,
             isResponsive: true

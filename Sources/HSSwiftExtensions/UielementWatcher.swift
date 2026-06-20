@@ -93,8 +93,8 @@ public func luaopen_hs_libuielementwatcher(_ L: UnsafeMutablePointer<lua_State>!
             let element = HSuielement(withElement: watcher.elementRef)
 
             if element.isWindow {
-                let window = HSwindow(axuiElementRef: watcher.elementRef)
-                pushHSwindow(L, window)
+                let handle = ProductionWindowElement(element: watcher.elementRef)
+                pushWindowElement(L, handle)
                 return 1
             } else if element.isApplication {
                 let app = HSapplication(pid: watcher.pid, withState: L)

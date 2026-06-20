@@ -234,7 +234,8 @@ private let watcherCallback: AXObserverCallback = { _, element, notificationName
     // Determine what kind of object to push as parameter 1
     let elementObj = HSuielement(withElement: element)
     if elementObj.isWindow {
-        _ = pushHSwindow(L, HSwindow(axuiElementRef: element))
+        let handle = ProductionWindowElement(element: element)
+        pushWindowElement(L, handle)
     } else if elementObj.isApplication {
         var pid: pid_t = 0
         AXUIElementGetPid(element, &pid)

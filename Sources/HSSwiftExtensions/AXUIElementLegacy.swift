@@ -696,7 +696,8 @@ private func axuielement_toHSWindow(_ L: LuaState) throws -> CInt {
        let value = value,
        CFGetTypeID(value) == CFStringGetTypeID(),
        (value as! String) == (kAXWindowRole as String) {
-        pushHSwindowOrNil(L, HSwindow(axuiElementRef: theRef))
+        let handle = ProductionWindowElement(element: theRef)
+        pushWindowElement(L, handle)
     } else {
         lua_pushnil(L)
     }

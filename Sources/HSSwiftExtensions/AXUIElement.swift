@@ -131,24 +131,9 @@ public func new_application(_ L: UnsafeMutablePointer<lua_State>!, _ pid: pid_t)
 @_cdecl("new_window")
 @discardableResult
 public func new_window(_ L: UnsafeMutablePointer<lua_State>!, _ win: AXUIElement) -> Bool {
-    guard let hswClass: AnyClass = NSClassFromString("HSwindow") else {
-        os_log(.error, "%{public}s", "\(String(cString: USERDATA_TAG)):new_window - HSwindow class not present; may require Cosmic Hammer upgrade")
-        lua_pushnil(L)
-        return false
-    }
-    let obj = (hswClass as! NSObject.Type).init().perform(
-        NSSelectorFromString("initWithAXUIElementRef:"),
-        with: win
-    )?.takeUnretainedValue() as? NSObject
-
-    if let obj = obj, pushHSwindow(L, obj) != 0 {
-        // the HSapplication initializer retains its elementRef; the HSwindow one doesn't
-        // ARC manages CF object lifetimes in Swift — no manual retain needed
-        return true
-    } else {
-        lua_pushnil(L)
-        return false
-    }
+    let handle = ProductionWindowElement(element: win)
+    pushWindowElement(L, handle)
+    return true
 }
 
 // MARK: - pushCFTypeToLua / lua_toCFType

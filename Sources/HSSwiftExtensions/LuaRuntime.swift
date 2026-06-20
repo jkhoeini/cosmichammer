@@ -817,6 +817,9 @@ private func MJLuaAtPanic(_ L: UnsafeMutablePointer<lua_State>?) -> Int32 {
 /// Create a Lua environment
 @_cdecl("MJLuaAlloc")
 func MJLuaAlloc() {
+    let traceState = CHTrace.signposter.beginInterval("LuaAlloc")
+    defer { CHTrace.signposter.endInterval("LuaAlloc", traceState) }
+
     if MJLuaLogDelegate == nil {
         MJLuaLogDelegate = HSLoggerCreateWithLua(nil)
     }
@@ -837,13 +840,18 @@ func MJLuaAlloc() {
 /// Configure a Lua environment that has already been created
 @_cdecl("MJLuaInit")
 func MJLuaInit() {
+    let traceState = CHTrace.signposter.beginInterval("LuaInit")
+    defer { CHTrace.signposter.endInterval("LuaInit", traceState) }
+
     let L = lua_getCurrentState()!
 
     registerHSGlobalTable(L)
     installLuaSkinCompatibilityGlobals(L)
 
     // Register every bundled hs.lib<name> entry point into package.preload before setup.lua runs.
+    let extRegState = CHTrace.signposter.beginInterval("RegisterExtensions")
     hsExtensionsRegisterAll(L)
+    CHTrace.signposter.endInterval("RegisterExtensions", extRegState)
 
     guard let setupPath = Bundle.main.path(forResource: "setup", ofType: "lua"),
           let extensionsPath = Bundle.main.path(forResource: "extensions", ofType: nil),
@@ -853,7 +861,9 @@ func MJLuaInit() {
     }
 
     let context = buildBootContext(L, extensionsPath: extensionsPath, docsPath: docsPath)
+    let setupState = CHTrace.signposter.beginInterval("RunSetupLua")
     runSetupOrTerminate(L, setupPath: setupPath, context: context)
+    CHTrace.signposter.endInterval("RunSetupLua", setupState)
 }
 
 /// Register the core library as the "hs" global table with all built-in functions.

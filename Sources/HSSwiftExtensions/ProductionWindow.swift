@@ -126,6 +126,8 @@ final class ProductionWindow: WindowProtocol {
     }
 
     func windowInfo(forID id: UInt32) -> AXWindowInfo? {
+        let traceState = CHTrace.signposter.beginInterval("WindowInfo")
+        defer { CHTrace.signposter.endInterval("WindowInfo", traceState) }
         guard let winElement = findWindowElement(id: id) else { return nil }
         return axWindowInfoFromElement(winElement)
     }
@@ -425,9 +427,69 @@ final class ProductionWindow: WindowProtocol {
         return arr.compactMap { ($0 as? NSNumber)?.intValue }
     }
 
+    // MARK: - Element-handle based access
+
+    func windowElement(forID id: UInt32) -> (any WindowElementHandle)? {
+        guard let element = findWindowElement(id: id) else { return nil }
+        return ProductionWindowElement(element: element)
+    }
+
+    func allWindowElements() -> [any WindowElementHandle] {
+        var result: [any WindowElementHandle] = []
+        for app in NSWorkspace.shared.runningApplications where app.activationPolicy == .regular {
+            let appElement = AXUIElementCreateApplication(app.processIdentifier)
+            var windowsRef: CFTypeRef?
+            guard AXUIElementCopyAttributeValue(
+                appElement, kAXWindowsAttribute as CFString, &windowsRef) == .success,
+                let windowsRef = windowsRef else { continue }
+            let windowsArray = unsafeBitCast(windowsRef, to: CFArray.self)
+            let count = CFArrayGetCount(windowsArray)
+            for i in 0..<count {
+                guard let raw = CFArrayGetValueAtIndex(windowsArray, i) else { continue }
+                let winElement = unsafeBitCast(raw, to: AXUIElement.self)
+                result.append(ProductionWindowElement(element: winElement))
+            }
+        }
+        return result
+    }
+
+    func windowElements(forAppPID pid: Int32) -> [any WindowElementHandle] {
+        let appElement = AXUIElementCreateApplication(pid)
+        var windowsRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(appElement, kAXWindowsAttribute as CFString, &windowsRef) == .success,
+              let windowsRef = windowsRef else { return [] }
+        let windowsArray = unsafeBitCast(windowsRef, to: CFArray.self)
+        let count = CFArrayGetCount(windowsArray)
+        var result: [any WindowElementHandle] = []
+        for i in 0..<count {
+            guard let raw = CFArrayGetValueAtIndex(windowsArray, i) else { continue }
+            let winElement = unsafeBitCast(raw, to: AXUIElement.self)
+            result.append(ProductionWindowElement(element: winElement))
+        }
+        return result
+    }
+
+    func focusedWindowElement() -> (any WindowElementHandle)? {
+        var appRef: CFTypeRef?
+        AXUIElementCopyAttributeValue(
+            _prodSystemWideElement, kAXFocusedApplicationAttribute as CFString, &appRef)
+        guard let appRef = appRef else { return nil }
+        let appElement = unsafeBitCast(appRef, to: AXUIElement.self)
+        var winRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(
+            appElement,
+            NSAccessibility.Attribute.focusedWindow.rawValue as CFString,
+            &winRef) == .success,
+            let winRef = winRef
+        else { return nil }
+        return ProductionWindowElement(element: unsafeBitCast(winRef, to: AXUIElement.self))
+    }
+
     // MARK: - Private
 
     private func findWindowElement(id: UInt32) -> AXUIElement? {
+        let traceState = CHTrace.signposter.beginInterval("FindWindowElement")
+        defer { CHTrace.signposter.endInterval("FindWindowElement", traceState) }
         for app in NSWorkspace.shared.runningApplications
             where app.activationPolicy == .regular
         {

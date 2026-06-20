@@ -1,5 +1,45 @@
 import Foundation
 
+// MARK: - WindowElementHandle protocol
+
+/// A handle to a window element that provides O(1) access to window properties.
+/// In production, this wraps an AXUIElement; in simulation, it delegates to the simulated window store.
+/// Storing this in Lua userdata avoids repeated O(N*M) AX tree scans.
+public protocol WindowElementHandle: AnyObject {
+    var windowID: UInt32 { get }
+    var pid: Int32 { get }
+
+    func title() -> String?
+    func role() -> String
+    func subrole() -> String?
+    func frame() -> (x: Double, y: Double, width: Double, height: Double)
+    func isMinimized() -> Bool
+    func isFullScreen() -> Bool
+    func isStandard() -> Bool
+    func isVisible() -> Bool
+    func isMaximizable() -> Bool?
+    func tabCount() -> Int32
+    func cornerRadius() -> Double
+
+    func setTopLeft(_ point: (x: Double, y: Double)) -> Bool
+    func setSize(_ size: (width: Double, height: Double)) -> Bool
+    func setFrame(_ frame: (x: Double, y: Double, width: Double, height: Double)) -> Bool
+    func minimize() -> Bool
+    func unminimize() -> Bool
+    func close() -> Bool
+    func raise() -> Bool
+    func focus() -> Bool
+    func toggleZoom() -> Bool
+    func setFullScreen(_ fullScreen: Bool) -> Bool
+    func becomeMain() -> Bool
+    func focusTab(_ tabIndex: Int32) -> Bool
+    func snapshot(keepTransparency: Bool) -> Data?
+    func zoomButtonRect() -> (x: Double, y: Double, width: Double, height: Double)?
+    func spaces() -> [Int]
+}
+
+// MARK: - AXWindowInfo value type
+
 public struct AXWindowInfo: Sendable {
     public var id: UInt32
     public var title: String?
@@ -115,4 +155,20 @@ public protocol WindowProtocol: AnyObject {
     /// When `allWindows` is true, returns all on-screen windows.
     /// When false, returns only windows below the Dock (excluding desktop elements).
     func listWindowInfo(allWindows: Bool) -> [[String: Any]]
+
+    // MARK: - Element-handle based access (O(1) per operation)
+
+    /// Returns a WindowElementHandle for the given window ID, or nil if not found.
+    /// The handle caches the AXUIElement (production) or window reference (simulator),
+    /// allowing O(1) property access instead of O(N*M) AX tree scans.
+    func windowElement(forID id: UInt32) -> (any WindowElementHandle)?
+
+    /// Returns all windows as WindowElementHandle instances.
+    func allWindowElements() -> [any WindowElementHandle]
+
+    /// Returns the currently focused window as a WindowElementHandle, or nil.
+    func focusedWindowElement() -> (any WindowElementHandle)?
+
+    /// Returns all window element handles for the given application PID.
+    func windowElements(forAppPID pid: Int32) -> [any WindowElementHandle]
 }

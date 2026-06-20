@@ -95,36 +95,6 @@ private func pushLightweightAppUserdata(_ L: UnsafeMutablePointer<lua_State>!, p
     lua_setiuservalue(L, -2, 1)
 }
 
-/// Push an array of AXWindowInfo as hs.window userdata.
-/// In production, tries the legacy HSapplication path first. Falls back to lightweight userdata.
-private func pushAXWindowInfos(_ L: UnsafeMutablePointer<lua_State>!, _ windows: [AXWindowInfo]) {
-    lua_createtable(L, Int32(windows.count), 0)
-    var index: lua_Integer = 1
-    for winInfo in windows {
-        pushLightweightWindowUserdata(L, winInfo)
-        lua_rawseti(L, -2, index)
-        index += 1
-    }
-}
-
-/// Push a single AXWindowInfo as an hs.window userdata.
-private func pushAXWindowInfoAsHSwindow(_ L: UnsafeMutablePointer<lua_State>!, _ winInfo: AXWindowInfo) {
-    pushLightweightWindowUserdata(L, winInfo)
-}
-
-/// Create a lightweight hs.window userdata from AXWindowInfo (for test/simulator use).
-/// Uses the same WindowUserData layout as Window.swift's new_window() so that
-/// getWindowID() recognises it as the new ID-based format.
-private let WINDOW_USERDATA_TAG = "hs.window"
-
-private func pushLightweightWindowUserdata(_ L: UnsafeMutablePointer<lua_State>!, _ winInfo: AXWindowInfo) {
-    let ptr = lua_newuserdata(L, MemoryLayout<WindowUserData>.size)!
-        .assumingMemoryBound(to: WindowUserData.self)
-    ptr.pointee.windowID = winInfo.id
-    ptr.pointee.lsCanary = lua_currentStateGeneration()
-    luaL_getmetatable(L, WINDOW_USERDATA_TAG)
-    lua_setmetatable(L, -2)
-}
 
 private func appClassMethod(_ sel: String, with arg1: Any? = nil) -> Any? {
     guard let appClass = HSuicore.applicationClass else { return nil }
@@ -391,9 +361,13 @@ private func application_bundleForUTI(_ L: LuaState) throws -> CInt {
 private func application_allWindows(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     guard let pid = getAppPID(L, at: 1) else { lua_pushnil(L); return 1 }
-    let appProto = environmentGet(L).application
-    let wins = appProto.allWindows(pid: pid)
-    pushAXWindowInfos(L, wins)
+    let winProto = environmentGet(L).window
+    let elements = winProto.windowElements(forAppPID: pid)
+    lua_createtable(L, Int32(elements.count), 0)
+    for (i, handle) in elements.enumerated() {
+        pushWindowElement(L, handle)
+        lua_rawseti(L, -2, lua_Integer(i + 1))
+    }
     return 1
 }
 
@@ -410,8 +384,9 @@ private func application_mainWindow(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     guard let pid = getAppPID(L, at: 1) else { lua_pushnil(L); return 1 }
     let appProto = environmentGet(L).application
-    if let win = appProto.mainWindow(pid: pid) {
-        pushAXWindowInfoAsHSwindow(L, win)
+    if let win = appProto.mainWindow(pid: pid),
+       let handle = environmentGet(L).window.windowElement(forID: win.id) {
+        pushWindowElement(L, handle)
     } else {
         lua_pushnil(L)
     }
@@ -431,8 +406,9 @@ private func application_focusedWindow(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     guard let pid = getAppPID(L, at: 1) else { lua_pushnil(L); return 1 }
     let appProto = environmentGet(L).application
-    if let win = appProto.focusedWindow(pid: pid) {
-        pushAXWindowInfoAsHSwindow(L, win)
+    if let win = appProto.focusedWindow(pid: pid),
+       let handle = environmentGet(L).window.windowElement(forID: win.id) {
+        pushWindowElement(L, handle)
     } else {
         lua_pushnil(L)
     }

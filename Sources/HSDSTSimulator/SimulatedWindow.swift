@@ -328,6 +328,29 @@ public final class SimulatedWindow: WindowProtocol {
         return cgWindowListInfo
     }
 
+    // MARK: - Element-handle based access
+
+    public func windowElement(forID id: UInt32) -> (any WindowElementHandle)? {
+        // Check regular windows and the special desktop window (UInt32.max)
+        guard windowInfo(forID: id) != nil else { return nil }
+        return SimulatedWindowElement(sim: self, windowID: id)
+    }
+
+    public func allWindowElements() -> [any WindowElementHandle] {
+        windows.map { SimulatedWindowElement(sim: self, windowID: $0.id) }
+    }
+
+    public func windowElements(forAppPID pid: Int32) -> [any WindowElementHandle] {
+        windows.filter { $0.pid == pid }.map { SimulatedWindowElement(sim: self, windowID: $0.id) }
+    }
+
+    public func focusedWindowElement() -> (any WindowElementHandle)? {
+        if faults.accessibilityPermissionDenied { return nil }
+        guard let topID = focusStack.first else { return nil }
+        guard windows.contains(where: { $0.id == topID }) else { return nil }
+        return SimulatedWindowElement(sim: self, windowID: topID)
+    }
+
     // MARK: - Private helpers
 
     private func makePNGStub() -> Data {
@@ -343,5 +366,128 @@ public final class SimulatedWindow: WindowProtocol {
             0x44, 0xAE, 0x42, 0x60, 0x82,
         ]
         return Data(pngStub)
+    }
+}
+
+// MARK: - SimulatedWindowElement
+
+/// A simulated `WindowElementHandle` that delegates to the `SimulatedWindow` store.
+/// Each method looks up the window by ID in the in-memory array, which is O(N) but
+/// fast enough for tests (small N, no AX overhead).
+public final class SimulatedWindowElement: WindowElementHandle {
+    private let sim: SimulatedWindow
+    public let windowID: UInt32
+
+    public var pid: Int32 {
+        sim.windowInfo(forID: windowID)?.pid ?? 0
+    }
+
+    init(sim: SimulatedWindow, windowID: UInt32) {
+        self.sim = sim
+        self.windowID = windowID
+    }
+
+    public func title() -> String? {
+        sim.windowInfo(forID: windowID)?.title
+    }
+
+    public func role() -> String {
+        sim.windowInfo(forID: windowID)?.role ?? "AXWindow"
+    }
+
+    public func subrole() -> String? {
+        sim.windowInfo(forID: windowID)?.subrole
+    }
+
+    public func frame() -> (x: Double, y: Double, width: Double, height: Double) {
+        sim.windowInfo(forID: windowID)?.frame ?? (0, 0, 0, 0)
+    }
+
+    public func isMinimized() -> Bool {
+        sim.windowInfo(forID: windowID)?.isMinimized ?? false
+    }
+
+    public func isFullScreen() -> Bool {
+        sim.windowInfo(forID: windowID)?.isFullScreen ?? false
+    }
+
+    public func isStandard() -> Bool {
+        sim.windowInfo(forID: windowID)?.isStandard ?? false
+    }
+
+    public func isVisible() -> Bool {
+        sim.windowInfo(forID: windowID)?.isVisible ?? false
+    }
+
+    public func isMaximizable() -> Bool? {
+        sim.isMaximizable(forWindowID: windowID)
+    }
+
+    public func tabCount() -> Int32 {
+        sim.windowInfo(forID: windowID)?.tabCount ?? 0
+    }
+
+    public func cornerRadius() -> Double {
+        sim.cornerRadius(forWindowID: windowID)
+    }
+
+    public func setTopLeft(_ point: (x: Double, y: Double)) -> Bool {
+        sim.setTopLeft(point, forWindowID: windowID)
+    }
+
+    public func setSize(_ size: (width: Double, height: Double)) -> Bool {
+        sim.setSize(size, forWindowID: windowID)
+    }
+
+    public func setFrame(_ frame: (x: Double, y: Double, width: Double, height: Double)) -> Bool {
+        sim.setFrame(frame, forWindowID: windowID)
+    }
+
+    public func minimize() -> Bool {
+        sim.minimize(windowID: windowID)
+    }
+
+    public func unminimize() -> Bool {
+        sim.unminimize(windowID: windowID)
+    }
+
+    public func close() -> Bool {
+        sim.close(windowID: windowID)
+    }
+
+    public func raise() -> Bool {
+        sim.raise(windowID: windowID)
+    }
+
+    public func focus() -> Bool {
+        sim.focus(windowID: windowID)
+    }
+
+    public func toggleZoom() -> Bool {
+        sim.toggleZoom(windowID: windowID)
+    }
+
+    public func setFullScreen(_ fullScreen: Bool) -> Bool {
+        sim.setFullScreen(fullScreen, forWindowID: windowID)
+    }
+
+    public func becomeMain() -> Bool {
+        sim.becomeMain(windowID: windowID)
+    }
+
+    public func focusTab(_ tabIndex: Int32) -> Bool {
+        sim.focusTab(tabIndex, forWindowID: windowID)
+    }
+
+    public func snapshot(keepTransparency: Bool) -> Data? {
+        sim.snapshot(windowID: windowID, keepTransparency: keepTransparency)
+    }
+
+    public func zoomButtonRect() -> (x: Double, y: Double, width: Double, height: Double)? {
+        sim.zoomButtonRect(forWindowID: windowID)
+    }
+
+    public func spaces() -> [Int] {
+        sim.spaces(forWindowID: windowID)
     }
 }
