@@ -25,7 +25,6 @@ private class HSHotkey {
     var releasedfn: LuaValue?
     var repeatfn: LuaValue?
     var enabled: Bool = false
-    var carbonHotKey: EventHotKeyRef? = nil
     var stateGeneration: UInt64 = 0
     private var tornDown = false
 
@@ -45,18 +44,9 @@ private class HSHotkey {
         guard enabled else { return }
         enabled = false
 
-        // Unregister from simulated input if in DST mode.
-        if let input = environmentGetGlobalOrNil()?.input, input.isSimulated {
-            input.unregisterHotkey(id: UInt32(monotonicID))
-        } else if carbonHotKey == nil {
-            os_log(.info, "hs.hotkey stop() we think the hotkey is enabled, but it has no Carbon event. Refusing to unregister.")
-        } else {
-            let result = UnregisterEventHotKey(carbonHotKey)
-            carbonHotKey = nil
-            if result != noErr {
-                os_log(.error, "hs.hotkey:stop() keycode: %u, mods: 0x%04x, UnregisterEventHotKey failed: %d", keycode, mods, result)
-            }
-        }
+        // Unregister via the protocol — ProductionInput calls Carbon's
+        // UnregisterEventHotKey; SimulatedInput removes from its table.
+        environmentGetGlobalOrNil()?.input.unregisterHotkey(id: UInt32(monotonicID))
 
         keyRepeatManager?.stopTimer()
     }
@@ -127,7 +117,6 @@ private func hotkey_new(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     hk.stateGeneration = lua_currentStateGeneration()
     hotkeys?.setObject(NSValue(nonretainedObject: hk), forKey: NSNumber(value: uid))
 
-    hk.carbonHotKey = nil
     hk.keycode = keycode
 
     // store pressedfn
@@ -308,41 +297,17 @@ public func luaopen_hs_libhotkey(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
                     return 1
                 }
 
+                // Register via the protocol — ProductionInput calls Carbon's
+                // RegisterEventHotKey; SimulatedInput records in its table.
                 let input = environmentGet(L).input
-
-                if input.isSimulated {
-                    // In DST mode, register the hotkey with the simulated input
-                    // so posted keyboard events trigger the callback.
-                    let hotkeyID = hk.monotonicID
-                    let registered = input.registerHotkey(id: UInt32(hotkeyID), keyCode: hk.keycode, mods: hk.mods) { eventUID, eventKind in
-                        _ = trigger_hotkey_callback(eventUID, eventKind: eventKind, isRepeat: false)
-                    }
-                    if registered {
-                        hk.enabled = true
-                        lua_pushvalue(L, 1)
-                    } else {
-                        lua_pushnil(L)
-                    }
+                let registered = input.registerHotkey(id: UInt32(hk.monotonicID), keyCode: hk.keycode, mods: hk.mods) { eventUID, eventKind in
+                    _ = trigger_hotkey_callback(eventUID, eventKind: eventKind, isRepeat: false)
+                }
+                if registered {
+                    hk.enabled = true
+                    lua_pushvalue(L, 1)
                 } else {
-                    if hk.carbonHotKey != nil {
-                        os_log(.info, "hs.hotkey:enable() we think the hotkey is disabled, but it has a Carbon event. Proceeding, but this is a leak.")
-                    }
-
-                    let hotKeyID = EventHotKeyID(signature: OSType(0x484D5350), id: UInt32(hk.monotonicID)) // 'HMSP'
-                    var carbonHotKey: EventHotKeyRef?
-                    let result = RegisterEventHotKey(hk.keycode, hk.mods, hotKeyID, GetEventDispatcherTarget(), OptionBits(kEventHotKeyExclusive), &carbonHotKey)
-
-                    if result == noErr {
-                        hk.carbonHotKey = carbonHotKey
-                        hk.enabled = true
-                        lua_pushvalue(L, 1)
-                    } else {
-                        os_log(.error, "hs.hotkey:enable() keycode: %u, mods: 0x%04x, RegisterEventHotKey failed: %d", hk.keycode, hk.mods, result)
-                        if result == OSStatus(eventHotKeyExistsErr) {
-                            os_log(.error, "This hotkey is already registered. It may be a duplicate in your Cosmic Hammer config, or it may be registered by macOS. See System Preferences->Keyboard->Shortcuts")
-                        }
-                        lua_pushnil(L)
-                    }
+                    lua_pushnil(L)
                 }
 
                 return 1
@@ -404,22 +369,13 @@ public func luaopen_hs_libhotkey(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
     lua_setfield(L, -2, "__gc")
     lua_setmetatable(L, -2)
 
-    // watch for hotkey events — skip real Carbon handler in DST simulator mode
-    if !(environmentGetGlobalOrNil()?.input.isSimulated == true) {
-        var hotKeyPressedSpec: [EventTypeSpec] = [
-            EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed)),
-            EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyReleased)),
-        ]
-
-        InstallEventHandler(
-            GetEventDispatcherTarget(),
-            hotkey_callback,
-            hotKeyPressedSpec.count,
-            &hotKeyPressedSpec,
-            nil,
-            &eventhandler
-        )
-    }
+    // Install the global hotkey dispatcher via the protocol —
+    // ProductionInput installs the Carbon event handler;
+    // SimulatedInput does nothing (hotkeys route through postEvent).
+    environmentGetGlobalOrNil()?.input.installHotkeyDispatcher(
+        callback: hotkey_callback as Any,
+        handler: &eventhandler
+    )
 
     return 1
 }

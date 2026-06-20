@@ -54,24 +54,60 @@ public protocol InputProtocol: AnyObject {
     func getEventProperty(_ event: InputEvent, property: UInt32) -> Int64?
     func setEventProperty(_ event: inout InputEvent, property: UInt32, value: Int64) -> Bool
     func currentMousePosition() -> (x: Double, y: Double)
-
-    /// Whether this is a simulated (DST) input provider.
-    var isSimulated: Bool { get }
+    func createEventSource() -> Any?
 
     /// Register a hotkey so that ``postEvent`` can dispatch keyboard events
     /// matching `keyCode`/`mods` to the provided callback.
     /// Returns false if the key combo is reserved by the system.
+    /// Production implementations register with Carbon's RegisterEventHotKey;
+    /// simulated implementations record in an in-memory table.
     func registerHotkey(id: UInt32, keyCode: UInt32, mods: UInt32,
                         callback: @escaping (_ hotkeyID: Int32, _ eventKind: Int32) -> Void) -> Bool
     /// Remove a previously registered hotkey.
+    /// Production implementations call Carbon's UnregisterEventHotKey;
+    /// simulated implementations remove from the in-memory table.
     func unregisterHotkey(id: UInt32)
+
+    /// Post a system event. Production implementations use the opaque
+    /// `cgEvent` (cast to CGEvent) to call ``CGEvent.post(tap:)`` or
+    /// ``CGEvent.postToPid(_:)``. Simulated implementations build an
+    /// InputEvent from the explicit parameters and route through the
+    /// event tap / hotkey dispatch pipeline.
+    ///
+    /// - Parameters:
+    ///   - eventType: The CGEventType raw value.
+    ///   - keyCode: The keyboard event keycode.
+    ///   - flags: The CGEventFlags raw value.
+    ///   - mousePosition: The cursor position.
+    ///   - timestamp: The event timestamp.
+    ///   - cgEvent: The opaque CGEvent (type-erased because HSDSTCore
+    ///     cannot import CoreGraphics).
+    ///   - applicationPID: If non-nil, post to this PID instead of
+    ///     the session event tap.
+    func postSystemEvent(eventType: UInt32, keyCode: Int64, flags: UInt64,
+                         mousePosition: (x: Double, y: Double), timestamp: Double,
+                         cgEvent: Any, applicationPID: Int32?)
+
+    /// Install the global hotkey event dispatcher. Production implementations
+    /// install a Carbon event handler via ``InstallEventHandler``.
+    /// Simulated implementations do nothing (hotkeys are dispatched via
+    /// ``postEvent``).
+    ///
+    /// - Parameters:
+    ///   - callback: The Carbon EventHandlerProcPtr (type-erased).
+    ///   - handler: Receives the installed EventHandlerRef (as OpaquePointer).
+    func installHotkeyDispatcher(callback: Any, handler: inout OpaquePointer?)
 }
 
 // Default implementations so existing conformers don't break.
 public extension InputProtocol {
-    var isSimulated: Bool { false }
+    func createEventSource() -> Any? { nil }
     @discardableResult
     func registerHotkey(id: UInt32, keyCode: UInt32, mods: UInt32,
                         callback: @escaping (_ hotkeyID: Int32, _ eventKind: Int32) -> Void) -> Bool { true }
     func unregisterHotkey(id: UInt32) {}
+    func postSystemEvent(eventType: UInt32, keyCode: Int64, flags: UInt64,
+                         mousePosition: (x: Double, y: Double), timestamp: Double,
+                         cgEvent: Any, applicationPID: Int32?) {}
+    func installHotkeyDispatcher(callback: Any, handler: inout OpaquePointer?) {}
 }

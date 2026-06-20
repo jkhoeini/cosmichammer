@@ -115,4 +115,6 @@ public protocol ApplicationProtocol: AnyObject {
     func findMenuItemByName(pid: Int32, name: String, isRegex: Bool) -> (enabled: Bool, marked: Bool)?
     func selectMenuItemByPath(pid: Int32, path: [String]) -> Bool
     func selectMenuItemByName(pid: Int32, name: String, isRegex: Bool) -> Bool
+
 }
+

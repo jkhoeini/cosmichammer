@@ -331,24 +331,25 @@ private func eventtap_event_post(_ L: LuaState) throws -> CInt {
     let event = getEvent(L, 1)
 
     let input = environmentGet(L).input
-    if input.isSimulated {
-        // In DST mode, convert the CGEvent to an InputEvent and route
-        // through the simulated input layer so hotkeys and event taps fire.
-        let inputEvent = InputEvent(
-            eventType: event.type.rawValue,
-            keyCode: Int64(event.getIntegerValueField(.keyboardEventKeycode)),
-            flags: event.flags.rawValue,
-            mousePosition: (x: Double(event.location.x), y: Double(event.location.y)),
-            timestamp: Double(event.timestamp) / 1_000_000_000
-        )
-        _ = input.postEvent(inputEvent, tapLocation: 0)
-    } else if luaL_testudata(L, 2, APPLICATION_USERDATA_TAG) != nil {
-        if let app = lua_toAnyObject(L, at: 2) as? HSapplicationProtocol {
-            event.postToPid(app.pid)
-        }
-    } else {
-        event.post(tap: .cgSessionEventTap)
+
+    // Determine if the event targets a specific application PID.
+    var applicationPID: Int32? = nil
+    if luaL_testudata(L, 2, APPLICATION_USERDATA_TAG) != nil,
+       let app = lua_toAnyObject(L, at: 2) as? HSapplicationProtocol {
+        applicationPID = app.pid
     }
+
+    // Route through the protocol: production posts the CGEvent directly,
+    // simulation converts to InputEvent and dispatches to event taps / hotkeys.
+    input.postSystemEvent(
+        eventType: event.type.rawValue,
+        keyCode: Int64(event.getIntegerValueField(.keyboardEventKeycode)),
+        flags: event.flags.rawValue,
+        mousePosition: (x: Double(event.location.x), y: Double(event.location.y)),
+        timestamp: Double(event.timestamp) / 1_000_000_000,
+        cgEvent: event,
+        applicationPID: applicationPID
+    )
     usleep(1000)
     lua_settop(L, 1)
     return 1
@@ -1027,9 +1028,8 @@ public func luaopen_hs_libeventtapevent(_ L: UnsafeMutablePointer<lua_State>!) -
         _ = pushFlagMasks(L)
         lua_setfield(L, -2, "rawFlagMasks")
 
-        // Skip real CGEventSource in DST simulator mode — nil is accepted by all CGEvent initializers
-        if !(environmentGetGlobalOrNil()?.input.isSimulated == true) {
-            eventSource = CGEventSource(stateID: .privateState)
+        if let src = environmentGetGlobalOrNil()?.input.createEventSource() {
+            eventSource = src as! CGEventSource
         }
 
         luaL_newmetatable(L, FLAGS_TAG)

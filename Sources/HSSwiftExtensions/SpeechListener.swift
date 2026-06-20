@@ -8,46 +8,41 @@ private let USERDATA_TAG = "hs.speech.listener"
 
 // MARK: - HSSpeechRecognizer Definition
 
-private class HSSpeechRecognizer: NSSpeechRecognizer, NSSpeechRecognizerDelegate {
+/// Handle wrapper for a speech recognizer managed by SpeechProtocol.
+/// Does NOT subclass NSSpeechRecognizer -- the real recognizer lives
+/// inside the protocol implementation (ProductionSpeech / SimulatedSpeech).
+private class HSSpeechRecognizer: NSObject {
+    /// Protocol handle. Zero until :start() creates the listener.
+    var handle: UInt64 = 0
     var callback: LuaValue?
     var selfRefValue: LuaValue?
     var isListeningFlag: Bool = false
     var generation: UInt64 = 0
     private var tornDown = false
 
-    override init?() {
+    // Deferred configuration (set before :start() creates the protocol listener)
+    var storedTitle: String = "Cosmic Hammer"
+    var storedCommands: [String] = []
+    var storedForegroundOnly: Bool = true
+    var storedBlocksOtherRecognizers: Bool = false
+
+    override init() {
         super.init()
-        self.isListeningFlag = false
-        self.delegate = self
     }
 
-    /// Idempotent teardown: stop listening, drop Lua refs, clear delegate.
+    /// Idempotent teardown: stop listening, drop Lua refs.
     func teardown() {
         guard !tornDown else { return }
         tornDown = true
-        stopListening()
+        if handle != 0, let env = environmentGetGlobalOrNil() {
+            _ = env.speech.stopListening(listenerID: handle)
+            handle = 0
+        }
         callback = nil
         selfRefValue = nil
-        delegate = nil
     }
 
-    // MARK: - NSSpeechRecognizerDelegate
-
-    func speechRecognizer(_ sender: NSSpeechRecognizer, didRecognizeCommand command: String) {
-        guard let recognizer = sender as? HSSpeechRecognizer else { return }
-        guard !recognizer.tornDown else { return }
-        guard lua_isStateGenerationValid(recognizer.generation) else {
-            recognizer.teardown()
-            return
-        }
-        guard let cb = recognizer.callback else { return }
-        let L = lua_getCurrentState()!
-
-        cb.push(onto: L)
-        L.push(userdata: recognizer)
-        lua_pushany(L, command as NSString)
-        if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
-    }
+    var isTornDown: Bool { tornDown }
 }
 
 // MARK: - Module Functions
@@ -65,11 +60,6 @@ private class HSSpeechRecognizer: NSSpeechRecognizer, NSSpeechRecognizerDelegate
 /// Notes:
 ///  * You can change the title later with the `hs.speech.listener:title` method.
 private func newSpeechRecognizer(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    if environmentGetGlobalOrNil()?.input.isSimulated == true {
-        lua_pushnil(L)
-        return 1
-    }
-
     var theTitle: String? = nil
     if lua_gettop(L) == 1 {
         _ = luaL_checkstring(L, 1)
@@ -77,12 +67,9 @@ private func newSpeechRecognizer(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
         if theTitle == nil { os_log(.info, "%{public}s", "unable to identify title from string, defaulting to \"Cosmic Hammer\"") }
     }
 
-    guard let recognizer = HSSpeechRecognizer() else {
-        lua_pushnil(L)
-        return 1
-    }
+    let recognizer = HSSpeechRecognizer()
     if let title = theTitle {
-        recognizer.displayedCommandsTitle = title
+        recognizer.storedTitle = title
     }
     recognizer.generation = lua_currentStateGeneration()
     L.push(userdata: recognizer)
@@ -98,6 +85,7 @@ public func luaopen_hs_libspeechlistener(_ L: UnsafeMutablePointer<lua_State>!) 
         fields: [
             "commands": .closure { L in
                 let recognizer: HSSpeechRecognizer = try L.checkArgument(1)
+                let speech = environmentGet(L).speech
                 if lua_gettop(L) == 2 {
                     var theCommands: [String] = []
                     let len = luaL_len(L, 2)
@@ -115,54 +103,131 @@ public func luaopen_hs_libspeechlistener(_ L: UnsafeMutablePointer<lua_State>!) 
                         }
                         lua_pop(L, 1)
                     }
-                    recognizer.commands = theCommands
+                    recognizer.storedCommands = theCommands
+                    if recognizer.handle != 0 {
+                        speech.listenerSetCommands(listenerID: recognizer.handle,
+                                                   commands: theCommands)
+                    }
                     lua_pushvalue(L, 1)
                 } else {
-                    lua_pushany(L, recognizer.commands as NSArray?)
+                    if recognizer.handle != 0,
+                       let cmds = speech.listenerCommands(listenerID: recognizer.handle) {
+                        lua_pushany(L, cmds as NSArray)
+                    } else {
+                        lua_pushany(L, recognizer.storedCommands as NSArray?)
+                    }
                 }
                 return 1
             },
             "title": .closure { L in
                 let recognizer: HSSpeechRecognizer = try L.checkArgument(1)
+                let speech = environmentGet(L).speech
                 if lua_gettop(L) == 2 {
                     var theTitle: String? = nil
                     if lua_type(L, 2) != LUA_TNIL {
                         _ = luaL_checkstring(L, 2)
                         theTitle = lua_tovalue(L, at: 2) as? String
                     }
-                    recognizer.displayedCommandsTitle = theTitle ?? "Cosmic Hammer"
+                    let title = theTitle ?? "Cosmic Hammer"
+                    recognizer.storedTitle = title
+                    if recognizer.handle != 0 {
+                        speech.listenerSetTitle(listenerID: recognizer.handle, title: title)
+                    }
                     lua_pushvalue(L, 1)
                 } else {
-                    lua_pushany(L, recognizer.displayedCommandsTitle as NSString?)
+                    if recognizer.handle != 0 {
+                        let title = speech.listenerTitle(listenerID: recognizer.handle)
+                        lua_pushany(L, (title ?? recognizer.storedTitle) as NSString?)
+                    } else {
+                        lua_pushany(L, recognizer.storedTitle as NSString?)
+                    }
                 }
                 return 1
             },
             "foregroundOnly": .closure { L in
                 let recognizer: HSSpeechRecognizer = try L.checkArgument(1)
+                let speech = environmentGet(L).speech
                 if lua_gettop(L) == 2 {
-                    recognizer.listensInForegroundOnly = lua_toboolean(L, 2) != 0
+                    let value = lua_toboolean(L, 2) != 0
+                    recognizer.storedForegroundOnly = value
+                    if recognizer.handle != 0 {
+                        speech.listenerSetForegroundOnly(listenerID: recognizer.handle,
+                                                         value: value)
+                    }
                     lua_pushvalue(L, 1)
                 } else {
-                    L.push(recognizer.listensInForegroundOnly)
+                    if recognizer.handle != 0 {
+                        L.push(speech.listenerForegroundOnly(listenerID: recognizer.handle))
+                    } else {
+                        L.push(recognizer.storedForegroundOnly)
+                    }
                 }
                 return 1
             },
             "blocksOtherRecognizers": .closure { L in
                 let recognizer: HSSpeechRecognizer = try L.checkArgument(1)
+                let speech = environmentGet(L).speech
                 if lua_gettop(L) == 2 {
-                    recognizer.blocksOtherRecognizers = lua_toboolean(L, 2) != 0
+                    let value = lua_toboolean(L, 2) != 0
+                    recognizer.storedBlocksOtherRecognizers = value
+                    if recognizer.handle != 0 {
+                        speech.listenerSetBlocksOtherRecognizers(
+                            listenerID: recognizer.handle, value: value)
+                    }
                     lua_pushvalue(L, 1)
                 } else {
-                    L.push(recognizer.blocksOtherRecognizers)
+                    if recognizer.handle != 0 {
+                        L.push(speech.listenerBlocksOtherRecognizers(
+                            listenerID: recognizer.handle))
+                    } else {
+                        L.push(recognizer.storedBlocksOtherRecognizers)
+                    }
                 }
                 return 1
             },
             "start": .closure { L in
                 let recognizer: HSSpeechRecognizer = try L.checkArgument(1)
-                recognizer.startListening()
+                let speech = environmentGet(L).speech
+
+                // If we already have a live handle, stop it first
+                if recognizer.handle != 0 {
+                    _ = speech.stopListening(listenerID: recognizer.handle)
+                    recognizer.handle = 0
+                }
+
+                // Create a new listener through the protocol
+                let callback: (String) -> Void = { [weak recognizer] command in
+                    guard let recognizer = recognizer, !recognizer.isTornDown else { return }
+                    guard lua_isStateGenerationValid(recognizer.generation) else {
+                        recognizer.teardown()
+                        return
+                    }
+                    guard let cb = recognizer.callback else { return }
+                    let _L = lua_getCurrentState()!
+                    cb.push(onto: _L)
+                    _L.push(userdata: recognizer)
+                    lua_pushany(_L, command as NSString)
+                    if lua_pcall(_L, 2, 0, 0) != LUA_OK { lua_pop(_L, 1) }
+                }
+
+                guard let handle = speech.startListening(
+                    commands: recognizer.storedCommands,
+                    callback: callback) else {
+                    lua_pushnil(L)
+                    return 1
+                }
+
+                recognizer.handle = handle
                 recognizer.isListeningFlag = true
-                // Hold a self-reference while actively listening to
-                // prevent GC from collecting the recognizer.
+
+                // Apply deferred config
+                speech.listenerSetTitle(listenerID: handle, title: recognizer.storedTitle)
+                speech.listenerSetForegroundOnly(listenerID: handle,
+                                                  value: recognizer.storedForegroundOnly)
+                speech.listenerSetBlocksOtherRecognizers(
+                    listenerID: handle, value: recognizer.storedBlocksOtherRecognizers)
+
+                // Hold a self-reference while actively listening
                 if recognizer.selfRefValue == nil {
                     lua_pushvalue(L, 1)
                     recognizer.selfRefValue = L.ref(index: -1)
@@ -173,9 +238,12 @@ public func luaopen_hs_libspeechlistener(_ L: UnsafeMutablePointer<lua_State>!) 
             },
             "stop": .closure { L in
                 let recognizer: HSSpeechRecognizer = try L.checkArgument(1)
-                recognizer.stopListening()
+                let speech = environmentGet(L).speech
+                if recognizer.handle != 0 {
+                    _ = speech.stopListening(listenerID: recognizer.handle)
+                    recognizer.handle = 0
+                }
                 recognizer.isListeningFlag = false
-                // Release self-reference so the object can be GC'd
                 recognizer.selfRefValue = nil
                 lua_pushvalue(L, 1)
                 return 1
@@ -203,8 +271,7 @@ public func luaopen_hs_libspeechlistener(_ L: UnsafeMutablePointer<lua_State>!) 
         ],
         tostring: .closure { L in
             let recognizer: HSSpeechRecognizer = try L.checkArgument(1)
-            let title = recognizer.displayedCommandsTitle ?? "Cosmic Hammer"
-            L.push("\(USERDATA_TAG): \(title) (\(lua_topointer(L, 1)!))")
+            L.push("\(USERDATA_TAG): \(recognizer.storedTitle) (\(lua_topointer(L, 1)!))")
             return 1
         }
     ))
@@ -224,11 +291,11 @@ public func luaopen_hs_libspeechlistener(_ L: UnsafeMutablePointer<lua_State>!) 
     }, 0)
     lua_setfield(L, -2, "__gc")
 
-    // __eq: compare the underlying objects
+    // __eq: compare the underlying handles
     lua_pushcclosure(L, { (L: LuaState!) -> CInt in
         if let rec1: HSSpeechRecognizer = L.touserdata(1),
            let rec2: HSSpeechRecognizer = L.touserdata(2) {
-            L.push(rec1.isEqual(to: rec2))
+            L.push(rec1 === rec2)
         } else {
             L.push(false)
         }

@@ -228,7 +228,7 @@ private class HSAsyncTcpSocket {
 
     /// Sync local state from the simulator (e.g. after server-side disconnect).
     func syncFromSim() {
-        guard let sim = socketSim, sim.isSimulated else { return }
+        guard let sim = socketSim else { return }
         guard role != .server else { return }
         if let info = sim.socketInfo(socketID: simSocketID), !info.isConnected && isConnectedFlag {
             isConnectedFlag = false
@@ -242,7 +242,7 @@ private class HSAsyncTcpSocket {
     }
 
     var isConnected: Bool {
-        if let sim = socketSim, sim.isSimulated {
+        if let sim = socketSim {
             if role == .server {
                 return sim.connectedClients(serverID: simSocketID).count > 0
             }
@@ -259,7 +259,7 @@ private class HSAsyncTcpSocket {
     }
 
     var isDisconnected: Bool {
-        if let sim = socketSim, sim.isSimulated {
+        if let sim = socketSim {
             if isListeningFlag { return false }
             if unixSocketPath != nil && role == .server { return false }
             syncFromSim()
@@ -289,7 +289,7 @@ private class HSAsyncTcpSocket {
         }
 
         // Simulated path
-        if let sim = socketSim, sim.isSimulated {
+        if let sim = socketSim {
             // Register data callback for later receives
             sim.setCallback(socketID: simSocketID) { [weak self] event in
                 guard let self = self else { return }
@@ -475,7 +475,7 @@ private class HSAsyncTcpSocket {
         }
 
         // Simulated path
-        if let sim = socketSim, sim.isSimulated {
+        if let sim = socketSim {
             // Register data callback for later receives
             sim.setCallback(socketID: simSocketID) { [weak self] event in
                 guard let self = self else { return }
@@ -559,7 +559,7 @@ private class HSAsyncTcpSocket {
         }
 
         // Simulated path
-        if let sim = socketSim, sim.isSimulated {
+        if let sim = socketSim {
             let result = sim.listen(socketID: simSocketID, port: port)
             if result {
                 role = .server
@@ -595,7 +595,7 @@ private class HSAsyncTcpSocket {
         }
 
         // Simulated path
-        if let sim = socketSim, sim.isSimulated {
+        if let sim = socketSim {
             let result = sim.listenUnix(socketID: simSocketID, path: path)
             if result {
                 role = .server
@@ -824,7 +824,7 @@ private class HSAsyncTcpSocket {
         _ = previousRole // suppress unused warning; used in postcondition below
 
         // Simulated path
-        if let sim = socketSim, sim.isSimulated {
+        if let sim = socketSim {
             _ = sim.close(socketID: simSocketID)
             isListeningFlag = false
             isConnectedFlag = false
@@ -890,7 +890,7 @@ private class HSAsyncTcpSocket {
         // Simulated path -- server sockets skip here because socket_read
         // also calls readDataFromClients which handles the pending read.
         // Queueing in both would double-read data.
-        if socketSim != nil && socketSim!.isSimulated {
+        if let sim = socketSim {
             if role == .server { return }
             simPendingReads.append((.bytes(Int(length)), tag))
             drainSimPendingReads()
@@ -955,7 +955,7 @@ private class HSAsyncTcpSocket {
     /// Read from all server clients (length-based).
     func readDataFromClients(toLength length: UInt, withTimeout timeout: TimeInterval, tag: Int) {
         // Simulated path: reads go through the server socket's own pending reads
-        if socketSim != nil && socketSim!.isSimulated {
+        if let sim = socketSim {
             simPendingReads.append((.bytes(Int(length)), tag))
             drainSimPendingReads()
             return
@@ -980,7 +980,7 @@ private class HSAsyncTcpSocket {
 
         // Simulated path -- server sockets skip here because socket_read
         // also calls readDataFromClients which handles the pending read.
-        if socketSim != nil && socketSim!.isSimulated {
+        if let sim = socketSim {
             if role == .server { return }
             simPendingReads.append((.delimiter(separator), tag))
             drainSimPendingReads()
@@ -1052,7 +1052,7 @@ private class HSAsyncTcpSocket {
     /// Read from all server clients (delimiter-based).
     func readDataFromClients(to separator: Data, withTimeout timeout: TimeInterval, tag: Int) {
         // Simulated path: reads go through the server socket's own pending reads
-        if socketSim != nil && socketSim!.isSimulated {
+        if let sim = socketSim {
             simPendingReads.append((.delimiter(separator), tag))
             drainSimPendingReads()
             return
@@ -1126,7 +1126,7 @@ private class HSAsyncTcpSocket {
         guard !data.isEmpty else { return }
 
         // Simulated path
-        if let sim = socketSim, sim.isSimulated {
+        if let sim = socketSim {
             _ = sim.send(socketID: simSocketID, data: data)
             if self.writeCallback != nil {
                 simScheduleWriteCallback(self, tag: tag)
@@ -1148,7 +1148,7 @@ private class HSAsyncTcpSocket {
         guard role == .server else { return }
 
         // Simulated path
-        if let sim = socketSim, sim.isSimulated {
+        if let sim = socketSim {
             let clientIDs = sim.connectedClients(serverID: simSocketID)
             for clientID in clientIDs {
                 _ = sim.sendToClient(serverID: simSocketID, clientID: clientID, data: data)
@@ -1348,9 +1348,9 @@ private func socket_new(_ L: LuaState) throws -> CInt {
 
     // Attach simulated socket protocol if available
     let env = environmentGet(L)
-    if env.socket.isSimulated {
+    if let id = env.socket.createManagedTCPSocket() {
         asyncSocket.socketSim = env.socket
-        asyncSocket.simSocketID = env.socket.createTCPSocket()
+        asyncSocket.simSocketID = id
         asyncSocket.simClock = env.clock
     }
 
@@ -1760,7 +1760,7 @@ private func socket_startTLS(_ L: LuaState) throws -> CInt {
 }
 
 private func get_socket_connections(_ asyncSocket: HSAsyncTcpSocket) -> Int {
-    if let sim = asyncSocket.socketSim, sim.isSimulated {
+    if let sim = asyncSocket.socketSim {
         if asyncSocket.role == .server {
             return sim.connectedClients(serverID: asyncSocket.simSocketID).count
         }

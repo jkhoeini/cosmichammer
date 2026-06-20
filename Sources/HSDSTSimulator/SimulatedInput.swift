@@ -17,7 +17,7 @@ public final class SimulatedInput: InputProtocol {
 
     // MARK: - Hotkey simulation
 
-    public var isSimulated: Bool { true }
+    public func createEventSource() -> Any? { nil }
 
     private struct HotkeyEntry {
         let keyCode: UInt32
@@ -205,5 +205,26 @@ public final class SimulatedInput: InputProtocol {
 
     public func currentMousePosition() -> (x: Double, y: Double) {
         mousePosition
+    }
+
+    // MARK: - System event posting (DST: convert to InputEvent and route)
+
+    public func postSystemEvent(eventType: UInt32, keyCode: Int64, flags: UInt64,
+                                mousePosition: (x: Double, y: Double), timestamp: Double,
+                                cgEvent: Any, applicationPID: Int32?) {
+        let inputEvent = InputEvent(
+            eventType: eventType,
+            keyCode: keyCode,
+            flags: flags,
+            mousePosition: mousePosition,
+            timestamp: timestamp
+        )
+        _ = postEvent(inputEvent, tapLocation: 0)
+    }
+
+    // MARK: - Hotkey dispatcher (no-op in simulation)
+
+    public func installHotkeyDispatcher(callback: Any, handler: inout OpaquePointer?) {
+        // No-op: in DST mode, hotkeys are dispatched via postEvent -> registeredHotkeys.
     }
 }

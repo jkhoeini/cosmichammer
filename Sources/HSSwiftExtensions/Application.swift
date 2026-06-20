@@ -62,12 +62,10 @@ private func lua_getAssociatedTag(_ L: UnsafeMutablePointer<lua_State>!, _ idx: 
 /// In production (when HSapplication is available), creates a real HSapplication wrapper.
 /// In test/simulator mode, creates a lightweight PID-only userdata.
 func pushApplicationInfo(_ L: UnsafeMutablePointer<lua_State>!, _ info: ApplicationInfo) {
-    // Try production path first: create real HSapplication if possible
     if let app = HSapplication(pid: info.pid, withState: L) {
         pushHSapplication(L, app)
         return
     }
-    // Lightweight path: store PID directly as the pointer value
     pushLightweightAppUserdata(L, pid: info.pid)
 }
 

@@ -658,12 +658,13 @@ private func toHSwindowFromLua(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int
     precondition(L != nil, "toHSwindowFromLua: L must not be nil")
     precondition(idx != 0, "toHSwindowFromLua: idx must not be 0")
     if luaL_testudata(L, idx, USERDATA_TAG) != nil {
+        let udataSize: Int = lua_rawlen(L, idx)
+        if udataSize == MemoryLayout<WindowUserData>.size {
+            return nil
+        }
         let ptr = luaL_checkudata(L, idx, USERDATA_TAG)!
             .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
         guard let rawPtr = ptr.pointee else { return nil }
-        // Check if this is a retained NSObject pointer (legacy HSwindow) or a value type
-        // For safety, attempt to interpret as Unmanaged<NSObject> — if the pointer is
-        // actually a WindowUserData struct, this will be caught by the protocol cast.
         let obj = Unmanaged<NSObject>.fromOpaque(rawPtr).takeUnretainedValue()
         return obj
     } else {

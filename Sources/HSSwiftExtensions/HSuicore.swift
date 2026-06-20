@@ -46,11 +46,17 @@ private nonisolated(unsafe) var _cachedSystemWideElement: AXUIElement?
 
 private func systemWideElement() -> AXUIElement {
     if let cached = _cachedSystemWideElement { return cached }
-    if environmentGetGlobalOrNil()?.input.isSimulated == true {
-        // DST mode: return a dummy element that will fail gracefully on attribute queries.
-        let dummy = AXUIElementCreateApplication(0)
-        _cachedSystemWideElement = dummy
-        return dummy
+    // Let the accessibility protocol decide: SimulatedAccessibility returns a
+    // sentinel ID (0) which we map to a harmless dummy element, while
+    // ProductionAccessibility returns a real stored element.
+    if let env = environmentGetGlobalOrNil() {
+        let id = env.accessibility.getSystemWideElement()
+        if id == 0 {
+            // Simulated — return a dummy that fails gracefully on attribute queries.
+            let dummy = AXUIElementCreateApplication(0)
+            _cachedSystemWideElement = dummy
+            return dummy
+        }
     }
     let element = AXUIElementCreateSystemWide()
     _cachedSystemWideElement = element

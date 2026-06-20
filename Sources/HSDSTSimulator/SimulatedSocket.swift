@@ -19,7 +19,13 @@ public final class SimulatedSocket: SocketProtocol {
     private var rng: RPRNG
     private let faults: FaultConfig
 
-    public var isSimulated: Bool { true }
+    public func createManagedTCPSocket() -> UInt64? {
+        return createTCPSocket()
+    }
+
+    public func createManagedUDPSocket() -> UInt64? {
+        return createUDPSocket()
+    }
 
     // MARK: - Socket state
 

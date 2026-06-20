@@ -1,7 +1,9 @@
 import AppKit
+import Carbon
 import CoreGraphics
 import Foundation
 import HSDSTCore
+import os.log
 
 final class ProductionInput: InputProtocol {
     private var nextTapID: UInt64 = 1
@@ -207,5 +209,76 @@ final class ProductionInput: InputProtocol {
         guard let screen = NSScreen.main else { return (x: Double(loc.x), y: Double(loc.y)) }
         let y = screen.frame.maxY - loc.y
         return (x: Double(loc.x), y: Double(y))
+    }
+
+    func createEventSource() -> Any? {
+        return CGEventSource(stateID: .privateState)
+    }
+
+    // MARK: - Hotkey registration (Carbon)
+
+    @discardableResult
+    func registerHotkey(id: UInt32, keyCode: UInt32, mods: UInt32,
+                        callback: @escaping (_ hotkeyID: Int32, _ eventKind: Int32) -> Void) -> Bool {
+        let hotKeyID = EventHotKeyID(signature: OSType(0x484D5350), id: id) // 'HMSP'
+        var carbonHotKey: EventHotKeyRef?
+        let result = RegisterEventHotKey(keyCode, mods, hotKeyID,
+                                         GetEventDispatcherTarget(),
+                                         OptionBits(kEventHotKeyExclusive), &carbonHotKey)
+        if result == noErr {
+            carbonHotKeys[id] = carbonHotKey
+            return true
+        }
+        os_log(.error, "hs.hotkey:enable() keycode: %u, mods: 0x%04x, RegisterEventHotKey failed: %d", keyCode, mods, result)
+        if result == OSStatus(eventHotKeyExistsErr) {
+            os_log(.error, "This hotkey is already registered. It may be a duplicate in your Cosmic Hammer config, or it may be registered by macOS. See System Preferences->Keyboard->Shortcuts")
+        }
+        return false
+    }
+
+    func unregisterHotkey(id: UInt32) {
+        guard let ref = carbonHotKeys.removeValue(forKey: id) else {
+            os_log(.info, "hs.hotkey stop() unregisterHotkey called for id %u but no Carbon ref found.", id)
+            return
+        }
+        let result = UnregisterEventHotKey(ref)
+        if result != noErr {
+            os_log(.error, "hs.hotkey:stop() UnregisterEventHotKey failed for id %u: %d", id, result)
+        }
+    }
+
+    /// The Carbon EventHotKeyRef for each registered hotkey, keyed by hotkey ID.
+    private var carbonHotKeys: [UInt32: EventHotKeyRef] = [:]
+
+    // MARK: - System event posting
+
+    func postSystemEvent(eventType: UInt32, keyCode: Int64, flags: UInt64,
+                         mousePosition: (x: Double, y: Double), timestamp: Double,
+                         cgEvent: Any, applicationPID: Int32?) {
+        // cgEvent is type-erased but guaranteed to be a CGEvent in production.
+        let event = cgEvent as! CGEvent
+        if let pid = applicationPID {
+            event.postToPid(pid)
+        } else {
+            event.post(tap: .cgSessionEventTap)
+        }
+    }
+
+    // MARK: - Hotkey dispatcher installation
+
+    func installHotkeyDispatcher(callback: Any, handler: inout OpaquePointer?) {
+        guard let cb = callback as? EventHandlerProcPtr else { return }
+        var hotKeyPressedSpec: [EventTypeSpec] = [
+            EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed)),
+            EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyReleased)),
+        ]
+        InstallEventHandler(
+            GetEventDispatcherTarget(),
+            cb,
+            hotKeyPressedSpec.count,
+            &hotKeyPressedSpec,
+            nil,
+            &handler
+        )
     }
 }

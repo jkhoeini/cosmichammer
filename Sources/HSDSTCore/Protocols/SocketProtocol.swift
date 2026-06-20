@@ -80,13 +80,20 @@ public protocol SocketProtocol: AnyObject {
     func udpSetBufferSize(socketID: UInt64, size: UInt64, ipVersion: Int?)
     func udpBeginReceiving(socketID: UInt64, continuous: Bool) -> Bool
 
-    /// Whether this is a simulated socket provider (used by extensions to decide routing).
-    var isSimulated: Bool { get }
+    /// Returns a managed TCP socket ID if this provider manages socket transport
+    /// (e.g. simulated sockets). Returns nil if transport is managed externally
+    /// (e.g. via NWConnection in production).
+    func createManagedTCPSocket() -> UInt64?
+
+    /// Returns a managed UDP socket ID if this provider manages socket transport.
+    /// Returns nil if transport is managed externally.
+    func createManagedUDPSocket() -> UInt64?
 }
 
 // Default implementations so existing conformances don't break
 public extension SocketProtocol {
-    var isSimulated: Bool { false }
+    func createManagedTCPSocket() -> UInt64? { nil }
+    func createManagedUDPSocket() -> UInt64? { nil }
 
     func connectedClients(serverID: UInt64) -> [UInt64] { [] }
     func sendToClient(serverID: UInt64, clientID: UInt64, data: Data) -> Bool { false }
