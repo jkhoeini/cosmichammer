@@ -69,7 +69,8 @@ extension CosmicHammerTests {
             var sawWrite = false
             var lastValueResult: String?
             while Date() < deadline {
-                RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.5))
+                let spinDuration: TimeInterval = testHarness != nil ? 0.001 : 0.5
+                RunLoop.main.run(until: Date(timeIntervalSinceNow: spinDuration))
                 testHarness?.advanceTime(by: 0.5)
                 sawWrite = sawWrite || simulatedSocketWriteCount() > 0
                 lastValueResult = runLua("testTcpConnectAndWriteUsesLocalServerValues()")

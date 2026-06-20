@@ -319,7 +319,8 @@ func luaTestWithCheckAndTimeout(
     var lastResult: String?
     while Date() < deadline {
         for _ in 0..<5 {
-            RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.1))
+            let spinDuration: TimeInterval = testHarness != nil ? 0.001 : 0.1
+            RunLoop.main.run(until: Date(timeIntervalSinceNow: spinDuration))
             testHarness?.advanceTime(by: 0.1)
         }
         lastResult = runLua(check)

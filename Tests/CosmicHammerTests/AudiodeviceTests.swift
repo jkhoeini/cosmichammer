@@ -44,7 +44,8 @@ extension CosmicHammerTests {
             testHarness?.eventLoop.drain()
             let deadline = Date(timeIntervalSinceNow: 5)
             while Date() < deadline {
-                RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.5))
+                let spinDuration: TimeInterval = testHarness != nil ? 0.001 : 0.5
+                RunLoop.main.run(until: Date(timeIntervalSinceNow: spinDuration))
                 testHarness?.eventLoop.drain()
                 if runLua("testWatcherCallbackResult()") == "Success" { return }
             }

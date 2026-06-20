@@ -7,7 +7,8 @@ extension CosmicHammerTests {
             try configureWebsocketTestEnvironment()
             try loadLuaModule("test_websocket")
             _ = runLua("startEchoServer()")
-            RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.2))
+            let initSpinDuration: TimeInterval = testHarness != nil ? 0.001 : 0.2
+            RunLoop.main.run(until: Date(timeIntervalSinceNow: initSpinDuration))
         }
         @Test func testNew() { runLuaTest() }
         @Test func testNewWss() { runLuaTest() }
@@ -31,7 +32,8 @@ extension CosmicHammerTests {
             var sawFrame = false
             var lastValueResult: String?
             while Date() < deadline {
-                RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.5))
+                let spinDuration: TimeInterval = testHarness != nil ? 0.001 : 0.5
+                RunLoop.main.run(until: Date(timeIntervalSinceNow: spinDuration))
                 testHarness?.advanceTime(by: 0.5)
                 sawFrame = sawFrame || currentCount() > initialCount
                 lastValueResult = runLua(valueCheck)

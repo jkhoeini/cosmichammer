@@ -166,6 +166,8 @@ private class HSAsyncTcpSocket {
     var socketSim: (any SocketProtocol)?
     /// The simulated socket ID (valid only when socketSim is non-nil).
     var simSocketID: UInt64 = 0
+    /// Clock used for simulated timers (read timeout); nil means use real Foundation.Timer.
+    var simClock: (any ClockProtocol)?
 
     private var tornDown = false
 
@@ -380,6 +382,8 @@ private class HSAsyncTcpSocket {
 
     /// Timer for simulated read timeout (disconnects the socket if reads can't be fulfilled).
     private var simReadTimeoutTimer: Timer?
+    /// DST clock timer handle for simulated read timeout (used instead of Foundation.Timer in DST mode).
+    private var simReadTimeoutHandle: (any TimerHandle)?
 
     private enum SimReadKind {
         case bytes(Int)
@@ -390,13 +394,28 @@ private class HSAsyncTcpSocket {
     /// disconnect the socket (matching real NWConnection timeout behavior).
     func scheduleSimReadTimeout() {
         guard socketTimeout >= 0 else { return }
-        // Cancel any existing timer
-        simReadTimeoutTimer?.invalidate()
-        simReadTimeoutTimer = Timer.scheduledTimer(withTimeInterval: socketTimeout, repeats: false) { [weak self] _ in
-            guard let self = self else { return }
-            if !self.simPendingReads.isEmpty {
-                self.simPendingReads.removeAll()
-                self.disconnect()
+
+        if let clock = simClock {
+            // DST mode: use the simulated clock's timer so advanceTime fires it instantly.
+            simReadTimeoutHandle?.invalidate()
+            let handle = clock.createTimer(interval: socketTimeout, repeats: false) { [weak self] in
+                guard let self = self else { return }
+                if !self.simPendingReads.isEmpty {
+                    self.simPendingReads.removeAll()
+                    self.disconnect()
+                }
+            }
+            handle.schedule()
+            simReadTimeoutHandle = handle
+        } else {
+            // Production mode: use real Foundation.Timer.
+            simReadTimeoutTimer?.invalidate()
+            simReadTimeoutTimer = Timer.scheduledTimer(withTimeInterval: socketTimeout, repeats: false) { [weak self] _ in
+                guard let self = self else { return }
+                if !self.simPendingReads.isEmpty {
+                    self.simPendingReads.removeAll()
+                    self.disconnect()
+                }
             }
         }
     }
@@ -439,6 +458,8 @@ private class HSAsyncTcpSocket {
         if simPendingReads.isEmpty {
             simReadTimeoutTimer?.invalidate()
             simReadTimeoutTimer = nil
+            simReadTimeoutHandle?.invalidate()
+            simReadTimeoutHandle = nil
         }
     }
 
@@ -821,6 +842,8 @@ private class HSAsyncTcpSocket {
             simPendingReads.removeAll()
             simReadTimeoutTimer?.invalidate()
             simReadTimeoutTimer = nil
+            simReadTimeoutHandle?.invalidate()
+            simReadTimeoutHandle = nil
             // Re-create a fresh simulated socket ID for reuse
             simSocketID = sim.createTCPSocket()
             return
@@ -1328,6 +1351,7 @@ private func socket_new(_ L: LuaState) throws -> CInt {
     if env.socket.isSimulated {
         asyncSocket.socketSim = env.socket
         asyncSocket.simSocketID = env.socket.createTCPSocket()
+        asyncSocket.simClock = env.clock
     }
 
     if lua_type(L, 1) == LUA_TFUNCTION {

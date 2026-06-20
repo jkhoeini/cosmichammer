@@ -22,7 +22,8 @@ extension CosmicHammerTests {
             runLuaTest()
             let deadline = Date(timeIntervalSinceNow: 5)
             while Date() < deadline {
-                RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.5))
+                let spinDuration: TimeInterval = testHarness != nil ? 0.001 : 0.5
+                RunLoop.main.run(until: Date(timeIntervalSinceNow: spinDuration))
                 if HScoresetupHelper.shutdownFired() { return }
             }
             Issue.record("hs.shutdownCallback was not called successfully")
