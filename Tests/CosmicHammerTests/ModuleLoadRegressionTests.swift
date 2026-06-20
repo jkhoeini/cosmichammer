@@ -182,10 +182,10 @@ extension CosmicHammerTests {
             (function()
                 local speech = require("hs.speech")
                 local synth = speech.new()
-                if type(synth) ~= "userdata" then
+                if synth ~= nil and type(synth) ~= "userdata" then
                     return "speech.new returned " .. type(synth)
                 end
-                if type(synth.speak) ~= "function" then
+                if synth ~= nil and type(synth.speak) ~= "function" then
                     return "speech:speak is " .. type(synth.speak)
                 end
 

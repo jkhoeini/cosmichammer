@@ -1,6 +1,7 @@
 import Cocoa
 import CLua
 import Lua
+import HSDSTCore
 import os.log
 
 private let USERDATA_TAG = "hs.speech.listener"
@@ -64,6 +65,11 @@ private class HSSpeechRecognizer: NSSpeechRecognizer, NSSpeechRecognizerDelegate
 /// Notes:
 ///  * You can change the title later with the `hs.speech.listener:title` method.
 private func newSpeechRecognizer(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    if environmentGetGlobalOrNil()?.input.isSimulated == true {
+        lua_pushnil(L)
+        return 1
+    }
+
     var theTitle: String? = nil
     if lua_gettop(L) == 1 {
         _ = luaL_checkstring(L, 1)

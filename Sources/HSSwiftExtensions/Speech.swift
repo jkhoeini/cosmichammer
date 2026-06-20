@@ -308,6 +308,11 @@ private func isAnyApplicationSpeaking(_ L: UnsafeMutablePointer<lua_State>!) -> 
 ///  * All of the names that have been encountered thus far follow this pattern for their full name:  `com.apple.speech.synthesis.voice.*name*`.  You can provide this suffix or not as you prefer when specifying a voice name.
 ///  * You can change the voice later with the `hs.speech:voice` method.
 private func newSpeechSynthesizer(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
+    if environmentGetGlobalOrNil()?.input.isSimulated == true {
+        lua_pushnil(L)
+        return 1
+    }
+
     var voiceName: NSSpeechSynthesizer.VoiceName? = nil
     if lua_gettop(L) == 1 {
         _ = luaL_checkstring(L, 1)
