@@ -867,11 +867,15 @@ private let userdata_eq: LuaClosure = { L in
 }
 
 private let userdata_gc: LuaClosure = { L in
-    luaL_checkudata(L, 1, USERDATA_TAG)
-
     let ptr = luaL_checkudata(L, 1, USERDATA_TAG)!
-    let rawPtr = ptr.load(as: UnsafeRawPointer.self)
+        .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
+    guard let rawPtr = ptr.pointee else {
+        lua_pushnil(L)
+        lua_setmetatable(L, 1)
+        return 0
+    }
     let chooser = Unmanaged<HSChooser>.fromOpaque(rawPtr).takeRetainedValue()
+    ptr.pointee = nil
 
     chooser.selfRefCount -= 1
     if chooser.selfRefCount == 0 {

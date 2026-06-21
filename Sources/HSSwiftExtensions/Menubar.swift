@@ -317,7 +317,7 @@ func menubarSetMenu(_ L: LuaState) throws -> CInt {
         delegate!.stateBoxImageSize = menuBarItem.pointee.stateBoxImageSize
         delegate!.fn = L.ref(index: 2)
         delegate!.generation = lua_currentStateGeneration()
-        mb_dynamicMenuDelegates.add(delegate!)
+        mb_dynamicMenuDelegates?.add(delegate!)
 
     default:
         break
@@ -365,11 +365,13 @@ func menubar_delete(_ L: LuaState) throws -> CInt {
         environmentGet(L).settings.set(autosaveValue, forKey: key)
     }
 
-    // Remove any click callback the menubar item has
-    L.push(menubarSetClickCallback)
-    lua_pushvalue(L, 1)
-    lua_pushnil(L)
-    lua_call(L, 2, 0)
+    // Remove any click callback directly (no lua_call — safe during GC)
+    if let callback = menuBarItem.pointee.click_callback {
+        statusItem.button?.target = nil
+        statusItem.button?.action = nil
+        let _ = Unmanaged<HSMenubarItemClickDelegate>.fromOpaque(callback).takeRetainedValue()
+        menuBarItem.pointee.click_callback = nil
+    }
 
     // Remove all menu stuff associated with this item
     mb_erase_all_menu_parts(L, statusItem)
@@ -673,18 +675,22 @@ func menubar_gc(_ L: LuaState) throws -> CInt {
 }
 
 func menubaritem_gc(_ L: LuaState) throws -> CInt {
-    L.push(menubar_delete)
-    lua_pushvalue(L, 1)
-    lua_call(L, 1, 1)
-    return 0
+    // Call menubar_delete directly as a Swift function — never via lua_call,
+    // which corrupts the allocator when invoked from within a GC finalizer
+    // during lua_close().
+    return try menubar_delete(L)
 }
 
 func mb_userdata_tostring(_ L: LuaState) throws -> CInt {
     let menuBarItem = mb_get_item_arg(L, 1)
-    let statusItem = Unmanaged<NSStatusItem>.fromOpaque(menuBarItem.pointee.menuBarItemObject!).takeUnretainedValue()
+    guard let rawObj = menuBarItem.pointee.menuBarItemObject else {
+        L.push("\(mb_USERDATA_TAG): (deleted) (\(String(describing: lua_topointer(L, 1)!)))")
+        return 1
+    }
+    let statusItem = Unmanaged<NSStatusItem>.fromOpaque(rawObj).takeUnretainedValue()
     let title = statusItem.button?.title ?? ""
 
-    L.push("\(mb_USERDATA_TAG): \(title) (\(lua_topointer(L, 1)!))")
+    L.push("\(mb_USERDATA_TAG): \(title) (\(String(describing: lua_topointer(L, 1)!)))")
     return 1
 }
 

@@ -79,7 +79,7 @@ struct menubaritem_t {
 }
 
 // Delegate objects
-var mb_dynamicMenuDelegates: NSMutableArray!
+var mb_dynamicMenuDelegates: NSMutableArray?
 
 @objc class HSMenubarItemClickDelegate: HSMenubarCallbackObject {
     @objc func click(_ sender: Any?) {
@@ -311,7 +311,7 @@ func mb_erase_menu_delegate(_ L: UnsafeMutablePointer<lua_State>!, _ menu: NSMen
 
     if let delegate = menu.delegate as? HSMenubarItemMenuDelegate {
         delegate.fn = nil
-        mb_dynamicMenuDelegates.remove(delegate)
+        mb_dynamicMenuDelegates?.remove(delegate)
         menu.delegate = nil
     }
 }
@@ -335,6 +335,15 @@ func mb_create_or_reuse_menu(_ L: UnsafeMutablePointer<lua_State>!, _ statusItem
         return menu
     }
     return NSMenu(title: menuTitle)
+}
+
+// Test helper: call mb_erase_menu_delegate with mb_dynamicMenuDelegates temporarily nil.
+// This lives in the Swift 5 module so tests (Swift 6) don't hit concurrency errors.
+func menubarGCTest_eraseMenuDelegateWithNilDelegates(_ L: UnsafeMutablePointer<lua_State>!, _ menu: NSMenu) {
+    let saved = mb_dynamicMenuDelegates
+    mb_dynamicMenuDelegates = nil
+    mb_erase_menu_delegate(L, menu)
+    mb_dynamicMenuDelegates = saved
 }
 
 // Create and push a lua geometry rect
