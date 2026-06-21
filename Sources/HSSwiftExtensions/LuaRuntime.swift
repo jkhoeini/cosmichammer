@@ -1122,8 +1122,10 @@ func MJLuaDeinit() {
 func MJLuaDealloc() {
     if let L = lua_getCurrentState() {
         environmentClearGlobal()
-        environmentDetach(L)
+        // lua_close MUST come before environmentDetach so GC finalizers
+        // can still access the environment via environmentGet(L).
         lua_close(L)
+        environmentDetach(L)
         lua_setCurrentState(nil)
         lua_bumpStateGeneration()
     }

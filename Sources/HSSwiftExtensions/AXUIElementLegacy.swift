@@ -551,7 +551,7 @@ private func axuielement_performAction(_ L: LuaState) throws -> CInt {
 ///  * If this method is called on an axuielementObject representing the system-wide element, the search is not restricted to any particular application.  See [hs.axuielement.systemElementAtPosition](#systemElementAtPosition).
 private func axuielement_getElementAtPosition(_ L: LuaState) throws -> CInt {
     precondition(L != nil, "Lua state must not be nil")
-    precondition(lua_gettop(L) >= 2, "elementAtPosition requires at least self + point/coordinates")
+    luaL_argcheck(L, lua_gettop(L) >= 2, 2, "expected at least self + point/coordinates")
     let theRef = get_axuielementref(L, 1, USERDATA_TAG)
     var returnCount: Int32 = 1
     if isApplicationOrSystem(theRef) {
@@ -596,7 +596,7 @@ private func axuielement_getElementAtPosition(_ L: LuaState) throws -> CInt {
 ///  * The specific parameter required for a each parameterized attribute is different and is often application specific thus requiring some experimentation. Notes regarding identified parameter types and thoughts on some still being investigated will be provided in the Cosmic Hammer Wiki, hopefully shortly after this module becomes part of a Cosmic Hammer release.
 private func axuielement_getParameterizedAttributeValue(_ L: LuaState) throws -> CInt {
     precondition(L != nil, "Lua state must not be nil")
-    precondition(lua_gettop(L) >= 3, "parameterizedAttributeValue requires self, attribute, and parameter")
+    luaL_argcheck(L, lua_gettop(L) >= 3, 3, "expected self, attribute, and parameter")
     let theRef = get_axuielementref(L, 1, USERDATA_TAG)
     let attribute = lua_tovalue(L, at: 2) as! NSString
     let parameter = lua_toCFType(L, 3)
@@ -626,7 +626,7 @@ private func axuielement_getParameterizedAttributeValue(_ L: LuaState) throws ->
 ///  * the axuielementObject on success; nil and an error string if the attribute could not be set or an accessibility error occurred.
 private func axuielement_setAttributeValue(_ L: LuaState) throws -> CInt {
     precondition(L != nil, "Lua state must not be nil")
-    precondition(lua_gettop(L) >= 3, "setAttributeValue requires self, attribute, and value")
+    luaL_argcheck(L, lua_gettop(L) >= 3, 3, "expected self, attribute, and value")
     let theRef = get_axuielementref(L, 1, USERDATA_TAG)
     let attribute = lua_tovalue(L, at: 2) as! NSString
     let value = lua_toCFType(L, 3)
@@ -1190,7 +1190,7 @@ private func userdata_tostring(_ L: LuaState) throws -> CInt {
 
 private func userdata_gc(_ L: LuaState) throws -> CInt {
     precondition(L != nil, "Lua state must not be nil")
-    precondition(lua_gettop(L) >= 1, "gc requires the userdata argument")
+    luaL_argcheck(L, lua_gettop(L) >= 1, 1, "expected the userdata argument")
     let ptr = luaL_checkudata(L, 1, USERDATA_TAG)!
         .assumingMemoryBound(to: Unmanaged<AXUIElement>.self)
     // Balance the passRetained() from pushAXUIElement — takeRetainedValue() releases the +1.

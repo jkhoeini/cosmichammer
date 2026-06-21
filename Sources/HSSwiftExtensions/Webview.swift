@@ -394,7 +394,7 @@ func webview_magnification(_ L: LuaState) throws -> CInt {
 /// Method
 /// Render the given HTML in the webview with an optional base URL for relative links.
 func webview_html(_ L: LuaState) throws -> CInt {
-    precondition(lua_gettop(L) >= 2, "webview_html requires at least 2 arguments (self + html)")
+    luaL_argcheck(L, lua_gettop(L) >= 2, 2, "expected at least 2 arguments (self + html)")
     let theWindow = wv_getWindowFromUD(L, 1)
     let theView = theWindow.contentView as! HSWebViewView
 
@@ -475,7 +475,7 @@ func webview_historyList(_ L: LuaState) throws -> CInt {
 /// Method
 /// Execute JavaScript within the context of the current webview and optionally receive its result or error in a callback function.
 func webview_evaluateJavaScript(_ L: LuaState) throws -> CInt {
-    precondition(lua_gettop(L) >= 2, "webview_evaluateJavaScript requires at least 2 arguments (self + script)")
+    luaL_argcheck(L, lua_gettop(L) >= 2, 2, "expected at least 2 arguments (self + script)")
     let theWindow = wv_getWindowFromUD(L, 1)
     let theView = theWindow.contentView as! HSWebViewView
 
@@ -817,7 +817,7 @@ func webview_windowStyle(_ L: LuaState) throws -> CInt {
 /// Method
 /// Get or set the window level
 func webview_level(_ L: LuaState) throws -> CInt {
-    precondition(lua_gettop(L) >= 1, "webview_level requires at least 1 argument (self)")
+    luaL_argcheck(L, lua_gettop(L) >= 1, 1, "expected at least 1 argument (self)")
     let theWindow = wv_getWindowFromUD(L, 1)
 
     if lua_gettop(L) == 1 {
@@ -1659,7 +1659,7 @@ func wv_userdata_eq(_ L: LuaState) throws -> CInt {
 }
 
 func wv_userdata_gc(_ L: LuaState) throws -> CInt {
-    precondition(lua_gettop(L) >= 1, "wv_userdata_gc requires at least 1 argument")
+    luaL_argcheck(L, lua_gettop(L) >= 1, 1, "expected at least 1 argument")
     if luaL_testudata(L, 1, wv_USERDATA_TAG) == nil { return 0 }
 
     let ptr = luaL_checkudata(L, 1, wv_USERDATA_TAG)!

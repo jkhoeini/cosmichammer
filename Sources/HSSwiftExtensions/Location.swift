@@ -423,7 +423,7 @@ private func location_fakeLocationChange(_ L: LuaState) throws -> CInt {
 
 private func sunturns(_ L: UnsafeMutablePointer<lua_State>!) -> EDSunriseSet? {
     precondition(L != nil, "Lua state must not be nil")
-    precondition(lua_gettop(L) >= 2, "sunturns requires at least 2 arguments")
+    luaL_argcheck(L, lua_gettop(L) >= 2, 2, "expected at least 2 arguments")
 
     var date: Date
     var tz: TimeZone
@@ -535,7 +535,7 @@ private func location_sunset(_ L: LuaState) throws -> CInt {
 ///  * This constructor does not require Location Services to be enabled for Cosmic Hammer.
 private func clgeocoder_lookupLocation(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     precondition(L != nil, "Lua state must not be nil")
-    precondition(lua_gettop(L) >= 2, "lookupLocation requires location and callback arguments")
+    luaL_argcheck(L, lua_gettop(L) >= 2, 2, "expected location and callback arguments")
     guard let theLocation = toCLLocation(L, at: 1) else {
         _ = luaL_argerror(L, 1, "expected locationTable")
         return 0
@@ -586,7 +586,7 @@ private func clgeocoder_lookupLocation(_ L: UnsafeMutablePointer<lua_State>!) ->
 ///  * This constructor does not require Location Services to be enabled for Cosmic Hammer.
 private func clgeocoder_lookupAddress(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     precondition(L != nil, "Lua state must not be nil")
-    precondition(lua_gettop(L) >= 2, "lookupAddress requires address and callback arguments")
+    luaL_argcheck(L, lua_gettop(L) >= 2, 2, "expected address and callback arguments")
     let searchString = lua_tovalue(L, at: 1) as! String
     luaL_checktype(L, 2, LUA_TFUNCTION)
     let fnRef = L.ref(index: 2)
@@ -636,7 +636,7 @@ private func clgeocoder_lookupAddress(_ L: UnsafeMutablePointer<lua_State>!) -> 
 ///  * While a partial address can be given, the more information you provide, the more likely the results will be useful.  The `regionTable` only determines sort order if multiple entries are returned, it does not constrain the search.
 private func clgeocoder_lookupAddressNear(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     precondition(L != nil, "Lua state must not be nil")
-    precondition(lua_gettop(L) >= 2, "lookupAddressNear requires at least address and callback arguments")
+    luaL_argcheck(L, lua_gettop(L) >= 2, 2, "expected at least address and callback arguments")
     let searchString = lua_tovalue(L, at: 1) as! String
     var theRegion: CLCircularRegion? = nil
 

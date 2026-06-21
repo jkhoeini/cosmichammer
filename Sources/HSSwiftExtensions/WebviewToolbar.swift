@@ -755,7 +755,7 @@ private func isBoolNumber(_ value: Any?) -> Bool {
 // MARK: - Module Functions
 
 private func toolbar_new(_ L: LuaState) throws -> CInt {
-    precondition(lua_gettop(L) >= 1, "toolbar_new requires at least 1 argument (identifier)")
+    luaL_argcheck(L, lua_gettop(L) >= 1, 1, "expected at least 1 argument (identifier)")
     let identifier = lua_tovalue(L, at: 1) as! String
     assert(!identifier.isEmpty, "toolbar_new: identifier must not be empty")
 

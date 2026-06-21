@@ -126,8 +126,7 @@ private func spaces_getActiveSpace(_ L: LuaState) throws -> CInt {
 ///  * Reviewing how third-party applications have generally pruned this list, I believe it will be necessary to use `hs.window.filter` to prune the list and access `hs.window` objects that are on the non-visible spaces.
 ///    * as `hs.window.filter` is scheduled to undergo a re-write soon to (hopefully) dramatically speed it up, I am providing this function *as is* at present for those who wish to experiment with it; however, I hope to make it more useful in the coming months and the contents may change in the future (the format won't, but hopefully the useless extras will disappear requiring less pruning logic on your end).
 private func spaces_windowsForSpace(_ L: LuaState) throws -> CInt {
-    precondition(lua_gettop(L) >= 1, "windowsForSpace requires at least a spaceID argument")
-    let sid = UInt64(lua_tointeger(L, 1))
+    let sid = UInt64(luaL_checkinteger(L, 1))
     let includeMinimized: Bool = lua_gettop(L) > 1 ? (lua_toboolean(L, 2) != 0) : true
 
     let owner: UInt32 = 0
@@ -177,9 +176,8 @@ private func spaces_windowsForSpace(_ L: LuaState) throws -> CInt {
 /// Notes:
 ///  * a window can only be moved from a user space to another user space -- you cannot move the window of a full screen (or tiled) application to another space. you also cannot move a window *to* the same space as a full screen application unless `force` is set to true and even then it works for floating windows only.
 private func spaces_moveWindowToSpace(_ L: LuaState) throws -> CInt {
-    precondition(lua_gettop(L) >= 2, "moveWindowToSpace requires window and spaceID arguments")
-    var wid = UInt32(lua_tointeger(L, 1))
-    let sid = UInt64(lua_tointeger(L, 2))
+    var wid = UInt32(luaL_checkinteger(L, 1))
+    let sid = UInt64(luaL_checkinteger(L, 2))
     let force: Bool = lua_gettop(L) > 2 ? (lua_toboolean(L, 3) != 0) : false
 
     if SLSSpaceGetType(g_connection, sid) != 0 && !force {
@@ -234,8 +232,7 @@ private func spaces_moveWindowToSpace(_ L: LuaState) throws -> CInt {
 ///  * For most windows, this will be a single element table; however some applications may create "sticky" windows that may appear on more than one space.
 ///    * For example, the container windows for `hs.canvas` objects which have the `canJoinAllSpaces` behavior set will appear on all spaces and the table returned by this function will contain all spaceIDs for the screen which displays the canvas.
 private func spaces_windowSpaces(_ L: LuaState) throws -> CInt {
-    precondition(lua_gettop(L) >= 1, "windowSpaces requires a window ID argument")
-    let wid = UInt32(lua_tointeger(L, 1))
+    let wid = UInt32(luaL_checkinteger(L, 1))
 
     let spaces = environmentGet(L).spaces
     let spaceIDs = spaces.spaceForWindow(windowID: wid)

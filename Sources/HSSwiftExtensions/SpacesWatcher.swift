@@ -26,14 +26,17 @@ private class SpaceWatcher: NSObject, LuaTeardownable {
         tornDown = true
         if running {
             running = false
-            let L = lua_getCurrentState()!
-            if let token = observerToken {
-                environmentGet(L).notification.removeObserver(token)
-                observerToken = nil
-            }
-            if selfRef != LUA_NOREF {
-                luaL_unref(L, LUA_REGISTRYINDEX_VALUE, selfRef)
-                selfRef = LUA_NOREF
+            if let L = lua_getCurrentState() {
+                if let token = observerToken {
+                    if let env = environmentGetGlobalOrNil() {
+                        env.notification.removeObserver(token)
+                    }
+                    observerToken = nil
+                }
+                if selfRef != LUA_NOREF {
+                    luaL_unref(L, LUA_REGISTRYINDEX_VALUE, selfRef)
+                    selfRef = LUA_NOREF
+                }
             }
         }
         callback = nil
