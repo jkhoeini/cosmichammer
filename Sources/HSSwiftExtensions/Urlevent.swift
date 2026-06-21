@@ -21,9 +21,50 @@ private var defaultContentTypes: [String]?
 
 /// Minimal @objc protocol exposing the MJAppDelegate properties we need.
 @objc protocol HSAppDelegateURLAccess: NSObjectProtocol {
-    @objc var startupEvent: NSAppleEventDescriptor? { get set }
+    @objc var startupEvents: [NSAppleEventDescriptor] { get set }
     @objc var startupFile: String? { get set }
     @objc var openFileDelegate: (any NSObjectProtocol)? { get set }
+}
+
+// MARK: - URL parsing (internal, testable)
+
+/// Result of normalizing and parsing a raw URL string.
+struct URLParseResult {
+    let scheme: String?
+    let host: String?
+    let params: [String: String]
+    let fullURL: String
+}
+
+/// Normalize a raw URL string (handling bare paths) and parse it into
+/// components.  Returns `nil` when the string cannot be parsed as a URL.
+func parseURLEvent(_ rawURL: String) -> URLParseResult? {
+    var urlString = rawURL
+    if urlString.hasPrefix("/") {
+        let fileURL = URL(fileURLWithPath: urlString)
+        urlString = fileURL.absoluteString
+    }
+
+    guard let url = URL(string: urlString) else { return nil }
+
+    let query = url.query ?? ""
+    let queryPairs = query.components(separatedBy: "&")
+    var params: [String: String] = [:]
+
+    for queryPair in queryPairs {
+        let bits = queryPair.components(separatedBy: "=")
+        if bits.count != 2 { continue }
+        let key = bits[0].removingPercentEncoding ?? bits[0]
+        let value = bits[1].removingPercentEncoding ?? bits[1]
+        params[key] = value
+    }
+
+    return URLParseResult(
+        scheme: url.scheme?.lowercased(),
+        host: url.host?.lowercased(),
+        params: params,
+        fullURL: url.absoluteString
+    )
 }
 
 // MARK: - HSURLEventHandler
@@ -80,9 +121,11 @@ private class HSURLEventHandler: NSObject, HSOpenFileDelegate {
     }
 
     func handleStartupEvents() {
-        if let startupEvent = appDelegate?.startupEvent {
-            handleAppleEvent(startupEvent, withReplyEvent: nil)
-            appDelegate?.startupEvent = nil
+        if let events = appDelegate?.startupEvents, !events.isEmpty {
+            for event in events {
+                handleAppleEvent(event, withReplyEvent: nil)
+            }
+            appDelegate?.startupEvents.removeAll()
         }
 
         if let startupFile = appDelegate?.startupFile {
@@ -95,9 +138,10 @@ private class HSURLEventHandler: NSObject, HSOpenFileDelegate {
         // Workaround for macOS 10.15+ revealing Dock icon before receiving Apple Events
         MJDockIconSetVisible(MJDockIconVisible())
 
-        // Get the process id for the application that sent the current Apple Event
-        let appleEventDescriptor = NSAppleEventManager.shared().currentAppleEvent
-        let processSerialDescriptor = appleEventDescriptor?.attributeDescriptor(forKeyword: AEKeyword(keyAddressAttr))
+        // Use the event parameter directly — currentAppleEvent is nil when
+        // replaying stored startup events via handleStartupEvents().
+        let appleEventDescriptor = event
+        let processSerialDescriptor = appleEventDescriptor.attributeDescriptor(forKeyword: AEKeyword(keyAddressAttr))
         let pidDescriptor = processSerialDescriptor?.coerce(toDescriptorType: typeKernelProcessID)
 
         let pid: pid_t
@@ -120,35 +164,18 @@ private class HSURLEventHandler: NSObject, HSOpenFileDelegate {
             return
         }
 
-        var urlString = openUrl
-        if urlString.hasPrefix("/") {
-            urlString = "file://\(urlString)"
-            urlString = urlString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? urlString
-        }
-
-        guard let url = URL(string: urlString) else {
-            os_log(.error, "ERROR: Unable to parse '%{public}s' as a URL", urlString)
+        guard let parsed = parseURLEvent(openUrl) else {
+            os_log(.error, "ERROR: Unable to parse '%{public}s' as a URL", openUrl)
             return
         }
 
-        let query = url.query ?? ""
-        let queryPairs = query.components(separatedBy: "&")
-        let pairs = NSMutableDictionary()
-
-        for queryPair in queryPairs {
-            let bits = queryPair.components(separatedBy: "=")
-            if bits.count != 2 { continue }
-
-            let key = bits[0].removingPercentEncoding ?? bits[0]
-            let value = bits[1].removingPercentEncoding ?? bits[1]
-            pairs[key] = value
-        }
+        let pairs = NSMutableDictionary(dictionary: parsed.params)
 
         cb.push(onto: L)
-        lua_pushany(L, url.scheme?.lowercased() as NSString?)
-        lua_pushany(L, url.host?.lowercased() as NSString?)
+        lua_pushany(L, parsed.scheme as NSString?)
+        lua_pushany(L, parsed.host as NSString?)
         lua_pushany(L, pairs)
-        lua_pushany(L, url.absoluteString as NSString)
+        lua_pushany(L, parsed.fullURL as NSString)
         L.push(lua_Integer(pid))
         if lua_pcall(L, 5, 0, 0) != LUA_OK { lua_pop(L, 1) }
     }

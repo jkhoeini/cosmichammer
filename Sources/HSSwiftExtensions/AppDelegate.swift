@@ -25,7 +25,7 @@ class MJAppDelegate: NSObject, NSApplicationDelegate {
     // MARK: Properties (matching MJAppDelegate.h)
 
     var menuBarMenu: NSMenu?
-    @objc var startupEvent: NSAppleEventDescriptor?
+    @objc var startupEvents: [NSAppleEventDescriptor] = []
     @objc var startupFile: String?
     @objc weak var openFileDelegate: (NSObjectProtocol & HSOpenFileDelegateAppDelegate)?
 
@@ -257,13 +257,13 @@ class MJAppDelegate: NSObject, NSApplicationDelegate {
             forEventClass: AEEventClass(kInternetEventClass),
             andEventID: AEEventID(kAEGetURL)
         )
-        self.startupEvent = nil
+        self.startupEvents = []
         self.startupFile = nil
         self.openFileDelegate = nil
     }
 
     @objc private func handleGetURLEvent(_ event: NSAppleEventDescriptor, withReplyEvent replyEvent: NSAppleEventDescriptor) {
-        self.startupEvent = event
+        self.startupEvents.append(event)
     }
 
     func application(_ sender: NSApplication, openFile filename: String) -> Bool {
