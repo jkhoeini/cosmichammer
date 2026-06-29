@@ -5,6 +5,7 @@ public final class SimulatedWorkspace: WorkspaceProtocol {
     private var rng: RPRNG
     private let faults: FaultConfig
 
+    public let launchServices = SimulatedLaunchServices()
     public var apps: [AppInfo] = []
     public var windows: [WindowInfo] = []
     public var frontmostApp: AppInfo?
@@ -26,12 +27,12 @@ public final class SimulatedWorkspace: WorkspaceProtocol {
 
     public func openURL(_ url: String) -> Bool {
         openedURLs.append(url)
-        return true
+        return launchServices.openURL(url)
     }
 
     public func openFile(_ path: String) -> Bool {
         openedFiles.append(path)
-        return true
+        return launchServices.openFile(path)
     }
 
     public func launchApplication(bundleIdentifier: String) -> Bool {

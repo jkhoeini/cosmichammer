@@ -141,9 +141,10 @@ LuaSkin → LuaSwift).
 :OWNER: agent-pipeline
 :END:
 
-  Origin: surfaced while evaluating ecritum (see ~ECRITUM_PLAN.org~ B1). The
-  ergonomic win attributed to ecritum is actually available today by adopting
-  LuaSwift's idiomatic Swift API — no engine swap, no capability loss.
+  Origin: surfaced while evaluating ecritum (see ~ECRITUM_PLAN.org~ B1; dual-track
+  plan 2026-06-21). The ergonomic win attributed to ecritum is actually available
+  today by adopting LuaSwift's idiomatic Swift API — no engine swap, no capability
+  loss. Track A Phase SH-1 in ~ECRITUM_PLAN.org~ / ~TODO.org~ "Ecritum integration".
 
 ** Context / why
    Extensions were ported from Hammerspoon's C by transliterating the Lua C API
@@ -171,10 +172,16 @@ LuaSkin → LuaSwift).
      verifiable.
    - Goal: deduplicate home-grown conversion against LuaSwift equivalents where
      behavior provably matches (esp. binary-safe strings, NUL handling).
+   - Goal (long-term, ecritum track): reduce direct ~lua_State~ coupling so a
+     future ~ScriptingHost~ abstraction can sit between extensions and the VM.
+     See ~ECRITUM_PLAN.org~ coupling layers L2–L4 and ~TODO.org~ "Ecritum
+     integration & scripting host decoupling". This WP series is Track A
+     Phase 1 of that plan — it does *not* require ecritum.
    - Non-goal: any change to public Lua API/behavior, the threading model, the
      bundle layout, or the engine.
    - Non-goal: a big-bang rewrite. Every step must ~just build~ + pass its
      focused tests before the next starts.
+   - Non-goal: replacing LuaSwift with ecritum (see ~ECRITUM_PLAN.org~ B1–B5).
 
 ** Verification harness (every step uses this)
    - Resources: ~mise exec -- just test-resources~
@@ -621,6 +628,158 @@ LuaSkin → LuaSwift).
     - ACTION: spawn a follow-up focused planning agent to redesign WP3 teardown
       (explicit `__gc` vs block/weak-proxy timer) and re-run codex on the revision
       BEFORE the WP3 implementation agent starts.
+
+* TODO — Ecritum integration & scripting host decoupling
+:PROPERTIES:
+:STATUS: PLANNING
+:PLAN: ECRITUM_PLAN.org
+:END:
+
+  Long-term effort to (a) reduce Cosmic Hammer's direct coupling to PUC-Rio
+  ~lua_State~ / raw ~CLua~, and (b) evaluate ecritum as an *additive*
+  multi-language sandbox — *not* as a drop-in LuaSwift replacement.
+
+  Canonical analysis, blocker inventory, coupling layers, and phased plan:
+  ~ECRITUM_PLAN.org~ (initial 2026-06-10; re-audit & dual-track plan 2026-06-21).
+
+  *Verdict:* full replacement blocked on five independent axes (B1–B5). Work
+  proceeds on two parallel tracks:
+
+  - *Track A (this repo):* decouple + idiomatic LuaSwift migration (WP0–WP8 below)
+    → ~ScriptingHost~ abstraction → optional engine swap evaluation later.
+  - *Track B (ecritum repo):* capability spikes; each must pass before embedding.
+
+** Context — two problems, one strategy
+
+   | Problem | Description | Primary owner |
+   |---------|-------------|---------------|
+   | Issue #1 — ecritum gaps | v0.2.0-alpha.1 lacks PUC-Rio 5.4, userdata, sync callbacks, ~require~, trusted tier | ecritum ADRs / spikes |
+   | Issue #2 — CH Lua coupling | ~153 files import ~CLua~/~Lua~; product API *is* userdata + refs + sync ~lua_pcall~ | this repo / Track A |
+
+** Track A — Cosmic Hammer decoupling (depends on CLua migration WPs)
+
+*** Phase SH-0 — Extension scorecard
+    :PROPERTIES:
+    :STATUS: NOT-STARTED
+    :BLOCKS: SH-2, ecritum module subset selection
+    :END:
+
+    Build per-module matrix for all 68 native modules (~extensions.manifest~).
+    Columns: userdata types, registry refs, sync callback, custom ~__gc~,
+    cross-module userdata, CLua WP bucket, ecritum feasibility, notes.
+
+    Score first (highest coupling): ~eventtap~, ~hotkey~, ~application~,
+    ~window~, ~webview~, ~canvas~, ~sqlite3~, ~menubar~, ~uielement~,
+    ~axuielement~.
+
+    Deliverable: ~docs/extension-scorecard.org~ or section in ~ECRITUM_PLAN.org~.
+
+    - [ ] Generate initial scorecard from automated grep heuristics
+    - [ ] Manual review pass for sync-callback and cross-module columns
+    - [ ] Link each module row to its WP bucket (WP2–WP8)
+
+*** Phase SH-1 — Continue CLua → idiomatic LuaSwift (active)
+    In-flight under [[*TODO — Migrate raw Lua C API (CLua) to idiomatic LuaSwift API][CLua migration]] above.
+
+    Status (2026-06-21):
+    - [X] WP0 adapter + equivalence/coexistence tests
+    - [X] WP1 ~Math~ + ~Base64~
+    - [X] WP3 ~Timer~ userdata pilot
+    - [ ] WP2 value-conversion dedup
+    - [ ] WP4–WP8 (see ordered list in CLua migration section)
+
+    Exit criteria (Phase SH-1 complete): raw ~lua_*~ confined to ~LuaRuntime~,
+    ~LuaHelpers~, ~LuaSkinHelpers~, ~LuaSkinCompatibility~, and explicitly
+    listed do-not-migrate modules (~SQLite3Module~, hardware).
+
+*** Phase SH-2 — ScriptingHost abstraction seam
+    :PROPERTIES:
+    :STATUS: NOT-STARTED
+    :DEPENDS: SH-0 scorecard (inform API shape), SH-1 partial (WP2+)
+    :END:
+
+    Introduce engine-swappable protocols; *first implementation delegates 1:1 to
+    existing PUC-Rio ~lua_State~* — zero user-visible behavior change.
+
+    Proposed types (names tentative — finalize in repo ADR):
+
+    - ~ScriptingRuntime~ — create/destroy, eval string, panic, register native module
+    - ~ScriptValue~ — typed push/pull mirroring ~lua_pushany~/~lua_tovalue~ semantics
+      including NON-delegatable cases (~LuaIdiomaticAdapter.swift~ header)
+    - ~ScriptCallback~ — ref/unref/invoke; replaces direct ~luaL_ref~ usage
+    - ~HostObject~ — userdata lifecycle; replaces ~lua_newuserdata~ + ~__gc~ pattern
+    - ~CallbackRegistry~ — generation canary integration for reload safety
+
+    Implementation plan:
+    - [ ] Draft ADR: ~docs/adr/scripting-host.org~ (or append to ~ECRITUM_PLAN.org~)
+    - [ ] Add ~Sources/HSDSTCore/ScriptingHost.swift~ (protocols only, no wiring)
+    - [ ] Add ~Sources/HSSwiftExtensions/LuaScriptingRuntime.swift~ (Lua adapter)
+    - [ ] Wire ~LuaRuntime~ through adapter behind feature flag (default: direct path)
+    - [ ] Migrate one low-risk module (~Hash~ or ~HostLocale~) as proof
+    - [ ] Tests: behavior identical to pre-adapter via existing functional suites
+
+    GC contract (must be encoded in ADR):
+    - ~__gc~ finalizers must NOT ~lua_call~ back into Lua (~Menubar.swift~,
+      ~ChooserLegacy.swift~, ~MenubarGCTests.swift~).
+    - ~lua_close~ before ~environmentDetach~ (~LuaRuntime.swift:MJLuaDealloc~).
+
+*** Phase SH-3 — Evaluate engine swap (gate: Track B spikes pass)
+    Do NOT start until ecritum spikes E3-1..E3-4 pass (see Track B below).
+    If gates fail, ecritum stays additive-only permanently.
+
+    - [ ] Document go/no-go decision in ~ECRITUM_PLAN.org~
+
+** Track B — Ecritum capability spikes (ecritum repo + optional CH prototype)
+
+    Each spike is pass/fail. Failures do not block Track A.
+
+*** Spike E3-1 — PUC-Rio or bootstrap-compatible Lua eval
+    Question: can ecritum eval a ~setup.lua~ / ~require~ fragment without rewrite?
+
+    - [ ] Attempt PUC-Rio backend prototype (ADR-0023 deferred path)
+    - [ ] Or: trusted-tier ~require~ for pre-registered module table
+    Pass: ~require("hs._boot")~ equivalent loads; document dialect differences.
+
+*** Spike E3-2 — Sync main-thread callback
+    Question: can a MainActor timer invoke ecritum Lua synchronously?
+
+    - [ ] Prototype sync eval API or MainActor-dispatched job completion
+    Pass: callback returns before timer handler exits; no ~ECRITUM_ERROR_REENTRANT_CALL~.
+
+*** Spike E3-3 — Handle-based object round-trip
+    Question: can ecritum express ~hs.window~-like identity without userdata?
+
+    - [ ] Host-side handle registry; ~ecritum.hs.window.focus(id)~ mutates live window
+    Pass: two calls with same handle ID refer to same window; stale ID errors cleanly.
+
+*** Spike E3-4 — One real module, five languages
+    Question: ergonomics + footprint of flat ~hs~ API exposure?
+
+    - [ ] Expose ~hs.alert~ or ~hs.notify~ as ~ecritum.hs.alert(msg)~ in Lua/JS/Python/Ruby/Clojure
+    - [ ] Measure: bundle size delta, cold start, first-eval latency
+    Pass: acceptable footprint; API usable; documented limitation list.
+
+** Phase SH-4 — Additive ecritum embedding (after E3-4 passes)
+    Only if Track B spikes justify the ~477 MB cost.
+
+    - [ ] SPM dependency on ecritum XCFramework (optional build flag?)
+    - [ ] Separate ~EcritumScriptingRuntime~ impl of ~ScriptingHost~ (subset API)
+    - [ ] User-facing docs: automation Lua vs sandbox scripts (see ECRITUM_PLAN S6)
+    - [ ] Policy: default-deny; explicit opt-in for ecritum surface
+
+** Follow-ups tied to recent production learnings
+
+    - [X] Menubar GC: no ~lua_call~ from ~__gc~ (~Menubar.swift~, ~MenubarGCTests.swift~)
+    - [ ] Document GC-safe teardown pattern in scripting-host ADR (generalize menubar fix)
+    - [ ] Add scorecard row for every module with custom ~__gc~ (~75 modules)
+
+** Cross-references
+
+    - Blocker details: ~ECRITUM_PLAN.org~ sections B1–B5, S1–S6
+    - Coupling layers L1–L6: ~ECRITUM_PLAN.org~
+    - Quantified metrics: ~ECRITUM_PLAN.org~ "2026-06-21 re-audit"
+    - CLua migration WPs: this file, section above
+    - Non-delegatable conversions: ~LuaIdiomaticAdapter.swift~ file header
 
 * TODO — Architecture (design decisions needed)
 

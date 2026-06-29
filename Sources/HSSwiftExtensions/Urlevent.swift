@@ -23,7 +23,7 @@ private var defaultContentTypes: [String]?
 @objc protocol HSAppDelegateURLAccess: NSObjectProtocol {
     @objc var startupEvents: [NSAppleEventDescriptor] { get set }
     @objc var startupFile: String? { get set }
-    @objc var openFileDelegate: (any NSObjectProtocol)? { get set }
+    @objc var openFileDelegate: (NSObjectProtocol & HSOpenFileDelegate)? { get set }
 }
 
 // MARK: - URL parsing (internal, testable)

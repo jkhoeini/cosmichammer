@@ -1,7 +1,7 @@
 #+TITLE: Ecritum vs. Cosmic Hammer Lua Integration — Feasibility Findings
 #+SUBTITLE: Can ecritum replace LuaSkin/Lua 5.4 while keeping Lua as-is and adding other languages?
 #+AUTHOR: Evaluation report
-#+DATE: 2026-06-10
+#+DATE: 2026-06-10 (initial); 2026-06-21 (re-audit & phased plan)
 #+STARTUP: overview
 #+OPTIONS: toc:3 num:t
 
@@ -16,7 +16,8 @@
 which alone blocks a drop-in replacement:
 
 1. Ecritum has *no Lua C API* and forbids native modules → all *68 native
-   extensions* (the entire macOS-integration core) cannot load.
+   ~luaopen_hs_*~ modules* (~extensions.manifest~) / *92 ~package.preload~
+   registrations* (~HSExtensionsGenerated.swift~) cannot load as-is.
 2. Ecritum passes *only 8 immutable value kinds* and explicitly rejects
    userdata / metatables / host objects → the object model of the ~hs~ API
    (~hs.window~, ~hs.application~, …) cannot be expressed.
@@ -34,7 +35,25 @@ which alone blocks a drop-in replacement:
 There is a realistic *additive* path (embed ecritum *alongside* the existing
 core for a new, sandboxed multi-language "rules/snippets" surface). It does not
 replace anything, and the "Lua" it adds is a different, incompatible dialect.
-See [[*The only realistic path: additive, not replacement]].
+See [[*The only realistic path: additive, not replacement]] and
+[[*Phased incremental plan (dual-track)]].
+
+*Dual-track strategy (2026-06-21).* Two problems must be solved in parallel,
+not by a single engine swap:
+
+1. *Ecritum gaps (Issue #1):* ecritum v0.2.0-alpha.1 lacks PUC-Rio Lua 5.4,
+   userdata, sync main-thread callbacks, ~require~, and a trusted automation
+   tier. These are explicit non-goals today (ecritum ADRs) — ecritum must grow,
+   or Cosmic Hammer must accept capability loss.
+2. *Cosmic Hammer coupling (Issue #2):* the app is a full in-process Lua C-API
+   host (~153 Swift files import ~CLua~/~Lua~, ~158 files call ~lua_*~). This
+   must be peeled layer-by-layer toward a *scripting-host abstraction* while
+   keeping PUC-Rio Lua as the production engine.
+
+Tracked execution items live in ~TODO.org~ under
+[[file:TODO.org::* TODO — Ecritum integration & scripting host decoupling][Ecritum
+integration & scripting host decoupling]] and the in-flight CLua → idiomatic
+LuaSwift migration (same file, WP0–WP8).
 
 * Scope and method
 
@@ -120,6 +139,8 @@ The whole ~hs~ API is built on Lua C-API primitives:
 ** Scale
 - ~73K lines of Swift extension code + ~36K lines of pure-Lua, *all* assuming
   the Lua 5.4 C API and Lua 5.4 semantics.
+- Updated counts (153 import files, 92 preloads, etc.): see
+  [[*2026-06-21 re-audit — quantified coupling]].
 
 * What ecritum actually is (verified from source + ADRs)
 
@@ -419,6 +440,224 @@ automation engine) and LuaJ (sandboxed, no ~require~/~os~/~io~/coroutine) under
 the same product name. Same language name, different dialect, different
 capabilities — a documentation and support hazard.
 
+* 2026-06-21 re-audit — quantified coupling
+
+Re-measured against the live repo (June 2026). Use these numbers when
+estimating migration cost or prioritizing refactors.
+
+| Metric | Count | Primary evidence |
+|--------|------:|------------------|
+| Swift files ~import CLua~ and/or ~import Lua~ | 153 | ~Sources/~ + ~Tests/~ grep |
+| Swift files ~import CLua~ only | 47 | bridge/infra, no idiomatic ~Lua~ yet |
+| Swift files ~import Lua~ (idiomatic layer) | 106 | often mixed with raw ~lua_*~ in same fn |
+| Files with ~lua_*~ / ~luaL_*~ call sites | 158 | Swift + headers |
+| ~@_cdecl("luaopen_hs_*")~ implementations | 94 | ~Sources/HSSwiftExtensions/~ |
+| ~package.preload~ entries (generated) | 92 | ~HSExtensionsGenerated.swift~ |
+| Native ~luaopen_*~ symbols (~extensions.manifest~) | 68 | authoritative manifest |
+| ~HSSwiftExtensions/*.swift~ total | 175 | SPM target |
+| Files using registry refs (~luaL_ref~ / ~lua_rawgeti~) | ~60 | extension modules |
+| Modules with userdata + custom ~__gc~ | ~75 | ~lua_newuserdata~ / ~luaL_newmetatable~ |
+| Modules guarded by generation canary | ~30 | ~lua_isStateGenerationValid~ |
+| Test files tied to Lua/CLua | ~40 | ~Tests/CosmicHammerTests/~ |
+| Swift extension LOC (approx.) | ~73K | all native bridge code |
+| Pure Lua extension LOC (approx.) | ~36K | ~extensions/~ tree |
+| Ecritum XCFramework size | ~477 MB | ecritum README / ADR-0018 |
+
+*Verdict unchanged:* replacement remains blocked on B1–B5. The re-audit confirms
+the coupling is *foundational*, not cosmetic — roughly half of all Swift in
+~Sources/~ + ~Tests/~ imports Lua/CLua directly.
+
+* Coupling layers — where Cosmic Hammer binds to Lua (L1–L6)
+
+Refactoring should peel from the *top* (product Lua) toward the *bottom* (VM),
+introducing abstractions at each seam. Do *not* attempt a bottom-up engine swap
+first.
+
+| Layer | What lives here | Key files / mechanisms | Refactor target | Ecritum severity |
+|-------+-----------------+------------------------+-----------------+------------------|
+| *L6 Product API* | User ~init.lua~, pure Lua wrappers | ~extensions/**/*.lua~ (~36K LOC) | Unchanged on Lua path; separate flat API for ecritum languages | Blocker (LuaJ + no ~require~) |
+| *L5 Bootstrap* | Module loader, preload | ~CosmicHammer/setup.lua~, ~HSExtensionsGenerated.swift~ (92 preloads), ~require~ → ~_coresetup~ | ~ModuleLoader~ interface; preload stays on Lua until ecritum gains ~require~ | Blocker |
+| *L4 Runtime lifecycle* | VM alloc/init/dealloc/reload, console | ~LuaRuntime.swift~ (~MJLuaAlloc/Init/Dealloc~, ~MJLuaRunString~) | ~ScriptingRuntime~ protocol; generation canary → ~CallbackRegistry~ | Blocker |
+| *L3 Bridge helpers* | Value conversion, LuaSkin compat, env attach | ~LuaHelpers.swift~, ~LuaSkinCompatibility.swift~, ~LuaSkinHelpers.swift~, ~HSDSTCore/Environment.swift~ (~lua_getextraspace~) | ~ScriptValue~ / ~HostObject~ abstractions; thin Lua adapter | Blocker |
+| *L2 Extension modules* | Native ~hs.*~ implementations | 94 ~@_cdecl luaopen_hs_*~ files, userdata OOP, registry refs | ~HostModule~ registration; idiomatic LuaSwift closures (in flight) | Blocker |
+| *L1 Engine* | PUC-Rio Lua 5.4 VM | ~Package.swift~ → ~tomsci/LuaSwift~ (~Lua~ + ~CLua~ products) | ~ScriptingRuntime~ with PUC-Rio impl now; ecritum impl only after spikes | Blocker (swap) |
+
+** L4 detail — runtime contracts that must survive any abstraction
+
+These behaviors are load-bearing and recently exercised (e.g. menubar GC fix,
+2026-06-21):
+
+- *Single main-thread ~lua_State~* integrated with AppKit runloop.
+- *~lua_close~ ordering:* ~MJLuaDealloc~ calls ~lua_close~ *before*
+  ~environmentDetach~ so ~__gc~ finalizers can still call ~environmentGet(L)~.
+- *Generation canary:* ~lua_bumpStateGeneration~ / ~lua_isStateGenerationValid~
+  (~LuaHelpers.swift~, ~30+ async modules~) — repo-specific reload guard with no
+  ecritum equivalent.
+- *Registry refs:* ~luaL_ref~ / ~lua_rawgeti~ + ~lua_pcall~ for timers, HTTP,
+  eventtaps, hotkeys, watchers — synchronous, re-entrant callbacks.
+- *~__gc~ must not ~lua_call~:* GC finalizers must call Swift cleanup directly
+  (see ~Menubar.swift~ ~menubaritem_gc~, ~ChooserLegacy.swift~ userdata GC).
+  Calling back into Lua from ~__gc~ corrupts the allocator during ~lua_close~.
+
+** L3 detail — non-delegatable conversion behaviors
+
+~LuaIdiomaticAdapter.swift~ documents cases where home-grown ~LuaHelpers.swift~
+*must* remain authoritative even during the in-stack LuaSwift migration (not
+ecritum-related, but blocks naive "use ~push(any:)~ everywhere"):
+
+- CFBoolean / NSNumber-as-bool → Lua boolean (vs LuaSwift number 1/0).
+- Swift ~Float~, empty ~[Any]~, deep nested tables without ~lua_checkstack~.
+- Geometry ~__luaSkinType~ tables (NSPoint, NSRect, NSColor, NSFont, …).
+- Retained-userdata seam (~lua_pushretainedUserdata~): ~hs.image~, ~hs.styledtext~,
+  cross-module routing (~LuaHelpers.swift:203-225~).
+- GC generation canary (independent of LuaSwift ~_State~ lifecycle).
+
+Any future ~ScriptValue~ abstraction must preserve these semantics on the Lua
+path or break Hammerspoon compatibility.
+
+* Blocker priority ranking (for planning)
+
+When sequencing work, address highest-impact incompatibilities first. Rank is by
+*practical unblock cost*, not ADR axis number.
+
+| Rank | Blocker | Why first | Unblock requires |
+|------|---------|-----------|------------------|
+| 1 | *B3 Threading / sync callbacks* | ~hs.eventtap~, ~hs.hotkey~ need synchronous main-thread verdicts; ecritum worker-thread async model is architecturally opposite | Ecritum: sync eval on MainActor + re-entry policy OR CH: drop real-time hooks |
+| 2 | *B2 Userdata / object model* | ~75+ modules; entire ~hs.window:focus()~ API; flat RPC = total redesign | Ecritum: handle registry + method dispatch OR CH: new flat API |
+| 3 | *B1 No C API / 68 native modules* | ~73K LOC Swift; every module is stack manipulation today | Ecritum: PUC-Rio path OR CH: rewrite all modules as host functions |
+| 4 | *B4 LuaJ ≠ PUC-Rio + bootstrap* | ~setup.lua~ ~require~ chain; ~36K pure Lua; user configs | Ecritum: PUC-Rio 5.4 backend (ADR-0023 deferred) OR CH: abandon Lua corpus |
+| 5 | *Registry refs + ~__gc~ (L4)* | ~60 callback sites; subtle ~lua_close~ ordering | ~CallbackRegistry~ abstraction; explicit teardown patterns |
+| 6 | *L3 conversion layer* | Hammerspoon-specific semantics in ~LuaHelpers~ | ~ScriptValue~ with documented divergence matrix |
+| 7 | *B5 Trust / footprint / maturity* | Product identity + ~477 MB + alpha status | Policy decision: trusted tier vs sandbox-only additive feature |
+
+* Ecritum gaps — what must change on each side
+
+** On the ecritum repo (highest leverage investments)
+
+If the goal is eventual backward-compatible Lua + multi-language scripting, ecritum
+would need *at least one* of these per row — not all are compatible with ecritum's
+current sandbox-first design:
+
+| Gap | Ecritum must add | ADR / status | Unlocks |
+|-----|------------------|--------------|---------|
+| PUC-Rio Lua 5.4 | Native ~lua_State~ or byte-compatible VM backend | ADR-0023 mentions deferred PUC-Lua dylib | B4 bootstrap, user ~init.lua~, pure Lua extensions |
+| Sync main-thread eval | Synchronous ~eval~ on caller/MainActor thread | ADR-0003 forbids today | B3 eventtap, hotkey, timer callbacks |
+| Re-entrant callbacks | Policy for host→script→host during callback | ~ECRITUM_ERROR_REENTRANT_CALL~ today | B3 all watcher modules |
+| Object handles | Opaque handle IDs + host-side registry + method dispatch | ADR-0021 rejects today | B2 OOP ~hs.*~ API (partial) |
+| ~require~ / modules | Trusted-tier module loading | ADR-0023 denies today | L5 bootstrap, extension graph |
+| Trusted capability tier | Full filesystem, subprocess, raw network policy | ADR-0004 deny-by-default | B5 ~hs.task~, ~hs.http~, ~hs.fs~ |
+
+** On the Cosmic Hammer repo (decoupling investments)
+
+Regardless of ecritum timeline, these reduce swap cost and improve maintainability:
+
+| Investment | Delivers | Tracked in |
+|------------|----------|------------|
+| CLua → idiomatic LuaSwift (WP0–WP8) | Less raw stack boilerplate; same capabilities | ~TODO.org~ CLua migration |
+| ~ScriptingHost~ protocol + Lua adapter | Engine-swappable seam without behavior change | ~TODO.org~ Phase SH-2 |
+| Extension scorecard | Per-module migration order + ecritum feasibility | ~TODO.org~ Phase SH-0 |
+| ~CallbackRegistry~ abstraction | Ref/registry logic independent of ~lua_State~ | ~TODO.org~ Phase SH-2 |
+| Explicit ~__gc~ / teardown patterns | Documented safe GC (no ~lua_call~ from finalizers) | ~MenubarGCTests.swift~ precedent |
+
+* Phased incremental plan (dual-track)
+
+This is the recommended pickup sequence. *Do not skip Phase 1* — it pays off even
+if ecritum never replaces the engine.
+
+** Phase 0 — Inventory & characterization (mostly done)
+
+- [X] Blocker analysis B1–B5, secondary S1–S6 (this document)
+- [X] Quantified coupling table (above)
+- [X] CLua idiomatic adapter + equivalence tests (WP0, ~LuaIdiomaticAdapter.swift~)
+- [ ] Extension scorecard — classify all 68 native modules (see [[*Extension scorecard (TODO)]])
+- [ ] Draft ~ScriptingHost~ protocol in repo (Lua-only impl first)
+
+** Phase 1 — Decouple Swift from raw CLua (stay on PUC-Rio)
+
+*Addresses Issue #2. Zero user-visible change.*
+
+Continue ~TODO.org~ work packages WP1–WP8:
+
+- [X] WP1: ~Math~, ~Base64~ (pure functions)
+- [X] WP3: ~Timer~ (userdata pilot)
+- [ ] WP2: value-conversion dedup (~JSON~, ~Plist~, ~Settings~, ~Hash~, ~Pasteboard~)
+- [ ] WP4–WP8: progressively harder modules (see ordered list in ~TODO.org~)
+
+*Exit criteria:* raw ~lua_*~ calls confined to ~LuaRuntime~, ~LuaHelpers~, and a
+shrinking set of legacy modules; ~just verify~ green after each WP.
+
+** Phase 2 — Scripting-host abstraction seam
+
+*Still PUC-Rio underneath; enables future engine evaluation.*
+
+Introduce protocols (names tentative — finalize in SH-2 ADR):
+
+- ~ScriptingRuntime~ — alloc, eval string, close, register module, panic handler
+- ~ScriptValue~ — push/pull without exposing stack indices to extensions
+- ~ScriptCallback~ — ref/unref/invoke equivalent to registry refs
+- ~HostObject~ — userdata lifecycle without ~lua_newuserdata~
+
+First implementation: *Lua adapter* delegating 1:1 to existing ~lua_State~.
+No behavior change; extensions migrate behind adapter incrementally (optional —
+not required for all WPs).
+
+** Phase 3 — Ecritum capability spikes (parallel, on ecritum repo)
+
+Each spike is pass/fail before proceeding. Failures keep ecritum *additive only*.
+
+| Spike | Question | Pass criterion |
+|-------|----------|----------------|
+| E3-1 | Can ecritum run PUC-Rio or eval ~setup.lua~ fragment? | ~require("hs._boot")~ equivalent loads without manual rewrite |
+| E3-2 | Sync callback from MainActor timer? | Host timer fires Lua handler synchronously on main thread |
+| E3-3 | Handle-based object round-trip? | ~focus(windowId)~ mutates live window via host registry |
+| E3-4 | One real module flat across 5 languages? | ~hs.alert~ or ~hs.notify~ works as ~ecritum.hs.alert(msg)~ in Lua/JS/Python |
+
+** Phase 4 — Additive multi-language surface (not replacement)
+
+- Keep PUC-Rio Lua as primary automation engine (all 68 native modules).
+- Embed ecritum for sandboxed rules/snippets only.
+- Curated flat subset of ~hs.*~ via ecritum namespaces.
+- User docs: *automation Lua* (PUC-Rio 5.4, full ~hs~ API) vs *sandbox scripts*
+  (LuaJ/JS/Python/Ruby/Clojure, limited flat API).
+
+** Phase 5 — Evaluate core engine replacement (gate: all E3 spikes pass)
+
+Only consider migrating the core engine if ecritum demonstrates:
+
+- PUC-Rio or byte-compatible Lua 5.4 (not LuaJ-only)
+- Sync main-thread callbacks with re-entry where needed
+- Object handles *or* accepted API redesign with migration guide
+- Trusted tier matching Hammerspoon capability model
+
+If any gate fails: *stop* — ecritum remains additive forever.
+
+* Extension scorecard (TODO)
+
+:PROPERTIES:
+:STATUS: NOT-STARTED
+:OWNER: TBD
+:END:
+
+Build a matrix for every native module (~extensions.manifest~, 68 rows). Columns:
+
+| Column | Meaning |
+|--------|---------|
+| Module | e.g. ~application~, ~eventtap~, ~canvas~ |
+| Userdata types | metatable names (~hs.application~, …) |
+| Registry refs | callback refs (~luaL_ref~) |
+| Sync callback | must return to OS synchronously (eventtap, hotkey) |
+| Custom ~__gc~ | resource teardown on GC / ~lua_close~ |
+| Cross-module userdata | pushed/consumed by other modules (~hs.image~, …) |
+| CLua migration WP | WP2–WP8 bucket from ~TODO.org~ |
+| Ecritum feasibility | IMPOSSIBLE / FLAT-ONLY / RULES-OK / N/A |
+| Notes | blockers, dependencies |
+
+*Priority modules to score first (highest coupling):* ~eventtap~, ~hotkey~,
+~application~, ~window~, ~webview~, ~canvas~, ~sqlite3~, ~timer~ (done),
+~menubar~, ~uielement~ / ~axuielement~.
+
+Deliverable: ~docs/extension-scorecard.org~ or a section appended here once filled.
+
 * What "keep Lua as-is" would literally require (and why ecritum won't give it)
 
 To preserve today's behavior, ecritum would need to provide ALL of:
@@ -477,39 +716,60 @@ So ecritum could plausibly power a "sandboxed user macros in multiple languages"
 
 * Recommendation and next steps
 
-- *Do not replace LuaSkin/Lua 5.4 with ecritum.* See blockers B1–B5.
-- If multi-language scripting is genuinely wanted, pursue the *additive,
-  sandboxed side-feature* (above) and weigh it against simpler alternatives:
-  - Expose the ~hs~ API over a local RPC/IPC any language can call.
-  - Embed a single additional native engine for one extra language if a specific
-    language is the actual ask.
-- Suggested follow-ups (pick any):
-  1. Prototype the additive bridge: expose one ~hs~ capability as an ecritum host
-     function across all 5 languages, to measure ergonomics and footprint.
-  2. Draft an ADR in this repo recording this decision.
-  3. Quantify the rewrite cost of one representative complex extension
-     (~hs.eventtap~ or ~hs.canvas~) to make the "not a migration" point concrete.
-- Fix the stale ~CLAUDE.md~ reference to ~Sources/LuaSkin/~ (see [[*Scope and method]]).
+- *Do not replace LuaSwift/PUC-Rio Lua 5.4 with ecritum as the core engine.*
+  See blockers B1–B5 and [[*Phased incremental plan (dual-track)]].
+- *Do pursue dual-track incremental work:*
+  1. *Track A (Cosmic Hammer):* CLua → idiomatic LuaSwift (WP0–WP8), then
+     ~ScriptingHost~ abstraction — see ~TODO.org~.
+  2. *Track B (ecritum):* capability spikes E3-1..E3-4 before any embedding
+     decision.
+  3. *If multi-language scripting is wanted before spikes pass:* additive
+     sandboxed surface only; keep Lua core unchanged.
+- *Alternative to ecritum for polyglot:* local RPC/IPC exposing ~hs~ API, or
+  embed one additional native engine for a specific language ask.
+- *Suggested follow-ups (ordered):*
+  1. [ ] Fill [[*Extension scorecard (TODO)]] — unblocks WP ordering + ecritum
+     module subset selection.
+  2. [ ] Draft ~ScriptingHost~ protocol + Lua adapter (Phase SH-2 in ~TODO.org~).
+  3. [ ] Ecritum spike E3-1: PUC-Rio eval path (even branch prototype).
+  4. [ ] Continue WP2 in ~TODO.org~ (~JSON~, ~Plist~, ~Settings~, ~Hash~,
+     ~Pasteboard~ value-conversion dedup).
+  5. [ ] Prototype additive bridge: one ~hs~ capability as ecritum host function
+     across 5 languages (spike E3-4), measure footprint + ergonomics.
+  6. [ ] Record decision ADR in this repo (linking here + ~TODO.org~).
+  7. [ ] Quantify rewrite cost of ~hs.eventtap~ or ~hs.canvas~ as flat RPC
+     (concrete "not a migration" evidence).
+- Fix the stale ~CLAUDE.md~ / ~AGENTS.md~ reference to ~Sources/LuaSkin/~ (see
+  [[*Scope and method]]) — *done in AGENTS.md*; verify no other stale refs.
 
 NOTE: ecritum appears to be the same author's repo (~jkhoeini~). If its ADRs are
-out of date relative to unpushed work, re-assess against the current design.
+out of date relative to unpushed work, re-assess against the current design and
+update the spike pass criteria accordingly.
 
 * Evidence index
 
 ** Cosmic Hammer (local)
 - ~Package.swift~ — LuaSwift dependency (line 30), Lua product (39, 105),
   ~LUA_USE_MACOSX~/~LUA_COMPAT_5_3~ (47–54).
-- ~extensions.manifest~ — 90 extensions; 68 native ~luaopen_*~ symbols; 24
-  Lua-only.
-- ~Sources/HSSwiftExtensions/HSExtensionsGenerated.swift~ — 68 ~@_silgen_name~
-  imports; ~HSExtensionsRegisterAll~ → ~package.preload~.
+- ~extensions.manifest~ — 90 extension scopes; 68 native ~luaopen_*~ symbols;
+  24 Lua-only (~extensions.manifest~ line count includes header rows).
+- ~Sources/HSSwiftExtensions/HSExtensionsGenerated.swift~ — 92 ~@_silgen_name~
+  preload entries; ~HSExtensionsRegisterAll~ → ~package.preload~.
+- ~Sources/HSSwiftExtensions/LuaIdiomaticAdapter.swift~ — WP0 adapter,
+  non-delegatable conversion matrix, safe entry-point contract.
+- ~Sources/HSSwiftExtensions/LuaHelpers.swift~ — home-grown conversions (~820 LOC),
+  generation canary, retained-userdata seam.
+- ~Sources/HSDSTCore/Environment.swift~ — ~lua_getextraspace~ attachment.
 - ~Sources/HSSwiftExtensions/LuaRuntime.swift~ — single ~lua_State~ lifecycle,
-  bootstrap, generation counters, console eval.
+  bootstrap, generation counters, console eval, ~lua_close~ ordering.
 - ~Sources/HSSwiftExtensions/Application.swift~ — representative userdata +
   metatable + ~luaopen_hs_libapplication~.
-- ~Sources/HSSwiftExtensions/{Timer,HTTP,PasteboardWatcher}.swift~ — synchronous
-  ~lua_rawgeti~ + ~lua_pcall~ callback marshalling.
+- ~Sources/HSSwiftExtensions/{Timer,HTTP,PasteboardWatcher,Menubar,ChooserLegacy}.swift~ —
+  sync callback marshalling; GC-safe teardown patterns.
+- ~Tests/CosmicHammerTests/{IdiomaticEquivalenceTests,MenubarGCTests,LuaTestSetup}.swift~ —
+  migration characterization + GC regression tests.
 - ~CosmicHammer/setup.lua~ — ~require~-based bootstrap; ~package.path~/~cpath~.
+- ~TODO.org~ — CLua → idiomatic LuaSwift WP0–WP8; ecritum/scripting-host track.
 
 ** Ecritum (remote, github.com/jkhoeini/ecritum)
 - ~README.md~ — status (planned/alpha v0.2.0-alpha.1), 5 languages, LuaJ, ~477 MB,

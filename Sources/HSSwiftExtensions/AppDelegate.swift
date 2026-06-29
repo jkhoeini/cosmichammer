@@ -7,27 +7,23 @@ import HSDSTCore
 // callAccessibilityStateCallback, textDroppedToDockIcon, fileDroppedToDockIcon
 // are now defined in LuaRuntime.swift (same module) — no @_silgen_name needed.
 
-// MARK: - HSOpenFileDelegate protocol
-
-/// Protocol for handling opened files/URLs.  The ObjC version lives in
-/// MJAppDelegate.h; we redeclare it here with the same ObjC name so the
-/// runtime treats them as the same protocol.  (Urlevent.swift does the
-/// same thing in the HSSwiftExtensions target.)
-@objc(HSOpenFileDelegate) protocol HSOpenFileDelegateAppDelegate: NSObjectProtocol {
-    @objc func callback(withURL openUrl: String, senderPID pid: pid_t)
-}
-
 // MARK: - MJAppDelegate
 
+enum OpenedFileHandlingResult: Equatable {
+    case deliveredToURLEvent
+    case storedForStartup
+    case deliveredToDock
+}
+
 @objc(MJAppDelegate)
-class MJAppDelegate: NSObject, NSApplicationDelegate {
+class MJAppDelegate: NSObject, NSApplicationDelegate, HSAppDelegateURLAccess {
 
     // MARK: Properties (matching MJAppDelegate.h)
 
     var menuBarMenu: NSMenu?
     @objc var startupEvents: [NSAppleEventDescriptor] = []
     @objc var startupFile: String?
-    @objc weak var openFileDelegate: (NSObjectProtocol & HSOpenFileDelegateAppDelegate)?
+    @objc weak var openFileDelegate: (NSObjectProtocol & HSOpenFileDelegate)?
 
     // MARK: - Programmatic Menu Construction
 
@@ -267,33 +263,50 @@ class MJAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func application(_ sender: NSApplication, openFile filename: String) -> Bool {
-        precondition(!filename.isEmpty, "filename must not be empty")
-        let fileExtension = (filename as NSString).pathExtension
-        let infoDict = Bundle.main.infoDictionary as NSDictionary?
-        if let supportedExtensions = infoDict?.value(forKeyPath: "CFBundleDocumentTypes.CFBundleTypeExtensions") as? [Any] {
-            // Flatten the nested arrays
-            let flatSupportedExtensions: [String] = supportedExtensions.compactMap { item -> [String]? in
-                if let arr = item as? [String] { return arr }
-                if let str = item as? String { return [str] }
-                return nil
-            }.flatMap { $0 }
+        handleOpenedFile(filename, supportedExtensions: Self.supportedDocumentExtensions(from: Bundle.main.infoDictionary))
+        return true
+    }
 
-            // Files to be processed by hs.urlevent
-            if flatSupportedExtensions.contains(fileExtension) {
+    @discardableResult
+    func handleOpenedFile(_ filename: String, supportedExtensions: [String]?) -> OpenedFileHandlingResult {
+        precondition(!filename.isEmpty, "filename must not be empty")
+
+        if let supportedExtensions {
+            if Self.isURLEventDocument(filename, supportedExtensions: supportedExtensions) {
                 if openFileDelegate == nil {
                     self.startupFile = filename
+                    return .storedForStartup
                 } else {
                     openFileDelegate?.callback(withURL: filename, senderPID: -1)
+                    return .deliveredToURLEvent
                 }
             } else {
-                // Trigger File Dropped to Dock Icon Callback
                 fileDroppedToDockIcon(filename as NSString)
+                return .deliveredToDock
             }
         } else {
             fileDroppedToDockIcon(filename as NSString)
+            return .deliveredToDock
+        }
+    }
+
+    private static func supportedDocumentExtensions(from infoDictionary: [String: Any]?) -> [String]? {
+        let infoDict = infoDictionary as NSDictionary?
+        guard let supportedExtensions = infoDict?.value(forKeyPath: "CFBundleDocumentTypes.CFBundleTypeExtensions") as? [Any] else {
+            return nil
         }
 
-        return true
+        return supportedExtensions.compactMap { item -> [String]? in
+            if let array = item as? [String] { return array }
+            if let string = item as? String { return [string] }
+            return nil
+        }.flatMap { $0 }
+    }
+
+    private static func isURLEventDocument(_ filename: String, supportedExtensions: [String]) -> Bool {
+        let fileExtension = (filename as NSString).pathExtension.lowercased()
+        let normalizedExtensions = supportedExtensions.map { $0.lowercased() }
+        return normalizedExtensions.contains(fileExtension)
     }
 
     func application(_ application: NSApplication,
