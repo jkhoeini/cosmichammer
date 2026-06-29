@@ -13,7 +13,7 @@ return {setup=function(context)
   local docstringspath = context.docsJSONPath
   local hasinitfile = context.hasInitFile
   local autoload_extensions = context.autoloadExtensions
-  local tostring,pack,tconcat,sformat,tsort=tostring,table.pack,table.concat,string.format,table.sort
+  local tostring,pack,unpack,tconcat,sformat,tsort=tostring,table.pack,table.unpack,table.concat,string.format,table.sort
   local traceback = debug.traceback
 
   -- define hs.printf before requiring anything because it's used by some of the modules
@@ -237,6 +237,185 @@ coroutine.applicationYield = hs.coroutineApplicationYield
     logmessage(str)
   end
 
+  local telemetryOK, telemetry = pcall(require, "hs.opentelemetry")
+  if telemetryOK then
+    hs.opentelemetry = telemetry
+  else
+    -- Fallback facade used only when the real `hs.opentelemetry` module fails to
+    -- load (e.g. the native lib is absent in a pure-Lua boot). It must expose the
+    -- same public surface as extensions/opentelemetry/opentelemetry.lua; the
+    -- `noopFacadeMatchesRealOpenTelemetrySurface` test guards against drift.
+    local activeNoopSpan
+    local activeNoopSpanStack = {}
+    local nextNoopSpanID = 1
+    local endNoopSpan
+    local noopSpanMethods = {
+      addEvent = function(self) return self end,
+      recordException = function(self) return self end,
+      setAttribute = function(self) return self end,
+      setStatus = function(self) return self end,
+      endSpan = function(self) endNoopSpan(self); return self end,
+      end_ = function(self) endNoopSpan(self); return self end,
+      finish = function(self) endNoopSpan(self); return self end,
+    }
+    noopSpanMethods.__index = noopSpanMethods
+    local function makeNoopSpan(name)
+      local span = setmetatable({ id = nextNoopSpanID, name = name, ended = false }, noopSpanMethods)
+      nextNoopSpanID = nextNoopSpanID + 1
+      return span
+    end
+    local function startNoopSpan(name)
+      local span = makeNoopSpan(name)
+      activeNoopSpanStack[#activeNoopSpanStack + 1] = span
+      activeNoopSpan = span
+      return span
+    end
+    local function activeNoopSpanID()
+      return activeNoopSpan and activeNoopSpan.id or nil
+    end
+    local function noopSpanID(span)
+      if type(span) == "table" then
+        return span.id
+      end
+      return span
+    end
+    local function validateNoopName(name, label, level)
+      if type(name) ~= "string" or name == "" then
+        error("expected " .. label, level or 3)
+      end
+    end
+    local function startValidatedNoopSpan(name)
+      validateNoopName(name, "span name", 2)
+      return startNoopSpan(name)
+    end
+    endNoopSpan = function(span)
+      local id = noopSpanID(span)
+      if id == nil then
+        return
+      end
+      if type(span) == "table" then
+        span.ended = true
+      end
+      for index = #activeNoopSpanStack, 1, -1 do
+        if activeNoopSpanStack[index].id == id then
+          activeNoopSpanStack[index].ended = true
+          table.remove(activeNoopSpanStack, index)
+        end
+      end
+      activeNoopSpan = activeNoopSpanStack[#activeNoopSpanStack]
+    end
+    local function noopStatus()
+      return { enabled = false, lastExportError = telemetry, activeSpanID = activeNoopSpanID() }
+    end
+    local function withNoopSpan(name, fn)
+      validateNoopName(name, "span name", 3)
+      if type(fn) ~= "function" then error("expected function", 3) end
+      local span = startNoopSpan(name)
+      local results = pack(xpcall(fn, traceback, span))
+      endNoopSpan(span)
+      if not results[1] then error(results[2], 0) end
+      return unpack(results, 2, results.n)
+    end
+    local noopTelemetry = {
+      configure = function() return false end,
+      saveConfig = function() return false end,
+      loadConfig = function() return nil end,
+      status = noopStatus,
+      diagnostics = function()
+        local status = noopStatus()
+        status.baggageCount = 0
+        status.redactorInstalled = false
+        return status
+      end,
+      flush = function() return true end,
+      shutdown = function() activeNoopSpan = nil; activeNoopSpanStack = {}; return true end,
+      startSpan = startValidatedNoopSpan,
+      activeSpan = activeNoopSpanID,
+      endSpan = function(span) endNoopSpan(span) end,
+      addEvent = function() end,
+      recordException = function() end,
+      setAttribute = function() end,
+      setStatus = function() end,
+      log = function() end,
+      metric = function() end,
+      inject = function(headers) return headers or {} end,
+      extract = function() end,
+      setBaggage = function() end,
+      getBaggage = function() return nil end,
+      clearBaggage = function() end,
+      setRedactor = function() end,
+      withSpan = function(name, opts, fn)
+        if type(opts) == "function" and fn == nil then fn = opts end
+        return withNoopSpan(name, fn)
+      end,
+      wrap = function(fn)
+        if type(fn) ~= "function" then error("expected function", 2) end
+        return fn
+      end,
+    }
+    noopTelemetry.tracer = function(name, version)
+      validateNoopName(name, "tracer name", 2)
+      local tracer = { name = name, version = version }
+      function tracer:startSpan(spanName)
+        return noopTelemetry.startSpan(spanName)
+      end
+      function tracer:withSpan(spanName, opts, fn)
+        if type(opts) == "function" and fn == nil then fn = opts end
+        return withNoopSpan(spanName, fn)
+      end
+      return tracer
+    end
+    noopTelemetry.meter = function(name, version)
+      validateNoopName(name, "meter name", 2)
+      local function instrument(kind, metricName, opts)
+        validateNoopName(metricName, "metric name", 3)
+        opts = opts or {}
+        local metricInstrument = {
+          name = metricName,
+          kind = kind,
+          unit = opts.unit,
+        }
+
+        function metricInstrument:add()
+          return self
+        end
+
+        function metricInstrument:record()
+          return self
+        end
+
+        return metricInstrument
+      end
+      return {
+        name = name,
+        version = version,
+        counter = function(_, metricName, opts) return instrument("counter", metricName, opts) end,
+        upDownCounter = function(_, metricName, opts) return instrument("upDownCounter", metricName, opts) end,
+        gauge = function(_, metricName, opts) return instrument("gauge", metricName, opts) end,
+        histogram = function(_, metricName, opts) return instrument("histogram", metricName, opts) end,
+      }
+    end
+    hs.opentelemetry = noopTelemetry
+  end
+
+  local originalRequire = require
+  hs._require = originalRequire
+  require = function(moduleName) -- luacheck: ignore
+    local moduleLabel = tostring(moduleName)
+    local span = hs.opentelemetry.startSpan("lua.require", {
+      attributes = { ["cosmichammer.lua.module"] = moduleLabel },
+    })
+    local results = pack(pcall(originalRequire, moduleName))
+    if not results[1] then
+      local message = tostring(results[2])
+      hs.opentelemetry.recordException(message, nil, { ["cosmichammer.lua.module"] = moduleLabel }, span)
+      hs.opentelemetry.endSpan(span, { code = "error", message = message })
+      error(results[2], 0)
+    end
+    hs.opentelemetry.endSpan(span, { code = "ok" })
+    return unpack(results, 2, results.n)
+  end
+
 --- hs.execute(command[, with_user_env]) -> output, status, type, rc
 --- Function
 --- Runs a shell command, optionally loading the users shell environment first, and returns stdout as a string, followed by the same result codes as `os.execute` would return.
@@ -257,6 +436,12 @@ coroutine.applicationYield = hs.coroutineApplicationYield
 ---  * This particular function is most useful when you're more interested in the command's output then a simple check for completion and result codes.  If you only require the result codes or verification of command completion, then `os.execute` will be slightly more efficient.
 ---  * If you need to execute commands that have spaces in their paths, use a form like: `hs.execute [["/Some/Path To/An/Executable" "--first-arg" "second-arg"]]`
   hs.execute = function(command, user_env)
+    local span = hs.opentelemetry.startSpan("hs.execute", {
+      attributes = {
+        ["cosmichammer.process.command.length"] = #command,
+        ["cosmichammer.process.shell.user_env"] = user_env and true or false,
+      },
+    })
     local f
     if user_env then
       f = io.popen(os.getenv("SHELL")..[[ -l -i -c "]]..command..[["]], 'r')
@@ -265,6 +450,18 @@ coroutine.applicationYield = hs.coroutineApplicationYield
     end
     local s = f:read('*a')
     local status, exit_type, rc = f:close()
+    if status then
+      hs.opentelemetry.endSpan(span, { code = "ok" }, {
+        ["process.exit.code"] = rc or 0,
+        ["cosmichammer.process.exit.type"] = exit_type or "exit",
+      })
+    else
+      local message = exit_type and (exit_type .. ":" .. tostring(rc)) or "command failed"
+      hs.opentelemetry.endSpan(span, { code = "error", message = message }, {
+        ["process.exit.code"] = rc or -1,
+        ["cosmichammer.process.exit.type"] = exit_type or "unknown",
+      })
+    end
     return s, status, exit_type, rc
   end
 
@@ -369,7 +566,11 @@ coroutine.applicationYield = hs.coroutineApplicationYield
       __index = function(_, key)
         if hs._extensions[key] ~= nil then
           print("-- Loading extension: "..key)
-          hs[key] = require("hs."..key)
+          hs.opentelemetry.withSpan("hs.extension.lazy_load", {
+            attributes = { ["cosmichammer.lua.module"] = "hs." .. key },
+          }, function()
+            hs[key] = require("hs."..key)
+          end)
           return hs[key]
         else
           return nil
@@ -402,12 +603,30 @@ coroutine.applicationYield = hs.coroutineApplicationYield
   hs.__appleScriptRunString = function(s)
 
     --print("runstring")
+    local span = hs.opentelemetry.startSpan("applescript.lua.evaluate", {
+      attributes = {
+        ["cosmichammer.lua.source"] = "applescript",
+        ["cosmichammer.lua.command.length"] = #s,
+      },
+    })
     local fn, err = load("return " .. s)
     if not fn then fn, err = load(s) end
-    if not fn then return false, tostring(err) end
+    if not fn then
+      local message = tostring(err)
+      hs.opentelemetry.recordException(message, nil, { ["cosmichammer.lua.source"] = "applescript", ["error.type"] = "compile" }, span)
+      hs.opentelemetry.endSpan(span, { code = "error", message = message })
+      return false, message
+    end
 
     local str = ""
     local results = pack(xpcall(fn,traceback))
+    if results[1] then
+      hs.opentelemetry.endSpan(span, { code = "ok" })
+    else
+      local message = tostring(results[2])
+      hs.opentelemetry.recordException(message, message, { ["cosmichammer.lua.source"] = "applescript", ["error.type"] = "runtime" }, span)
+      hs.opentelemetry.endSpan(span, { code = "error", message = message })
+    end
     for i = 2,results.n do
       if i > 2 then str = str .. "\t" end
       str = str .. tostring(results[i])
@@ -432,12 +651,30 @@ coroutine.applicationYield = hs.coroutineApplicationYield
     end
 
     --print("runstring")
+    local span = hs.opentelemetry.startSpan("console.evaluate", {
+      attributes = {
+        ["cosmichammer.lua.source"] = "console",
+        ["cosmichammer.lua.command.length"] = #s,
+      },
+    })
     local fn, err = load("return " .. s)
     if not fn then fn, err = load(s) end
-    if not fn then return tostring(err) end
+    if not fn then
+      local message = tostring(err)
+      hs.opentelemetry.recordException(message, nil, { ["cosmichammer.lua.source"] = "console", ["error.type"] = "compile" }, span)
+      hs.opentelemetry.endSpan(span, { code = "error", message = message })
+      return message
+    end
 
     local str = ""
     local results = pack(xpcall(fn,traceback))
+    if results[1] then
+      hs.opentelemetry.endSpan(span, { code = "ok" })
+    else
+      local message = tostring(results[2])
+      hs.opentelemetry.recordException(message, message, { ["cosmichammer.lua.source"] = "console", ["error.type"] = "runtime" }, span)
+      hs.opentelemetry.endSpan(span, { code = "error", message = message })
+    end
     for i = 2,results.n do
       if i > 2 then str = str .. "\t" end
       str = str .. tostring(results[i])

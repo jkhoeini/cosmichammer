@@ -19,6 +19,7 @@ local fnutils  = require("hs.fnutils")
 
 local MSG_ID = {
     REGISTER   = 100,   -- register an instance with the v2 cli
+    CONTEXT    = 101,   -- attach inherited telemetry context to a v2 cli instance
     UNREGISTER = 200,   -- unregister an instance with the v2 cli
 
     LEGACYCHK  = 900,   -- query to test if we are the v2 ipc or not (v1 will ignore the id and evaluate)
@@ -417,6 +418,15 @@ module.__defaultHandler = function(_, msgID, msg)
                _G[key] = value
            end,
         })
+    elseif msgID == MSG_ID.CONTEXT then       -- inherited trace context for a registered v2 cli
+        local instanceID, context = msg:match("^([%w-]+)\0(.*)$")
+        local registered = instanceID and module.__registeredCLIInstances[instanceID]
+        if registered and context then
+            local ok, decoded = pcall(json.decode, context)
+            if ok and type(decoded) == "table" then
+                registered._cli.telemetryContext = decoded
+            end
+        end
     elseif msgID == MSG_ID.UNREGISTER then  -- unregistering an instance
         log.df("unregistering %s", msg)
         module.__registeredCLIInstances[msg]._cli.remote:delete()
@@ -440,9 +450,29 @@ module.__defaultHandler = function(_, msgID, msg)
             end
 
             local fnEnv = module.__registeredCLIInstances[instanceID]
+            local telemetryContext = fnEnv and fnEnv._cli and fnEnv._cli.telemetryContext
+            if telemetryContext then
+                hs.opentelemetry.extract(telemetryContext)
+            end
+            local span = hs.opentelemetry.startSpan("hs.cli.execute", {
+                kind = "server",
+                attributes = {
+                    ["cosmichammer.cli.instance_id"] = instanceID,
+                    ["cosmichammer.ipc.message_id"] = msgID,
+                    ["cosmichammer.lua.command.length"] = #code,
+                    ["cosmichammer.lua.source"] = "cli",
+                },
+            })
             local fn, err = load("return " .. code, "return " .. code, "bt", fnEnv)
             if not fn then fn, err = load(code, code, "bt", fnEnv) end
             local results = fn and table.pack(pcall(fn)) or { false, err, n = 2 }
+            if results[1] then
+                hs.opentelemetry.endSpan(span, { code = "ok" })
+            else
+                local message = tostring(results[2])
+                hs.opentelemetry.recordException(message, nil, { ["cosmichammer.lua.source"] = "cli" }, span)
+                hs.opentelemetry.endSpan(span, { code = "error", message = message })
+            end
 
             local str = (results.n > 1) and tostring(results[2]) or ""
             for i = 3, results.n do

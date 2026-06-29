@@ -6,6 +6,18 @@ import HSDSTCore
 
 private let USERDATA_TAG = "hs.keycodes.callback"
 private var refTable: Int32 = LUA_NOREF
+private var activeKeycodesWatcherCount = 0
+
+private func recordActiveKeycodesWatcherGauge(_ L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+    let telemetry = L.map { environmentGet($0).telemetry } ?? environmentGetGlobalOrNil()?.telemetry
+    telemetry?.recordMetric(
+        name: "cosmichammer.keycodes.watcher.active",
+        kind: .gauge,
+        value: Double(activeKeycodesWatcherCount),
+        attributes: [:],
+        unit: "1"
+    )
+}
 
 // MARK: - Keycode Helpers
 
@@ -215,13 +227,7 @@ class MJKeycodesObserver: NSObject, LuaTeardownable {
         guard !tornDown else { return }
         tornDown = true
         if running {
-            running = false
-            if let token = observerToken {
-                if let L = lua_getCurrentState() {
-                    environmentGet(L).notification.removeObserver(token)
-                }
-                observerToken = nil
-            }
+            stop(lua_getCurrentState())
         }
         if ref != LUA_NOREF {
             if let L = lua_getCurrentState() {
@@ -243,18 +249,30 @@ class MJKeycodesObserver: NSObject, LuaTeardownable {
             let L = lua_getCurrentState()!
             guard lua_isStateGenerationValid(self.lsCanary) else { return }
             lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(self.ref))
-            if lua_pcall(L, 0, 0, 0) != LUA_OK { lua_pop(L, 1) }
+            if luaTelemetryPCall(
+                L,
+                nargs: 0,
+                nresults: 0,
+                callbackName: "hs.keycodes.inputSourceChanged"
+            ) != LUA_OK { lua_pop(L, 1) }
         }
+        activeKeycodesWatcherCount += 1
+        recordActiveKeycodesWatcherGauge(L)
     }
 
-    func stop() {
+    func stop(_ L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
         guard running else { return }
         running = false
         if let token = observerToken {
-            let L = lua_getCurrentState()!
-            environmentGet(L).notification.removeObserver(token)
+            if let L {
+                environmentGet(L).notification.removeObserver(token)
+            } else {
+                environmentGetGlobalOrNil()?.notification.removeObserver(token)
+            }
             observerToken = nil
         }
+        activeKeycodesWatcherCount = max(0, activeKeycodesWatcherCount - 1)
+        recordActiveKeycodesWatcherGauge(L)
     }
 }
 
@@ -576,7 +594,7 @@ public func luaopen_hs_libkeycodes(_ L: UnsafeMutablePointer<lua_State>!) -> Int
                 "_stop": .closure { L in
                     let observer: MJKeycodesObserver = try L.checkArgument(1)
                     lua_settop(L, 1)
-                    observer.stop()
+                    observer.stop(L)
                     return 1
                 },
             ],

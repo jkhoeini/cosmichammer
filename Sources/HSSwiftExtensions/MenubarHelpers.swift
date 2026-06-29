@@ -3,6 +3,7 @@ import CLua
 import Lua
 import Carbon
 import os.log
+import HSDSTCore
 
 // MARK: - Callback Objects
 
@@ -56,9 +57,28 @@ private let kMaxMenuRecursionDepth = 50
                 lua_pushnil(L)
             }
 
-            fn_result = lua_pcall(L, 2, 1, 0) == LUA_OK
+            fn_result = luaTelemetryPCall(
+                L,
+                nargs: 2,
+                nresults: 1,
+                callbackName: "hs.menubar.clickCallback",
+                attributes: [
+                    "menubar.has_event": true,
+                    "menubar.modifier.cmd": isCommandKey,
+                    "menubar.modifier.shift": isShiftKey,
+                    "menubar.modifier.alt": isOptKey,
+                    "menubar.modifier.ctrl": isCtrlKey,
+                    "menubar.modifier.fn": isFnKey,
+                ]
+            ) == LUA_OK
         } else {
-            fn_result = lua_pcall(L, 0, 1, 0) == LUA_OK
+            fn_result = luaTelemetryPCall(
+                L,
+                nargs: 0,
+                nresults: 1,
+                callbackName: "hs.menubar.clickCallback",
+                attributes: ["menubar.has_event": false]
+            ) == LUA_OK
         }
 
         if !fn_result {
@@ -195,6 +215,7 @@ private func mb_parseAction(_ L: UnsafeMutablePointer<lua_State>!, menuItem: NSM
         menuItem.target = delegate
         menuItem.action = #selector(HSMenubarItemClickDelegate.click(_:))
         menuItem.representedObject = delegate
+        adjustMenubarMenuItemCallbackCount(1, L: L)
     }
     lua_pop(L, 1)
 }
@@ -297,6 +318,7 @@ func mb_erase_menu_items(_ L: UnsafeMutablePointer<lua_State>!, _ menu: NSMenu, 
             menuItem.target = nil
             menuItem.action = nil
             menuItem.representedObject = nil
+            adjustMenubarMenuItemCallbackCount(-1, L: L)
         }
         if menuItem.hasSubmenu {
             mb_erase_menu_items(L, menuItem.submenu!, depth: depth + 1)
@@ -313,6 +335,7 @@ func mb_erase_menu_delegate(_ L: UnsafeMutablePointer<lua_State>!, _ menu: NSMen
         delegate.fn = nil
         mb_dynamicMenuDelegates?.remove(delegate)
         menu.delegate = nil
+        adjustMenubarDynamicMenuCallbackCount(-1, L: L)
     }
 }
 

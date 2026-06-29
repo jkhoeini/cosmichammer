@@ -63,6 +63,18 @@ import HSDSTCore
 
 private let USERDATA_TAG = "hs.caffeinate.watcher"
 private var refTable: Int32 = 0
+private var activeCaffeinateWatcherCount = 0
+
+private func recordActiveCaffeinateWatcherGauge(_ L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+    let telemetry = L.map { environmentGet($0).telemetry } ?? environmentGetGlobalOrNil()?.telemetry
+    telemetry?.recordMetric(
+        name: "cosmichammer.caffeinate.watcher.active",
+        kind: .gauge,
+        value: Double(activeCaffeinateWatcherCount),
+        attributes: [:],
+        unit: "1"
+    )
+}
 
 // MARK: - Event enum
 
@@ -95,8 +107,7 @@ private class CaffeinateWatcher: LuaTeardownable {
         guard !tornDown else { return }
         tornDown = true
         if running {
-            running = false
-            unregister_observer(self)
+            stop(lua_getCurrentState())
         }
         callback = nil
         notificationRef = nil
@@ -116,9 +127,31 @@ private class CaffeinateWatcher: LuaTeardownable {
         cb.push(onto: L)
         L.push(lua_Integer(event.rawValue))
 
-        if lua_pcall(L, 1, 0, 0) != LUA_OK {
+        if luaTelemetryPCall(
+            L,
+            nargs: 1,
+            nresults: 0,
+            callbackName: "hs.caffeinate.watcher",
+            attributes: ["caffeinate.event": event.rawValue]
+        ) != LUA_OK {
             lua_pop(L, 1)
         }
+    }
+
+    func start(_ L: UnsafeMutablePointer<lua_State>) {
+        guard !running else { return }
+        running = true
+        register_observer(self, environmentGet(L).notification)
+        activeCaffeinateWatcherCount += 1
+        recordActiveCaffeinateWatcherGauge(L)
+    }
+
+    func stop(_ L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+        guard running else { return }
+        running = false
+        unregister_observer(self)
+        activeCaffeinateWatcherCount = max(0, activeCaffeinateWatcherCount - 1)
+        recordActiveCaffeinateWatcherGauge(L)
     }
 }
 
@@ -207,19 +240,13 @@ public func luaopen_hs_libcaffeinatewatcher(_ L: UnsafeMutablePointer<lua_State>
                 "start": .closure { L in
                     let watcher: CaffeinateWatcher = try L.checkArgument(1)
                     lua_settop(L, 1)
-                    if !watcher.running {
-                        watcher.running = true
-                        register_observer(watcher, environmentGet(L).notification)
-                    }
+                    watcher.start(L)
                     return 1
                 },
                 "stop": .closure { L in
                     let watcher: CaffeinateWatcher = try L.checkArgument(1)
                     lua_settop(L, 1)
-                    if watcher.running {
-                        watcher.running = false
-                        unregister_observer(watcher)
-                    }
+                    watcher.stop(L)
                     return 1
                 },
             ],

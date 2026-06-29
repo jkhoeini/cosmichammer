@@ -5,6 +5,18 @@ import Cocoa
 import HSDSTCore
 
 private let USERDATA_TAG = "hs.distributednotifications"
+private var activeDistributedNotificationWatcherCount = 0
+
+private func recordActiveDistributedNotificationWatcherGauge(_ L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+    let telemetry = L.map { environmentGet($0).telemetry } ?? environmentGetGlobalOrNil()?.telemetry
+    telemetry?.recordMetric(
+        name: "cosmichammer.distributednotifications.watcher.active",
+        kind: .gauge,
+        value: Double(activeDistributedNotificationWatcherCount),
+        attributes: [:],
+        unit: "1"
+    )
+}
 
 // MARK: - HSDistNotWatcher Definition
 
@@ -20,12 +32,49 @@ private class HSDistNotWatcher: NSObject {
     func teardown() {
         guard !tornDown else { return }
         tornDown = true
-        if let token = observerToken {
-            notificationRef?.removeObserver(token)
-            observerToken = nil
-        }
+        stop(lua_getCurrentState())
         notificationRef = nil
         callback = nil
+    }
+
+    func start(_ L: UnsafeMutablePointer<lua_State>) {
+        guard observerToken == nil else { return }
+
+        let notif = environmentGet(L).notification
+        let token = notif.addDistributedObserver(name: name, object: object) { [weak self] name, object, userInfo in
+            guard let self = self else { return }
+            if !lua_isStateGenerationValid(self.generation) {
+                self.teardown()
+                return
+            }
+            guard let cb = self.callback else { return }
+            let L = lua_getCurrentState()!
+            cb.push(onto: L)
+            lua_pushany(L, name)
+            lua_pushany(L, object)
+            lua_pushany(L, userInfo)
+            if luaTelemetryPCall(
+                L,
+                nargs: 3,
+                nresults: 0,
+                callbackName: "hs.distributednotifications",
+                attributes: ["notification.name": name]
+            ) != LUA_OK {
+                lua_pop(L, 1)
+            }
+        }
+        observerToken = token
+        notificationRef = notif
+        activeDistributedNotificationWatcherCount += 1
+        recordActiveDistributedNotificationWatcherGauge(L)
+    }
+
+    func stop(_ L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+        guard let token = observerToken else { return }
+        notificationRef?.removeObserver(token)
+        observerToken = nil
+        activeDistributedNotificationWatcherCount = max(0, activeDistributedNotificationWatcherCount - 1)
+        recordActiveDistributedNotificationWatcherGauge(L)
     }
 }
 
@@ -98,38 +147,13 @@ public func luaopen_hs_libdistributednotifications(_ L: UnsafeMutablePointer<lua
             "start": .closure { L in
                 let watcher: HSDistNotWatcher = try L.checkArgument(1)
                 lua_settop(L, 1)
-
-                let notif = environmentGet(L).notification
-                let token = notif.addDistributedObserver(name: watcher.name, object: watcher.object) { [weak watcher] name, object, userInfo in
-                    guard let watcher = watcher else { return }
-                    if !lua_isStateGenerationValid(watcher.generation) {
-                        watcher.teardown()
-                        return
-                    }
-                    guard let cb = watcher.callback else { return }
-                    let L = lua_getCurrentState()!
-                    cb.push(onto: L)
-                    lua_pushany(L, name)
-                    lua_pushany(L, object)
-                    lua_pushany(L, userInfo)
-                    if lua_pcall(L, 3, 0, 0) != LUA_OK {
-                        lua_pop(L, 1)
-                    }
-                }
-                watcher.observerToken = token
-                watcher.notificationRef = notif
-
+                watcher.start(L)
                 return 1  // return self
             },
             "stop": .closure { L in
                 let watcher: HSDistNotWatcher = try L.checkArgument(1)
                 lua_settop(L, 1)
-
-                if let token = watcher.observerToken {
-                    environmentGet(L).notification.removeObserver(token)
-                    watcher.observerToken = nil
-                }
-
+                watcher.stop(L)
                 return 1  // return self
             },
         ],

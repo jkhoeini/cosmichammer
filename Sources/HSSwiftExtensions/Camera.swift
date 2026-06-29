@@ -3,11 +3,24 @@ import CLua
 import Lua
 import AVFoundation
 import CoreMediaIO
+import HSDSTCore
 import os.log
 
 // MARK: - Module declarations
 
 private let USERDATA_TAG = "hs.camera"
+private var activeCameraDeviceWatcherCount = 0
+
+private func recordActiveCameraDeviceWatcherGauge(_ L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+    let telemetry = L.map { environmentGet($0).telemetry } ?? environmentGetGlobalOrNil()?.telemetry
+    telemetry?.recordMetric(
+        name: "cosmichammer.camera.device_watcher.active",
+        kind: .gauge,
+        value: Double(activeCameraDeviceWatcherCount),
+        attributes: [:],
+        unit: "1"
+    )
+}
 
 // MARK: - Devices watcher declarations
 
@@ -122,7 +135,17 @@ private class HSCamera: NSObject {
                     lua_pushany(L, event["mScope"] as? NSString)
                     lua_pushany(L, event["mElement"] as? NSNumber)
 
-                    if lua_pcall(L, 4, 0, 0) != LUA_OK { lua_pop(L, 1) }
+                    if luaTelemetryPCall(
+                        L,
+                        nargs: 4,
+                        nresults: 0,
+                        callbackName: "hs.camera.propertyWatcher",
+                        attributes: [
+                            "camera.event": "property_changed",
+                            "camera.property.selector": event["mSelector"] as? String ?? "",
+                            "camera.property.scope": event["mScope"] as? String ?? "",
+                        ]
+                    ) != LUA_OK { lua_pop(L, 1) }
                 }
                 assert(savedTop == lua_gettop(L))
             }
@@ -329,7 +352,13 @@ private func deviceWatcherDoCallback(_ deviceId: CMIODeviceID, _ event: String) 
     cb.push(onto: L)
     L.push(userdata: cameraManagerInstance.cameraForDeviceID(deviceId))
     lua_pushany(L, event as NSString)
-    if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
+    if luaTelemetryPCall(
+        L,
+        nargs: 2,
+        nresults: 0,
+        callbackName: "hs.camera.deviceWatcher",
+        attributes: ["camera.event": event]
+    ) != LUA_OK { lua_pop(L, 1) }
 
     assert(savedTop == lua_gettop(L))
 }
@@ -392,6 +421,8 @@ private func startWatcher(_ L: LuaState) throws -> CInt {
            String(describing: deviceWatcherAddedObserver),
            String(describing: deviceWatcherRemovedObserver))
     watcher.pointee.running = true
+    activeCameraDeviceWatcherCount += 1
+    recordActiveCameraDeviceWatcherGauge(L)
     return 0
 }
 
@@ -408,6 +439,7 @@ private func stopWatcher(_ L: LuaState) throws -> CInt {
     // This is an ugly hack so we can call this from elsewhere without checkArgs exploding
 
     guard let watcher = deviceWatcher else { return 0 }
+    guard watcher.pointee.running else { return 0 }
 
     let center = NotificationCenter.default
     if let added = deviceWatcherAddedObserver {
@@ -416,8 +448,12 @@ private func stopWatcher(_ L: LuaState) throws -> CInt {
     if let removed = deviceWatcherRemovedObserver {
         center.removeObserver(removed, name: .AVCaptureDeviceWasDisconnected, object: nil)
     }
+    deviceWatcherAddedObserver = nil
+    deviceWatcherRemovedObserver = nil
 
     watcher.pointee.running = false
+    activeCameraDeviceWatcherCount = max(0, activeCameraDeviceWatcherCount - 1)
+    recordActiveCameraDeviceWatcherGauge(L)
     return 0
 }
 

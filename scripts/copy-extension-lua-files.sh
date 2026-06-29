@@ -71,13 +71,15 @@ while IFS=$'\t' read -r source bundle_path module extra || [[ -n "${source:-}" ]
         exit 1
     }
 
-    for seen in "${seen_destinations[@]}"; do
-        if [[ "$seen" == "$bundle_path" ]]; then
-            echo "error: duplicate Lua bundle destination before copy: extensions/${bundle_path}" >&2
-            echo "       Regenerate metadata after fixing extensions.manifest." >&2
-            exit 1
-        fi
-    done
+    if ((${#seen_destinations[@]})); then
+        for seen in "${seen_destinations[@]}"; do
+            if [[ "$seen" == "$bundle_path" ]]; then
+                echo "error: duplicate Lua bundle destination before copy: extensions/${bundle_path}" >&2
+                echo "       Regenerate metadata after fixing extensions.manifest." >&2
+                exit 1
+            fi
+        done
+    fi
     seen_destinations+=("$bundle_path")
     sources+=("$source")
     destinations+=("$bundle_path")

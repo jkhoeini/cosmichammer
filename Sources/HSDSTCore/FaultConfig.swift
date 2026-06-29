@@ -101,6 +101,14 @@ public struct FaultConfig: Sendable {
     // Media faults
     public var mediaReadFailProbability: Double = 0
 
+    // Telemetry faults
+    public var telemetryFlushFailProbability: Double = 0
+    public var telemetryShutdownFailProbability: Double = 0
+    public var telemetryCollectorUnavailable: Bool = false
+    public var telemetryExportTimeoutProbability: Double = 0
+    public var telemetryMalformedEndpoint: Bool = false
+    public var telemetryQueueCapacity: Int? = nil
+
     public init() {}
 
     // MARK: - Tier 2: Targeted fault factories
@@ -120,6 +128,30 @@ public struct FaultConfig: Sendable {
     public static func withConnectionFailure() -> FaultConfig {
         var c = FaultConfig()
         c.connectionFailProbability = 1.0
+        return c
+    }
+
+    public static func withTelemetryFlushFailure() -> FaultConfig {
+        var c = FaultConfig()
+        c.telemetryFlushFailProbability = 1.0
+        return c
+    }
+
+    public static func withTelemetryShutdownFailure() -> FaultConfig {
+        var c = FaultConfig()
+        c.telemetryShutdownFailProbability = 1.0
+        return c
+    }
+
+    public static func withTelemetryCollectorUnavailable() -> FaultConfig {
+        var c = FaultConfig()
+        c.telemetryCollectorUnavailable = true
+        return c
+    }
+
+    public static func withTelemetryTimeout() -> FaultConfig {
+        var c = FaultConfig()
+        c.telemetryExportTimeoutProbability = 1.0
         return c
     }
 
@@ -183,6 +215,10 @@ public struct FaultConfig: Sendable {
         c.keyGenerationFailProbability = rng.uniformDouble() * 0.02
         c.keychainOperationFailProbability = rng.uniformDouble() * 0.02
         c.mediaReadFailProbability = rng.uniformDouble() * 0.05
+        c.telemetryFlushFailProbability = rng.uniformDouble() * 0.02
+        c.telemetryShutdownFailProbability = rng.uniformDouble() * 0.02
+        c.telemetryCollectorUnavailable = rng.boolean(probability: 0.02)
+        c.telemetryExportTimeoutProbability = rng.uniformDouble() * 0.02
         return c
     }
 }

@@ -100,7 +100,13 @@ private class HSMetadataQuery: NSObject {
             L.push(userdata: self)
             lua_pushany(L, message as NSString)
             lua_pushany(L, userInfo as NSDictionary)
-            if lua_pcall(L, 3, 0, 0) != LUA_OK { lua_pop(L, 1) }
+            if luaTelemetryPCall(
+                L,
+                nargs: 3,
+                nresults: 0,
+                callbackName: "hs.spotlight",
+                attributes: ["spotlight.event": message]
+            ) != LUA_OK { lua_pop(L, 1) }
         }
     }
 }

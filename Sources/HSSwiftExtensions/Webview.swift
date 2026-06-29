@@ -15,6 +15,133 @@ private let USERDATA_TB_TAG = "hs.webview.toolbar"
 var wv_refTable: Int32 = 0
 var wv_ProcessPool: WKProcessPool?
 var wv_delayTimers: NSMapTable<HSWebViewView, Timer>?
+private var activeWebViewWindowCallbackCount = 0
+private var activeWebViewNavigationCallbackCount = 0
+private var activeWebViewPolicyCallbackCount = 0
+private var activeWebViewSSLCallbackCount = 0
+private var activeWebViewEvaluateJavaScriptCallbackCount = 0
+
+private func recordActiveWebViewWindowCallbackGauge(_ L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+    let telemetry = L.map { environmentGet($0).telemetry } ?? environmentGetGlobalOrNil()?.telemetry
+    telemetry?.recordMetric(
+        name: "cosmichammer.webview.window.callback.active",
+        kind: .gauge,
+        value: Double(activeWebViewWindowCallbackCount),
+        attributes: [:],
+        unit: "1"
+    )
+}
+
+func setWebViewWindowCallbackCounted(_ window: HSWebViewWindow, _ active: Bool, L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+    guard window.countedWindowCallbackActive != active else { return }
+    window.countedWindowCallbackActive = active
+    if active {
+        activeWebViewWindowCallbackCount += 1
+    } else {
+        activeWebViewWindowCallbackCount = max(0, activeWebViewWindowCallbackCount - 1)
+    }
+    recordActiveWebViewWindowCallbackGauge(L)
+}
+
+private func recordActiveWebViewNavigationCallbackGauge(_ L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+    let telemetry = L.map { environmentGet($0).telemetry } ?? environmentGetGlobalOrNil()?.telemetry
+    telemetry?.recordMetric(
+        name: "cosmichammer.webview.navigation.callback.active",
+        kind: .gauge,
+        value: Double(activeWebViewNavigationCallbackCount),
+        attributes: [:],
+        unit: "1"
+    )
+}
+
+func setWebViewNavigationCallbackCounted(_ view: HSWebViewView, _ active: Bool, L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+    guard view.countedNavigationCallbackActive != active else { return }
+    view.countedNavigationCallbackActive = active
+    if active {
+        activeWebViewNavigationCallbackCount += 1
+    } else {
+        activeWebViewNavigationCallbackCount = max(0, activeWebViewNavigationCallbackCount - 1)
+    }
+    recordActiveWebViewNavigationCallbackGauge(L)
+}
+
+private func recordActiveWebViewPolicyCallbackGauge(_ L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+    let telemetry = L.map { environmentGet($0).telemetry } ?? environmentGetGlobalOrNil()?.telemetry
+    telemetry?.recordMetric(
+        name: "cosmichammer.webview.policy.callback.active",
+        kind: .gauge,
+        value: Double(activeWebViewPolicyCallbackCount),
+        attributes: [:],
+        unit: "1"
+    )
+}
+
+func setWebViewPolicyCallbackCounted(_ view: HSWebViewView, _ active: Bool, L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+    guard view.countedPolicyCallbackActive != active else { return }
+    view.countedPolicyCallbackActive = active
+    if active {
+        activeWebViewPolicyCallbackCount += 1
+    } else {
+        activeWebViewPolicyCallbackCount = max(0, activeWebViewPolicyCallbackCount - 1)
+    }
+    recordActiveWebViewPolicyCallbackGauge(L)
+}
+
+private func recordActiveWebViewSSLCallbackGauge(_ L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+    let telemetry = L.map { environmentGet($0).telemetry } ?? environmentGetGlobalOrNil()?.telemetry
+    telemetry?.recordMetric(
+        name: "cosmichammer.webview.ssl.callback.active",
+        kind: .gauge,
+        value: Double(activeWebViewSSLCallbackCount),
+        attributes: [:],
+        unit: "1"
+    )
+}
+
+private func setWebViewSSLCallbackCounted(_ view: HSWebViewView, _ active: Bool, L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+    guard view.countedSSLCallbackActive != active else { return }
+    view.countedSSLCallbackActive = active
+    if active {
+        activeWebViewSSLCallbackCount += 1
+    } else {
+        activeWebViewSSLCallbackCount = max(0, activeWebViewSSLCallbackCount - 1)
+    }
+    recordActiveWebViewSSLCallbackGauge(L)
+}
+
+private func recordActiveWebViewEvaluateJavaScriptCallbackGauge(_ L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+    let telemetry = L.map { environmentGet($0).telemetry } ?? environmentGetGlobalOrNil()?.telemetry
+    telemetry?.recordMetric(
+        name: "cosmichammer.webview.evaluate_javascript.callback.active",
+        kind: .gauge,
+        value: Double(activeWebViewEvaluateJavaScriptCallbackCount),
+        attributes: [:],
+        unit: "1"
+    )
+}
+
+private func adjustWebViewEvaluateJavaScriptCallbackCount(_ delta: Int, L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+    activeWebViewEvaluateJavaScriptCallbackCount = max(0, activeWebViewEvaluateJavaScriptCallbackCount + delta)
+    recordActiveWebViewEvaluateJavaScriptCallbackGauge(L)
+}
+
+final class WebViewEvaluateJavaScriptCallbackGaugeToken {
+    private var active = true
+
+    init(L: UnsafeMutablePointer<lua_State>?) {
+        adjustWebViewEvaluateJavaScriptCallbackCount(1, L: L)
+    }
+
+    func finish(L: UnsafeMutablePointer<lua_State>?) {
+        guard active else { return }
+        active = false
+        adjustWebViewEvaluateJavaScriptCallbackCount(-1, L: L)
+    }
+
+    deinit {
+        finish(L: nil)
+    }
+}
 
 func wv_RectWithFlippedYCoordinate(_ theRect: NSRect) -> NSRect {
     let screenHeight: CGFloat
@@ -420,9 +547,13 @@ func webview_navigationCallback(_ L: LuaState) throws -> CInt {
     let theWindow = wv_getWindowFromUD(L, 1)
     let theView = theWindow.contentView as! HSWebViewView
 
-    theView.navigationCallback = nil
     if lua_type(L, 2) == LUA_TFUNCTION {
+        theView.navigationCallback = nil
         theView.navigationCallback = L.ref(index: 2)
+        setWebViewNavigationCallbackCounted(theView, true, L: L)
+    } else {
+        theView.navigationCallback = nil
+        setWebViewNavigationCallbackCounted(theView, false, L: L)
     }
     lua_pushvalue(L, 1)
     return 1
@@ -436,9 +567,13 @@ func webview_policyCallback(_ L: LuaState) throws -> CInt {
     let theWindow = wv_getWindowFromUD(L, 1)
     let theView = theWindow.contentView as! HSWebViewView
 
-    theView.policyCallback = nil
     if lua_type(L, 2) == LUA_TFUNCTION {
+        theView.policyCallback = nil
         theView.policyCallback = L.ref(index: 2)
+        setWebViewPolicyCallbackCounted(theView, true, L: L)
+    } else {
+        theView.policyCallback = nil
+        setWebViewPolicyCallbackCounted(theView, false, L: L)
     }
     lua_pushvalue(L, 1)
     return 1
@@ -452,9 +587,13 @@ func webview_sslCallback(_ L: LuaState) throws -> CInt {
     let theWindow = wv_getWindowFromUD(L, 1)
     let theView = theWindow.contentView as! HSWebViewView
 
-    theView.sslCallback = nil
     if lua_type(L, 2) == LUA_TFUNCTION {
+        theView.sslCallback = nil
         theView.sslCallback = L.ref(index: 2)
+        setWebViewSSLCallbackCounted(theView, true, L: L)
+    } else {
+        theView.sslCallback = nil
+        setWebViewSSLCallbackCounted(theView, false, L: L)
     }
     lua_pushvalue(L, 1)
     return 1
@@ -481,21 +620,36 @@ func webview_evaluateJavaScript(_ L: LuaState) throws -> CInt {
 
     let javascript = lua_tovalue(L, at: 2) as! String
     var callbackValue: LuaValue?
+    var callbackGaugeToken: WebViewEvaluateJavaScriptCallbackGaugeToken?
     if lua_type(L, 3) == LUA_TFUNCTION {
         callbackValue = L.ref(index: 3)
+        callbackGaugeToken = WebViewEvaluateJavaScriptCallbackGaugeToken(L: L)
     }
 
     let lsCanary = lua_currentStateGeneration()
     theView.evaluateJavaScript(javascript) { obj, error in
         if let cb = callbackValue {
             DispatchQueue.main.async {
-                if !lua_isStateGenerationValid(lsCanary) { return }
-                let blockL = lua_getCurrentState()!
+                let blockL = lua_getCurrentState()
+                defer {
+                    callbackValue = nil
+                    callbackGaugeToken?.finish(L: blockL)
+                    callbackGaugeToken = nil
+                }
+                guard lua_isStateGenerationValid(lsCanary), let blockL = blockL else { return }
                 cb.push(onto: blockL)
                 wv_pushAny(blockL, obj as? NSObject)
                 wv_NSError_toLua(blockL, error as NSError?)
-                if lua_pcall(blockL, 2, 0, 0) != LUA_OK { lua_pop(blockL, 1) }
-                callbackValue = nil
+                if luaTelemetryPCall(
+                    blockL,
+                    nargs: 2,
+                    nresults: 0,
+                    callbackName: "hs.webview.evaluateJavaScript",
+                    attributes: [
+                        "webview.javascript.success": error == nil,
+                        "webview.javascript.has_result": obj != nil,
+                    ]
+                ) != LUA_OK { lua_pop(blockL, 1) }
             }
         }
     }
@@ -964,9 +1118,13 @@ func webview_windowCallback(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, wv_USERDATA_TAG)
     let theWindow = wv_getWindowFromUD(L, 1)
 
-    theWindow.windowCallback = nil
     if lua_type(L, 2) == LUA_TFUNCTION {
+        theWindow.windowCallback = nil
         theWindow.windowCallback = L.ref(index: 2)
+        setWebViewWindowCallbackCounted(theWindow, true, L: L)
+    } else {
+        theWindow.windowCallback = nil
+        setWebViewWindowCallbackCounted(theWindow, false, L: L)
     }
     lua_pushvalue(L, 1)
     return 1
@@ -1676,8 +1834,12 @@ func wv_userdata_gc(_ L: LuaState) throws -> CInt {
     lua_setmetatable(L, 1)
 
     theWindow.udRef = nil
+    setWebViewWindowCallbackCounted(theWindow, false, L: L)
     theWindow.windowCallback = nil
     if let theView = theView {
+        setWebViewNavigationCallbackCounted(theView, false, L: L)
+        setWebViewPolicyCallbackCounted(theView, false, L: L)
+        setWebViewSSLCallbackCounted(theView, false, L: L)
         theView.navigationCallback = nil
         theView.policyCallback = nil
         theView.sslCallback = nil

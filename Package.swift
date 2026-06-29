@@ -23,9 +23,15 @@ let package = Package(
         .executable(name: "CosmicHammer", targets: ["HSApp"]),
         .library(name: "CosmicHammerLibs", type: .static, targets: ["HSExtensions", "HSSwiftExtensions"]),
         .executable(name: "hs", targets: ["hs"]),
+        .executable(name: "OTELBenchmarks", targets: ["OTELBenchmarks"]),
     ],
     dependencies: [
         .package(url: "https://github.com/armadsen/ORSSerialPort", exact: "2.1.0"),
+        .package(url: "https://github.com/apple/swift-nio.git", from: "2.97.1"),
+        .package(url: "https://github.com/apple/swift-protobuf.git", from: "1.36.1"),
+        .package(url: "https://github.com/grpc/grpc-swift.git", exact: "1.27.5"),
+        .package(url: "https://github.com/open-telemetry/opentelemetry-swift-core.git", from: "2.4.1"),
+        .package(url: "https://github.com/open-telemetry/opentelemetry-swift.git", from: "2.4.1"),
         .package(url: "https://github.com/swiftlang/swift-markdown.git", from: "0.5.0"),
         .package(url: "https://github.com/tomsci/LuaSwift.git", from: "1.0.0"),
     ],
@@ -128,6 +134,14 @@ let package = Package(
             dependencies: [
                 "HSDSTCore",
                 .product(name: "Lua", package: "LuaSwift"),
+                .product(name: "OpenTelemetryApi", package: "opentelemetry-swift-core"),
+                .product(name: "OpenTelemetrySdk", package: "opentelemetry-swift-core"),
+                .product(name: "OpenTelemetryProtocolExporter", package: "opentelemetry-swift"),
+                .product(name: "OpenTelemetryProtocolExporterHTTP", package: "opentelemetry-swift"),
+                .product(name: "StdoutExporter", package: "opentelemetry-swift-core"),
+                .product(name: "GRPC", package: "grpc-swift"),
+                .product(name: "NIO", package: "swift-nio"),
+                .product(name: "SwiftProtobuf", package: "swift-protobuf"),
                 .product(name: "ORSSerial", package: "ORSSerialPort"),
                 .product(name: "Markdown", package: "swift-markdown"),
             ],
@@ -166,6 +180,23 @@ let package = Package(
                 .linkedFramework("AppKit"),
                 .linkedFramework("CoreFoundation"),
                 .linkedLibrary("edit"),
+            ]
+        ),
+        // ---------------------------------------------------------------
+        // OTELBenchmarks — opt-in OpenTelemetry benchmark runner
+        // ---------------------------------------------------------------
+        .executableTarget(
+            name: "OTELBenchmarks",
+            dependencies: [
+                "HSExtensions",
+                "HSSwiftExtensions",
+                "HSDSTCore",
+                "HSDSTSimulator",
+                .product(name: "Lua", package: "LuaSwift"),
+            ],
+            path: "Benchmarks/OTELBenchmarks",
+            swiftSettings: [
+                .swiftLanguageMode(.v6),
             ]
         ),
         // ---------------------------------------------------------------

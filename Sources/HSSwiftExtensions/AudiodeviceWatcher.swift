@@ -23,6 +23,18 @@ private var watcherCallback: LuaValue? = nil
 
 private var watcherRefTable: Int32 = 0
 private var theWatcher: UnsafeMutablePointer<AudioDeviceWatcher>? = nil
+private var activeAudioDeviceWatcherCount = 0
+
+private func recordActiveAudioDeviceWatcherGauge(_ L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+    let telemetry = L.map { environmentGet($0).telemetry } ?? environmentGetGlobalOrNil()?.telemetry
+    telemetry?.recordMetric(
+        name: "cosmichammer.audiodevice.watcher.active",
+        kind: .gauge,
+        value: Double(activeAudioDeviceWatcherCount),
+        attributes: [:],
+        unit: "1"
+    )
+}
 
 // MARK: - hs.audiodevice.watcher library functions
 
@@ -113,12 +125,20 @@ private func audiodevicewatcher_start(_ L: LuaState) throws -> CInt {
 
             cb.push(onto: L)
             lua_pushany(L, eventName as NSString)
-            if lua_pcall(L, 1, 0, 0) != LUA_OK { lua_pop(L, 1) }
+            if luaTelemetryPCall(
+                L,
+                nargs: 1,
+                nresults: 0,
+                callbackName: "hs.audiodevice.watcher",
+                attributes: ["audio.event": eventName]
+            ) != LUA_OK { lua_pop(L, 1) }
         }
     }
 
     watcher.pointee.listenerID = listenerID
     watcher.pointee.running = true
+    activeAudioDeviceWatcherCount += 1
+    recordActiveAudioDeviceWatcherGauge(L)
 
     return 0
 }
@@ -142,6 +162,8 @@ private func audiodevicewatcher_stop(_ L: LuaState) throws -> CInt {
 
     watcher.pointee.running = false
     watcher.pointee.listenerID = 0
+    activeAudioDeviceWatcherCount = max(0, activeAudioDeviceWatcherCount - 1)
+    recordActiveAudioDeviceWatcherGauge(L)
 
     return 0
 }

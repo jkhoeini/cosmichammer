@@ -242,7 +242,13 @@ private func target_watchKey(_ L: LuaState) throws -> CInt {
                 for (_, cb) in entry.callbacks {
                     cb.push(onto: L)
                     lua_pushany(L, changedKey)
-                    if lua_pcall(L, 1, 0, 0) != LUA_OK {
+                    if luaTelemetryPCall(
+                        L,
+                        nargs: 1,
+                        nresults: 0,
+                        callbackName: "hs.settings.watchKey",
+                        attributes: ["settings.key": changedKey]
+                    ) != LUA_OK {
                         lua_pop(L, 1)
                     }
                 }

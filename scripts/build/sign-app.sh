@@ -29,11 +29,20 @@ cli="${app_dir}/Contents/Frameworks/hs/hs"
 [[ -d "$app_dir" ]] || fail "missing app bundle at $app_dir; run 'just app-bundle ${config_name}' first"
 
 cd "$repo_root"
-/usr/bin/codesign --force --sign - "$cli"
-if [[ "$config_name" == "Release" ]]; then
-    /usr/bin/codesign --force --sign - --deep --options runtime --entitlements "$entitlements" "$app_dir"
-else
-    /usr/bin/codesign --force --sign - --deep --entitlements "$entitlements" "$app_dir"
+
+identity="${CODESIGN_IDENTITY:--}"
+if [[ "$config_name" == "Release" && "$identity" == "-" ]]; then
+    # For release builds, prefer "Cosmic Hammer Dev" if available
+    if security find-identity -v -p codesigning | grep -q "Cosmic Hammer Dev"; then
+        identity="Cosmic Hammer Dev"
+    fi
 fi
 
-echo "Signed ${app_dir#${repo_root}/} (${config_name})"
+/usr/bin/codesign --force --sign "$identity" "$cli"
+if [[ "$config_name" == "Release" ]]; then
+    /usr/bin/codesign --force --sign "$identity" --deep --options runtime --entitlements "$entitlements" "$app_dir"
+else
+    /usr/bin/codesign --force --sign "$identity" --deep --entitlements "$entitlements" "$app_dir"
+fi
+
+echo "Signed ${app_dir#${repo_root}/} (${config_name}, identity: ${identity})"

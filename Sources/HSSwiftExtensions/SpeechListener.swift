@@ -207,7 +207,16 @@ public func luaopen_hs_libspeechlistener(_ L: UnsafeMutablePointer<lua_State>!) 
                     cb.push(onto: _L)
                     _L.push(userdata: recognizer)
                     lua_pushany(_L, command as NSString)
-                    if lua_pcall(_L, 2, 0, 0) != LUA_OK { lua_pop(_L, 1) }
+                    if luaTelemetryPCall(
+                        _L,
+                        nargs: 2,
+                        nresults: 0,
+                        callbackName: "hs.speech.listener",
+                        attributes: [
+                            "speech.command.count": recognizer.storedCommands.count,
+                            "speech.command.length": command.count,
+                        ]
+                    ) != LUA_OK { lua_pop(_L, 1) }
                 }
 
                 guard let handle = speech.startListening(

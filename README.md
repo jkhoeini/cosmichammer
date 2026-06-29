@@ -34,6 +34,7 @@ Out of the box, Cosmic Hammer does nothing - you will need to create `~/.cosmic-
  * [API docs](https://github.com/jkhoeini/cosmichammer/docs/)
  * [FAQ](https://github.com/jkhoeini/cosmichammer/faq/)
  * [Sample Configurations](https://github.com/jkhoeini/cosmichammer/wiki/Sample-Configurations) supplied by various users
+ * [OpenTelemetry Guide](docs/opentelemetry.md) for tracing, logs, metrics, and local diagnostics
  * [Contribution Guide](https://github.com/jkhoeini/cosmichammer/blob/master/CONTRIBUTING.md) for developers looking to get involved
  * An IRC channel for general chat/support/development (#cosmic-hammer on Libera)
 

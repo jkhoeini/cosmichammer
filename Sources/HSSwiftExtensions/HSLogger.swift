@@ -39,6 +39,16 @@ class HSLogger: NSObject {
     // VERY IMPORTANT NOTE: DO NOT CALL NSLog (i.e. logBreadcrumb) IN THIS METHOD
     // indirectly — the breadcrumb path calls NSLog directly.
     func logForLuaSkin(atLevel level: Int32, withMessage theMessage: String) {
+        if let telemetry = environmentGetGlobalOrNil()?.telemetry,
+           telemetry.configuration.captureLogger {
+            telemetry.recordLog(
+                level: Self.telemetryLevelName(level),
+                message: theMessage,
+                attributes: ["log.source": "HSLogger", "lua.log.level": level],
+                timestamp: nil
+            )
+        }
+
         guard let L = _L else {
             logBreadcrumb(theMessage)
             return
@@ -92,7 +102,28 @@ class HSLogger: NSObject {
     /// Non-variadic breadcrumb logger. Swift cannot bridge ObjC-style variadic methods,
     /// so call sites pass a pre-formatted string directly.
     func logBreadcrumb(_ message: String) {
+        if let telemetry = environmentGetGlobalOrNil()?.telemetry,
+           telemetry.configuration.captureLogger {
+            telemetry.addEvent(
+                spanID: nil,
+                name: "breadcrumb",
+                attributes: ["message": message, "log.source": "HSLogger"],
+                timestamp: nil
+            )
+        }
         os_log(.default, "BREADCRUMB: %{public}s", message)
+    }
+
+    private static func telemetryLevelName(_ level: Int32) -> String {
+        switch level {
+        case LS_LOG_ERROR: return "error"
+        case LS_LOG_WARN: return "warning"
+        case LS_LOG_INFO: return "info"
+        case LS_LOG_DEBUG: return "debug"
+        case LS_LOG_VERBOSE: return "verbose"
+        case LS_LOG_BREADCRUMB: return "breadcrumb"
+        default: return "unknown"
+        }
     }
 }
 

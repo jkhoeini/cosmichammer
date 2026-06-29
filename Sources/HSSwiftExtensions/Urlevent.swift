@@ -177,7 +177,13 @@ private class HSURLEventHandler: NSObject, HSOpenFileDelegate {
         lua_pushany(L, pairs)
         lua_pushany(L, parsed.fullURL as NSString)
         L.push(lua_Integer(pid))
-        if lua_pcall(L, 5, 0, 0) != LUA_OK { lua_pop(L, 1) }
+        if luaTelemetryPCall(
+            L,
+            nargs: 5,
+            nresults: 0,
+            callbackName: "hs.urlevent",
+            attributes: ["url.scheme": parsed.scheme ?? ""]
+        ) != LUA_OK { lua_pop(L, 1) }
     }
 }
 

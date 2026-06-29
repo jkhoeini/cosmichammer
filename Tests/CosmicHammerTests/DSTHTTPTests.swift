@@ -78,6 +78,26 @@ extension CosmicHammerTests {
             }
         }
 
+        @Test func httpTelemetryRedactsCredentialsFromURLFull() throws {
+            try withHTTPState { L in
+                let sim = environmentGet(L).telemetry as! SimulatedTelemetry
+                sim.configure(TelemetryConfiguration(enabled: true))
+
+                let status = luaEvalInt(L, """
+                    local status, body, headers = http.doRequest("https://user:secret@example.com/api?token=query", "GET")
+                    return status
+                """)
+                #expect(status == 200)
+
+                let span = try #require(sim.spans.first { $0.name == "HTTP GET" })
+                #expect(span.attributes["url.full"] == "https://example.com/api")
+                #expect(span.attributes["url.full"]?.contains("user:secret") == false)
+                #expect(span.attributes["url.full"]?.contains("token=query") == false)
+                #expect(span.attributes["server.address"] == "example.com")
+                #expect(span.attributes["url.path"] == "/api")
+            }
+        }
+
         @Test func httpGetWithCustomResponseHeaders() {
             withHTTPState(configure: { net in
                 net.httpResponses["https://example.com/headers"] = HTTPResponse(

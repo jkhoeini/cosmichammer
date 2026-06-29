@@ -8,6 +8,51 @@ import HSDSTCore
 // MARK: - Definitions
 
 let mb_USERDATA_TAG = "hs.menubar"
+private var activeMenubarClickCallbackCount = 0
+private var activeMenubarDynamicMenuCallbackCount = 0
+private var activeMenubarMenuItemCallbackCount = 0
+
+private func recordMenubarCallbackGauge(
+    name: String,
+    value: Int,
+    L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()
+) {
+    let telemetry = L.map { environmentGet($0).telemetry } ?? environmentGetGlobalOrNil()?.telemetry
+    telemetry?.recordMetric(
+        name: name,
+        kind: .gauge,
+        value: Double(value),
+        attributes: [:],
+        unit: "1"
+    )
+}
+
+func adjustMenubarClickCallbackCount(_ delta: Int, L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+    activeMenubarClickCallbackCount = max(0, activeMenubarClickCallbackCount + delta)
+    recordMenubarCallbackGauge(
+        name: "cosmichammer.menubar.click.callback.active",
+        value: activeMenubarClickCallbackCount,
+        L: L
+    )
+}
+
+func adjustMenubarDynamicMenuCallbackCount(_ delta: Int, L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+    activeMenubarDynamicMenuCallbackCount = max(0, activeMenubarDynamicMenuCallbackCount + delta)
+    recordMenubarCallbackGauge(
+        name: "cosmichammer.menubar.dynamic_menu.callback.active",
+        value: activeMenubarDynamicMenuCallbackCount,
+        L: L
+    )
+}
+
+func adjustMenubarMenuItemCallbackCount(_ delta: Int, L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+    activeMenubarMenuItemCallbackCount = max(0, activeMenubarMenuItemCallbackCount + delta)
+    recordMenubarCallbackGauge(
+        name: "cosmichammer.menubar.menu_item.callback.active",
+        value: activeMenubarMenuItemCallbackCount,
+        L: L
+    )
+}
 
 func mb_get_item_arg(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> UnsafeMutablePointer<menubaritem_t> {
     return luaL_checkudata(L, idx, mb_USERDATA_TAG)!.assumingMemoryBound(to: menubaritem_t.self)
@@ -267,6 +312,7 @@ func menubarSetClickCallback(_ L: LuaState) throws -> CInt {
         statusItem.button?.action = nil
         let _ = Unmanaged<HSMenubarItemClickDelegate>.fromOpaque(callback).takeRetainedValue()
         menuBarItem.pointee.click_callback = nil
+        adjustMenubarClickCallbackCount(-1, L: L)
     }
 
     if lua_isfunction(L, 2) {
@@ -276,6 +322,7 @@ func menubarSetClickCallback(_ L: LuaState) throws -> CInt {
         menuBarItem.pointee.click_callback = Unmanaged.passRetained(object).toOpaque()
         statusItem.button?.target = object
         statusItem.button?.action = #selector(HSMenubarItemClickDelegate.click(_:))
+        adjustMenubarClickCallbackCount(1, L: L)
     }
 
     lua_settop(L, 1)
@@ -318,6 +365,7 @@ func menubarSetMenu(_ L: LuaState) throws -> CInt {
         delegate!.fn = L.ref(index: 2)
         delegate!.generation = lua_currentStateGeneration()
         mb_dynamicMenuDelegates?.add(delegate!)
+        adjustMenubarDynamicMenuCallbackCount(1, L: L)
 
     default:
         break
@@ -371,6 +419,7 @@ func menubar_delete(_ L: LuaState) throws -> CInt {
         statusItem.button?.action = nil
         let _ = Unmanaged<HSMenubarItemClickDelegate>.fromOpaque(callback).takeRetainedValue()
         menuBarItem.pointee.click_callback = nil
+        adjustMenubarClickCallbackCount(-1, L: L)
     }
 
     // Remove all menu stuff associated with this item
@@ -671,6 +720,12 @@ func menubar_setup() {
 func menubar_gc(_ L: LuaState) throws -> CInt {
     mb_dynamicMenuDelegates?.removeAllObjects()
     mb_dynamicMenuDelegates = nil
+    activeMenubarDynamicMenuCallbackCount = 0
+    recordMenubarCallbackGauge(
+        name: "cosmichammer.menubar.dynamic_menu.callback.active",
+        value: activeMenubarDynamicMenuCallbackCount,
+        L: L
+    )
     return 0
 }
 

@@ -5,10 +5,66 @@ import IOKit
 import IOKit.hid
 import IOKit.usb
 import os.log
+import HSDSTCore
 
 // MARK: - Constants (mirroring razer.h)
 
 private let USERDATA_TAG = "hs.razer"
+private var activeRazerDiscoveryCallbackCount = 0
+private var activeRazerButtonCallbackCount = 0
+
+private func recordRazerCallbackGauge(
+    name: String,
+    value: Int,
+    L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()
+) {
+    let telemetry = L.map { environmentGet($0).telemetry } ?? environmentGetGlobalOrNil()?.telemetry
+    telemetry?.recordMetric(
+        name: name,
+        kind: .gauge,
+        value: Double(value),
+        attributes: [:],
+        unit: "1"
+    )
+}
+
+func adjustRazerDiscoveryCallbackCount(_ delta: Int, L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+    activeRazerDiscoveryCallbackCount = max(0, activeRazerDiscoveryCallbackCount + delta)
+    recordRazerCallbackGauge(
+        name: "cosmichammer.razer.discovery.callback.active",
+        value: activeRazerDiscoveryCallbackCount,
+        L: L
+    )
+}
+
+func adjustRazerButtonCallbackCount(_ delta: Int, L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+    activeRazerButtonCallbackCount = max(0, activeRazerButtonCallbackCount + delta)
+    recordRazerCallbackGauge(
+        name: "cosmichammer.razer.button.callback.active",
+        value: activeRazerButtonCallbackCount,
+        L: L
+    )
+}
+
+func setRazerDiscoveryCallbackCounted(
+    _ manager: HSRazerManager,
+    _ active: Bool,
+    L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()
+) {
+    guard manager.countedDiscoveryCallbackActive != active else { return }
+    manager.countedDiscoveryCallbackActive = active
+    adjustRazerDiscoveryCallbackCount(active ? 1 : -1, L: L)
+}
+
+func setRazerButtonCallbackCounted(
+    _ device: HSRazerDevice,
+    _ active: Bool,
+    L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()
+) {
+    guard device.countedButtonCallbackActive != active else { return }
+    device.countedButtonCallbackActive = active
+    adjustRazerButtonCallbackCount(active ? 1 : -1, L: L)
+}
 
 private let USB_VID_RAZER: Int32                = 0x1532
 private let USB_PID_RAZER_TARTARUS_V2: Int32    = 0x022B
@@ -105,6 +161,7 @@ class HSRazerDevice: NSObject, LuaTeardownable {
     var device: IOHIDDevice?
     weak var manager: HSRazerManager?
     var buttonCallbackRef: Int32 = LUA_NOREF
+    var countedButtonCallbackActive = false
     var isValid: Bool = true
 
     private var tornDown = false
@@ -113,7 +170,10 @@ class HSRazerDevice: NSObject, LuaTeardownable {
         guard !tornDown else { return }
         tornDown = true
         destroyEventTap()
-        // buttonCallbackRef is cleaned up by the Lua GC caller
+        setRazerButtonCallbackCounted(self, false)
+        if let L = lua_getCurrentState() {
+            lua_unrefRegistryRef(L, &buttonCallbackRef)
+        }
     }
 
     var locationID: NSNumber?
@@ -196,7 +256,16 @@ class HSRazerDevice: NSObject, LuaTeardownable {
         _ = pushHSRazerDevice(L, self)
         lua_pushany(L, buttonName as NSString)
         lua_pushany(L, buttonAction as NSString)
-        if lua_pcall(L, 3, 0, 0) != LUA_OK { lua_pop(L, 1) }
+        if luaTelemetryPCall(
+            L,
+            nargs: 3,
+            nresults: 0,
+            callbackName: "hs.razer.button",
+            attributes: [
+                "razer.event": "button",
+                "razer.button.action": buttonAction,
+            ]
+        ) != LUA_OK { lua_pop(L, 1) }
     }
 
     // MARK: - Event Tap for Scroll Wheel
@@ -930,6 +999,7 @@ class HSRazerManager: NSObject {
     var ioHIDManager: IOHIDManager?
     var devices: NSMutableArray = NSMutableArray()
     var discoveryCallbackRef: Int32 = LUA_NOREF
+    var countedDiscoveryCallbackActive = false
 
     override init() {
         super.init()
@@ -1016,7 +1086,13 @@ class HSRazerManager: NSObject {
             lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(discoveryCallbackRef))
             L.push(true)
             _ = pushHSRazerDevice(L, razerDevice)
-            if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
+            if luaTelemetryPCall(
+                L,
+                nargs: 2,
+                nresults: 0,
+                callbackName: "hs.razer.discovery",
+                attributes: ["razer.connected": true]
+            ) != LUA_OK { lua_pop(L, 1) }
         }
 
         return razerDevice
@@ -1035,7 +1111,13 @@ class HSRazerManager: NSObject {
                 lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(discoveryCallbackRef))
                 L.push(false)
                 _ = pushHSRazerDevice(L, razerDevice)
-                if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
+                if luaTelemetryPCall(
+                    L,
+                    nargs: 2,
+                    nresults: 0,
+                    callbackName: "hs.razer.discovery",
+                    attributes: ["razer.connected": false]
+                ) != LUA_OK { lua_pop(L, 1) }
             }
 
             devices.removeObject(at: index)
@@ -1045,6 +1127,18 @@ class HSRazerManager: NSObject {
 }
 
 // MARK: - Lua API: Module-level functions
+
+private func teardownRazerManager(_ manager: HSRazerManager, L: UnsafeMutablePointer<lua_State>?) {
+    setRazerDiscoveryCallbackCounted(manager, false, L: L)
+    for item in manager.devices {
+        (item as? HSRazerDevice)?.teardown()
+    }
+    manager.stopHIDManager()
+    manager.doGC()
+    if let L {
+        lua_unrefRegistryRef(L, &manager.discoveryCallbackRef)
+    }
+}
 
 /// hs.razer.init(fn)
 /// Function
@@ -1063,8 +1157,12 @@ class HSRazerManager: NSObject {
 private let razer_init: lua_CFunction = { L in
     luaL_checktype(L, 1, LUA_TFUNCTION)
 
+    if let manager = razerManager {
+        teardownRazerManager(manager, L: L)
+    }
     razerManager = HSRazerManager()
     lua_replaceRegistryFunctionRef(L, &razerManager!.discoveryCallbackRef, at: 1)
+    setRazerDiscoveryCallbackCounted(razerManager!, true, L: L)
     razerManager!.startHIDManager()
 
     return 0
@@ -1085,11 +1183,9 @@ private let razer_discoveryCallback: lua_CFunction = { L in
     if razerManager == nil {
         razerManager = HSRazerManager()
     }
-    lua_unrefRegistryRef(L, &razerManager!.discoveryCallbackRef)
-
-    if lua_type(L, 1) == LUA_TFUNCTION {
-        lua_replaceRegistryFunctionRef(L, &razerManager!.discoveryCallbackRef, at: 1)
-    }
+    let active = lua_type(L, 1) == LUA_TFUNCTION
+    lua_replaceRegistryFunctionRef(L, &razerManager!.discoveryCallbackRef, at: 1)
+    setRazerDiscoveryCallbackCounted(razerManager!, active, L: L)
 
     return 0
 }
@@ -1164,7 +1260,9 @@ public func luaopen_hs_librazer(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
             },
             "callback": .closure { L in
                 let device: HSRazerDevice = try L.checkArgument(1)
+                let active = lua_type(L, 2) == LUA_TFUNCTION
                 lua_replaceRegistryFunctionRef(L, &device.buttonCallbackRef, at: 2)
+                setRazerButtonCallbackCounted(device, active, L: L)
                 lua_pushvalue(L, 1)
                 return 1
             },
@@ -1373,8 +1471,10 @@ public func luaopen_hs_librazer(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
     // Set module metatable (for __gc)
     lua_createtable(L, 0, 1)
     lua_pushcclosure(L, { L in
-        razerManager?.stopHIDManager()
-        razerManager?.doGC()
+        if let manager = razerManager {
+            teardownRazerManager(manager, L: L)
+            razerManager = nil
+        }
         return 0
     }, 0)
     lua_setfield(L, -2, "__gc")

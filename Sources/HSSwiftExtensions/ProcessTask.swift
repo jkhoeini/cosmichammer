@@ -6,6 +6,18 @@ import HSDSTCore
 import os.log
 
 private let USERDATA_TAG = "hs.task"
+private var activeTaskCount = 0
+
+private func recordActiveTaskGauge(_ L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+    let telemetry = L.map { environmentGet($0).telemetry } ?? environmentGetGlobalOrNil()?.telemetry
+    telemetry?.recordMetric(
+        name: "cosmichammer.task.active",
+        kind: .gauge,
+        value: Double(activeTaskCount),
+        attributes: [:],
+        unit: "1"
+    )
+}
 
 // TigerStyle bounds: maximum process output size (100 MB)
 private let kMaxProcessOutputSize = 104_857_600
@@ -27,11 +39,14 @@ private class HSTask: NSObject {
     var generation: UInt64 = 0
     var customEnvironment: [String: String]?
     var workingDirectory: String?
+    var telemetrySpanID: UInt64?
+    var countedActive: Bool = false
     private var tornDown = false
 
-    func teardown() {
+    func teardown(_ L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
         guard !tornDown else { return }
         tornDown = true
+        setCountedActive(false, L: L)
         if let h = handle, h.isRunning {
             h.terminate()
         }
@@ -40,10 +55,22 @@ private class HSTask: NSObject {
         luaCallback = nil
         luaStreamCallback = nil
         selfRef = nil
+        telemetrySpanID = nil
         inputData = nil
         assert(handle == nil, "handle must be nil after teardown")
         assert(luaCallback == nil, "luaCallback must be nil after teardown")
         assert(selfRef == nil, "selfRef must be nil after teardown")
+    }
+
+    func setCountedActive(_ active: Bool, L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+        guard countedActive != active else { return }
+        countedActive = active
+        if active {
+            activeTaskCount += 1
+        } else {
+            activeTaskCount = max(0, activeTaskCount - 1)
+        }
+        recordActiveTaskGauge(L)
     }
 }
 
@@ -128,6 +155,10 @@ private func task_new(_ L: LuaState) throws -> CInt {
 private func task_metagc(_ L: LuaState) throws -> CInt {
     precondition(L != nil, "Lua state must not be nil")
     activeTasks.removeAll()
+    if activeTaskCount != 0 {
+        activeTaskCount = 0
+        recordActiveTaskGauge(L)
+    }
     if let observer = fileReadObserver {
         fileReadNotificationRef?.removeObserver(observer)
         fileReadObserver = nil
@@ -203,13 +234,40 @@ public func luaopen_hs_libtask(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
                     }
 
                     task.hasStarted = true
+                    let telemetry = environmentGet(L).telemetry
+                    task.telemetrySpanID = telemetry.startSpan(
+                        name: "hs.task",
+                        kind: .producer,
+                        attributes: [
+                            TelemetrySemanticConventions.Attribute.Process.executablePath: task.launchPath,
+                            TelemetrySemanticConventions.Attribute.Process.argsCount: task.arguments.count,
+                            TelemetrySemanticConventions.Attribute.Process.workingDirectory: task.workingDirectory ?? "",
+                        ],
+                        startTime: nil
+                    )
+                    let baseEnvironment = task.customEnvironment ?? [:]
+                    let injectedEnvironment = telemetry.inject(into: baseEnvironment)
+                    let taskEnvironment: [String: String]?
+                    if injectedEnvironment == baseEnvironment {
+                        taskEnvironment = task.customEnvironment
+                    } else if task.customEnvironment == nil {
+                        var inheritedEnvironment = ProcessInfo.processInfo.environment
+                        for (key, value) in injectedEnvironment {
+                            inheritedEnvironment[key] = value
+                        }
+                        taskEnvironment = inheritedEnvironment
+                    } else {
+                        taskEnvironment = injectedEnvironment
+                    }
+
+                    task.setCountedActive(true, L: L)
 
                     if task.isStream {
                         // Streaming mode: use streamingRun
                         let handle = provider.streamingRun(
                             executablePath: task.launchPath,
                             arguments: task.arguments,
-                            environment: task.customEnvironment,
+                            environment: taskEnvironment,
                             currentDirectory: task.workingDirectory,
                             onStdout: { [weak task] data in
                                 guard let task = task else { return }
@@ -229,7 +287,13 @@ public func luaopen_hs_libtask(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
                                 }
                                 _L.push(dataString)
                                 _L.push("")
-                                if lua_pcall(_L, 3, 1, 0) != LUA_OK {
+                                if luaTelemetryPCall(
+                                    _L,
+                                    nargs: 3,
+                                    nresults: 1,
+                                    callbackName: "hs.task.stream",
+                                    attributes: [TelemetrySemanticConventions.Attribute.Process.stream: "stdout"]
+                                ) != LUA_OK {
                                     lua_pop(_L, 1)
                                 } else {
                                     lua_pop(_L, 1) // pop result
@@ -253,7 +317,13 @@ public func luaopen_hs_libtask(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
                                 }
                                 _L.push("")
                                 _L.push(dataString)
-                                if lua_pcall(_L, 3, 1, 0) != LUA_OK {
+                                if luaTelemetryPCall(
+                                    _L,
+                                    nargs: 3,
+                                    nresults: 1,
+                                    callbackName: "hs.task.stream",
+                                    attributes: [TelemetrySemanticConventions.Attribute.Process.stream: "stderr"]
+                                ) != LUA_OK {
                                     lua_pop(_L, 1)
                                 } else {
                                     lua_pop(_L, 1) // pop result
@@ -266,13 +336,23 @@ public func luaopen_hs_libtask(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
                                     return
                                 }
                                 task.hasTerminated = true
+                                let _L = lua_getCurrentState()!
+                                task.setCountedActive(false, L: _L)
+                                if let spanID = task.telemetrySpanID {
+                                    environmentGet(_L).telemetry.endSpan(
+                                        id: spanID,
+                                        status: exitCode == 0 ? .ok : .error("process exited with \(exitCode)"),
+                                        attributes: [TelemetrySemanticConventions.Attribute.Process.exitCode: exitCode],
+                                        endTime: nil
+                                    )
+                                    task.telemetrySpanID = nil
+                                }
                                 if let cb = task.luaCallback {
-                                    let _L = lua_getCurrentState()!
                                     cb.push(onto: _L)
                                     _L.push(lua_Integer(exitCode))
                                     _L.push("")  // stdout already delivered via stream
                                     _L.push("")  // stderr already delivered via stream
-                                    if lua_pcall(_L, 3, 0, 0) != LUA_OK { lua_pop(_L, 1) }
+                                    if luaTelemetryPCall(_L, nargs: 3, nresults: 0, callbackName: "hs.task.exit") != LUA_OK { lua_pop(_L, 1) }
                                 }
                                 task.selfRef = nil
                             }
@@ -289,7 +369,7 @@ public func luaopen_hs_libtask(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
                         let handle = provider.run(
                             executablePath: task.launchPath,
                             arguments: task.arguments,
-                            environment: task.customEnvironment,
+                            environment: taskEnvironment,
                             currentDirectory: task.workingDirectory
                         ) { [weak task] result in
                             guard let task = task else { return }
@@ -298,16 +378,26 @@ public func luaopen_hs_libtask(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
                                 return
                             }
                             task.hasTerminated = true
+                            let _L = lua_getCurrentState()!
+                            task.setCountedActive(false, L: _L)
+                            if let spanID = task.telemetrySpanID {
+                                environmentGet(_L).telemetry.endSpan(
+                                    id: spanID,
+                                    status: result.exitCode == 0 ? .ok : .error("process exited with \(result.exitCode)"),
+                                    attributes: [TelemetrySemanticConventions.Attribute.Process.exitCode: result.exitCode],
+                                    endTime: nil
+                                )
+                                task.telemetrySpanID = nil
+                            }
 
                             if let cb = task.luaCallback {
-                                let _L = lua_getCurrentState()!
                                 cb.push(onto: _L)
                                 _L.push(lua_Integer(result.exitCode))
                                 let stdOutStr = String(data: result.stdout, encoding: .utf8) ?? ""
                                 let stdErrStr = String(data: result.stderr, encoding: .utf8) ?? ""
                                 _L.push(stdOutStr)
                                 _L.push(stdErrStr)
-                                if lua_pcall(_L, 3, 0, 0) != LUA_OK { lua_pop(_L, 1) }
+                                if luaTelemetryPCall(_L, nargs: 3, nresults: 0, callbackName: "hs.task.exit") != LUA_OK { lua_pop(_L, 1) }
                             }
                             task.selfRef = nil
                         }
@@ -455,6 +545,7 @@ public func luaopen_hs_libtask(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
                     // After waitUntilExit, sync our state
                     if let handle = task.handle, handle.hasTerminated {
                         task.hasTerminated = true
+                        task.setCountedActive(false, L: L)
                     }
                     lua_pushvalue(L, 1)
                     return 1
@@ -478,7 +569,7 @@ public func luaopen_hs_libtask(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
                 if let idx = activeTasks.firstIndex(where: { $0 === task }) {
                     activeTasks.remove(at: idx)
                 }
-                task.teardown()
+                task.teardown(L)
             }
             // Deinitialize the Any box (same as LuaSwift's gcUserdata)
             let rawptr = lua_touserdata(L, 1)!
@@ -510,5 +601,6 @@ public func luaopen_hs_libtask(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
         lua_setmetatable(L, -2)
 
         activeTasks = []
+        activeTaskCount = 0
     }
 }

@@ -87,7 +87,13 @@ private let eventtapCallback: CGEventTapCallBack = { proxy, type, event, userInf
     cb.push(onto: L)
     newEventtapEvent(L, event)
 
-    if lua_pcall(L, 1, 2, 0) != LUA_OK {
+    if luaTelemetryPCall(
+        L,
+        nargs: 1,
+        nresults: 2,
+        callbackName: "hs.eventtap",
+        attributes: ["eventtap.event_type": type.rawValue]
+    ) != LUA_OK {
         let errorMsg = lua_tostring(L, -1).map { String(cString: $0) } ?? "unknown error"
         os_log(.error, "%{public}s", "hs.eventtap callback error: \(errorMsg)")
         lua_pop(L, 1)

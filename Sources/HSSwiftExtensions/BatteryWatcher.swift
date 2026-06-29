@@ -14,6 +14,18 @@ import HSDSTCore
 
 private let USERDATA_TAG = "hs.battery.watcher"
 private var refTable: Int32 = 0
+private var activeBatteryWatcherCount = 0
+
+private func recordActiveBatteryWatcherGauge(_ L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+    let telemetry = L.map { environmentGet($0).telemetry } ?? environmentGetGlobalOrNil()?.telemetry
+    telemetry?.recordMetric(
+        name: "cosmichammer.battery.watcher.active",
+        kind: .gauge,
+        value: Double(activeBatteryWatcherCount),
+        attributes: [:],
+        unit: "1"
+    )
+}
 
 // Not so common code
 
@@ -38,7 +50,7 @@ private func callback(_ info: UnsafeMutableRawPointer?) {
 
     if let cb = callbackMap[info] {
         cb.push(onto: L)
-        if lua_pcall(L, 0, 0, 0) != LUA_OK {
+        if luaTelemetryPCall(L, nargs: 0, nresults: 0, callbackName: "hs.battery.watcher") != LUA_OK {
             lua_pop(L, 1)
         }
     }
@@ -94,6 +106,8 @@ private func battery_watcher_start(_ L: LuaState) throws -> CInt {
     watcher.pointee.started = true
 
     CFRunLoopAddSource(CFRunLoopGetMain(), watcher.pointee.t, .commonModes)
+    activeBatteryWatcherCount += 1
+    recordActiveBatteryWatcherGauge(L)
     return 1
 }
 
@@ -115,6 +129,8 @@ private func battery_watcher_stop(_ L: LuaState) throws -> CInt {
 
     watcher.pointee.started = false
     CFRunLoopRemoveSource(CFRunLoopGetMain(), watcher.pointee.t, .commonModes)
+    activeBatteryWatcherCount = max(0, activeBatteryWatcherCount - 1)
+    recordActiveBatteryWatcherGauge(L)
     return 1
 }
 
@@ -144,6 +160,8 @@ public func luaopen_hs_libbatterywatcher(_ L: UnsafeMutablePointer<lua_State>!) 
             if watcher.pointee.started {
                 watcher.pointee.started = false
                 CFRunLoopRemoveSource(CFRunLoopGetMain(), watcher.pointee.t, .commonModes)
+                activeBatteryWatcherCount = max(0, activeBatteryWatcherCount - 1)
+                recordActiveBatteryWatcherGauge(L)
             }
 
             callbackMap[UnsafeMutableRawPointer(watcher)] = nil

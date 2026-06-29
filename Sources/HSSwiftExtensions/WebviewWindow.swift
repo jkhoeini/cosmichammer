@@ -12,6 +12,7 @@ class HSWebViewWindow: NSPanel, NSWindowDelegate {
     var children: NSMutableArray = NSMutableArray()
     var udRef: LuaValue?
     var windowCallback: LuaValue?
+    var countedWindowCallbackActive = false
     var allowKeyboardEntry: Bool = false
     var darkMode: Bool = false
     var titleFollow: Bool = true
@@ -64,7 +65,13 @@ class HSWebViewWindow: NSPanel, NSWindowDelegate {
             windowCallback!.push(onto: L)
             lua_pushany(L, "closing" as NSString)
             wv_pushAny(L, self)
-            if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
+            if luaTelemetryPCall(
+                L,
+                nargs: 2,
+                nresults: 0,
+                callbackName: "hs.webview.window",
+                attributes: ["webview.window.event": "closing"]
+            ) != LUA_OK { lua_pop(L, 1) }
         }
         if deleteOnClose {
             L.push(wv_userdata_gc)
@@ -86,7 +93,16 @@ class HSWebViewWindow: NSPanel, NSWindowDelegate {
                 lua_pushany(L, "focusChange" as NSString)
                 wv_pushAny(L, self)
                 L.push(true)
-                if lua_pcall(L, 3, 0, 0) != LUA_OK { lua_pop(L, 1) }
+                if luaTelemetryPCall(
+                    L,
+                    nargs: 3,
+                    nresults: 0,
+                    callbackName: "hs.webview.window",
+                    attributes: [
+                        "webview.window.event": "focusChange",
+                        "webview.window.focused": true,
+                    ]
+                ) != LUA_OK { lua_pop(L, 1) }
             }
         }
     }
@@ -101,7 +117,16 @@ class HSWebViewWindow: NSPanel, NSWindowDelegate {
                 lua_pushany(L, "focusChange" as NSString)
                 wv_pushAny(L, self)
                 L.push(false)
-                if lua_pcall(L, 3, 0, 0) != LUA_OK { lua_pop(L, 1) }
+                if luaTelemetryPCall(
+                    L,
+                    nargs: 3,
+                    nresults: 0,
+                    callbackName: "hs.webview.window",
+                    attributes: [
+                        "webview.window.event": "focusChange",
+                        "webview.window.focused": false,
+                    ]
+                ) != LUA_OK { lua_pop(L, 1) }
             }
         }
     }
@@ -116,7 +141,16 @@ class HSWebViewWindow: NSPanel, NSWindowDelegate {
                 lua_pushany(L, "frameChange" as NSString)
                 wv_pushAny(L, self)
                 lua_pushNSRect(L, wv_RectWithFlippedYCoordinate(self.frame))
-                if lua_pcall(L, 3, 0, 0) != LUA_OK { lua_pop(L, 1) }
+                if luaTelemetryPCall(
+                    L,
+                    nargs: 3,
+                    nresults: 0,
+                    callbackName: "hs.webview.window",
+                    attributes: [
+                        "webview.window.event": "frameChange",
+                        "webview.window.change": "resize",
+                    ]
+                ) != LUA_OK { lua_pop(L, 1) }
             }
         }
     }
@@ -131,7 +165,16 @@ class HSWebViewWindow: NSPanel, NSWindowDelegate {
                 lua_pushany(L, "frameChange" as NSString)
                 wv_pushAny(L, self)
                 lua_pushNSRect(L, wv_RectWithFlippedYCoordinate(self.frame))
-                if lua_pcall(L, 3, 0, 0) != LUA_OK { lua_pop(L, 1) }
+                if luaTelemetryPCall(
+                    L,
+                    nargs: 3,
+                    nresults: 0,
+                    callbackName: "hs.webview.window",
+                    attributes: [
+                        "webview.window.event": "frameChange",
+                        "webview.window.change": "move",
+                    ]
+                ) != LUA_OK { lua_pop(L, 1) }
             }
         }
     }

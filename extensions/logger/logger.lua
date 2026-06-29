@@ -20,6 +20,7 @@ local function toLogLevel(lvl)
 end
 
 local LEVELFMT={{'ERROR:',''},{'** Warning:',''},{'',''},{'','    '},{'','        '}}
+local LEVELNAMES={'error','warning','info','debug','verbose'}
 local lasttime,lastid=0
 local idlen,idf,idempty=10,'%10.10s:','           '
 local timeempty='        '
@@ -89,6 +90,17 @@ local function store(s)
   histIndex=histIndex+1
   if histIndex>histSize then histIndex=1 end
   history[histIndex]=s
+end
+
+local function emitTelemetry(lvl, id, msg)
+  local otel = rawget(hs, 'opentelemetry')
+  if type(otel) == 'table' and type(otel.log) == 'function' then
+    pcall(otel.log, LEVELNAMES[lvl] or tostring(lvl), msg, {
+      ['lua.logger.id'] = id,
+      ['lua.logger.level'] = lvl,
+      ['log.source'] = 'hs.logger',
+    })
+  end
 end
 
 --- hs.logger.history() -> list of log entries
@@ -176,6 +188,7 @@ local lf = function(loglevel,lvl,id,fmt,...)
   local msg=sformat(fmt,...)
   if histSize>0 then store({time=ct,level=lvl,id=id,message=msg}) end
   if loglevel<lvl then return end
+  emitTelemetry(lvl,id,msg)
   id=formatID(id)
 --   id=sformat(idf,id)
   local stime = timeempty

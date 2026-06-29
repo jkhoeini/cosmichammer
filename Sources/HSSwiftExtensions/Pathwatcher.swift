@@ -1,10 +1,23 @@
 import Cocoa
 import CLua
+import HSDSTCore
 import Lua
 
 // Common Code
 
 private let USERDATA_TAG = "hs.pathwatcher"
+private var activePathWatcherCount = 0
+
+private func recordActivePathWatcherGauge(_ L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+    let telemetry = L.map { environmentGet($0).telemetry } ?? environmentGetGlobalOrNil()?.telemetry
+    telemetry?.recordMetric(
+        name: "cosmichammer.pathwatcher.active",
+        kind: .gauge,
+        value: Double(activePathWatcherCount),
+        attributes: [:],
+        unit: "1"
+    )
+}
 
 // MARK: - HSPathWatcher class
 
@@ -18,14 +31,14 @@ class HSPathWatcher: NSObject {
     /// Idempotent teardown: stop the FSEventStream, drop the Lua callback
     /// reference, mark as torn down.  Called from the explicit __gc closure
     /// while the lua_State is still alive.
-    func teardown() {
+    func teardown(_ L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
         guard !tornDown else { return }
         tornDown = true
         if started, let stream = stream {
             FSEventStreamStop(stream)
             FSEventStreamUnscheduleFromRunLoop(stream, CFRunLoopGetCurrent(), CFRunLoopMode.defaultMode.rawValue)
         }
-        started = false
+        setStarted(false, L: L)
         if let stream = stream {
             FSEventStreamInvalidate(stream)
             FSEventStreamRelease(stream)
@@ -34,18 +47,32 @@ class HSPathWatcher: NSObject {
         callback = nil   // drops the LuaValue ref while L is still open
     }
 
-    func start() {
+    func start(_ L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
         guard !started, let stream = stream else { return }
-        started = true
         FSEventStreamScheduleWithRunLoop(stream, CFRunLoopGetCurrent(), CFRunLoopMode.defaultMode.rawValue)
-        FSEventStreamStart(stream)
+        if FSEventStreamStart(stream) {
+            setStarted(true, L: L)
+        } else {
+            FSEventStreamUnscheduleFromRunLoop(stream, CFRunLoopGetCurrent(), CFRunLoopMode.defaultMode.rawValue)
+        }
     }
 
-    func stop() {
+    func stop(_ L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
         guard started, let stream = stream else { return }
-        started = false
         FSEventStreamStop(stream)
         FSEventStreamUnscheduleFromRunLoop(stream, CFRunLoopGetCurrent(), CFRunLoopMode.defaultMode.rawValue)
+        setStarted(false, L: L)
+    }
+
+    private func setStarted(_ active: Bool, L: UnsafeMutablePointer<lua_State>?) {
+        guard started != active else { return }
+        started = active
+        if active {
+            activePathWatcherCount += 1
+        } else {
+            activePathWatcherCount = max(0, activePathWatcherCount - 1)
+        }
+        recordActivePathWatcherGauge(L)
     }
 }
 
@@ -117,7 +144,13 @@ private let event_callback: FSEventStreamCallback = {
         lua_rawseti(L, -2, lua_Integer(i + 1))
     }
 
-    if lua_pcall(L, 2, 0, 0) != LUA_OK {
+    if luaTelemetryPCall(
+        L,
+        nargs: 2,
+        nresults: 0,
+        callbackName: "hs.pathwatcher",
+        attributes: ["file.event.count": numEvents]
+    ) != LUA_OK {
         lua_pop(L, 1)
     }
 }
@@ -208,13 +241,13 @@ public func luaopen_hs_libpathwatcher(_ L: UnsafeMutablePointer<lua_State>!) -> 
             "start": .closure { L in
                 let watcher: HSPathWatcher = try L.checkArgument(1)
                 lua_settop(L, 1)
-                watcher.start()
+                watcher.start(L)
                 return 1  // return self
             },
             "stop": .closure { L in
                 let watcher: HSPathWatcher = try L.checkArgument(1)
                 lua_settop(L, 1)
-                watcher.stop()
+                watcher.stop(L)
                 return 1  // return self
             },
         ],
@@ -245,7 +278,7 @@ public func luaopen_hs_libpathwatcher(_ L: UnsafeMutablePointer<lua_State>!) -> 
     L.push({ (L: LuaState!) -> CInt in
         // Extract the HSPathWatcher from the Any box BEFORE deinitializing
         if let watcher: HSPathWatcher = L.touserdata(1) {
-            watcher.teardown()
+            watcher.teardown(L)
             // Balance the Unmanaged.passRetained from watcher_path_new
             Unmanaged.passUnretained(watcher).release()
         }

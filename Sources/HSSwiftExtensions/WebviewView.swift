@@ -12,6 +12,9 @@ class HSWebViewView: WKWebView, WKNavigationDelegate, WKUIDelegate {
     var navigationCallback: LuaValue?
     var policyCallback: LuaValue?
     var sslCallback: LuaValue?
+    var countedNavigationCallbackActive = false
+    var countedPolicyCallbackActive = false
+    var countedSSLCallbackActive = false
     var allowNewWindows: Bool = true
     var examineInvalidCertificates: Bool = false
     var trackingID: WKNavigation?
@@ -124,7 +127,16 @@ class HSWebViewView: WKWebView, WKNavigationDelegate, WKUIDelegate {
         wv_pushAny(L, webView.window as? HSWebViewWindow)
         wv_pushAny(L, challenge)
 
-        if lua_pcall(L, 3, 1, 0) != LUA_OK {
+        if luaTelemetryPCall(
+            L,
+            nargs: 3,
+            nresults: 1,
+            callbackName: "hs.webview.policyCallback",
+            attributes: [
+                "webview.policy.event": "authenticationChallenge",
+                "webview.auth.failure_count": challenge.previousFailureCount,
+            ]
+        ) != LUA_OK {
             let errorMsg = lua_tostring(L, -1).map({ String(cString: $0) }) ?? "unknown error"
             os_log(.error, "%{public}s", "hs.webview:policyCallback() authenticationChallenge callback error: \(errorMsg)")
             lua_pop(L, 1)
@@ -216,7 +228,13 @@ class HSWebViewView: WKWebView, WKNavigationDelegate, WKUIDelegate {
         wv_pushAny(L, webView.window as? HSWebViewWindow)
         wv_pushAny(L, challenge.protectionSpace)
 
-        if lua_pcall(L, 2, 1, 0) != LUA_OK {
+        if luaTelemetryPCall(
+            L,
+            nargs: 2,
+            nresults: 1,
+            callbackName: "hs.webview.sslCallback",
+            attributes: ["webview.ssl.examine_invalid_certificates": examineInvalidCertificates]
+        ) != LUA_OK {
             let errorMsg = lua_tostring(L, -1).map({ String(cString: $0) }) ?? "unknown error"
             os_log(.error, "%{public}s", "hs.webview:sslCallback callback error: \(errorMsg)")
             completionHandler(.performDefaultHandling, nil)
@@ -241,7 +259,13 @@ class HSWebViewView: WKWebView, WKNavigationDelegate, WKUIDelegate {
             wv_pushAny(L, webView.window as? HSWebViewWindow)
             wv_pushAny(L, navigationAction)
 
-            if lua_pcall(L, 3, 1, 0) != LUA_OK {
+            if luaTelemetryPCall(
+                L,
+                nargs: 3,
+                nresults: 1,
+                callbackName: "hs.webview.policyCallback",
+                attributes: ["webview.policy.event": "navigationAction"]
+            ) != LUA_OK {
                 let errorMsg = lua_tostring(L, -1).map({ String(cString: $0) }) ?? "unknown error"
                 os_log(.error, "%{public}s", "hs.webview:policyCallback() navigationAction callback error: \(errorMsg)")
                 decisionHandler(.cancel)
@@ -263,7 +287,13 @@ class HSWebViewView: WKWebView, WKNavigationDelegate, WKUIDelegate {
             wv_pushAny(L, webView.window as? HSWebViewWindow)
             wv_pushAny(L, navigationResponse)
 
-            if lua_pcall(L, 3, 1, 0) != LUA_OK {
+            if luaTelemetryPCall(
+                L,
+                nargs: 3,
+                nresults: 1,
+                callbackName: "hs.webview.policyCallback",
+                attributes: ["webview.policy.event": "navigationResponse"]
+            ) != LUA_OK {
                 let errorMsg = lua_tostring(L, -1).map({ String(cString: $0) }) ?? "unknown error"
                 os_log(.error, "%{public}s", "hs.webview:policyCallback() navigationResponse callback error: \(errorMsg)")
                 decisionHandler(.cancel)
@@ -303,6 +333,7 @@ class HSWebViewView: WKWebView, WKNavigationDelegate, WKUIDelegate {
         if let parentWinCb = parent.windowCallback {
             parentWinCb.push(onto: L)
             newWindow.windowCallback = L.ref(index: -1)
+            setWebViewWindowCallbackCounted(newWindow, true, L: L)
         }
 
         let newView = HSWebViewView(frame: (newWindow.contentView! as NSView).bounds, configuration: configuration)
@@ -317,10 +348,12 @@ class HSWebViewView: WKWebView, WKNavigationDelegate, WKUIDelegate {
         if let parentNavCb = (webView as! HSWebViewView).navigationCallback {
             parentNavCb.push(onto: L)
             newView.navigationCallback = L.ref(index: -1)
+            setWebViewNavigationCallbackCounted(newView, true, L: L)
         }
         if let parentPolicyCb = (webView as! HSWebViewView).policyCallback {
             parentPolicyCb.push(onto: L)
             newView.policyCallback = L.ref(index: -1)
+            setWebViewPolicyCallbackCounted(newView, true, L: L)
         }
 
         if self.policyCallback != nil {
@@ -330,7 +363,13 @@ class HSWebViewView: WKWebView, WKNavigationDelegate, WKUIDelegate {
             wv_pushAny(L, navigationAction)
             wv_pushAny(L, windowFeatures)
 
-            if lua_pcall(L, 4, 1, 0) != LUA_OK {
+            if luaTelemetryPCall(
+                L,
+                nargs: 4,
+                nresults: 1,
+                callbackName: "hs.webview.policyCallback",
+                attributes: ["webview.policy.event": "newWindow"]
+            ) != LUA_OK {
                 let errorMsg = lua_tostring(L, -1).map({ String(cString: $0) }) ?? "unknown error"
                 lua_pop(L, 1)
                 os_log(.error, "%{public}s", "hs.webview:policyCallback() newWindow callback error: \(errorMsg)")
@@ -443,7 +482,16 @@ class HSWebViewView: WKWebView, WKNavigationDelegate, WKUIDelegate {
                 wv_NSError_toLua(L, error)
             }
 
-            if lua_pcall(L, numberOfArguments, 1, 0) != LUA_OK {
+            if luaTelemetryPCall(
+                L,
+                nargs: numberOfArguments,
+                nresults: 1,
+                callbackName: "hs.webview.navigationCallback",
+                attributes: [
+                    "webview.navigation.action": action,
+                    "webview.navigation.has_error": error != nil,
+                ]
+            ) != LUA_OK {
                 let errorMsg = lua_tostring(L, -1).map({ String(cString: $0) }) ?? "unknown error"
                 os_log(.error, "%{public}s", "hs.webview:navigationCallback() \(action) callback error: \(errorMsg)")
             } else {

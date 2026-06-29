@@ -19,12 +19,25 @@
 import Cocoa
 import CLua
 import Lua
+import HSDSTCore
 import os.log
 import Darwin.POSIX
 
 // MARK: - Constants
 
 private let USERDATA_TAG = "hs.network.ping.echoRequest"
+private var activeNetworkPingCount = 0
+
+private func recordActiveNetworkPingGauge(_ L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+    let telemetry = L.map { environmentGet($0).telemetry } ?? environmentGetGlobalOrNil()?.telemetry
+    telemetry?.recordMetric(
+        name: "cosmichammer.network.ping.active",
+        kind: .gauge,
+        value: Double(activeNetworkPingCount),
+        attributes: [:],
+        unit: "1"
+    )
+}
 
 private let ADDRESS_STYLES: [String: Int] = [
     "any":  SimplePingAddressStyle.any.rawValue,
@@ -98,6 +111,7 @@ private class PingableObject: SimplePing, SimplePingDelegate {
     var selfRefValue: LuaValue?
     var passAllUnexpected: Bool = false
     var generation: UInt64 = 0
+    var countedActive: Bool = false
     private var tornDown = false
 
     override init(hostName: String) {
@@ -109,12 +123,24 @@ private class PingableObject: SimplePing, SimplePingDelegate {
     /// reference, mark as torn down.  Called from the explicit __gc closure
     /// while the lua_State is still alive, AND from delegate methods when the
     /// generation canary fires.
-    func teardown() {
+    func teardown(_ L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
         guard !tornDown else { return }
         tornDown = true
+        setCountedActive(false, L: L)
         stop()
         callback = nil
         selfRefValue = nil
+    }
+
+    func setCountedActive(_ active: Bool, L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+        guard countedActive != active else { return }
+        countedActive = active
+        if active {
+            activeNetworkPingCount += 1
+        } else {
+            activeNetworkPingCount = max(0, activeNetworkPingCount - 1)
+        }
+        recordActiveNetworkPingGauge(L)
     }
 
     // MARK: SimplePingDelegate Methods
@@ -138,7 +164,16 @@ private class PingableObject: SimplePing, SimplePingDelegate {
         L.push(userdata: pinger as! PingableObject)
         lua_pushany(L, "didStart" as NSString)
         _ = pushParsedAddress(L, address)
-        if lua_pcall(L, 3, 0, 0) != LUA_OK { lua_pop(L, 1) }
+        if luaTelemetryPCall(
+            L,
+            nargs: 3,
+            nresults: 0,
+            callbackName: "hs.network.ping",
+            attributes: [
+                "network.ping.event": "didStart",
+                "network.address.bytes": address.count,
+            ]
+        ) != LUA_OK { lua_pop(L, 1) }
     }
 
     func simplePing(_ pinger: SimplePing, didFailWithError error: Error) {
@@ -156,8 +191,15 @@ private class PingableObject: SimplePing, SimplePingDelegate {
             L.push(userdata: pinger as! PingableObject)
             lua_pushany(L, "didFail" as NSString)
             lua_pushany(L, errorReason as NSString)
-            if lua_pcall(L, 3, 0, 0) != LUA_OK { lua_pop(L, 1) }
+            if luaTelemetryPCall(
+                L,
+                nargs: 3,
+                nresults: 0,
+                callbackName: "hs.network.ping",
+                attributes: ["network.ping.event": "didFail"]
+            ) != LUA_OK { lua_pop(L, 1) }
         }
+        setCountedActive(false, L: L)
         selfRefValue = nil
     }
 
@@ -174,7 +216,17 @@ private class PingableObject: SimplePing, SimplePingDelegate {
         lua_pushany(L, "sendPacket" as NSString)
         _ = pushParsedICMPPayload(L, packet)
         L.push(lua_Integer(sequenceNumber))
-        if lua_pcall(L, 4, 0, 0) != LUA_OK { lua_pop(L, 1) }
+        if luaTelemetryPCall(
+            L,
+            nargs: 4,
+            nresults: 0,
+            callbackName: "hs.network.ping",
+            attributes: [
+                "network.ping.event": "sendPacket",
+                "network.ping.sequence_number": Int(sequenceNumber),
+                "network.io.bytes": packet.count,
+            ]
+        ) != LUA_OK { lua_pop(L, 1) }
     }
 
     func simplePing(_ pinger: SimplePing, didFailToSendPacket packet: Data, sequenceNumber: UInt16, error: Error) {
@@ -191,7 +243,17 @@ private class PingableObject: SimplePing, SimplePingDelegate {
         _ = pushParsedICMPPayload(L, packet)
         L.push(lua_Integer(sequenceNumber))
         lua_pushany(L, error.localizedDescription as NSString)
-        if lua_pcall(L, 5, 0, 0) != LUA_OK { lua_pop(L, 1) }
+        if luaTelemetryPCall(
+            L,
+            nargs: 5,
+            nresults: 0,
+            callbackName: "hs.network.ping",
+            attributes: [
+                "network.ping.event": "sendPacketFailed",
+                "network.ping.sequence_number": Int(sequenceNumber),
+                "network.io.bytes": packet.count,
+            ]
+        ) != LUA_OK { lua_pop(L, 1) }
     }
 
     func simplePing(_ pinger: SimplePing, didReceivePingResponsePacket packet: Data, sequenceNumber: UInt16) {
@@ -207,7 +269,17 @@ private class PingableObject: SimplePing, SimplePingDelegate {
         lua_pushany(L, "receivedPacket" as NSString)
         _ = pushParsedICMPPayload(L, packet)
         L.push(lua_Integer(sequenceNumber))
-        if lua_pcall(L, 4, 0, 0) != LUA_OK { lua_pop(L, 1) }
+        if luaTelemetryPCall(
+            L,
+            nargs: 4,
+            nresults: 0,
+            callbackName: "hs.network.ping",
+            attributes: [
+                "network.ping.event": "receivedPacket",
+                "network.ping.sequence_number": Int(sequenceNumber),
+                "network.io.bytes": packet.count,
+            ]
+        ) != LUA_OK { lua_pop(L, 1) }
     }
 
     func simplePing(_ pinger: SimplePing, didReceiveUnexpectedPacket packet: Data) {
@@ -239,7 +311,16 @@ private class PingableObject: SimplePing, SimplePingDelegate {
         L.push(userdata: pinger as! PingableObject)
         lua_pushany(L, "receivedUnexpectedPacket" as NSString)
         _ = pushParsedICMPPayload(L, packet)
-        if lua_pcall(L, 3, 0, 0) != LUA_OK { lua_pop(L, 1) }
+        if luaTelemetryPCall(
+            L,
+            nargs: 3,
+            nresults: 0,
+            callbackName: "hs.network.ping",
+            attributes: [
+                "network.ping.event": "receivedUnexpectedPacket",
+                "network.io.bytes": packet.count,
+            ]
+        ) != LUA_OK { lua_pop(L, 1) }
     }
 }
 
@@ -416,9 +497,10 @@ public func luaopen_hs_libnetworkping(_ L: UnsafeMutablePointer<lua_State>!) -> 
                 "start": .closure { L in
                     let pinger: PingableObject = try L.checkArgument(1)
                     if pinger.selfRefValue == nil {
-                        pinger.start()
                         lua_pushvalue(L, 1)
                         pinger.selfRefValue = L.ref(index: -1)
+                        pinger.setCountedActive(true, L: L)
+                        pinger.start()
                     }
                     lua_pushvalue(L, 1)
                     return 1
@@ -437,6 +519,7 @@ public func luaopen_hs_libnetworkping(_ L: UnsafeMutablePointer<lua_State>!) -> 
                     if pinger.selfRefValue != nil {
                         pinger.stop()
                         pinger.selfRefValue = nil
+                        pinger.setCountedActive(false, L: L)
                     }
                     lua_pushvalue(L, 1)
                     return 1
@@ -606,7 +689,7 @@ public func luaopen_hs_libnetworkping(_ L: UnsafeMutablePointer<lua_State>!) -> 
         // Replace __gc with our explicit teardown + deinitialize
         lua_pushcclosure(L, { (L: LuaState!) -> CInt in
             if let pinger: PingableObject = L.touserdata(1) {
-                pinger.teardown()
+                pinger.teardown(L)
             }
             let rawptr = lua_touserdata(L, 1)!
             let anyPtr = rawptr.assumingMemoryBound(to: Any.self)

@@ -3,6 +3,7 @@ import CLua
 import Lua
 import os.log
 import SystemConfiguration
+import HSDSTCore
 
 // SCDynamicStoreCopyDHCPInfo is not in the SystemConfiguration umbrella header,
 // so Swift doesn't see it. Declare it manually.
@@ -14,6 +15,18 @@ private func _SCDynamicStoreCopyDHCPInfo(
 
 private let USERDATA_TAG = "hs.network.configuration"
 private var dynamicStoreQueue: DispatchQueue! = nil
+private var activeNetworkConfigurationWatcherCount = 0
+
+private func recordActiveNetworkConfigurationWatcherGauge(_ L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+    let telemetry = L.map { environmentGet($0).telemetry } ?? environmentGetGlobalOrNil()?.telemetry
+    telemetry?.recordMetric(
+        name: "cosmichammer.network.configuration.watcher.active",
+        kind: .gauge,
+        value: Double(activeNetworkConfigurationWatcherCount),
+        attributes: [:],
+        unit: "1"
+    )
+}
 
 // MARK: - HSDynamicStore class
 
@@ -28,13 +41,35 @@ private class HSDynamicStore: NSObject {
     func teardown() {
         guard !tornDown else { return }
         tornDown = true
-        if let store = storeObject, watcherEnabled {
-            _ = SCDynamicStoreSetDispatchQueue(store, nil)
-            watcherEnabled = false
-        }
+        stop(lua_getCurrentState())
         callback = nil
         selfRefValue = nil
         storeObject = nil
+    }
+
+    func start(_ L: UnsafeMutablePointer<lua_State>) throws {
+        guard !watcherEnabled else { return }
+        guard let store = storeObject else {
+            throw LuaCallError("dynamic store object is invalid")
+        }
+        if SCDynamicStoreSetDispatchQueue(store, dynamicStoreQueue) {
+            watcherEnabled = true
+            activeNetworkConfigurationWatcherCount += 1
+            recordActiveNetworkConfigurationWatcherGauge(L)
+        } else {
+            throw LuaCallError("unable to set watcher dispatch queue:\(String(cString: SCErrorString(SCError())))")
+        }
+    }
+
+    func stop(_ L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+        guard watcherEnabled else { return }
+        if let store = storeObject, !SCDynamicStoreSetDispatchQueue(store, nil) {
+            os_log(.debug, "%{public}s", "\(USERDATA_TAG):stop, error removing watcher from dispatch queue:\(SCErrorString(SCError()))")
+        }
+        watcherEnabled = false
+        selfRefValue = nil
+        activeNetworkConfigurationWatcherCount = max(0, activeNetworkConfigurationWatcherCount - 1)
+        recordActiveNetworkConfigurationWatcherGauge(L)
     }
 }
 
@@ -51,7 +86,13 @@ private let doDynamicStoreCallback: SCDynamicStoreCallBack = { store, changedKey
         cb.push(onto: L)
         L.push(userdata: obj)
         lua_pushany(L, nsChangedKeys)
-        if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
+        if luaTelemetryPCall(
+            L,
+            nargs: 2,
+            nresults: 0,
+            callbackName: "hs.network.configuration",
+            attributes: ["network.configuration.changed_key.count": nsChangedKeys.count]
+        ) != LUA_OK { lua_pop(L, 1) }
     }
 }
 
@@ -490,13 +531,7 @@ private func dynamicStoreSetCallback(_ L: LuaState) throws -> CInt {
 ///  * The callback function should be specified with [hs.network.configuration:setCallback](#setCallback) and the keys to monitor should be specified with [hs.network.configuration:monitorKeys](#monitorKeys).
 private func dynamicStoreStartWatcher(_ L: LuaState) throws -> CInt {
     let obj: HSDynamicStore = try L.checkArgument(1)
-    if !obj.watcherEnabled {
-        if SCDynamicStoreSetDispatchQueue(obj.storeObject!, dynamicStoreQueue) {
-            obj.watcherEnabled = true
-        } else {
-            throw LuaCallError("unable to set watcher dispatch queue:\(String(cString: SCErrorString(SCError())))")
-        }
-    }
+    try obj.start(L)
     lua_pushvalue(L, 1)
     return 1
 }
@@ -512,12 +547,7 @@ private func dynamicStoreStartWatcher(_ L: LuaState) throws -> CInt {
 ///  * the store object
 private func dynamicStoreStopWatcher(_ L: LuaState) throws -> CInt {
     let obj: HSDynamicStore = try L.checkArgument(1)
-    if !SCDynamicStoreSetDispatchQueue(obj.storeObject!, nil) {
-        os_log(.debug, "%{public}s", "\(USERDATA_TAG):stop, error removing watcher from dispatch queue:\(SCErrorString(SCError()))")
-    }
-    obj.watcherEnabled = false
-    // Release self-reference so the object can be GC'd when stopped
-    obj.selfRefValue = nil
+    obj.stop(L)
     lua_pushvalue(L, 1)
     return 1
 }

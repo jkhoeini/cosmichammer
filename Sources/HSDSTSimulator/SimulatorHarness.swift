@@ -56,6 +56,7 @@ public final class SimulatorHarness {
         // Round 4 simulators
         let appSim = SimulatedApplication(rng: rng.fork(), faults: faults)
         appSim.windowSim = winSim
+        let telemetrySim = SimulatedTelemetry(rng: rng.fork(), faults: faults)
 
         return Environment(
             clock: clockSim,
@@ -90,7 +91,8 @@ public final class SimulatorHarness {
             drawing: drawingSim,
             certificate: certificateSim,
             media: mediaSim,
-            application: appSim
+            application: appSim,
+            telemetry: telemetrySim
         )
     }
 

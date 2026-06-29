@@ -1,6 +1,7 @@
 import Cocoa
 import CLua
 import Lua
+import HSDSTCore
 import os.log
 import Darwin.POSIX.netinet
 import Darwin.POSIX.netdb
@@ -8,6 +9,53 @@ import Darwin.POSIX.netdb
 private let USERDATA_TAG = "hs.bonjour.service"
 
 private var serviceUDRecords: NSMapTable<HSNetServiceWrapper, NSNumber>!
+private var activeBonjourServiceMonitorCount = 0
+private var activeBonjourServicePublishCount = 0
+private var activeBonjourServiceResolveCount = 0
+
+private func recordActiveBonjourServiceMonitorGauge(_ L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+    let telemetry = L.map { environmentGet($0).telemetry } ?? environmentGetGlobalOrNil()?.telemetry
+    telemetry?.recordMetric(
+        name: "cosmichammer.bonjour.service.monitor.active",
+        kind: .gauge,
+        value: Double(activeBonjourServiceMonitorCount),
+        attributes: [:],
+        unit: "1"
+    )
+}
+
+private func recordBonjourServiceGauge(
+    name: String,
+    value: Int,
+    L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()
+) {
+    let telemetry = L.map { environmentGet($0).telemetry } ?? environmentGetGlobalOrNil()?.telemetry
+    telemetry?.recordMetric(
+        name: name,
+        kind: .gauge,
+        value: Double(value),
+        attributes: [:],
+        unit: "1"
+    )
+}
+
+func adjustBonjourServicePublishCount(_ delta: Int, L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+    activeBonjourServicePublishCount = max(0, activeBonjourServicePublishCount + delta)
+    recordBonjourServiceGauge(
+        name: "cosmichammer.bonjour.service.publish.active",
+        value: activeBonjourServicePublishCount,
+        L: L
+    )
+}
+
+func adjustBonjourServiceResolveCount(_ delta: Int, L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+    activeBonjourServiceResolveCount = max(0, activeBonjourServiceResolveCount + delta)
+    recordBonjourServiceGauge(
+        name: "cosmichammer.bonjour.service.resolve.active",
+        value: activeBonjourServiceResolveCount,
+        L: L
+    )
+}
 
 // MARK: - Support Functions and Classes
 
@@ -67,6 +115,9 @@ private func pushNetServiceCallbackArgument(_ L: UnsafeMutablePointer<lua_State>
     // assume that if this module didn't create it, we can't publish it.
     var canPublish: Bool = false
 
+    var countedMonitorActive: Bool = false
+    var countedPublishActive: Bool = false
+    var countedResolveActive: Bool = false
     private var tornDown = false
 
     init(service: NetService) {
@@ -75,9 +126,12 @@ private func pushNetServiceCallbackArgument(_ L: UnsafeMutablePointer<lua_State>
         service.delegate = self
     }
 
-    func teardown() {
+    func teardown(_ L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
         guard !tornDown else { return }
         tornDown = true
+        setCountedMonitorActive(false, L: L)
+        setCountedPublishActive(false, L: L)
+        setCountedResolveActive(false, L: L)
         callback = nil
         monitorCallback = nil
         if selfRef != LUA_NOREF {
@@ -90,6 +144,42 @@ private func pushNetServiceCallbackArgument(_ L: UnsafeMutablePointer<lua_State>
         service = nil
     }
 
+    func setCountedMonitorActive(_ active: Bool, L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+        guard countedMonitorActive != active else { return }
+        countedMonitorActive = active
+        if active {
+            activeBonjourServiceMonitorCount += 1
+        } else {
+            activeBonjourServiceMonitorCount = max(0, activeBonjourServiceMonitorCount - 1)
+        }
+        recordActiveBonjourServiceMonitorGauge(L)
+    }
+
+    func setCountedPublishActive(_ active: Bool, L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+        guard countedPublishActive != active else { return }
+        countedPublishActive = active
+        adjustBonjourServicePublishCount(active ? 1 : -1, L: L)
+    }
+
+    func setCountedResolveActive(_ active: Bool, L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+        guard countedResolveActive != active else { return }
+        countedResolveActive = active
+        adjustBonjourServiceResolveCount(active ? 1 : -1, L: L)
+    }
+
+    func stopActiveService(_ L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+        callback = nil
+        service?.stop()
+        setCountedPublishActive(false, L: L)
+        setCountedResolveActive(false, L: L)
+    }
+
+    func stopMonitoring(_ L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+        monitorCallback = nil
+        service?.stopMonitoring()
+        setCountedMonitorActive(false, L: L)
+    }
+
     func performCallback(with argument: Any?, usingCallback fn: LuaValue?) {
         guard let fn = fn else { return }
         guard lua_isStateGenerationValid(generation) else {
@@ -98,20 +188,32 @@ private func pushNetServiceCallbackArgument(_ L: UnsafeMutablePointer<lua_State>
         }
         let L = lua_getCurrentState()!
         var argCount: Int32 = 1
+        var callbackEvent = "none"
         fn.push(onto: L)
         pushHSNetServiceWrapper(L, self)
         if let argument = argument {
             if let args = argument as? [Any] {
+                callbackEvent = args.first as? String ?? "array"
                 for obj in args {
                     pushNetServiceCallbackArgument(L, obj)
                 }
                 argCount += Int32(args.count)
             } else {
+                callbackEvent = argument as? String ?? "value"
                 pushNetServiceCallbackArgument(L, argument)
                 argCount += 1
             }
         }
-        if lua_pcall(L, argCount, 0, 0) != LUA_OK {
+        if luaTelemetryPCall(
+            L,
+            nargs: argCount,
+            nresults: 0,
+            callbackName: "hs.bonjour.service",
+            attributes: [
+                "bonjour.service.event": callbackEvent,
+                "bonjour.service.argument.count": Int(argCount),
+            ]
+        ) != LUA_OK {
             os_log(.error, "%{public}s", "\(USERDATA_TAG):callback error:\(String(cString: lua_tostring(L, -1)!))")
             lua_pop(L, -1)
         }
@@ -124,6 +226,7 @@ private func pushNetServiceCallbackArgument(_ L: UnsafeMutablePointer<lua_State>
     }
 
     func netService(_ sender: NetService, didNotPublish errorDict: [String: NSNumber]) {
+        setCountedPublishActive(false)
         if callback != nil {
             performCallback(with: ["error", netServiceErrorToString(errorDict as [String: Any])] as [Any],
                             usingCallback: callback)
@@ -137,6 +240,7 @@ private func pushNetServiceCallbackArgument(_ L: UnsafeMutablePointer<lua_State>
     }
 
     func netService(_ sender: NetService, didNotResolve errorDict: [String: NSNumber]) {
+        setCountedResolveActive(false)
         if callback != nil {
             performCallback(with: ["error", netServiceErrorToString(errorDict as [String: Any])] as [Any],
                             usingCallback: callback)
@@ -148,6 +252,8 @@ private func pushNetServiceCallbackArgument(_ L: UnsafeMutablePointer<lua_State>
     // we clear the callback before stopping, but resolveWithTimeout uses this for indicating that the
     // timeout has been reached.
     func netServiceDidStop(_ sender: NetService) {
+        setCountedPublishActive(false)
+        setCountedResolveActive(false)
         performCallback(with: "stop", usingCallback: callback)
     }
 
@@ -468,13 +574,13 @@ public func luaopen_hs_libbonjourservice(_ L: UnsafeMutablePointer<lua_State>!) 
                     allowRename = lua_toboolean(L, 2) != 0
                 }
 
-                wrapper.callback = nil
-                wrapper.service.stop()
+                wrapper.stopActiveService(L)
                 if hasFunction {
                     wrapper.callback = L.ref(index: -1)
                 }
 
                 wrapper.service.publish(options: allowRename ? [] : .noAutoRename)
+                wrapper.setCountedPublishActive(true, L: L)
                 lua_pushvalue(L, 1)
                 return 1
             },
@@ -522,13 +628,13 @@ public func luaopen_hs_libbonjourservice(_ L: UnsafeMutablePointer<lua_State>!) 
                     duration = lua_tonumber(L, 2)
                 }
 
-                wrapper.callback = nil
-                wrapper.service.stop()
+                wrapper.stopActiveService(L)
                 if hasFunction {
                     wrapper.callback = L.ref(index: -1)
                 }
 
                 wrapper.service.resolve(withTimeout: duration)
+                wrapper.setCountedResolveActive(true, L: L)
                 lua_pushvalue(L, 1)
                 return 1
             },
@@ -562,6 +668,7 @@ public func luaopen_hs_libbonjourservice(_ L: UnsafeMutablePointer<lua_State>!) 
                 }
 
                 wrapper.service.startMonitoring()
+                wrapper.setCountedMonitorActive(true, L: L)
                 lua_pushvalue(L, 1)
                 return 1
             },
@@ -582,8 +689,7 @@ public func luaopen_hs_libbonjourservice(_ L: UnsafeMutablePointer<lua_State>!) 
             ///  * To reduce the usage of system resources, you should make sure to use this method when resolving a remote service if you did not specify a timeout for [hs.bonjour.service:resolve](#resolve) or specified a timeout of 0.0 once you have verified that you have the details you need.
             "stop": .closure { L in
                 let wrapper: HSNetServiceWrapper = try L.checkArgument(1)
-                wrapper.callback = nil
-                wrapper.service.stop()
+                wrapper.stopActiveService(L)
                 if wrapper.selfRef != LUA_NOREF {
                     luaL_unref(L, LUA_REGISTRYINDEX_VALUE, wrapper.selfRef)
                     wrapper.selfRef = Int32(LUA_NOREF)
@@ -606,8 +712,7 @@ public func luaopen_hs_libbonjourservice(_ L: UnsafeMutablePointer<lua_State>!) 
             ///  * This method will stop updating [hs.bonjour.service:txtRecord](#txtRecord) and invoking the callback, if any, assigned with [hs.bonjour.service:monitor](#monitor).
             "stopMonitoring": .closure { L in
                 let wrapper: HSNetServiceWrapper = try L.checkArgument(1)
-                wrapper.monitorCallback = nil
-                wrapper.service.stopMonitoring()
+                wrapper.stopMonitoring(L)
                 lua_pushvalue(L, 1)
                 return 1
             },
@@ -642,7 +747,7 @@ public func luaopen_hs_libbonjourservice(_ L: UnsafeMutablePointer<lua_State>!) 
                 obj.selfRef = LUA_NOREF
             }
             serviceUDRecords.removeObject(forKey: obj)
-            obj.teardown()
+            obj.teardown(L)
         }
         // Deinitialize the Any box (same as LuaSwift's gcUserdata)
         let rawptr = lua_touserdata(L, 1)!

@@ -76,7 +76,13 @@ private class HSWifiScan: NSObject {
         } else {
             lua_pushnil(L)
         }
-        if lua_pcall(L, 1, 0, 0) != LUA_OK { lua_pop(L, 1) }
+        if luaTelemetryPCall(
+            L,
+            nargs: 1,
+            nresults: 0,
+            callbackName: "hs.wifi.scan",
+            attributes: ["wifi.scan.success": !(object is NSError)]
+        ) != LUA_OK { lua_pop(L, 1) }
     }
 }
 

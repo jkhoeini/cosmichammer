@@ -345,14 +345,26 @@ public func luaopen_hs_libspeech(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
                             _L.push(lua_Integer(luaStart.last?.uintValue ?? 0))
                             _L.push(lua_Integer((luaEnd.last?.uintValue ?? 1)) - 1)
                             lua_pushany(_L, text as NSString)
-                            if lua_pcall(_L, 5, 0, 0) != LUA_OK { lua_pop(_L, 1) }
+                            if luaTelemetryPCall(
+                                _L,
+                                nargs: 5,
+                                nresults: 0,
+                                callbackName: "hs.speech",
+                                attributes: ["speech.event": "willSpeakWord"]
+                            ) != LUA_OK { lua_pop(_L, 1) }
 
                         case .willSpeakPhoneme(let phonemeOpcode):
                             cb.push(onto: _L)
                             _L.push(userdata: synth)
                             _L.push("willSpeakPhoneme")
                             _L.push(lua_Integer(phonemeOpcode))
-                            if lua_pcall(_L, 3, 0, 0) != LUA_OK { lua_pop(_L, 1) }
+                            if luaTelemetryPCall(
+                                _L,
+                                nargs: 3,
+                                nresults: 0,
+                                callbackName: "hs.speech",
+                                attributes: ["speech.event": "willSpeakPhoneme"]
+                            ) != LUA_OK { lua_pop(_L, 1) }
 
                         case .didEncounterError(let characterIndex, let text, let message):
                             let charMap = luaByteToObjCharMap(text)
@@ -364,21 +376,42 @@ public func luaopen_hs_libspeech(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
                             _L.push(lua_Integer(index.last?.uintValue ?? 0))
                             lua_pushany(_L, text as NSString)
                             lua_pushany(_L, message as NSString)
-                            if lua_pcall(_L, 5, 0, 0) != LUA_OK { lua_pop(_L, 1) }
+                            if luaTelemetryPCall(
+                                _L,
+                                nargs: 5,
+                                nresults: 0,
+                                callbackName: "hs.speech",
+                                attributes: ["speech.event": "didEncounterError"]
+                            ) != LUA_OK { lua_pop(_L, 1) }
 
                         case .didEncounterSync(let syncValue):
                             cb.push(onto: _L)
                             _L.push(userdata: synth)
                             _L.push("didEncounterSync")
                             lua_pushany(_L, syncValue as? NSObject)
-                            if lua_pcall(_L, 3, 0, 0) != LUA_OK { lua_pop(_L, 1) }
+                            if luaTelemetryPCall(
+                                _L,
+                                nargs: 3,
+                                nresults: 0,
+                                callbackName: "hs.speech",
+                                attributes: ["speech.event": "didEncounterSync"]
+                            ) != LUA_OK { lua_pop(_L, 1) }
 
                         case .didFinish(let success):
                             cb.push(onto: _L)
                             _L.push(userdata: synth)
                             _L.push("didFinish")
                             _L.push(success)
-                            if lua_pcall(_L, 3, 0, 0) != LUA_OK { lua_pop(_L, 1) }
+                            if luaTelemetryPCall(
+                                _L,
+                                nargs: 3,
+                                nresults: 0,
+                                callbackName: "hs.speech",
+                                attributes: [
+                                    "speech.event": "didFinish",
+                                    "speech.success": success,
+                                ]
+                            ) != LUA_OK { lua_pop(_L, 1) }
                             // Release the self-reference that was keeping us alive during speech
                             synth.selfRefValue = nil
                         }

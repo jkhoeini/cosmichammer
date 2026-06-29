@@ -399,9 +399,62 @@ private func push_hammerAppInfo(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
 private func core_accessibilityState(_ L: LuaState) throws -> CInt {
     let shouldprompt = lua_toboolean(L, 1) != 0
     let enabled = MJAccessibilityIsEnabled()
+    recordPermissionAudit(
+        L,
+        name: "accessibility",
+        action: "check",
+        enabled: enabled,
+        status: enabled ? "authorized" : "denied_or_not_determined",
+        prompted: shouldprompt
+    )
     if shouldprompt { MJAccessibilityOpenPanel() }
     lua_pushboolean(L, enabled ? 1 : 0)
     return 1
+}
+
+func recordPermissionAudit(
+    _ L: LuaState,
+    name: String,
+    action: String,
+    enabled: Bool,
+    status: String,
+    prompted: Bool
+) {
+    environmentGet(L).telemetry.recordLog(
+        level: "info",
+        message: "permission.\(name).\(action)",
+        attributes: [
+            TelemetrySemanticConventions.Attribute.Permission.name: name,
+            TelemetrySemanticConventions.Attribute.Permission.enabled: enabled,
+            TelemetrySemanticConventions.Attribute.Permission.status: status,
+            TelemetrySemanticConventions.Attribute.Permission.prompted: prompted,
+        ],
+        timestamp: nil
+    )
+}
+
+private func recordPermissionPromptResult(name: String, granted: Bool) {
+    environmentGetGlobalOrNil()?.telemetry.recordLog(
+        level: "info",
+        message: "permission.\(name).prompt.result",
+        attributes: [
+            TelemetrySemanticConventions.Attribute.Permission.name: name,
+            TelemetrySemanticConventions.Attribute.Permission.enabled: granted,
+            TelemetrySemanticConventions.Attribute.Permission.status: granted ? "authorized" : "denied",
+            TelemetrySemanticConventions.Attribute.Permission.prompted: true,
+        ],
+        timestamp: nil
+    )
+}
+
+private func avAuthorizationStatusString(_ status: AVAuthorizationStatus) -> String {
+    switch status {
+    case .authorized: return "authorized"
+    case .denied: return "denied"
+    case .notDetermined: return "not_determined"
+    case .restricted: return "restricted"
+    @unknown default: return "unknown"
+    }
 }
 
 // SOURCE: https://stackoverflow.com/a/58985069
@@ -458,6 +511,14 @@ private func isScreenRecordingEnabled() -> Bool {
 private func core_screenRecordingState(_ L: LuaState) throws -> CInt {
     let shouldprompt = lua_toboolean(L, 1) != 0
     let enabled = isScreenRecordingEnabled()
+    recordPermissionAudit(
+        L,
+        name: "screen_recording",
+        action: "check",
+        enabled: enabled,
+        status: enabled ? "authorized" : "denied_or_not_determined",
+        prompted: shouldprompt
+    )
     if shouldprompt {
         // CGDisplayStreamCreate is obsoleted in macOS 15 SDK but still works at runtime.
         // We use it only to trigger the screen recording permission prompt.
@@ -495,13 +556,24 @@ private func core_screenRecordingState(_ L: LuaState) throws -> CInt {
 ///  * Will always return `true` on macOS 10.13 or earlier.
 private func core_microphoneState(_ L: LuaState) throws -> CInt {
     let shouldprompt = lua_toboolean(L, 1) != 0
+    let status = AVCaptureDevice.authorizationStatus(for: .audio)
+    let statusString = avAuthorizationStatusString(status)
+    recordPermissionAudit(
+        L,
+        name: "microphone",
+        action: "check",
+        enabled: status == .authorized,
+        status: statusString,
+        prompted: shouldprompt
+    )
 
-    switch AVCaptureDevice.authorizationStatus(for: .audio) {
+    switch status {
     case .authorized:
         lua_pushboolean(L, 1)
     case .notDetermined:
         if shouldprompt {
             AVCaptureDevice.requestAccess(for: .audio) { granted in
+                recordPermissionPromptResult(name: "microphone", granted: granted)
                 if !granted {
                     os_log(.default, "Cosmic Hammer has been declined Microphone access by the user.")
                 }
@@ -530,13 +602,24 @@ private func core_microphoneState(_ L: LuaState) throws -> CInt {
 ///  * Will always return `true` on macOS 10.13 or earlier.
 private func core_cameraState(_ L: LuaState) throws -> CInt {
     let shouldprompt = lua_toboolean(L, 1) != 0
+    let status = AVCaptureDevice.authorizationStatus(for: .video)
+    let statusString = avAuthorizationStatusString(status)
+    recordPermissionAudit(
+        L,
+        name: "camera",
+        action: "check",
+        enabled: status == .authorized,
+        status: statusString,
+        prompted: shouldprompt
+    )
 
-    switch AVCaptureDevice.authorizationStatus(for: .video) {
+    switch status {
     case .authorized:
         lua_pushboolean(L, 1)
     case .notDetermined:
         if shouldprompt {
             AVCaptureDevice.requestAccess(for: .video) { granted in
+                recordPermissionPromptResult(name: "camera", granted: granted)
                 if !granted {
                     os_log(.default, "Cosmic Hammer has been declined Camera access by the user.")
                 }
@@ -710,7 +793,19 @@ private func core_logmessage(_ L: LuaState) throws -> CInt {
         }
         lua_pop(L, 1)
     }
-    loghandler?(NSString(string: str ?? ""))
+    let message = str ?? ""
+    if let telemetry = environmentGetGlobalOrNil()?.telemetry,
+       telemetry.configuration.capturePrint.lowercased() != "off",
+       telemetry.configuration.capturePrint.lowercased() != "false",
+       telemetry.configuration.capturePrint.lowercased() != "none" {
+        telemetry.recordLog(
+            level: "info",
+            message: message.trimmingCharacters(in: .newlines),
+            attributes: [TelemetrySemanticConventions.Attribute.Lua.loggerID: "print", "log.source": "hs._logmessage"],
+            timestamp: nil
+        )
+    }
+    loghandler?(NSString(string: message))
     return 0
 }
 
@@ -796,6 +891,9 @@ func MJLuaDestroy() {
 /// Deconfigure and destroy a Lua environment and create its replacement
 @_cdecl("MJLuaReplace")
 func MJLuaReplace() {
+    if let L = lua_getCurrentState() {
+        recordLuaLifecycleMetric(L, name: "cosmichammer.lua.reload.count", kind: .counter, value: 1, unit: "1")
+    }
     MJLuaDeinit()
     MJLuaDealloc()
     MJConsoleWindowController.singleton().initializeConsoleColorsAndFont()
@@ -817,8 +915,8 @@ private func MJLuaAtPanic(_ L: UnsafeMutablePointer<lua_State>?) -> Int32 {
 /// Create a Lua environment
 @_cdecl("MJLuaAlloc")
 func MJLuaAlloc() {
-    let traceState = CHTrace.signposter.beginInterval("LuaAlloc")
-    defer { CHTrace.signposter.endInterval("LuaAlloc", traceState) }
+    let traceState = CHTrace.beginInterval("LuaAlloc")
+    defer { CHTrace.endInterval(traceState) }
 
     if MJLuaLogDelegate == nil {
         MJLuaLogDelegate = HSLoggerCreateWithLua(nil)
@@ -837,11 +935,29 @@ func MJLuaAlloc() {
     oldPanicFunction = lua_atpanic(L, MJLuaAtPanic)
 }
 
+func recordLuaLifecycleMetric(
+    _ L: UnsafeMutablePointer<lua_State>,
+    name: String,
+    kind: TelemetryMetricKind,
+    value: Double,
+    attributes: [String: Any] = [:],
+    unit: String? = nil
+) {
+    environmentGet(L).telemetry.recordMetric(
+        name: name,
+        kind: kind,
+        value: value,
+        attributes: attributes,
+        unit: unit
+    )
+}
+
 /// Configure a Lua environment that has already been created
 @_cdecl("MJLuaInit")
 func MJLuaInit() {
-    let traceState = CHTrace.signposter.beginInterval("LuaInit")
-    defer { CHTrace.signposter.endInterval("LuaInit", traceState) }
+    let start = Date()
+    let traceState = CHTrace.beginInterval("LuaInit")
+    defer { CHTrace.endInterval(traceState) }
 
     let L = lua_getCurrentState()!
 
@@ -849,9 +965,9 @@ func MJLuaInit() {
     installLuaSkinCompatibilityGlobals(L)
 
     // Register every bundled hs.lib<name> entry point into package.preload before setup.lua runs.
-    let extRegState = CHTrace.signposter.beginInterval("RegisterExtensions")
+    let extRegState = CHTrace.beginInterval("RegisterExtensions")
     hsExtensionsRegisterAll(L)
-    CHTrace.signposter.endInterval("RegisterExtensions", extRegState)
+    CHTrace.endInterval(extRegState)
 
     guard let setupPath = Bundle.main.path(forResource: "setup", ofType: "lua"),
           let extensionsPath = Bundle.main.path(forResource: "extensions", ofType: nil),
@@ -861,9 +977,21 @@ func MJLuaInit() {
     }
 
     let context = buildBootContext(L, extensionsPath: extensionsPath, docsPath: docsPath)
-    let setupState = CHTrace.signposter.beginInterval("RunSetupLua")
+    let setupState = CHTrace.beginInterval(
+        "RunSetupLua",
+        attributes: [TelemetrySemanticConventions.Attribute.Lua.configHasInit: context.hasInitFile]
+    )
     runSetupOrTerminate(L, setupPath: setupPath, context: context)
-    CHTrace.signposter.endInterval("RunSetupLua", setupState)
+    CHTrace.endInterval(setupState)
+    recordLuaLifecycleMetric(L, name: "cosmichammer.lua.init.count", kind: .counter, value: 1, unit: "1")
+    recordLuaLifecycleMetric(
+        L,
+        name: "cosmichammer.lua.init.duration",
+        kind: .histogram,
+        value: Date().timeIntervalSince(start),
+        attributes: [TelemetrySemanticConventions.Attribute.Lua.configHasInit: context.hasInitFile],
+        unit: "s"
+    )
 }
 
 /// Register the core library as the "hs" global table with all built-in functions.
@@ -951,8 +1079,20 @@ private func runSetupOrTerminate(_ L: UnsafeMutablePointer<lua_State>, setupPath
         completionsForWordFn = lifecycle.completionsFunctionRef
         os_log(.default, "BREADCRUMB: setup.lua completed")
     } catch let error as LuaBoot.Error {
+        environmentGet(L).telemetry.recordException(
+            spanID: nil,
+            message: error.description,
+            stack: nil,
+            attributes: [TelemetrySemanticConventions.Attribute.Lua.setupPath: setupPath]
+        )
         terminateWithInitFailureAlert(error.description)
     } catch {
+        environmentGet(L).telemetry.recordException(
+            spanID: nil,
+            message: String(describing: error),
+            stack: nil,
+            attributes: [TelemetrySemanticConventions.Attribute.Lua.setupPath: setupPath]
+        )
         terminateWithInitFailureAlert(String(describing: error))
     }
 }
@@ -991,7 +1131,7 @@ func callAccessibilityStateCallback() {
         // There is no callback set, so just pop the callback and carry on
         lua_pop(L, 1)
     } else {
-        if lua_pcall(L, 0, 0, 0) != LUA_OK {
+        if luaTelemetryPCall(L, nargs: 0, nresults: 0, callbackName: "hs.accessibilityStateCallback") != LUA_OK {
             let err = lua_tostring(L, -1).map { String(cString: $0) } ?? "(unknown)"
             os_log(.error, "hs.callAccessibilityStateCallback: %{public}s", err)
             lua_pop(L, 1)
@@ -1017,7 +1157,13 @@ func textDroppedToDockIcon(_ pboardString: NSString) {
         lua_pop(L, 1)
     } else {
         lua_pushany(L, pboardString)
-        if lua_pcall(L, 1, 0, 0) != LUA_OK {
+        if luaTelemetryPCall(
+            L,
+            nargs: 1,
+            nresults: 0,
+            callbackName: "hs.textDroppedToDockIconCallback",
+            attributes: [TelemetrySemanticConventions.Attribute.UI.dockDropType: "text"]
+        ) != LUA_OK {
             let err = lua_tostring(L, -1).map { String(cString: $0) } ?? "(unknown)"
             os_log(.error, "hs.textDroppedToDockIconCallback: %{public}s", err)
             lua_pop(L, 1)
@@ -1043,7 +1189,13 @@ func fileDroppedToDockIcon(_ filePath: NSString) {
         lua_pop(L, 1)
     } else {
         lua_pushany(L, filePath)
-        if lua_pcall(L, 1, 0, 0) != LUA_OK {
+        if luaTelemetryPCall(
+            L,
+            nargs: 1,
+            nresults: 0,
+            callbackName: "hs.fileDroppedToDockIconCallback",
+            attributes: [TelemetrySemanticConventions.Attribute.UI.dockDropType: "file"]
+        ) != LUA_OK {
             let err = lua_tostring(L, -1).map { String(cString: $0) } ?? "(unknown)"
             os_log(.error, "hs.fileDroppedToDockIconCallback: %{public}s", err)
             lua_pop(L, 1)
@@ -1069,7 +1221,7 @@ func callDockIconCallback() {
         // There is no callback set, so just pop the callback and carry on
         lua_pop(L, 1)
     } else {
-        if lua_pcall(L, 0, 0, 0) != LUA_OK {
+        if luaTelemetryPCall(L, nargs: 0, nresults: 0, callbackName: "hs.dockIconClickCallback") != LUA_OK {
             let err = lua_tostring(L, -1).map { String(cString: $0) } ?? "(unknown)"
             os_log(.error, "hs.dockIconClickCallback: %{public}s", err)
             lua_pop(L, 1)
@@ -1093,7 +1245,7 @@ private func callShutdownCallback(_ L: UnsafeMutablePointer<lua_State>!) {
         // There is no callback set, so just pop the callback and carry on
         lua_pop(L, 1)
     } else {
-        if lua_pcall(L, 0, 0, 0) != LUA_OK {
+        if luaTelemetryPCall(L, nargs: 0, nresults: 0, callbackName: "hs.shutdownCallback") != LUA_OK {
             let err = lua_tostring(L, -1).map { String(cString: $0) } ?? "(unknown)"
             os_log(.error, "hs.shutdownCallback: %{public}s", err)
             lua_pop(L, 1)
@@ -1111,6 +1263,8 @@ func MJLuaDeinit() {
     guard let L = lua_getCurrentState() else { return }
 
     callShutdownCallback(L)
+    recordLuaLifecycleMetric(L, name: "cosmichammer.lua.shutdown.count", kind: .counter, value: 1, unit: "1")
+    _ = environmentGet(L).telemetry.shutdown(timeout: 2)
     evalfn = LUA_NOREF
     completionsForWordFn = LUA_NOREF
 
@@ -1175,7 +1329,13 @@ func MJLuaRunString(_ command: NSString) -> NSString {
         return ""
     }
     lua_pushstring(L, (command as String).cString(using: .utf8))
-    if lua_pcall(L, 1, 1, 0) != LUA_OK {
+    if luaTelemetryPCall(
+        L,
+        nargs: 1,
+        nresults: 1,
+        callbackName: "lua.runtime.evaluate",
+        attributes: [TelemetrySemanticConventions.Attribute.Lua.commandLength: command.length]
+    ) != LUA_OK {
         if let errorMsg = lua_tostring(L, -1) {
             os_log(.error, "%{public}s", String(cString: errorMsg))
         }
@@ -1211,7 +1371,13 @@ func MJLuaCompletionsForWord(_ completionWord: NSString) -> NSArray {
 
     lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(completionsForWordFn))
     lua_pushany(L, completionWord)
-    if lua_pcall(L, 1, 1, 0) != LUA_OK {
+    if luaTelemetryPCall(
+        L,
+        nargs: 1,
+        nresults: 1,
+        callbackName: "lua.runtime.completions",
+        attributes: [TelemetrySemanticConventions.Attribute.Lua.completionPrefixLength: completionWord.length]
+    ) != LUA_OK {
         let err = lua_tostring(L, -1).map { String(cString: $0) } ?? "(unknown)"
         os_log(.error, "MJLuaCompletionsForWord: %{public}s", err)
         lua_pop(L, 1)

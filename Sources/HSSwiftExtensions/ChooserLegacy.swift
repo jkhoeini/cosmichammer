@@ -31,6 +31,7 @@ private let chooserNew: LuaClosure = { L in
     luaL_checktype(L, 1, LUA_TFUNCTION)
     let completionCb = L.ref(index: 1)
     let chooser = HSChooser(completionCallback: completionCb)
+    setChooserCallbackCounted(chooser, "completion", true, L: L)
     _ = pushHSChooser(L, chooser)
 
     return 1
@@ -125,17 +126,22 @@ private let chooserSetChoices: LuaClosure = { L in
 
     let chooser: HSChooser = toHSChooserFromLua(L, 1) as! HSChooser
 
-    chooser.choicesCallback = nil
     chooser.clearChoices()
 
     switch lua_type(L, 2) {
     case LUA_TNIL:
+        chooser.choicesCallback = nil
+        setChooserCallbackCounted(chooser, "choices", false, L: L)
         break
 
     case LUA_TFUNCTION:
+        chooser.choicesCallback = nil
         chooser.choicesCallback = L.ref(index: 2)
+        setChooserCallbackCounted(chooser, "choices", true, L: L)
 
     case LUA_TTABLE:
+        chooser.choicesCallback = nil
+        setChooserCallbackCounted(chooser, "choices", false, L: L)
         chooser.currentStaticChoices = lua_toChooserChoices(L, at: 2)
 
         var staticChoicesTypeCheckPass = false
@@ -181,10 +187,13 @@ private let chooserHideCallback: LuaClosure = { L in
 
     let chooser: HSChooser = toHSChooserFromLua(L, 1) as! HSChooser
 
-    chooser.hideCallback = nil
-
     if lua_type(L, 2) == LUA_TFUNCTION {
+        chooser.hideCallback = nil
         chooser.hideCallback = L.ref(index: 2)
+        setChooserCallbackCounted(chooser, "hide", true, L: L)
+    } else {
+        chooser.hideCallback = nil
+        setChooserCallbackCounted(chooser, "hide", false, L: L)
     }
 
     lua_pushvalue(L, 1)
@@ -207,10 +216,13 @@ private let chooserShowCallback: LuaClosure = { L in
 
     let chooser: HSChooser = toHSChooserFromLua(L, 1) as! HSChooser
 
-    chooser.showCallback = nil
-
     if lua_type(L, 2) == LUA_TFUNCTION {
+        chooser.showCallback = nil
         chooser.showCallback = L.ref(index: 2)
+        setChooserCallbackCounted(chooser, "show", true, L: L)
+    } else {
+        chooser.showCallback = nil
+        setChooserCallbackCounted(chooser, "show", false, L: L)
     }
 
     lua_pushvalue(L, 1)
@@ -326,10 +338,13 @@ private let chooserQueryCallback: LuaClosure = { L in
 
     let chooser: HSChooser = toHSChooserFromLua(L, 1) as! HSChooser
 
-    chooser.queryChangedCallback = nil
-
     if lua_type(L, 2) == LUA_TFUNCTION {
+        chooser.queryChangedCallback = nil
         chooser.queryChangedCallback = L.ref(index: 2)
+        setChooserCallbackCounted(chooser, "queryChanged", true, L: L)
+    } else {
+        chooser.queryChangedCallback = nil
+        setChooserCallbackCounted(chooser, "queryChanged", false, L: L)
     }
 
     lua_pushvalue(L, 1)
@@ -353,10 +368,13 @@ private let chooserRightClickCallback: LuaClosure = { L in
 
     let chooser: HSChooser = toHSChooserFromLua(L, 1) as! HSChooser
 
-    chooser.rightClickCallback = nil
-
     if lua_type(L, 2) == LUA_TFUNCTION {
+        chooser.rightClickCallback = nil
         chooser.rightClickCallback = L.ref(index: 2)
+        setChooserCallbackCounted(chooser, "rightClick", true, L: L)
+    } else {
+        chooser.rightClickCallback = nil
+        setChooserCallbackCounted(chooser, "rightClick", false, L: L)
     }
 
     lua_pushvalue(L, 1)
@@ -380,10 +398,13 @@ private let chooserInvalidCallback: LuaClosure = { L in
 
     let chooser: HSChooser = toHSChooserFromLua(L, 1) as! HSChooser
 
-    chooser.invalidCallback = nil
-
     if lua_type(L, 2) == LUA_TFUNCTION {
+        chooser.invalidCallback = nil
         chooser.invalidCallback = L.ref(index: 2)
+        setChooserCallbackCounted(chooser, "invalid", true, L: L)
+    } else {
+        chooser.invalidCallback = nil
+        setChooserCallbackCounted(chooser, "invalid", false, L: L)
     }
 
     lua_pushvalue(L, 1)

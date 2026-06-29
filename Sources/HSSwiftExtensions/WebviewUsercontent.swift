@@ -3,9 +3,22 @@ import CLua
 import Lua
 import Cocoa
 import WebKit
+import HSDSTCore
 import os.log
 
 private let USERDATA_UCC_TAG = "hs.webview.usercontent"
+private var activeWebViewUserContentCallbackCount = 0
+
+private func recordActiveWebViewUserContentCallbackGauge(_ L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+    let telemetry = L.map { environmentGet($0).telemetry } ?? environmentGetGlobalOrNil()?.telemetry
+    telemetry?.recordMetric(
+        name: "cosmichammer.webview.usercontent.callback.active",
+        kind: .gauge,
+        value: Double(activeWebViewUserContentCallbackCount),
+        attributes: [:],
+        unit: "1"
+    )
+}
 
 // MARK: - HSUserContentController
 
@@ -14,6 +27,7 @@ private class HSUserContentController: WKUserContentController, WKScriptMessageH
     var udRef: LuaValue?
     var userContentCallback: LuaValue?
     var generation: UInt64 = 0
+    var countedCallbackActive: Bool = false
 
     convenience init(name: String) {
         self.init()
@@ -30,8 +44,25 @@ private class HSUserContentController: WKUserContentController, WKScriptMessageH
             let L = lua_getCurrentState()!
             cb.push(onto: L)
             wv_pushAny(L, message)
-            if lua_pcall(L, 1, 0, 0) != LUA_OK { lua_pop(L, 1) }
+            if luaTelemetryPCall(
+                L,
+                nargs: 1,
+                nresults: 0,
+                callbackName: "hs.webview.usercontent",
+                attributes: ["webview.usercontent.has_body": !(message.body is NSNull)]
+            ) != LUA_OK { lua_pop(L, 1) }
         }
+    }
+
+    func setCountedCallbackActive(_ active: Bool, L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+        guard countedCallbackActive != active else { return }
+        countedCallbackActive = active
+        if active {
+            activeWebViewUserContentCallbackCount += 1
+        } else {
+            activeWebViewUserContentCallbackCount = max(0, activeWebViewUserContentCallbackCount - 1)
+        }
+        recordActiveWebViewUserContentCallbackGauge(L)
     }
 }
 
@@ -166,11 +197,14 @@ private func ucc_setCallback(_ L: LuaState) throws -> CInt {
         .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
     let ucc = Unmanaged<HSUserContentController>.fromOpaque(ptr.pointee!).takeUnretainedValue()
 
-    ucc.userContentCallback = nil
-
     if lua_type(L, 2) == LUA_TFUNCTION {
+        ucc.userContentCallback = nil
         ucc.userContentCallback = L.ref(index: 2)
         ucc.generation = lua_currentStateGeneration()
+        ucc.setCountedCallbackActive(true, L: L)
+    } else {
+        ucc.userContentCallback = nil
+        ucc.setCountedCallbackActive(false, L: L)
     }
 
     lua_pushvalue(L, 1)
@@ -310,6 +344,7 @@ private func userdata_gc(_ L: LuaState) throws -> CInt {
     if let rawPtr = ptr.pointee {
         let ucc = Unmanaged<HSUserContentController>.fromOpaque(rawPtr).takeRetainedValue()
         ucc.udRef = nil
+        ucc.setCountedCallbackActive(false, L: L)
         ucc.userContentCallback = nil
         ucc.removeAllUserScripts()
         ucc.removeScriptMessageHandler(forName: ucc.name)

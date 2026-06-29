@@ -7,6 +7,17 @@ import os.log
 // MARK: - Common Code
 
 private let USERDATA_TAG = "hs.timer"
+private var activeTimerCount = 0
+
+private func recordActiveTimerGauge(_ L: UnsafeMutablePointer<lua_State>) {
+    environmentGet(L).telemetry.recordMetric(
+        name: "cosmichammer.timer.active",
+        kind: .gauge,
+        value: Double(activeTimerCount),
+        attributes: [:],
+        unit: "1"
+    )
+}
 
 // MARK: - HSTimer class
 
@@ -17,7 +28,9 @@ class HSTimer: NSObject {
     var repeats: Bool = false
     var interval: TimeInterval = 0
     var generation: UInt64 = 0
+    var parentTelemetryContext: [String: String]?
     private var tornDown = false
+    private var countedActive = false
 
     func create(_ L: LuaState, interval: TimeInterval, repeat shouldRepeat: Bool) {
         let clock = environmentGet(L).clock
@@ -29,6 +42,7 @@ class HSTimer: NSObject {
     func teardown() {
         guard !tornDown else { return }
         tornDown = true
+        setCountedActive(false)
         timerHandle?.invalidate()
         timerHandle = nil
         callback = nil
@@ -50,15 +64,29 @@ class HSTimer: NSObject {
         guard let cb = callback else { return }
 
         cb.push(onto: L)
-        if lua_pcall(L, 0, 0, 0) != LUA_OK {
+        if luaTelemetryPCall(
+            L,
+            nargs: 0,
+            nresults: 0,
+            callbackName: "hs.timer",
+            attributes: [
+                "timer.interval": interval,
+                "timer.repeats": repeats,
+            ],
+            parentContext: parentTelemetryContext
+        ) != LUA_OK {
             let errorMsg = lua_tostring(L, -1).map { String(cString: $0) } ?? "(non-string error)"
             os_log(.error, "hs.timer callback error: %{public}s", errorMsg)
             lua_pop(L, 1)
             if !continueOnError {
                 os_log(.error, "hs.timer callback failed. The timer has been stopped to prevent repeated notifications of the error.")
                 os_log(.error, "  timer details: %{public}s repeating, every %f seconds", repeats ? "is" : "is not", interval)
+                setCountedActive(false)
                 timerHandle?.invalidate()
             }
+        }
+        if !repeats {
+            setCountedActive(false)
         }
     }
 
@@ -71,11 +99,17 @@ class HSTimer: NSObject {
             create(L, interval: interval, repeat: repeats)
         }
 
+        let wasRunning = isRunning
+        captureTelemetryContext(L)
         timerHandle?.setNextFire(afterInterval: interval)
         timerHandle?.schedule()
+        if !wasRunning, isRunning {
+            setCountedActive(true, L: L)
+        }
     }
 
     func stop() {
+        setCountedActive(false)
         timerHandle?.invalidate()
     }
 
@@ -90,6 +124,23 @@ class HSTimer: NSObject {
     func trigger() {
         guard let th = timerHandle, th.isValid else { return }
         th.fire()
+    }
+
+    private func captureTelemetryContext(_ L: LuaState) {
+        let carrier = environmentGet(L).telemetry.inject(into: [:])
+        parentTelemetryContext = carrier.isEmpty ? nil : carrier
+    }
+
+    private func setCountedActive(_ active: Bool, L explicitState: UnsafeMutablePointer<lua_State>? = nil) {
+        guard countedActive != active else { return }
+        countedActive = active
+        if active {
+            activeTimerCount += 1
+        } else {
+            activeTimerCount = max(0, activeTimerCount - 1)
+        }
+        guard let L = explicitState ?? lua_getCurrentState() else { return }
+        recordActiveTimerGauge(L)
     }
 }
 

@@ -7,6 +7,18 @@ import Lua
 
 private let USERDATA_TAG = "hs.host.locale"
 private var callbackRef: LuaValue?
+private var activeHostLocaleObserverCount = 0
+
+private func recordActiveHostLocaleObserverGauge(_ L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+    let telemetry = L.map { environmentGet($0).telemetry } ?? environmentGetGlobalOrNil()?.telemetry
+    telemetry?.recordMetric(
+        name: "cosmichammer.host.locale.observer.active",
+        kind: .gauge,
+        value: Double(activeHostLocaleObserverCount),
+        attributes: [:],
+        unit: "1"
+    )
+}
 
 // MARK: - Support Functions and Classes
 
@@ -29,6 +41,7 @@ private class HSLocaleChangeObserver {
     weak var notificationRef: (any NotificationProtocol)?
 
     func start(_ L: LuaState!) {
+        guard token == nil else { return }
         let notification = environmentGet(L).notification
         notificationRef = notification
         token = notification.addObserver(
@@ -39,16 +52,20 @@ private class HSLocaleChangeObserver {
             if let cb = callbackRef {
                 let L = lua_getCurrentState()!
                 cb.push(onto: L)
-                if lua_pcall(L, 0, 0, 0) != LUA_OK {
+                if luaTelemetryPCall(L, nargs: 0, nresults: 0, callbackName: "hs.host.locale") != LUA_OK {
                     lua_pop(L, 1)
                 }
             }
         }
+        activeHostLocaleObserverCount += 1
+        recordActiveHostLocaleObserverGauge(L)
     }
 
-    func stop() {
+    func stop(_ L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
         if let t = token, let n = notificationRef {
             n.removeObserver(t)
+            activeHostLocaleObserverCount = max(0, activeHostLocaleObserverCount - 1)
+            recordActiveHostLocaleObserverGauge(L)
         }
         token = nil
         notificationRef = nil
@@ -312,7 +329,7 @@ private func locale_registerCallback(_ L: LuaState) throws -> CInt {
 
 private func meta_gc(_ L: LuaState) throws -> CInt {
     callbackRef = nil
-    observerOfChanges?.stop()
+    observerOfChanges?.stop(L)
     observerOfChanges = nil
     return 0
 }

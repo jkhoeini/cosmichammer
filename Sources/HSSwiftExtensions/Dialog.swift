@@ -5,6 +5,61 @@ import Lua
 import os.log
 
 private let USERDATA_TAG = "hs.dialog"
+private var dialogColorCallbackCountedActive = false
+private var activeDialogColorCallbackCount = 0
+private var activeDialogWebviewAlertCallbackCount = 0
+
+private func recordActiveDialogColorCallbackGauge(_ L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+    let telemetry = L.map { environmentGet($0).telemetry } ?? environmentGetGlobalOrNil()?.telemetry
+    telemetry?.recordMetric(
+        name: "cosmichammer.dialog.color.callback.active",
+        kind: .gauge,
+        value: Double(activeDialogColorCallbackCount),
+        attributes: [:],
+        unit: "1"
+    )
+}
+
+func setDialogColorCallbackCounted(_ active: Bool, L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+    guard dialogColorCallbackCountedActive != active else { return }
+    dialogColorCallbackCountedActive = active
+    activeDialogColorCallbackCount = active ? 1 : 0
+    recordActiveDialogColorCallbackGauge(L)
+}
+
+private func recordActiveDialogWebviewAlertCallbackGauge(_ L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+    let telemetry = L.map { environmentGet($0).telemetry } ?? environmentGetGlobalOrNil()?.telemetry
+    telemetry?.recordMetric(
+        name: "cosmichammer.dialog.webview_alert.callback.active",
+        kind: .gauge,
+        value: Double(activeDialogWebviewAlertCallbackCount),
+        attributes: [:],
+        unit: "1"
+    )
+}
+
+private func adjustDialogWebviewAlertCallbackCount(_ delta: Int, L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+    activeDialogWebviewAlertCallbackCount = max(0, activeDialogWebviewAlertCallbackCount + delta)
+    recordActiveDialogWebviewAlertCallbackGauge(L)
+}
+
+final class DialogWebviewAlertCallbackGaugeToken {
+    private var active = true
+
+    init(L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+        adjustDialogWebviewAlertCallbackCount(1, L: L)
+    }
+
+    func finish(L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+        guard active else { return }
+        active = false
+        adjustDialogWebviewAlertCallbackCount(-1, L: L)
+    }
+
+    deinit {
+        finish()
+    }
+}
 
 // MARK: - Support Functions and Classes
 
@@ -43,7 +98,13 @@ private class HSColorPanel: NSObject {
                 cb.push(onto: L)
                 NSColor_tolua(L, cp.color)
                 L.push(true)
-                if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
+                if luaTelemetryPCall(
+                    L,
+                    nargs: 2,
+                    nresults: 0,
+                    callbackName: "hs.dialog.color",
+                    attributes: ["dialog.event": "close"]
+                ) != LUA_OK { lua_pop(L, 1) }
             }
         }
     }
@@ -58,7 +119,13 @@ private class HSColorPanel: NSObject {
                 cb.push(onto: L)
                 NSColor_tolua(L, colorPanel.color)
                 L.push(false)
-                if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
+                if luaTelemetryPCall(
+                    L,
+                    nargs: 2,
+                    nresults: 0,
+                    callbackName: "hs.dialog.color",
+                    attributes: ["dialog.event": "change"]
+                ) != LUA_OK { lua_pop(L, 1) }
             }
         }
     }
@@ -97,6 +164,7 @@ private func colorPanelCallback(_ L: LuaState) throws -> CInt {
             cpReceiverObject!.callbackRef = L.ref(index: 1)
             cpReceiverObject!.generation = lua_currentStateGeneration()
         }
+        setDialogColorCallbackCounted(lua_type(L, 1) == LUA_TFUNCTION, L: L)
     }
     // return the *last* fn (or nil) so you can save it and re-attach it if something needs to
     // temporarily take the callbacks
@@ -402,6 +470,7 @@ private func webviewAlert(_ L: LuaState) throws -> CInt {
     }
 
     var callbackRef: LuaValue? = L.ref(index: 2)
+    var callbackGaugeToken: DialogWebviewAlertCallbackGaugeToken? = DialogWebviewAlertCallbackGaugeToken(L: L)
 
     let message = lua_tovalue(L, at: 3) as! String
     let informativeText = lua_tovalue(L, at: 4) as? String
@@ -435,6 +504,10 @@ private func webviewAlert(_ L: LuaState) throws -> CInt {
 
     let generation = lua_currentStateGeneration()
     alert.beginSheetModal(for: webview) { result in
+        defer {
+            callbackGaugeToken?.finish(L: lua_getCurrentState())
+            callbackGaugeToken = nil
+        }
         guard lua_isStateGenerationValid(generation), let L = lua_getCurrentState() else {
             callbackRef = nil
             return
@@ -456,7 +529,13 @@ private func webviewAlert(_ L: LuaState) throws -> CInt {
         callbackRef!.push(onto: L) // Put the saved function back on the stack.
         callbackRef = nil // Release the stored function from the registry.
         lua_pushany(L, button)
-        if lua_pcall(L, 1, 0, 0) != LUA_OK { lua_pop(L, 1) }
+        if luaTelemetryPCall(
+            L,
+            nargs: 1,
+            nresults: 0,
+            callbackName: "hs.dialog.webviewAlert",
+            attributes: ["dialog.event": "button"]
+        ) != LUA_OK { lua_pop(L, 1) }
     }
 
     lua_pushnil(L)
@@ -640,6 +719,7 @@ private func releaseReceivers(_ L: LuaState) throws -> CInt {
     cp.setTarget(nil)
     cp.setAction(nil)
     cpReceiverObject!.callbackRef = nil
+    setDialogColorCallbackCounted(false, L: L)
     cp.close() // Close the Color Panel
     cpReceiverObject = nil
 

@@ -1,6 +1,7 @@
 import Cocoa
 import CLua
 import Lua
+import HSDSTCore
 import os.log
 
 private let USERDATA_TB_TAG = "hs.webview.toolbar"
@@ -9,6 +10,18 @@ private var boolEncodingType: UnsafePointer<CChar>!
 private var builtinToolbarItems: [String] = []
 private var automaticallyIncluded: [String] = []
 private var keysToKeepFromDefinitionDictionary: [String] = []
+private var activeWebViewToolbarCallbackCount = 0
+
+private func recordActiveWebViewToolbarCallbackGauge(_ L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+    let telemetry = L.map { environmentGet($0).telemetry } ?? environmentGetGlobalOrNil()?.telemetry
+    telemetry?.recordMetric(
+        name: "cosmichammer.webview.toolbar.callback.active",
+        kind: .gauge,
+        value: Double(activeWebViewToolbarCallbackCount),
+        attributes: [:],
+        unit: "1"
+    )
+}
 
 // MARK: - Helper: get toolbar from userdata
 
@@ -122,6 +135,7 @@ private func isBoolNumber(_ value: Any?) -> Bool {
     var notifyToolbarChanges = false
     var toolbarStyle_: NSInteger = NSWindow.ToolbarStyle.automatic.rawValue
     weak var windowUsingToolbar: NSWindow?
+    var countedCallbackActive = false
     let allowedIdentifiers_ = NSMutableOrderedSet()
     let defaultIdentifiers = NSMutableOrderedSet()
     let selectableIdentifiers_ = NSMutableOrderedSet()
@@ -183,6 +197,7 @@ private func isBoolNumber(_ value: Any?) -> Bool {
         if let origCb = original.callbackRef {
             origCb.push(onto: L)
             callbackRef = L.ref(index: -1)
+            setCountedCallbackActive(true, L: L)
         }
         for obj in original.allowedIdentifiers_ { allowedIdentifiers_.add(obj) }
         for obj in original.defaultIdentifiers { defaultIdentifiers.add(obj) }
@@ -242,7 +257,16 @@ private func isBoolNumber(_ value: Any?) -> Bool {
                 _ = toolbar_pushWindowContext(L, self?.windowUsingToolbar)
                 lua_pushany(L, item?.itemIdentifier.rawValue)
                 if argCount == 4 { lua_pushany(L, searchText) }
-                if lua_pcall(L, argCount, 0, 0) != LUA_OK { lua_pop(L, 1) }
+                if luaTelemetryPCall(
+                    L,
+                    nargs: argCount,
+                    nresults: 0,
+                    callbackName: "hs.webview.toolbar",
+                    attributes: [
+                        "webview.toolbar.event": argCount == 4 ? "search" : "click",
+                        "webview.toolbar.argument.count": Int(argCount),
+                    ]
+                ) != LUA_OK { lua_pop(L, 1) }
             }
         }
     }
@@ -730,7 +754,13 @@ private func isBoolNumber(_ value: Any?) -> Bool {
             let itemId = (notification.userInfo?["item"] as? NSToolbarItem)?.itemIdentifier.rawValue ?? ""
             lua_pushany(L, itemId)
             L.push("add")
-            if lua_pcall(L, 4, 0, 0) != LUA_OK { lua_pop(L, 1) }
+            if luaTelemetryPCall(
+                L,
+                nargs: 4,
+                nresults: 0,
+                callbackName: "hs.webview.toolbar",
+                attributes: ["webview.toolbar.event": "add"]
+            ) != LUA_OK { lua_pop(L, 1) }
         }
     }
 
@@ -747,8 +777,25 @@ private func isBoolNumber(_ value: Any?) -> Bool {
             let itemId = (notification.userInfo?["item"] as? NSToolbarItem)?.itemIdentifier.rawValue ?? ""
             lua_pushany(L, itemId)
             L.push("remove")
-            if lua_pcall(L, 4, 0, 0) != LUA_OK { lua_pop(L, 1) }
+            if luaTelemetryPCall(
+                L,
+                nargs: 4,
+                nresults: 0,
+                callbackName: "hs.webview.toolbar",
+                attributes: ["webview.toolbar.event": "remove"]
+            ) != LUA_OK { lua_pop(L, 1) }
         }
+    }
+
+    func setCountedCallbackActive(_ active: Bool, L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+        guard countedCallbackActive != active else { return }
+        countedCallbackActive = active
+        if active {
+            activeWebViewToolbarCallbackCount += 1
+        } else {
+            activeWebViewToolbarCallbackCount = max(0, activeWebViewToolbarCallbackCount - 1)
+        }
+        recordActiveWebViewToolbarCallbackGauge(L)
     }
 }
 
@@ -900,9 +947,13 @@ private func toolbar_setCallback(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TB_TAG)
     let toolbar = getToolbar(L, 1)
 
-    toolbar.callbackRef = nil
     if lua_type(L, 2) == LUA_TFUNCTION {
+        toolbar.callbackRef = nil
         toolbar.callbackRef = L.ref(index: 2)
+        toolbar.setCountedCallbackActive(true, L: L)
+    } else {
+        toolbar.callbackRef = nil
+        toolbar.setCountedCallbackActive(false, L: L)
     }
     lua_pushvalue(L, 1)
     return 1
@@ -1531,6 +1582,7 @@ private func toolbar_gc(_ L: LuaState) throws -> CInt {
     ptr.pointee = nil
 
     toolbar.fnRefDictionary.removeAll()
+    toolbar.setCountedCallbackActive(false, L: L)
 
     if let ourWindow = toolbar.windowUsingToolbar, (ourWindow.toolbar as? HSToolbar) === toolbar {
         ourWindow.toolbar = nil

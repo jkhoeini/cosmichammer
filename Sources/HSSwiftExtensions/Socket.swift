@@ -64,7 +64,13 @@ private func tcpConnectCallback(_ asyncSocket: HSAsyncTcpSocket) {
             let L = lua_getCurrentState()!
             asyncSocket.connectCallback?.push(onto: L)
             asyncSocket.connectCallback = nil  // single-use
-            if lua_pcall(L, 0, 0, 0) != LUA_OK { lua_pop(L, 1) }
+            if luaTelemetryPCall(
+                L,
+                nargs: 0,
+                nresults: 0,
+                callbackName: "hs.socket.tcp",
+                attributes: ["socket.event": "connect"]
+            ) != LUA_OK { lua_pop(L, 1) }
         }
     }
 }
@@ -80,7 +86,16 @@ private func tcpWriteCallback(_ asyncSocket: HSAsyncTcpSocket, tag: Int) {
             asyncSocket.writeCallback?.push(onto: L)
             L.push(lua_Integer(tag))
             asyncSocket.writeCallback = nil  // single-use
-            if lua_pcall(L, 1, 0, 0) != LUA_OK { lua_pop(L, 1) }
+            if luaTelemetryPCall(
+                L,
+                nargs: 1,
+                nresults: 0,
+                callbackName: "hs.socket.tcp",
+                attributes: [
+                    "socket.event": "write",
+                    "socket.tag": tag,
+                ]
+            ) != LUA_OK { lua_pop(L, 1) }
         }
     }
 }
@@ -96,7 +111,17 @@ private func tcpReadCallback(_ asyncSocket: HSAsyncTcpSocket, data: Data, tag: I
             asyncSocket.readCallback?.push(onto: L)
             lua_pushdata(L, data)
             L.push(lua_Integer(tag))
-            if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
+            if luaTelemetryPCall(
+                L,
+                nargs: 2,
+                nresults: 0,
+                callbackName: "hs.socket.tcp",
+                attributes: [
+                    "socket.event": "read",
+                    "socket.tag": tag,
+                    "network.io.bytes": data.count,
+                ]
+            ) != LUA_OK { lua_pop(L, 1) }
         }
     }
 }
@@ -114,7 +139,16 @@ private func simScheduleConnectCallback(_ asyncSocket: HSAsyncTcpSocket) {
         let L = lua_getCurrentState()!
         asyncSocket.connectCallback?.push(onto: L)
         asyncSocket.connectCallback = nil
-        if lua_pcall(L, 0, 0, 0) != LUA_OK { lua_pop(L, 1) }
+        if luaTelemetryPCall(
+            L,
+            nargs: 0,
+            nresults: 0,
+            callbackName: "hs.socket.tcp",
+            attributes: [
+                "socket.event": "connect",
+                "socket.simulated": true,
+            ]
+        ) != LUA_OK { lua_pop(L, 1) }
     }
 }
 
@@ -130,7 +164,17 @@ private func simScheduleWriteCallback(_ asyncSocket: HSAsyncTcpSocket, tag: Int)
             asyncSocket.writeCallback?.push(onto: L)
             L.push(lua_Integer(tag))
             asyncSocket.writeCallback = nil
-            if lua_pcall(L, 1, 0, 0) != LUA_OK { lua_pop(L, 1) }
+            if luaTelemetryPCall(
+                L,
+                nargs: 1,
+                nresults: 0,
+                callbackName: "hs.socket.tcp",
+                attributes: [
+                    "socket.event": "write",
+                    "socket.tag": tag,
+                    "socket.simulated": true,
+                ]
+            ) != LUA_OK { lua_pop(L, 1) }
         }
     }
 }
@@ -147,7 +191,18 @@ private func simScheduleReadCallback(_ asyncSocket: HSAsyncTcpSocket, data: Data
             asyncSocket.readCallback?.push(onto: L)
             lua_pushdata(L, data)
             L.push(lua_Integer(tag))
-            if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
+            if luaTelemetryPCall(
+                L,
+                nargs: 2,
+                nresults: 0,
+                callbackName: "hs.socket.tcp",
+                attributes: [
+                    "socket.event": "read",
+                    "socket.tag": tag,
+                    "network.io.bytes": data.count,
+                    "socket.simulated": true,
+                ]
+            ) != LUA_OK { lua_pop(L, 1) }
         }
     }
 }

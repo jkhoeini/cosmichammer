@@ -1,9 +1,22 @@
 import Cocoa
 import CLua
 import Lua
+import HSDSTCore
 import os.log
 
 private let USERDATA_TAG = "hs.ipc"
+private var activeIPCLocalPortCount = 0
+
+private func recordActiveIPCLocalPortGauge(_ L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+    let telemetry = L.map { environmentGet($0).telemetry } ?? environmentGetGlobalOrNil()?.telemetry
+    telemetry?.recordMetric(
+        name: "cosmichammer.ipc.local_port.active",
+        kind: .gauge,
+        value: Double(activeIPCLocalPortCount),
+        attributes: [:],
+        unit: "1"
+    )
+}
 
 // MARK: - Support Functions and Classes
 
@@ -11,19 +24,32 @@ class HSIPCMessagePort: NSObject {
     var messagePort: CFMessagePort?
     var callbackValue: LuaValue?
     var generation: UInt64 = 0
+    var countedLocalActive: Bool = false
     private var tornDown = false
 
     /// Idempotent teardown: invalidate the CFMessagePort, drop the Lua callback
     /// reference, mark as torn down.  Called from __gc while the lua_State is
     /// still alive.
-    func teardown() {
+    func teardown(_ L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
         guard !tornDown else { return }
         tornDown = true
+        setCountedLocalActive(false, L: L)
         if let mp = messagePort {
             CFMessagePortInvalidate(mp)
             messagePort = nil
         }
         callbackValue = nil
+    }
+
+    func setCountedLocalActive(_ active: Bool, L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+        guard countedLocalActive != active else { return }
+        countedLocalActive = active
+        if active {
+            activeIPCLocalPortCount += 1
+        } else {
+            activeIPCLocalPortCount = max(0, activeIPCLocalPortCount - 1)
+        }
+        recordActiveIPCLocalPortGauge(L)
     }
 }
 
@@ -59,7 +85,16 @@ private let ipc_callback: CFMessagePortCallBack = { (local, msgid, data, info) -
         } else {
             lua_pushnil(L)
         }
-        let status = lua_pcall(L, 3, 1, 0) == LUA_OK
+        let status = luaTelemetryPCall(
+            L,
+            nargs: 3,
+            nresults: 1,
+            callbackName: "hs.ipc.localPort",
+            attributes: [
+                "ipc.message_id": msgid,
+                "ipc.port.name": port.messagePort.flatMap { CFMessagePortGetName($0) as String? } ?? "unknown",
+            ]
+        ) == LUA_OK
 
         luaL_tolstring(L, -1, nil) // make sure it's a string
         let portName = port.messagePort.flatMap { CFMessagePortGetName($0) as String? } ?? "unknown"
@@ -133,6 +168,7 @@ private func ipc_localPort(_ L: LuaState) throws -> CInt {
         throw LuaCallError("unable to create runloop source for local port")
     }
     CFRunLoopAddSource(CFRunLoopGetMain(), runLoopSource, .commonModes)
+    port.setCountedLocalActive(true, L: L)
 
     L.push(userdata: port)
     return 1
@@ -206,9 +242,23 @@ private func ipc_sendMessage(_ L: LuaState) throws -> CInt {
 
     let portName = CFMessagePortGetName(port.messagePort) as String? ?? "unknown"
     os_log(.debug, "%{public}s", "ipc_sendMessage on \(portName)")
+    let telemetry = environmentGet(L).telemetry
+    let spanID = telemetry.startSpan(
+        name: "hs.ipc.sendMessage",
+        kind: .client,
+        attributes: [
+            "ipc.message_id": msgID,
+            "ipc.port.name": portName,
+            "ipc.one_way": oneWay,
+        ],
+        startTime: nil
+    )
 
     var returnedData: Unmanaged<CFData>?
     guard CFMessagePortIsValid(port.messagePort) else {
+        if let spanID {
+            telemetry.endSpan(id: spanID, status: .error("ipc port is no longer valid (late)"), attributes: [:], endTime: nil)
+        }
         throw LuaCallError("ipc port is no longer valid (late)")
     }
     var code: Int32 = -1
@@ -223,6 +273,15 @@ private func ipc_sendMessage(_ L: LuaState) throws -> CInt {
             &returnedData
         )
     }) {
+        telemetry.recordException(
+            spanID: spanID,
+            message: "ObjC exception in CFMessagePortSendRequest: \(error)",
+            stack: nil,
+            attributes: ["ipc.port.name": portName]
+        )
+        if let spanID {
+            telemetry.endSpan(id: spanID, status: .error("ObjC exception in CFMessagePortSendRequest"), attributes: [:], endTime: nil)
+        }
         throw LuaCallError("ObjC exception in CFMessagePortSendRequest: \(error)")
     }
     let status = (code == kCFMessagePortSuccess)
@@ -243,6 +302,14 @@ private func ipc_sendMessage(_ L: LuaState) throws -> CInt {
         default:                               errMsg = "unrecognized error: \(code)"
         }
         response = errMsg.data(using: .utf8)
+    }
+    if let spanID {
+        telemetry.endSpan(
+            id: spanID,
+            status: status ? .ok : .error(String(data: response ?? Data(), encoding: .utf8) ?? "ipc send failed"),
+            attributes: ["ipc.result_code": code],
+            endTime: nil
+        )
     }
 
     L.push(status)
@@ -267,7 +334,7 @@ public func luaopen_hs_libipc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
                 },
                 "delete": .closure { L in
                     let port: HSIPCMessagePort = try L.checkArgument(1)
-                    port.teardown()
+                    port.teardown(L)
                     return 0
                 },
                 "isRemote": .closure { L in
@@ -311,7 +378,7 @@ public func luaopen_hs_libipc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
         // Replace __gc with our explicit teardown + deinitialize
         L.push({ (L: LuaState!) -> CInt in
             if let port: HSIPCMessagePort = L.touserdata(1) {
-                port.teardown()
+                port.teardown(L)
             }
             let rawptr = lua_touserdata(L, 1)!
             let anyPtr = rawptr.assumingMemoryBound(to: Any.self)

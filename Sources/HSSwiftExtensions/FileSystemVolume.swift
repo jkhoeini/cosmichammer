@@ -29,6 +29,18 @@ import HSDSTCore
 // MARK: - Constants
 
 private let USERDATA_TAG = "hs.fs.volume"
+private var activeVolumeWatcherCount = 0
+
+private func recordActiveVolumeWatcherGauge(_ L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+    let telemetry = L.map { environmentGet($0).telemetry } ?? environmentGetGlobalOrNil()?.telemetry
+    telemetry?.recordMetric(
+        name: "cosmichammer.fs.volume.watcher.active",
+        kind: .gauge,
+        value: Double(activeVolumeWatcherCount),
+        attributes: [:],
+        unit: "1"
+    )
+}
 
 // MARK: - Event type enum
 
@@ -55,11 +67,7 @@ private class VolumeWatcher: NSObject {
         guard !tornDown else { return }
         tornDown = true
         if running {
-            running = false
-            for token in observerTokens {
-                notificationRef?.removeObserver(token)
-            }
-            observerTokens.removeAll()
+            stop(lua_getCurrentState())
         }
         notificationRef = nil
         callback = nil
@@ -102,9 +110,34 @@ private class VolumeWatcher: NSObject {
         }
 
         lua_pushany(L, tableArg)
-        if lua_pcall(L, 2, 0, 0) != LUA_OK {
+        if luaTelemetryPCall(
+            L,
+            nargs: 2,
+            nresults: 0,
+            callbackName: "hs.fs.volume.watcher",
+            attributes: ["fs.volume.event": event.rawValue]
+        ) != LUA_OK {
             lua_pop(L, 1)
         }
+    }
+
+    func start(_ L: UnsafeMutablePointer<lua_State>) {
+        guard !running else { return }
+        running = true
+        register_observer(self, L)
+        activeVolumeWatcherCount += 1
+        recordActiveVolumeWatcherGauge(L)
+    }
+
+    func stop(_ L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+        guard running else { return }
+        running = false
+        for token in observerTokens {
+            notificationRef?.removeObserver(token)
+        }
+        observerTokens.removeAll()
+        activeVolumeWatcherCount = max(0, activeVolumeWatcherCount - 1)
+        recordActiveVolumeWatcherGauge(L)
     }
 }
 
@@ -127,14 +160,6 @@ private func register_observer(_ observer: VolumeWatcher, _ L: UnsafeMutablePoin
         observer.observerTokens.append(token)
     }
     observer.notificationRef = notif
-}
-
-private func unregister_observer(_ observer: VolumeWatcher, _ L: UnsafeMutablePointer<lua_State>!) {
-    let notif = environmentGet(L).notification
-    for token in observer.observerTokens {
-        notif.removeObserver(token)
-    }
-    observer.observerTokens.removeAll()
 }
 
 // MARK: - Module functions
@@ -217,19 +242,13 @@ public func luaopen_hs_libfsvolume(_ L: UnsafeMutablePointer<lua_State>!) -> Int
             "start": .closure { L in
                 let watcher: VolumeWatcher = try L.checkArgument(1)
                 lua_settop(L, 1)
-                if !watcher.running {
-                    watcher.running = true
-                    register_observer(watcher, L)
-                }
+                watcher.start(L)
                 return 1
             },
             "stop": .closure { L in
                 let watcher: VolumeWatcher = try L.checkArgument(1)
                 lua_settop(L, 1)
-                if watcher.running {
-                    watcher.running = false
-                    unregister_observer(watcher, L)
-                }
+                watcher.stop(L)
                 return 1
             },
         ],

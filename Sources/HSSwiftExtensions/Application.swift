@@ -821,7 +821,12 @@ private func application_getMenus(_ L: LuaState) throws -> CInt {
             let L = lua_getCurrentState()!
             backgroundCallbacks[fnKey]!.push(onto: L)
             lua_pushany(L, menus as NSArray?)
-            if lua_pcall(L, 1, 0, 0) != LUA_OK { lua_pop(L, 1) }
+            if luaTelemetryPCall(
+                L,
+                nargs: 1,
+                nresults: 0,
+                callbackName: "hs.application.getMenus"
+            ) != LUA_OK { lua_pop(L, 1) }
             backgroundCallbacks.removeValue(forKey: fnKey)
         }
     }

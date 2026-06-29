@@ -1,5 +1,9 @@
 import Testing
 import Foundation
+import CLua
+import HSDSTCore
+import HSDSTSimulator
+@testable import HSSwiftExtensions
 
 extension CosmicHammerTests {
     @Suite(.serialized) @MainActor final class Websocket {
@@ -64,6 +68,66 @@ extension CosmicHammerTests {
         @Test func testOpenStatus() { runTwoPartLuaTest(timeout: 5) }
         @Test func testClosedStatus() { runTwoPartLuaTest(timeout: 5) }
         @Test func testCloseStatusAfterClose() { runTwoPartLuaTest(timeout: 5) }
+        @Test func testWebSocketActiveGauge() {
+            bootstrapLuaForTesting()
+            let L = lua_getCurrentState()!
+            let sim = environmentGet(L).telemetry as! SimulatedTelemetry
+            sim.configure(TelemetryConfiguration(enabled: true))
+
+            let echoURL = ProcessInfo.processInfo.environment["COSMIC_HAMMER_TEST_WEBSOCKET_URL"]
+                ?? "ws://localhost:8067/"
+            let setupResult = runLua("""
+                websocketGaugeEvents = {}
+                websocketGaugeObject = require("hs.websocket").new("\(echoURL)", function(event)
+                    websocketGaugeEvents[#websocketGaugeEvents + 1] = event
+                end)
+                return success()
+            """)
+            guard setupResult == "Success" else {
+                Issue.record("Setup failed: websocket active gauge returned \(setupResult ?? "nil")")
+                return
+            }
+            defer {
+                _ = runLua("""
+                    if websocketGaugeObject then websocketGaugeObject:close() end
+                    websocketGaugeObject = nil
+                    websocketGaugeEvents = nil
+                    collectgarbage()
+                    collectgarbage()
+                    return success()
+                """)
+            }
+
+            let openDeadline = Date(timeIntervalSinceNow: 5)
+            while Date() < openDeadline {
+                RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.01))
+                testHarness?.advanceTime(by: 0.1)
+                let sawOpen = sim.metrics.contains {
+                    $0.name == "cosmichammer.websocket.active" && $0.value >= 1
+                }
+                if sawOpen { break }
+            }
+
+            _ = runLua("websocketGaugeObject:close(); return success()")
+
+            let closeDeadline = Date(timeIntervalSinceNow: 5)
+            while Date() < closeDeadline {
+                RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.01))
+                testHarness?.advanceTime(by: 0.1)
+                let gaugeValues = sim.metrics
+                    .filter { $0.name == "cosmichammer.websocket.active" }
+                    .map(\.value)
+                if gaugeValues.count >= 2, gaugeValues.last == gaugeValues.first.map({ max(0, $0 - 1) }) {
+                    return
+                }
+            }
+
+            let gaugeValues = sim.metrics
+                .filter { $0.name == "cosmichammer.websocket.active" }
+                .map(\.value)
+            #expect(gaugeValues.count >= 2)
+            #expect(gaugeValues.last == gaugeValues.first.map { max(0, $0 - 1) })
+        }
         @Test func testLegacy() {
             runLuaSendTest(
                 setup: "testLegacy()",

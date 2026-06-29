@@ -1111,7 +1111,16 @@ private func audiodevice_watcherStart(_ L: LuaState) throws -> CInt {
             lua_pushany(L, eventName as NSString)
             lua_pushany(L, eventScope as NSString)
             lua_pushany(L, NSNumber(value: element))
-            if lua_pcall(L, 4, 0, 0) != LUA_OK { lua_pop(L, 1) }
+            if luaTelemetryPCall(
+                L,
+                nargs: 4,
+                nresults: 0,
+                callbackName: "hs.audiodevice.watcher",
+                attributes: [
+                    "audio.device.event": eventName,
+                    "audio.device.scope": eventScope,
+                ]
+            ) != LUA_OK { lua_pop(L, 1) }
         }
     }
 

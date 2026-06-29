@@ -21,8 +21,28 @@ module.log = log
 local validClasses = { "any", "IPv4", "IPv6" }
 
 local internals = setmetatable({}, { __mode = "k" })
+local activePingProcessCount = 0
+
+local recordPingProcessGauge = function()
+    local ok, otel = pcall(require, "hs.opentelemetry")
+    if ok and otel and otel.metric then
+        otel.metric("cosmichammer.network.ping.process.active", activePingProcessCount, { kind = "gauge", unit = "1" })
+    end
+end
+
+local setPingProcessActive = function(self, active)
+    if not internals[self] or internals[self].countedActive == active then return end
+    internals[self].countedActive = active
+    if active then
+        activePingProcessCount = activePingProcessCount + 1
+    else
+        activePingProcessCount = math.max(0, activePingProcessCount - 1)
+    end
+    recordPingProcessGauge()
+end
 
 local basicPingCompletionFunction = function(self)
+    setPingProcessActive(self, false)
     -- in case we got here through the cancel method:
     internals[self].allSent = true
     if getmetatable(internals[self].pingTimer) then internals[self].pingTimer:stop() end
@@ -444,6 +464,7 @@ module.ping = function(server, ...)
         maxCount  = count,
         timeouts  = {},
     }
+    setPingProcessActive(self, true)
 
     internals[self].pingObject = module.echoRequest(server):acceptAddressFamily(class):setCallback(function(obj, msg, ...)
         if msg == "didStart" then
@@ -456,6 +477,7 @@ module.ping = function(server, ...)
             internals[self].pingTimer = nil
             -- we don't have to stop because the fail callback has already done it for us
             internals[self].pingObject = nil
+            setPingProcessActive(self, false)
             internals[self].callback(self, msg, err)
         elseif msg == "sendPacket" then
             local icmp, seq = ...

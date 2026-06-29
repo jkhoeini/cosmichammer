@@ -10,8 +10,9 @@ This file is the canonical agent-guidance doc for this repository; `CLAUDE.md` i
 
 ## Shell and tools
 
-- Run commands through `zsh -ic '<cmd>'` so the user's shell setup, PATH, and `mise` shims are loaded.
-- Run just tasks as `zsh -ic 'mise exec -- just <recipe>'`.
+- Run ad-hoc shell commands through `zsh -ic '<cmd>'` so the user's shell setup, PATH, and `mise` shims are loaded.
+- Run repository tasks directly as `just <recipe>`. `mise.toml` installs `just`; once it is on PATH, extra `zsh -ic` and `mise exec --` wrapping is unnecessary for `just` recipes.
+- Before considering code changes complete, run `just verify`. This is the agent-facing quality gate and is optimized to parallelize independent checks.
 - In a new jj workspace, if `mise` reports that `mise.toml` is not trusted, run `zsh -ic 'mise trust -y'` once in that workspace.
 
 ## Common commands
@@ -20,10 +21,11 @@ The project uses `just` as a task runner. `mise` installs `just` (`mise.toml`). 
 
 - `just build` — Debug build of `Cosmic Hammer.app` into `build/`. `just build Release` for Release. Orchestrates version numbering (from git tags), docs.json compilation, hs CLI build, SPM build, and post-build Lua/hs-CLI copying. Release builds enable hardened runtime via `--options runtime` in the codesign step.
 - `just rebuild` — `clean` + `build`.
-- `just test` — Runs the SPM test suite via `swift test` (requires a prior `just build` for Lua resources). Tests live in `Tests/CosmicHammerTests/` as a Swift Testing `.testTarget`.
+- `just test` — Prepares test resources and runs the SPM test suite via `swift test`. Tests live in `Tests/CosmicHammerTests/` as a Swift Testing `.testTarget`.
+- `just test-built` — Runs the SPM test suite against the resources in the built app bundle; used by `just verify` to avoid duplicating resource preparation after `just build`.
 - `just docs` / `just docs-lint` — Builds/lints the API docs via the Swift tool under `scripts/docs/` (auto-builds the `BuildDocs` binary the first time).
 - `just check-generated` — Verifies generated HSExtensions glue matches `extensions.manifest`.
-- `just verify` — Runs `check-generated`, `docs-lint`, `build`, and `test` in the normal local/CI order.
+- `just verify` — Full local verification path. Runs generated-file checks, docs linting, app build, and tests; independent checks run in parallel where safe.
 - `scripts/generate-hsextensions.sh` — Regenerates the HSExtensions glue (`HSExtensions+Preload.h`, `HSExtensionsGenerated.swift`) from `extensions.manifest`. Re-run this whenever an extension entry-point is added or removed. The script is idempotent.
 
 To run a single test suite, use `swift test --filter <SuiteName>` (with the private framework linker flag — see `justfile`). To run all tests: `just test`.

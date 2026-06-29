@@ -9,6 +9,9 @@ import HSDSTSimulator
 
 let isHeadless: Bool = ProcessInfo.processInfo.environment["HEADLESS"] != nil
 let externalNetworkTestsEnabled: Bool = ProcessInfo.processInfo.environment["EXTERNAL_NETWORK_TESTS"] != nil
+let otelCollectorTestsEnabled: Bool = ProcessInfo.processInfo.environment["OTEL_COLLECTOR_TESTS"] != nil
+let otelStressTestsEnabled: Bool = ProcessInfo.processInfo.environment["OTEL_STRESS_TESTS"] != nil
+let otelBenchmarkTestsEnabled: Bool = ProcessInfo.processInfo.environment["OTEL_BENCHMARK_TESTS"] != nil
 
 private func socketTestError(_ message: String) -> NSError {
     NSError(domain: "CosmicHammerTests.Socket", code: Int(errno), userInfo: [NSLocalizedDescriptionKey: message])
@@ -210,6 +213,159 @@ private final class LocalWebSocketEchoServer: @unchecked Sendable {
     }
 }
 
+struct LocalOTLPHTTPRequest: Equatable {
+    var method: String
+    var path: String
+    var headers: [String: String]
+    var body: Data
+}
+
+final class LocalOTLPHTTPReceiver: @unchecked Sendable {
+    private let listener: NWListener
+    private let queue = DispatchQueue(label: "CosmicHammerTests.LocalOTLPHTTPReceiver")
+    private let lock = NSLock()
+    private var receivedRequests: [LocalOTLPHTTPRequest] = []
+    let endpoint: String
+
+    init(port: UInt16) throws {
+        guard let nwPort = NWEndpoint.Port(rawValue: port) else {
+            throw socketTestError("Invalid local OTLP receiver port \(port)")
+        }
+        listener = try NWListener(using: .tcp, on: nwPort)
+        endpoint = "http://127.0.0.1:\(port)"
+
+        let ready = DispatchSemaphore(value: 0)
+        let startupState = LocalNetworkServerStartupState()
+        listener.stateUpdateHandler = { state in
+            switch state {
+            case .ready:
+                ready.signal()
+            case .failed(let error):
+                startupState.setError(error)
+                ready.signal()
+            default:
+                break
+            }
+        }
+        listener.newConnectionHandler = { [weak self] connection in
+            self?.handle(connection)
+        }
+        listener.start(queue: queue)
+
+        guard ready.wait(timeout: .now() + 2) == .success else {
+            throw socketTestError("Timed out starting local OTLP HTTP receiver")
+        }
+        if let startupError = startupState.error() {
+            throw startupError
+        }
+    }
+
+    convenience init() throws {
+        try self.init(port: reserveLocalNetworkPort())
+    }
+
+    deinit {
+        listener.cancel()
+    }
+
+    func requests() -> [LocalOTLPHTTPRequest] {
+        lock.lock()
+        defer { lock.unlock() }
+        return receivedRequests
+    }
+
+    func waitForRequests(count: Int, timeout: TimeInterval) -> [LocalOTLPHTTPRequest] {
+        let deadline = Date(timeIntervalSinceNow: timeout)
+        while Date() < deadline {
+            let snapshot = requests()
+            if snapshot.count >= count {
+                return snapshot
+            }
+            Thread.sleep(forTimeInterval: 0.01)
+        }
+        return requests()
+    }
+
+    private func handle(_ connection: NWConnection) {
+        connection.start(queue: queue)
+        receive(on: connection, buffer: Data())
+    }
+
+    private func receive(on connection: NWConnection, buffer: Data) {
+        connection.receive(minimumIncompleteLength: 1, maximumLength: 64 * 1024) { [weak self] data, _, isComplete, error in
+            guard let self else {
+                connection.cancel()
+                return
+            }
+            if error != nil {
+                connection.cancel()
+                return
+            }
+
+            var nextBuffer = buffer
+            if let data {
+                nextBuffer.append(data)
+            }
+            if let request = self.parseRequest(nextBuffer) {
+                self.lock.lock()
+                self.receivedRequests.append(request)
+                self.lock.unlock()
+                self.sendOK(on: connection)
+                return
+            }
+            if isComplete {
+                connection.cancel()
+                return
+            }
+            self.receive(on: connection, buffer: nextBuffer)
+        }
+    }
+
+    private func sendOK(on connection: NWConnection) {
+        let response = Data("HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".utf8)
+        connection.send(
+            content: response,
+            contentContext: .defaultMessage,
+            isComplete: true,
+            completion: .contentProcessed { _ in
+                connection.cancel()
+            }
+        )
+    }
+
+    private func parseRequest(_ data: Data) -> LocalOTLPHTTPRequest? {
+        let separator = Data("\r\n\r\n".utf8)
+        guard let headerRange = data.range(of: separator) else { return nil }
+        let headerData = data[..<headerRange.lowerBound]
+        guard let headerText = String(data: headerData, encoding: .utf8) else { return nil }
+        let lines = headerText.components(separatedBy: "\r\n")
+        guard let requestLine = lines.first else { return nil }
+        let requestParts = requestLine.split(separator: " ", maxSplits: 2).map(String.init)
+        guard requestParts.count >= 2 else { return nil }
+
+        var headers: [String: String] = [:]
+        for line in lines.dropFirst() {
+            guard let colon = line.firstIndex(of: ":") else { continue }
+            let key = line[..<colon].trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            let value = line[line.index(after: colon)...].trimmingCharacters(in: .whitespacesAndNewlines)
+            headers[key] = value
+        }
+
+        let bodyStart = headerRange.upperBound
+        let contentLength = Int(headers["content-length"] ?? "0") ?? 0
+        guard data.distance(from: bodyStart, to: data.endIndex) >= contentLength else {
+            return nil
+        }
+        let bodyEnd = data.index(bodyStart, offsetBy: contentLength)
+        return LocalOTLPHTTPRequest(
+            method: requestParts[0],
+            path: requestParts[1],
+            headers: headers,
+            body: Data(data[bodyStart..<bodyEnd])
+        )
+    }
+}
+
 @MainActor private var localWebSocketEchoServer: LocalWebSocketEchoServer?
 
 @MainActor
@@ -348,5 +504,17 @@ extension Trait where Self == Testing.ConditionTrait {
 
     static var requiresExternalNetwork: Self {
         .enabled(if: externalNetworkTestsEnabled, "Test requires external network; set EXTERNAL_NETWORK_TESTS=1 to run")
+    }
+
+    static var requiresOTELCollector: Self {
+        .enabled(if: otelCollectorTestsEnabled, "Test requires OTEL_COLLECTOR_TESTS=1")
+    }
+
+    static var requiresOTELStress: Self {
+        .enabled(if: otelStressTestsEnabled, "Test requires OTEL_STRESS_TESTS=1")
+    }
+
+    static var requiresOTELBenchmark: Self {
+        .enabled(if: otelBenchmarkTestsEnabled, "Test requires OTEL_BENCHMARK_TESTS=1")
     }
 }

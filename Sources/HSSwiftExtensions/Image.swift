@@ -580,7 +580,13 @@ private func imageFromURL(_ L: LuaState) throws -> CInt {
                     let bgL = lua_getCurrentState()!
                     storedCb.push(onto: bgL)
                     pushNSImageOrNil(bgL, image)
-                    if lua_pcall(bgL, 1, 0, 0) != LUA_OK { lua_pop(bgL, 1) }
+                    if luaTelemetryPCall(
+                        bgL,
+                        nargs: 1,
+                        nresults: 0,
+                        callbackName: "hs.image.imageFromURL",
+                        attributes: ["image.loaded": image != nil]
+                    ) != LUA_OK { lua_pop(bgL, 1) }
                 }
             }
         }

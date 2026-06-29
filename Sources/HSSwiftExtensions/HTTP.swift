@@ -72,6 +72,27 @@ private func extractHeadersFromStack(_ L: UnsafeMutablePointer<lua_State>!, _ in
     }
 }
 
+private func httpTelemetryAttributes(url: String, method: String) -> [String: Any] {
+    var attributes: [String: Any] = [
+        TelemetrySemanticConventions.Attribute.HTTP.requestMethod: method,
+    ]
+    if let components = URLComponents(string: url) {
+        var sanitizedComponents = components
+        sanitizedComponents.user = nil
+        sanitizedComponents.password = nil
+        sanitizedComponents.query = nil
+        sanitizedComponents.percentEncodedQuery = nil
+        attributes[TelemetrySemanticConventions.Attribute.URL.full] = sanitizedComponents.string ?? url
+        if let scheme = components.scheme { attributes[TelemetrySemanticConventions.Attribute.URL.scheme] = scheme }
+        if let host = components.host { attributes[TelemetrySemanticConventions.Attribute.Server.address] = host }
+        if let port = components.port { attributes[TelemetrySemanticConventions.Attribute.Server.port] = port }
+        attributes[TelemetrySemanticConventions.Attribute.URL.path] = components.path
+    } else {
+        attributes[TelemetrySemanticConventions.Attribute.URL.full] = url
+    }
+    return attributes
+}
+
 // MARK: - Module Functions
 
 /// hs.http.doAsyncRequest(url, method, data, headers, callback, [cachePolicy|enableRedirect])
@@ -127,6 +148,15 @@ private func http_doAsyncRequest(_ L: LuaState) throws -> CInt {
     let body = request.httpBody
 
     let env = environmentGet(L)
+    let telemetry = env.telemetry
+    let spanID = telemetry.startSpan(
+        name: "HTTP \(method)",
+        kind: .client,
+        attributes: httpTelemetryAttributes(url: url, method: method),
+        startTime: nil
+    )
+    headers = telemetry.inject(into: headers)
+
     env.network.httpRequest(url: url, method: method, headers: headers,
                             body: body, redirect: enableRedirect) { response, error in
         guard lua_isStateGenerationValid(generation) else { return }
@@ -134,14 +164,39 @@ private func http_doAsyncRequest(_ L: LuaState) throws -> CInt {
 
         if let error = error {
             let errorMessage = "Connection failed: \(error.localizedDescription)"
+            var errorAttributes = httpTelemetryAttributes(url: url, method: method)
+            errorAttributes[TelemetrySemanticConventions.Attribute.Error.type] = String(describing: type(of: error))
+            environmentGet(L).telemetry.recordException(
+                spanID: spanID,
+                message: errorMessage,
+                stack: nil,
+                attributes: errorAttributes
+            )
+            if let spanID {
+                environmentGet(L).telemetry.endSpan(
+                    id: spanID,
+                    status: .error(errorMessage),
+                    attributes: [TelemetrySemanticConventions.Attribute.Error.type: String(describing: type(of: error))],
+                    endTime: nil
+                )
+            }
             fn.push(onto: L)
             L.push(-1)
             lua_pushany(L, errorMessage as NSString)
-            if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
+            if luaTelemetryPCall(L, nargs: 2, nresults: 0, callbackName: "hs.http.doAsyncRequest") != LUA_OK { lua_pop(L, 1) }
             return
         }
 
         guard let response = response else { return }
+        if let spanID {
+            let status: TelemetrySpanStatus = (200..<400).contains(response.statusCode) ? .ok : .error("HTTP \(response.statusCode)")
+            environmentGet(L).telemetry.endSpan(
+                id: spanID,
+                status: status,
+                attributes: [TelemetrySemanticConventions.Attribute.HTTP.responseStatusCode: response.statusCode],
+                endTime: nil
+            )
+        }
 
         // Convert response body, respecting text/* content-type for string conversion
         let contentType = response.headers["Content-Type"] ?? ""
@@ -156,7 +211,7 @@ private func http_doAsyncRequest(_ L: LuaState) throws -> CInt {
         L.push(response.statusCode)
         lua_pushany(L, responseBody as? NSObject)
         lua_pushany(L, response.headers as NSDictionary)
-        if lua_pcall(L, 3, 0, 0) != LUA_OK { lua_pop(L, 1) }
+        if luaTelemetryPCall(L, nargs: 3, nresults: 0, callbackName: "hs.http.doAsyncRequest") != LUA_OK { lua_pop(L, 1) }
     }
 
     return 0
@@ -200,6 +255,14 @@ private func http_doRequest(_ L: LuaState) throws -> CInt {
     let body = request.httpBody
 
     let env = environmentGet(L)
+    let telemetry = env.telemetry
+    let spanID = telemetry.startSpan(
+        name: "HTTP \(method)",
+        kind: .client,
+        attributes: httpTelemetryAttributes(url: url, method: method),
+        startTime: nil
+    )
+    headers = telemetry.inject(into: headers)
     let sem = DispatchSemaphore(value: 0)
     var result: HTTPResponse?
     var resultError: Error?
@@ -212,7 +275,29 @@ private func http_doRequest(_ L: LuaState) throws -> CInt {
     }
     sem.wait()
 
-    if resultError != nil || result == nil {
+    if let resultError = resultError {
+        let message = "Connection failed: \(resultError.localizedDescription)"
+        var errorAttributes = httpTelemetryAttributes(url: url, method: method)
+        errorAttributes[TelemetrySemanticConventions.Attribute.Error.type] = String(describing: type(of: resultError))
+        telemetry.recordException(spanID: spanID, message: message, stack: nil, attributes: errorAttributes)
+        if let spanID {
+            telemetry.endSpan(
+                id: spanID,
+                status: .error(message),
+                attributes: [TelemetrySemanticConventions.Attribute.Error.type: String(describing: type(of: resultError))],
+                endTime: nil
+            )
+        }
+        L.push(0)
+        lua_pushnil(L)
+        lua_pushnil(L)
+        return 3
+    }
+
+    if result == nil {
+        if let spanID {
+            telemetry.endSpan(id: spanID, status: .error("missing HTTP response"), attributes: [:], endTime: nil)
+        }
         L.push(0)
         lua_pushnil(L)
         lua_pushnil(L)
@@ -220,6 +305,15 @@ private func http_doRequest(_ L: LuaState) throws -> CInt {
     }
 
     let response = result!
+    if let spanID {
+        let status: TelemetrySpanStatus = (200..<400).contains(response.statusCode) ? .ok : .error("HTTP \(response.statusCode)")
+        telemetry.endSpan(
+            id: spanID,
+            status: status,
+            attributes: [TelemetrySemanticConventions.Attribute.HTTP.responseStatusCode: response.statusCode],
+            endTime: nil
+        )
+    }
 
     // Convert response body, respecting text/* content-type for string conversion
     let contentType = response.headers["Content-Type"] ?? ""

@@ -2,8 +2,29 @@ import Foundation
 import CLua
 import Lua
 import Cocoa
+import HSDSTCore
 
 private let WS_USERDATA_TAG = "hs.websocket"
+private var activeWebSocketCount = 0
+
+private func recordActiveWebSocketGauge(_ L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+    let telemetry = L.map { environmentGet($0).telemetry } ?? environmentGetGlobalOrNil()?.telemetry
+    telemetry?.recordMetric(
+        name: "cosmichammer.websocket.active",
+        kind: .gauge,
+        value: Double(activeWebSocketCount),
+        attributes: [:],
+        unit: "1"
+    )
+}
+
+func websocketRequest(url: URL, telemetry: any TelemetryProtocol) -> URLRequest {
+    var request = URLRequest(url: url)
+    for (key, value) in telemetry.inject(into: [:]) {
+        request.setValue(value, forHTTPHeaderField: key)
+    }
+    return request
+}
 
 // MARK: - HSWebSocketDelegate
 
@@ -15,7 +36,9 @@ private class HSWebSocketDelegate: NSObject, URLSessionWebSocketDelegate {
     // URLSession delegate callbacks must use performLuaWork before touching them.
     var isOpen: Bool = false
     var isExplicitlyClosing: Bool = false
+    var countedActive: Bool = false
     var stateGeneration: UInt64 = 0
+    private var connectSpanID: UInt64?
     private var tornDown = false
     private let delegateQueue: OperationQueue = {
         let queue = OperationQueue()
@@ -23,20 +46,22 @@ private class HSWebSocketDelegate: NSObject, URLSessionWebSocketDelegate {
         return queue
     }()
 
-    init(url: URL) {
+    init(request: URLRequest, connectSpanID: UInt64?) {
+        self.connectSpanID = connectSpanID
         super.init()
         let config = URLSessionConfiguration.default
         session = URLSession(configuration: config, delegate: self, delegateQueue: delegateQueue)
-        webSocket = session?.webSocketTask(with: url)
+        webSocket = session?.webSocketTask(with: request)
         isOpen = false
     }
 
     /// Idempotent teardown: cancel the websocket, invalidate the session,
     /// drop the Lua callback reference.  Called from __gc while the
     /// lua_State is still alive.
-    func teardown() {
+    func teardown(_ L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
         guard !tornDown else { return }
         tornDown = true
+        setCountedActive(false, L: L)
         close()
         webSocket = nil
         session?.invalidateAndCancel()
@@ -49,6 +74,17 @@ private class HSWebSocketDelegate: NSObject, URLSessionWebSocketDelegate {
         listenForMessages()
     }
 
+    func setCountedActive(_ active: Bool, L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+        guard countedActive != active else { return }
+        countedActive = active
+        if active {
+            activeWebSocketCount += 1
+        } else {
+            activeWebSocketCount = max(0, activeWebSocketCount - 1)
+        }
+        recordActiveWebSocketGauge(L)
+    }
+
     func listenForMessages() {
         webSocket?.receive { [weak self] result in
             guard let strongSelf = self else { return }
@@ -57,17 +93,18 @@ private class HSWebSocketDelegate: NSObject, URLSessionWebSocketDelegate {
             case .failure(let error):
                 strongSelf.performLuaWork { [weak strongSelf] in
                     guard let strongSelf, !strongSelf.isOpen, !strongSelf.isExplicitlyClosing else { return }
-                    strongSelf.invokeLuaCallback { L in
+                    strongSelf.invokeLuaCallback(event: "fail") { L in
                         L.push("fail")
                         L.push(error.localizedDescription)
                         return 2
                     }
+                    strongSelf.finishConnectSpan(status: .error(error.localizedDescription))
                 }
 
             case .success(let message):
                 strongSelf.performLuaWork { [weak strongSelf] in
                     guard let strongSelf, !strongSelf.isExplicitlyClosing else { return }
-                    strongSelf.invokeLuaCallback { L in
+                    strongSelf.invokeLuaCallback(event: "received") { L in
                         L.push("received")
                         switch message {
                         case .string(let text):
@@ -87,6 +124,18 @@ private class HSWebSocketDelegate: NSObject, URLSessionWebSocketDelegate {
         }
     }
 
+    private func finishConnectSpan(status: TelemetrySpanStatus) {
+        guard let spanID = connectSpanID else { return }
+        connectSpanID = nil
+        guard let L = lua_getCurrentState() else { return }
+        environmentGet(L).telemetry.endSpan(
+            id: spanID,
+            status: status,
+            attributes: [:],
+            endTime: nil
+        )
+    }
+
     private func performLuaWork(_ work: @escaping () -> Void) {
         if Thread.isMainThread {
             work()
@@ -97,13 +146,19 @@ private class HSWebSocketDelegate: NSObject, URLSessionWebSocketDelegate {
         }
     }
 
-    private func invokeLuaCallback(pushArguments: (UnsafeMutablePointer<lua_State>) -> Int32) {
+    private func invokeLuaCallback(event: String, pushArguments: (UnsafeMutablePointer<lua_State>) -> Int32) {
         guard let cb = callback else { return }
         guard lua_isStateGenerationValid(stateGeneration) else { return }
         guard let L = lua_getCurrentState() else { return }
         cb.push(onto: L)
         let argumentCount = pushArguments(L)
-        if lua_pcall(L, argumentCount, 0, 0) != LUA_OK { lua_pop(L, 1) }
+        if luaTelemetryPCall(
+            L,
+            nargs: argumentCount,
+            nresults: 0,
+            callbackName: "hs.websocket",
+            attributes: ["websocket.event": event]
+        ) != LUA_OK { lua_pop(L, 1) }
     }
 
     func urlSession(_ session: URLSession,
@@ -113,10 +168,12 @@ private class HSWebSocketDelegate: NSObject, URLSessionWebSocketDelegate {
             guard let self else { return }
             guard !isExplicitlyClosing else { return }
             isOpen = true
-            invokeLuaCallback { L in
+            setCountedActive(true)
+            invokeLuaCallback(event: "open") { L in
                 L.push("open")
                 return 1
             }
+            finishConnectSpan(status: .ok)
         }
     }
 
@@ -127,7 +184,8 @@ private class HSWebSocketDelegate: NSObject, URLSessionWebSocketDelegate {
         performLuaWork { [weak self] in
             guard let self else { return }
             isOpen = false
-            invokeLuaCallback { L in
+            setCountedActive(false)
+            invokeLuaCallback(event: "closed") { L in
                 L.push("closed")
                 return 1
             }
@@ -136,6 +194,7 @@ private class HSWebSocketDelegate: NSObject, URLSessionWebSocketDelegate {
 
     func close() {
         isExplicitlyClosing = true
+        finishConnectSpan(status: .unset)
         webSocket?.cancel(with: .normalClosure, reason: nil)
     }
 }
@@ -168,7 +227,22 @@ private class HSWebSocketDelegate: NSObject, URLSessionWebSocketDelegate {
 private func websocket_new(_ L: LuaState) throws -> CInt {
     let urlString = String(cString: luaL_checkstring(L, 1))
     luaL_checktype(L, 2, LUA_TFUNCTION)
-    let ws = HSWebSocketDelegate(url: URL(string: urlString)!)
+    let url = URL(string: urlString)!
+    let telemetry = environmentGet(L).telemetry
+    let spanID = telemetry.startSpan(
+        name: "WEBSOCKET CONNECT",
+        kind: .client,
+        attributes: [
+            "url.scheme": url.scheme ?? "",
+            "server.address": url.host ?? "",
+            "server.port": url.port ?? 0,
+        ],
+        startTime: nil
+    )
+    let ws = HSWebSocketDelegate(
+        request: websocketRequest(url: url, telemetry: telemetry),
+        connectSpanID: spanID
+    )
     ws.stateGeneration = lua_currentStateGeneration()
     ws.callback = L.ref(index: 2)
     ws.open()
@@ -272,7 +346,7 @@ public func luaopen_hs_libwebsocket(_ L: UnsafeMutablePointer<lua_State>!) -> In
     L.pushMetatable(for: HSWebSocketDelegate.self)
     lua_pushcclosure(L, { (L: LuaState!) -> CInt in
         if let ws: HSWebSocketDelegate = L.touserdata(1) {
-            ws.teardown()
+            ws.teardown(L)
         }
         let rawptr = lua_touserdata(L, 1)!
         let anyPtr = rawptr.assumingMemoryBound(to: Any.self)

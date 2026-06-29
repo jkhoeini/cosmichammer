@@ -2,6 +2,7 @@ import Testing
 import Cocoa
 import CLua
 import HSDSTCore
+import HSDSTSimulator
 @testable import HSSwiftExtensions
 
 extension CosmicHammerTests {
@@ -88,6 +89,80 @@ extension CosmicHammerTests {
                 // Access the global var through a helper to satisfy Swift 6.
                 menubarGCTest_eraseMenuDelegateWithNilDelegates(L, menu)
                 // If we reach here, the nil guard works.
+            }
+        }
+
+        @Test func menubarClickCallbackActiveGauge() {
+            withModuleLoaded(luaopen_hs_libmenubar) { L in
+                let saved = lua_getCurrentState()
+                lua_setCurrentState(L)
+                defer { lua_setCurrentState(saved) }
+
+                adjustMenubarClickCallbackCount(-1_000, L: L)
+                let sim = environmentGet(L).telemetry as! SimulatedTelemetry
+                sim.configure(TelemetryConfiguration(enabled: true))
+
+                #expect(luaEval(L, """
+                    local item = mod.new(false)
+                    item:setClickCallback(function() end)
+                    item:setClickCallback(nil)
+                    item:delete()
+                """))
+
+                let gaugeValues = sim.metrics
+                    .filter { $0.name == "cosmichammer.menubar.click.callback.active" }
+                    .map(\.value)
+                #expect(gaugeValues == [1, 0])
+            }
+        }
+
+        @Test func menubarDynamicMenuCallbackActiveGauge() {
+            withModuleLoaded(luaopen_hs_libmenubar) { L in
+                let saved = lua_getCurrentState()
+                lua_setCurrentState(L)
+                defer { lua_setCurrentState(saved) }
+
+                adjustMenubarDynamicMenuCallbackCount(-1_000, L: L)
+                let sim = environmentGet(L).telemetry as! SimulatedTelemetry
+                sim.configure(TelemetryConfiguration(enabled: true))
+
+                #expect(luaEval(L, """
+                    local item = mod.new(false)
+                    item:setMenu(function() return {} end)
+                    item:setMenu(nil)
+                    item:delete()
+                """))
+
+                let gaugeValues = sim.metrics
+                    .filter { $0.name == "cosmichammer.menubar.dynamic_menu.callback.active" }
+                    .map(\.value)
+                #expect(gaugeValues == [1, 0])
+            }
+        }
+
+        @Test func menubarMenuItemCallbackActiveGauge() {
+            withModuleLoaded(luaopen_hs_libmenubar) { L in
+                let saved = lua_getCurrentState()
+                lua_setCurrentState(L)
+                defer { lua_setCurrentState(saved) }
+
+                adjustMenubarMenuItemCallbackCount(-1_000, L: L)
+                let sim = environmentGet(L).telemetry as! SimulatedTelemetry
+                sim.configure(TelemetryConfiguration(enabled: true))
+
+                #expect(luaEval(L, """
+                    local item = mod.new(false)
+                    item:setMenu({
+                        { title = "A", fn = function() end },
+                    })
+                    item:setMenu(nil)
+                    item:delete()
+                """))
+
+                let gaugeValues = sim.metrics
+                    .filter { $0.name == "cosmichammer.menubar.menu_item.callback.active" }
+                    .map(\.value)
+                #expect(gaugeValues == [1, 0])
             }
         }
     }

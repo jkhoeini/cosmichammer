@@ -175,6 +175,9 @@ private func _import_luaopen_hs_libnoises(_ L: UnsafeMutablePointer<lua_State>!)
 @_silgen_name("luaopen_hs_libnotify")
 private func _import_luaopen_hs_libnotify(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 
+@_silgen_name("luaopen_hs_libopentelemetry")
+private func _import_luaopen_hs_libopentelemetry(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
+
 @_silgen_name("luaopen_hs_libosascript")
 private func _import_luaopen_hs_libosascript(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 
@@ -348,6 +351,7 @@ func hsExtensionsRegisterAll(_ L: UnsafeMutablePointer<lua_State>!) {
         ("hs.libnetworkreachability", _import_luaopen_hs_libnetworkreachability),
         ("hs.libnoises", _import_luaopen_hs_libnoises),
         ("hs.libnotify", _import_luaopen_hs_libnotify),
+        ("hs.libopentelemetry", _import_luaopen_hs_libopentelemetry),
         ("hs.libosascript", _import_luaopen_hs_libosascript),
         ("hs.libpasteboard", _import_luaopen_hs_libpasteboard),
         ("hs.libpasteboardwatcher", _import_luaopen_hs_libpasteboardwatcher),

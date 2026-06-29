@@ -1,6 +1,7 @@
 import Testing
 import CLua
 import HSDSTCore
+import HSDSTSimulator
 @testable import HSSwiftExtensions
 
 extension CosmicHammerTests {
@@ -121,6 +122,31 @@ extension CosmicHammerTests {
                     w = nil
                     collectgarbage()
                 """), "Double stop should be safe")
+            }
+        }
+
+        @Test func spaceWatcherActiveGauge() {
+            withModuleLoaded(luaopen_hs_libspaces_watcher) { L in
+                let saved = lua_getCurrentState()
+                lua_setCurrentState(L)
+                defer { lua_setCurrentState(saved) }
+
+                let sim = environmentGet(L).telemetry as! SimulatedTelemetry
+                sim.configure(TelemetryConfiguration(enabled: true))
+
+                #expect(luaEval(L, """
+                    local w = mod.new(function() end)
+                    w:start()
+                    w:start()
+                    w:stop()
+                    w:stop()
+                """))
+
+                let gaugeValues = sim.metrics
+                    .filter { $0.name == "cosmichammer.spaces.watcher.active" }
+                    .map(\.value)
+                #expect(gaugeValues.count == 2)
+                #expect(gaugeValues.last == gaugeValues.first.map { max(0, $0 - 1) })
             }
         }
     }

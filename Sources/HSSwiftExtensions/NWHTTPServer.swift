@@ -334,7 +334,7 @@ class NWHTTPServer {
               request.path == wsHandler.path else {
             return false
         }
-        let headerDict = headersToDict(request.headers)
+        let headerDict = buildEnrichedHeaders(from: request, on: wrapper)
         wsHandler.acceptConnection(wrapper.connection, request: headerDict)
         connections.remove(wrapper)
         return true

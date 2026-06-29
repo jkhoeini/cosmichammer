@@ -11,8 +11,28 @@ private let USERDATA_TAG   = "hs.location"
 private let GEOCODE_UD_TAG = "hs.location.geocode"
 private var callbackValue: LuaValue?
 private var location: HSLocation?
+private var locationWatcherCountedActive = false
+private var activeLocationWatcherCount = 0
 
 private var backgroundCallbacks = [Int32: LuaValue]()
+
+private func recordActiveLocationWatcherGauge(_ L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+    let telemetry = L.map { environmentGet($0).telemetry } ?? environmentGetGlobalOrNil()?.telemetry
+    telemetry?.recordMetric(
+        name: "cosmichammer.location.watcher.active",
+        kind: .gauge,
+        value: Double(activeLocationWatcherCount),
+        attributes: [:],
+        unit: "1"
+    )
+}
+
+func setLocationWatcherCounted(_ active: Bool, L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+    guard locationWatcherCountedActive != active else { return }
+    locationWatcherCountedActive = active
+    activeLocationWatcherCount = active ? 1 : 0
+    recordActiveLocationWatcherGauge(L)
+}
 
 // MARK: - HSLocation class
 
@@ -61,7 +81,13 @@ private class HSLocation: NSObject, CLLocationManagerDelegate {
         invokeCallback { L in
             lua_pushany(L, "didUpdateLocations" as NSString)
             pushCLLocationArray(L, locations)
-            if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
+            if luaTelemetryPCall(
+                L,
+                nargs: 2,
+                nresults: 0,
+                callbackName: "hs.location",
+                attributes: ["location.event": "didUpdateLocations"]
+            ) != LUA_OK { lua_pop(L, 1) }
         }
     }
 
@@ -69,7 +95,13 @@ private class HSLocation: NSObject, CLLocationManagerDelegate {
         invokeCallback { L in
             lua_pushany(L, "didEnterRegion" as NSString)
             pushCLRegion(L, region)
-            if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
+            if luaTelemetryPCall(
+                L,
+                nargs: 2,
+                nresults: 0,
+                callbackName: "hs.location",
+                attributes: ["location.event": "didEnterRegion"]
+            ) != LUA_OK { lua_pop(L, 1) }
         }
     }
 
@@ -77,7 +109,13 @@ private class HSLocation: NSObject, CLLocationManagerDelegate {
         invokeCallback { L in
             lua_pushany(L, "didExitRegion" as NSString)
             pushCLRegion(L, region)
-            if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
+            if luaTelemetryPCall(
+                L,
+                nargs: 2,
+                nresults: 0,
+                callbackName: "hs.location",
+                attributes: ["location.event": "didExitRegion"]
+            ) != LUA_OK { lua_pop(L, 1) }
         }
     }
 
@@ -85,7 +123,13 @@ private class HSLocation: NSObject, CLLocationManagerDelegate {
         invokeCallback { L in
             lua_pushany(L, "didFailWithError" as NSString)
             lua_pushany(L, error.localizedDescription as NSString)
-            if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
+            if luaTelemetryPCall(
+                L,
+                nargs: 2,
+                nresults: 0,
+                callbackName: "hs.location",
+                attributes: ["location.event": "didFailWithError"]
+            ) != LUA_OK { lua_pop(L, 1) }
         }
     }
 
@@ -95,7 +139,13 @@ private class HSLocation: NSObject, CLLocationManagerDelegate {
             lua_pushany(L, "monitoringDidFailForRegion" as NSString)
             pushCLRegion(L, region)
             lua_pushany(L, error.localizedDescription as NSString)
-            if lua_pcall(L, 3, 0, 0) != LUA_OK { lua_pop(L, 1) }
+            if luaTelemetryPCall(
+                L,
+                nargs: 3,
+                nresults: 0,
+                callbackName: "hs.location",
+                attributes: ["location.event": "monitoringDidFailForRegion"]
+            ) != LUA_OK { lua_pop(L, 1) }
         }
     }
 
@@ -113,7 +163,16 @@ private class HSLocation: NSObject, CLLocationManagerDelegate {
                 statusString = "unrecognized CLAuthorizationStatus: \(status.rawValue), notify developers"
             }
             lua_pushany(L, statusString as NSString)
-            if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
+            if luaTelemetryPCall(
+                L,
+                nargs: 2,
+                nresults: 0,
+                callbackName: "hs.location",
+                attributes: [
+                    "location.event": "didChangeAuthorizationStatus",
+                    "location.authorization.status": statusString,
+                ]
+            ) != LUA_OK { lua_pop(L, 1) }
         }
     }
 
@@ -121,7 +180,13 @@ private class HSLocation: NSObject, CLLocationManagerDelegate {
         invokeCallback { L in
             lua_pushany(L, "didStartMonitoringForRegion" as NSString)
             pushCLRegion(L, region)
-            if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
+            if luaTelemetryPCall(
+                L,
+                nargs: 2,
+                nresults: 0,
+                callbackName: "hs.location",
+                attributes: ["location.event": "didStartMonitoringForRegion"]
+            ) != LUA_OK { lua_pop(L, 1) }
         }
     }
 }
@@ -231,7 +296,10 @@ private func location_startWatching(_ L: LuaState) throws -> CInt {
     let env = environmentGet(L)
     env.location.startUpdating { _, _ in }
     let ok = checkLocationManager()
-    if ok { location?.manager.startUpdatingLocation() }
+    if ok {
+        location?.manager.startUpdatingLocation()
+        setLocationWatcherCounted(true, L: L)
+    }
     L.push(ok)
     return 1
 }
@@ -241,6 +309,7 @@ private func location_stopWatching(_ L: LuaState) throws -> CInt {
     // no args to validate
     environmentGet(L).location.stopUpdating()
     location?.manager.stopUpdatingLocation()
+    setLocationWatcherCounted(false, L: L)
     return 0
 }
 
@@ -560,7 +629,16 @@ private func clgeocoder_lookupLocation(_ L: UnsafeMutablePointer<lua_State>!) ->
             } else {
                 pushCLPlacemarkArray(L, placemark)
             }
-            if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
+            if luaTelemetryPCall(
+                L,
+                nargs: 2,
+                nresults: 0,
+                callbackName: "hs.location.geocoder",
+                attributes: [
+                    "geocoder.operation": "reverseGeocodeLocation",
+                    "geocoder.success": error == nil,
+                ]
+            ) != LUA_OK { lua_pop(L, 1) }
             backgroundCallbacks.removeValue(forKey: fnKey)
         }
     }
@@ -608,7 +686,16 @@ private func clgeocoder_lookupAddress(_ L: UnsafeMutablePointer<lua_State>!) -> 
             } else {
                 pushCLPlacemarkArray(L, placemark)
             }
-            if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
+            if luaTelemetryPCall(
+                L,
+                nargs: 2,
+                nresults: 0,
+                callbackName: "hs.location.geocoder",
+                attributes: [
+                    "geocoder.operation": "geocodeAddressString",
+                    "geocoder.success": error == nil,
+                ]
+            ) != LUA_OK { lua_pop(L, 1) }
             backgroundCallbacks.removeValue(forKey: fnKey)
         }
     }
@@ -667,7 +754,16 @@ private func clgeocoder_lookupAddressNear(_ L: UnsafeMutablePointer<lua_State>!)
             } else {
                 pushCLPlacemarkArray(L, placemark)
             }
-            if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
+            if luaTelemetryPCall(
+                L,
+                nargs: 2,
+                nresults: 0,
+                callbackName: "hs.location.geocoder",
+                attributes: [
+                    "geocoder.operation": "geocodeAddressStringNear",
+                    "geocoder.success": error == nil,
+                ]
+            ) != LUA_OK { lua_pop(L, 1) }
             backgroundCallbacks.removeValue(forKey: fnKey)
         }
     }
@@ -906,6 +1002,7 @@ private func meta_gc(_ L: LuaState) throws -> CInt {
 
     // Release the module-level callback LuaValue
     callbackValue = nil
+    setLocationWatcherCounted(false, L: L)
 
     // Tear down the location manager
     if let loc = location {
@@ -929,6 +1026,7 @@ func luaopen_hs_liblocation(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
             location = nil
         }
         callbackValue = nil
+        setLocationWatcherCounted(false, L: L)
         backgroundCallbacks.removeAll()
         _nextBackgroundKey = 0
 

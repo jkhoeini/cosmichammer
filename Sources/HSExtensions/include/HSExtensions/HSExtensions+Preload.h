@@ -65,6 +65,7 @@ int luaopen_hs_libnetworkping(lua_State *L);
 int luaopen_hs_libnetworkreachability(lua_State *L);
 int luaopen_hs_libnoises(lua_State *L);
 int luaopen_hs_libnotify(lua_State *L);
+int luaopen_hs_libopentelemetry(lua_State *L);
 int luaopen_hs_libosascript(lua_State *L);
 int luaopen_hs_libpasteboard(lua_State *L);
 int luaopen_hs_libpasteboardwatcher(lua_State *L);

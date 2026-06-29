@@ -13,6 +13,8 @@ private let kMaxCanvasRecursionDepth = 50
     @objc var wrapperWindow: HSCanvasWindow?
     var mouseCallbackFn: LuaValue?
     var draggingCallbackFn: LuaValue?
+    var countedMouseCallbackActive = false
+    var countedDraggingCallbackActive = false
     var generation: UInt64 = 0
     var mouseTracking: Bool = false
     var canvasMouseDown: Bool = false
@@ -35,6 +37,8 @@ private let kMaxCanvasRecursionDepth = 50
 
         mouseCallbackFn = nil
         draggingCallbackFn = nil
+        countedMouseCallbackActive = false
+        countedDraggingCallbackActive = false
         canvasDefaults = NSMutableDictionary()
         elementList = NSMutableArray()
         elementBounds = NSMutableArray()
@@ -216,7 +220,13 @@ private let kMaxCanvasRecursionDepth = 50
         canvas_pushValue(L, elementIdentifier)
         L.push(lua_Number(location.x))
         L.push(lua_Number(location.y))
-        if lua_pcall(L, 5, 0, 0) != LUA_OK { lua_pop(L, 1) }
+        if luaTelemetryPCall(
+            L,
+            nargs: 5,
+            nresults: 0,
+            callbackName: "hs.canvas.mouse",
+            attributes: ["canvas.mouse.event": message]
+        ) != LUA_OK { lua_pop(L, 1) }
     }
 
     func subviewCallback(_ sender: Any) {
@@ -227,7 +237,13 @@ private let kMaxCanvasRecursionDepth = 50
         canvas_pushValue(L, self)
         canvas_pushValue(L, "_subview_" as NSString)
         canvas_pushValue(L, sender as AnyObject)
-        if lua_pcall(L, 3, 0, 0) != LUA_OK { lua_pop(L, 1) }
+        if luaTelemetryPCall(
+            L,
+            nargs: 3,
+            nresults: 0,
+            callbackName: "hs.canvas.subview",
+            attributes: ["canvas.mouse.event": "subview"]
+        ) != LUA_OK { lua_pop(L, 1) }
     }
 
     override func mouseDown(with theEvent: NSEvent) {
@@ -1316,7 +1332,16 @@ private let kMaxCanvasRecursionDepth = 50
             argCount += 1
         }
 
-        if lua_pcall(L, argCount, 1, 0) == LUA_OK {
+        if luaTelemetryPCall(
+            L,
+            nargs: argCount,
+            nresults: 1,
+            callbackName: "hs.canvas.dragging",
+            attributes: [
+                "canvas.dragging.event": message,
+                "canvas.dragging.has_sender": sender != nil,
+            ]
+        ) == LUA_OK {
             isAllGood = lua_isnoneornil(L, -1) ? true : (lua_toboolean(L, -1) != 0)
         } else {
             os_log(.error, "%{public}s", "\(canvas_USERDATA_TAG):draggingCallback error: \(lua_tovalue(L, at: -1) ?? "unknown" as NSString)")

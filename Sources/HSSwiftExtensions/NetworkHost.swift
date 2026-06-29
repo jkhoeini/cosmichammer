@@ -153,7 +153,16 @@ private let handleCallback: CFHostClientCallBack = { theHost, typeInfo, error, i
                 L.push("resolution error:\(expandCFStreamError(domain: domain, errorNum: errorNum))")
                 argCount = 1
             }
-            if lua_pcall(L, argCount, 0, 0) != LUA_OK {
+            if luaTelemetryPCall(
+                L,
+                nargs: argCount,
+                nresults: 0,
+                callbackName: "hs.network.host",
+                attributes: [
+                    "network.host.success": domain == 0 && errorNum == 0,
+                    "network.host.argument.count": Int(argCount),
+                ]
+            ) != LUA_OK {
                 lua_pop(L, 1)
             }
         }

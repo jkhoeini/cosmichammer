@@ -2,8 +2,32 @@ import Cocoa
 import CLua
 import Lua
 import os.log
+import HSDSTCore
 
 private let USERDATA_TAG = "hs.sharing"
+private var activeSharingCallbackCount = 0
+
+private func recordActiveSharingCallbackGauge(_ L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+    let telemetry = L.map { environmentGet($0).telemetry } ?? environmentGetGlobalOrNil()?.telemetry
+    telemetry?.recordMetric(
+        name: "cosmichammer.sharing.callback.active",
+        kind: .gauge,
+        value: Double(activeSharingCallbackCount),
+        attributes: [:],
+        unit: "1"
+    )
+}
+
+func setSharingCallbackCounted(_ wrapper: HSSharingService, _ active: Bool, L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+    guard wrapper.countedCallbackActive != active else { return }
+    wrapper.countedCallbackActive = active
+    if active {
+        activeSharingCallbackCount += 1
+    } else {
+        activeSharingCallbackCount = max(0, activeSharingCallbackCount - 1)
+    }
+    recordActiveSharingCallbackGauge(L)
+}
 
 // MARK: - Support Functions and Classes
 
@@ -125,6 +149,7 @@ func pushSharingURLs(_ L: UnsafeMutablePointer<lua_State>!, _ urls: [URL]?) {
 class HSSharingService: NSObject, NSSharingServiceDelegate {
     var sharingService: NSSharingService?
     var callback: LuaValue?
+    var countedCallbackActive = false
     var generation: UInt64 = 0
     private var tornDown = false
 
@@ -141,6 +166,7 @@ class HSSharingService: NSObject, NSSharingServiceDelegate {
     func teardown() {
         guard !tornDown else { return }
         tornDown = true
+        setSharingCallbackCounted(self, false)
         callback = nil
         sharingService?.delegate = nil
         sharingService = nil
@@ -160,7 +186,16 @@ class HSSharingService: NSObject, NSSharingServiceDelegate {
         lua_pushany(L, "didFail" as NSString)
         pushSharingItems(L, items)
         lua_pushany(L, error.localizedDescription as NSString)
-        if lua_pcall(L, 4, 0, 0) != LUA_OK { lua_pop(L, 1) }
+        if luaTelemetryPCall(
+            L,
+            nargs: 4,
+            nresults: 0,
+            callbackName: "hs.sharing",
+            attributes: [
+                "sharing.event": "didFail",
+                "sharing.item.count": items.count,
+            ]
+        ) != LUA_OK { lua_pop(L, 1) }
     }
 
     func sharingService(_ sharingService: NSSharingService, didShareItems items: [Any]) {
@@ -174,7 +209,16 @@ class HSSharingService: NSObject, NSSharingServiceDelegate {
         L.push(userdata: self)
         lua_pushany(L, "didShare" as NSString)
         pushSharingItems(L, items)
-        if lua_pcall(L, 3, 0, 0) != LUA_OK { lua_pop(L, 1) }
+        if luaTelemetryPCall(
+            L,
+            nargs: 3,
+            nresults: 0,
+            callbackName: "hs.sharing",
+            attributes: [
+                "sharing.event": "didShare",
+                "sharing.item.count": items.count,
+            ]
+        ) != LUA_OK { lua_pop(L, 1) }
     }
 
     func sharingService(_ sharingService: NSSharingService, willShareItems items: [Any]) {
@@ -188,7 +232,16 @@ class HSSharingService: NSObject, NSSharingServiceDelegate {
         L.push(userdata: self)
         lua_pushany(L, "willShare" as NSString)
         pushSharingItems(L, items)
-        if lua_pcall(L, 3, 0, 0) != LUA_OK { lua_pop(L, 1) }
+        if luaTelemetryPCall(
+            L,
+            nargs: 3,
+            nresults: 0,
+            callbackName: "hs.sharing",
+            attributes: [
+                "sharing.event": "willShare",
+                "sharing.item.count": items.count,
+            ]
+        ) != LUA_OK { lua_pop(L, 1) }
     }
 }
 
@@ -274,9 +327,13 @@ public func luaopen_hs_libsharing(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
             "callback": .closure { L in
                 let wrapper: HSSharingService = try L.checkArgument(1)
 
-                wrapper.callback = nil
                 if lua_type(L, 2) == LUA_TFUNCTION {
+                    wrapper.callback = nil
                     wrapper.callback = L.ref(index: 2)
+                    setSharingCallbackCounted(wrapper, true, L: L)
+                } else {
+                    wrapper.callback = nil
+                    setSharingCallbackCounted(wrapper, false, L: L)
                 }
                 lua_pushvalue(L, 1)
                 return 1

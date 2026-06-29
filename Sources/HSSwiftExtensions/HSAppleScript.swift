@@ -35,6 +35,15 @@ func HSAppleScriptEnabled() -> Bool {
 func HSAppleScriptSetEnabled(_ enabled: Bool) {
     if let env = environmentGetGlobalOrNil() {
         env.settings.set(enabled, forKey: HSAppleScriptEnabledKey)
+        env.telemetry.recordLog(
+            level: "info",
+            message: "permission.applescript.set",
+            attributes: [
+                TelemetrySemanticConventions.Attribute.Permission.name: "applescript",
+                TelemetrySemanticConventions.Attribute.Permission.enabled: enabled,
+            ],
+            timestamp: nil
+        )
     } else {
         UserDefaults.standard.set(enabled, forKey: HSAppleScriptEnabledKey)
     }
@@ -58,7 +67,13 @@ private func HSAppleScriptRunString(_ command: String, errorFor cmd: NSScriptCom
     }
 
     lua_pushstring(L, command)
-    if lua_pcall(L, 1, 2, 0) != LUA_OK {
+    if luaTelemetryPCall(
+        L,
+        nargs: 1,
+        nresults: 2,
+        callbackName: "applescript.bridge.executeLua",
+        attributes: [TelemetrySemanticConventions.Attribute.Lua.commandLength: command.count]
+    ) != LUA_OK {
         let errMsg: String
         if let cStr = lua_tostring(L, -1) {
             errMsg = "hs.__appleScriptRunString callback error:\(String(cString: cStr))"

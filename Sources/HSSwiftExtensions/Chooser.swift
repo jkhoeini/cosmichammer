@@ -4,6 +4,32 @@ import HSDSTCore
 import Lua
 import os.log
 
+private var activeChooserCallbackCount = 0
+
+private func recordActiveChooserCallbackGauge(_ L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+    let telemetry = L.map { environmentGet($0).telemetry } ?? environmentGetGlobalOrNil()?.telemetry
+    telemetry?.recordMetric(
+        name: "cosmichammer.chooser.callback.active",
+        kind: .gauge,
+        value: Double(activeChooserCallbackCount),
+        attributes: [:],
+        unit: "1"
+    )
+}
+
+func setChooserCallbackCounted(_ chooser: HSChooser, _ slot: String, _ active: Bool, L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+    let wasActive = chooser.countedCallbackSlots.contains(slot)
+    guard wasActive != active else { return }
+    if active {
+        chooser.countedCallbackSlots.insert(slot)
+        activeChooserCallbackCount += 1
+    } else {
+        chooser.countedCallbackSlots.remove(slot)
+        activeChooserCallbackCount = max(0, activeChooserCallbackCount - 1)
+    }
+    recordActiveChooserCallbackGauge(L)
+}
+
 // MARK: - HSChooserTableView delegate protocol
 
 @objc protocol HSChooserTableViewDelegate: AnyObject {
@@ -198,6 +224,7 @@ class HSChooserTableView: NSTableView {
     var completionCallback: LuaValue?
     var rightClickCallback: LuaValue?
     var invalidCallback: LuaValue?
+    var countedCallbackSlots: Set<String> = []
 
     // Our self-ref count
     var selfRefCount: Int32 = 0
@@ -207,6 +234,9 @@ class HSChooserTableView: NSTableView {
     func teardown() {
         guard !tornDown else { return }
         tornDown = true
+        for slot in Array(countedCallbackSlots) {
+            setChooserCallbackCounted(self, slot, false)
+        }
         hideCallback = nil
         showCallback = nil
         choicesCallback = nil
@@ -656,7 +686,13 @@ class HSChooserTableView: NSTableView {
         } else {
             _ = pushHSChooser(L, self)
             L.push("willOpen")
-            if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
+            if luaTelemetryPCall(
+                L,
+                nargs: 2,
+                nresults: 0,
+                callbackName: "hs.chooser.globalCallback",
+                attributes: ["chooser.event": "willOpen"]
+            ) != LUA_OK { lua_pop(L, 1) }
         }
 
         resizeWindow()
@@ -678,7 +714,13 @@ class HSChooserTableView: NSTableView {
 
         if let cb = showCallback {
             cb.push(onto: L)
-            if lua_pcall(L, 0, 0, 0) != LUA_OK { lua_pop(L, 1) }
+            if luaTelemetryPCall(
+                L,
+                nargs: 0,
+                nresults: 0,
+                callbackName: "hs.chooser.showCallback",
+                attributes: ["chooser.event": "show"]
+            ) != LUA_OK { lua_pop(L, 1) }
         }
     }
 
@@ -704,13 +746,25 @@ class HSChooserTableView: NSTableView {
         } else {
             _ = pushHSChooser(L, self)
             L.push("didClose")
-            if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
+            if luaTelemetryPCall(
+                L,
+                nargs: 2,
+                nresults: 0,
+                callbackName: "hs.chooser.globalCallback",
+                attributes: ["chooser.event": "didClose"]
+            ) != LUA_OK { lua_pop(L, 1) }
         }
 
         // Call hs.chooser:hideCallback()
         if let cb = hideCallback {
             cb.push(onto: L)
-            if lua_pcall(L, 0, 0, 0) != LUA_OK { lua_pop(L, 1) }
+            if luaTelemetryPCall(
+                L,
+                nargs: 0,
+                nresults: 0,
+                callbackName: "hs.chooser.hideCallback",
+                attributes: ["chooser.event": "hide"]
+            ) != LUA_OK { lua_pop(L, 1) }
         }
     }
 
@@ -999,12 +1053,24 @@ class HSChooserTableView: NSTableView {
                let cb = invalidCallback {
                 cb.push(onto: L)
                 pushChooserChoice(L, choice)
-                if lua_pcall(L, 1, 0, 0) != LUA_OK { lua_pop(L, 1) }
+                if luaTelemetryPCall(
+                    L,
+                    nargs: 1,
+                    nresults: 0,
+                    callbackName: "hs.chooser.invalidCallback",
+                    attributes: ["chooser.event": "invalidSelection"]
+                ) != LUA_OK { lua_pop(L, 1) }
             } else if let cb = completionCallback {
                 hide()
                 cb.push(onto: L)
                 pushChooserChoice(L, choice)
-                if lua_pcall(L, 1, 0, 0) != LUA_OK { lua_pop(L, 1) }
+                if luaTelemetryPCall(
+                    L,
+                    nargs: 1,
+                    nresults: 0,
+                    callbackName: "hs.chooser.completionCallback",
+                    attributes: ["chooser.event": "selection"]
+                ) != LUA_OK { lua_pop(L, 1) }
             }
         } else if enableDefaultForQuery, let cb = completionCallback {
             // No row remaining in choices, return just query
@@ -1014,7 +1080,13 @@ class HSChooserTableView: NSTableView {
             hide()
             cb.push(onto: L)
             pushChooserChoice(L, choice)
-            if lua_pcall(L, 1, 0, 0) != LUA_OK { lua_pop(L, 1) }
+            if luaTelemetryPCall(
+                L,
+                nargs: 1,
+                nresults: 0,
+                callbackName: "hs.chooser.completionCallback",
+                attributes: ["chooser.event": "defaultQuery"]
+            ) != LUA_OK { lua_pop(L, 1) }
         }
     }
 
@@ -1023,7 +1095,13 @@ class HSChooserTableView: NSTableView {
             let L = lua_getCurrentState()!
             cb.push(onto: L)
             L.push(lua_Integer(row + 1))
-            if lua_pcall(L, 1, 0, 0) != LUA_OK { lua_pop(L, 1) }
+            if luaTelemetryPCall(
+                L,
+                nargs: 1,
+                nresults: 0,
+                callbackName: "hs.chooser.rightClickCallback",
+                attributes: ["chooser.event": "rightClick"]
+            ) != LUA_OK { lua_pop(L, 1) }
         }
     }
 
@@ -1040,7 +1118,13 @@ class HSChooserTableView: NSTableView {
 
         cb.push(onto: L)
         lua_pushnil(L)
-        if lua_pcall(L, 1, 0, 0) != LUA_OK { lua_pop(L, 1) }
+        if luaTelemetryPCall(
+            L,
+            nargs: 1,
+            nresults: 0,
+            callbackName: "hs.chooser.completionCallback",
+            attributes: ["chooser.event": "cancel"]
+        ) != LUA_OK { lua_pop(L, 1) }
     }
 
     @IBAction func queryDidPressEnter(_ sender: Any?) {
@@ -1055,7 +1139,16 @@ class HSChooserTableView: NSTableView {
             let L = lua_getCurrentState()!
             cb.push(onto: L)
             lua_pushany(L, queryString as NSString)
-            if lua_pcall(L, 1, 0, 0) != LUA_OK { lua_pop(L, 1) }
+            if luaTelemetryPCall(
+                L,
+                nargs: 1,
+                nresults: 0,
+                callbackName: "hs.chooser.queryChangedCallback",
+                attributes: [
+                    "chooser.event": "queryChanged",
+                    "chooser.query.length": queryString.count,
+                ]
+            ) != LUA_OK { lua_pop(L, 1) }
         } else {
             // We do not have a query callback set, so we are doing the filtering
             if !queryString.isEmpty {
@@ -1175,7 +1268,13 @@ class HSChooserTableView: NSTableView {
             if currentCallbackChoices == nil {
                 let L = lua_getCurrentState()!
                 cb.push(onto: L)
-                if lua_pcall(L, 0, 1, 0) == LUA_OK {
+                if luaTelemetryPCall(
+                    L,
+                    nargs: 0,
+                    nresults: 1,
+                    callbackName: "hs.chooser.choicesCallback",
+                    attributes: ["chooser.event": "choices"]
+                ) == LUA_OK {
                     currentCallbackChoices = lua_toChooserChoices(L, at: -1)
 
                     var callbackChoicesTypeCheckPass = false

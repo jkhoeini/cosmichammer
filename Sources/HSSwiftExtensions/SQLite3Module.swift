@@ -4,6 +4,46 @@
 
 import SQLite3
 import CLua
+import HSDSTCore
+
+private var activeSQLiteHookCallbackCount = 0
+private var activeSQLiteFunctionCallbackCount = 0
+
+private func recordActiveSQLiteHookCallbackGauge(_ L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+    let telemetry = L.map { environmentGet($0).telemetry } ?? environmentGetGlobalOrNil()?.telemetry
+    telemetry?.recordMetric(
+        name: "cosmichammer.sqlite3.hook.callback.active",
+        kind: .gauge,
+        value: Double(activeSQLiteHookCallbackCount),
+        attributes: [:],
+        unit: "1"
+    )
+}
+
+private func adjustSQLiteHookCallbackCount(_ delta: Int, L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+    activeSQLiteHookCallbackCount = max(0, activeSQLiteHookCallbackCount + delta)
+    recordActiveSQLiteHookCallbackGauge(L)
+}
+
+private func recordActiveSQLiteFunctionCallbackGauge(_ L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+    let telemetry = L.map { environmentGet($0).telemetry } ?? environmentGetGlobalOrNil()?.telemetry
+    telemetry?.recordMetric(
+        name: "cosmichammer.sqlite3.function.callback.active",
+        kind: .gauge,
+        value: Double(activeSQLiteFunctionCallbackCount),
+        attributes: [:],
+        unit: "1"
+    )
+}
+
+private func adjustSQLiteFunctionCallbackCount(_ delta: Int, L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+    activeSQLiteFunctionCallbackCount = max(0, activeSQLiteFunctionCallbackCount + delta)
+    recordActiveSQLiteFunctionCallbackGauge(L)
+}
+
+private func sqliteCallbackIsActive(_ ref: Int32) -> Bool {
+    ref != LUA_NOREF && ref != LUA_REFNIL
+}
 
 // MARK: - Metatable names (must match what Lua code expects)
 
@@ -167,6 +207,18 @@ private func cleanupDB(_ L: UnsafeMutablePointer<lua_State>!, _ sdb: UnsafeMutab
     lua_pushnil(L)
     lua_rawset(L, LUA_REGISTRYINDEX_VALUE)
 
+    let activeHookCount = [
+        sdb.pointee.busyCb,
+        sdb.pointee.progressCb,
+        sdb.pointee.traceCb,
+        sdb.pointee.updateHookCb,
+        sdb.pointee.commitHookCb,
+        sdb.pointee.rollbackHookCb,
+    ].filter(sqliteCallbackIsActive).count
+    if activeHookCount > 0 {
+        adjustSQLiteHookCallbackCount(-activeHookCount, L: L)
+    }
+
     // Unref all callbacks
     luaL_unref(L, LUA_REGISTRYINDEX_VALUE, sdb.pointee.busyCb)
     luaL_unref(L, LUA_REGISTRYINDEX_VALUE, sdb.pointee.busyUdata)
@@ -186,8 +238,10 @@ private func cleanupDB(_ L: UnsafeMutablePointer<lua_State>!, _ sdb: UnsafeMutab
     sdb.pointee.db = nil
 
     // Free registered SQL functions
+    var functionCount = 0
     var funcPtr = sdb.pointee.funcHead
     while let f = funcPtr {
+        functionCount += 1
         let next = f.pointee.next
         luaL_unref(L, LUA_REGISTRYINDEX_VALUE, f.pointee.fnStep)
         luaL_unref(L, LUA_REGISTRYINDEX_VALUE, f.pointee.fnFinalize)
@@ -196,6 +250,9 @@ private func cleanupDB(_ L: UnsafeMutablePointer<lua_State>!, _ sdb: UnsafeMutab
         funcPtr = next
     }
     sdb.pointee.funcHead = nil
+    if functionCount > 0 {
+        adjustSQLiteFunctionCallbackCount(-functionCount, L: L)
+    }
 
     return result
 }
@@ -779,7 +836,13 @@ private class ExecCallbackContext {
             }
         }
 
-        if lua_pcall(L, 4, 1, 0) == 0 {
+        if luaTelemetryPCall(
+            L,
+            nargs: 4,
+            nresults: 1,
+            callbackName: "hs.sqlite3.exec",
+            attributes: ["sqlite.column.count": Int(columns)]
+        ) == 0 {
             if lua_isinteger(L, -1) != 0 {
                 result = Int32(lua_tointeger(L, -1))
             } else if lua_isnumber(L, -1) {
@@ -954,6 +1017,9 @@ private let db_busy_timeout: lua_CFunction = { L in
     let timeout = Int32(luaL_checkinteger(L, 2))
     sqlite3_busy_timeout(sdb.pointee.db, timeout)
 
+    if sqliteCallbackIsActive(sdb.pointee.busyCb) {
+        adjustSQLiteHookCallbackCount(-1, L: L)
+    }
     luaL_unref(L, LUA_REGISTRYINDEX_VALUE, sdb.pointee.busyCb)
     luaL_unref(L, LUA_REGISTRYINDEX_VALUE, sdb.pointee.busyUdata)
     sdb.pointee.busyCb = LUA_NOREF
@@ -967,6 +1033,9 @@ private let db_busy_handler: lua_CFunction = { L in
     let sdb = checkDB(L, 1)
 
     if lua_gettop(L) < 2 || lua_type(L, 2) == LUA_TNIL {
+        if sqliteCallbackIsActive(sdb.pointee.busyCb) {
+            adjustSQLiteHookCallbackCount(-1, L: L)
+        }
         luaL_unref(L, LUA_REGISTRYINDEX_VALUE, sdb.pointee.busyCb)
         luaL_unref(L, LUA_REGISTRYINDEX_VALUE, sdb.pointee.busyUdata)
         sdb.pointee.busyCb = LUA_NOREF
@@ -976,11 +1045,15 @@ private let db_busy_handler: lua_CFunction = { L in
         luaL_checktype(L, 2, LUA_TFUNCTION)
         lua_settop(L, 3)
 
+        let wasActive = sqliteCallbackIsActive(sdb.pointee.busyCb)
         luaL_unref(L, LUA_REGISTRYINDEX_VALUE, sdb.pointee.busyCb)
         luaL_unref(L, LUA_REGISTRYINDEX_VALUE, sdb.pointee.busyUdata)
 
         sdb.pointee.busyUdata = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
         sdb.pointee.busyCb = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+        if !wasActive {
+            adjustSQLiteHookCallbackCount(1, L: L)
+        }
 
         sqlite3_busy_handler(sdb.pointee.db, { (user, tries) -> Int32 in
             guard let user = user else { return 0 }
@@ -993,7 +1066,13 @@ private let db_busy_handler: lua_CFunction = { L in
             lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(sdb.pointee.busyUdata))
             lua_pushinteger(L, lua_Integer(tries))
 
-            if lua_pcall(L, 2, 1, 0) == 0 {
+            if luaTelemetryPCall(
+                L,
+                nargs: 2,
+                nresults: 1,
+                callbackName: "hs.sqlite3.busyHandler",
+                attributes: ["sqlite.busy.tries": Int(tries)]
+            ) == 0 {
                 retry = lua_toboolean(L, -1)
             }
             lua_settop(L, top)
@@ -1010,6 +1089,9 @@ private let db_trace: lua_CFunction = { L in
     let sdb = checkDB(L, 1)
 
     if lua_gettop(L) < 2 || lua_type(L, 2) == LUA_TNIL {
+        if sqliteCallbackIsActive(sdb.pointee.traceCb) {
+            adjustSQLiteHookCallbackCount(-1, L: L)
+        }
         luaL_unref(L, LUA_REGISTRYINDEX_VALUE, sdb.pointee.traceCb)
         luaL_unref(L, LUA_REGISTRYINDEX_VALUE, sdb.pointee.traceUdata)
         sdb.pointee.traceCb = LUA_NOREF
@@ -1019,11 +1101,15 @@ private let db_trace: lua_CFunction = { L in
         luaL_checktype(L, 2, LUA_TFUNCTION)
         lua_settop(L, 3)
 
+        let wasActive = sqliteCallbackIsActive(sdb.pointee.traceCb)
         luaL_unref(L, LUA_REGISTRYINDEX_VALUE, sdb.pointee.traceCb)
         luaL_unref(L, LUA_REGISTRYINDEX_VALUE, sdb.pointee.traceUdata)
 
         sdb.pointee.traceUdata = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
         sdb.pointee.traceCb = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+        if !wasActive {
+            adjustSQLiteHookCallbackCount(1, L: L)
+        }
 
         sqlite3_trace(sdb.pointee.db, { (user, sql) in
             guard let user = user else { return }
@@ -1034,7 +1120,13 @@ private let db_trace: lua_CFunction = { L in
             lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(sdb.pointee.traceCb))
             lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(sdb.pointee.traceUdata))
             lua_pushstring(L, sql)
-            lua_pcall(L, 2, 0, 0)
+            _ = luaTelemetryPCall(
+                L,
+                nargs: 2,
+                nresults: 0,
+                callbackName: "hs.sqlite3.trace",
+                attributes: ["sqlite.hook": "trace"]
+            )
 
             lua_settop(L, top)
         }, sdb)
@@ -1049,6 +1141,9 @@ private let db_progress_handler: lua_CFunction = { L in
     let sdb = checkDB(L, 1)
 
     if lua_gettop(L) < 2 || lua_type(L, 2) == LUA_TNIL {
+        if sqliteCallbackIsActive(sdb.pointee.progressCb) {
+            adjustSQLiteHookCallbackCount(-1, L: L)
+        }
         luaL_unref(L, LUA_REGISTRYINDEX_VALUE, sdb.pointee.progressCb)
         luaL_unref(L, LUA_REGISTRYINDEX_VALUE, sdb.pointee.progressUdata)
         sdb.pointee.progressCb = LUA_NOREF
@@ -1059,11 +1154,15 @@ private let db_progress_handler: lua_CFunction = { L in
         luaL_checktype(L, 3, LUA_TFUNCTION)
         lua_settop(L, 4)
 
+        let wasActive = sqliteCallbackIsActive(sdb.pointee.progressCb)
         luaL_unref(L, LUA_REGISTRYINDEX_VALUE, sdb.pointee.progressCb)
         luaL_unref(L, LUA_REGISTRYINDEX_VALUE, sdb.pointee.progressUdata)
 
         sdb.pointee.progressUdata = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
         sdb.pointee.progressCb = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+        if !wasActive {
+            adjustSQLiteHookCallbackCount(1, L: L)
+        }
 
         sqlite3_progress_handler(sdb.pointee.db, nop, { user -> Int32 in
             guard let user = user else { return 1 }
@@ -1075,7 +1174,13 @@ private let db_progress_handler: lua_CFunction = { L in
             lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(sdb.pointee.progressCb))
             lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(sdb.pointee.progressUdata))
 
-            if lua_pcall(L, 1, 1, 0) == 0 {
+            if luaTelemetryPCall(
+                L,
+                nargs: 1,
+                nresults: 1,
+                callbackName: "hs.sqlite3.progressHandler",
+                attributes: ["sqlite.hook": "progress"]
+            ) == 0 {
                 result = lua_toboolean(L, -1)
             }
             lua_settop(L, top)
@@ -1092,6 +1197,9 @@ private let db_update_hook: lua_CFunction = { L in
     let sdb = checkDB(L, 1)
 
     if lua_gettop(L) < 2 || lua_type(L, 2) == LUA_TNIL {
+        if sqliteCallbackIsActive(sdb.pointee.updateHookCb) {
+            adjustSQLiteHookCallbackCount(-1, L: L)
+        }
         luaL_unref(L, LUA_REGISTRYINDEX_VALUE, sdb.pointee.updateHookCb)
         luaL_unref(L, LUA_REGISTRYINDEX_VALUE, sdb.pointee.updateHookUdata)
         sdb.pointee.updateHookCb = LUA_NOREF
@@ -1101,11 +1209,15 @@ private let db_update_hook: lua_CFunction = { L in
         luaL_checktype(L, 2, LUA_TFUNCTION)
         lua_settop(L, 3)
 
+        let wasActive = sqliteCallbackIsActive(sdb.pointee.updateHookCb)
         luaL_unref(L, LUA_REGISTRYINDEX_VALUE, sdb.pointee.updateHookCb)
         luaL_unref(L, LUA_REGISTRYINDEX_VALUE, sdb.pointee.updateHookUdata)
 
         sdb.pointee.updateHookUdata = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
         sdb.pointee.updateHookCb = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+        if !wasActive {
+            adjustSQLiteHookCallbackCount(1, L: L)
+        }
 
         sqlite3_update_hook(sdb.pointee.db, { (user, op, dbname, tblname, rowid) in
             guard let user = user else { return }
@@ -1119,7 +1231,16 @@ private let db_update_hook: lua_CFunction = { L in
             lua_pushstring(L, dbname)
             lua_pushstring(L, tblname)
             pushInt64(L, rowid)
-            lua_pcall(L, 5, 0, 0)
+            _ = luaTelemetryPCall(
+                L,
+                nargs: 5,
+                nresults: 0,
+                callbackName: "hs.sqlite3.updateHook",
+                attributes: [
+                    "sqlite.hook": "update",
+                    "sqlite.operation": Int(op),
+                ]
+            )
 
             lua_settop(L, top)
         }, sdb)
@@ -1132,6 +1253,9 @@ private let db_commit_hook: lua_CFunction = { L in
     let sdb = checkDB(L, 1)
 
     if lua_gettop(L) < 2 || lua_type(L, 2) == LUA_TNIL {
+        if sqliteCallbackIsActive(sdb.pointee.commitHookCb) {
+            adjustSQLiteHookCallbackCount(-1, L: L)
+        }
         luaL_unref(L, LUA_REGISTRYINDEX_VALUE, sdb.pointee.commitHookCb)
         luaL_unref(L, LUA_REGISTRYINDEX_VALUE, sdb.pointee.commitHookUdata)
         sdb.pointee.commitHookCb = LUA_NOREF
@@ -1141,11 +1265,15 @@ private let db_commit_hook: lua_CFunction = { L in
         luaL_checktype(L, 2, LUA_TFUNCTION)
         lua_settop(L, 3)
 
+        let wasActive = sqliteCallbackIsActive(sdb.pointee.commitHookCb)
         luaL_unref(L, LUA_REGISTRYINDEX_VALUE, sdb.pointee.commitHookCb)
         luaL_unref(L, LUA_REGISTRYINDEX_VALUE, sdb.pointee.commitHookUdata)
 
         sdb.pointee.commitHookUdata = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
         sdb.pointee.commitHookCb = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+        if !wasActive {
+            adjustSQLiteHookCallbackCount(1, L: L)
+        }
 
         sqlite3_commit_hook(sdb.pointee.db, { user -> Int32 in
             guard let user = user else { return 0 }
@@ -1157,7 +1285,13 @@ private let db_commit_hook: lua_CFunction = { L in
             lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(sdb.pointee.commitHookCb))
             lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(sdb.pointee.commitHookUdata))
 
-            if lua_pcall(L, 1, 1, 0) == 0 {
+            if luaTelemetryPCall(
+                L,
+                nargs: 1,
+                nresults: 1,
+                callbackName: "hs.sqlite3.commitHook",
+                attributes: ["sqlite.hook": "commit"]
+            ) == 0 {
                 rollback = lua_toboolean(L, -1)
             }
             lua_settop(L, top)
@@ -1172,6 +1306,9 @@ private let db_rollback_hook: lua_CFunction = { L in
     let sdb = checkDB(L, 1)
 
     if lua_gettop(L) < 2 || lua_type(L, 2) == LUA_TNIL {
+        if sqliteCallbackIsActive(sdb.pointee.rollbackHookCb) {
+            adjustSQLiteHookCallbackCount(-1, L: L)
+        }
         luaL_unref(L, LUA_REGISTRYINDEX_VALUE, sdb.pointee.rollbackHookCb)
         luaL_unref(L, LUA_REGISTRYINDEX_VALUE, sdb.pointee.rollbackHookUdata)
         sdb.pointee.rollbackHookCb = LUA_NOREF
@@ -1181,11 +1318,15 @@ private let db_rollback_hook: lua_CFunction = { L in
         luaL_checktype(L, 2, LUA_TFUNCTION)
         lua_settop(L, 3)
 
+        let wasActive = sqliteCallbackIsActive(sdb.pointee.rollbackHookCb)
         luaL_unref(L, LUA_REGISTRYINDEX_VALUE, sdb.pointee.rollbackHookCb)
         luaL_unref(L, LUA_REGISTRYINDEX_VALUE, sdb.pointee.rollbackHookUdata)
 
         sdb.pointee.rollbackHookUdata = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
         sdb.pointee.rollbackHookCb = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
+        if !wasActive {
+            adjustSQLiteHookCallbackCount(1, L: L)
+        }
 
         sqlite3_rollback_hook(sdb.pointee.db, { user in
             guard let user = user else { return }
@@ -1195,7 +1336,13 @@ private let db_rollback_hook: lua_CFunction = { L in
 
             lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(sdb.pointee.rollbackHookCb))
             lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(sdb.pointee.rollbackHookUdata))
-            lua_pcall(L, 1, 0, 0)
+            _ = luaTelemetryPCall(
+                L,
+                nargs: 1,
+                nresults: 0,
+                callbackName: "hs.sqlite3.rollbackHook",
+                attributes: ["sqlite.hook": "rollback"]
+            )
 
             lua_settop(L, top)
         }, sdb)
@@ -1249,6 +1396,7 @@ private func dbRegisterFunction(_ L: UnsafeMutablePointer<lua_State>, aggregate:
             lua_pushvalue(L, 5)
             funcPtr.pointee.fnFinalize = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
         }
+        adjustSQLiteFunctionCallbackCount(1, L: L)
     } else {
         funcPtr.deallocate()
     }
@@ -1291,7 +1439,16 @@ private func dbSqlNormalFunction(_ context: OpaquePointer?, _ argc: Int32, _ arg
 
     ctxPtr.pointee.ctx = context
 
-    if lua_pcall(L, argc + 1, 0, 0) != 0 {
+    if luaTelemetryPCall(
+        L,
+        nargs: argc + 1,
+        nresults: 0,
+        callbackName: "hs.sqlite3.sqlFunction",
+        attributes: [
+            "sqlite.argument.count": Int(argc),
+            "sqlite.aggregate": funcPtr.pointee.aggregate,
+        ]
+    ) != 0 {
         let errmsg = lua_tostring(L, -1)
         let errLen: Int = lua_rawlen(L, -1)
         sqlite3_result_error(context, errmsg, Int32(errLen))
@@ -1330,7 +1487,13 @@ private func dbSqlFinalizeFunction(_ context: OpaquePointer?) {
 
     ctxPtr.pointee.ctx = context
 
-    if lua_pcall(L, 1, 0, 0) != 0 {
+    if luaTelemetryPCall(
+        L,
+        nargs: 1,
+        nresults: 0,
+        callbackName: "hs.sqlite3.finalizeFunction",
+        attributes: ["sqlite.aggregate": true]
+    ) != 0 {
         sqlite3_result_error(context, lua_tostring(L, -1), -1)
     }
 
@@ -1545,7 +1708,13 @@ private let db_create_collation: lua_CFunction = { L in
                 lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(co.pointee.ref))
                 lua_pushlstring(L, p1?.assumingMemoryBound(to: CChar.self), Int(l1))
                 lua_pushlstring(L, p2?.assumingMemoryBound(to: CChar.self), Int(l2))
-                if lua_pcall(L, 2, 1, 0) == 0 {
+                if luaTelemetryPCall(
+                    L,
+                    nargs: 2,
+                    nresults: 1,
+                    callbackName: "hs.sqlite3.collation",
+                    attributes: ["sqlite.hook": "collation"]
+                ) == 0 {
                     res = Int32(lua_tonumber(L, -1))
                 }
                 lua_pop(L, 1)

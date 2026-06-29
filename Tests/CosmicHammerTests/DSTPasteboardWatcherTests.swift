@@ -259,6 +259,27 @@ extension CosmicHammerTests {
             }
         }
 
+        @Test func luaPasteboardWatcherActiveGauge() {
+            withPasteboardWatcherLuaState { L, _, _ in
+                let sim = environmentGet(L).telemetry as! SimulatedTelemetry
+                sim.configure(TelemetryConfiguration(enabled: true))
+
+                let ok = luaEval(L, """
+                    _watcher = pbwatcher.new(function(contents) end)
+                    _watcher:start()
+                    _watcher:stop()
+                    _watcher:stop()
+                """)
+                #expect(ok)
+
+                let gaugeValues = sim.metrics
+                    .filter { $0.name == "cosmichammer.pasteboard.watcher.active" }
+                    .map(\.value)
+                #expect(gaugeValues.count == 2)
+                #expect(gaugeValues.last == gaugeValues.first.map { max(0, $0 - 1) })
+            }
+        }
+
         @Test func luaPasteboardWatcherFiresCallbackOnChange() {
             withPasteboardWatcherLuaState { L, harness, pb in
                 let ok = luaEval(L, """

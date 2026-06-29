@@ -64,6 +64,7 @@ network	hs.libnetworkconfiguration=luaopen_hs_libnetworkconfiguration,hs.libnetw
 noises	hs.libnoises=luaopen_hs_libnoises	hs.noises=noises.lua>noises.lua	-
 notify	hs.libnotify=luaopen_hs_libnotify	hs.notify=notify.lua>notify.lua	-
 osascript	hs.libosascript=luaopen_hs_libosascript	hs.osascript=osascript.lua>osascript.lua	-
+opentelemetry	hs.libopentelemetry=luaopen_hs_libopentelemetry	hs.opentelemetry=opentelemetry.lua>opentelemetry.lua	-
 pasteboard	hs.libpasteboard=luaopen_hs_libpasteboard,hs.libpasteboardwatcher=luaopen_hs_libpasteboardwatcher	hs.pasteboard=pasteboard.lua>pasteboard.lua	hs.pasteboard.watcher=hs.libpasteboardwatcher
 pathwatcher	hs.libpathwatcher=luaopen_hs_libpathwatcher	hs.pathwatcher=pathwatcher.lua>pathwatcher.lua	-
 plist	hs.libplist=luaopen_hs_libplist	hs.plist=plist.lua>plist.lua	-

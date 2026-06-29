@@ -2,6 +2,8 @@ import AppKit
 import Foundation
 import CLua
 import Testing
+import HSDSTCore
+import HSDSTSimulator
 @testable import HSSwiftExtensions
 
 extension CosmicHammerTests {
@@ -205,6 +207,44 @@ extension CosmicHammerTests {
             } else {
                 #expect(parts?.count == 6, "Lua result: \(result ?? "nil")")
             }
+        }
+
+        @Test func testIPCSendMessageRecordsTelemetry() {
+            bootstrapLuaForTesting()
+            let L = lua_getCurrentState()!
+            let sim = environmentGet(L).telemetry as! SimulatedTelemetry
+            let initialSpanCount = sim.spans.count
+            let name = "cosmic-hammer-telemetry-test-\(UUID().uuidString)"
+
+            let result = runLua("""
+                hs.opentelemetry.configure({ enabled = true })
+                local ipc = require('hs.libipc')
+                local name = '\(name)'
+                local localPort = ipc.localPort(name, function(port, msgid, data)
+                  return 'ack:' .. tostring(msgid)
+                end)
+                local remotePort = ipc.remotePort(name)
+                local ok, response = remotePort:sendMessage('hello', 42, 2, false)
+                local output = tostring(ok) .. ':' .. tostring(response)
+                localPort:delete()
+                remotePort:delete()
+                return output
+                """)
+
+            #expect(result == "true:ack:42")
+            let newSpans = Array(sim.spans.dropFirst(initialSpanCount))
+            let sendSpan = newSpans.first { $0.name == "hs.ipc.sendMessage" }
+            let callbackSpan = newSpans.first {
+                $0.name == "lua.callback" && $0.attributes["cosmichammer.lua.callback.name"] == "hs.ipc.localPort"
+            }
+            #expect(sendSpan?.attributes["ipc.message_id"] == "42")
+            #expect(sendSpan?.attributes["ipc.port.name"] == name)
+            #expect(sendSpan?.status == .ok)
+            #expect(sendSpan?.ended == true)
+            #expect(callbackSpan?.attributes["ipc.message_id"] == "42")
+            #expect(callbackSpan?.attributes["ipc.port.name"] == name)
+            #expect(callbackSpan?.status == .ok)
+            #expect(callbackSpan?.ended == true)
         }
 
         @Test func testNetworkPingSetterReturnsSameUserdata() {

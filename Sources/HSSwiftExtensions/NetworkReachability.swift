@@ -3,9 +3,22 @@ import CLua
 import Lua
 import CFNetwork
 import SystemConfiguration
+import HSDSTCore
 
 private let USERDATA_TAG = "hs.network.reachability"
 private var reachabilityQueue: DispatchQueue! = nil
+private var activeReachabilityWatcherCount = 0
+
+private func recordActiveReachabilityWatcherGauge(_ L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+    let telemetry = L.map { environmentGet($0).telemetry } ?? environmentGetGlobalOrNil()?.telemetry
+    telemetry?.recordMetric(
+        name: "cosmichammer.network.reachability.watcher.active",
+        kind: .gauge,
+        value: Double(activeReachabilityWatcherCount),
+        attributes: [:],
+        unit: "1"
+    )
+}
 
 // MARK: - Support Functions and Classes
 
@@ -23,14 +36,48 @@ private class HSReachability: NSObject {
     func teardown() {
         guard !tornDown else { return }
         tornDown = true
-        if watcherEnabled, let r = reachabilityObj {
-            SCNetworkReachabilitySetCallback(r, nil, nil)
-            SCNetworkReachabilitySetDispatchQueue(r, nil)
-            watcherEnabled = false
-        }
+        stop(lua_getCurrentState())
         callback = nil
         selfRefValue = nil
         reachabilityObj = nil
+    }
+
+    func start(_ L: UnsafeMutablePointer<lua_State>) throws {
+        guard !watcherEnabled else { return }
+        var context = SCNetworkReachabilityContext(
+            version: 0,
+            info: Unmanaged.passUnretained(self).toOpaque(),
+            retain: nil,
+            release: nil,
+            copyDescription: nil
+        )
+        guard let r = reachabilityObj else {
+            throw LuaCallError("reachability object is invalid")
+        }
+        if SCNetworkReachabilitySetCallback(r, doReachabilityCallback, &context) {
+            if SCNetworkReachabilitySetDispatchQueue(r, reachabilityQueue) {
+                watcherEnabled = true
+                activeReachabilityWatcherCount += 1
+                recordActiveReachabilityWatcherGauge(L)
+            } else {
+                SCNetworkReachabilitySetCallback(r, nil, nil)
+                throw LuaCallError("unable to set watcher dispatch queue:\(String(cString: SCErrorString(SCError())))")
+            }
+        } else {
+            throw LuaCallError("unable to set watcher callback:\(String(cString: SCErrorString(SCError())))")
+        }
+    }
+
+    func stop(_ L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+        guard watcherEnabled else { return }
+        if let r = reachabilityObj {
+            SCNetworkReachabilitySetCallback(r, nil, nil)
+            SCNetworkReachabilitySetDispatchQueue(r, nil)
+        }
+        watcherEnabled = false
+        selfRefValue = nil
+        activeReachabilityWatcherCount = max(0, activeReachabilityWatcherCount - 1)
+        recordActiveReachabilityWatcherGauge(L)
     }
 }
 
@@ -44,7 +91,13 @@ private let doReachabilityCallback: SCNetworkReachabilityCallBack = { target, fl
         cb.push(onto: L)
         L.push(userdata: obj)
         L.push(lua_Integer(flags.rawValue))
-        if lua_pcall(L, 2, 0, 0) != LUA_OK {
+        if luaTelemetryPCall(
+            L,
+            nargs: 2,
+            nresults: 0,
+            callbackName: "hs.network.reachability",
+            attributes: ["network.reachability.flags": flags.rawValue]
+        ) != LUA_OK {
             lua_pop(L, 1)
         }
     }
@@ -311,28 +364,7 @@ public func luaopen_hs_libnetworkreachability(_ L: UnsafeMutablePointer<lua_Stat
                 ///  * The callback function should be specified with [hs.network.reachability:setCallback](#setCallback).
                 "start": .closure { L in
                     let obj: HSReachability = try L.checkArgument(1)
-                    if !obj.watcherEnabled {
-                        var context = SCNetworkReachabilityContext(
-                            version: 0,
-                            info: Unmanaged.passUnretained(obj).toOpaque(),
-                            retain: nil,
-                            release: nil,
-                            copyDescription: nil
-                        )
-                        guard let r = obj.reachabilityObj else {
-                            throw LuaCallError("reachability object is invalid")
-                        }
-                        if SCNetworkReachabilitySetCallback(r, doReachabilityCallback, &context) {
-                            if SCNetworkReachabilitySetDispatchQueue(r, reachabilityQueue) {
-                                obj.watcherEnabled = true
-                            } else {
-                                SCNetworkReachabilitySetCallback(r, nil, nil)
-                                throw LuaCallError("unable to set watcher dispatch queue:\(String(cString: SCErrorString(SCError())))")
-                            }
-                        } else {
-                            throw LuaCallError("unable to set watcher callback:\(String(cString: SCErrorString(SCError())))")
-                        }
-                    }
+                    try obj.start(L)
                     lua_pushvalue(L, 1)
                     return 1
                 },
@@ -347,13 +379,7 @@ public func luaopen_hs_libnetworkreachability(_ L: UnsafeMutablePointer<lua_Stat
                 ///  * the reachability object
                 "stop": .closure { L in
                     let obj: HSReachability = try L.checkArgument(1)
-                    if let r = obj.reachabilityObj {
-                        SCNetworkReachabilitySetCallback(r, nil, nil)
-                        SCNetworkReachabilitySetDispatchQueue(r, nil)
-                    }
-                    obj.watcherEnabled = false
-                    // Release self-reference so the object can be GC'd when stopped
-                    obj.selfRefValue = nil
+                    obj.stop(L)
                     lua_pushvalue(L, 1)
                     return 1
                 },

@@ -756,6 +756,159 @@ extension CosmicHammerTests {
             #expect(error != nil)
         }
 
+        // MARK: - Telemetry
+
+        @Test func telemetryFlushFailureReportsStatus() {
+            var faults = FaultConfig()
+            faults.telemetryFlushFailProbability = 1.0
+            let harness = SimulatorHarness(seed: 42)
+            let env = harness.createEnvironment(faults: faults)
+            let telemetry = env.telemetry as! SimulatedTelemetry
+
+            telemetry.configure(TelemetryConfiguration(enabled: true))
+            #expect(!telemetry.flush(timeout: 1))
+
+            let status = telemetry.status()
+            #expect(status.lastFlushResult == "failure")
+            #expect(status.lastExporterFailureKind == "flush_failed")
+            #expect(status.flushFailureCount == 1)
+            #expect(status.exporterFailureCount == 1)
+            #expect(status.lastExportError?.contains("simulated") == true)
+        }
+
+        @Test func telemetryShutdownFailureReportsStatus() {
+            var faults = FaultConfig()
+            faults.telemetryShutdownFailProbability = 1.0
+            let harness = SimulatorHarness(seed: 42)
+            let env = harness.createEnvironment(faults: faults)
+            let telemetry = env.telemetry as! SimulatedTelemetry
+
+            telemetry.configure(TelemetryConfiguration(enabled: true))
+            #expect(!telemetry.shutdown(timeout: 1))
+
+            let status = telemetry.status()
+            #expect(status.shutdownCount == 1)
+            #expect(status.lastShutdownResult == "failure")
+            #expect(status.lastExporterFailureKind == "shutdown_failed")
+            #expect(status.shutdownFailureCount == 1)
+            #expect(status.exporterFailureCount == 1)
+            #expect(status.lastShutdownDuration != nil)
+        }
+
+        @Test func telemetryFailedShutdownClearsLocalActiveContext() throws {
+            var faults = FaultConfig()
+            faults.telemetryShutdownFailProbability = 1.0
+            let harness = SimulatorHarness(seed: 42)
+            let env = harness.createEnvironment(faults: faults)
+            let telemetry = env.telemetry as! SimulatedTelemetry
+
+            telemetry.configure(TelemetryConfiguration(enabled: true))
+            _ = try #require(telemetry.startSpan(
+                name: "active-before-failed-shutdown",
+                kind: .internalSpan,
+                attributes: [:],
+                startTime: nil
+            ))
+
+            #expect(!telemetry.shutdown(timeout: 1))
+            #expect(telemetry.status().activeSpanID == nil)
+
+            let afterShutdown = try #require(telemetry.startSpan(
+                name: "after-failed-shutdown",
+                kind: .internalSpan,
+                attributes: [:],
+                startTime: nil
+            ))
+            telemetry.endSpan(id: afterShutdown, status: .ok, attributes: [:], endTime: nil)
+
+            #expect(telemetry.spans.first { $0.name == "after-failed-shutdown" }?.parentSpanID == nil)
+        }
+
+        @Test func telemetryConfigurePreservesFailureCountsAndClearsLastResults() {
+            var faults = FaultConfig()
+            faults.telemetryShutdownFailProbability = 1.0
+            let harness = SimulatorHarness(seed: 42)
+            let env = harness.createEnvironment(faults: faults)
+            let telemetry = env.telemetry as! SimulatedTelemetry
+
+            telemetry.configure(TelemetryConfiguration(enabled: true))
+            #expect(!telemetry.shutdown(timeout: 1))
+
+            let beforeReconfigure = telemetry.status()
+            #expect(beforeReconfigure.exporterFailureCount == 1)
+            #expect(beforeReconfigure.shutdownFailureCount == 1)
+            #expect(beforeReconfigure.lastFlushResult == "success")
+            #expect(beforeReconfigure.lastShutdownResult == "failure")
+
+            telemetry.configure(TelemetryConfiguration(enabled: true, serviceName: "reconfigured"))
+
+            let afterReconfigure = telemetry.status()
+            #expect(afterReconfigure.serviceName == "reconfigured")
+            #expect(afterReconfigure.exporterFailureCount == 1)
+            #expect(afterReconfigure.shutdownFailureCount == 1)
+            #expect(afterReconfigure.lastExportError == nil)
+            #expect(afterReconfigure.lastExporterFailureKind == nil)
+            #expect(afterReconfigure.lastFlushDuration == nil)
+            #expect(afterReconfigure.lastFlushResult == nil)
+            #expect(afterReconfigure.lastShutdownDuration == nil)
+            #expect(afterReconfigure.lastShutdownResult == nil)
+        }
+
+        @Test func telemetryUnavailableCollectorAndTimeoutReportFailureKinds() {
+            var unavailableFaults = FaultConfig()
+            unavailableFaults.telemetryCollectorUnavailable = true
+            let unavailableHarness = SimulatorHarness(seed: 42)
+            let unavailableTelemetry = unavailableHarness.createEnvironment(faults: unavailableFaults).telemetry as! SimulatedTelemetry
+            unavailableTelemetry.configure(TelemetryConfiguration(enabled: true, exporter: "otlp", endpoint: "http://localhost:4318"))
+
+            #expect(!unavailableTelemetry.flush(timeout: 1))
+            #expect(unavailableTelemetry.status().lastExporterFailureKind == "collector_unavailable")
+
+            var timeoutFaults = FaultConfig()
+            timeoutFaults.telemetryExportTimeoutProbability = 1.0
+            let timeoutHarness = SimulatorHarness(seed: 43)
+            let timeoutTelemetry = timeoutHarness.createEnvironment(faults: timeoutFaults).telemetry as! SimulatedTelemetry
+            timeoutTelemetry.configure(TelemetryConfiguration(enabled: true, exporter: "otlp", endpoint: "http://localhost:4318"))
+
+            #expect(!timeoutTelemetry.flush(timeout: 1))
+            #expect(timeoutTelemetry.status().lastExporterFailureKind == "timeout")
+        }
+
+        @Test func telemetryMalformedEndpointReportsConfigurationDiagnostic() {
+            let telemetry = SimulatedTelemetry()
+
+            telemetry.configure(TelemetryConfiguration(
+                enabled: true,
+                exporter: "otlp",
+                endpoint: "http://[::1"
+            ))
+
+            let status = telemetry.status()
+            #expect(status.lastExporterFailureKind == "invalid_endpoint")
+            #expect(status.exporterFailureCount == 1)
+            #expect(status.lastExportError?.contains("Invalid OTLP endpoint") == true)
+        }
+
+        @Test func telemetryBackpressureDropsBoundedRecords() {
+            var faults = FaultConfig()
+            faults.telemetryQueueCapacity = 1
+            let harness = SimulatorHarness(seed: 42)
+            let env = harness.createEnvironment(faults: faults)
+            let telemetry = env.telemetry as! SimulatedTelemetry
+
+            telemetry.configure(TelemetryConfiguration(enabled: true))
+            telemetry.recordLog(level: "info", message: "queued", attributes: [:], timestamp: nil)
+            telemetry.recordLog(level: "info", message: "dropped", attributes: [:], timestamp: nil)
+
+            let status = telemetry.status()
+            #expect(status.logRecords == 1)
+            #expect(status.droppedRecords == 1)
+            #expect(status.backpressureDroppedRecords == 1)
+            #expect(status.exporterFailureCount == 0)
+            #expect(status.lastExporterFailureKind == nil)
+            #expect(status.exporterQueueCapacity == 1)
+        }
+
         @Test func tcpConnectionSucceeds() {
             let harness = SimulatorHarness(seed: 42)
             let env = harness.createEnvironment()

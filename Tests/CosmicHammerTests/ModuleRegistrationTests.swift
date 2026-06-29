@@ -44,6 +44,9 @@ private func luaopen_hs_libmarkdown(_ L: UnsafeMutablePointer<lua_State>?) -> In
 @_silgen_name("luaopen_hs_libosascript")
 private func luaopen_hs_libosascript(_ L: UnsafeMutablePointer<lua_State>?) -> Int32
 
+@_silgen_name("luaopen_hs_libopentelemetry")
+private func luaopen_hs_libopentelemetry(_ L: UnsafeMutablePointer<lua_State>?) -> Int32
+
 @_silgen_name("luaopen_hs_libhost")
 private func luaopen_hs_libhost(_ L: UnsafeMutablePointer<lua_State>?) -> Int32
 
@@ -118,6 +121,10 @@ extension CosmicHammerTests {
 
         @Test func testOsascriptRegistration() {
             assertRegisters(luaopen_hs_libosascript, name: "hs.osascript")
+        }
+
+        @Test func testOpenTelemetryRegistration() {
+            assertRegisters(luaopen_hs_libopentelemetry, name: "hs.opentelemetry")
         }
 
         @Test func testHostRegistration() {

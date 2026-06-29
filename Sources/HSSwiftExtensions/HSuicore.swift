@@ -12,6 +12,24 @@ import Lua
 import Darwin
 import os.log
 
+private var activeUielementWatcherCount = 0
+
+private func recordActiveUielementWatcherGauge(_ L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+    let telemetry = L.map { environmentGet($0).telemetry } ?? environmentGetGlobalOrNil()?.telemetry
+    telemetry?.recordMetric(
+        name: "cosmichammer.uielement.watcher.active",
+        kind: .gauge,
+        value: Double(activeUielementWatcherCount),
+        attributes: [:],
+        unit: "1"
+    )
+}
+
+func adjustUielementWatcherCount(_ delta: Int, L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+    activeUielementWatcherCount = max(0, activeUielementWatcherCount + delta)
+    recordActiveUielementWatcherGauge(L)
+}
+
 // MARK: - Private C API declarations
 
 @_silgen_name("_AXUIElementGetWindow")
@@ -265,7 +283,13 @@ private let watcherCallback: AXObserverCallback = { _, element, notificationName
         lua_pushnil(L)
     }
 
-    if lua_pcall(L, 4, 0, 0) != LUA_OK {
+    if luaTelemetryPCall(
+        L,
+        nargs: 4,
+        nresults: 0,
+        callbackName: "hs.uielement.watcher",
+        attributes: ["uielement.notification": notificationName]
+    ) != LUA_OK {
         if let errorMsg = lua_tostring(L, -1) {
             os_log(.error, "%{public}s", String(cString: errorMsg))
         }
@@ -301,6 +325,7 @@ private let watcherCallback: AXObserverCallback = { _, element, notificationName
     var handlerCallback: LuaValue?
     var userDataValue: LuaValue?
     var watcherSelfRef: LuaValue?
+    var countedActive = false
     private var tornDown = false
 
     init(element: HSuielement, handlerCallback: LuaValue, userDataValue: LuaValue?) {
@@ -315,6 +340,12 @@ private let watcherCallback: AXObserverCallback = { _, element, notificationName
         self.handlerCallback = handlerCallback
         self.userDataValue = userDataValue
         AXUIElementGetPid(_elementRef, &pid)
+    }
+
+    func setCountedActive(_ active: Bool, L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+        guard countedActive != active else { return }
+        countedActive = active
+        adjustUielementWatcherCount(active ? 1 : -1, L: L)
     }
 
     func teardown() {
@@ -344,6 +375,7 @@ private let watcherCallback: AXObserverCallback = { _, element, notificationName
 
         _observer = obs
         running = true
+        setCountedActive(true, L: L)
 
         CFRunLoopAddSource(RunLoop.current.getCFRunLoop(),
                            AXObserverGetRunLoopSource(obs),
@@ -356,6 +388,7 @@ private let watcherCallback: AXObserverCallback = { _, element, notificationName
                               AXObserverGetRunLoopSource(obs),
                               CFRunLoopMode.defaultMode)
         running = false
+        setCountedActive(false)
     }
 }
 

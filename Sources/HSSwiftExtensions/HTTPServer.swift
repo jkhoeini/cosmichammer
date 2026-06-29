@@ -2,10 +2,23 @@ import Cocoa
 import CLua
 import Lua
 import os.log
+import HSDSTCore
 
 // MARK: - Constants
 
 private let USERDATA_TAG = "hs.httpserver"
+private var activeHTTPServerCount = 0
+
+private func recordActiveHTTPServerGauge(_ L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+    let telemetry = L.map { environmentGet($0).telemetry } ?? environmentGetGlobalOrNil()?.telemetry
+    telemetry?.recordMetric(
+        name: "cosmichammer.httpserver.active",
+        kind: .gauge,
+        value: Double(activeHTTPServerCount),
+        attributes: [:],
+        unit: "1"
+    )
+}
 
 // MARK: - HSHTTPServer — wraps NWHTTPServer for Lua
 
@@ -43,15 +56,16 @@ private class HSHTTPServer {
     /// Idempotent teardown: stop the server, drop Lua callback references,
     /// mark as torn down.  Called from the explicit __gc closure while the
     /// lua_State is still alive.
-    func teardown() {
+    func teardown(_ L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
         guard !tornDown else { return }
         tornDown = true
-        stop()
+        stop(L)
         fn = nil
         wsCallback = nil
     }
 
-    func start() throws {
+    func start(_ L: UnsafeMutablePointer<lua_State>) throws {
+        guard !nwServer.isRunning else { return }
         generation = lua_currentStateGeneration()
 
         // Wire up the request handler from the Lua callback
@@ -65,8 +79,8 @@ private class HSHTTPServer {
         // Wire up WebSocket if configured
         if let wsPath = wsPath {
             let ws = NWWebSocketServer(path: wsPath)
-            ws.onMessage = { [weak self] message in
-                self?.handleWebSocketMessage(message)
+            ws.onMessage = { [weak self] message, headers in
+                self?.handleWebSocketMessage(message, headers: headers)
             }
             ws.onOpen = {
                 os_log(.info, "Opened websocket connection")
@@ -79,11 +93,16 @@ private class HSHTTPServer {
         }
 
         try nwServer.start()
+        activeHTTPServerCount += 1
+        recordActiveHTTPServerGauge(L)
     }
 
-    func stop() {
+    func stop(_ L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+        guard nwServer.isRunning else { return }
         nwServer.stop()
         wsServer?.close()
+        activeHTTPServerCount = max(0, activeHTTPServerCount - 1)
+        recordActiveHTTPServerGauge(L)
     }
 
     func listeningPort() -> UInt16 {
@@ -115,6 +134,26 @@ private class HSHTTPServer {
         // Setting a name enables Bonjour advertisement.
     }
 
+    private var urlScheme: String {
+        useSSL ? "https" : "http"
+    }
+
+    private func requestNetworkAttributes(path: String, headers: [String: String]) -> [String: Any] {
+        var attributes: [String: Any] = [
+            TelemetrySemanticConventions.Attribute.URL.path: path,
+            TelemetrySemanticConventions.Attribute.URL.scheme: urlScheme,
+            TelemetrySemanticConventions.Attribute.Server.address: headers["X-Server-Addr"] ?? "",
+            TelemetrySemanticConventions.Attribute.Client.address: headers["X-Remote-Addr"] ?? "",
+        ]
+        if let serverPort = Int(headers["X-Server-Port"] ?? "") {
+            attributes[TelemetrySemanticConventions.Attribute.Server.port] = serverPort
+        }
+        if let clientPort = Int(headers["X-Remote-Port"] ?? "") {
+            attributes[TelemetrySemanticConventions.Attribute.Client.port] = clientPort
+        }
+        return attributes
+    }
+
     // MARK: - Request Handling (Lua callback bridge)
 
     private func handleRequest(
@@ -126,12 +165,23 @@ private class HSHTTPServer {
         var responseCode: Int = 503
         var responseHeaders: [String: String] = [:]
         var responseBody = Data("An error occurred during hs.httpserver callback handling".utf8)
+        var responseErrorType: String?
 
         let responseCallbackBlock = { [self] in
             guard lua_isStateGenerationValid(self.generation) else { return }
             guard let cb = self.fn else { return }
 
             let L = lua_getCurrentState()!
+            let telemetry = environmentGet(L).telemetry
+            telemetry.extract(from: headers)
+            let spanID = telemetry.startSpan(
+                name: "HTTP \(method)",
+                kind: .server,
+                attributes: requestNetworkAttributes(path: path, headers: headers).merging([
+                    TelemetrySemanticConventions.Attribute.HTTP.requestMethod: method,
+                ]) { _, new in new },
+                startTime: nil
+            )
 
             cb.push(onto: L)
             L.push(method)
@@ -142,16 +192,18 @@ private class HSHTTPServer {
                 lua_pushlstring(L, rawBuf.baseAddress?.assumingMemoryBound(to: CChar.self), rawBuf.count)
             }
 
-            if lua_pcall(L, 4, 3, 0) != LUA_OK {
+            if luaTelemetryPCall(L, nargs: 4, nresults: 3, callbackName: "hs.httpserver.request") != LUA_OK {
                 let errorMsg = lua_tostring(L, -1).map { String(cString: $0) } ?? "unknown error"
                 os_log(.error, "hs.httpserver:setCallback() callback error: %{public}s", errorMsg)
                 responseCode = 503
+                responseErrorType = "lua.callback"
                 responseBody = Data("An error occurred during hs.httpserver callback handling".utf8)
                 lua_pop(L, 1)
             } else {
                 if !(lua_type(L, -3) == LUA_TSTRING && lua_type(L, -2) == LUA_TNUMBER && lua_type(L, -1) == LUA_TTABLE) {
                     os_log(.error, "hs.httpserver:setCallback() callbacks must return three values. A string for the response body, an integer response code, and a table of headers")
                     responseCode = 503
+                    responseErrorType = "lua.callback.invalid_return"
                     responseBody = Data("Callback handler returned invalid values".utf8)
                 } else {
                     // Get response body as raw bytes
@@ -181,6 +233,22 @@ private class HSHTTPServer {
                 }
                 lua_pop(L, 3)
             }
+
+            if let spanID {
+                let status: TelemetrySpanStatus = (200..<400).contains(responseCode) ? .ok : .error("HTTP \(responseCode)")
+                var attributes: [String: Any] = [
+                    TelemetrySemanticConventions.Attribute.HTTP.responseStatusCode: responseCode,
+                ]
+                if let responseErrorType {
+                    attributes[TelemetrySemanticConventions.Attribute.Error.type] = responseErrorType
+                }
+                telemetry.endSpan(
+                    id: spanID,
+                    status: status,
+                    attributes: attributes,
+                    endTime: nil
+                )
+            }
         }
 
         if Thread.isMainThread {
@@ -194,7 +262,7 @@ private class HSHTTPServer {
 
     // MARK: - WebSocket Message Handling (Lua callback bridge)
 
-    private func handleWebSocketMessage(_ message: String) {
+    private func handleWebSocketMessage(_ message: String, headers: [String: String]) {
         var response: String? = nil
 
         let responseCallbackBlock = { [self] in
@@ -202,21 +270,41 @@ private class HSHTTPServer {
             guard let cb = self.wsCallback else { return }
 
             let L = lua_getCurrentState()!
+            let telemetry = environmentGet(L).telemetry
+            telemetry.extract(from: headers)
+            let spanID = telemetry.startSpan(
+                name: "WEBSOCKET MESSAGE",
+                kind: .server,
+                attributes: requestNetworkAttributes(path: self.wsPath ?? "", headers: headers).merging([
+                    TelemetrySemanticConventions.Attribute.WebSocket.messageLength: message.count,
+                ]) { _, new in new },
+                startTime: nil
+            )
             cb.push(onto: L)
             L.push(message)
 
-            if lua_pcall(L, 1, 1, 0) != LUA_OK {
+            var spanStatus = TelemetrySpanStatus.ok
+            if luaTelemetryPCall(L, nargs: 1, nresults: 1, callbackName: "hs.httpserver.websocket") != LUA_OK {
                 let errorMsg = lua_tostring(L, -1).map { String(cString: $0) } ?? "unknown error"
                 os_log(.error, "hs.httpserver:websocket callback error: %{public}s", errorMsg)
+                spanStatus = .error(errorMsg)
                 lua_pop(L, 1)
-                return
             } else {
                 if lua_type(L, -1) == LUA_TSTRING {
                     response = String(cString: lua_tostring(L, -1)!)
                 }
+                lua_pop(L, 1)
             }
 
-            lua_pop(L, 1)
+            if let spanID {
+                let attributes: [String: Any]
+                if case .error = spanStatus {
+                    attributes = [TelemetrySemanticConventions.Attribute.Error.type: "lua.callback"]
+                } else {
+                    attributes = [:]
+                }
+                telemetry.endSpan(id: spanID, status: spanStatus, attributes: attributes, endTime: nil)
+            }
         }
 
         if Thread.isMainThread {
@@ -277,7 +365,7 @@ public func luaopen_hs_libhttpserver(_ L: UnsafeMutablePointer<lua_State>!) -> I
                     os_log(.error, "hs.httpserver:start() called with no callback set. You must call hs.httpserver:setCallback() or hs.httpserver:websocket() first.")
                 } else {
                     do {
-                        try server.start()
+                        try server.start(L)
                     } catch {
                         os_log(.error, "hs.httpserver:start() Unable to start object: %{public}s", "\(error)")
                     }
@@ -287,7 +375,7 @@ public func luaopen_hs_libhttpserver(_ L: UnsafeMutablePointer<lua_State>!) -> I
             "stop": .closure { L in
                 let server: HSHTTPServer = try L.checkArgument(1)
                 lua_settop(L, 1)
-                server.stop()
+                server.stop(L)
                 return 1
             },
             "getPort": .closure { L in
@@ -409,7 +497,7 @@ public func luaopen_hs_libhttpserver(_ L: UnsafeMutablePointer<lua_State>!) -> I
     // Replace __gc with our explicit teardown + deinitialize
     lua_pushcclosure(L, { (L: LuaState!) -> CInt in
         if let server: HSHTTPServer = L.touserdata(1) {
-            server.teardown()
+            server.teardown(L)
         }
         let rawptr = lua_touserdata(L, 1)!
         let anyPtr = rawptr.assumingMemoryBound(to: Any.self)

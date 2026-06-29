@@ -34,7 +34,13 @@ private func udpConnectCallback(_ asyncUdpSocket: HSAsyncUdpSocket) {
             let L = lua_getCurrentState()!
             cb.push(onto: L)
             asyncUdpSocket.connectCallback = nil  // single-use
-            if lua_pcall(L, 0, 0, 0) != LUA_OK { lua_pop(L, 1) }
+            if luaTelemetryPCall(
+                L,
+                nargs: 0,
+                nresults: 0,
+                callbackName: "hs.socket.udp",
+                attributes: ["socket.event": "connect"]
+            ) != LUA_OK { lua_pop(L, 1) }
         }
     }
 }
@@ -47,7 +53,16 @@ private func udpWriteCallback(_ asyncUdpSocket: HSAsyncUdpSocket, tag: Int) {
             cb.push(onto: L)
             L.push(lua_Integer(tag))
             asyncUdpSocket.writeCallback = nil  // single-use
-            if lua_pcall(L, 1, 0, 0) != LUA_OK { lua_pop(L, 1) }
+            if luaTelemetryPCall(
+                L,
+                nargs: 1,
+                nresults: 0,
+                callbackName: "hs.socket.udp",
+                attributes: [
+                    "socket.event": "write",
+                    "socket.tag": tag,
+                ]
+            ) != LUA_OK { lua_pop(L, 1) }
         }
     }
 }
@@ -60,7 +75,17 @@ private func udpReadCallback(_ asyncUdpSocket: HSAsyncUdpSocket, data: Data, add
             cb.push(onto: L)
             lua_pushdata(L, data)
             lua_pushdata(L, address)
-            if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
+            if luaTelemetryPCall(
+                L,
+                nargs: 2,
+                nresults: 0,
+                callbackName: "hs.socket.udp",
+                attributes: [
+                    "socket.event": "read",
+                    "network.io.bytes": data.count,
+                    "network.peer.address.bytes": address.count,
+                ]
+            ) != LUA_OK { lua_pop(L, 1) }
         }
     }
 }
@@ -74,7 +99,16 @@ private func simScheduleUdpConnectCallback(_ asyncUdpSocket: HSAsyncUdpSocket) {
             let L = lua_getCurrentState()!
             cb.push(onto: L)
             asyncUdpSocket.connectCallback = nil
-            if lua_pcall(L, 0, 0, 0) != LUA_OK { lua_pop(L, 1) }
+            if luaTelemetryPCall(
+                L,
+                nargs: 0,
+                nresults: 0,
+                callbackName: "hs.socket.udp",
+                attributes: [
+                    "socket.event": "connect",
+                    "socket.simulated": true,
+                ]
+            ) != LUA_OK { lua_pop(L, 1) }
         }
     }
 }
@@ -87,7 +121,17 @@ private func simScheduleUdpWriteCallback(_ asyncUdpSocket: HSAsyncUdpSocket, tag
             cb.push(onto: L)
             L.push(lua_Integer(tag))
             asyncUdpSocket.writeCallback = nil
-            if lua_pcall(L, 1, 0, 0) != LUA_OK { lua_pop(L, 1) }
+            if luaTelemetryPCall(
+                L,
+                nargs: 1,
+                nresults: 0,
+                callbackName: "hs.socket.udp",
+                attributes: [
+                    "socket.event": "write",
+                    "socket.tag": tag,
+                    "socket.simulated": true,
+                ]
+            ) != LUA_OK { lua_pop(L, 1) }
         }
     }
 }
@@ -100,7 +144,18 @@ private func simScheduleUdpReadCallback(_ asyncUdpSocket: HSAsyncUdpSocket, data
             cb.push(onto: L)
             lua_pushdata(L, data)
             lua_pushdata(L, address)
-            if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
+            if luaTelemetryPCall(
+                L,
+                nargs: 2,
+                nresults: 0,
+                callbackName: "hs.socket.udp",
+                attributes: [
+                    "socket.event": "read",
+                    "network.io.bytes": data.count,
+                    "network.peer.address.bytes": address.count,
+                    "socket.simulated": true,
+                ]
+            ) != LUA_OK { lua_pop(L, 1) }
         }
     }
 }

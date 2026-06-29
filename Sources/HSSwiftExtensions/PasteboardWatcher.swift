@@ -9,9 +9,21 @@ import HSDSTCore
 /// macOS doesn't offer any API for getting Pasteboard notifications, so this extension uses polling to check for Pasteboard changes at a chosen interval (defaults to 0.25).
 
 private let USERDATA_TAG = "hs.pasteboard.watcher"
+private var activePasteboardWatcherCount = 0
 
 // How often we should poll the Pasteboard for changes:
 private var pollingInterval: Double = 0.25
+
+private func recordActivePasteboardWatcherGauge(_ L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+    let telemetry = L.map { environmentGet($0).telemetry } ?? environmentGetGlobalOrNil()?.telemetry
+    telemetry?.recordMetric(
+        name: "cosmichammer.pasteboard.watcher.active",
+        kind: .gauge,
+        value: Double(activePasteboardWatcherCount),
+        attributes: [:],
+        unit: "1"
+    )
+}
 
 class HSPasteboardTimer: NSObject, LuaTeardownable {
     var pbName: String?
@@ -25,10 +37,14 @@ class HSPasteboardTimer: NSObject, LuaTeardownable {
     var clock: (any ClockProtocol)?
 
     func teardown() {
+        teardown(lua_getCurrentState())
+    }
+
+    private func teardown(_ L: UnsafeMutablePointer<lua_State>?) {
         guard !tornDown else { return }
         tornDown = true
         if isRunning {
-            stop()
+            stop(L)
         }
         callback = nil
         timerHandle = nil
@@ -75,13 +91,19 @@ class HSPasteboardTimer: NSObject, LuaTeardownable {
                 lua_pushnil(L)
             }
 
-            if lua_pcall(L, 1, 0, 0) != LUA_OK {
+            if luaTelemetryPCall(
+                L,
+                nargs: 1,
+                nresults: 0,
+                callbackName: "hs.pasteboard.watcher",
+                attributes: ["pasteboard.name": pbName ?? "general"]
+            ) != LUA_OK {
                 lua_pop(L, 1)
             }
         }
     }
 
-    func start() {
+    func start(_ L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
         // Abort if the watcher is already running:
         if isRunning {
             return
@@ -104,15 +126,21 @@ class HSPasteboardTimer: NSObject, LuaTeardownable {
 
         // The watcher is now running:
         isRunning = true
+        activePasteboardWatcherCount += 1
+        recordActivePasteboardWatcherGauge(L)
     }
 
-    func stop() {
+    func stop(_ L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+        guard isRunning else { return }
+
         // Invalidate the timer:
         timerHandle?.invalidate()
         timerHandle = nil
 
         // Watcher is no longer running:
         isRunning = false
+        activePasteboardWatcherCount = max(0, activePasteboardWatcherCount - 1)
+        recordActivePasteboardWatcherGauge(L)
     }
 
     // Helper for named pasteboards (not covered by the protocol):
@@ -132,13 +160,13 @@ public func luaopen_hs_libpasteboardwatcher(_ L: UnsafeMutablePointer<lua_State>
                 "start": .closure { L in
                     let timer: HSPasteboardTimer = try L.checkArgument(1)
                     lua_settop(L, 1)
-                    timer.start()
+                    timer.start(L)
                     return 1
                 },
                 "stop": .closure { L in
                     let timer: HSPasteboardTimer = try L.checkArgument(1)
                     lua_settop(L, 1)
-                    timer.stop()
+                    timer.stop(L)
                     return 1
                 },
                 "running": .closure { L in
@@ -174,7 +202,7 @@ public func luaopen_hs_libpasteboardwatcher(_ L: UnsafeMutablePointer<lua_State>
             timer.clock = env.clock
 
             // Start the timer:
-            timer.start()
+            timer.start(L)
 
             L.push(userdata: timer)
             return 1

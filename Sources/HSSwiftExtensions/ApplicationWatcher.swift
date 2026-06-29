@@ -6,6 +6,18 @@ import HSDSTCore
 // MARK: - Module constants
 
 private let USERDATA_TAG = "hs.application.watcher"
+private var activeApplicationWatcherCount = 0
+
+private func recordActiveApplicationWatcherGauge(_ L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+    let telemetry = L.map { environmentGet($0).telemetry } ?? environmentGetGlobalOrNil()?.telemetry
+    telemetry?.recordMetric(
+        name: "cosmichammer.application.watcher.active",
+        kind: .gauge,
+        value: Double(activeApplicationWatcherCount),
+        attributes: [:],
+        unit: "1"
+    )
+}
 
 // Event type enum matching the ObjC original
 private enum AppWatcherEvent: Int {
@@ -32,8 +44,7 @@ private class AppWatcher: NSObject, LuaTeardownable {
         guard !tornDown else { return }
         tornDown = true
         if running {
-            running = false
-            unregisterObservers()
+            stop(lua_getCurrentState())
         }
         callbackRef = nil
     }
@@ -75,7 +86,16 @@ private class AppWatcher: NSObject, LuaTeardownable {
             lua_pushnil(L)
         }
 
-        if lua_pcall(L, 3, 0, 0) != LUA_OK {
+        if luaTelemetryPCall(
+            L,
+            nargs: 3,
+            nresults: 0,
+            callbackName: "hs.application.watcher",
+            attributes: [
+                "application.event": event.rawValue,
+                "application.bundle_id": app.bundleIdentifier ?? "",
+            ]
+        ) != LUA_OK {
             lua_pop(L, 1)
         }
     }
@@ -108,6 +128,22 @@ private class AppWatcher: NSObject, LuaTeardownable {
         }
         observerTokens.removeAll()
     }
+
+    func start(_ L: UnsafeMutablePointer<lua_State>) {
+        guard !running else { return }
+        running = true
+        registerObservers(L)
+        activeApplicationWatcherCount += 1
+        recordActiveApplicationWatcherGauge(L)
+    }
+
+    func stop(_ L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+        guard running else { return }
+        running = false
+        unregisterObservers()
+        activeApplicationWatcherCount = max(0, activeApplicationWatcherCount - 1)
+        recordActiveApplicationWatcherGauge(L)
+    }
 }
 
 // MARK: - Event enum registration
@@ -138,19 +174,13 @@ public func luaopen_hs_libapplicationwatcher(_ L: UnsafeMutablePointer<lua_State
                 "start": .closure { L in
                     let watcher: AppWatcher = try L.checkArgument(1)
                     lua_settop(L, 1)
-                    if !watcher.running {
-                        watcher.running = true
-                        watcher.registerObservers(L)
-                    }
+                    watcher.start(L)
                     return 1
                 },
                 "stop": .closure { L in
                     let watcher: AppWatcher = try L.checkArgument(1)
                     lua_settop(L, 1)
-                    if watcher.running {
-                        watcher.running = false
-                        watcher.unregisterObservers()
-                    }
+                    watcher.stop(L)
                     return 1
                 },
             ],

@@ -28,6 +28,946 @@ LuaSkin → LuaSwift).
 
 *** TODO Generate a new app icon
 
+* DONE — OpenTelemetry Follow-Up Status
+
+  Updated 2026-07-03 after the local implementation passes. The core
+  integration and the major follow-up items below are now implemented and
+  verified locally: Lua-based configuration, global ~hs.opentelemetry~,
+  traces/logs/metrics, OTLP HTTP/protobuf, SDK-backed OTLP/gRPC, context
+  propagation, callback wrapping, active resource gauges, permission audit
+  logs, local benchmark recipes, docs, simulator coverage, lifecycle stress
+  tests, conformance fixtures, fake loopback OTLP trace/log payload decoding,
+  semantic-convention cleanup, exporter diagnostics, and repeated full
+  ~just verify~ runs are green.
+
+  Local validation notes:
+  - ~COSMIC_HAMMER_OTEL_GRPC_INTEGRATION=1 just otel-grpc-integration~ has
+    been validated locally after Docker Desktop sign-in.
+  - Deterministic fake loopback OTLP payload tests now assert trace, log, and
+    metric protobuf payloads.
+  - OTELBenchmarks supports both ~--telemetry simulated~ and
+    ~--telemetry production~. Use simulator mode for repeatability and
+    production mode for SDK-path spot checks.
+
+  The detailed items below are retained as implementation history and for any
+  future tightening work.
+
+** DONE [#A] Add OTEL performance benchmarks
+   Effort estimate: 2-4 days.
+
+   Technical work:
+   - Measure disabled-path overhead for common instrumentation calls:
+     ~startSpan~, ~withSpan~, ~log~, meter ~add~/~record~, baggage
+     inject/extract, and callback wrapper entry/exit.
+   - Measure enabled-path overhead for representative low-frequency and
+     high-frequency callbacks.
+   - Benchmark default sampling behavior for known hot paths such as
+     ~hs.eventtap~ and SQLite engine hooks.
+   - Measure memory churn/allocation pressure during span-heavy Lua scripts,
+     repeated callback execution, and flush/shutdown.
+   - Produce repeatable local benchmark commands, JSON output, and guidance for
+     interpreting advisory numbers on macOS.
+
+   Dependencies:
+   - A stable benchmark harness or convention in this repo.
+   - Representative Lua scripts that exercise both normal user automation
+     and high-frequency callbacks.
+   - Agreement on which advisory benchmark recipes are useful for local
+     verification and investigation.
+
+   Why this remains:
+   - OTEL now touches many callback and watcher paths. Functional tests prove
+     correctness, but benchmarks are needed to prevent future regressions in
+     user-visible automation latency.
+
+*** Investigation refinement (2026-07-01)
+
+**** Current state
+   - OTEL code is centered in ~OpenTelemetryModule.swift~,
+     ~ProductionTelemetry.swift~, ~LuaCallbackTelemetry.swift~, and
+     ~extensions/opentelemetry/opentelemetry.lua~.
+   - Telemetry is disabled by default; most disabled paths return through early
+     guards.
+   - Callback instrumentation is centralized in ~luaTelemetryPCall~. Default
+     sampling already disables several hot paths such as ~hs.eventtap~ and
+     SQLite hooks.
+   - There is no benchmark harness or benchmark target today. ~just verify~
+     only runs generated checks, docs lint, build, and tests.
+
+**** Files to touch
+   - ~Package.swift~: add an ~OTELBenchmarks~ executable target/product.
+   - ~justfile~: add ~bench-otel~, ~bench-otel-smoke~, and
+     ~bench-otel-full~ recipes.
+   - ~Sources/HSDSTSimulator/SimulatorHarness.swift~: add a telemetry
+     injection overload for benchmark environments.
+   - ~Sources/HSSwiftExtensions/OTELBenchmarkSupport.swift~: add internal/SPI
+     helpers for benchmark-only production telemetry and callback loops.
+   - ~Benchmarks/OTELBenchmarks/main.swift~ and helpers: timing, memory, Lua
+     setup, JSON reporting.
+   - ~benchmarks/otel/*.lua~: representative Lua workloads.
+   - ~Tests/CosmicHammerTests/OTELBenchmarkSupportTests.swift~: smoke coverage.
+   - ~docs/opentelemetry.md~: document commands, JSON output, noise, and
+     advisory interpretation.
+
+**** Small implementation steps
+   1. Define a benchmark JSON schema: suite, case, mode, iterations, warmups,
+      samples, median ns/op, p90 ns/op, min/max, RSS delta, peak RSS, OTEL
+      counters, and config.
+   2. Add the ~OTELBenchmarks~ target in release mode only.
+   3. Implement CLI flags: ~--suite~, ~--iterations~, ~--warmup~, ~--samples~,
+      ~--telemetry simulated|production~, and ~--output pretty|json~.
+   4. Add monotonic timing, warmup, sample aggregation, and empty-loop baseline
+      subtraction.
+   5. Add resident-memory sampling using the same style as existing resident
+      size helpers.
+   6. Add a ~SimulatorHarness.createEnvironment(telemetry:)~ overload.
+   7. Add benchmark-only helpers to create production telemetry, reset callback
+      sampling counters, and run controlled ~luaTelemetryPCall~ loops.
+   8. Implement disabled-path benchmarks for ~startSpan~, ~withSpan~, ~log~,
+      meter ~add~/~record~, baggage inject/extract, and callback entry/exit.
+   9. Add comparison baselines for empty Lua loop, plain Lua function call,
+      native ~lua_pcall~, and table creation.
+   10. Implement enabled-path benchmarks with non-console production telemetry
+       so ~os_log~ does not dominate the result.
+   11. Add low-frequency callback cases with sampling rate ~1~.
+   12. Add high-frequency cases for ~hs.eventtap~ and SQLite hook names at
+       default sampling, ~0~, ~0.01~, and ~1~.
+   13. Add memory churn suites: span-heavy loops, repeated callbacks, baggage
+       churn, and repeated flush/shutdown.
+   14. Add ~just bench-otel~ for quick local runs, ~just bench-otel-smoke~ for
+       smoke JSON output, and ~just bench-otel-full~ for longer local suites.
+   15. Collect release-build medians on a stable local machine, then document
+       how to compare local JSON output without hard pass/fail thresholds.
+
+**** Dependencies and edge cases
+   - Keep benchmarks local-only and advisory.
+   - Reject debug-mode benchmark numbers.
+   - Keep hot-loop overhead independent from a real collector.
+   - Reset global callback sampling counters before every case.
+   - Separate span/log/metric creation from flush/export timing.
+   - Treat RSS/allocation numbers as noisy on macOS; document thermal state,
+     Spotlight, App Nap, background load, and power-mode effects.
+   - Avoid real ~hs.eventtap~ permissions by using deterministic callback
+     wrapper loops.
+
+**** Verification
+   - ~just bench-otel~
+   - ~just bench-otel-smoke~
+   - ~just bench-otel-full~
+   - ~swift test --filter OpenTelemetryFunctionalTests~
+   - ~swift test --filter OTELBenchmarkSupportTests~
+   - ~just verify~
+
+**** Scope estimate and open decisions
+   - Estimated size: 2-4 days.
+   - Open decisions:
+     - Which local machine metadata should be recorded with benchmark JSON?
+     - What degree of local benchmark movement should trigger investigation?
+     - Should export benchmarks require a local collector or remain optional?
+
+** DONE [#A] Add reload and lifecycle stress tests
+   Effort estimate: 2-3 days.
+
+   Technical work:
+   - Repeatedly configure, flush, shutdown, reload Lua, and configure again.
+   - Exercise active spans, extracted remote parents, baggage, redactors, and
+     active resource gauges across reload boundaries.
+   - Verify no stale active span, baggage, remote parent, retained Lua
+     callback reference, or gauge count survives incorrectly after reload.
+   - Include cases where callbacks fire during or immediately after
+     reconfiguration.
+
+   Dependencies:
+   - Existing ~SimulatorHarness~ and Lua boot lifecycle helpers.
+   - Clear expected behavior for user reload versus full process shutdown.
+   - Test fixtures that can trigger callback-like behavior without real OS
+     side effects.
+
+   Why this remains:
+   - Cosmic Hammer users reload config frequently. OTEL must remain
+     predictable across reloads, not only across a single Lua runtime session.
+
+*** Investigation refinement (2026-07-01)
+
+**** Current state
+   - Native lifecycle state lives in ~ProductionTelemetry.swift~ and
+     ~SimulatedTelemetry.swift~.
+   - ~configure()~ and ~shutdown()~ already clear active span stacks and
+     extracted remote parents in both production and simulator paths.
+   - Lua facade state such as baggage, active propagators, redactor, and last
+     config lives in ~extensions/opentelemetry/opentelemetry.lua~ module locals
+     and resets only with a new Lua state.
+   - Reload goes through ~MJLuaReplace()~ -> ~MJLuaDeinit()~ -> telemetry
+     shutdown -> ~MJLuaDealloc()~ -> new Lua state/environment.
+   - Existing coverage is split across ~OpenTelemetryFunctionalTests.swift~,
+     ~LifecycleSafetyTests.swift~, ~EnvironmentDetachTests.swift~, and gauge
+     tests. No single stress suite combines reload, active context, baggage,
+     callbacks, and gauge teardown.
+
+**** Files to touch
+   - ~Tests/CosmicHammerTests/OpenTelemetryLifecycleStressTests.swift~: new
+     serialized stress suite.
+   - ~Tests/CosmicHammerTests/PureLuaTestSetup.swift~: add reusable isolated
+     reloadable Lua-state helpers.
+   - ~Tests/CosmicHammerTests/OpenTelemetryFunctionalTests.swift~: optionally
+     extract duplicated Lua facade setup.
+   - ~Sources/HSDSTSimulator/SimulatedTelemetry.swift~: only if narrow
+     inspection helpers or parity fixes are needed.
+   - ~extensions/opentelemetry/opentelemetry.lua~: only if same-state
+     shutdown/configure semantics should clear facade baggage/redactor state.
+   - ~Sources/HSSwiftExtensions/LuaCallbackTelemetry.swift~: only if callback
+     sampling counters must reset on reload/configure.
+
+**** Small implementation steps
+   1. Define lifecycle semantics in test names before production edits:
+      user reload means new Lua state and no stale active span, baggage,
+      redactor, remote parent, callback ref, or gauge count.
+   2. Add an isolated Lua helper that saves/restores current state and
+      environment, opens libs, attaches ~SimulatorHarness~, registers
+      ~luaopen_hs_libopentelemetry~, loads the Lua facade, and safely closes.
+   3. Add ~nativeReconfigureAndShutdownClearContextRepeatedly~ with 20-50 pure
+      simulator cycles across configure, active span, remote extract, flush,
+      reconfigure, shutdown, and reconfigure.
+   4. Add ~luaFacadeStateDoesNotSurviveReload~ with 5 full Lua-state cycles.
+   5. Add ~reloadAfterActiveSpanAndRemoteParentDropsOldContext~ for unended
+      active spans and extracted parents.
+   6. Add ~callbackDuringReconfigurationLeavesNoStaleSpan~ using direct
+      ~luaTelemetryPCall~ as the no-OS callback fixture.
+   7. Add ~callbackImmediatelyAfterReconfigurationUsesFreshContext~ with two
+      distinct parent contexts and a no-parent callback.
+   8. Add ~wrappedCallbackContextDoesNotSurviveReload~ without calling old Lua
+      closures after ~lua_close~.
+   9. Add active gauge reload tests using in-memory SQLite callbacks as the
+      canonical low-side-effect fixture.
+   10. Add one callback-like gauge case that fires during or immediately after
+       reconfiguration.
+   11. Keep loops small: 5 cycles for full Lua reload, 20-50 cycles for pure
+       simulator lifecycle checks.
+   12. Make minimal fixes only after tests expose behavior: facade state in Lua,
+       native context in production/simulator, or specific gauge teardown paths.
+
+**** Dependencies and edge cases
+   - Requires ~SimulatorHarness~, current pure Lua test helpers, lifecycle
+     tests, and existing OTEL functional tests.
+   - Prefer direct ~luaTelemetryPCall~ and SQLite in-memory callbacks over real
+     OS watchers.
+   - Edge cases: active span during configure/shutdown, remote parent with or
+     without active span, malformed/missing traceparent after valid extract,
+     baggage disabled/cleared/replaced, redactor throwing, callback success/error
+     during reconfiguration, explicit close versus GC teardown, double teardown,
+     and gauge clamping to zero.
+
+**** Verification
+   - ~zsh -ic 'just test-resources'~
+   - Focused ~swift test --filter ...~ runs with the same private-framework
+     linker flags and ~COSMIC_HAMMER_TEST_RESOURCES~ setup used by ~just test~:
+     ~OpenTelemetryLifecycleStressTests~, ~OpenTelemetryFunctionalTests~,
+     ~LifecycleSafetyTests~, ~EnvironmentDetachTests~, and
+     ~SQLite3CallbackGaugeTests~.
+   - ~zsh -ic 'just verify'~
+
+**** Scope estimate and open decisions
+   - Estimated size: 2-3 days if mostly test-only, 3-4 days if gauge teardown
+     bugs appear.
+   - Open decisions:
+     - Should ~hs.opentelemetry.shutdown()~ clear Lua facade baggage/redactor
+       in the same Lua state?
+     - Should ~configure({ enabled = false })~ clear or preserve facade state?
+     - Should callback sampling counters reset on reload/configure?
+     - Should stress tests exercise actual ~MJLuaReplace()~ or isolated Lua
+       states for local repeatability?
+
+** DONE [#A] Expand exporter and lifecycle fault-injection tests
+   Effort estimate: 2-4 days.
+
+   Technical work:
+   - Simulate collector unavailable, malformed endpoint, timeout, failed
+     flush, failed shutdown, exporter backpressure, and config reload during
+     export.
+   - Assert diagnostics via ~hs.opentelemetry.status()~ and
+     ~hs.opentelemetry.diagnostics()~ remain useful and low-cardinality.
+   - Verify failures do not crash Lua callbacks, leak active spans, or create
+     unbounded dropped-record noise.
+   - Keep the existing redactor fault coverage; extend the same pattern to
+     exporter and lifecycle failures.
+
+   Dependencies:
+   - Injectable exporter/network fakes, or a controllable local collector
+     fixture.
+   - Decision to keep real collector-backed tests outside default
+     ~just verify~ as opt-in local checks.
+
+   Why this remains:
+   - Current tests cover many simulator and Lua facade failure modes, but
+     exporter/network failure behavior needs more end-to-end evidence.
+
+*** Investigation refinement (2026-07-01)
+
+**** Current state
+   - OTEL bindings are split across native Lua bindings, Lua facade,
+     ~TelemetryProtocol~, production SDK pipeline, and simulator telemetry.
+   - ~TelemetryStatusSnapshot~ has basic enabled/config/counter/flush fields and
+     a free-form ~lastExportError~.
+   - Production exporter setup is not injectable; ~ProductionTelemetry~ directly
+     creates HTTP or console exporters.
+   - Production exporter errors are captured indirectly through
+     ~OpenTelemetry.registerFeedbackHandler~.
+   - Simulator telemetry has no configurable exporter/network failure modes.
+
+**** Files to touch
+   - ~Sources/HSDSTCore/Protocols/TelemetryProtocol.swift~: add bounded
+     diagnostic fields such as error kind, failure counts, and shutdown timing.
+   - ~Sources/HSDSTCore/FaultConfig.swift~: add deterministic telemetry fault
+     knobs.
+   - ~Sources/HSDSTSimulator/SimulatedTelemetry.swift~: simulate flush,
+     shutdown, timeout, unavailable collector, and backpressure faults.
+   - ~Sources/HSDSTSimulator/SimulatorHarness.swift~: pass fault config into
+     simulator telemetry.
+   - ~Sources/HSSwiftExtensions/ProductionTelemetry.swift~: normalize
+     diagnostics and add a production exporter/pipeline seam only if needed.
+   - ~Sources/HSSwiftExtensions/OpenTelemetryModule.swift~: expose status fields.
+   - ~extensions/opentelemetry/opentelemetry.lua~: only if ~diagnostics()~
+     needs derived Lua facade fields.
+   - ~Tests/CosmicHammerTests/OpenTelemetryFunctionalTests.swift~ or
+     ~DSTFaultInjectionTests.swift~: add targeted tests.
+   - ~docs/opentelemetry.md~: update public diagnostics after names settle.
+
+**** Small implementation steps
+   1. Add explicit telemetry fault knobs to ~FaultConfig~:
+      flush failure, shutdown failure, timeout, collector unavailable,
+      malformed endpoint, and backpressure limit.
+   2. Thread faults into ~SimulatedTelemetry~ through ~SimulatorHarness~.
+   3. Extend ~TelemetryStatusSnapshot~ with low-cardinality fields:
+      ~lastExportErrorKind~, ~exportFailureCount~, ~lastShutdownDuration~,
+      ~lastShutdownErrorKind~, and possibly exporter drop counts.
+   4. Expose new status fields through native ~hs.opentelemetry.status()~.
+   5. Implement simulator failed flush: increment counters, set duration, set
+      error kind, return ~false~, and keep Lua callback behavior unchanged.
+   6. Implement simulator failed shutdown: return ~false~, record shutdown
+      diagnostics, and still clear active span/remote parent unless product
+      semantics say otherwise.
+   7. Make malformed OTLP endpoints deterministic diagnostics instead of silent
+      stdout fallback.
+   8. Add collector-unavailable and export-timeout simulator cases.
+   9. Add bounded backpressure simulation with accepted/pending records and
+      dropped-export counts.
+   10. Add Lua facade tests matching the existing redactor fault pattern.
+   11. Add callback safety tests under exporter failure using sampled
+       ~luaTelemetryPCall~.
+   12. Add config reload during simulated in-flight export/backpressure.
+   13. Add shutdown-callback lifecycle fault coverage.
+   14. Add a production fake-exporter seam only after simulator behavior is
+       covered and if real SDK failure evidence is still needed.
+   15. Keep real collector-backed tests opt-in and local-only.
+
+**** Dependencies and edge cases
+   - Requires a decision between simulator/fake-exporter tests in default
+     verification and real collector tests as opt-in.
+   - If fake exporters are used, exact OpenTelemetry Swift exporter protocols
+     from the pinned SDK must be confirmed.
+   - Edge cases: malformed endpoint currently risks silent stdout fallback,
+     failed shutdown during reconfigure, whether counters survive configure,
+     failed shutdown still clearing active spans, avoiding high-cardinality raw
+     endpoint/error labels, avoiding recursive diagnostic metric noise, and
+     keeping redactor errors separate from exporter errors.
+
+**** Verification
+   - ~swift test --filter OpenTelemetryFunctionalTests~
+   - ~swift test --filter DSTFaultInjectionTests~
+   - ~swift test --filter LuaBootLifecycleTests~
+   - ~just verify~
+   - Optional local collector recipe when real collector evidence is needed.
+
+**** Scope estimate and open decisions
+   - Estimated size: 2-4 days with simulator/fakes; 4-6 days with real
+     collector-backed tests.
+   - Open decisions:
+     - Should failed shutdown clear active spans? Recommendation: yes.
+     - Should configure preserve aggregate failure counts? Recommendation:
+       preserve aggregate counts, reset only last-result fields.
+     - Should exporter backpressure use a separate counter from current
+       ~droppedRecords~? Recommendation: yes.
+     - Should malformed endpoint make configure fail or produce diagnostics?
+       Recommendation: keep configure compatible, report deterministic failure.
+
+** DONE [#B] Add OTEL conformance and interoperability tests
+   Effort estimate: 3-6 days.
+
+   Technical work:
+   - Add golden tests for W3C Trace Context parsing/injection, including
+     malformed ~traceparent~ rejection and stale context clearing.
+   - Add baggage conformance fixtures for key validation, percent encoding,
+     case-insensitive headers, replacement semantics, and disabled propagator
+     behavior.
+   - Add local collector or fake OTLP receiver tests to inspect exported
+     trace/log/metric payloads.
+   - Validate expected span kind, parent/child relationships, status,
+     attributes, events, exceptions, metric names, units, and log severity.
+
+   Dependencies:
+   - Stable OTLP payload capture approach.
+   - Golden fixtures checked into the repo or generated deterministically.
+   - Local fake receiver by default; real collector checks remain opt-in on the
+     developer machine.
+
+   Why this remains:
+   - The current test suite proves internal behavior. Conformance tests prove
+     Cosmic Hammer interoperates correctly with standard OTEL tooling.
+
+*** Investigation refinement (2026-07-01)
+
+**** Current state
+   - ~ProductionTelemetry~ uses OpenTelemetry Swift SDK propagation and
+     HTTP/protobuf exporters.
+   - ~SimulatedTelemetry~ already has deterministic traceparent parsing and
+     injection, and current tests cover many malformed/stale cases.
+   - Baggage is mostly implemented in the Lua facade and has existing coverage
+     for validation, percent encoding, replacement, case-insensitive headers,
+     and disabled propagators.
+   - There is no fake OTLP receiver or decoded protobuf assertion helper yet;
+     collector-backed payload capture remains opt-in local evidence.
+   - ~TelemetryConfiguration.headers~ is parsed but appears not to be passed to
+     OTLP exporters; conformance tests may expose this as a gap.
+
+**** Files to touch
+   - ~Tests/CosmicHammerTests/OpenTelemetryPropagationConformanceTests.swift~:
+     new W3C tracecontext/baggage golden suite.
+   - ~Tests/CosmicHammerTests/OpenTelemetryOTLPExportTests.swift~: new payload
+     export suite.
+   - ~Tests/CosmicHammerTests/HSTestHelpers.swift~: local HTTP/protobuf receiver
+     helper.
+   - ~Tests/CosmicHammerTests/OpenTelemetryGoldenFixtures.swift~: optional
+     fixture table.
+   - ~Sources/HSSwiftExtensions/ProductionTelemetry.swift~: likely header
+     pass-through, production parity, or test hooks.
+   - ~Sources/HSDSTSimulator/SimulatedTelemetry.swift~: only for parity fixes.
+   - ~extensions/opentelemetry/opentelemetry.lua~: only if baggage fixtures
+     expose parser gaps.
+   - ~Package.swift~: only if decoded OTLP assertions need explicit protobuf
+     model dependencies.
+   - ~docs/opentelemetry.md~: update behavior after fixtures are locked.
+
+**** Small implementation steps
+   1. Extract traceparent fixtures covering valid, missing, malformed,
+      unsupported version, uppercase hex, all-zero IDs, bad flags, short/long
+      IDs, non-hex bytes, and whitespace.
+   2. Add simulator golden tests: accepted fixtures set expected parent span ID;
+      rejected fixtures clear stale extracted parent context.
+   3. Add production tracecontext parity tests using console exporter first,
+      then decoded receiver assertions when available.
+   4. Add Lua facade carrier replacement tests for mixed-case trace headers and
+      disabled tracecontext behavior.
+   5. Add baggage fixtures for valid/invalid keys, percent encoding, malformed
+      percent escapes, duplicate keys, metadata, empty values, replacement,
+      removal, clear, and disabled behavior.
+   6. Convert baggage assertions to table-driven Lua tests with deterministic
+      sorted injected headers.
+   7. Build a local fake OTLP HTTP receiver using existing ~NWListener~ testing
+      patterns on loopback.
+   8. Decide payload decode strategy: use accessible OTLP proto models if
+      available, add test-only SwiftProtobuf models if needed, or keep default
+      tests transport-level and move semantic payload checks to opt-in.
+   9. Add trace export payload tests for span kind, hierarchy, status,
+      attributes, events, exceptions, resource, and scope.
+   10. Add log export payload tests for severity, body, attributes, and
+       trace/span correlation.
+   11. Add metric payload tests for counter, up-down counter, gauge, histogram,
+       names, units, data point attributes, and runtime metrics.
+   12. Add endpoint/transport tests for base endpoint expansion,
+       signal-specific overrides, disabled signals, unsupported gRPC diagnostic,
+       and custom headers after implementation.
+   13. Add failure-path receiver tests returning 500 or closing connection.
+   14. Split large existing functional coverage only if it improves failure
+       triage without large churn.
+
+**** Dependencies and edge cases
+   - Requires a fake OTLP receiver or decoded protobuf model strategy.
+   - Default local verification should require loopback only, not Docker or
+     external network.
+   - Production SDK providers are global; mark production export suites
+     serialized and always flush/shutdown.
+   - Edge cases: malformed traceparent clearing stale context, disabled
+     propagation removing stale carrier headers, case-insensitive carrier lookup,
+     duplicate baggage keys, bad percent escapes, sorted injection, custom
+     headers not passed today, metric payloads containing extra runtime metrics,
+     and batch processor teardown races.
+
+**** Verification
+   - ~zsh -ic 'swift test --filter OpenTelemetryPropagationConformanceTests'~
+   - ~zsh -ic 'swift test --filter OpenTelemetryOTLPExportTests'~
+   - ~zsh -ic 'swift test --filter OpenTelemetryFunctionalTests'~
+   - ~just verify~
+   - Manual optional: run the LGTM collector from ~docs/opentelemetry.md~, emit
+     a span/log/metric, flush, and inspect Grafana.
+
+**** Scope estimate and open decisions
+   - Estimated size: 3-6 days.
+   - Open decisions:
+     - Fake in-process OTLP receiver only, optional collector tests, or both?
+     - How should OTLP protobuf payloads be decoded in tests?
+     - What exact duplicate-key and malformed-percent baggage behavior should
+       be locked?
+     - Is custom OTLP header pass-through in scope for this item?
+
+** DONE [#B] Define OTEL local verification policy
+   Effort estimate: 1-2 days.
+
+   Technical work:
+   - Decide which OTEL tests stay in default ~just verify~.
+   - Add slower opt-in local recipes for benchmark, collector-backed,
+     conformance, and stress tests.
+   - Document expected runtime and failure triage guidance.
+   - Ensure generated files, docs lint, build, and test order stays aligned
+     with existing repo conventions.
+
+   Dependencies:
+   - Local runtime budget for developer machines.
+   - Docker or collector availability only for opt-in real collector checks.
+   - Agreement that ~just verify~ remains the only default local verification
+     gate.
+
+   Why this remains:
+   - The OTEL surface is now broad. Heavy tests should be intentional so the
+     normal developer loop stays fast while release confidence improves.
+
+*** Investigation refinement (2026-07-01)
+
+**** Current state
+   - ~just verify~ is the documented full local verification gate. It runs
+     ~check-generated~, ~docs-lint~, and ~test-built~ in parallel.
+   - ~test-built~ runs the app build and Swift tests against built resources.
+   - There is no remote automation plan for this repository pass; all
+     development and verification are local on the user's machine.
+   - Current OTEL coverage is deterministic and simulator-backed, so it belongs
+     in the default gate.
+   - Existing opt-in test pattern uses Swift Testing condition traits in
+     ~HSTestHelpers.swift~, such as ~EXTERNAL_NETWORK_TESTS=1~.
+
+**** Files to touch
+   - ~justfile~: add opt-in OTEL recipes while preserving default ~verify~.
+   - ~Tests/CosmicHammerTests/HSTestHelpers.swift~: add OTEL condition traits.
+   - Future OTEL test files: annotate collector/stress/benchmark tests.
+   - ~docs/opentelemetry.md~: add local verification command matrix.
+   - ~AGENTS.md~ / ~CLAUDE.md~: keep ~just verify~ documented as the default
+     local quality gate.
+
+**** Small implementation steps
+   1. Record policy: default local verification gate remains ~just verify~.
+   2. Keep deterministic simulator-backed OTEL tests in default verification.
+   3. Add env-gated traits:
+      ~OTEL_COLLECTOR_TESTS~, ~OTEL_STRESS_TESTS~, and
+      ~OTEL_BENCHMARK_TESTS~.
+   4. Add ~just otel-test~ for focused existing OTEL smoke tests.
+   5. Add ~just otel-conformance~ for deterministic W3C/golden tests.
+   6. Add ~just otel-collector-test~ requiring
+      ~OTEL_COLLECTOR_TESTS=1~ for real local collector checks.
+   7. Add ~just otel-stress-test~ for reload/lifecycle loops.
+   8. Add ~just otel-benchmark~ for benchmark output under
+      ~build/otel-benchmarks/~.
+   9. Add ~just otel-local-checks~ as a local umbrella that runs ~just verify~
+      plus selected OTEL recipes.
+   10. Factor Swift test linker/resource setup if recipe duplication becomes
+       fragile.
+   11. Add collector preflight with clear infra-vs-product failure messages.
+   12. Document the matrix: command, owner, expected runtime band, default or
+       opt-in, required or advisory, and failure triage.
+   13. Document that this pass is local-only; the coordinator should run local
+       commands explicitly.
+   14. Measure runtime locally, then backfill approximate bands.
+
+**** Dependencies and edge cases
+   - Requires local runtime budget and a decision on fake receiver versus
+     opt-in real collector coverage.
+   - Swift test filters are name-sensitive; keep suite names deliberate.
+   - Do not accidentally pull UI/hardware/network tests into default local
+     verification.
+   - Collector failures must distinguish port conflicts, collector unavailable,
+     Docker missing, slow endpoint, and product export failures.
+   - Benchmark results are noisy on macOS and should start advisory.
+
+**** Verification
+   - ~just verify~
+   - ~just otel-test~
+   - ~just otel-conformance~
+   - ~OTEL_COLLECTOR_TESTS=1 just otel-collector-test~
+   - ~COSMIC_HAMMER_OTEL_GRPC_INTEGRATION=1 just otel-grpc-integration~
+   - ~OTEL_STRESS_TESTS=1 just otel-stress-test~
+   - ~OTEL_BENCHMARK_TESTS=1 just otel-benchmark~
+
+**** Scope estimate and open decisions
+   - Estimated size: 1 day for policy, recipes, traits, and docs; +1-2 days for
+     robust local collector preflight/fake receiver.
+   - Open decisions:
+     - Should ~otel-conformance~ move into ~just verify~ after it is stable?
+     - Fake receiver by default, opt-in Docker collector, or both?
+     - Maximum acceptable local ~just verify~ runtime?
+     - Should ~otel-local-checks~ run collector/stress/benchmark/gRPC checks by
+       default or only when env vars are present?
+
+** DONE [#B] Review and polish semantic conventions
+   Effort estimate: 1-2 days.
+
+   Technical work:
+   - Audit custom trace attributes for HTTP, HTTP server, task, CLI,
+     window/UI automation, permission audit logs, Lua runtime, callbacks, and
+     resource gauges.
+   - Align names with current OpenTelemetry semantic conventions where stable.
+   - Keep custom Cosmic Hammer attributes low-cardinality and documented.
+   - Update ~docs/opentelemetry.md~ examples if attribute names change.
+
+   Dependencies:
+   - Current OpenTelemetry semantic convention docs.
+   - Decision on whether to prioritize stable conventions only or also adopt
+     experimental conventions.
+
+   Why this remains:
+   - Good naming makes telemetry easier to query and correlate across Grafana,
+     Tempo, Loki, Prometheus/Mimir, and other OTEL-compatible tools.
+
+*** Investigation refinement (2026-07-01)
+
+**** Current state
+   - Attribute names are mostly inline string literals across Swift and Lua.
+   - HTTP client instrumentation already uses many stable names.
+   - Process/task instrumentation mixes stable names with outdated or custom
+     names such as ~process.command_args.count~ and ~process.exit_code~.
+   - Lua runtime, callback, permission, UI/window, IPC, and CLI attributes are
+     useful but mostly custom and should be namespaced or explicitly documented.
+   - Metrics already mostly use the ~cosmichammer.*~ namespace.
+   - Tests assert many current names, so changes must be batched carefully.
+
+**** Files to touch
+   - ~Sources/HSSwiftExtensions/TelemetrySemanticConventions.swift~: new
+     constants layer for automatic instrumentation names.
+   - ~Sources/HSSwiftExtensions/HTTP.swift~ and ~HTTPServer.swift~: HTTP
+     semconv alignment.
+   - ~Sources/HSSwiftExtensions/ProcessTask.swift~ and
+     ~extensions/_coresetup/_coresetup.lua~: process/Lua command attributes.
+   - ~extensions/ipc/ipc.lua~: CLI/IPC attributes.
+   - ~Sources/HSSwiftExtensions/LuaRuntime.swift~ and ~HSAppleScript.swift~:
+     permission and lifecycle attributes.
+   - ~Sources/HSSwiftExtensions/LuaCallbackTelemetry.swift~: callback
+     attribute namespace.
+   - ~Sources/HSSwiftExtensions/Window.swift~: UI/window attributes.
+   - ~Sources/HSSwiftExtensions/ProductionTelemetry.swift~ and
+     ~Sources/HSDSTSimulator/SimulatedTelemetry.swift~: resource/runtime metric
+     attributes.
+   - ~docs/opentelemetry.md~ and ~examples/opentelemetry-init.lua~.
+   - Tests: ~OpenTelemetryFunctionalTests.swift~, ~LuaBootLifecycleTests.swift~,
+     ~IPCTelemetryTests.swift~, ~WindowTests.swift~, ~TaskTelemetryTests.swift~,
+     ~HTTPServerTests.swift~, and affected gauge tests.
+
+**** Small implementation steps
+   1. Create an inventory of emitted span names, log messages, metric names,
+      and attributes. Classify each as stable semconv, custom
+      ~cosmichammer.*~, or needs rename.
+   2. Add ~TelemetrySemanticConventions.swift~ for built-in automatic
+      instrumentation constants. Do not route user Lua attributes through it.
+   3. Rename stable process fields:
+      ~process.command_args.count~ -> ~process.args_count~ and
+      ~process.exit_code~ -> ~process.exit.code~.
+   4. Move custom process fields to ~cosmichammer.process.*~ or
+      ~cosmichammer.lua.*~.
+   5. Fix HTTP client spans: method normalization, optional
+      ~http.request.method_original~, low-cardinality ~error.type~, and no
+      high-cardinality path in span names.
+   6. Fix HTTP server spans: integer ports, ~url.scheme~ where known,
+      ~error.type~ for failures, and no raw route in span names.
+   7. Namespace Lua runtime attributes under ~cosmichammer.lua.*~.
+   8. Rename ~lua.callback.name~ to ~cosmichammer.lua.callback.name~ and keep
+      callback names bounded/static.
+   9. Namespace CLI/IPC custom attributes under ~cosmichammer.cli.*~ and
+      ~cosmichammer.ipc.*~; consider dropping high-cardinality
+      ~cli.instance_id~ if not needed.
+   10. Namespace permission audit attributes under
+       ~cosmichammer.permission.*~.
+   11. Namespace UI/window attributes under ~cosmichammer.ui.*~ and
+       ~cosmichammer.window.*~.
+   12. Review resource attributes: change ~telemetry.sdk.language = swift-lua~
+       to a standard value plus a custom bridge/runtime attribute.
+   13. Rename custom ~otel.flush.result~ to
+       ~cosmichammer.telemetry.flush.result~ or a local ~result~ attribute.
+   14. Update tests in domain batches: process/task, HTTP, Lua runtime/CLI,
+       permission/UI/resource.
+   15. Update docs and examples last with stable semconv and custom
+       ~cosmichammer.*~ sections plus cardinality notes.
+
+**** Dependencies and edge cases
+   - Use current OpenTelemetry semantic convention docs and prefer stable-only
+     conventions.
+   - If this surface is already shipped, decide whether temporary duplicate
+     old/new attributes are needed. If not shipped, replace outright.
+   - Edge cases: sensitive query params in ~url.full~, unknown HTTP methods,
+     missing/non-numeric ports, high-cardinality paths, CLI IDs, IPC port names,
+     window IDs, user-provided Lua module names, permission status enum bounds,
+     and simulated telemetry stringifying typed attributes.
+
+**** Verification
+   - ~swift test --filter OpenTelemetryFunctionalTests~
+   - ~swift test --filter LuaBootLifecycleTests~
+   - ~swift test --filter IPCTelemetryTests~
+   - ~swift test --filter WindowTests~
+   - ~swift test --filter TaskTelemetryTests~
+   - ~swift test --filter HTTPServerTests~
+   - ~just test~
+   - ~just docs-lint~
+   - ~just verify~
+
+**** Scope estimate and open decisions
+   - Estimated size: 1.5-2 days if replacing names outright; +0.5-1 day for
+     compatibility duplication or migration docs.
+   - Open decisions:
+     - Rename all custom attributes to ~cosmichammer.*~ or only conflicts?
+     - Is compatibility required for old attribute names?
+     - Should privacy/cardinality-sensitive attributes remain default trace
+       attributes?
+     - Should permission log messages be per-permission or one low-cardinality
+       event with attributes?
+
+** DONE [#C] Implement OTLP/gRPC exporter support through the Swift SDK
+   Effort estimate: 3-6 days if SDK support is usable; larger if transport
+   must be patched upstream.
+
+   Technical work:
+   - Replace the current diagnostic-only behavior for ~protocol = "grpc"~
+     with real OTLP/gRPC export for traces, logs, and metrics.
+   - Validate TLS, plaintext local collector mode, SDK-supported compression,
+     retry/error reporting, flush, shutdown, and endpoint configuration.
+   - Add local collector-backed integration tests for all three signals.
+   - Keep HTTP/protobuf as the default and preserve current diagnostics when
+     gRPC is unavailable.
+
+   Dependencies:
+   - OpenTelemetry Swift SDK support for OTLP/gRPC across traces/logs/metrics.
+   - ~GRPCSwift~ compatibility with the app build, package resolution, and
+     macOS deployment target.
+   - Local collector-backed tests or a reliable fake gRPC OTLP receiver.
+
+   Why this remains:
+   - The current build intentionally supports OTLP HTTP/protobuf. gRPC export
+     should use the pinned Swift SDK path so transport behavior stays
+     maintainable.
+
+*** Investigation refinement (2026-07-01)
+
+**** Current state
+   - ~Package.swift~ depends on OpenTelemetry Swift core/SDK and currently links
+     only the HTTP exporter product into ~HSSwiftExtensions~.
+   - ~Package.resolved~ already includes transitive ~grpc-swift~, ~swift-nio~,
+     and ~swift-protobuf~ via OpenTelemetry Swift.
+   - The pinned SDK exposes gRPC exporter product/module/classes for traces,
+     logs, and metrics.
+   - ~ProductionTelemetry.swift~ currently treats ~protocol = "grpc"~ as
+     unsupported diagnostics and falls back to stdout.
+   - ~OpenTelemetryModule.swift~ parses protocol, endpoint, per-signal
+     endpoints, headers, timeout, and batch, but not compression/TLS-specific
+     fields.
+   - Existing tests assert the unsupported gRPC diagnostic.
+
+**** Files to touch
+   - ~Package.swift~ and possibly ~Package.resolved~: add gRPC exporter product
+     and direct ~GRPC~/~NIO~ dependencies only if needed.
+   - ~Sources/HSDSTCore/Protocols/TelemetryProtocol.swift~: add compression
+     config/status if supported.
+   - ~Sources/HSSwiftExtensions/OpenTelemetryModule.swift~: parse compression
+     and preserve HTTP default behavior.
+   - ~Sources/HSSwiftExtensions/ProductionTelemetry.swift~: implement protocol
+     routing, endpoint parsing, channel lifecycle, exporters, diagnostics,
+     flush, and shutdown.
+   - ~Sources/HSDSTSimulator/SimulatedTelemetry.swift~: accept gRPC once
+     production supports it; keep unknown-protocol diagnostics.
+   - ~Tests/CosmicHammerTests/OpenTelemetryFunctionalTests.swift~: update
+     protocol diagnostics tests.
+   - ~Tests/CosmicHammerTests/OpenTelemetryGRPCIntegrationTests.swift~: new
+     env-gated collector-backed suite.
+   - ~Tests/Fixtures/otel-collector-grpc.yaml~ and/or
+     ~scripts/test-otel-grpc-integration.sh~: collector fixture.
+   - ~justfile~: add opt-in gRPC integration recipe.
+   - ~docs/opentelemetry.md~ and ~examples/opentelemetry-init.lua~.
+
+**** Small implementation steps
+   1. Run a compile-only spike linking
+      ~OpenTelemetryProtocolExporter~ and importing gRPC exporter modules.
+   2. Add direct ~grpc-swift~/~swift-nio~ dependencies only if transitive
+      modules are not importable.
+   3. Add protocol parser accepting ~http~, ~http/protobuf~, ~grpc~, and
+      ~otlp/grpc~; reject unknown values with current diagnostic style.
+   4. Add gRPC endpoint parser: ~http://host:port~ = plaintext,
+      ~https://host:port~ = TLS, default port ~4317~.
+   5. Investigate SDK gRPC compression support, then add ~compression~ to
+      configuration and Lua parsing for only the values the SDK actually
+      supports.
+   6. If the SDK cannot apply a configured compression mode, report a clear
+      unsupported-compression diagnostic instead of silently ignoring it.
+   7. Create a gRPC channel helper with one event loop thread and deterministic
+      shutdown.
+   8. Use separate channels per signal unless a safe shared-channel owner is
+      introduced.
+   9. Switch exporter construction: HTTP keeps existing ~/v1/*~ expansion,
+      gRPC uses host/port exporters, invalid configs fall back safely with
+      diagnostics.
+   10. Pass headers into gRPC metadata and consider fixing HTTP header
+       pass-through in the same helper if low-risk.
+   11. Add diagnostic wrapper exporters so failed gRPC exports set
+       ~lastExportError~ reliably.
+   12. Revisit ~flush(timeout:)~ and ~shutdown(timeout:)~ so failed
+       trace/log/metric exports and channel teardown are reflected.
+   13. Update simulator protocol behavior and replace unsupported gRPC tests
+       with unknown-protocol diagnostics.
+   14. Add unit tests for parsing, endpoint normalization, plaintext/TLS,
+       invalid endpoints, headers, compression diagnostics, repeated configure,
+       flush, and shutdown.
+   15. Add local collector integration for one span, one log, and one metric
+       with unique attributes, explicit flush/shutdown, and collector output
+       polling.
+   16. Keep collector tests behind ~just otel-grpc-integration~.
+   17. Update docs: HTTP/protobuf remains default on ~4318~; gRPC uses
+       ~http://localhost:4317~ for plaintext and ~https://...:4317~ for TLS.
+
+**** Dependencies and edge cases
+   - Depends on OpenTelemetry Swift gRPC exporter product, ~GRPC~, ~NIO~, and
+     Docker or another local collector runner for integration tests.
+   - Edge cases: protocol aliases/casing, missing endpoints, unsupported URL
+     schemes, endpoint paths, signal-specific endpoints on different hosts,
+     invalid metadata headers, collector unavailable, reconfigure while enabled,
+     exporter-owned channel shutdown, compression behavior, and less stable log
+     and metric gRPC paths.
+
+**** Verification
+   - ~zsh -ic 'swift package resolve'~
+   - ~zsh -ic 'just test'~
+   - ~zsh -ic 'just otel-grpc-integration'~
+   - ~zsh -ic 'just build'~
+   - ~zsh -ic 'just verify'~
+   - Manual smoke with local collector on ~4317~, ~protocol = "grpc"~, emit
+     span/log/metric, flush, and inspect all signals.
+
+**** Scope estimate and open decisions
+   - Estimated size: 3-5 days if SDK compression is supported or
+     diagnostic-only; 6+ days if compression needs a custom exporter or upstream
+     patch.
+   - Open decisions:
+     - Should gRPC tests remain opt-in local checks outside ~just verify~?
+     - Which compression modes does the pinned SDK support end-to-end?
+     - Should HTTP header pass-through be fixed in the same change?
+     - Should path-bearing gRPC endpoints be rejected or accepted leniently?
+     - Separate channels per signal or shared channel with explicit ownership?
+
+** DONE [#C] Expose exporter queue-depth/backpressure metrics if available
+   Effort estimate: Small if the SDK exposes queue depth; 3+ days if it
+   requires custom wrappers or upstream SDK work.
+
+   Technical work:
+   - Investigate whether OpenTelemetry Swift exposes exporter or batch
+     processor queue depth.
+   - If available, record metrics such as queued records, dropped exporter
+     records, batch size, and export latency.
+   - If unavailable, decide whether to wrap processors/exporters locally or
+     leave this documented as unsupported.
+
+   Dependencies:
+   - Public OpenTelemetry Swift SDK APIs or safe extension points.
+   - Clear distinction between Cosmic Hammer dropped records and SDK/exporter
+     dropped records.
+
+   Why this remains:
+   - ~docs/opentelemetry.md~ currently notes SDK exporter queue depth is not
+     exposed. Backpressure visibility is valuable, but only if implemented
+     without depending on fragile SDK internals.
+
+*** Investigation refinement (2026-07-01)
+
+**** Current state
+   - ~ProductionTelemetry~ builds OTLP/console exporters,
+     ~BatchSpanProcessor~, ~BatchLogRecordProcessor~, and
+     ~PeriodicMetricReader~.
+   - The trace processor already receives a meter provider, so SDK-native trace
+     processor metrics may be exported.
+   - The pinned SDK exposes no public queue-depth getter. Trace/log queues are
+     private worker state.
+   - Current ~droppedRecords~ means Cosmic Hammer/Lua facade drops, attribute
+     truncation, or invalid span operations. It does not mean SDK/exporter queue
+     drops.
+   - Docs already say SDK exporter queue depth is not exposed.
+
+**** Files to touch
+   - ~Sources/HSSwiftExtensions/ProductionTelemetry.swift~: exporter
+     instrumentation wrappers and diagnostics metrics.
+   - ~Sources/HSDSTCore/Protocols/TelemetryProtocol.swift~: optional exporter
+     stats fields in ~TelemetryStatusSnapshot~.
+   - ~Sources/HSDSTSimulator/SimulatedTelemetry.swift~: deterministic mirror of
+     new diagnostics.
+   - ~Sources/HSSwiftExtensions/OpenTelemetryModule.swift~: expose status fields
+     if added.
+   - ~extensions/opentelemetry/opentelemetry.lua~: doc/comment updates if
+     diagnostics fields change.
+   - ~docs/opentelemetry.md~: clarify supported and unsupported queue/backpressure
+     visibility.
+   - ~Tests/CosmicHammerTests/OpenTelemetryFunctionalTests.swift~: status and
+     simulator stats coverage.
+
+**** Small implementation steps
+   1. Treat SDK trace processor metrics as exported OTEL metrics only, not as a
+      public Cosmic Hammer queue-depth API.
+   2. Add a private locked ~TelemetryExportStats~ helper in
+      ~ProductionTelemetry.swift~ with per-signal last batch size, last export
+      duration, total exported records, failed export calls, and last result.
+   3. Add private wrapper exporters:
+      ~InstrumentedSpanExporter~, ~InstrumentedLogRecordExporter~, and
+      ~InstrumentedMetricExporter~.
+   4. Wrap exporters in ~installPipeline()~ before processors/readers receive
+      them.
+   5. Keep current queue depth optional/nil unless the SDK exposes a public API.
+      Expose configured queue capacity separately if useful.
+   6. Extend runtime diagnostics to emit export duration, batch size, failure
+      count, configured capacity, and unsupported queue-depth state with
+      low-cardinality signal/result attributes.
+   7. Do not mix exporter failures into ~droppedRecords~; use separate
+      ~cosmichammer.telemetry.export.*~ metrics/counters.
+   8. Add simulator support for deterministic export stats.
+   9. Update docs to distinguish SDK-native trace metrics, Cosmic Hammer
+      exporter stats, and true queue-depth gaps.
+   10. Avoid custom batch processor wrappers unless exact queue depth becomes a
+       hard product requirement.
+
+**** Dependencies and edge cases
+   - Depends on public exporter protocols, which are safe extension points.
+   - Queue-depth APIs are not public in the current SDK.
+   - Edge cases: avoid metric-export recursion when instrumenting metric
+     exporter, reset stats on configure/shutdown, protect stats with a lock,
+     preserve console exporter behavior, avoid high-cardinality endpoint/error
+     attributes, and keep SDK-owned metrics best-effort.
+
+**** Verification
+   - ~just test-resources~
+   - Focused ~swift test --filter OpenTelemetryFunctionalTests~ with the same
+     linker flags used by ~just test~.
+   - ~just verify~
+   - Manual local LGTM check: configure OTLP HTTP, emit spans/logs/metrics,
+     flush, and inspect runtime metrics.
+
+**** Scope estimate and open decisions
+   - Estimated size: 0.5-1.5 days for exporter wrappers, status/docs/tests.
+     Exact queue depth and SDK drop counts are 3+ days and likely need custom
+     processors or upstream SDK changes.
+   - Open decisions:
+     - Should SDK-native trace processor metrics be documented as behavior or
+       best-effort?
+     - Should exporter stats appear in ~status()~ or remain metrics-only plus
+       ~diagnostics()~?
+     - Is configured capacity plus latency/failure visibility enough, or is
+       exact queue depth required?
+     - Should custom processor wrappers be explicitly deferred until the SDK
+       exposes stable public queue metrics?
+
+** DEFER Keep these explicitly out of the immediate implementation loop
+   - Do not keep adding tiny API polish unless it directly supports one of the
+     items above.
+   - Do not implement OTLP/gRPC by manually constructing gRPC transport unless
+     the user explicitly approves that larger design.
+   - Do not put Docker/collector-backed tests into default ~just verify~
+     without first deciding local runtime budget.
+
 * TODO — Remaining Build Cleanup
 
 *** TODO Replace Xcode-style ~$(VARIABLE)~ placeholders in Info.plist
@@ -944,7 +1884,7 @@ LuaSkin → LuaSwift).
 
 * TODO — Tech debt review (2026-06-01)
 
-*** DONE Fix generated HSExtensions glue checks and jj/CI enforcement
+*** DONE Fix generated HSExtensions glue checks and jj/local enforcement
     Completed 2026-06-04.
 
     Fixed ~scripts/check-generated-files.sh~ after the ObjC-to-Swift
@@ -961,7 +1901,7 @@ LuaSkin → LuaSwift).
 
     The generator now emits the CLua-era preload header include (~<CLua.h>~).
     Added ~just check-generated~ and ~just verify~, and documented the Git
-    hook as a convenience only; jj users and CI should use the ~just~ recipes.
+    hook as a convenience only; jj users should use the ~just~ recipes.
 
     Verified:
     - ~scripts/check-generated-files.sh --quiet~ exits 0.
@@ -2041,7 +2981,8 @@ LuaSkin → LuaSwift).
 ** SKIP Make generators Xcode build-time phases
    Not feasible — generator outputs are SPM package sources (compiled
    before Xcode target phases run) and xcfilelists (consumed before the
-   build starts). Pre-commit hook + CI is the correct enforcement point.
+   build starts). The pre-commit hook plus ~just check-generated~ is the
+   correct enforcement point.
 
 ** DEFER Make ~BuildDocs~ a workspace SPM dependency
    Only practical option (Option C: ~.executableTarget~ invoked by Run

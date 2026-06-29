@@ -760,12 +760,14 @@ func canvas_draggingCallback(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, canvas_USERDATA_TAG)
     let canvasView = canvas_toHSCanvasViewFromLua(L, idx: 1) as! HSCanvasView
 
+    setCanvasDraggingCallbackCounted(canvasView, false, L: L)
     canvasView.draggingCallbackFn = nil
     canvasView.unregisterDraggedTypes()
     if lua_type(L, 2) == LUA_TFUNCTION {
         canvasView.draggingCallbackFn = L.ref(index: 2)
         canvasView.generation = lua_currentStateGeneration()
         canvasView.registerForDraggedTypes([.fileURL])
+        setCanvasDraggingCallbackCounted(canvasView, true, L: L)
     }
 
     lua_pushvalue(L, 1)
@@ -838,6 +840,7 @@ func canvas_mouseCallback(_ L: LuaState) throws -> CInt {
     let canvasView = canvas_toHSCanvasViewFromLua(L, idx: 1) as! HSCanvasView
     let canvasWindow = canvasView.wrapperWindow
 
+    setCanvasMouseCallbackCounted(canvasView, false, L: L)
     canvasView.mouseCallbackFn = nil
     canvasView.previousTrackedIndex = UInt(NSNotFound)
     canvasWindow?.ignoresMouseEvents = true
@@ -846,6 +849,7 @@ func canvas_mouseCallback(_ L: LuaState) throws -> CInt {
         canvasView.mouseCallbackFn = L.ref(index: 2)
         canvasView.generation = lua_currentStateGeneration()
         canvasWindow?.ignoresMouseEvents = false
+        setCanvasMouseCallbackCounted(canvasView, true, L: L)
     }
 
     lua_pushvalue(L, 1)

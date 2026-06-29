@@ -1,5 +1,6 @@
 import Cocoa
 import CLua
+import HSDSTCore
 import Lua
 import os.log
 
@@ -9,12 +10,29 @@ import os.log
 var observerRefTable: Int32 = LUA_NOREF
 
 var observerDetails: NSMutableDictionary? = nil
+private var activeAXObserverWatcherCount = 0
 
 let keySelfRefCount = "selfRefCount" as CFString
 let keyCallbackRef  = "callbackRef" as CFString  // value is LuaValue? (not NSNumber)
 let keyIsRunning    = "isRunning" as CFString
 let keyWatching     = "watching" as CFString
 let keyGeneration   = "generation" as CFString    // value is NSNumber (UInt64)
+
+private func recordActiveAXObserverWatcherGauge(_ L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+    let telemetry = L.map { environmentGet($0).telemetry } ?? environmentGetGlobalOrNil()?.telemetry
+    telemetry?.recordMetric(
+        name: "cosmichammer.axuielement.observer.watcher.active",
+        kind: .gauge,
+        value: Double(activeAXObserverWatcherCount),
+        attributes: [:],
+        unit: "1"
+    )
+}
+
+func adjustAXObserverWatcherCount(_ delta: Int, L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+    activeAXObserverWatcherCount = max(0, activeAXObserverWatcherCount + delta)
+    recordActiveAXObserverWatcherGauge(L)
+}
 
 // MARK: - Support Functions (observer)
 
@@ -49,11 +67,15 @@ public func pushAXObserver(_ L: UnsafeMutablePointer<lua_State>!, _ observer: AX
 }
 
 func purgeWatchers(element: AXUIElement, notifications: NSMutableArray, observer: AXObserver) {
+    let removedCount = notifications.count
     for notification in notifications {
         guard let what = notification as? String else { continue }
         _ = catchingObjCException { AXObserverRemoveNotification(observer, element, what as CFString) }
     }
     notifications.removeAllObjects()
+    if removedCount > 0 {
+        adjustAXObserverWatcherCount(-removedCount)
+    }
 }
 
 func cleanupAXObserver(_ observer: AXObserver, _ details: NSMutableDictionary) {
@@ -99,7 +121,13 @@ let observerCallbackPtr: AXObserverCallbackWithInfo = { (observer, element, noti
         pushAXUIElement(L, element)
         lua_pushany(L, notification as String)
         pushCFTypeToLua(L, info, observerRefTable)
-        if lua_pcall(L, 4, 0, 0) != LUA_OK {
+        if luaTelemetryPCall(
+            L,
+            nargs: 4,
+            nresults: 0,
+            callbackName: "hs.axuielement.observer",
+            attributes: ["ax.notification": notification as String]
+        ) != LUA_OK {
             os_log(.error, "%{public}s", "\(String(cString: axuielement_OBSERVER_TAG)):callback error:\(String(cString: lua_tostring(L, -1)!))")
             lua_pop(L, 1)
         }
@@ -222,6 +250,7 @@ private func axobserver_addWatchedElement(_ L: LuaState) throws -> CInt {
         }
         if err != .success { throw LuaCallError(String(cString: AXErrorAsString(err))) }
         notifications!.add(what)
+        adjustAXObserverWatcherCount(1, L: L)
     }
     lua_pushvalue(L, 1)
     return 1
@@ -247,6 +276,7 @@ private func axobserver_removeWatchedElement(_ L: LuaState) throws -> CInt {
             throw LuaCallError("ObjC exception in AXObserverRemoveNotification: \(exMsg)")
         }
         notifications.removeObject(at: idx)
+        adjustAXObserverWatcherCount(-1, L: L)
         if err != .success { throw LuaCallError(String(cString: AXErrorAsString(err))) }
     }
     lua_pushvalue(L, 1)
@@ -394,6 +424,8 @@ private func observer_meta_gc(_ L: LuaState) throws -> CInt {
         }
         od.removeAllObjects()
         observerDetails = nil
+        activeAXObserverWatcherCount = 0
+        recordActiveAXObserverWatcherGauge(L)
     }
     return 0
 }

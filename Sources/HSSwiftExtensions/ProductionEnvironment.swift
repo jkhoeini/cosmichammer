@@ -1,7 +1,7 @@
 import Foundation
 import HSDSTCore
 
-func createProductionEnvironment() -> Environment {
+public func createProductionEnvironment() -> Environment {
     Environment(
         clock: ProductionClock(),
         eventLoop: ProductionEventLoop(),
@@ -35,6 +35,7 @@ func createProductionEnvironment() -> Environment {
         drawing: ProductionDrawing(),
         certificate: ProductionCertificate(),
         media: ProductionMedia(),
-        application: ProductionApplication()
+        application: ProductionApplication(),
+        telemetry: ProductionTelemetry()
     )
 }

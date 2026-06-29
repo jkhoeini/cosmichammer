@@ -14,6 +14,18 @@ import HSDSTCore
 /// This module is based primarily on code from the previous incarnation of Mjolnir.
 
 private let USERDATA_TAG = "hs.screen.watcher"
+private var activeScreenWatcherCount = 0
+
+private func recordActiveScreenWatcherGauge(_ L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+    let telemetry = L.map { environmentGet($0).telemetry } ?? environmentGetGlobalOrNil()?.telemetry
+    telemetry?.recordMetric(
+        name: "cosmichammer.screen.watcher.active",
+        kind: .gauge,
+        value: Double(activeScreenWatcherCount),
+        attributes: [:],
+        unit: "1"
+    )
+}
 
 // MARK: - MJScreenWatcher
 
@@ -31,15 +43,7 @@ private class MJScreenWatcher: NSObject, LuaTeardownable {
         guard !tornDown else { return }
         tornDown = true
         if running {
-            running = false
-            if let token = screenParamsToken {
-                notificationRef?.removeObserver(token)
-                screenParamsToken = nil
-            }
-            if let token = activeDisplayToken {
-                notificationRef?.removeObserver(token)
-                activeDisplayToken = nil
-            }
+            stop(lua_getCurrentState())
         }
         notificationRef = nil
         callback = nil
@@ -65,9 +69,57 @@ private class MJScreenWatcher: NSObject, LuaTeardownable {
                 lua_pushnil(L)
             }
         }
-        if lua_pcall(L, argCount, 0, 0) != LUA_OK {
+        if luaTelemetryPCall(
+            L,
+            nargs: argCount,
+            nresults: 0,
+            callbackName: "hs.screen.watcher",
+            attributes: ["screen.active_display_change": isActiveDisplayChange]
+        ) != LUA_OK {
             lua_pop(L, 1)
         }
+    }
+
+    func start(_ L: UnsafeMutablePointer<lua_State>) {
+        guard !running else { return }
+        running = true
+
+        let notif = environmentGet(L).notification
+        notificationRef = notif
+
+        screenParamsToken = notif.addObserver(
+            name: NSApplication.didChangeScreenParametersNotification.rawValue,
+            object: nil
+        ) { [weak self] _ in
+            self?.screensChanged(isActiveDisplayChange: false)
+        }
+
+        if includeActive {
+            activeDisplayToken = notif.addWorkspaceObserver(
+                name: "NSWorkspaceActiveDisplayDidChangeNotification",
+                object: nil
+            ) { [weak self] _ in
+                self?.screensChanged(isActiveDisplayChange: true)
+            }
+        }
+
+        activeScreenWatcherCount += 1
+        recordActiveScreenWatcherGauge(L)
+    }
+
+    func stop(_ L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+        guard running else { return }
+        running = false
+        if let token = screenParamsToken {
+            notificationRef?.removeObserver(token)
+            screenParamsToken = nil
+        }
+        if let token = activeDisplayToken {
+            notificationRef?.removeObserver(token)
+            activeDisplayToken = nil
+        }
+        activeScreenWatcherCount = max(0, activeScreenWatcherCount - 1)
+        recordActiveScreenWatcherGauge(L)
     }
 }
 
@@ -82,48 +134,13 @@ public func luaopen_hs_libscreenwatcher(_ L: UnsafeMutablePointer<lua_State>!) -
                 "start": .closure { L in
                     let watcher: MJScreenWatcher = try L.checkArgument(1)
                     lua_settop(L, 1)
-
-                    if watcher.running { return 1 }
-                    watcher.running = true
-
-                    let notif = environmentGet(L).notification
-                    watcher.notificationRef = notif
-
-                    watcher.screenParamsToken = notif.addObserver(
-                        name: NSApplication.didChangeScreenParametersNotification.rawValue,
-                        object: nil
-                    ) { [weak watcher] _ in
-                        watcher?.screensChanged(isActiveDisplayChange: false)
-                    }
-
-                    if watcher.includeActive {
-                        watcher.activeDisplayToken = notif.addWorkspaceObserver(
-                            name: "NSWorkspaceActiveDisplayDidChangeNotification",
-                            object: nil
-                        ) { [weak watcher] _ in
-                            watcher?.screensChanged(isActiveDisplayChange: true)
-                        }
-                    }
-
+                    watcher.start(L)
                     return 1
                 },
                 "stop": .closure { L in
                     let watcher: MJScreenWatcher = try L.checkArgument(1)
                     lua_settop(L, 1)
-
-                    if !watcher.running { return 1 }
-                    watcher.running = false
-
-                    let notif = environmentGet(L).notification
-                    if let token = watcher.screenParamsToken {
-                        notif.removeObserver(token)
-                        watcher.screenParamsToken = nil
-                    }
-                    if let token = watcher.activeDisplayToken {
-                        notif.removeObserver(token)
-                        watcher.activeDisplayToken = nil
-                    }
-
+                    watcher.stop(L)
                     return 1
                 },
             ],

@@ -6,6 +6,29 @@ import os.log
 import AVFoundation
 
 private let USERDATA_TAG = "hs.sound"
+private var activeSoundCallbackCount = 0
+
+private func recordActiveSoundCallbackGauge(_ L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+    let telemetry = L.map { environmentGet($0).telemetry } ?? environmentGetGlobalOrNil()?.telemetry
+    telemetry?.recordMetric(
+        name: "cosmichammer.sound.callback.active",
+        kind: .gauge,
+        value: Double(activeSoundCallbackCount),
+        attributes: [:],
+        unit: "1"
+    )
+}
+
+func setSoundCallbackCounted(_ sound: HSSoundObject, _ active: Bool, L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+    guard sound.countedCallbackActive != active else { return }
+    sound.countedCallbackActive = active
+    if active {
+        activeSoundCallbackCount += 1
+    } else {
+        activeSoundCallbackCount = max(0, activeSoundCallbackCount - 1)
+    }
+    recordActiveSoundCallbackGauge(L)
+}
 
 /// TigerStyle: maximum audio components to enumerate before bailing out.
 private let kMaxAudioComponents = 1_000
@@ -15,9 +38,10 @@ private let kMaxSoundFileEntries = 10_000
 
 // MARK: - Support Functions and Classes
 
-private class HSSoundObject: NSObject, NSSoundDelegate {
+class HSSoundObject: NSObject, NSSoundDelegate {
     var soundObject: NSSound?
     var callback: LuaValue?
+    var countedCallbackActive = false
     var selfRef: Int32 = LUA_NOREF
     var stopOnRelease: Bool = true
     var generation: UInt64 = 0
@@ -33,6 +57,7 @@ private class HSSoundObject: NSObject, NSSoundDelegate {
     func teardown() {
         guard !tornDown else { return }
         tornDown = true
+        setSoundCallbackCounted(self, false)
         callback = nil
         soundObject?.delegate = nil
         if stopOnRelease { soundObject?.stop() }
@@ -59,7 +84,13 @@ private class HSSoundObject: NSObject, NSSoundDelegate {
                 } else {
                     lua_pushnil(L)
                 }
-                if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
+                if luaTelemetryPCall(
+                    L,
+                    nargs: 2,
+                    nresults: 0,
+                    callbackName: "hs.sound.didFinishPlaying",
+                    attributes: ["sound.finished": flag]
+                ) != LUA_OK { lua_pop(L, 1) }
             }
             // a completed song should rely solely on user saved userdata values to prevent __gc
             // since there will be no other way to access it once this point is reached if it hasn't
@@ -400,13 +431,16 @@ public func luaopen_hs_libsound(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 
             "setCallback": .closure { L in
                 let obj: HSSoundObject = try L.checkArgument(1)
                 if lua_type(L, 2) == LUA_TFUNCTION {
+                    obj.callback = nil
                     obj.callback = L.ref(index: 2)
+                    setSoundCallbackCounted(obj, true, L: L)
                     if obj.selfRef == LUA_NOREF {
                         lua_pushvalue(L, 1)
                         obj.selfRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
                     }
                 } else {
                     obj.callback = nil
+                    setSoundCallbackCounted(obj, false, L: L)
                     if obj.soundObject?.isPlaying != true {
                         luaL_unref(L, LUA_REGISTRYINDEX_VALUE, obj.selfRef)
                         obj.selfRef = LUA_NOREF

@@ -12,8 +12,20 @@ private var eventhandler: EventHandlerRef?
 
 private var monotonicHotkeyCount: UInt32 = 0
 private var hotkeys: NSMutableDictionary? = nil // [NSNumber: NSValue]
+private var activeHotkeyCount = 0
 
 private var keyRepeatManager: HSKeyRepeatManager?
+
+private func recordActiveHotkeyGauge(_ L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+    let telemetry = L.map { environmentGet($0).telemetry } ?? environmentGetGlobalOrNil()?.telemetry
+    telemetry?.recordMetric(
+        name: "cosmichammer.hotkey.active",
+        kind: .gauge,
+        value: Double(activeHotkeyCount),
+        attributes: [:],
+        unit: "1"
+    )
+}
 
 // MARK: - HSHotkey class
 
@@ -43,6 +55,8 @@ private class HSHotkey {
     func stop() {
         guard enabled else { return }
         enabled = false
+        activeHotkeyCount = max(0, activeHotkeyCount - 1)
+        recordActiveHotkeyGauge()
 
         // Unregister via the protocol — ProductionInput calls Carbon's
         // UnregisterEventHotKey; SimulatedInput removes from its table.
@@ -235,7 +249,19 @@ private func trigger_hotkey_callback(_ eventUID: Int32, eventKind: Int32, isRepe
 
     if let cb = cb {
         cb.push(onto: L)
-        if lua_pcall(L, 0, 0, 0) != LUA_OK {
+        if luaTelemetryPCall(
+            L,
+            nargs: 0,
+            nresults: 0,
+            callbackName: "hs.hotkey",
+            attributes: [
+                "hotkey.id": hk.monotonicID,
+                "hotkey.keycode": hk.keycode,
+                "hotkey.mods": hk.mods,
+                "hotkey.event_kind": eventKind,
+                "hotkey.repeat": isRepeat,
+            ]
+        ) != LUA_OK {
             lua_pop(L, 1)
             // For the sake of safety, invalidate any repeat timer so we don't spam errors
             keyRepeatManager?.stopTimer()
@@ -273,6 +299,8 @@ private func meta_gc(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     }
     keyRepeatManager?.stopTimer()
     keyRepeatManager = nil
+    activeHotkeyCount = 0
+    recordActiveHotkeyGauge(L)
     hotkeys?.removeAllObjects()
     return 0
 }
@@ -305,6 +333,8 @@ public func luaopen_hs_libhotkey(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
                 }
                 if registered {
                     hk.enabled = true
+                    activeHotkeyCount += 1
+                    recordActiveHotkeyGauge(L)
                     lua_pushvalue(L, 1)
                 } else {
                     lua_pushnil(L)

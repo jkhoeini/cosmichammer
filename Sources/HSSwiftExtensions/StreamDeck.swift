@@ -13,10 +13,106 @@ import Lua
 import IOKit
 import IOKit.hid
 import os.log
+import HSDSTCore
 
 // MARK: - Constants (mirroring streamdeck.h)
 
 private let USERDATA_TAG = "hs.streamdeck"
+private var activeStreamDeckDiscoveryCallbackCount = 0
+private var activeStreamDeckButtonCallbackCount = 0
+private var activeStreamDeckEncoderCallbackCount = 0
+private var activeStreamDeckScreenCallbackCount = 0
+
+private func recordStreamDeckCallbackGauge(
+    name: String,
+    value: Int,
+    L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()
+) {
+    let telemetry = L.map { environmentGet($0).telemetry } ?? environmentGetGlobalOrNil()?.telemetry
+    telemetry?.recordMetric(
+        name: name,
+        kind: .gauge,
+        value: Double(value),
+        attributes: [:],
+        unit: "1"
+    )
+}
+
+func adjustStreamDeckDiscoveryCallbackCount(_ delta: Int, L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+    activeStreamDeckDiscoveryCallbackCount = max(0, activeStreamDeckDiscoveryCallbackCount + delta)
+    recordStreamDeckCallbackGauge(
+        name: "cosmichammer.streamdeck.discovery.callback.active",
+        value: activeStreamDeckDiscoveryCallbackCount,
+        L: L
+    )
+}
+
+func adjustStreamDeckButtonCallbackCount(_ delta: Int, L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+    activeStreamDeckButtonCallbackCount = max(0, activeStreamDeckButtonCallbackCount + delta)
+    recordStreamDeckCallbackGauge(
+        name: "cosmichammer.streamdeck.button.callback.active",
+        value: activeStreamDeckButtonCallbackCount,
+        L: L
+    )
+}
+
+func adjustStreamDeckEncoderCallbackCount(_ delta: Int, L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+    activeStreamDeckEncoderCallbackCount = max(0, activeStreamDeckEncoderCallbackCount + delta)
+    recordStreamDeckCallbackGauge(
+        name: "cosmichammer.streamdeck.encoder.callback.active",
+        value: activeStreamDeckEncoderCallbackCount,
+        L: L
+    )
+}
+
+func adjustStreamDeckScreenCallbackCount(_ delta: Int, L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+    activeStreamDeckScreenCallbackCount = max(0, activeStreamDeckScreenCallbackCount + delta)
+    recordStreamDeckCallbackGauge(
+        name: "cosmichammer.streamdeck.screen.callback.active",
+        value: activeStreamDeckScreenCallbackCount,
+        L: L
+    )
+}
+
+func setStreamDeckDiscoveryCallbackCounted(
+    _ manager: HSStreamDeckManager,
+    _ active: Bool,
+    L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()
+) {
+    guard manager.countedDiscoveryCallbackActive != active else { return }
+    manager.countedDiscoveryCallbackActive = active
+    adjustStreamDeckDiscoveryCallbackCount(active ? 1 : -1, L: L)
+}
+
+func setStreamDeckButtonCallbackCounted(
+    _ device: HSStreamDeckDevice,
+    _ active: Bool,
+    L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()
+) {
+    guard device.countedButtonCallbackActive != active else { return }
+    device.countedButtonCallbackActive = active
+    adjustStreamDeckButtonCallbackCount(active ? 1 : -1, L: L)
+}
+
+func setStreamDeckEncoderCallbackCounted(
+    _ device: HSStreamDeckDevice,
+    _ active: Bool,
+    L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()
+) {
+    guard device.countedEncoderCallbackActive != active else { return }
+    device.countedEncoderCallbackActive = active
+    adjustStreamDeckEncoderCallbackCount(active ? 1 : -1, L: L)
+}
+
+func setStreamDeckScreenCallbackCounted(
+    _ device: HSStreamDeckDevice,
+    _ active: Bool,
+    L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()
+) {
+    guard device.countedScreenCallbackActive != active else { return }
+    device.countedScreenCallbackActive = active
+    adjustStreamDeckScreenCallbackCount(active ? 1 : -1, L: L)
+}
 
 private let USB_VID_ELGATO: Int                  = 0x0fd9
 
@@ -54,6 +150,9 @@ class HSStreamDeckDevice: NSObject, LuaTeardownable {
     var buttonCallbackRef: Int32 = LUA_NOREF
     var encoderCallbackRef: Int32 = LUA_NOREF
     var screenCallbackRef: Int32 = LUA_NOREF
+    var countedButtonCallbackActive = false
+    var countedEncoderCallbackActive = false
+    var countedScreenCallbackActive = false
 
     var isValid: Bool = true
     var lsCanary: UInt64 = UInt64()
@@ -63,7 +162,14 @@ class HSStreamDeckDevice: NSObject, LuaTeardownable {
     func teardown() {
         guard !tornDown else { return }
         tornDown = true
-        // Callback refs are cleaned up by the Lua GC caller
+        setStreamDeckButtonCallbackCounted(self, false)
+        setStreamDeckEncoderCallbackCounted(self, false)
+        setStreamDeckScreenCallbackCounted(self, false)
+        if let L = lua_getCurrentState() {
+            lua_unrefRegistryRef(L, &buttonCallbackRef)
+            lua_unrefRegistryRef(L, &encoderCallbackRef)
+            lua_unrefRegistryRef(L, &screenCallbackRef)
+        }
     }
 
     var deckType: String = "Unknown"
@@ -210,7 +316,17 @@ class HSStreamDeckDevice: NSObject, LuaTeardownable {
                 _ = pushHSStreamDeckDevice(L, self)
                 L.push(Int(button))
                 L.push(newButtonStates[idx].boolValue)
-                if lua_pcall(L, 3, 0, 0) != LUA_OK { lua_pop(L, 1) }
+                if luaTelemetryPCall(
+                    L,
+                    nargs: 3,
+                    nresults: 0,
+                    callbackName: "hs.streamdeck.button",
+                    attributes: [
+                        "streamdeck.event": "button",
+                        "streamdeck.button": Int(button),
+                        "streamdeck.pressed": newButtonStates[idx].boolValue,
+                    ]
+                ) != LUA_OK { lua_pop(L, 1) }
                 buttonStateCache[idx] = newButtonStates[idx]
             }
         }
@@ -239,7 +355,17 @@ class HSStreamDeckDevice: NSObject, LuaTeardownable {
                 L.push(newPressEncoderStates[idx].boolValue)
                 L.push(false)
                 L.push(false)
-                if lua_pcall(L, 5, 0, 0) != LUA_OK { lua_pop(L, 1) }
+                if luaTelemetryPCall(
+                    L,
+                    nargs: 5,
+                    nresults: 0,
+                    callbackName: "hs.streamdeck.encoder",
+                    attributes: [
+                        "streamdeck.event": "encoder_button",
+                        "streamdeck.button": Int(button),
+                        "streamdeck.pressed": newPressEncoderStates[idx].boolValue,
+                    ]
+                ) != LUA_OK { lua_pop(L, 1) }
                 encoderButtonStateCache[idx] = newPressEncoderStates[idx]
             }
         }
@@ -265,7 +391,17 @@ class HSStreamDeckDevice: NSObject, LuaTeardownable {
         L.push(false)
         L.push(turningLeft)
         L.push(!turningLeft)
-        if lua_pcall(L, 5, 0, 0) != LUA_OK { lua_pop(L, 1) }
+        if luaTelemetryPCall(
+            L,
+            nargs: 5,
+            nresults: 0,
+            callbackName: "hs.streamdeck.encoder",
+            attributes: [
+                "streamdeck.event": "encoder_turn",
+                "streamdeck.button": Int(button),
+                "streamdeck.turning_left": turningLeft,
+            ]
+        ) != LUA_OK { lua_pop(L, 1) }
     }
 
     func deviceDidSendScreenTouch(eventType: String, startX: Int32, startY: Int32, endX: Int32, endY: Int32) {
@@ -289,7 +425,16 @@ class HSStreamDeckDevice: NSObject, LuaTeardownable {
         L.push(Int(startY))
         L.push(Int(endX))
         L.push(Int(endY))
-        if lua_pcall(L, 6, 0, 0) != LUA_OK { lua_pop(L, 1) }
+        if luaTelemetryPCall(
+            L,
+            nargs: 6,
+            nresults: 0,
+            callbackName: "hs.streamdeck.screen",
+            attributes: [
+                "streamdeck.event": "screen_touch",
+                "streamdeck.touch.event_type": eventType,
+            ]
+        ) != LUA_OK { lua_pop(L, 1) }
     }
 
     // MARK: - Device commands
@@ -925,6 +1070,7 @@ class HSStreamDeckManager: NSObject {
     var ioHIDManager: IOHIDManager?
     var devices: [HSStreamDeckDevice] = []
     var discoveryCallbackRef: Int32 = LUA_NOREF
+    var countedDiscoveryCallbackActive = false
     var lsCanary: UInt64 = UInt64()
 
     var inputBuffer: UnsafeMutablePointer<UInt8>?
@@ -1051,7 +1197,13 @@ class HSStreamDeckManager: NSObject {
         lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(discoveryCallbackRef))
         L.push(true)
         _ = pushHSStreamDeckDevice(L, deck)
-        if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
+        if luaTelemetryPCall(
+            L,
+            nargs: 2,
+            nresults: 0,
+            callbackName: "hs.streamdeck.discovery",
+            attributes: ["streamdeck.connected": true]
+        ) != LUA_OK { lua_pop(L, 1) }
         return deck
     }
 
@@ -1072,7 +1224,13 @@ class HSStreamDeckManager: NSObject {
                     lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(discoveryCallbackRef))
                     L.push(false)
                     _ = pushHSStreamDeckDevice(L, deckDevice)
-                    if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
+                    if luaTelemetryPCall(
+                        L,
+                        nargs: 2,
+                        nresults: 0,
+                        callbackName: "hs.streamdeck.discovery",
+                        attributes: ["streamdeck.connected": false]
+                    ) != LUA_OK { lua_pop(L, 1) }
                 }
 
                 var tmpLSUUID = deckDevice.lsCanary
@@ -1204,6 +1362,18 @@ private func hidDisconnectCallback(_ context: UnsafeMutableRawPointer?,
 
 // MARK: - Lua API
 
+private func teardownStreamDeckManager(_ manager: HSStreamDeckManager, L: UnsafeMutablePointer<lua_State>?) {
+    setStreamDeckDiscoveryCallbackCounted(manager, false, L: L)
+    for device in manager.devices {
+        device.teardown()
+    }
+    manager.stopHIDManager()
+    manager.doGC()
+    if let L {
+        lua_unrefRegistryRef(L, &manager.discoveryCallbackRef)
+    }
+}
+
 /// hs.streamdeck.init(fn)
 /// Function
 /// Initialises the Stream Deck driver and sets a discovery callback
@@ -1221,8 +1391,12 @@ private func hidDisconnectCallback(_ context: UnsafeMutableRawPointer?,
 private func streamdeck_init(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     luaL_checktype(L, 1, LUA_TFUNCTION)
 
+    if let manager = deckManager {
+        teardownStreamDeckManager(manager, L: L)
+    }
     deckManager = HSStreamDeckManager()
     lua_replaceRegistryFunctionRef(L, &deckManager!.discoveryCallbackRef, at: 1)
+    setStreamDeckDiscoveryCallbackCounted(deckManager!, true, L: L)
     deckManager!.lsCanary = lua_currentStateGeneration()
     deckManager!.startHIDManager()
 
@@ -1241,10 +1415,10 @@ private func streamdeck_init(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Returns:
 ///  * None
 private func streamdeck_discoveryCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
-    luaL_checktype(L, 1, LUA_TFUNCTION)
-
     if let manager = deckManager {
+        let active = lua_type(L, 1) == LUA_TFUNCTION
         lua_replaceRegistryFunctionRef(L, &manager.discoveryCallbackRef, at: 1)
+        setStreamDeckDiscoveryCallbackCounted(manager, active, L: L)
     }
 
     return 0
@@ -1331,19 +1505,25 @@ func luaopen_hs_libstreamdeck(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
             },
             "buttonCallback": .closure { L in
                 let device: HSStreamDeckDevice = try L.checkArgument(1)
+                let active = lua_type(L, 2) == LUA_TFUNCTION
                 lua_replaceRegistryFunctionRef(L, &device.buttonCallbackRef, at: 2)
+                setStreamDeckButtonCallbackCounted(device, active, L: L)
                 lua_pushvalue(L, 1)
                 return 1
             },
             "encoderCallback": .closure { L in
                 let device: HSStreamDeckDevice = try L.checkArgument(1)
+                let active = lua_type(L, 2) == LUA_TFUNCTION
                 lua_replaceRegistryFunctionRef(L, &device.encoderCallbackRef, at: 2)
+                setStreamDeckEncoderCallbackCounted(device, active, L: L)
                 lua_pushvalue(L, 1)
                 return 1
             },
             "screenCallback": .closure { L in
                 let device: HSStreamDeckDevice = try L.checkArgument(1)
+                let active = lua_type(L, 2) == LUA_TFUNCTION
                 lua_replaceRegistryFunctionRef(L, &device.screenCallbackRef, at: 2)
+                setStreamDeckScreenCallbackCounted(device, active, L: L)
                 lua_pushvalue(L, 1)
                 return 1
             },
@@ -1422,8 +1602,8 @@ func luaopen_hs_libstreamdeck(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
         if let manager = deckManager {
             var tmpLSUUID = manager.lsCanary
             manager.lsCanary = tmpLSUUID
-            manager.stopHIDManager()
-            manager.doGC()
+            teardownStreamDeckManager(manager, L: L)
+            deckManager = nil
         }
         return 0
     }, 0)

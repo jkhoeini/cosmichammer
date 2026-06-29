@@ -59,6 +59,52 @@ class HSGifAnimator: NSObject {
 let canvas_USERDATA_TAG = "hs.canvas"
 // canvas_refTable removed — LuaValue? manages callback lifetime
 var canvas_defaultCustomSubRole: Bool = true
+private var activeCanvasMouseCallbackCount = 0
+private var activeCanvasDraggingCallbackCount = 0
+
+private func recordActiveCanvasMouseCallbackGauge(_ L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+    let telemetry = L.map { environmentGet($0).telemetry } ?? environmentGetGlobalOrNil()?.telemetry
+    telemetry?.recordMetric(
+        name: "cosmichammer.canvas.mouse.callback.active",
+        kind: .gauge,
+        value: Double(activeCanvasMouseCallbackCount),
+        attributes: [:],
+        unit: "1"
+    )
+}
+
+func setCanvasMouseCallbackCounted(_ view: HSCanvasView, _ active: Bool, L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+    guard view.countedMouseCallbackActive != active else { return }
+    view.countedMouseCallbackActive = active
+    if active {
+        activeCanvasMouseCallbackCount += 1
+    } else {
+        activeCanvasMouseCallbackCount = max(0, activeCanvasMouseCallbackCount - 1)
+    }
+    recordActiveCanvasMouseCallbackGauge(L)
+}
+
+private func recordActiveCanvasDraggingCallbackGauge(_ L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+    let telemetry = L.map { environmentGet($0).telemetry } ?? environmentGetGlobalOrNil()?.telemetry
+    telemetry?.recordMetric(
+        name: "cosmichammer.canvas.dragging.callback.active",
+        kind: .gauge,
+        value: Double(activeCanvasDraggingCallbackCount),
+        attributes: [:],
+        unit: "1"
+    )
+}
+
+func setCanvasDraggingCallbackCounted(_ view: HSCanvasView, _ active: Bool, L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+    guard view.countedDraggingCallbackActive != active else { return }
+    view.countedDraggingCallbackActive = active
+    if active {
+        activeCanvasDraggingCallbackCount += 1
+    } else {
+        activeCanvasDraggingCallbackCount = max(0, activeCanvasDraggingCallbackCount - 1)
+    }
+    recordActiveCanvasDraggingCallbackGauge(L)
+}
 
 // Can't have "static" or "constant" dynamic NSObjects like NSArray, so define in lua_open
 var canvas_languageDictionary: NSDictionary!
@@ -922,6 +968,8 @@ private func canvas_teardownView(_ theView: HSCanvasView) {
     theView.selfRefCount -= 1
     if theView.selfRefCount == 0 {
         if !canvas_parentIsWindow(theView) { theView.removeFromSuperview() }
+        setCanvasMouseCallbackCounted(theView, false)
+        setCanvasDraggingCallbackCounted(theView, false)
         theView.mouseCallbackFn = nil
         theView.draggingCallbackFn = nil
         theView.selfRef = nil  // release any fade-animation registry reference

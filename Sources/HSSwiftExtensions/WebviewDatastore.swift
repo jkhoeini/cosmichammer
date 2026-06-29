@@ -136,7 +136,16 @@ private func datastore_fetchRecords(_ L: LuaState) throws -> CInt {
                     wv_pushAny(L, record)
                     lua_rawseti(L, -2, luaL_len(L, -2) + 1)
                 }
-                if lua_pcall(L, 1, 0, 0) != LUA_OK { lua_pop(L, 1) }
+                if luaTelemetryPCall(
+                    L,
+                    nargs: 1,
+                    nresults: 0,
+                    callbackName: "hs.webview.datastore.fetchRecords",
+                    attributes: [
+                        "webview.datastore.record.count": records.count,
+                        "webview.datastore.type.count": typeSet.count,
+                    ]
+                ) != LUA_OK { lua_pop(L, 1) }
                 backgroundCallbacks.removeValue(forKey: key)
             }
         }
@@ -206,7 +215,16 @@ private func datastore_removeRecords(_ L: LuaState) throws -> CInt {
                 }
                 if let k = key, let cb = fnValue, backgroundCallbacks[k] != nil {
                     cb.push(onto: L)
-                    if lua_pcall(L, 0, 0, 0) != LUA_OK { lua_pop(L, 1) }
+                    if luaTelemetryPCall(
+                        L,
+                        nargs: 0,
+                        nresults: 0,
+                        callbackName: "hs.webview.datastore.removeRecords",
+                        attributes: [
+                            "webview.datastore.record.count": targets.count,
+                            "webview.datastore.type.count": typeSet.count,
+                        ]
+                    ) != LUA_OK { lua_pop(L, 1) }
                     backgroundCallbacks.removeValue(forKey: k)
                 }
             }
@@ -280,7 +298,13 @@ private func datastore_removeDataFrom(_ L: LuaState) throws -> CInt {
             }
             if let k = key, let cb = fnValue, backgroundCallbacks[k] != nil {
                 cb.push(onto: L)
-                if lua_pcall(L, 0, 0, 0) != LUA_OK { lua_pop(L, 1) }
+                if luaTelemetryPCall(
+                    L,
+                    nargs: 0,
+                    nresults: 0,
+                    callbackName: "hs.webview.datastore.removeSince",
+                    attributes: ["webview.datastore.type.count": typeSet.count]
+                ) != LUA_OK { lua_pop(L, 1) }
                 backgroundCallbacks.removeValue(forKey: k)
             }
         }

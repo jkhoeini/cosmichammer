@@ -4,6 +4,7 @@ import Lua
 import Cocoa
 import IOKit
 import IOKit.usb
+import HSDSTCore
 import os.log
 
 // kIOMessageServiceIsTerminated is a C macro not bridged to Swift
@@ -15,6 +16,18 @@ private let kIOMessageServiceIsTerminated: UInt32 = 0xE000_0010
 
 private let USERDATA_TAG = "hs.usb.watcher"
 private var refTable: Int32 = 0
+private var activeUSBWatcherCount = 0
+
+private func recordActiveUSBWatcherGauge(_ L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+    let telemetry = L.map { environmentGet($0).telemetry } ?? environmentGetGlobalOrNil()?.telemetry
+    telemetry?.recordMetric(
+        name: "cosmichammer.usb.watcher.active",
+        kind: .gauge,
+        value: Double(activeUSBWatcherCount),
+        attributes: [:],
+        unit: "1"
+    )
+}
 
 /// Module-level map from userdata pointer to LuaValue callback.
 /// We cannot store a LuaValue (class) inside a struct that lives in
@@ -74,7 +87,13 @@ private func DeviceNotification(refCon: UnsafeMutableRawPointer?,
             L.push("removed")
             lua_settable(L, -3)
 
-            if lua_pcall(L, 1, 0, 0) != LUA_OK {
+            if luaTelemetryPCall(
+                L,
+                nargs: 1,
+                nresults: 0,
+                callbackName: "hs.usb.watcher",
+                attributes: ["usb.event": "removed"]
+            ) != LUA_OK {
                 lua_pop(L, 1)
             }
         }
@@ -157,7 +176,13 @@ private func DeviceAdded(refCon: UnsafeMutableRawPointer?, iterator: io_iterator
             L.push("added")
             lua_settable(L, -3)
 
-            if lua_pcall(L, 1, 0, 0) != LUA_OK {
+            if luaTelemetryPCall(
+                L,
+                nargs: 1,
+                nresults: 0,
+                callbackName: "hs.usb.watcher",
+                attributes: ["usb.event": "added"]
+            ) != LUA_OK {
                 lua_pop(L, 1)
             }
         }
@@ -222,6 +247,8 @@ private func usb_watcher_start(_ L: LuaState) throws -> CInt {
 
     usbwatcher.pointee.running = true
     usbwatcher.pointee.isFirstRun = true
+    activeUSBWatcherCount += 1
+    recordActiveUSBWatcherGauge(L)
 
     CFRunLoopAddSource(CFRunLoopGetCurrent(),
                        usbwatcher.pointee.runLoopSource?.takeUnretainedValue(),
@@ -258,6 +285,8 @@ private func usb_watcher_stop(_ L: LuaState) throws -> CInt {
     CFRunLoopRemoveSource(CFRunLoopGetCurrent(),
                           usbwatcher.pointee.runLoopSource?.takeUnretainedValue(),
                           .defaultMode)
+    activeUSBWatcherCount = max(0, activeUSBWatcherCount - 1)
+    recordActiveUSBWatcherGauge(L)
 
     return 1
 }
@@ -289,6 +318,8 @@ public func luaopen_hs_libusbwatcher(_ L: UnsafeMutablePointer<lua_State>!) -> I
                 CFRunLoopRemoveSource(CFRunLoopGetCurrent(),
                                       usbwatcher.pointee.runLoopSource?.takeUnretainedValue(),
                                       .defaultMode)
+                activeUSBWatcherCount = max(0, activeUSBWatcherCount - 1)
+                recordActiveUSBWatcherGauge(L)
             }
 
             callbackMap[UnsafeMutableRawPointer(usbwatcher)] = nil

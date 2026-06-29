@@ -23,6 +23,7 @@ private func xdgStateHome() -> String {
 private enum MsgID: Int32 {
     case legacy     =   0
     case register   = 100
+    case context    = 101
     case unregister = 200
     case command    = 500
     case query      = 501
@@ -157,7 +158,24 @@ private final class HSClient {
             reg = "\(localName)\0\(str)"
         }
         let resp = sendToRemote(reg, msgID: .register, wantResponse: true)
-        return resp != nil
+        guard resp != nil else { return false }
+        sendTelemetryContext()
+        return true
+    }
+
+    func sendTelemetryContext() {
+        var context: [String: String] = [:]
+        let environment = ProcessInfo.processInfo.environment
+        if let traceparent = environment["traceparent"] ?? environment["TRACEPARENT"], !traceparent.isEmpty {
+            context["traceparent"] = traceparent
+        }
+        if let baggage = environment["baggage"] ?? environment["BAGGAGE"], !baggage.isEmpty {
+            context["baggage"] = baggage
+        }
+        guard !context.isEmpty,
+              let json = try? JSONSerialization.data(withJSONObject: context),
+              let str = String(data: json, encoding: .utf8) else { return }
+        sendToRemote("\(localName)\0\(str)", msgID: .context, wantResponse: false)
     }
 
     func unregisterWithRemote() {

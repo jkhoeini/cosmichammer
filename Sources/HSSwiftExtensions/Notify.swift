@@ -2,6 +2,7 @@ import Cocoa
 import CLua
 import Lua
 import os.log
+import HSDSTCore
 
 // NSUserNotification and its relations are deprecated but we're not ready to switch quite yet...
 
@@ -23,8 +24,33 @@ let KEY_ALWAYSPRESENT = "alwaysPresent"
 let KEY_AUTOWITHDRAW  = "autoWithdraw"
 let KEY_SELFREFCOUNT  = "selfRefCount"
 let KEY_DELIVERED     = "delivered"
+let KEY_ACTIVEGAUGE   = "activeGauge"
 
 var nt_old_delegate: NSUserNotificationCenterDelegate?
+private var activeNotifyUserdataCount = 0
+
+private func recordActiveNotifyUserdataGauge(_ L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+    let telemetry = L.map { environmentGet($0).telemetry } ?? environmentGetGlobalOrNil()?.telemetry
+    telemetry?.recordMetric(
+        name: "cosmichammer.notify.userdata.active",
+        kind: .gauge,
+        value: Double(activeNotifyUserdataCount),
+        attributes: [:],
+        unit: "1"
+    )
+}
+
+private func setNotifyUserdataCounted(_ userInfo: NSMutableDictionary, _ active: Bool, L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+    let counted = (userInfo[KEY_ACTIVEGAUGE] as? NSNumber)?.boolValue ?? false
+    guard counted != active else { return }
+    userInfo[KEY_ACTIVEGAUGE] = NSNumber(value: active)
+    if active {
+        activeNotifyUserdataCount += 1
+    } else {
+        activeNotifyUserdataCount = max(0, activeNotifyUserdataCount - 1)
+    }
+    recordActiveNotifyUserdataGauge(L)
+}
 
 // MARK: - Support Functions and Classes
 
@@ -80,7 +106,16 @@ class HSModuleNotificationManager: NSObject, NSUserNotificationCenterDelegate {
         lua_pushany(L, userInfo[KEY_FNTAG])
         nt_pushNSUserNotification(L, notification)
 
-        if lua_pcall(L, 2, 0, 0) != LUA_OK {
+        if luaTelemetryPCall(
+            L,
+            nargs: 2,
+            nresults: 0,
+            callbackName: "hs.notify.activation",
+            attributes: [
+                "notification.delivered": userInfo[KEY_DELIVERED] as? Bool ?? true,
+                "notification.has_action": notification.activationType != .none,
+            ]
+        ) != LUA_OK {
             lua_pop(L, 1) // pop error message
             lua_pop(L, 1) // pop the hs.notify module
             return
@@ -261,6 +296,7 @@ private func notification_new(_ L: LuaState) throws -> CInt {
         KEY_AUTOWITHDRAW:  true,
         KEY_SELFREFCOUNT:  0,
         KEY_DELIVERED:     false,
+        KEY_ACTIVEGAUGE:   false,
     ]
 
     nt_specifics[gus] = userInfo
@@ -316,11 +352,14 @@ func nt_pushNSUserNotification(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any
             if let userInfo = nt_specifics[gus] as? NSMutableDictionary {
                 let selfRefCount = (userInfo[KEY_SELFREFCOUNT] as? NSNumber)?.intValue ?? 0
                 userInfo[KEY_SELFREFCOUNT] = NSNumber(value: selfRefCount + 1)
+                setNotifyUserdataCounted(userInfo, true, L: L)
             } else {
                 if userInfoDict[KEY_DELIVERED] != nil { // it's a holdover from a reload/relaunch
                     nt_specifics[gus] = (userInfoDict as NSDictionary).mutableCopy()
                     let userInfo = nt_specifics[gus] as! NSMutableDictionary
                     userInfo[KEY_SELFREFCOUNT] = NSNumber(value: 1)
+                    userInfo[KEY_ACTIVEGAUGE] = NSNumber(value: false)
+                    setNotifyUserdataCounted(userInfo, true, L: L)
                 }
             }
         } // else not ours -- how does it exist?
@@ -379,6 +418,7 @@ func nt_userdata_gc(_ L: LuaState) throws -> CInt {
                     let newSelfRefCount = selfRefCount - 1
                     userInfo[KEY_SELFREFCOUNT] = NSNumber(value: newSelfRefCount)
                     if newSelfRefCount <= 0 {
+                        setNotifyUserdataCounted(userInfo, false, L: L)
                         specifics[gus] = nil
                     }
                 }
@@ -397,6 +437,8 @@ func nt_userdata_gc(_ L: LuaState) throws -> CInt {
 private func nt_meta_gc(_ L: LuaState) throws -> CInt {
     NSUserNotificationCenter.default.delegate = nt_old_delegate
     if nt_specifics != nil {
+        activeNotifyUserdataCount = 0
+        recordActiveNotifyUserdataGauge(L)
         nt_specifics.removeAllObjects()
         nt_specifics = nil
     }

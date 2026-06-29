@@ -42,7 +42,7 @@ class NWWebSocketServer {
     private(set) var clientConnection: NWConnection?
 
     /// Called on the main queue when a text message arrives from the client.
-    var onMessage: ((String) -> Void)?
+    var onMessage: ((String, [String: String]) -> Void)?
 
     /// Called on the main queue when a client connection is established.
     var onOpen: (() -> Void)?
@@ -56,6 +56,7 @@ class NWWebSocketServer {
 
     /// Partial frame data accumulated while reading.
     private var readBuffer = Data()
+    private var clientHeaders: [String: String] = [:]
 
     private static let logger = Logger(
         subsystem: "org.cosmichammer",
@@ -90,6 +91,7 @@ class NWWebSocketServer {
 
         clientConnection = connection
         readBuffer = Data()
+        clientHeaders = headers
 
         // Build and send the HTTP 101 handshake response.
         guard let acceptKey = headers["Sec-WebSocket-Key"] else {
@@ -163,6 +165,7 @@ class NWWebSocketServer {
         queue.asyncAfter(deadline: .now() + .milliseconds(100)) { [weak self] in
             connection.cancel()
             self?.clientConnection = nil
+            self?.clientHeaders = [:]
         }
         DispatchQueue.main.async { [weak self] in self?.onClose?() }
     }
@@ -213,7 +216,8 @@ class NWWebSocketServer {
             case .text:
                 if let text = String(data: frame.payload, encoding: .utf8) {
                     let callback = self.onMessage
-                    DispatchQueue.main.async { callback?(text) }
+                    let headers = self.clientHeaders
+                    DispatchQueue.main.async { callback?(text, headers) }
                 }
 
             case .binary:
@@ -255,6 +259,7 @@ class NWWebSocketServer {
         connection.cancel()
         if clientConnection === connection {
             clientConnection = nil
+            clientHeaders = [:]
             readBuffer = Data()
             DispatchQueue.main.async { [weak self] in self?.onClose?() }
         }

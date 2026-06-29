@@ -46,6 +46,37 @@ private func getWindowID(_ L: UnsafeMutablePointer<lua_State>!, at idx: Int32) -
     return handle.windowID
 }
 
+@discardableResult
+private func traceWindowAutomation(
+    _ L: UnsafeMutablePointer<lua_State>!,
+    handle: any WindowElementHandle,
+    action: String,
+    operation: () -> Bool
+) -> Bool {
+    let telemetry = environmentGet(L).telemetry
+    let spanID = telemetry.startSpan(
+        name: "hs.window.\(action)",
+        kind: .internalSpan,
+        attributes: [
+            TelemetrySemanticConventions.Attribute.UI.system: "macos",
+            TelemetrySemanticConventions.Attribute.UI.action: action,
+            TelemetrySemanticConventions.Attribute.Window.id: handle.windowID,
+            TelemetrySemanticConventions.Attribute.Process.pid: handle.pid,
+        ],
+        startTime: nil
+    )
+    let succeeded = operation()
+    if let spanID {
+        telemetry.endSpan(
+            id: spanID,
+            status: succeeded ? .ok : .error("window action failed"),
+            attributes: [TelemetrySemanticConventions.Attribute.UI.actionSuccess: succeeded],
+            endTime: nil
+        )
+    }
+    return succeeded
+}
+
 // MARK: - Module Functions
 
 /// hs.window.list(allWindows) -> table
@@ -203,7 +234,9 @@ private func window__settopleft(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 2, LUA_TTABLE)
     let point = lua_tableToPoint(L, at: 2)
     if let handle = getWindowHandle(L, at: 1) {
-        _ = handle.setTopLeft((Double(point.x), Double(point.y)))
+        traceWindowAutomation(L, handle: handle, action: "setTopLeft") {
+            handle.setTopLeft((Double(point.x), Double(point.y)))
+        }
     }
     lua_pushvalue(L, 1)
     return 1
@@ -214,7 +247,9 @@ private func window__setsize(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 2, LUA_TTABLE)
     let size = lua_tableToSize(L, at: 2)
     if let handle = getWindowHandle(L, at: 1) {
-        _ = handle.setSize((Double(size.width), Double(size.height)))
+        traceWindowAutomation(L, handle: handle, action: "setSize") {
+            handle.setSize((Double(size.width), Double(size.height)))
+        }
     }
     lua_pushvalue(L, 1)
     return 1
@@ -225,8 +260,10 @@ private func window__setframe(_ L: LuaState) throws -> CInt {
     luaL_checktype(L, 2, LUA_TTABLE)
     let rect = lua_tableToRect(L, at: 2)
     if let handle = getWindowHandle(L, at: 1) {
-        _ = handle.setFrame((Double(rect.origin.x), Double(rect.origin.y),
+        traceWindowAutomation(L, handle: handle, action: "setFrame") {
+            handle.setFrame((Double(rect.origin.x), Double(rect.origin.y),
                              Double(rect.size.width), Double(rect.size.height)))
+        }
     }
     lua_pushvalue(L, 1)
     return 1
@@ -235,7 +272,9 @@ private func window__setframe(_ L: LuaState) throws -> CInt {
 private func window__togglezoom(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     if let handle = getWindowHandle(L, at: 1) {
-        _ = handle.toggleZoom()
+        traceWindowAutomation(L, handle: handle, action: "toggleZoom") {
+            handle.toggleZoom()
+        }
     }
     lua_pushvalue(L, 1)
     return 1
@@ -266,7 +305,9 @@ private func window_isMaximizable(_ L: LuaState) throws -> CInt {
 private func window__close(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     guard let handle = getWindowHandle(L, at: 1) else { L.push(false); return 1 }
-    L.push(handle.close())
+    L.push(traceWindowAutomation(L, handle: handle, action: "close") {
+        handle.close()
+    })
     return 1
 }
 
@@ -274,7 +315,9 @@ private func window_focustab(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let tabIndex = Int32(lua_tointeger(L, 2))
     guard let handle = getWindowHandle(L, at: 1) else { L.push(false); return 1 }
-    L.push(handle.focusTab(tabIndex))
+    L.push(traceWindowAutomation(L, handle: handle, action: "focusTab") {
+        handle.focusTab(tabIndex)
+    })
     return 1
 }
 
@@ -289,7 +332,9 @@ private func window__setfullscreen(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     let fullscreen = lua_toboolean(L, 2) != 0
     if let handle = getWindowHandle(L, at: 1) {
-        _ = handle.setFullScreen(fullscreen)
+        traceWindowAutomation(L, handle: handle, action: "setFullScreen") {
+            handle.setFullScreen(fullscreen)
+        }
     }
     lua_pushvalue(L, 1)
     return 1
@@ -305,7 +350,9 @@ private func window_isfullscreen(_ L: LuaState) throws -> CInt {
 private func window__minimize(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     if let handle = getWindowHandle(L, at: 1) {
-        _ = handle.minimize()
+        traceWindowAutomation(L, handle: handle, action: "minimize") {
+            handle.minimize()
+        }
     }
     lua_pushvalue(L, 1)
     return 1
@@ -314,7 +361,9 @@ private func window__minimize(_ L: LuaState) throws -> CInt {
 private func window__unminimize(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     if let handle = getWindowHandle(L, at: 1) {
-        _ = handle.unminimize()
+        traceWindowAutomation(L, handle: handle, action: "unminimize") {
+            handle.unminimize()
+        }
     }
     lua_pushvalue(L, 1)
     return 1
@@ -352,7 +401,9 @@ private func window_application(_ L: LuaState) throws -> CInt {
 private func window_becomemain(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     if let handle = getWindowHandle(L, at: 1) {
-        _ = handle.becomeMain()
+        traceWindowAutomation(L, handle: handle, action: "becomeMain") {
+            handle.becomeMain()
+        }
     }
     lua_pushvalue(L, 1)
     return 1
@@ -361,7 +412,9 @@ private func window_becomemain(_ L: LuaState) throws -> CInt {
 private func window_raise(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, USERDATA_TAG)
     if let handle = getWindowHandle(L, at: 1) {
-        _ = handle.raise()
+        traceWindowAutomation(L, handle: handle, action: "raise") {
+            handle.raise()
+        }
     }
     lua_pushvalue(L, 1)
     return 1

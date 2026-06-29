@@ -1,9 +1,22 @@
 import Cocoa
 import CLua
 import Lua
+import HSDSTCore
 import os.log
 
 private let USERDATA_TAG = "hs.bonjour"
+private var activeBonjourBrowserCount = 0
+
+private func recordActiveBonjourBrowserGauge(_ L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+    let telemetry = L.map { environmentGet($0).telemetry } ?? environmentGetGlobalOrNil()?.telemetry
+    telemetry?.recordMetric(
+        name: "cosmichammer.bonjour.browser.active",
+        kind: .gauge,
+        value: Double(activeBonjourBrowserCount),
+        attributes: [:],
+        unit: "1"
+    )
+}
 
 // MARK: - Support Functions and Classes
 
@@ -46,6 +59,7 @@ private func pushBonjourCallbackArgument(_ L: UnsafeMutablePointer<lua_State>!, 
 @objc private class HSNetServiceBrowser: NetServiceBrowser, NetServiceBrowserDelegate {
     var callback: LuaValue?
     var generation: UInt64 = 0
+    var countedActive: Bool = false
     private var tornDown = false
 
     override init() {
@@ -57,12 +71,29 @@ private func pushBonjourCallbackArgument(_ L: UnsafeMutablePointer<lua_State>!, 
     /// clear delegate.  Called from the explicit __gc closure while the
     /// lua_State is still alive, AND from performCallback when the generation
     /// canary fires.
-    func teardown() {
+    func teardown(_ L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
         guard !tornDown else { return }
         tornDown = true
+        setCountedActive(false, L: L)
         super.stop()
         callback = nil
         delegate = nil
+    }
+
+    func setCountedActive(_ active: Bool, L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+        guard countedActive != active else { return }
+        countedActive = active
+        if active {
+            activeBonjourBrowserCount += 1
+        } else {
+            activeBonjourBrowserCount = max(0, activeBonjourBrowserCount - 1)
+        }
+        recordActiveBonjourBrowserGauge(L)
+    }
+
+    func stopBrowsing(_ L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+        super.stop()
+        setCountedActive(false, L: L)
     }
 
     func performCallback(with argument: Any?) {
@@ -74,20 +105,32 @@ private func pushBonjourCallbackArgument(_ L: UnsafeMutablePointer<lua_State>!, 
 
         let L = lua_getCurrentState()!
         var argCount: Int32 = 1
+        var callbackEvent = "none"
         callback?.push(onto: L)
         L.push(userdata: self)
         if let argument = argument {
             if let args = argument as? [Any] {
+                callbackEvent = args.first as? String ?? "array"
                 for obj in args {
                     pushBonjourCallbackArgument(L, obj)
                 }
                 argCount += Int32(args.count)
             } else {
+                callbackEvent = "value"
                 pushBonjourCallbackArgument(L, argument)
                 argCount += 1
             }
         }
-        if lua_pcall(L, argCount, 0, 0) != LUA_OK {
+        if luaTelemetryPCall(
+            L,
+            nargs: argCount,
+            nresults: 0,
+            callbackName: "hs.bonjour.browser",
+            attributes: [
+                "bonjour.event": callbackEvent,
+                "bonjour.argument.count": Int(argCount),
+            ]
+        ) != LUA_OK {
             os_log(.error, "%{public}s", "\(USERDATA_TAG):callback error:\(String(cString: lua_tostring(L, -1)!))")
             lua_pop(L, 1)
         }
@@ -200,11 +243,12 @@ public func luaopen_hs_libbonjour(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
                 let browser: HSNetServiceBrowser = try L.checkArgument(1)
                 luaL_checktype(L, 2, LUA_TFUNCTION)
                 if browser.callback != nil {
-                    browser.stop()
+                    browser.stopBrowsing(L)
                     browser.callback = nil
                 }
                 browser.callback = L.ref(index: 2)
                 browser.searchForBrowsableDomains()
+                browser.setCountedActive(true, L: L)
                 lua_pushvalue(L, 1)
                 return 1
             },
@@ -237,11 +281,12 @@ public func luaopen_hs_libbonjour(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
                 let browser: HSNetServiceBrowser = try L.checkArgument(1)
                 luaL_checktype(L, 2, LUA_TFUNCTION)
                 if browser.callback != nil {
-                    browser.stop()
+                    browser.stopBrowsing(L)
                     browser.callback = nil
                 }
                 browser.callback = L.ref(index: 2)
                 browser.searchForRegistrationDomains()
+                browser.setCountedActive(true, L: L)
                 lua_pushvalue(L, 1)
                 return 1
             },
@@ -260,11 +305,12 @@ public func luaopen_hs_libbonjour(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
                     domain = lua_tovalue(L, at: 3) as! String
                 }
                 if browser.callback != nil {
-                    browser.stop()
+                    browser.stopBrowsing(L)
                     browser.callback = nil
                 }
                 browser.callback = L.ref(index: lua_gettop(L))
                 browser.searchForServices(ofType: service, inDomain: domain)
+                browser.setCountedActive(true, L: L)
                 lua_pushvalue(L, 1)
                 return 1
             },
@@ -285,7 +331,7 @@ public func luaopen_hs_libbonjour(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
             ///  * In general, when your callback function for [hs.bonjour:findBrowsableDomains](#findBrowsableDomains), [hs.bonjour:findRegistrationDomains](#findRegistrationDomains), or [hs.bonjour:findServices](#findServices) receives false for the `moreExpected` parameter, you should invoke this method on the browserObject unless there are specific reasons not to. Possible reasons you might want to extend the life of the browserObject are documented within each method.
             "stop": .closure { L in
                 let browser: HSNetServiceBrowser = try L.checkArgument(1)
-                browser.stop()
+                browser.stopBrowsing(L)
                 browser.callback = nil
                 lua_pushvalue(L, 1)
                 return 1
@@ -316,7 +362,7 @@ public func luaopen_hs_libbonjour(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
     // Replace __gc with our explicit teardown + deinitialize
     lua_pushcclosure(L, { (L: LuaState!) -> CInt in
         if let browser: HSNetServiceBrowser = L.touserdata(1) {
-            browser.teardown()
+            browser.teardown(L)
         }
         // Now deinitialize the Any box (same as LuaSwift's gcUserdata)
         let rawptr = lua_touserdata(L, 1)!

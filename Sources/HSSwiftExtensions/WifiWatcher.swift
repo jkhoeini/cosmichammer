@@ -14,6 +14,18 @@ private let USERDATA_TAG = "hs.wifi.watcher"
 
 private var watchableTypes: [String: String] = [:]
 private var manager: HSWifiWatcherManager?
+private var activeWifiWatcherCount = 0
+
+private func recordActiveWifiWatcherGauge(_ L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+    let telemetry = L.map { environmentGet($0).telemetry } ?? environmentGetGlobalOrNil()?.telemetry
+    telemetry?.recordMetric(
+        name: "cosmichammer.wifi.watcher.active",
+        kind: .gauge,
+        value: Double(activeWifiWatcherCount),
+        attributes: [:],
+        unit: "1"
+    )
+}
 
 // MARK: - Support Functions and Classes
 
@@ -94,7 +106,13 @@ private class HSWifiWatcherManager: NSObject {
                             lua_pushany(L, argument)
                         }
                     }
-                    if lua_pcall(L, Int32(2 + count), 0, 0) != LUA_OK {
+                    if luaTelemetryPCall(
+                        L,
+                        nargs: Int32(2 + count),
+                        nresults: 0,
+                        callbackName: "hs.wifi.watcher",
+                        attributes: ["wifi.event": message]
+                    ) != LUA_OK {
                         lua_pop(L, 1)
                     }
                 }
@@ -114,7 +132,21 @@ private class HSWifiWatcher: NSObject, LuaTeardownable {
         guard !tornDown else { return }
         tornDown = true
         callback = nil
-        manager?.watchers.remove(self)
+        stop(lua_getCurrentState())
+    }
+
+    func start(_ L: UnsafeMutablePointer<lua_State>) {
+        guard let watchers = manager?.watchers, !watchers.contains(self) else { return }
+        watchers.add(self)
+        activeWifiWatcherCount += 1
+        recordActiveWifiWatcherGauge(L)
+    }
+
+    func stop(_ L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+        guard let watchers = manager?.watchers, watchers.contains(self) else { return }
+        watchers.remove(self)
+        activeWifiWatcherCount = max(0, activeWifiWatcherCount - 1)
+        recordActiveWifiWatcherGauge(L)
     }
 }
 
@@ -169,7 +201,7 @@ public func luaopen_hs_libwifiwatcher(_ L: UnsafeMutablePointer<lua_State>!) -> 
             guard let watcher = getHSWifiWatcher(L, at: 1) else {
                 throw LuaCallError("expected \(USERDATA_TAG) object")
             }
-            manager?.watchers.add(watcher)
+            watcher.start(L)
             lua_pushvalue(L, 1)
             return 1
         })
@@ -180,7 +212,7 @@ public func luaopen_hs_libwifiwatcher(_ L: UnsafeMutablePointer<lua_State>!) -> 
             guard let watcher = getHSWifiWatcher(L, at: 1) else {
                 throw LuaCallError("expected \(USERDATA_TAG) object")
             }
-            manager?.watchers.remove(watcher)
+            watcher.stop(L)
             lua_pushvalue(L, 1)
             return 1
         })
@@ -280,6 +312,8 @@ public func luaopen_hs_libwifiwatcher(_ L: UnsafeMutablePointer<lua_State>!) -> 
             manager?.watchers.removeAllObjects()
             manager?.removeAllObservers()
             manager = nil
+            activeWifiWatcherCount = 0
+            recordActiveWifiWatcherGauge(L)
             return 0
         }, 0)
         lua_setfield(L, -2, "__gc")

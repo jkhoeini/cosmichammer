@@ -8,6 +8,18 @@ import IOKit.usb
 
 private let USERDATA_TAG = "hs.serial"
 private var refTable: Int32 = LUA_NOREF
+private var activeSerialDeviceWatcherCount = 0
+
+private func recordActiveSerialDeviceWatcherGauge(_ L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+    let telemetry = L.map { environmentGet($0).telemetry } ?? environmentGetGlobalOrNil()?.telemetry
+    telemetry?.recordMetric(
+        name: "cosmichammer.serial.device_watcher.active",
+        kind: .gauge,
+        value: Double(activeSerialDeviceWatcherCount),
+        attributes: [:],
+        unit: "1"
+    )
+}
 
 // MARK: - ORSSerialPort Attributes Extension
 
@@ -99,6 +111,7 @@ class HSSerialPort: NSObject, ORSSerialPortDelegate, LuaTeardownable {
     private var deviceConnectedToken: (any NotificationObserverToken)?
     private var deviceDisconnectedToken: (any NotificationObserverToken)?
     weak var notificationRef: (any NotificationProtocol)?
+    var countedDeviceWatcherActive: Bool = false
 
     private var tornDown = false
 
@@ -110,6 +123,7 @@ class HSSerialPort: NSObject, ORSSerialPortDelegate, LuaTeardownable {
             callbackToken = nil
         }
         // callbackRef is cleaned up by the Lua GC caller
+        unwatchDevices()
     }
 
     override init() {
@@ -129,6 +143,10 @@ class HSSerialPort: NSObject, ORSSerialPortDelegate, LuaTeardownable {
     // MARK: - Device watching
 
     func watchDevices(_ L: UnsafeMutablePointer<lua_State>!) {
+        guard deviceConnectedToken == nil, deviceDisconnectedToken == nil else {
+            setCountedDeviceWatcherActive(true, L: L)
+            return
+        }
         let notif = environmentGet(L).notification
         notificationRef = notif
 
@@ -145,9 +163,10 @@ class HSSerialPort: NSObject, ORSSerialPortDelegate, LuaTeardownable {
         ) { [weak self] userInfo in
             self?.serialPortsWereDisconnected(userInfo)
         }
+        setCountedDeviceWatcherActive(true, L: L)
     }
 
-    func unwatchDevices() {
+    func unwatchDevices(_ L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
         if let token = deviceConnectedToken {
             notificationRef?.removeObserver(token)
             deviceConnectedToken = nil
@@ -156,6 +175,18 @@ class HSSerialPort: NSObject, ORSSerialPortDelegate, LuaTeardownable {
             notificationRef?.removeObserver(token)
             deviceDisconnectedToken = nil
         }
+        setCountedDeviceWatcherActive(false, L: L)
+    }
+
+    func setCountedDeviceWatcherActive(_ active: Bool, L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
+        guard countedDeviceWatcherActive != active else { return }
+        countedDeviceWatcherActive = active
+        if active {
+            activeSerialDeviceWatcherCount += 1
+        } else {
+            activeSerialDeviceWatcherCount = max(0, activeSerialDeviceWatcherCount - 1)
+        }
+        recordActiveSerialDeviceWatcherGauge(L)
     }
 
     // MARK: - ORSSerialPortDelegate
@@ -167,7 +198,13 @@ class HSSerialPort: NSObject, ORSSerialPortDelegate, LuaTeardownable {
         lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(callbackRef))
         _ = pushHSSerialPort(L, self)
         lua_pushany(L, "opened" as NSString)
-        if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
+        if luaTelemetryPCall(
+            L,
+            nargs: 2,
+            nresults: 0,
+            callbackName: "hs.serial.port",
+            attributes: ["serial.event": "opened"]
+        ) != LUA_OK { lua_pop(L, 1) }
     }
 
     func serialPortWasClosed(_ serialPort: ORSSerialPort) {
@@ -177,7 +214,13 @@ class HSSerialPort: NSObject, ORSSerialPortDelegate, LuaTeardownable {
         lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(callbackRef))
         _ = pushHSSerialPort(L, self)
         lua_pushany(L, "closed" as NSString)
-        if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
+        if luaTelemetryPCall(
+            L,
+            nargs: 2,
+            nresults: 0,
+            callbackName: "hs.serial.port",
+            attributes: ["serial.event": "closed"]
+        ) != LUA_OK { lua_pop(L, 1) }
     }
 
     func serialPort(_ serialPort: ORSSerialPort, didReceive data: Data) {
@@ -189,7 +232,16 @@ class HSSerialPort: NSObject, ORSSerialPortDelegate, LuaTeardownable {
         lua_pushany(L, "received" as NSString)
         lua_pushany(L, data as NSData)
         lua_pushany(L, data.hexadecimalString as NSString)
-        if lua_pcall(L, 4, 0, 0) != LUA_OK { lua_pop(L, 1) }
+        if luaTelemetryPCall(
+            L,
+            nargs: 4,
+            nresults: 0,
+            callbackName: "hs.serial.port",
+            attributes: [
+                "serial.event": "received",
+                "serial.data.length": data.count,
+            ]
+        ) != LUA_OK { lua_pop(L, 1) }
     }
 
     func serialPort(_ serialPort: ORSSerialPort, didReceivePacket packetData: Data, matching descriptor: ORSSerialPacketDescriptor) {
@@ -203,7 +255,13 @@ class HSSerialPort: NSObject, ORSSerialPortDelegate, LuaTeardownable {
             lua_rawgeti(L, LUA_REGISTRYINDEX_VALUE, lua_Integer(callbackRef))
             _ = pushHSSerialPort(L, self)
             lua_pushany(L, "removed" as NSString)
-            if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
+            if luaTelemetryPCall(
+                L,
+                nargs: 2,
+                nresults: 0,
+                callbackName: "hs.serial.port",
+                attributes: ["serial.event": "removed"]
+            ) != LUA_OK { lua_pop(L, 1) }
         }
 
         self.serialPort = nil
@@ -217,7 +275,13 @@ class HSSerialPort: NSObject, ORSSerialPortDelegate, LuaTeardownable {
         _ = pushHSSerialPort(L, self)
         lua_pushany(L, "error" as NSString)
         lua_pushany(L, error.localizedDescription as NSString)
-        if lua_pcall(L, 3, 0, 0) != LUA_OK { lua_pop(L, 1) }
+        if luaTelemetryPCall(
+            L,
+            nargs: 3,
+            nresults: 0,
+            callbackName: "hs.serial.port",
+            attributes: ["serial.event": "error"]
+        ) != LUA_OK { lua_pop(L, 1) }
     }
 
     // MARK: - Device notifications
@@ -235,7 +299,16 @@ class HSSerialPort: NSObject, ORSSerialPortDelegate, LuaTeardownable {
             result.add(port.name)
         }
         lua_pushany(L, result)
-        if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
+        if luaTelemetryPCall(
+            L,
+            nargs: 2,
+            nresults: 0,
+            callbackName: "hs.serial.device",
+            attributes: [
+                "serial.event": "connected",
+                "serial.device.count": connectedPorts.count,
+            ]
+        ) != LUA_OK { lua_pop(L, 1) }
     }
 
     func serialPortsWereDisconnected(_ userInfo: [String: Any]) {
@@ -251,7 +324,16 @@ class HSSerialPort: NSObject, ORSSerialPortDelegate, LuaTeardownable {
             result.add(port.name)
         }
         lua_pushany(L, result)
-        if lua_pcall(L, 2, 0, 0) != LUA_OK { lua_pop(L, 1) }
+        if luaTelemetryPCall(
+            L,
+            nargs: 2,
+            nresults: 0,
+            callbackName: "hs.serial.device",
+            attributes: [
+                "serial.event": "disconnected",
+                "serial.device.count": disconnectedPorts.count,
+            ]
+        ) != LUA_OK { lua_pop(L, 1) }
     }
 
     // MARK: - Port validation and creation
@@ -551,7 +633,7 @@ private func serial_deviceCallback(_ L: UnsafeMutablePointer<lua_State>!) -> Int
     if lua_type(L, 1) == LUA_TNIL {
         guard let manager = watcherDeviceManager else { return 0 }
         lua_unrefRegistryRef(L, &manager.deviceCallbackRef)
-        manager.unwatchDevices()
+        manager.unwatchDevices(L)
         watcherDeviceManager = nil
         return 0
     }
@@ -826,7 +908,7 @@ public func luaopen_hs_libserial(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
     lua_pushcclosure(L, { L in
         if let manager = watcherDeviceManager {
             lua_unrefRegistryRef(L, &manager.deviceCallbackRef)
-            manager.unwatchDevices()
+            manager.unwatchDevices(L)
             watcherDeviceManager = nil
         }
         return 0

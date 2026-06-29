@@ -71,6 +71,7 @@ extensions/network/ping/network_ping.lua	hs/network_ping.lua	hs.network_ping
 extensions/network/network_reachability.lua	hs/network_reachability.lua	hs.network_reachability
 extensions/noises/noises.lua	hs/noises.lua	hs.noises
 extensions/notify/notify.lua	hs/notify.lua	hs.notify
+extensions/opentelemetry/opentelemetry.lua	hs/opentelemetry.lua	hs.opentelemetry
 extensions/osascript/osascript.lua	hs/osascript.lua	hs.osascript
 extensions/pasteboard/pasteboard.lua	hs/pasteboard.lua	hs.pasteboard
 extensions/pathwatcher/pathwatcher.lua	hs/pathwatcher.lua	hs.pathwatcher
