@@ -122,6 +122,14 @@ release version:
         || { echo "Error: gh CLI not found — install with: brew install gh" >&2; exit 1; }
     command -v create-dmg >/dev/null \
         || { echo "Error: create-dmg not found — install with: brew install create-dmg" >&2; exit 1; }
+    command -v jj >/dev/null \
+        || { echo "Error: jj CLI not found" >&2; exit 1; }
+
+    if [[ -n "$(jj diff --summary)" ]]; then
+        echo "Error: working copy must be clean before release" >&2
+        jj status >&2
+        exit 1
+    fi
 
     if gh release view "$TAG" &>/dev/null; then
         echo "Error: release $TAG already exists on GitHub" >&2
@@ -189,3 +197,17 @@ release version:
         -e "s|hash = \".*\";|hash = \"${DMG_HASH}\";|" \
         flake.nix
     echo "===> Updated flake.nix to {{ version }} (${DMG_HASH})"
+
+    FLAKE_DIFF="$(jj diff --summary)"
+    if [[ "$FLAKE_DIFF" != "M flake.nix" ]]; then
+        echo "Error: expected only flake.nix to change after release, got:" >&2
+        echo "$FLAKE_DIFF" >&2
+        exit 1
+    fi
+
+    echo "===> Committing flake.nix release metadata"
+    jj commit -m "chore: update flake.nix to $TAG"
+    jj bookmark move dev --to @-
+
+    echo "===> Pushing dev with flake.nix release metadata"
+    jj git push --bookmark dev
