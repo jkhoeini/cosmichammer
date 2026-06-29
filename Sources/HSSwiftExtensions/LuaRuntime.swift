@@ -1122,12 +1122,30 @@ func MJLuaDeinit() {
 func MJLuaDealloc() {
     if let L = lua_getCurrentState() {
         environmentClearGlobal()
-        // lua_close MUST come before environmentDetach so GC finalizers
-        // can still access the environment via environmentGet(L).
-        lua_close(L)
-        environmentDetach(L)
-        lua_setCurrentState(nil)
+
+        // Bump generation BEFORE lua_close so async callbacks (which check
+        // generation) bail out, but keep the state pointer alive because
+        // synchronous GC finalizers (e.g. HSWebViewWindow.windowWillClose)
+        // force-unwrap lua_getCurrentState() before their generation check.
         lua_bumpStateGeneration()
+
+        // Save the Environment pointer from extra-space BEFORE lua_close frees
+        // the lua_State memory. GC finalizers during lua_close can still read
+        // the environment via the (not-yet-zeroed) extra-space slot.
+        let extra = lua_getextraspace(L)!
+        let envRaw = extra.load(as: UnsafeMutableRawPointer?.self)
+
+        lua_close(L)
+
+        // NOW nil the state — lua_close is done, no more finalizers running.
+        lua_setCurrentState(nil)
+
+        // Release the Environment from our saved pointer — NOT from the
+        // now-freed lua_State. This was the crash: environmentDetach(L)
+        // called lua_getextraspace on freed memory.
+        if let raw = envRaw {
+            Unmanaged<Environment>.fromOpaque(raw).release()
+        }
     }
 }
 
