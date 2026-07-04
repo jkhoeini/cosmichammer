@@ -4,6 +4,9 @@
 # Claude Code session artifacts
 /.claude/
 
+# Teaching workspace (learning materials, not project code)
+/.teach/
+
 # Rebuild script
 /rebuild.sh
 
