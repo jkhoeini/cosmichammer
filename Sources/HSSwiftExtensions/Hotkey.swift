@@ -38,6 +38,7 @@ private class HSHotkey {
     var repeatfn: LuaValue?
     var enabled: Bool = false
     var stateGeneration: UInt64 = 0
+    fileprivate var inputOwner: (any InputProtocol)?
     private var tornDown = false
 
     /// Idempotent teardown: unregister the Carbon hotkey, drop all Lua callback
@@ -58,9 +59,10 @@ private class HSHotkey {
         activeHotkeyCount = max(0, activeHotkeyCount - 1)
         recordActiveHotkeyGauge()
 
-        // Unregister via the protocol — ProductionInput calls Carbon's
-        // UnregisterEventHotKey; SimulatedInput removes from its table.
-        environmentGetGlobalOrNil()?.input.unregisterHotkey(id: UInt32(monotonicID))
+        // Release through the adapter that created the registration. The global
+        // Environment is intentionally unavailable while Lua finalizers run.
+        inputOwner?.unregisterHotkey(id: UInt32(monotonicID))
+        inputOwner = nil
 
         keyRepeatManager?.stopTimer()
     }
@@ -332,6 +334,7 @@ public func luaopen_hs_libhotkey(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
                     _ = trigger_hotkey_callback(eventUID, eventKind: eventKind, isRepeat: false)
                 }
                 if registered {
+                    hk.inputOwner = input
                     hk.enabled = true
                     activeHotkeyCount += 1
                     recordActiveHotkeyGauge(L)

@@ -299,6 +299,8 @@ private func location_startWatching(_ L: LuaState) throws -> CInt {
     if ok {
         location?.manager.startUpdatingLocation()
         setLocationWatcherCounted(true, L: L)
+    } else {
+        env.location.stopUpdating()
     }
     L.push(ok)
     return 1
@@ -997,6 +999,8 @@ private func pushCLPlacemarkArray(_ L: UnsafeMutablePointer<lua_State>!, _ place
 
 private func meta_gc(_ L: LuaState) throws -> CInt {
     precondition(L != nil, "Lua state must not be nil")
+    environmentGet(L).location.stopUpdating()
+
     // Release all background geocoder callback LuaValues
     backgroundCallbacks.removeAll()
 

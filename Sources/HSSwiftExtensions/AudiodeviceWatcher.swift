@@ -107,14 +107,11 @@ private func audiodevicewatcher_start(_ L: LuaState) throws -> CInt {
 
     let listenerID = audio.addSystemAudioHardwareListener { eventName in
         environmentGetGlobalOrNil()?.eventLoop.async {
-            let L = lua_getCurrentState()!
+            guard let L = lua_getCurrentState(),
+                  lua_isStateGenerationValid(lsCanary) else { return }
 
-            guard let watcher = theWatcher else {
+            guard theWatcher != nil else {
                 os_log(.info, "%{public}s", "hs.audiodevice.watcher callback fired, but theWatcher is nil. This is a bug")
-                return
-            }
-
-            if !lua_isStateGenerationValid(watcher.pointee.lsCanary) {
                 return
             }
 

@@ -1091,10 +1091,8 @@ private func audiodevice_watcherStart(_ L: LuaState) throws -> CInt {
         let deviceUIDNS = audio?.deviceUID(deviceID: callbackDeviceID)
 
         environmentGetGlobalOrNil()?.eventLoop.async {
-            let L = lua_getCurrentState()!
-            if !lua_isStateGenerationValid(lsCanary) {
-                return
-            }
+            guard let L = lua_getCurrentState(),
+                  lua_isStateGenerationValid(lsCanary) else { return }
             guard let cb = deviceCallbacks[capturedUdPtr] else {
                 os_log(.error, "%{public}s", "hs.audiodevice.watcher callback fired, but no function has been set with hs.audiodevice:watcherCallback()")
                 return

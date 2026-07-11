@@ -145,6 +145,216 @@ extension CosmicHammerTests {
             if let env = savedEnv { environmentSetGlobal(env) }
         }
 
+        @Test func gcFinalizerUsesAttachedEnvironmentWhileGlobalIsCleared() {
+            globalEnvLock.lock()
+            defer { globalEnvLock.unlock() }
+
+            let savedState = lua_getCurrentState()
+            let savedEnvironment = environmentGetGlobalOrNil()
+            defer {
+                lua_setCurrentState(savedState)
+                if let savedEnvironment {
+                    environmentSetGlobal(savedEnvironment)
+                } else {
+                    environmentClearGlobal()
+                }
+            }
+
+            let L = luaL_newstate()!
+            luaL_openlibs(L)
+            let harness = SimulatorHarness(seed: 104)
+            let environment = harness.createEnvironment()
+            environmentAttach(L, environment)
+            environmentSetGlobal(environment)
+            lua_setCurrentState(L)
+            lua_bumpStateGeneration()
+
+            let gcAccessor: lua_CFunction = { L in
+                guard let L else { return 0 }
+                environmentGet(L).settings.set(
+                    environmentGetGlobalOrNil() == nil,
+                    forKey: "gc.finalizer.globalEnvironmentWasCleared"
+                )
+                return 0
+            }
+            lua_newuserdata(L, 1)
+            lua_createtable(L, 0, 1)
+            lua_pushcfunction(L, gcAccessor)
+            lua_setfield(L, -2, "__gc")
+            lua_setmetatable(L, -2)
+            lua_setglobal(L, "environmentLifetimeProbe")
+
+            MJLuaDealloc()
+
+            #expect(environment.settings.bool(forKey: "gc.finalizer.globalEnvironmentWasCleared"))
+        }
+
+        @Test func speechResourcesAreReleasedDuringMJLuaDealloc() {
+            globalEnvLock.lock()
+            defer { globalEnvLock.unlock() }
+
+            let savedState = lua_getCurrentState()
+            let savedEnvironment = environmentGetGlobalOrNil()
+            defer {
+                lua_setCurrentState(savedState)
+                if let savedEnvironment {
+                    environmentSetGlobal(savedEnvironment)
+                } else {
+                    environmentClearGlobal()
+                }
+            }
+
+            let L = luaL_newstate()!
+            luaL_openlibs(L)
+            let harness = SimulatorHarness(seed: 105)
+            let environment = harness.createEnvironment()
+            let speech = environment.speech as! SimulatedSpeech
+            environmentAttach(L, environment)
+            environmentSetGlobal(environment)
+            lua_setCurrentState(L)
+            lua_bumpStateGeneration()
+
+            _ = luaopen_hs_libspeech(L)
+            lua_setglobal(L, "speech")
+            _ = luaopen_hs_libspeechlistener(L)
+            lua_setglobal(L, "speechListener")
+            #expect(luaEval(L, """
+                synthesizer = speech.new()
+                listener = speechListener.new()
+                assert(listener:start() ~= nil)
+            """))
+            #expect(speech.synthesizers.count == 1)
+            #expect(speech.isListening(listenerID: 2))
+
+            MJLuaDealloc()
+
+            #expect(speech.synthesizers.isEmpty)
+            #expect(!speech.isListening(listenerID: 2))
+        }
+
+        @Test func locationUpdatesStopDuringMJLuaDealloc() {
+            globalEnvLock.lock()
+            defer { globalEnvLock.unlock() }
+
+            let savedState = lua_getCurrentState()
+            let savedEnvironment = environmentGetGlobalOrNil()
+            defer {
+                lua_setCurrentState(savedState)
+                if let savedEnvironment {
+                    environmentSetGlobal(savedEnvironment)
+                } else {
+                    environmentClearGlobal()
+                }
+            }
+
+            let L = luaL_newstate()!
+            luaL_openlibs(L)
+            let harness = SimulatorHarness(seed: 106)
+            let environment = harness.createEnvironment()
+            let location = environment.location as! SimulatedLocation
+            environmentAttach(L, environment)
+            environmentSetGlobal(environment)
+            lua_setCurrentState(L)
+            lua_bumpStateGeneration()
+
+            _ = luaopen_hs_liblocation(L)
+            lua_setglobal(L, "location")
+            #expect(luaEval(L, "location.start()"))
+            #expect(location.isUpdating)
+
+            MJLuaDealloc()
+
+            #expect(!location.isUpdating)
+        }
+
+        @Test func queuedAudioWatcherCallbackIgnoresClosedLuaState() {
+            globalEnvLock.lock()
+            defer { globalEnvLock.unlock() }
+
+            let savedState = lua_getCurrentState()
+            let savedEnvironment = environmentGetGlobalOrNil()
+            defer {
+                lua_setCurrentState(savedState)
+                if let savedEnvironment {
+                    environmentSetGlobal(savedEnvironment)
+                } else {
+                    environmentClearGlobal()
+                }
+            }
+
+            let L = luaL_newstate()!
+            luaL_openlibs(L)
+            let harness = SimulatorHarness(seed: 107)
+            let environment = harness.createEnvironment()
+            let audio = environment.audio as! SimulatedAudio
+            environmentAttach(L, environment)
+            environmentSetGlobal(environment)
+            lua_setCurrentState(L)
+            lua_bumpStateGeneration()
+
+            _ = luaopen_hs_libaudiodevicewatcher(L)
+            lua_setglobal(L, "audioWatcher")
+            #expect(luaEval(L, """
+                audioWatcher.setCallback(function() error("stale callback ran") end)
+                audioWatcher.start()
+            """))
+
+            audio.simulateSystemHardwareEvent(eventName: "dOut")
+            #expect(harness.eventLoop.pendingCount == 1)
+
+            MJLuaDealloc()
+            harness.eventLoop.drain()
+
+            #expect(harness.eventLoop.pendingCount == 0)
+        }
+
+        @Test func queuedAudioDeviceCallbackIgnoresClosedLuaState() {
+            globalEnvLock.lock()
+            defer { globalEnvLock.unlock() }
+
+            let savedState = lua_getCurrentState()
+            let savedEnvironment = environmentGetGlobalOrNil()
+            defer {
+                lua_setCurrentState(savedState)
+                if let savedEnvironment {
+                    environmentSetGlobal(savedEnvironment)
+                } else {
+                    environmentClearGlobal()
+                }
+            }
+
+            let L = luaL_newstate()!
+            luaL_openlibs(L)
+            let harness = SimulatorHarness(seed: 108)
+            let environment = harness.createEnvironment()
+            let audio = environment.audio as! SimulatedAudio
+            environmentAttach(L, environment)
+            environmentSetGlobal(environment)
+            lua_setCurrentState(L)
+            lua_bumpStateGeneration()
+
+            _ = luaopen_hs_libaudiodevice(L)
+            lua_setglobal(L, "audio")
+            #expect(luaEval(L, """
+                device = audio.defaultOutputDevice()
+                device:watcherCallback(function() error("stale callback ran") end)
+                assert(device:watcherStart() ~= nil)
+            """))
+
+            audio.simulatePropertyChange(
+                deviceID: 1,
+                eventName: "vmvc",
+                eventScope: "outp",
+                element: 0
+            )
+            #expect(harness.eventLoop.pendingCount == 1)
+
+            MJLuaDealloc()
+            harness.eventLoop.drain()
+
+            #expect(harness.eventLoop.pendingCount == 0)
+        }
+
         // MARK: - Ordering guarantees
 
         /// After MJLuaDealloc, generation must have been bumped so any stale

@@ -18,6 +18,7 @@ private class HSSpeechRecognizer: NSObject {
     var selfRefValue: LuaValue?
     var isListeningFlag: Bool = false
     var generation: UInt64 = 0
+    fileprivate var speechOwner: (any SpeechProtocol)?
     private var tornDown = false
 
     // Deferred configuration (set before :start() creates the protocol listener)
@@ -34,10 +35,12 @@ private class HSSpeechRecognizer: NSObject {
     func teardown() {
         guard !tornDown else { return }
         tornDown = true
-        if handle != 0, let env = environmentGetGlobalOrNil() {
-            _ = env.speech.stopListening(listenerID: handle)
+        if handle != 0 {
+            _ = speechOwner?.stopListening(listenerID: handle)
             handle = 0
         }
+        speechOwner = nil
+        isListeningFlag = false
         callback = nil
         selfRefValue = nil
     }
@@ -189,10 +192,11 @@ public func luaopen_hs_libspeechlistener(_ L: UnsafeMutablePointer<lua_State>!) 
                 let recognizer: HSSpeechRecognizer = try L.checkArgument(1)
                 let speech = environmentGet(L).speech
 
-                // If we already have a live handle, stop it first
+                // If we already have a live handle, stop it through its owner first.
                 if recognizer.handle != 0 {
-                    _ = speech.stopListening(listenerID: recognizer.handle)
+                    _ = recognizer.speechOwner?.stopListening(listenerID: recognizer.handle)
                     recognizer.handle = 0
+                    recognizer.speechOwner = nil
                 }
 
                 // Create a new listener through the protocol
@@ -227,6 +231,7 @@ public func luaopen_hs_libspeechlistener(_ L: UnsafeMutablePointer<lua_State>!) 
                 }
 
                 recognizer.handle = handle
+                recognizer.speechOwner = speech
                 recognizer.isListeningFlag = true
 
                 // Apply deferred config
@@ -247,11 +252,11 @@ public func luaopen_hs_libspeechlistener(_ L: UnsafeMutablePointer<lua_State>!) 
             },
             "stop": .closure { L in
                 let recognizer: HSSpeechRecognizer = try L.checkArgument(1)
-                let speech = environmentGet(L).speech
                 if recognizer.handle != 0 {
-                    _ = speech.stopListening(listenerID: recognizer.handle)
+                    _ = recognizer.speechOwner?.stopListening(listenerID: recognizer.handle)
                     recognizer.handle = 0
                 }
+                recognizer.speechOwner = nil
                 recognizer.isListeningFlag = false
                 recognizer.selfRefValue = nil
                 lua_pushvalue(L, 1)

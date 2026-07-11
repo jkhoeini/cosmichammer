@@ -59,14 +59,16 @@ private func getVoiceShortCut(_ theVoice: String?) -> String? {
 /// inside the protocol implementation (ProductionSpeech / SimulatedSpeech).
 private class HSSpeechSynthesizer: NSObject {
     let handle: UInt64
+    private let speechOwner: any SpeechProtocol
     var callback: LuaValue?
     /// Self-reference kept alive during speech to prevent GC while speaking.
     var selfRefValue: LuaValue?
     var generation: UInt64 = 0
     private var tornDown = false
 
-    init(handle: UInt64) {
+    init(handle: UInt64, speechOwner: any SpeechProtocol) {
         self.handle = handle
+        self.speechOwner = speechOwner
         super.init()
     }
 
@@ -74,9 +76,7 @@ private class HSSpeechSynthesizer: NSObject {
     func teardown() {
         guard !tornDown else { return }
         tornDown = true
-        if let env = environmentGetGlobalOrNil() {
-            _ = env.speech.destroySynthesizer(synthesizerID: handle)
-        }
+        _ = speechOwner.destroySynthesizer(synthesizerID: handle)
         callback = nil
         selfRefValue = nil
     }
@@ -222,7 +222,7 @@ private func newSpeechSynthesizer(_ L: UnsafeMutablePointer<lua_State>!) -> Int3
     }
 
     let handle = env.speech.createSynthesizer(voice: voiceStr)
-    let synth = HSSpeechSynthesizer(handle: handle)
+    let synth = HSSpeechSynthesizer(handle: handle, speechOwner: env.speech)
     synth.generation = lua_currentStateGeneration()
     L.push(userdata: synth)
     return 1

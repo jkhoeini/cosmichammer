@@ -2,16 +2,29 @@ import Foundation
 import HSDSTCore
 
 public final class SimulatorHarness {
+    public static let standardSystemReservedHotkeys: Set<SimulatedInput.SystemHotkeyCombo> = [
+        .init(keyCode: 126, mods: 4096), // Control-Up: Mission Control
+        .init(keyCode: 125, mods: 4096), // Control-Down: App Exposé
+        .init(keyCode: 123, mods: 4096), // Control-Left: previous Space
+        .init(keyCode: 124, mods: 4096), // Control-Right: next Space
+    ]
+
     public let seed: Int64
     public private(set) var rng: RPRNG
     public private(set) var clock: SimulatedClock
     public private(set) var eventLoop: SimulatedEventLoop
+    private let hotkeySystem: SimulatedInput.HotkeySystem
 
-    public init(seed: Int64 = 42) {
+    public init(
+        seed: Int64 = 42,
+        systemReservedHotkeys: Set<SimulatedInput.SystemHotkeyCombo> = standardSystemReservedHotkeys
+    ) {
         self.seed = seed
         self.rng = RPRNG(seed: seed)
         self.clock = SimulatedClock(rng: rng.fork())
         self.eventLoop = SimulatedEventLoop(clock: clock)
+        self.hotkeySystem = SimulatedInput.HotkeySystem()
+        self.hotkeySystem.reservedHotkeys = systemReservedHotkeys
     }
 
     public func createEnvironment(faults: FaultConfig = FaultConfig()) -> Environment {
@@ -32,7 +45,7 @@ public final class SimulatorHarness {
         // New 15 simulators
         let winSim = SimulatedWindow(rng: rng.fork(), faults: faults)
         let axSim = SimulatedAccessibility(rng: rng.fork(), faults: faults)
-        let inputSim = SimulatedInput(rng: rng.fork(), faults: faults)
+        let inputSim = SimulatedInput(rng: rng.fork(), faults: faults, hotkeySystem: hotkeySystem)
         let audioSim = SimulatedAudio(rng: rng.fork(), faults: faults)
         let socketSim = SimulatedSocket(rng: rng.fork(), faults: faults)
         let speechSim = SimulatedSpeech(rng: rng.fork(), faults: faults)

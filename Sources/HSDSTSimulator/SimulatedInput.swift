@@ -19,35 +19,73 @@ public final class SimulatedInput: InputProtocol {
 
     public func createEventSource() -> Any? { nil }
 
-    private struct HotkeyEntry {
-        let keyCode: UInt32
-        let mods: UInt32 // Carbon modifier flags
-        let callback: (_ hotkeyID: Int32, _ eventKind: Int32) -> Void
-    }
-    private var registeredHotkeys: [UInt32: HotkeyEntry] = [:]
-
-    /// Key combos reserved by the system (keyCode, carbonMods).
-    /// Mirrors the most common macOS Mission Control / Spaces shortcuts
-    /// that RegisterEventHotKey would reject with eventHotKeyExistsErr.
-    public var systemReservedHotkeys: Set<SystemHotkeyCombo> = {
-        // Carbon modifier constants: controlKey = 4096
-        let ctrl: UInt32 = 4096
-        // Virtual keycodes: Up = 126, Down = 125, Left = 123, Right = 124
-        return [
-            SystemHotkeyCombo(keyCode: 126, mods: ctrl),  // Ctrl+Up (Mission Control)
-            SystemHotkeyCombo(keyCode: 125, mods: ctrl),  // Ctrl+Down (App Exposé)
-            SystemHotkeyCombo(keyCode: 123, mods: ctrl),  // Ctrl+Left (Space left)
-            SystemHotkeyCombo(keyCode: 124, mods: ctrl),  // Ctrl+Right (Space right)
-        ]
-    }()
-
     public struct SystemHotkeyCombo: Hashable {
         public let keyCode: UInt32
         public let mods: UInt32
+
         public init(keyCode: UInt32, mods: UInt32) {
             self.keyCode = keyCode
             self.mods = mods
         }
+    }
+
+    final class HotkeySystem {
+        private struct RegistrationKey: Hashable {
+            let ownerID: UInt64
+            let hotkeyID: UInt32
+        }
+
+        private struct Registration {
+            let combo: SystemHotkeyCombo
+            let callback: (_ hotkeyID: Int32, _ eventKind: Int32) -> Void
+        }
+
+        var reservedHotkeys: Set<SystemHotkeyCombo> = []
+        private var nextOwnerID: UInt64 = 1
+        private var registrations: [RegistrationKey: Registration] = [:]
+        private var registrationKeysByCombo: [SystemHotkeyCombo: RegistrationKey] = [:]
+
+        func makeOwnerID() -> UInt64 {
+            defer { nextOwnerID += 1 }
+            return nextOwnerID
+        }
+
+        func register(
+            ownerID: UInt64,
+            hotkeyID: UInt32,
+            combo: SystemHotkeyCombo,
+            callback: @escaping (_ hotkeyID: Int32, _ eventKind: Int32) -> Void
+        ) -> Bool {
+            let key = RegistrationKey(ownerID: ownerID, hotkeyID: hotkeyID)
+            guard registrations[key] == nil,
+                  registrationKeysByCombo[combo] == nil,
+                  !reservedHotkeys.contains(combo) else { return false }
+
+            registrations[key] = Registration(combo: combo, callback: callback)
+            registrationKeysByCombo[combo] = key
+            return true
+        }
+
+        func unregister(ownerID: UInt64, hotkeyID: UInt32) {
+            let key = RegistrationKey(ownerID: ownerID, hotkeyID: hotkeyID)
+            guard let registration = registrations.removeValue(forKey: key) else { return }
+            registrationKeysByCombo.removeValue(forKey: registration.combo)
+        }
+
+        func dispatch(combo: SystemHotkeyCombo, eventKind: Int32) {
+            guard let key = registrationKeysByCombo[combo],
+                  let registration = registrations[key] else { return }
+            registration.callback(Int32(key.hotkeyID), eventKind)
+        }
+    }
+
+    private let hotkeySystem: HotkeySystem
+    private let hotkeyOwnerID: UInt64
+
+    /// Hotkey combinations already owned by simulated system services or other processes.
+    public var systemReservedHotkeys: Set<SystemHotkeyCombo> {
+        get { hotkeySystem.reservedHotkeys }
+        set { hotkeySystem.reservedHotkeys = newValue }
     }
 
     /// Convert CGEvent modifier flags to Carbon modifier flags.
@@ -64,8 +102,18 @@ public final class SimulatedInput: InputProtocol {
     }
 
     public init(rng: RPRNG, faults: FaultConfig) {
+        let hotkeySystem = HotkeySystem()
         self.rng = rng
         self.faults = faults
+        self.hotkeySystem = hotkeySystem
+        self.hotkeyOwnerID = hotkeySystem.makeOwnerID()
+    }
+
+    init(rng: RPRNG, faults: FaultConfig, hotkeySystem: HotkeySystem) {
+        self.rng = rng
+        self.faults = faults
+        self.hotkeySystem = hotkeySystem
+        self.hotkeyOwnerID = hotkeySystem.makeOwnerID()
     }
 
     public func createKeyboardEvent(keyCode: Int64, keyDown: Bool, flags: UInt64) -> InputEvent {
@@ -100,16 +148,16 @@ public final class SimulatedInput: InputProtocol {
     @discardableResult
     public func registerHotkey(id: UInt32, keyCode: UInt32, mods: UInt32,
                                callback: @escaping (_ hotkeyID: Int32, _ eventKind: Int32) -> Void) -> Bool {
-        // Reject combos reserved by the system (same as Carbon's eventHotKeyExistsErr).
-        if systemReservedHotkeys.contains(SystemHotkeyCombo(keyCode: keyCode, mods: mods)) {
-            return false
-        }
-        registeredHotkeys[id] = HotkeyEntry(keyCode: keyCode, mods: mods, callback: callback)
-        return true
+        hotkeySystem.register(
+            ownerID: hotkeyOwnerID,
+            hotkeyID: id,
+            combo: SystemHotkeyCombo(keyCode: keyCode, mods: mods),
+            callback: callback
+        )
     }
 
     public func unregisterHotkey(id: UInt32) {
-        registeredHotkeys.removeValue(forKey: id)
+        hotkeySystem.unregister(ownerID: hotkeyOwnerID, hotkeyID: id)
     }
 
     public func postEvent(_ event: InputEvent, tapLocation: Int32) -> Bool {
@@ -131,17 +179,16 @@ public final class SimulatedInput: InputProtocol {
             }
         }
 
-        // Dispatch to registered hotkeys for keyboard events.
-        // CGEventType: keyDown = 10, keyUp = 11
+        // Dispatch to the process-wide hotkey registration matching this keyboard event.
+        // CGEventType: keyDown = 10, keyUp = 11.
         if event.eventType == 10 || event.eventType == 11 {
-            let carbonMods = SimulatedInput.cgFlagsToCarbonMods(event.flags)
-            // Carbon: kEventHotKeyPressed = 5, kEventHotKeyReleased = 6
-            let eventKind: Int32 = (event.eventType == 10) ? 5 : 6
-            for (id, entry) in registeredHotkeys {
-                if entry.keyCode == UInt32(event.keyCode) && entry.mods == carbonMods {
-                    entry.callback(Int32(id), eventKind)
-                }
-            }
+            let combo = SystemHotkeyCombo(
+                keyCode: UInt32(event.keyCode),
+                mods: SimulatedInput.cgFlagsToCarbonMods(event.flags)
+            )
+            // Carbon: kEventHotKeyPressed = 5, kEventHotKeyReleased = 6.
+            let eventKind: Int32 = event.eventType == 10 ? 5 : 6
+            hotkeySystem.dispatch(combo: combo, eventKind: eventKind)
         }
 
         return true
