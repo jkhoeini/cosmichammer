@@ -1,0 +1,6 @@
+# PROTOTYPE — throwaway manifest for the direct Swift registry experiment
+# Format: scope<TAB>native-factories<TAB>lua-modules<TAB>aliases
+userdata	hs.libprototype_userdata=prototypeUserdataFactory	hs.prototypeuserdata=Lua/hs/prototypeuserdata.lua>prototypeuserdata.lua	hs.prototype.userdata=hs.libprototype_userdata
+simple	hs.libprototype_simple=prototypeSimpleFactoryV2	hs.prototypesimple=Lua/hs/prototypesimple.lua>prototypesimple.lua	hs.prototype.simple=hs.libprototype_simple
+nested	hs.libprototype_nested=prototypeNestedFactory	hs.prototypenested=Lua/hs/prototypenested.lua>prototypenested.lua	hs.prototype.nested=hs.libprototype_nested
+callback	hs.libprototype_callback=prototypeCallbackFactory	hs.prototypecallback=Lua/hs/prototypecallback.lua>prototypecallback.lua	hs.prototype.callback=hs.libprototype_callback

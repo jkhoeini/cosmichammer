@@ -1162,8 +1162,12 @@ LuaSkin → LuaSwift).
     - C9  `luaL_checkstring` (binary) → `tovalue<Data>/<[UInt8]>` / `lua_checkdata` parity (binary-safe)
     - C10 `luaL_checktype`+`lua_tonumber` → `let x: Double = try L.checkArgument(n)`
     - C11 `luaL_error` (in CFunction) → `throw L.error("…")` (only in throwing `LuaClosure` bodies)
-    NOTE: `@_cdecl("luaopen_hs_lib…")` entry-point *signatures* stay C-shaped (imported by
-    `@_silgen_name` in generated `HSExtensionsGenerated.swift`); only the *body* migrates.
+    NOTE: Superseded by the Wayfinder decision in
+    ~.wayfinder/issues/WF-005-reconcile-active-luaswift-migration.md~. After the
+    generated direct-Swift registry lands, each remaining WP keeps the
+    ~lua_CFunction~-compatible Swift type but removes every project-owned
+    ~@_cdecl~ annotation in its owned files; WP owners do not edit registry inputs
+    or generated outputs.
     The idiomatic API works on the existing `luaL_newstate()` — `LuaState` is the same
     `UnsafeMutablePointer<lua_State>`; first idiomatic call lazily registers LuaSwift's
     private `_State` bookkeeping (names `LuaSwift_*`, disjoint from `hs.*`).
@@ -1190,7 +1194,7 @@ LuaSkin → LuaSwift).
 *** Do-not-migrate (with reasons)
     - `SQLite3Module.swift` — raw `sqlite3*`/`sqlite3_stmt*` pointer userdata + hand `__gc` (`Any`-box doesn't fit).
     - Hardware: `Razer`, `StreamDeck`, `Serial`, `Milight` — unverifiable without devices; `Milight` struct userdata.
-    - `@_cdecl` entry-point signatures + `HSExtensionsGenerated.swift` (generated, C-symbol-coupled).
+    - Registry inputs, generator, and generated outputs — exclusive registry-foundation scope, which lands before the remaining WPs; `@_cdecl` annotations are not excluded from module-WP scope.
     - `LuaSkinCompatibility.swift` (pure Lua) and the `extensions/**/*.lua` files.
     - AppKit view/window/category files with no Lua-bridge surface.
     - Struct-backed userdata inside otherwise-migrating modules (e.g. `FileSystem` `dir_data`/`lfs_Lock`).
@@ -1270,8 +1274,12 @@ LuaSkin → LuaSwift).
           failure (test calls randomFromRange(-1,100) without pcall — error aborts
           the test function; identical behavior before and after migration).
           Filed as a separate fix-up (test needs pcall wrapping).
-    - [ ] implement WP2 (value-conversion dedup: JSON/Plist/Settings/Hash/Pasteboard)
-    - [ ] implement WP4–WP8 (parallelized via isolated jj workspaces)
+    - [ ] land the typed direct-registry/test-loading foundation before remaining WPs
+          (see ~.wayfinder/issues/WF-005-reconcile-active-luaswift-migration.md~)
+    - [ ] implement WP2 after that gate; its owner also removes every project-owned
+          ~@_cdecl~ annotation in JSON/Plist/Settings/Hash/Pasteboard sources
+    - [ ] implement WP4–WP8 after that gate (parallel isolated jj workspaces); each
+          module/cluster owner also removes every project-owned annotation in its files
 
     Codex top-3 fixes before impl: (1) solve timer GC explicitly — synthesized
     `__gc` is insufficient for a runloop-retained timer; (2) remove/hard-block all

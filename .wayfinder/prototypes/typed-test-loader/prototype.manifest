@@ -1,0 +1,6 @@
+# PROTOTYPE — intentionally out of preload-key order
+# typed-id<TAB>preload-key<TAB>Swift factory
+userdata	hs.libprototype_userdata	prototypeUserdataFactory
+simple	hs.libprototype_simple	prototypeSimpleFactoryV2
+nested	hs.libprototype_nested	prototypeNestedFactory
+callback	hs.libprototype_callback	prototypeCallbackFactory
