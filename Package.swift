@@ -33,7 +33,7 @@ let package = Package(
         .package(url: "https://github.com/open-telemetry/opentelemetry-swift-core.git", from: "2.4.1"),
         .package(url: "https://github.com/open-telemetry/opentelemetry-swift.git", from: "2.4.1"),
         .package(url: "https://github.com/swiftlang/swift-markdown.git", from: "0.5.0"),
-        .package(url: "https://github.com/tomsci/LuaSwift.git", from: "1.0.0"),
+        .package(url: "https://github.com/tomsci/LuaSwift.git", revision: "985e19af1ae62639e54e4ce2a9f7712a29b5432c"), // Swift 6.4 fix; no tagged release yet
     ],
     targets: [
         // ---------------------------------------------------------------
@@ -84,7 +84,6 @@ let package = Package(
                 .define("LUA_USE_MACOSX"),
             ],
             linkerSettings: [
-                .unsafeFlags(["-Xlinker", "-ObjC", "-Xlinker", "-all_load"]),
                 .linkedFramework("Cocoa"),
                 .linkedFramework("Foundation"),
                 .linkedFramework("AppKit"),

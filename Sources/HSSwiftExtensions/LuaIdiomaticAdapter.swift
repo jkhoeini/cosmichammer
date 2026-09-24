@@ -170,7 +170,15 @@ protocol LuaTeardownable: AnyObject {
 /// `tag` in the registry (so `core_getObjectMetatable(tag)` resolves).
 ///
 /// If `T` conforms to `LuaTeardownable`, `teardown()` is called
-/// before the userdata's `Any` box is deinitialized.
+/// before the userdata's strong reference is released.
+///
+/// The `__gc` handler must match LuaSwift's userdata storage model:
+/// `push(userdata:)` stores `T` inline in the userdata
+/// (`luaswift_newuserdata(L, MemoryLayout<T>.size)` + `initialize(to:)`). For
+/// `AnyObject`-constrained `T` that is an 8-byte class reference, so the handler reads the
+/// reference directly and releases it with `Unmanaged.release` — equivalent to
+/// `deinitialize(count: 1)` on a `T`-typed pointer, but formable as a plain C function
+/// pointer (a generic closure cannot capture `T`).
 func installMetatableBoilerplate<T: AnyObject>(
     _ L: LuaState, for type: T.Type, tag: String
 ) {
@@ -178,11 +186,12 @@ func installMetatableBoilerplate<T: AnyObject>(
 
     lua_pushcclosure(L, { (L: LuaState!) -> CInt in
         let rawptr = lua_touserdata(L, 1)!
-        let anyPtr = rawptr.assumingMemoryBound(to: Any.self)
-        if let teardownable = anyPtr.pointee as? LuaTeardownable {
+        let ref = rawptr.load(as: UnsafeRawPointer.self)
+        let obj = Unmanaged<AnyObject>.fromOpaque(ref).takeUnretainedValue()
+        if let teardownable = obj as? LuaTeardownable {
             teardownable.teardown()
         }
-        anyPtr.deinitialize(count: 1)
+        lua_releaseUserdataObject(rawptr)
         return 0
     }, 0)
     lua_setfield(L, -2, "__gc")

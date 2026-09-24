@@ -402,6 +402,18 @@ func lua_checkdata(_ L: UnsafeMutablePointer<lua_State>!, at index: Int32) -> Da
     return data
 }
 
+/// Release the strong reference that LuaSwift's `push(userdata:)` stores inline in a
+/// userdata for an `AnyObject`-constrained value (`luaswift_newuserdata` with
+/// `MemoryLayout<T>.size` bytes holding the class reference directly).
+///
+/// Call from a `__gc` handler AFTER any teardown work. Equivalent to
+/// `assumingMemoryBound(to: T.self).deinitialize(count: 1)` for class types, but formable
+/// from a non-generic C closure (a generic closure cannot capture `T`).
+func lua_releaseUserdataObject(_ rawptr: UnsafeMutableRawPointer) {
+    let ref = rawptr.load(as: UnsafeRawPointer.self)
+    Unmanaged<AnyObject>.fromOpaque(ref).release()
+}
+
 /// Pull a Lua string as Swift text while respecting Lua's byte length.
 func lua_tostringValue(_ L: UnsafeMutablePointer<lua_State>!, at index: Int32) -> String? {
     guard let data = lua_todata(L, at: index) else { return nil }

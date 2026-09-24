@@ -751,7 +751,7 @@ public func luaopen_hs_libbonjourservice(_ L: UnsafeMutablePointer<lua_State>!) 
         }
         // Deinitialize the Any box (same as LuaSwift's gcUserdata)
         let rawptr = lua_touserdata(L, 1)!
-        rawptr.assumingMemoryBound(to: Any.self).deinitialize(count: 1)
+        lua_releaseUserdataObject(rawptr)
         return 0
     }, 0)
     lua_setfield(L, -2, "__gc")

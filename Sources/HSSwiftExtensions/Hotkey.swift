@@ -374,7 +374,7 @@ public func luaopen_hs_libhotkey(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
             hk.teardown()
         }
         let rawptr = lua_touserdata(L, 1)!
-        rawptr.assumingMemoryBound(to: Any.self).deinitialize(count: 1)
+        lua_releaseUserdataObject(rawptr)
         return 0
     }, 0)
     lua_setfield(L, -2, "__gc")

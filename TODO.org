@@ -28,6 +28,147 @@ LuaSkin → LuaSwift).
 
 *** TODO Generate a new app icon
 
+
+*** TODO Add direct Space lifecycle and granular display watcher events
+    CosmicHammer currently exposes active-Space changes through
+    ~hs.spaces.watcher~ and aggregate screen-layout changes through
+    ~hs.screen.watcher~. Consumers must diff ~hs.spaces.allSpaces()~ snapshots
+    to infer Space creation/destruction, and cannot identify which display was
+    added, removed, moved, or resized from the watcher callback.
+
+**** Why yabai can emit these signals directly
+     Source-verified against upstream yabai master at commit
+     ~dd845723416f5fe92af49fad5ebab00369e07edd~ (2026-06-14):
+
+     - ~space_created~ and ~space_destroyed~ are direct private SkyLight
+       connection notifications, not snapshot diffs. On Ventura and newer,
+       ~src/yabai.c~ registers ~SLSRegisterConnectionNotifyProc~ on the main
+       SkyLight connection for numeric notification IDs ~1327~ and ~1328~.
+       ~src/mission_control.c:connection_handler~ copies a ~uint64_t~ Space ID
+       from the callback payload and posts it onto yabai's internal event loop.
+     - ~src/event_loop.c~ validates created IDs with
+       ~SLSSpaceGetType(connection, sid)~ and only publishes user/fullscreen
+       Spaces (types ~0~ and ~4~). Destruction is accepted only for an ID in
+       yabai's existing Space model. These guards matter: Sequoia 15.3 changed
+       notification behavior and caused spurious create events on window
+       minimize/unminimize; yabai fixed it in commit
+       ~34b541184e31ae0b82e4dd6c2c8c0240ef1e8542~ / issue #2548.
+     - ~display_added~, ~display_removed~, ~display_moved~, and
+       ~display_resized~ come from the public
+       ~CGDisplayRegisterReconfigurationCallback~. ~src/display.c~ maps
+       ~kCGDisplayAddFlag~, ~kCGDisplayRemoveFlag~, ~kCGDisplayMovedFlag~, and
+       ~kCGDisplayDesktopShapeChangedFlag~ to events carrying the
+       ~CGDirectDisplayID~.
+     - ~space_changed~ and ~display_changed~ use the same NSWorkspace sources
+       CosmicHammer already has: ~NSWorkspaceActiveSpaceDidChangeNotification~
+       and private ~NSWorkspaceActiveDisplayDidChangeNotification~.
+     - Architecture: OS callbacks enqueue small typed events; one serialized
+       event loop updates yabai's Space/display model; its signal layer then
+       exports IDs and current indexes to subscribers. SkyLight/CoreGraphics
+       callbacks never execute subscriber code directly.
+
+     Primary sources:
+     - https://github.com/asmvik/yabai/blob/dd845723416f5fe92af49fad5ebab00369e07edd/src/yabai.c
+     - https://github.com/asmvik/yabai/blob/dd845723416f5fe92af49fad5ebab00369e07edd/src/mission_control.c
+     - https://github.com/asmvik/yabai/blob/dd845723416f5fe92af49fad5ebab00369e07edd/src/event_loop.c
+     - https://github.com/asmvik/yabai/blob/dd845723416f5fe92af49fad5ebab00369e07edd/src/display.c
+     - https://github.com/asmvik/yabai/blob/dd845723416f5fe92af49fad5ebab00369e07edd/src/display_manager.c
+     - https://github.com/asmvik/yabai/blob/dd845723416f5fe92af49fad5ebab00369e07edd/src/workspace.m
+     - https://github.com/asmvik/yabai/commit/34b541184e31ae0b82e4dd6c2c8c0240ef1e8542
+     - https://github.com/asmvik/yabai/issues/2548
+     - https://developer.apple.com/documentation/coregraphics/cgdisplayregisterreconfigurationcallback(_:_:)
+
+**** Proposed Lua interface
+     Preserve existing constructors and add typed variants:
+
+     #+begin_src lua
+     hs.spaces.watcher.newWithLifecycle(function(event, spaceID)
+       -- event is "created" or "destroyed"
+     end)
+
+     hs.screen.watcher.newWithDisplayEvents(function(event, displayID)
+       -- event is "added", "removed", "moved", or "resized"
+     end)
+     #+end_src
+
+     IDs are ephemeral OS identities, not stable configuration keys. Callers
+     that need indexes, UUIDs, frames, or complete topology should re-query
+     ~hs.spaces.allSpaces()~ / ~hs.screen.allScreens()~ after the callback.
+     Keep ~hs.spaces.watcher.new~ and ~hs.screen.watcher.new~ unchanged for
+     active-Space and aggregate layout notifications. Keep
+     ~newWithActiveScreen~ unchanged except for an optional future display-ID
+     addition; active display is not part of this feature.
+
+**** Suggested implementation plan
+     1. Extend ~SpacesProtocol~ with lifecycle subscription methods and a typed
+        ~SpaceLifecycleEvent { kind, spaceID }~. Implement deterministic
+        registration and ~simulateSpaceLifecycleEvent~ in ~SimulatedSpaces~.
+     2. In ~ProductionSpaces~, declare ~SLSRegisterConnectionNotifyProc~ with
+        the callback ABI already documented by yabai, register IDs 1327/1328
+        once per process on ~SLSMainConnectionID()~, parse only payloads at
+        least ~MemoryLayout<UInt64>.size~, and fan out to subscribers.
+     3. Mirror yabai's semantic guards before delivery: created IDs must have
+        ~SpaceType.user~ or ~.fullscreen~; destroyed IDs must exist in a cached
+        prior topology. Refresh that topology after each accepted lifecycle
+        event. Keep consumer-side snapshot diffing as a fallback/deduplication
+        path because the API is private and version-sensitive.
+     4. Extend ~SpacesWatcher.swift~ with ~newWithLifecycle~. The SkyLight
+        callback must enqueue onto the main event loop before touching Lua,
+        then apply the existing generation guard, ~LuaTeardownable~ lifecycle,
+        telemetry callback wrapper, self-pinning, idempotent stop, and gauge
+        patterns.
+     5. Add a DST-owned display-reconfiguration seam rather than registering a
+        Lua callback per watcher. Extend ~ScreenProtocol~ (or a focused display
+        watcher protocol if that keeps ownership clearer) with typed
+        ~DisplayReconfigurationEvent { kind, displayID }~ subscription methods.
+        Production maps CoreGraphics flags; simulation exposes deterministic
+        event injection.
+     6. Centralize the process-wide
+        ~CGDisplayRegisterReconfigurationCallback~ currently used only for
+        gamma maintenance in ~Screen.swift~ so it fans out to both gamma and
+        watcher subscribers. Register once, remove once; CoreGraphics permits
+        multiple registrations but a single owner avoids duplicate callbacks
+        and teardown races.
+     7. Extend ~ScreenWatcher.swift~ with ~newWithDisplayEvents~, delivering on
+        the main event loop with the same lifecycle/generation/telemetry rules.
+        Preserve ~NSApplication.didChangeScreenParametersNotification~ as the
+        aggregate catch-all because CoreGraphics can deliver multi-flag,
+        before/after bursts.
+     8. Add simulator-backed Lua tests for payloads, ordering, multi-subscriber
+        fan-out, start/stop/GC idempotence, stale-generation suppression,
+        undersized SkyLight payload rejection, Space type/membership guards,
+        CoreGraphics multi-flag precedence, and no callback after stop.
+     9. Add production smoke diagnostics behind debug logging: registration
+        result, unknown notification/flag values, and accepted event IDs. Do
+        not log every callback at info level.
+     10. Document both APIs as experimental/private-API-backed and record the
+         Ventura+ evidence and Sequoia 15.3 regression history. Run
+         ~just verify~, then manually create/remove a Space and attach/move/
+         resize/detach a display on the minimum supported macOS version.
+
+**** Acceptance criteria
+     - Creating/removing a user Space invokes exactly one lifecycle callback
+       with the correct ~spaceID~; minimizing/restoring a window invokes none.
+     - Attaching, detaching, moving, and resizing a display invokes the matching
+       typed callback with its ~CGDirectDisplayID~; aggregate screen watchers
+       continue to work unchanged.
+     - OS callbacks never touch Lua off the main event loop, stopped/collected
+       watchers receive nothing, and multiple watchers do not multiply native
+       registrations.
+     - Simulator tests cover every event kind and guard; ~just verify~ passes.
+
+**** Risks / non-goals
+     - ~SLSRegisterConnectionNotifyProc~ and IDs 1327/1328 are private,
+       undocumented, and OS-version-sensitive. This feature must fail closed
+       and retain snapshot-diff fallback capability; it must not promise these
+       callbacks as stable across macOS releases.
+     - CoreGraphics invokes display reconfiguration callbacks before and after
+       a change and may combine flags. The implementation must define and test
+       deduplication/precedence rather than assume one callback per action.
+     - No Space creation/removal commands, Mission Control automation, yabai
+       shell-signal compatibility, stable display identity, or generic raw
+       SkyLight-notification Lua API are in scope.
+
 * DONE — OpenTelemetry Follow-Up Status
 
   Updated 2026-07-03 after the local implementation passes. The core

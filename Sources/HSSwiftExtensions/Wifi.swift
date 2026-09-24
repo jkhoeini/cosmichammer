@@ -737,8 +737,7 @@ public func luaopen_hs_libwifi(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
             scanner.teardown()
         }
         let rawptr = lua_touserdata(L, 1)!
-        let anyPtr = rawptr.assumingMemoryBound(to: Any.self)
-        anyPtr.deinitialize(count: 1)
+        lua_releaseUserdataObject(rawptr)
         return 0
     })
     lua_setfield(L, -2, "__gc")

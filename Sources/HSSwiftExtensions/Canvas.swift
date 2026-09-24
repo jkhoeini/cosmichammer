@@ -1011,8 +1011,7 @@ public func luaopen_hs_libcanvas(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
             }
             // Now deinitialize the Any box (same as LuaSwift's gcUserdata)
             let rawptr = lua_touserdata(L, 1)!
-            let anyPtr = rawptr.assumingMemoryBound(to: Any.self)
-            anyPtr.deinitialize(count: 1)
+            lua_releaseUserdataObject(rawptr)
             // Remove the Metatable so future use of the variable in Lua won't think its valid
             lua_pushnil(L)
             lua_setmetatable(L, 1)

@@ -1,5 +1,5 @@
 {
-  "originHash" : "edd84349f668941d6c62fba69355ddb3b533b2cb9016781b94c1301f7f914c08",
+  "originHash" : "6cb1b04e0b568250c26d1c45ca32073a5738359ded6876c4092782c82346381a",
   "pins" : [
     {
       "identity" : "grpc-swift",
@@ -15,8 +15,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/tomsci/LuaSwift.git",
       "state" : {
-        "revision" : "f5b1cf666d02a10b357c2a19c79e6e91247a88f4",
-        "version" : "1.0.0"
+        "revision" : "985e19af1ae62639e54e4ce2a9f7712a29b5432c"
       }
     },
     {

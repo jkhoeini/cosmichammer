@@ -656,8 +656,7 @@ public func luaopen_hs_libnetworkconfiguration(_ L: UnsafeMutablePointer<lua_Sta
                 obj.teardown()
             }
             let rawptr = lua_touserdata(L, 1)!
-            let anyPtr = rawptr.assumingMemoryBound(to: Any.self)
-            anyPtr.deinitialize(count: 1)
+            lua_releaseUserdataObject(rawptr)
             return 0
         }, 0)
         lua_setfield(L, -2, "__gc")
