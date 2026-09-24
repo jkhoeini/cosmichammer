@@ -29,12 +29,12 @@ info_template="CosmicHammer/CosmicHammer-Info.plist"
 marketing_placeholder="$(/usr/bin/plutil -extract CFBundleShortVersionString raw -o - "$info_template")"
 build_placeholder="$(/usr/bin/plutil -extract CFBundleVersion raw -o - "$info_template")"
 minimum_placeholder="$(/usr/bin/plutil -extract LSMinimumSystemVersion raw -o - "$info_template")"
-[[ "$marketing_placeholder" == '$(MARKETING_VERSION)' ]] \
-    || fail "Info.plist CFBundleShortVersionString must be \$(MARKETING_VERSION)"
-[[ "$build_placeholder" == '$(CURRENT_PROJECT_VERSION)' ]] \
-    || fail "Info.plist CFBundleVersion must be \$(CURRENT_PROJECT_VERSION)"
-[[ "$minimum_placeholder" == '${MACOSX_DEPLOYMENT_TARGET}' ]] \
-    || fail "Info.plist LSMinimumSystemVersion must be \${MACOSX_DEPLOYMENT_TARGET}"
+[[ "$marketing_placeholder" == '@MARKETING_VERSION@' ]] \
+    || fail "Info.plist CFBundleShortVersionString must be @MARKETING_VERSION@"
+[[ "$build_placeholder" == '@CURRENT_PROJECT_VERSION@' ]] \
+    || fail "Info.plist CFBundleVersion must be @CURRENT_PROJECT_VERSION@"
+[[ "$minimum_placeholder" == '@MACOSX_DEPLOYMENT_TARGET@' ]] \
+    || fail "Info.plist LSMinimumSystemVersion must be @MACOSX_DEPLOYMENT_TARGET@"
 
 git_bin="$(sh -c '. /etc/profile >/dev/null 2>&1 || true; command -v git' 2>/dev/null || true)"
 git_bin="${git_bin:-$(command -v git || true)}"
