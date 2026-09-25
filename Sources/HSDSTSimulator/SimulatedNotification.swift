@@ -1,6 +1,11 @@
 import Foundation
 import HSDSTCore
 
+// Tracking keys shared with the hs.notify module layer (KEY_ALWAYSPRESENT is
+// defined in HSSwiftExtensions/Notify.swift; redefine locally since
+// HSDSTSimulator cannot import the app extension target).
+private let KEY_ALWAYSPRESENT = "alwaysPresent"
+
 public final class SimulatedNotification: NotificationProtocol {
     private var rng: RPRNG
     private let faults: FaultConfig
@@ -75,6 +80,46 @@ public final class SimulatedNotification: NotificationProtocol {
         n.isDelivered = true
         n.actualDeliveryDate = Date()
         deliveredNotifs.append(n)
+    }
+
+    /// UN willPresent equivalent: honor KEY_ALWAYSPRESENT from the userInfo
+    /// (defaults to true like the production delegate).
+    public func presentNotification(_ notification: UserNotification) -> Bool {
+        (notification.userInfo[KEY_ALWAYSPRESENT] as? NSNumber)?.boolValue ?? true
+    }
+
+    /// Test hook: fire a didReceive-like activation for a delivered
+    /// notification. Looks up the registered callback for the identifier
+    /// (usually the notify delegate's activation handler) and invokes it with
+    /// the stored notification so tests can exercise the callback path
+    /// without the real OS notification center.
+    public func activateNotification(identifier: String, actionIdentifier: String?, userText: String?) {
+        if let callback = userNotificationCallbacks.removeValue(forKey: identifier) {
+            let note = deliveredNotifs.first { $0.identifier == identifier } ?? UserNotification(identifier: identifier)
+            callback(note)
+            return
+        }
+        // No registered callback: mark the activation on the stored note so
+        // callers reading the simulator state see the response.
+        if let idx = deliveredNotifs.firstIndex(where: { $0.identifier == identifier }) {
+            deliveredNotifs[idx].activationType = activationType(forAction: actionIdentifier)
+            deliveredNotifs[idx].response = userText
+        }
+    }
+
+    private func activationType(forAction actionIdentifier: String?) -> Int {
+        switch actionIdentifier {
+        case nil, UserNotificationActionIdentifier.defaultAction:
+            return 1 // contentsClicked
+        case UserNotificationActionIdentifier.dismissAction:
+            return 0 // none
+        case UserNotificationActionIdentifier.actionButton:
+            return 2 // actionButtonClicked
+        case UserNotificationActionIdentifier.reply:
+            return 3 // replied
+        default:
+            return 4 // additionalActionClicked
+        }
     }
 
     public func scheduleUserNotification(_ notification: UserNotification) {

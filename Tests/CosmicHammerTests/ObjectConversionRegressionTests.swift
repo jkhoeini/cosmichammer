@@ -393,10 +393,8 @@ extension CosmicHammerTests {
 
         @Test func testNotifyArrayPushesUserdataElements() {
             withLibNotifyState { L in
-                let first = NSUserNotification()
-                first.title = "first"
-                let second = NSUserNotification()
-                second.title = "second"
+                let first = UserNotification(identifier: "notify-array-first", title: "first")
+                let second = UserNotification(identifier: "notify-array-second", title: "second")
 
                 nt_pushNotificationArray(L, [first, second])
                 #expect(lua_istable(L, -1) != 0)
@@ -404,12 +402,12 @@ extension CosmicHammerTests {
 
                 lua_rawgeti(L, -1, 1)
                 #expect(luaL_testudata(L, -1, nt_USERDATA_TAG) != nil)
-                #expect(nt_getNotification(L, -1).title == "first")
+                #expect(nt_getNotification(L, -1).note.title == "first")
                 lua_pop(L, 1)
 
                 lua_rawgeti(L, -1, 2)
                 #expect(luaL_testudata(L, -1, nt_USERDATA_TAG) != nil)
-                #expect(nt_getNotification(L, -1).title == "second")
+                #expect(nt_getNotification(L, -1).note.title == "second")
                 lua_pop(L, 1)
             }
         }
@@ -423,12 +421,11 @@ extension CosmicHammerTests {
                 ])
                 nt_debugSetSpecificsRecord(gus, userInfo)
 
-                let notification = NSUserNotification()
-                notification.userInfo = [KEY_ID: gus]
+                let notification = UserNotification(identifier: gus, userInfo: [KEY_ID: gus])
 
-                #expect(nt_pushNSUserNotification(L, notification) == 1)
+                #expect(nt_pushNotification(L, note: notification) == 1)
                 #expect(nt_debugSelfRefCount(gus) == 1)
-                #expect(nt_pushNSUserNotification(L, notification) == 1)
+                #expect(nt_pushNotification(L, gus: gus) == 1)
                 #expect(nt_debugSelfRefCount(gus) == 2)
 
                 try #expect(nt_userdata_gc(L) == 0)

@@ -329,6 +329,10 @@ class MJAppDelegate: NSObject, NSApplicationDelegate, HSAppDelegateURLAccess {
         setFallbackAppIcon()
         promptToResetPreferencesIfHotkeyHeld()
         registerAccessibilityObserver()
+        // Install the process-wide UNUserNotificationCenter delegate so
+        // hs.notify (and core MJNotification responses) route through our
+        // delegate from the start.
+        MJUserNotificationManager.sharedManager.installAsDelegateIfNeeded()
 
         // Remove our early event manager handler so hs.urlevent can register for it later
         NSAppleEventManager.shared().removeEventHandler(forEventClass: AEEventClass(kInternetEventClass), andEventID: AEEventID(kAEGetURL))

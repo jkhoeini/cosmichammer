@@ -3,17 +3,26 @@ import CLua
 import Lua
 import os.log
 import HSDSTCore
+import UserNotifications
 
-// NSUserNotification and its relations are deprecated but we're not ready to switch quite yet...
+// Migrated off the deprecated NS-era notification APIs;
+// all delivery now goes through NotificationProtocol (UNUserNotificationCenter in
+// production, SimulatedNotification under DST tests).
 
 // MARK: - Constants
 
 let nt_USERDATA_TAG = "hs.notify"
 var nt_refTable: Int32 = LUA_NOREF
 
-// changes made to userInfo dictionary in userNotificationCenter:didDeliverNotification: are not
-// kept (is notification object a copy?) so we can't update delivered if it's in that particular
-// dictionary... track it in here instead, keyed to unique id added when created (see new).
+// UN has no "default notification sound" constant (the NS-era
+// DefaultSoundName constant was removed); keep the same Lua-visible string value.
+let UserNotificationDefaultSoundName = "DefaultSoundName"
+
+// Record of per-notification state, keyed to the unique id (gus) added when the
+// notification is created (see notification_new). The authoritative live copy is
+// the wrapper's UserNotification; this dictionary carries the Lua-visible
+// tracking state (locked/fntag/...) plus a content snapshot copied into the
+// UN content userInfo so a reload-recreated record restores it.
 var nt_specifics: NSMutableDictionary!
 
 let KEY_LOCKED        = "locked"
@@ -25,8 +34,24 @@ let KEY_AUTOWITHDRAW  = "autoWithdraw"
 let KEY_SELFREFCOUNT  = "selfRefCount"
 let KEY_DELIVERED     = "delivered"
 let KEY_ACTIVEGAUGE   = "activeGauge"
+let KEY_ACTIVATIONTYPE        = "activationType"
+let KEY_RESPONSE              = "response"
+let KEY_ADDITIONALACTIVATION  = "additionalActivationAction"
+let KEY_TITLE                 = "title"
+let KEY_SUBTITLE              = "subTitle"
+let KEY_INFORMATIVETEXT       = "informativeText"
+let KEY_SOUNDNAME             = "soundName"
+let KEY_HASACTIONBUTTON       = "hasActionButton"
+let KEY_ACTIONBUTTON_TITLE    = "actionButtonTitle"
+let KEY_HASREPLYBUTTON        = "hasReplyButton"
+let KEY_RESPONSEPLACEHOLDER   = "responsePlaceholder"
+let KEY_ADDITIONALACTIONS     = "additionalActions"
 
-var nt_old_delegate: NSUserNotificationCenterDelegate?
+// Pending withdrawAfter timers, keyed by gus id. UNUserNotificationCenter has no
+// per-notification withdrawal timer, so hs.notify:withdrawAfter() schedules a
+// DispatchWorkItem on the main queue here.
+var nt_withdrawTimers: [String: DispatchWorkItem] = [:]
+
 private var activeNotifyUserdataCount = 0
 
 private func recordActiveNotifyUserdataGauge(_ L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
@@ -52,109 +77,303 @@ private func setNotifyUserdataCounted(_ userInfo: NSMutableDictionary, _ active:
     recordActiveNotifyUserdataGauge(L)
 }
 
-// MARK: - Support Functions and Classes
+// MARK: - Wrapper class held by the userdata
 
-class HSModuleNotificationManager: NSObject, NSUserNotificationCenterDelegate {
-    static let shared = HSModuleNotificationManager()
+/// Strong table keeping live HSNotifyObject wrappers reachable from the delegate
+/// path (which only has the gus string). Keyed by gus id.
+var nt_wrapperRegistry: NSMutableDictionary?
 
-    // Notification delivered to Notification Center
-    func userNotificationCenter(_ center: NSUserNotificationCenter, didDeliver notification: NSUserNotification) {
-        // if it's ours, we've copied the necessary info into the userInfo dictionary...
-        guard let gus = notification.userInfo?[KEY_ID] as? String else { return }
+/// The userdata box for hs.notify. UserNotification is a Swift struct, so the
+/// userdata must hold a class wrapper; the Unmanaged retained-pointer model
+/// (instead of Metatable<T> boilerplate) is preserved.
+final class HSNotifyObject: NSObject {
+    var note: UserNotification
+    /// Local record (nt_specifics entry) for Lua-visible tracking state.
+    var record: NSMutableDictionary?
 
-        // however we *might* need to recreate the local record so we can update KEY_DELIVERED
-        if nt_specifics[gus] == nil {
-            nt_specifics[gus] = (notification.userInfo! as NSDictionary).mutableCopy()
-        }
-        let userInfo = nt_specifics[gus] as! NSMutableDictionary
-        userInfo[KEY_DELIVERED] = true
-
-        let withdrawAfter = (userInfo[KEY_WITHDRAWAFTER] as? NSNumber)?.doubleValue ?? 0.0
-
-        if withdrawAfter > 0 {
-            center.perform(#selector(NSUserNotificationCenter.removeDeliveredNotification(_:)),
-                           with: notification,
-                           afterDelay: withdrawAfter)
-        }
-    }
-
-    // User clicked on notification...
-    func userNotificationCenter(_ center: NSUserNotificationCenter, didActivate notification: NSUserNotification) {
-        // if it's ours, we've copied the necessary info into the userInfo dictionary...
-        guard let gus = notification.userInfo?[KEY_ID] as? String else {
-            os_log(.error, "%{public}s","\(nt_USERDATA_TAG) passing off to original handler")
-            if let delegate = nt_old_delegate, delegate.responds(to: #selector(NSUserNotificationCenterDelegate.userNotificationCenter(_:didActivate:))) {
-                delegate.userNotificationCenter?(center, didActivate: notification)
-            }
-            return
-        }
-
-        // however we *might* need to recreate the local record so we can update KEY_DELIVERED
-        if nt_specifics[gus] == nil {
-            nt_specifics[gus] = (notification.userInfo! as NSDictionary).mutableCopy()
-        }
-        let userInfo = nt_specifics[gus] as! NSMutableDictionary
-        userInfo[KEY_DELIVERED] = true // just in case its a holdover from before a reload/relaunch
-
-        let L = lua_getCurrentState()!
-        if !(lua_getglobal(L, "require") == LUA_OK && { L.push(nt_USERDATA_TAG); return lua_pcall(L, 1, 1, 0) == LUA_OK }()) {
-            os_log(.error, "%{public}s", "\(nt_USERDATA_TAG):_didActivateNotification - unable to load tag handler: \(String(cString: lua_tostring(L, -1)!))")
-            lua_pop(L, 1) // remove error message
-            return
-        }
-        lua_getfield(L, -1, "_tag_handler") // now we know the function hs.notify._tag_handler is on the stack...
-        lua_pushany(L, userInfo[KEY_FNTAG])
-        nt_pushNSUserNotification(L, notification)
-
-        if luaTelemetryPCall(
-            L,
-            nargs: 2,
-            nresults: 0,
-            callbackName: "hs.notify.activation",
-            attributes: [
-                "notification.delivered": userInfo[KEY_DELIVERED] as? Bool ?? true,
-                "notification.has_action": notification.activationType != .none,
-            ]
-        ) != LUA_OK {
-            lua_pop(L, 1) // pop error message
-            lua_pop(L, 1) // pop the hs.notify module
-            return
-        }
-        lua_pop(L, 1) // pop the hs.notify module
-
-        let shouldWithdraw: Bool
-        if notification.deliveryRepeatInterval != nil {
-            shouldWithdraw = true
-        } else {
-            shouldWithdraw = (userInfo[KEY_AUTOWITHDRAW] as? NSNumber)?.boolValue ?? true
-        }
-
-        if shouldWithdraw {
-            NSUserNotificationCenter.default.removeDeliveredNotification(notification)
-            NSUserNotificationCenter.default.removeScheduledNotification(notification)
-        }
-    }
-
-    // Should notification show, even if we're the foremost application?
-    func userNotificationCenter(_ center: NSUserNotificationCenter, shouldPresent notification: NSUserNotification) -> Bool {
-        // if it's ours, we've copied the necessary info into the userInfo dictionary...
-        if let shouldPresent = notification.userInfo?[KEY_ALWAYSPRESENT] as? NSNumber {
-            return shouldPresent.boolValue
-        } else { // MJNotificationManager just returns YES, so this is simpler.
-            return true
-        }
+    init(note: UserNotification, record: NSMutableDictionary? = nil) {
+        self.note = note
+        self.record = record
     }
 }
 
-func nt_delegate_setup() {
-    // Get and store old (core app) delegate. If it hasn't been setup yet, do so.
-    nt_old_delegate = NSUserNotificationCenter.default.delegate
-    if nt_old_delegate == nil {
-        _ = MJUserNotificationManager.sharedManager
-        nt_old_delegate = NSUserNotificationCenter.default.delegate
+// MARK: - Support Functions and Classes
+
+/// Activation handling for hs.notify notifications. Not the UN delegate itself:
+/// MJUserNotificationManager is the process-wide UNUserNotificationCenter
+/// delegate (UN has a single delegate slot) and forwards hs.notify responses
+/// here. The UN center calls delegates on a secondary queue, so all Lua work is
+/// marshaled onto the main run loop (see Websocket.swift's performLuaWork).
+final class HSModuleNotificationManager: NSObject {
+    static let shared = HSModuleNotificationManager()
+
+    /// Marshal Lua callback work onto the main run loop. The Lua host pumps the
+    /// main run loop; DispatchQueue.main.async is not reliably drained by the
+    /// Swift test harness polling loop, so use RunLoop.main.perform off-main.
+    private func performOnMainRunLoop(_ work: @escaping () -> Void) {
+        if Thread.isMainThread {
+            work()
+        } else {
+            RunLoop.main.perform(work)
+        }
     }
-    // Create our delegate
-    NSUserNotificationCenter.default.delegate = HSModuleNotificationManager.shared
+
+    /// Entry from the process UN delegate (MJUserNotificationManager) for a
+    /// notification response on an hs.notify notification.
+    func handleActivationResponse(_ response: UNNotificationResponse) {
+        let content = response.notification.request.content
+        guard let gus = content.userInfo[KEY_ID] as? String else { return }
+
+        // however we *might* need to recreate the local record so we can update KEY_DELIVERED
+        if nt_specifics == nil { nt_specifics = NSMutableDictionary() }
+        if nt_specifics[gus] == nil {
+            nt_specifics[gus] = (content.userInfo as NSDictionary).mutableCopy()
+        }
+        guard let userInfo = nt_specifics[gus] as? NSMutableDictionary else { return }
+        userInfo[KEY_DELIVERED] = true // just in case its a holdover from before a reload/relaunch
+
+        // Compute the hs.notify activation type from the UN action identifier.
+        let activationType = nt_activationType(for: response.actionIdentifier, category: content.categoryIdentifier)
+        userInfo[KEY_ACTIVATIONTYPE] = NSNumber(value: activationType)
+        let userText = (response as? UNTextInputNotificationResponse)?.userText
+        if response.actionIdentifier == UserNotificationActionIdentifier.reply, let userText {
+            userInfo[KEY_RESPONSE] = userText
+        }
+        if let additional = nt_additionalActivationAction(
+            for: response.actionIdentifier, category: content.categoryIdentifier
+        ) {
+            userInfo[KEY_ADDITIONALACTIVATION] = additional
+        }
+
+        performOnMainRunLoop {
+            nt_handleActivation(
+                gus: gus,
+                activationType: activationType,
+                delivered: true,
+                record: userInfo,
+                actionIdentifier: response.actionIdentifier,
+                userText: userText
+            )
+        }
+    }
+
+    /// Entry from the process UN delegate for a notification shown while the
+    /// app is frontmost. Returns whether to present (alwaysPresent honored).
+    func presentationDecision(identifier: String, userInfo: [AnyHashable: Any], deliveryDate: Date) -> Bool {
+        if userInfo["MJNotification"] != nil {
+            return true
+        }
+        guard let gus = userInfo[KEY_ID] as? String else { return false }
+
+        // if it's ours, we've copied the necessary info into the userInfo dictionary...
+        if nt_specifics == nil { nt_specifics = NSMutableDictionary() }
+        if nt_specifics[gus] == nil {
+            nt_specifics[gus] = (userInfo as NSDictionary).mutableCopy()
+        }
+        guard let userInfo = nt_specifics[gus] as? NSMutableDictionary else { return false }
+        userInfo[KEY_DELIVERED] = true
+        let alwaysPresent = (userInfo[KEY_ALWAYSPRESENT] as? NSNumber)?.boolValue ?? true
+        performOnMainRunLoop {
+            nt_recordPresentation(gus: gus, presented: alwaysPresent, deliveryDate: deliveryDate)
+        }
+        return alwaysPresent
+    }
+
+    /// Test hook mirroring the didReceive response path for the DST simulator:
+    /// runs the same activation handling the process delegate performs for a
+    /// real UNNotificationResponse. Tests drive this via
+    /// SimulatedNotification.activateNotification.
+    func testActivationFromSimulator(
+        gus: String,
+        activationType: Int,
+        delivered: Bool,
+        record: NSMutableDictionary,
+        actionIdentifier: String?,
+        userText: String?
+    ) {
+        record[KEY_DELIVERED] = delivered
+        record[KEY_ACTIVATIONTYPE] = NSNumber(value: activationType)
+        if actionIdentifier == UserNotificationActionIdentifier.reply, let userText {
+            record[KEY_RESPONSE] = userText
+        }
+        nt_handleActivation(
+            gus: gus,
+            activationType: activationType,
+            delivered: delivered,
+            record: record,
+            actionIdentifier: actionIdentifier,
+            userText: userText
+        )
+    }
+}
+
+/// Recreate/refresh the wrapper-side state for a delivered notification.
+/// Marshaled to the main run loop by the delegate path.
+private func nt_recordPresentation(gus: String, presented: Bool, deliveryDate: Date) {
+    if nt_specifics == nil { nt_specifics = NSMutableDictionary() }
+    let userInfo = nt_specifics[gus] as? NSMutableDictionary
+    userInfo?[KEY_DELIVERED] = true
+    guard let wrapper = nt_wrapperRegistry?[gus] as? HSNotifyObject else { return }
+    wrapper.note.isDelivered = true
+    wrapper.note.isPresented = presented
+    if wrapper.note.actualDeliveryDate == nil {
+        wrapper.note.actualDeliveryDate = deliveryDate
+    }
+}
+
+/// Map a UN action identifier + category to the hs.notify numeric activation type.
+func nt_activationType(for actionIdentifier: String?, category: String?) -> Int {
+    switch actionIdentifier {
+    case nil, "", UserNotificationActionIdentifier.defaultAction:
+        return 1 // contentsClicked
+    case UserNotificationActionIdentifier.dismissAction:
+        return 0 // none
+    case UserNotificationActionIdentifier.actionButton:
+        return 2 // actionButtonClicked
+    case UserNotificationActionIdentifier.reply:
+        return 3 // replied
+    default:
+        // Additional actions are registered as "hs.notify.<identifier>" within
+        // the notification's "hs.notify.category.*" category.
+        if let actionIdentifier, actionIdentifier.hasPrefix("hs.notify."),
+           let category, category.hasPrefix("hs.notify.category.") {
+            return 4 // additionalActionClicked
+        }
+        return 1 // unknown action: treat as a body activation
+    }
+}
+
+/// Extract the selected additional action title from an
+/// "hs.notify.<identifier>" action identifier scoped by the category.
+private func nt_additionalActivationAction(for actionIdentifier: String?, category: String?) -> String? {
+    guard let actionIdentifier, actionIdentifier.hasPrefix("hs.notify."),
+          actionIdentifier != UserNotificationActionIdentifier.actionButton,
+          actionIdentifier != UserNotificationActionIdentifier.reply,
+          let category, category.hasPrefix("hs.notify.category.") else { return nil }
+    return String(actionIdentifier.dropFirst("hs.notify.".count))
+}
+
+// MARK: - Activation handling
+
+/// Handle a notification activation: sync the wrapper state, look up the
+/// callback tag, call hs.notify._tag_handler through luaTelemetryPCall, honor
+/// autoWithdraw. Runs on the main thread/run loop.
+func nt_handleActivation(
+    gus: String,
+    activationType: Int,
+    delivered: Bool,
+    record: NSMutableDictionary,
+    actionIdentifier: String?,
+    userText: String?
+) {
+    guard record[KEY_FNTAG] != nil else { return }
+
+    // Sync the activation state onto the live wrapper so the getters
+    // (activationType/response/...) observe the recorded values.
+    if let wrapper = nt_wrapperRegistry?[gus] as? HSNotifyObject {
+        wrapper.note.activationType = (record[KEY_ACTIVATIONTYPE] as? NSNumber)?.intValue ?? wrapper.note.activationType
+        if let response = record[KEY_RESPONSE] as? String {
+            wrapper.note.response = response
+        }
+        if let additional = record[KEY_ADDITIONALACTIVATION] as? String {
+            wrapper.note.additionalActivationAction = additional
+        }
+        if delivered {
+            wrapper.note.isDelivered = true
+        }
+    }
+
+    let L = lua_getCurrentState()!
+    let requireType = lua_getglobal(L, "require")
+    guard requireType == LUA_TFUNCTION else {
+        lua_pop(L, 1) // pop the non-function value
+        NSLog("%@:_didActivateNotification - require is unavailable", nt_USERDATA_TAG)
+        return
+    }
+    L.push(nt_USERDATA_TAG)
+    if lua_pcall(L, 1, 1, 0) != LUA_OK {
+        NSLog("%@:_didActivateNotification - unable to load tag handler: %@", nt_USERDATA_TAG, String(cString: lua_tostring(L, -1)!))
+        lua_pop(L, 1) // remove error message
+        return
+    }
+    lua_getfield(L, -1, "_tag_handler") // now we know the function hs.notify._tag_handler is on the stack...
+    lua_pushany(L, record[KEY_FNTAG])
+    nt_pushNotification(L, gus: gus)
+
+    if luaTelemetryPCall(
+        L,
+        nargs: 2,
+        nresults: 0,
+        callbackName: "hs.notify.activation",
+        attributes: [
+            "notification.delivered": delivered,
+            "notification.has_action": activationType != 0,
+        ]
+    ) != LUA_OK {
+        lua_pop(L, 1) // pop error message
+        lua_pop(L, 1) // pop the hs.notify module
+        return
+    }
+    lua_pop(L, 1) // pop the hs.notify module
+
+    let shouldWithdraw = (record[KEY_AUTOWITHDRAW] as? NSNumber)?.boolValue ?? true
+    if shouldWithdraw {
+        let notification = environmentGetGlobalOrNil()?.notification ?? environmentGet(L).notification
+        notification.removeDeliveredUserNotification(identifier: gus)
+        notification.removeScheduledUserNotification(identifier: gus)
+        // Cancel any pending withdrawAfter timer; activation wins.
+        nt_cancelWithdrawTimer(gus: gus)
+    }
+}
+
+// MARK: - withdrawAfter timers
+
+func nt_scheduleWithdrawTimer(gus: String, after seconds: Double, from deliveryTime: Date? = nil) {
+    nt_cancelWithdrawTimer(gus: gus)
+    let item = DispatchWorkItem {
+        guard let env = environmentGetGlobalOrNil() else { return }
+        env.notification.removeDeliveredUserNotification(identifier: gus)
+        if let userInfo = nt_specifics[gus] as? NSMutableDictionary {
+            userInfo[KEY_DELIVERED] = false
+        }
+        if let wrapper = nt_wrapperRegistry?[gus] as? HSNotifyObject {
+            wrapper.note.isDelivered = false
+            wrapper.note.isPresented = false
+        }
+        nt_withdrawTimers[gus] = nil
+    }
+    nt_withdrawTimers[gus] = item
+    let delay = deliveryTime.map { max(0, $0.timeIntervalSinceNow) + seconds } ?? seconds
+    DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: item)
+}
+
+func nt_cancelWithdrawTimer(gus: String) {
+    if let item = nt_withdrawTimers.removeValue(forKey: gus) {
+        item.cancel()
+    }
+}
+
+func nt_cancelAllWithdrawTimers() {
+    for gus in Array(nt_withdrawTimers.keys) {
+        nt_cancelWithdrawTimer(gus: gus)
+    }
+}
+
+/// Copy the wrapper's content configuration into the record so the userInfo
+/// copied into the UN content restores it when the record is recreated after a
+/// reload (the UN content only carries userInfo across relaunches).
+func nt_recordContentConfig(_ userInfo: NSMutableDictionary, _ note: UserNotification) {
+    userInfo[KEY_TITLE] = note.title
+    userInfo[KEY_SUBTITLE] = note.subtitle
+    userInfo[KEY_INFORMATIVETEXT] = note.informativeText
+    userInfo[KEY_SOUNDNAME] = note.soundName ?? NSNull()
+    userInfo[KEY_HASACTIONBUTTON] = NSNumber(value: note.hasActionButton)
+    userInfo[KEY_ACTIONBUTTON_TITLE] = note.actionButtonTitle
+    userInfo[KEY_HASREPLYBUTTON] = NSNumber(value: note.hasReplyButton)
+    userInfo[KEY_RESPONSEPLACEHOLDER] = note.responsePlaceholder
+    userInfo[KEY_ADDITIONALACTIONS] = note.additionalActions.map {
+        ["identifier": $0.identifier, "title": $0.title]
+    }
 }
 
 func nt_date_from_string(_ dateString: String) -> Date? {
@@ -168,16 +387,16 @@ func nt_date_from_string(_ dateString: String) -> Date? {
 
 // MARK: - Helper: get_objectFromUserdata
 
-func nt_getNotification(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> NSUserNotification {
+func nt_getNotification(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> HSNotifyObject {
     let ptr = luaL_checkudata(L, idx, nt_USERDATA_TAG)!
         .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
-    return Unmanaged<NSUserNotification>.fromOpaque(ptr.pointee!).takeUnretainedValue()
+    return Unmanaged<HSNotifyObject>.fromOpaque(ptr.pointee!).takeUnretainedValue()
 }
 
-func nt_pushNotificationArray(_ L: UnsafeMutablePointer<lua_State>!, _ notifications: [NSUserNotification]) {
+func nt_pushNotificationArray(_ L: UnsafeMutablePointer<lua_State>!, _ notifications: [UserNotification]) {
     lua_newtable(L)
     for (idx, notification) in notifications.enumerated() {
-        nt_pushNSUserNotification(L, notification)
+        nt_pushNotification(L, note: notification)
         lua_rawseti(L, -2, lua_Integer(idx + 1))
     }
 }
@@ -197,7 +416,8 @@ func nt_pushNotificationArray(_ L: UnsafeMutablePointer<lua_State>!, _ notificat
 /// Notes:
 ///  * This will withdraw all notifications for Cosmic Hammer, including those not sent by this module or that linger from a previous load of Cosmic Hammer.
 private func notification_withdraw_all(_ L: LuaState) throws -> CInt {
-    NSUserNotificationCenter.default.removeAllDeliveredNotifications()
+    let notification = environmentGetGlobalOrNil()?.notification ?? environmentGet(L).notification
+    notification.removeAllDeliveredUserNotifications()
     return 0
 }
 
@@ -211,7 +431,10 @@ private func notification_withdraw_all(_ L: LuaState) throws -> CInt {
 /// Returns:
 ///  * None
 private func notification_withdraw_allScheduled(_ L: LuaState) throws -> CInt {
-    NSUserNotificationCenter.default.scheduledNotifications = []
+    let notification = environmentGetGlobalOrNil()?.notification ?? environmentGet(L).notification
+    for note in notification.scheduledUserNotifications() {
+        notification.removeScheduledUserNotification(identifier: note.identifier)
+    }
     return 0
 }
 
@@ -246,13 +469,14 @@ private func notification_withdraw_allScheduled(_ L: LuaState) throws -> CInt {
 /// end)
 /// ~~~
 private func notification_deliveredNotifications(_ L: LuaState) throws -> CInt {
-    let deliveredNotifications = NSUserNotificationCenter.default.deliveredNotifications
+    let notification = environmentGetGlobalOrNil()?.notification ?? environmentGet(L).notification
+    let deliveredNotifications = notification.deliveredUserNotifications()
 
     nt_pushNotificationArray(L, deliveredNotifications)
-    // just in case pushNSUserNotification had to recreate our entries in nt_specifics
-    for notification in deliveredNotifications {
-        if let gus = notification.userInfo?[KEY_ID] as? String {
-            if let userInfo = nt_specifics[gus] as? NSMutableDictionary {
+    // just in case pushNotification had to recreate our entries in nt_specifics
+    for note in deliveredNotifications {
+        if note.userInfo[KEY_ID] is String {
+            if let userInfo = nt_specifics[note.identifier] as? NSMutableDictionary {
                 userInfo[KEY_DELIVERED] = true
             }
         }
@@ -275,7 +499,8 @@ private func notification_deliveredNotifications(_ L: LuaState) throws -> CInt {
 ///
 ///  * You can use this function along with [hs.notify:getFunctionTag](#getFunctionTag) to re=register necessary callback functions with [hs.notify.register](#register) when Cosmic Hammer is restarted.
 private func notification_scheduledNotifications(_ L: LuaState) throws -> CInt {
-    nt_pushNotificationArray(L, NSUserNotificationCenter.default.scheduledNotifications)
+    let notification = environmentGetGlobalOrNil()?.notification ?? environmentGet(L).notification
+    nt_pushNotificationArray(L, notification.scheduledUserNotifications())
     return 1
 }
 
@@ -301,11 +526,23 @@ private func notification_new(_ L: LuaState) throws -> CInt {
 
     nt_specifics[gus] = userInfo
 
-    let notification = NSUserNotification()
-    notification.userInfo = [KEY_ID: gus]
-    notification.hasActionButton = false
+    // UN presents the notification content's title; the Lua layer defaults it
+    // to "Notification" (see notify.lua module.new), but a raw _new() call
+    // yields an empty title like the old NS-era object did.
+    let notification = UserNotification(
+        identifier: gus,
+        title: "",
+        subtitle: "",
+        informativeText: "",
+        soundName: nil,
+        hasActionButton: false,
+        actionButtonTitle: "",
+        otherButtonTitle: "",
+        hasReplyButton: false,
+        userInfo: [KEY_ID: gus]
+    )
 
-    nt_pushNSUserNotification(L, notification)
+    nt_pushNotification(L, note: notification, record: userInfo)
     return 1
 }
 
@@ -326,66 +563,108 @@ func nt_activationTypesTable(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
 /// Notes:
 ///  * Count starts at zero. (implemented in Objective-C)
     lua_newtable(L)
-    L.push(lua_Integer(NSUserNotification.ActivationType.none.rawValue))
+    L.push(lua_Integer(0))
     lua_setfield(L, -2, "none")
-    L.push(lua_Integer(NSUserNotification.ActivationType.contentsClicked.rawValue))
+    L.push(lua_Integer(1))
     lua_setfield(L, -2, "contentsClicked")
-    L.push(lua_Integer(NSUserNotification.ActivationType.actionButtonClicked.rawValue))
+    L.push(lua_Integer(2))
     lua_setfield(L, -2, "actionButtonClicked")
-    L.push(lua_Integer(NSUserNotification.ActivationType.replied.rawValue))
+    L.push(lua_Integer(3))
     lua_setfield(L, -2, "replied")
-    L.push(lua_Integer(NSUserNotification.ActivationType.additionalActionClicked.rawValue))
+    L.push(lua_Integer(4))
     lua_setfield(L, -2, "additionalActionClicked")
     return 1
 }
 
-// MARK: - Lua<->NSObject Conversion Functions
-// These must not throw a lua error to ensure LuaSkin can safely be used from Objective-C
+// MARK: - Lua<->Wrapper Conversion Functions
+// These must not throw a lua error to ensure LuaSkin can safely be used from
 // delegates and blocks.
 
-@discardableResult
-func nt_pushNSUserNotification(_ L: UnsafeMutablePointer<lua_State>!, _ obj: Any) -> Int32 {
-    let value = obj as! NSUserNotification
-
-    if let userInfoDict = value.userInfo {
-        if let gus = userInfoDict[KEY_ID] as? String {
-            if let userInfo = nt_specifics[gus] as? NSMutableDictionary {
-                let selfRefCount = (userInfo[KEY_SELFREFCOUNT] as? NSNumber)?.intValue ?? 0
-                userInfo[KEY_SELFREFCOUNT] = NSNumber(value: selfRefCount + 1)
-                setNotifyUserdataCounted(userInfo, true, L: L)
-            } else {
-                if userInfoDict[KEY_DELIVERED] != nil { // it's a holdover from a reload/relaunch
-                    nt_specifics[gus] = (userInfoDict as NSDictionary).mutableCopy()
-                    let userInfo = nt_specifics[gus] as! NSMutableDictionary
-                    userInfo[KEY_SELFREFCOUNT] = NSNumber(value: 1)
-                    userInfo[KEY_ACTIVEGAUGE] = NSNumber(value: false)
-                    setNotifyUserdataCounted(userInfo, true, L: L)
+func nt_pushNotification(
+    _ L: UnsafeMutablePointer<lua_State>!,
+    note: UserNotification? = nil,
+    record: NSMutableDictionary? = nil,
+    gus: String? = nil
+) -> Int32 {
+    // Resolve the wrapper being pushed: an existing one from the registry, a
+    // recreated one from the tracked record (holdover from a reload/relaunch),
+    // or a fresh one from the given note.
+    if nt_specifics == nil { nt_specifics = NSMutableDictionary() }
+    let wrapper: HSNotifyObject
+    if let gus, let existing = nt_wrapperRegistry?[gus] as? HSNotifyObject {
+        wrapper = existing
+    } else if let gus, let userInfo = nt_specifics[gus] as? NSMutableDictionary {
+        var rebuilt = UserNotification(
+            identifier: gus,
+            title: userInfo[KEY_TITLE] as? String ?? "",
+            subtitle: userInfo[KEY_SUBTITLE] as? String ?? "",
+            informativeText: userInfo[KEY_INFORMATIVETEXT] as? String ?? "",
+            soundName: userInfo[KEY_SOUNDNAME] as? String,
+            hasActionButton: (userInfo[KEY_HASACTIONBUTTON] as? NSNumber)?.boolValue ?? true,
+            actionButtonTitle: userInfo[KEY_ACTIONBUTTON_TITLE] as? String ?? "Show",
+            otherButtonTitle: "",
+            hasReplyButton: (userInfo[KEY_HASREPLYBUTTON] as? NSNumber)?.boolValue ?? false,
+            isDelivered: (userInfo[KEY_DELIVERED] as? NSNumber)?.boolValue ?? false,
+            isPresented: (userInfo[KEY_DELIVERED] as? NSNumber)?.boolValue ?? false,
+            additionalActions: [],
+            userInfo: [KEY_ID: gus],
+            activationType: (userInfo[KEY_ACTIVATIONTYPE] as? NSNumber)?.intValue ?? 0,
+            response: userInfo[KEY_RESPONSE] as? String,
+            additionalActivationAction: userInfo[KEY_ADDITIONALACTIVATION] as? String,
+            responsePlaceholder: userInfo[KEY_RESPONSEPLACEHOLDER] as? String ?? ""
+        )
+        if let actions = userInfo[KEY_ADDITIONALACTIONS] as? [[String: String]] {
+            rebuilt.additionalActions = actions.compactMap { dict in
+                if let id = dict["identifier"], let title = dict["title"] {
+                    return (identifier: id, title: title)
                 }
+                return nil
             }
-        } // else not ours -- how does it exist?
-    } // else not ours (probably from core app)
+        }
+        wrapper = HSNotifyObject(note: rebuilt, record: userInfo)
+    } else {
+        guard let note else { return 0 }
+        wrapper = HSNotifyObject(note: note, record: record)
+    }
+
+    let gus = wrapper.note.identifier
+    if wrapper.note.userInfo[KEY_ID] is String { // only track ours
+        if nt_wrapperRegistry == nil {
+            nt_wrapperRegistry = NSMutableDictionary()
+        }
+        nt_wrapperRegistry?[gus] = wrapper
+    }
+
+    if let userInfo = wrapper.record ?? (nt_specifics[gus] as? NSMutableDictionary) {
+        let selfRefCount = (userInfo[KEY_SELFREFCOUNT] as? NSNumber)?.intValue ?? 0
+        userInfo[KEY_SELFREFCOUNT] = NSNumber(value: selfRefCount + 1)
+        setNotifyUserdataCounted(userInfo, true, L: L)
+        wrapper.record = userInfo
+    } else if wrapper.note.userInfo[KEY_DELIVERED] != nil {
+        // it's a holdover from a reload/relaunch whose record was never
+        // recreated by the delegate path: rebuild it from the wrapper's own
+        // state (its userInfo was copied into the UN content at send time).
+        let userInfo = NSMutableDictionary(dictionary: wrapper.note.userInfo)
+        userInfo[KEY_SELFREFCOUNT] = NSNumber(value: 1)
+        userInfo[KEY_ACTIVEGAUGE] = NSNumber(value: false)
+        nt_specifics[gus] = userInfo
+        setNotifyUserdataCounted(userInfo, true, L: L)
+        wrapper.record = userInfo
+    } // else not ours (probably from the core app)
+
     let valuePtr = lua_newuserdata(L, MemoryLayout<UnsafeMutableRawPointer>.size)!
         .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
-    valuePtr.pointee = Unmanaged.passRetained(value).toOpaque()
+    valuePtr.pointee = Unmanaged.passRetained(wrapper).toOpaque()
     luaL_getmetatable(L, nt_USERDATA_TAG)
     lua_setmetatable(L, -2)
     return 1
-}
-
-func nt_toNSUserNotificationFromLua(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int32) -> Any? {
-    if luaL_testudata(L, idx, nt_USERDATA_TAG) != nil {
-        return nt_getNotification(L, idx)
-    } else {
-        os_log(.error, "%{public}s", "expected \(nt_USERDATA_TAG) object, found \(String(cString: lua_typename(L, lua_type(L, idx))!))")
-    }
-    return nil
 }
 
 // MARK: - Cosmic Hammer/Lua Infrastructure
 
 private func nt_userdata_tostring(_ L: LuaState) throws -> CInt {
     let obj = nt_getNotification(L, 1)
-    let title = obj.title ?? ""
+    let title = obj.note.title
     let desc = "\(nt_USERDATA_TAG): \(title) (\(String(describing: lua_topointer(L, 1)!)))"
     L.push(desc)
     return 1
@@ -397,7 +676,7 @@ private func nt_userdata_eq(_ L: LuaState) throws -> CInt {
     if luaL_testudata(L, 1, nt_USERDATA_TAG) != nil && luaL_testudata(L, 2, nt_USERDATA_TAG) != nil {
         let obj1 = nt_getNotification(L, 1)
         let obj2 = nt_getNotification(L, 2)
-        L.push(obj1.isEqual(to: obj2))
+        L.push(obj1 === obj2)
     } else {
         L.push(false)
     }
@@ -408,19 +687,18 @@ func nt_userdata_gc(_ L: LuaState) throws -> CInt {
     let ptr = luaL_checkudata(L, 1, nt_USERDATA_TAG)!
         .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
     if let rawPtr = ptr.pointee {
-        let obj = Unmanaged<NSUserNotification>.fromOpaque(rawPtr).takeRetainedValue()
+        let wrapper = Unmanaged<HSNotifyObject>.fromOpaque(rawPtr).takeRetainedValue()
 
-        if let userInfoDict = obj.userInfo {
-            if let gus = userInfoDict[KEY_ID] as? String { // it's ours
-                if let specifics = nt_specifics,
-                   let userInfo = specifics[gus] as? NSMutableDictionary { // and we have a record for it
-                    let selfRefCount = (userInfo[KEY_SELFREFCOUNT] as? NSNumber)?.intValue ?? 0
-                    let newSelfRefCount = selfRefCount - 1
-                    userInfo[KEY_SELFREFCOUNT] = NSNumber(value: newSelfRefCount)
-                    if newSelfRefCount <= 0 {
-                        setNotifyUserdataCounted(userInfo, false, L: L)
-                        specifics[gus] = nil
-                    }
+        if let gus = wrapper.note.userInfo[KEY_ID] as? String, nt_specifics != nil { // it's ours
+            nt_cancelWithdrawTimer(gus: gus)
+            if let userInfo = wrapper.record ?? (nt_specifics[gus] as? NSMutableDictionary) { // and we have a record for it
+                let selfRefCount = (userInfo[KEY_SELFREFCOUNT] as? NSNumber)?.intValue ?? 0
+                let newSelfRefCount = selfRefCount - 1
+                userInfo[KEY_SELFREFCOUNT] = NSNumber(value: newSelfRefCount)
+                if newSelfRefCount <= 0 {
+                    setNotifyUserdataCounted(userInfo, false, L: L)
+                    nt_specifics[gus] = nil
+                    nt_wrapperRegistry?[gus] = nil
                 }
             }
         }
@@ -435,13 +713,18 @@ func nt_userdata_gc(_ L: LuaState) throws -> CInt {
 
 // Metamethods for the module
 private func nt_meta_gc(_ L: LuaState) throws -> CInt {
-    NSUserNotificationCenter.default.delegate = nt_old_delegate
+    // UNUserNotificationCenter has a single delegate slot shared by the whole
+    // process; leave it installed after module gc so notifications delivered
+    // while hs.notify is unloaded still route through the activation handler.
     if nt_specifics != nil {
         activeNotifyUserdataCount = 0
         recordActiveNotifyUserdataGauge(L)
         nt_specifics.removeAllObjects()
         nt_specifics = nil
     }
+    nt_wrapperRegistry?.removeAllObjects()
+    nt_wrapperRegistry = nil
+    nt_cancelAllWithdrawTimers()
     return 0
 }
 
@@ -450,6 +733,11 @@ private func nt_meta_gc(_ L: LuaState) throws -> CInt {
 func nt_debugSetSpecificsRecord(_ gus: String, _ userInfo: NSMutableDictionary) {
     guard let specifics = nt_specifics else { return }
     specifics[gus] = userInfo
+}
+
+@MainActor
+func nt_debugSpecifics() -> NSMutableDictionary? {
+    nt_specifics
 }
 
 @MainActor
@@ -481,8 +769,9 @@ public func luaopen_hs_libnotify(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
         nt_refTable = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
 
         // Register userdata metatable
-        // NOTE: NSUserNotification is an Apple framework class stored via Unmanaged raw pointer,
-        // so we cannot use Metatable<T>/installMetatableBoilerplate. Manual registration is correct here.
+        // NOTE: the wrapper class is stored via Unmanaged raw pointer, so we
+        // cannot use Metatable<T>/installMetatableBoilerplate. Manual
+        // registration is correct here.
         luaL_newmetatable(L, nt_USERDATA_TAG)
         lua_pushvalue(L, -1)
         lua_setfield(L, -2, "__index")
@@ -521,28 +810,14 @@ public func luaopen_hs_libnotify(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
 
         // __gc must be a non-throwing C closure — finalizers must not raise Lua errors.
         lua_pushcclosure(L, { (L: LuaState!) -> CInt in
-            let ptr = luaL_checkudata(L, 1, nt_USERDATA_TAG)!
-                .assumingMemoryBound(to: UnsafeMutableRawPointer?.self)
-            if let rawPtr = ptr.pointee {
-                let obj = Unmanaged<NSUserNotification>.fromOpaque(rawPtr).takeRetainedValue()
-                if let userInfoDict = obj.userInfo {
-                    if let gus = userInfoDict[KEY_ID] as? String {
-                        if let specifics = nt_specifics,
-                           let userInfo = specifics[gus] as? NSMutableDictionary {
-                            let selfRefCount = (userInfo[KEY_SELFREFCOUNT] as? NSNumber)?.intValue ?? 0
-                            let newSelfRefCount = selfRefCount - 1
-                            userInfo[KEY_SELFREFCOUNT] = NSNumber(value: newSelfRefCount)
-                            if newSelfRefCount <= 0 {
-                                specifics[gus] = nil
-                            }
-                        }
-                    }
-                }
-                ptr.pointee = nil
+            do {
+                return try nt_userdata_gc(L)
+            } catch {
+                // luaL_checkudata failed: nothing to release; just strip the metatable.
+                lua_pushnil(L)
+                lua_setmetatable(L, 1)
+                return 0
             }
-            lua_pushnil(L)
-            lua_setmetatable(L, 1)
-            return 0
         }, 0)
         lua_setfield(L, -2, "__gc")
 
@@ -564,12 +839,11 @@ public func luaopen_hs_libnotify(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
         // Set module metatable (for __gc) — non-throwing C closure for finalizer safety
         lua_createtable(L, 0, 1)
         lua_pushcclosure(L, { (L: LuaState!) -> CInt in
-            NSUserNotificationCenter.default.delegate = nt_old_delegate
-            if nt_specifics != nil {
-                nt_specifics.removeAllObjects()
-                nt_specifics = nil
+            do {
+                return try nt_meta_gc(L)
+            } catch {
+                return 0
             }
-            return 0
         }, 0)
         lua_setfield(L, -2, "__gc")
         lua_setmetatable(L, -2)
@@ -580,10 +854,13 @@ public func luaopen_hs_libnotify(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
     /// hs.notify.defaultNotificationSound
     /// Constant
     /// The string representation of the default notification sound. Use `hs.notify:soundName()` or set the `soundName` attribute in `hs:notify.new()`, to this constant, if you want to use the default sound
-        L.push(NSUserNotificationDefaultSoundName)
+        L.push(UserNotificationDefaultSoundName)
         lua_setfield(L, -2, "defaultNotificationSound")
 
-        nt_delegate_setup()
+        // Ensure the process-wide UN delegate is installed (no-op under tests;
+        // the delegate stays installed for the process lifetime).
+        MJUserNotificationManager.sharedManager.installAsDelegateIfNeeded()
+
         nt_specifics = NSMutableDictionary()
     }
 }

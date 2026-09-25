@@ -1,5 +1,6 @@
 import AppKit
 import HSDSTCore
+import UserNotifications
 
 final class ProductionNotification: NotificationProtocol {
     func addObserver(name: String, object: AnyObject?,
@@ -54,72 +55,268 @@ final class ProductionNotification: NotificationProtocol {
         return observer as AnyObject
     }
 
+    // MARK: - UNUserNotificationCenter delivery
+
+    private func makeContent(_ notification: UserNotification) -> UNMutableNotificationContent {
+        let content = UNMutableNotificationContent()
+        content.title = notification.title
+        content.subtitle = notification.subtitle
+        content.body = notification.informativeText
+        if let soundName = notification.soundName {
+            content.sound = UNNotificationSound(named: UNNotificationSoundName(rawValue: soundName))
+        }
+        if notification.hasActionButton || notification.hasReplyButton {
+            content.categoryIdentifier = ProductionNotification.categoryIdentifier(
+                for: notification
+            )
+        }
+        content.userInfo = notification.userInfo
+        return content
+    }
+
+    /// Register (or reuse) a UNNotificationCategory describing this
+    /// notification's buttons, returning its identifier.
+    static func categoryIdentifier(for notification: UserNotification) -> String {
+        var actions: [UNNotificationAction] = []
+        if notification.hasReplyButton {
+            actions.append(UNTextInputNotificationAction(
+                identifier: UserNotificationActionIdentifier.reply,
+                title: notification.actionButtonTitle.isEmpty ? "Reply" : notification.actionButtonTitle,
+                textInputButtonTitle: "Send",
+                textInputPlaceholder: notification.responsePlaceholder
+            ))
+        } else if notification.hasActionButton {
+            actions.append(UNNotificationAction(
+                identifier: UserNotificationActionIdentifier.actionButton,
+                title: notification.actionButtonTitle.isEmpty ? "Show" : notification.actionButtonTitle
+            ))
+        }
+        for action in notification.additionalActions {
+            actions.append(UNNotificationAction(
+                identifier: "hs.notify.\(action.identifier)",
+                title: action.title
+            ))
+        }
+        let id = "hs.notify.category.\(actions.map(\.identifier).joined(separator: "|"))"
+        UNUserNotificationCenter.current().setNotificationCategories([
+            UNNotificationCategory(
+                identifier: id,
+                actions: actions,
+                intentIdentifiers: [],
+                options: []
+            )
+        ])
+        return id
+    }
+
+    private func attachment(for notification: UserNotification) throws -> UNNotificationAttachment? {
+        guard let imageData = notification.contentImageData else { return nil }
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cosmichammer-notify-\(UUID().uuidString).png")
+        try imageData.write(to: url)
+        return try UNNotificationAttachment(
+            identifier: "contentImage", url: url, options: nil
+        )
+    }
+
+    /// Request authorization lazily before the first add; a missing/denied
+    /// permission must not crash the host — the add call reports the error.
+    private func add(_ notification: UserNotification, trigger: UNNotificationTrigger?) {
+        let center = UNUserNotificationCenter.current()
+        center.requestAuthorization(options: [.alert, .sound]) { granted, error in
+            if let error {
+                NSLog("notify: authorization failed: %@", error.localizedDescription)
+            } else if !granted {
+                NSLog("notify: authorization denied by user")
+            }
+            var content = self.makeContent(notification)
+            if let attachment = try? self.attachment(for: notification) {
+                content.attachments = [attachment]
+            }
+            let request = UNNotificationRequest(
+                identifier: notification.identifier, content: content, trigger: trigger
+            )
+            center.add(request) { error in
+                if let error {
+                    NSLog("notify: failed to deliver notification: %@", error.localizedDescription)
+                }
+            }
+        }
+    }
+
     func deliverUserNotification(_ notification: UserNotification) {
-        let n = NSUserNotification()
-        n.title = notification.title
-        n.subtitle = notification.subtitle
-        n.informativeText = notification.informativeText
-        n.soundName = notification.soundName
-        n.hasActionButton = notification.hasActionButton
-        n.actionButtonTitle = notification.actionButtonTitle
-        n.otherButtonTitle = notification.otherButtonTitle
-        n.hasReplyButton = notification.hasReplyButton
-        NSUserNotificationCenter.default.deliver(n)
+        add(notification, trigger: nil)
     }
 
     func scheduleUserNotification(_ notification: UserNotification) {
-        let n = NSUserNotification()
-        n.title = notification.title
-        n.subtitle = notification.subtitle
-        n.informativeText = notification.informativeText
-        n.soundName = notification.soundName
-        NSUserNotificationCenter.default.scheduleNotification(n)
+        guard let date = notification.deliveryDate else {
+            // No delivery date: deliver immediately.
+            add(notification, trigger: nil)
+            return
+        }
+        var components = Calendar.current.dateComponents(
+            [.year, .month, .day, .hour, .minute, .second], from: date
+        )
+        components.timeZone = Calendar.current.timeZone
+        add(notification, trigger: UNCalendarNotificationTrigger(dateMatching: components, repeats: false))
     }
 
     func removeDeliveredUserNotification(identifier: String) {
-        for n in NSUserNotificationCenter.default.deliveredNotifications where n.identifier == identifier {
-            NSUserNotificationCenter.default.removeDeliveredNotification(n)
-        }
+        UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [identifier])
     }
 
     func removeScheduledUserNotification(identifier: String) {
-        for n in NSUserNotificationCenter.default.scheduledNotifications where n.identifier == identifier {
-            NSUserNotificationCenter.default.removeScheduledNotification(n)
-        }
+        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [identifier])
     }
 
     func removeAllDeliveredUserNotifications() {
-        NSUserNotificationCenter.default.removeAllDeliveredNotifications()
+        UNUserNotificationCenter.current().removeAllDeliveredNotifications()
     }
 
     func deliveredUserNotifications() -> [UserNotification] {
-        NSUserNotificationCenter.default.deliveredNotifications.map { n in
-            UserNotification(
-                identifier: n.identifier ?? "",
-                title: n.title ?? "",
-                subtitle: n.subtitle ?? "",
-                informativeText: n.informativeText ?? "",
-                soundName: n.soundName,
-                hasActionButton: n.hasActionButton,
-                actionButtonTitle: n.actionButtonTitle ?? "Show",
-                otherButtonTitle: n.otherButtonTitle ?? "Close",
-                hasReplyButton: n.hasReplyButton,
-                isDelivered: true,
-                isPresented: n.isPresented,
-                actualDeliveryDate: n.actualDeliveryDate
-            )
+        // UNUserNotificationCenter delegate methods are main-queue; mirror the
+        // synchronous NS-era contract by blocking the current (main) thread on
+        // the async UN query.
+        let center = UNUserNotificationCenter.current()
+        var notes: [UserNotification] = []
+        if Thread.isMainThread {
+            let semaphore = DispatchSemaphore(value: 0)
+            center.getDeliveredNotifications { delivered in
+                notes = delivered.map { ProductionNotification.note(from: $0) }
+                semaphore.signal()
+            }
+            _ = semaphore.wait(timeout: .now() + 2.0)
+        } else {
+            let group = DispatchGroup()
+            group.enter()
+            center.getDeliveredNotifications { delivered in
+                notes = delivered.map { ProductionNotification.note(from: $0) }
+                group.leave()
+            }
+            group.wait()
         }
+        return notes
     }
 
     func scheduledUserNotifications() -> [UserNotification] {
-        NSUserNotificationCenter.default.scheduledNotifications.map { n in
-            UserNotification(
-                identifier: n.identifier ?? "",
-                title: n.title ?? "",
-                subtitle: n.subtitle ?? "",
-                informativeText: n.informativeText ?? "",
-                soundName: n.soundName
-            )
+        let center = UNUserNotificationCenter.current()
+        var notes: [UserNotification] = []
+        if Thread.isMainThread {
+            let semaphore = DispatchSemaphore(value: 0)
+            center.getPendingNotificationRequests { requests in
+                notes = requests.map { ProductionNotification.note(fromPending: $0) }
+                semaphore.signal()
+            }
+            _ = semaphore.wait(timeout: .now() + 2.0)
+        } else {
+            let group = DispatchGroup()
+            group.enter()
+            center.getPendingNotificationRequests { requests in
+                notes = requests.map { ProductionNotification.note(fromPending: $0) }
+                group.leave()
+            }
+            group.wait()
         }
+        return notes
+    }
+
+    func presentNotification(_ notification: UserNotification) -> Bool {
+        // The foreground presentation decision is made by the shared
+        // HSModuleNotificationManager.willPresent delegate, which honors
+        // KEY_ALWAYSPRESENT from the content userInfo.
+        true
+    }
+
+    func activateNotification(identifier: String, actionIdentifier: String?, userText: String?) {
+        // Production activations come from the real UN center through the
+        // shared delegate; there is no way to synthesize them here.
+    }
+
+    // MARK: UNNotification -> UserNotification mapping
+
+    static func note(from notification: UNNotification) -> UserNotification {
+        let content = notification.request.content
+        var actions: [(identifier: String, title: String)] = []
+        if content.categoryIdentifier.hasPrefix("hs.notify.category.") {
+            let raw = String(content.categoryIdentifier.dropFirst("hs.notify.category.".count))
+            actions = raw.isEmpty ? [] : raw.split(separator: "|").map { rawID in
+                let id = String(rawID)
+                if id == UserNotificationActionIdentifier.reply {
+                    return (identifier: id, title: "Reply")
+                }
+                return (identifier: id, title: id.hasPrefix("hs.notify.") ? String(id.dropFirst("hs.notify.".count)) : id)
+            }
+        }
+        // UNNotificationSound has no name getter, so the original sound name is
+        // carried in the record snapshot via userInfo and restored on read.
+        var soundName: String?
+        if content.sound != nil {
+            soundName = content.userInfo[KEY_SOUNDNAME] as? String
+                ?? (content.userInfo["MJNotification"] != nil ? "default" : nil) ?? "DefaultSoundName"
+        }
+        var note = UserNotification(
+            identifier: notification.request.identifier,
+            title: content.title,
+            subtitle: content.subtitle,
+            informativeText: content.body,
+            soundName: soundName,
+            hasActionButton: content.categoryIdentifier.hasPrefix("hs.notify.category."),
+            actionButtonTitle: actions.first(where: { $0.identifier == UserNotificationActionIdentifier.actionButton })?.title
+                ?? (actions.first(where: { $0.identifier == UserNotificationActionIdentifier.reply })?.title ?? "Show"),
+            otherButtonTitle: "",
+            hasReplyButton: actions.contains(where: { $0.identifier == UserNotificationActionIdentifier.reply }),
+            isDelivered: true,
+            isPresented: false,
+            actualDeliveryDate: notification.date,
+            additionalActions: actions.filter { $0.identifier != UserNotificationActionIdentifier.actionButton && $0.identifier != UserNotificationActionIdentifier.reply },
+            userInfo: content.userInfo as? [String: Any] ?? [:]
+        )
+        if let response = content.userInfo[KEY_RESPONSE] as? String {
+            note.response = response
+        }
+        if let activation = content.userInfo[KEY_ACTIVATIONTYPE] as? Int ?? (content.userInfo[KEY_ACTIVATIONTYPE] as? NSNumber)?.intValue {
+            note.activationType = activation
+        }
+        if let additional = content.userInfo[KEY_ADDITIONALACTIVATION] as? String {
+            note.additionalActivationAction = additional
+        }
+        if let placeholder = content.userInfo[KEY_RESPONSEPLACEHOLDER] as? String {
+            note.responsePlaceholder = placeholder
+        }
+        return note
+    }
+
+    static func note(fromPending request: UNNotificationRequest) -> UserNotification {
+        let content = request.content
+        var actions: [(identifier: String, title: String)] = []
+        if content.categoryIdentifier.hasPrefix("hs.notify.category.") {
+            let raw = String(content.categoryIdentifier.dropFirst("hs.notify.category.".count))
+            actions = raw.isEmpty ? [] : raw.split(separator: "|").map { rawID in
+                let id = String(rawID)
+                if id == UserNotificationActionIdentifier.reply {
+                    return (identifier: id, title: "Reply")
+                }
+                return (identifier: id, title: id.hasPrefix("hs.notify.") ? String(id.dropFirst("hs.notify.".count)) : id)
+            }
+        }
+        var soundName: String?
+        if content.sound != nil {
+            soundName = content.userInfo[KEY_SOUNDNAME] as? String
+                ?? (content.userInfo["MJNotification"] != nil ? "default" : nil) ?? "DefaultSoundName"
+        }
+        return UserNotification(
+            identifier: request.identifier,
+            title: content.title,
+            subtitle: content.subtitle,
+            informativeText: content.body,
+            soundName: soundName,
+            hasActionButton: content.categoryIdentifier.hasPrefix("hs.notify.category."),
+            actionButtonTitle: actions.first(where: { $0.identifier == UserNotificationActionIdentifier.actionButton })?.title
+                ?? (actions.first(where: { $0.identifier == UserNotificationActionIdentifier.reply })?.title ?? "Show"),
+            otherButtonTitle: "",
+            hasReplyButton: actions.contains(where: { $0.identifier == UserNotificationActionIdentifier.reply }),
+            additionalActions: actions.filter { $0.identifier != UserNotificationActionIdentifier.actionButton && $0.identifier != UserNotificationActionIdentifier.reply },
+            userInfo: content.userInfo as? [String: Any] ?? [:]
+        )
     }
 }

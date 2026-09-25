@@ -2,6 +2,19 @@ import Foundation
 
 public typealias NotificationObserverToken = AnyObject
 
+/// Action identifiers shared by the production UN delegate and the DST
+/// simulator so both compute hs.notify activation types identically.
+public enum UserNotificationActionIdentifier {
+    /// User tapped the notification body (UNNotificationDefaultActionIdentifier).
+    public static let defaultAction = "com.apple.UNNotificationDefaultActionIdentifier"
+    /// User dismissed the notification (UNNotificationDismissActionIdentifier).
+    public static let dismissAction = "com.apple.UNNotificationDismissActionIdentifier"
+    /// hs.notify primary action button (maps to activationTypes.actionButtonClicked).
+    public static let actionButton = "hs.notify.action"
+    /// hs.notify reply text-input action (maps to activationTypes.replied).
+    public static let reply = "hs.notify.reply"
+}
+
 public struct UserNotification {
     public var identifier: String
     public var title: String
@@ -17,6 +30,16 @@ public struct UserNotification {
     public var actualDeliveryDate: Date?
     public var additionalActions: [(identifier: String, title: String)]
     public var userInfo: [String: Any]
+    // Activation/response state recorded by the delegate path (0 = none,
+    // 1 = contentsClicked, 2 = actionButtonClicked, 3 = replied,
+    // 4 = additionalActionClicked; see hs.notify.activationTypes).
+    public var activationType: Int
+    public var response: String?
+    public var additionalActivationAction: String?
+    public var responsePlaceholder: String
+    public var deliveryDate: Date?
+    // PNG payload for the hs.notify contentImage (delivered as a UN attachment).
+    public var contentImageData: Data?
 
     public init(identifier: String = UUID().uuidString,
                 title: String = "", subtitle: String = "",
@@ -26,7 +49,13 @@ public struct UserNotification {
                 isDelivered: Bool = false, isPresented: Bool = false,
                 actualDeliveryDate: Date? = nil,
                 additionalActions: [(identifier: String, title: String)] = [],
-                userInfo: [String: Any] = [:]) {
+                userInfo: [String: Any] = [:],
+                activationType: Int = 0,
+                response: String? = nil,
+                additionalActivationAction: String? = nil,
+                responsePlaceholder: String = "",
+                deliveryDate: Date? = nil,
+                contentImageData: Data? = nil) {
         self.identifier = identifier
         self.title = title
         self.subtitle = subtitle
@@ -41,6 +70,12 @@ public struct UserNotification {
         self.actualDeliveryDate = actualDeliveryDate
         self.additionalActions = additionalActions
         self.userInfo = userInfo
+        self.activationType = activationType
+        self.response = response
+        self.additionalActivationAction = additionalActivationAction
+        self.responsePlaceholder = responsePlaceholder
+        self.deliveryDate = deliveryDate
+        self.contentImageData = contentImageData
     }
 }
 
@@ -64,4 +99,12 @@ public protocol NotificationProtocol: AnyObject {
     func removeAllDeliveredUserNotifications()
     func deliveredUserNotifications() -> [UserNotification]
     func scheduledUserNotifications() -> [UserNotification]
+
+    /// UN willPresent equivalent: consult the foreground presentation path.
+    /// Returns the presentation options the delegate would honor (empty when
+    /// the notification should not be shown while the app is frontmost).
+    func presentNotification(_ notification: UserNotification) -> Bool
+    /// Test hook: fire a didReceive-like activation for a delivered
+    /// notification without touching the real OS notification center.
+    func activateNotification(identifier: String, actionIdentifier: String?, userText: String?)
 }
