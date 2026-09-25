@@ -1,6 +1,8 @@
 import Testing
+import CoreGraphics
 import HSDSTCore
 import HSDSTSimulator
+@testable import HSSwiftExtensions
 
 extension CosmicHammerTests {
     @Suite final class SpaceDisplayLifecycleTests {
@@ -42,6 +44,83 @@ extension CosmicHammerTests {
 
             screen.simulateDisplayReconfigurationEvent(.init(kind: .added, displayID: 10))
             #expect(received == events)
+        }
+
+        @Test func spaceNotificationDecodeRejectsBadPayloads() {
+            var rawID: UInt64 = 42
+            withUnsafePointer(to: &rawID) { pointer in
+                #expect(decodeSpaceLifecycleNotification(
+                    type: 1327, data: pointer, length: MemoryLayout<UInt64>.size
+                ) == .init(kind: .created, spaceID: 42))
+                #expect(decodeSpaceLifecycleNotification(
+                    type: 1328, data: pointer, length: MemoryLayout<UInt64>.size
+                ) == .init(kind: .destroyed, spaceID: 42))
+                #expect(decodeSpaceLifecycleNotification(
+                    type: 999, data: pointer, length: MemoryLayout<UInt64>.size
+                ) == nil)
+                #expect(decodeSpaceLifecycleNotification(
+                    type: 1327, data: pointer, length: MemoryLayout<UInt64>.size - 1
+                ) == nil)
+            }
+            #expect(decodeSpaceLifecycleNotification(type: 1327, data: nil, length: 8) == nil)
+        }
+
+        @Test func spaceLifecycleGuardsFilterNoiseAndDeduplicate() {
+            var known: Set<Int> = [1]
+            #expect(!acceptedSpaceLifecycleEvent(
+                .init(kind: .created, spaceID: 2), knownSpaceIDs: &known,
+                createdSpaceType: .system))
+            #expect(known == [1])
+            #expect(acceptedSpaceLifecycleEvent(
+                .init(kind: .created, spaceID: 2), knownSpaceIDs: &known,
+                createdSpaceType: .user))
+            #expect(!acceptedSpaceLifecycleEvent(
+                .init(kind: .created, spaceID: 2), knownSpaceIDs: &known,
+                createdSpaceType: .user))
+            #expect(!acceptedSpaceLifecycleEvent(
+                .init(kind: .destroyed, spaceID: 3), knownSpaceIDs: &known,
+                createdSpaceType: .unknown))
+            #expect(acceptedSpaceLifecycleEvent(
+                .init(kind: .destroyed, spaceID: 2), knownSpaceIDs: &known,
+                createdSpaceType: .unknown))
+            #expect(known == [1])
+        }
+
+        @Test func snapshotDiffIsStableAndFiltersSystemSpaces() {
+            let current = [
+                SpaceInfo(id: 4, type: .fullscreen),
+                SpaceInfo(id: 3, type: .system),
+                SpaceInfo(id: 2, type: .user),
+            ]
+            #expect(spaceLifecycleSnapshotDiff(previous: [1, 2], current: current) == [
+                .init(kind: .created, spaceID: 4),
+                .init(kind: .destroyed, spaceID: 1),
+            ])
+        }
+
+        @Test func displayFlagsHaveDeterministicPrecedenceAndIgnoreBeforePhase() {
+            #expect(displayReconfigurationEvent(
+                displayID: 7, flags: [.beginConfigurationFlag, .addFlag]
+            ) == nil)
+            #expect(displayReconfigurationEvent(
+                displayID: 7, flags: [.addFlag, .removeFlag, .movedFlag]
+            ) == .init(kind: .added, displayID: 7))
+            #expect(displayReconfigurationEvent(
+                displayID: 7, flags: [.removeFlag, .movedFlag]
+            ) == .init(kind: .removed, displayID: 7))
+            #expect(displayReconfigurationEvent(
+                displayID: 7, flags: [.movedFlag, .desktopShapeChangedFlag]
+            ) == .init(kind: .moved, displayID: 7))
+            #expect(displayReconfigurationEvent(
+                displayID: 7, flags: [.desktopShapeChangedFlag]
+            ) == .init(kind: .resized, displayID: 7))
+            #expect(displayReconfigurationEvent(
+                displayID: 7, flags: [.disabledFlag]
+            ) == .init(kind: .disabled, displayID: 7))
+            #expect(displayReconfigurationEvent(
+                displayID: 7, flags: [.enabledFlag]
+            ) == .init(kind: .enabled, displayID: 7))
+            #expect(displayReconfigurationEvent(displayID: 7, flags: []) == nil)
         }
     }
 }

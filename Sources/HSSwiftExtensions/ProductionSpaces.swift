@@ -1,17 +1,146 @@
 import AppKit
 import Foundation
 import HSDSTCore
+import os.log
 
 // NOTE: SkyLight private API declarations are already module-visible from Spaces.swift:
 //   SLSMainConnectionID, SLSCopyManagedDisplaySpaces, SLSSpaceGetType,
 //   SLSCopyWindowsWithOptionsAndTags, SLSMoveWindowsToManagedSpace,
 //   SLSCopySpacesForWindows, SLSSpaceSetCompatID, SLSGetActiveSpace
 
+private typealias SLSConnectionNotifyProc = @convention(c) (
+    UInt32, UnsafeMutableRawPointer?, Int, UnsafeMutableRawPointer?, Int32
+) -> Void
+
+@_silgen_name("SLSRegisterConnectionNotifyProc")
+private func SLSRegisterConnectionNotifyProc(
+    _ cid: Int32,
+    _ callback: SLSConnectionNotifyProc,
+    _ notificationType: UInt32,
+    _ context: UnsafeMutableRawPointer?
+) -> CGError
+
+private let spaceCreatedNotification: UInt32 = 1327
+private let spaceDestroyedNotification: UInt32 = 1328
+
+func decodeSpaceLifecycleNotification(
+    type: UInt32,
+    data: UnsafeRawPointer?,
+    length: Int
+) -> SpaceLifecycleEvent? {
+    guard length >= MemoryLayout<UInt64>.size, let data else { return nil }
+    let rawSpaceID = data.loadUnaligned(as: UInt64.self)
+    guard rawSpaceID <= UInt64(Int.max) else { return nil }
+
+    switch type {
+    case spaceCreatedNotification:
+        return SpaceLifecycleEvent(kind: .created, spaceID: Int(rawSpaceID))
+    case spaceDestroyedNotification:
+        return SpaceLifecycleEvent(kind: .destroyed, spaceID: Int(rawSpaceID))
+    default:
+        return nil
+    }
+}
+
+func spaceLifecycleSnapshotDiff(
+    previous: Set<Int>,
+    current: [SpaceInfo]
+) -> [SpaceLifecycleEvent] {
+    let visible = current.filter { $0.type == .user || $0.type == .fullscreen }
+    let currentIDs = Set(visible.map(\.id))
+    let created = currentIDs.subtracting(previous).sorted().map {
+        SpaceLifecycleEvent(kind: .created, spaceID: $0)
+    }
+    let destroyed = previous.subtracting(currentIDs).sorted().map {
+        SpaceLifecycleEvent(kind: .destroyed, spaceID: $0)
+    }
+    return created + destroyed
+}
+
+func acceptedSpaceLifecycleEvent(
+    _ event: SpaceLifecycleEvent,
+    knownSpaceIDs: inout Set<Int>,
+    createdSpaceType: SpaceType
+) -> Bool {
+    switch event.kind {
+    case .created:
+        guard createdSpaceType == .user || createdSpaceType == .fullscreen,
+              knownSpaceIDs.insert(event.spaceID).inserted else { return false }
+    case .destroyed:
+        guard knownSpaceIDs.remove(event.spaceID) != nil else { return false }
+    }
+    return true
+}
+
+private final class SpaceLifecycleNativeSource {
+    static let shared = SpaceLifecycleNativeSource()
+
+    private var registrationAttempted = false
+    private var nextSubscriberID: UInt64 = 1
+    private var subscribers: [UInt64: (SpaceLifecycleEvent) -> Void] = [:]
+
+    func addSubscriber(_ callback: @escaping (SpaceLifecycleEvent) -> Void) -> UInt64 {
+        dispatchPrecondition(condition: .onQueue(.main))
+        registerIfNeeded()
+        let id = nextSubscriberID
+        nextSubscriberID += 1
+        subscribers[id] = callback
+        return id
+    }
+
+    func removeSubscriber(_ id: UInt64) {
+        dispatchPrecondition(condition: .onQueue(.main))
+        subscribers.removeValue(forKey: id)
+    }
+
+    private func registerIfNeeded() {
+        guard !registrationAttempted else { return }
+        registrationAttempted = true
+        let context = Unmanaged.passUnretained(self).toOpaque()
+        let connection = SLSMainConnectionID()
+        let createdResult = SLSRegisterConnectionNotifyProc(
+            connection, spaceLifecycleConnectionCallback, spaceCreatedNotification, context)
+        let destroyedResult = SLSRegisterConnectionNotifyProc(
+            connection, spaceLifecycleConnectionCallback, spaceDestroyedNotification, context)
+        if createdResult != .success || destroyedResult != .success {
+            os_log(.error, "Space lifecycle registration failed: created=%d destroyed=%d",
+                   createdResult.rawValue, destroyedResult.rawValue)
+        } else {
+            os_log(.debug, "Space lifecycle notifications registered")
+        }
+    }
+
+    fileprivate func receive(_ event: SpaceLifecycleEvent) {
+        DispatchQueue.main.async { [self] in
+            for id in subscribers.keys.sorted() {
+                subscribers[id]?(event)
+            }
+        }
+    }
+}
+
+private func spaceLifecycleConnectionCallback(
+    _ type: UInt32,
+    _ data: UnsafeMutableRawPointer?,
+    _ dataLength: Int,
+    _ context: UnsafeMutableRawPointer?,
+    _ cid: Int32
+) {
+    guard let context,
+          let event = decodeSpaceLifecycleNotification(type: type, data: data, length: dataLength)
+    else { return }
+    Unmanaged<SpaceLifecycleNativeSource>.fromOpaque(context)
+        .takeUnretainedValue().receive(event)
+}
+
 final class ProductionSpaces: SpacesProtocol {
     private var nextCallbackID: UInt64 = 1
     private var callbacks: [UInt64: (observer: NSObjectProtocol, callback: (Int) -> Void)] = [:]
     private var nextLifecycleCallbackID: UInt64 = 1
     private var lifecycleCallbacks: [UInt64: (SpaceLifecycleEvent) -> Void] = [:]
+    private var nativeLifecycleSubscriberID: UInt64?
+    private var lifecycleFallbackObserver: NSObjectProtocol?
+    private var knownLifecycleSpaceIDs: Set<Int> = []
 
     private var cid: Int32 { SLSMainConnectionID() }
 
@@ -146,6 +275,21 @@ final class ProductionSpaces: SpacesProtocol {
     }
 
     func addSpaceLifecycleCallback(callback: @escaping (SpaceLifecycleEvent) -> Void) -> UInt64 {
+        dispatchPrecondition(condition: .onQueue(.main))
+        if lifecycleCallbacks.isEmpty {
+            knownLifecycleSpaceIDs = lifecycleSpaceIDs(from: allSpaces())
+            nativeLifecycleSubscriberID = SpaceLifecycleNativeSource.shared.addSubscriber {
+                [weak self] event in self?.acceptNativeLifecycleEvent(event)
+            }
+            lifecycleFallbackObserver = NSWorkspace.shared.notificationCenter.addObserver(
+                forName: NSWorkspace.activeSpaceDidChangeNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                self?.refreshLifecycleTopology()
+            }
+        }
+
         let id = nextLifecycleCallbackID
         nextLifecycleCallbackID += 1
         lifecycleCallbacks[id] = callback
@@ -153,9 +297,53 @@ final class ProductionSpaces: SpacesProtocol {
     }
 
     func removeSpaceLifecycleCallback(id: UInt64) -> Bool {
-        lifecycleCallbacks.removeValue(forKey: id) != nil
+        dispatchPrecondition(condition: .onQueue(.main))
+        guard lifecycleCallbacks.removeValue(forKey: id) != nil else { return false }
+        if lifecycleCallbacks.isEmpty {
+            if let nativeLifecycleSubscriberID {
+                SpaceLifecycleNativeSource.shared.removeSubscriber(nativeLifecycleSubscriberID)
+                self.nativeLifecycleSubscriberID = nil
+            }
+            if let lifecycleFallbackObserver {
+                NSWorkspace.shared.notificationCenter.removeObserver(lifecycleFallbackObserver)
+                self.lifecycleFallbackObserver = nil
+            }
+            knownLifecycleSpaceIDs.removeAll()
+        }
+        return true
     }
 
+
+    private func lifecycleSpaceIDs(from spaces: [SpaceInfo]) -> Set<Int> {
+        Set(spaces.lazy.filter { $0.type == .user || $0.type == .fullscreen }.map(\.id))
+    }
+
+    private func acceptNativeLifecycleEvent(_ event: SpaceLifecycleEvent) {
+        let createdSpaceType = event.kind == .created
+            ? spaceType(spaceID: event.spaceID)
+            : .unknown
+        guard acceptedSpaceLifecycleEvent(
+            event,
+            knownSpaceIDs: &knownLifecycleSpaceIDs,
+            createdSpaceType: createdSpaceType
+        ) else { return }
+        deliverLifecycleEvent(event)
+    }
+
+    private func refreshLifecycleTopology() {
+        let current = allSpaces()
+        let events = spaceLifecycleSnapshotDiff(previous: knownLifecycleSpaceIDs, current: current)
+        knownLifecycleSpaceIDs = lifecycleSpaceIDs(from: current)
+        for event in events {
+            deliverLifecycleEvent(event)
+        }
+    }
+
+    private func deliverLifecycleEvent(_ event: SpaceLifecycleEvent) {
+        for id in lifecycleCallbacks.keys.sorted() {
+            lifecycleCallbacks[id]?(event)
+        }
+    }
 
     // MARK: - Private
 

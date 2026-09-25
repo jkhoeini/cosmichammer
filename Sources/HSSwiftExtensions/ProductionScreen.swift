@@ -85,9 +85,48 @@ private func CGDisplaySetInvertedPolarity(_ invertedPolarity: Bool)
 // IOKit private constant
 private let kIOFBSetTransform: UInt32 = 0x00000400
 
+func displayReconfigurationEvent(
+    displayID: UInt32,
+    flags: CGDisplayChangeSummaryFlags
+) -> DisplayReconfigurationEvent? {
+    if flags.contains(.beginConfigurationFlag) { return nil }
+    let kind: DisplayReconfigurationEvent.Kind
+    if flags.contains(.addFlag) {
+        kind = .added
+    } else if flags.contains(.removeFlag) {
+        kind = .removed
+    } else if flags.contains(.movedFlag) {
+        kind = .moved
+    } else if flags.contains(.desktopShapeChangedFlag) {
+        kind = .resized
+    } else if flags.contains(.disabledFlag) {
+        kind = .disabled
+    } else if flags.contains(.enabledFlag) {
+        kind = .enabled
+    } else {
+        return nil
+    }
+    return DisplayReconfigurationEvent(kind: kind, displayID: displayID)
+}
+
+private func productionDisplayReconfigurationCallback(
+    _ display: CGDirectDisplayID,
+    _ flags: CGDisplayChangeSummaryFlags,
+    _ context: UnsafeMutableRawPointer?
+) {
+    guard let context,
+          let event = displayReconfigurationEvent(displayID: display, flags: flags)
+    else { return }
+    let screen = Unmanaged<ProductionScreen>.fromOpaque(context).takeUnretainedValue()
+    DispatchQueue.main.async {
+        screen.deliverDisplayReconfigurationEvent(event)
+    }
+}
+
 final class ProductionScreen: ScreenProtocol {
     private var nextDisplayCallbackID: UInt64 = 1
     private var displayCallbacks: [UInt64: (DisplayReconfigurationEvent) -> Void] = [:]
+    private var displayCallbackRegistered = false
 
 
     // MARK: - Screen enumeration
@@ -463,6 +502,18 @@ final class ProductionScreen: ScreenProtocol {
     }
 
     func addDisplayReconfigurationCallback(callback: @escaping (DisplayReconfigurationEvent) -> Void) -> UInt64 {
+        dispatchPrecondition(condition: .onQueue(.main))
+        if !displayCallbackRegistered {
+            let context = Unmanaged.passUnretained(self).toOpaque()
+            let result = CGDisplayRegisterReconfigurationCallback(
+                productionDisplayReconfigurationCallback, context)
+            guard result == .success else {
+                os_log(.error, "Display reconfiguration registration failed: %d", result.rawValue)
+                return 0
+            }
+            displayCallbackRegistered = true
+        }
+
         let id = nextDisplayCallbackID
         nextDisplayCallbackID += 1
         displayCallbacks[id] = callback
@@ -470,8 +521,27 @@ final class ProductionScreen: ScreenProtocol {
     }
 
     func removeDisplayReconfigurationCallback(id: UInt64) -> Bool {
-        displayCallbacks.removeValue(forKey: id) != nil
+        dispatchPrecondition(condition: .onQueue(.main))
+        guard id != 0, displayCallbacks.removeValue(forKey: id) != nil else { return false }
+        if displayCallbacks.isEmpty && displayCallbackRegistered {
+            let context = Unmanaged.passUnretained(self).toOpaque()
+            let result = CGDisplayRemoveReconfigurationCallback(
+                productionDisplayReconfigurationCallback, context)
+            if result != .success {
+                os_log(.error, "Display reconfiguration removal failed: %d", result.rawValue)
+            }
+            displayCallbackRegistered = false
+        }
+        return true
     }
+
+    fileprivate func deliverDisplayReconfigurationEvent(_ event: DisplayReconfigurationEvent) {
+        dispatchPrecondition(condition: .onQueue(.main))
+        for id in displayCallbacks.keys.sorted() {
+            displayCallbacks[id]?(event)
+        }
+    }
+
 
 
     // MARK: - Private helpers

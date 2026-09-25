@@ -23,6 +23,8 @@ private func userdataToScreen(_ L: UnsafeMutablePointer<lua_State>!, _ idx: Int3
 private var originalGammas = NSMutableDictionary()
 /// Currently applied gamma tables. Keyed by display ID as NSNumber.
 private var currentGammas = NSMutableDictionary()
+private var gammaDisplayCallbackID: UInt64?
+
 
 // MARK: - Helpers
 
@@ -885,7 +887,10 @@ private func screen_accessibilitySettings(_ L: LuaState) throws -> CInt {
 }
 
 private func screens_gc(_ L: LuaState) throws -> CInt {
-    CGDisplayRemoveReconfigurationCallback(displayReconfigurationCallback, nil)
+    if let callbackID = gammaDisplayCallbackID {
+        _ = environmentGet(L).screen.removeDisplayReconfigurationCallback(id: callbackID)
+        gammaDisplayCallbackID = nil
+    }
     _ = try screen_gammaRestore(L)
     return 0
 }
@@ -902,26 +907,23 @@ private func userdata_tostring(_ L: LuaState) throws -> CInt {
 
 // MARK: - Display reconfiguration callback (gamma reapply)
 
-/// This callback runs on the CG notification thread. It accesses module-level
-/// gamma dictionaries (originalGammas / currentGammas) and uses the global
-/// environment to call into the protocol layer for gamma reapply.
-private func displayReconfigurationCallback(_ display: CGDirectDisplayID, _ flags: CGDisplayChangeSummaryFlags, _ userInfo: UnsafeMutableRawPointer?) {
-    if flags.contains(.addFlag) {
-        if let scr = environmentGetGlobalOrNil()?.screen {
-            storeInitialScreenGamma(display, using: scr)
-        }
-    } else if flags.contains(.removeFlag) {
-        originalGammas.removeObject(forKey: NSNumber(value: display))
-        currentGammas.removeObject(forKey: NSNumber(value: display))
-    } else if flags.contains(.disabledFlag) {
-        currentGammas.removeObject(forKey: NSNumber(value: display))
-    } else if flags.contains(.enabledFlag) || flags.contains(.beginConfigurationFlag) {
-        // NOOP
-    } else {
+private func handleGammaDisplayReconfiguration(
+    _ event: DisplayReconfigurationEvent,
+    using screen: any ScreenProtocol
+) {
+    switch event.kind {
+    case .added:
+        storeInitialScreenGamma(event.displayID, using: screen)
+    case .removed:
+        originalGammas.removeObject(forKey: NSNumber(value: event.displayID))
+        currentGammas.removeObject(forKey: NSNumber(value: event.displayID))
+    case .disabled:
+        currentGammas.removeObject(forKey: NSNumber(value: event.displayID))
+    case .enabled:
+        break
+    case .moved, .resized:
         DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-            if let scr = environmentGetGlobalOrNil()?.screen {
-                screen_gammaReapply(display, using: scr)
-            }
+            screen_gammaReapply(event.displayID, using: screen)
         }
     }
 }
@@ -932,11 +934,16 @@ private func displayReconfigurationCallback(_ display: CGDirectDisplayID, _ flag
 public func luaopen_hs_libscreen(_ L: UnsafeMutablePointer<lua_State>!) -> Int32 {
     precondition(L != nil, "luaopen_hs_libscreen: L must not be nil")
     return runEntryPoint(L) { L in
-        // Initialize gamma structures, populate them, and register callbacks
+        // Initialize gamma structures and subscribe through the shared display source.
         originalGammas = NSMutableDictionary()
         currentGammas = NSMutableDictionary()
-        getAllInitialScreenGammas(using: environmentGet(L).screen)
-        CGDisplayRegisterReconfigurationCallback(displayReconfigurationCallback, nil)
+        let screen = environmentGet(L).screen
+        getAllInitialScreenGammas(using: screen)
+        if gammaDisplayCallbackID == nil {
+            gammaDisplayCallbackID = screen.addDisplayReconfigurationCallback { event in
+                handleGammaDisplayReconfiguration(event, using: screen)
+            }
+        }
 
         // Register userdata metatable
         luaL_newmetatable(L, USERDATA_TAG)
