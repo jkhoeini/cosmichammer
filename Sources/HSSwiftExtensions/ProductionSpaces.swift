@@ -10,6 +10,9 @@ import HSDSTCore
 final class ProductionSpaces: SpacesProtocol {
     private var nextCallbackID: UInt64 = 1
     private var callbacks: [UInt64: (observer: NSObjectProtocol, callback: (Int) -> Void)] = [:]
+    private var nextLifecycleCallbackID: UInt64 = 1
+    private var lifecycleCallbacks: [UInt64: (SpaceLifecycleEvent) -> Void] = [:]
+
     private var cid: Int32 { SLSMainConnectionID() }
 
     func allSpaces() -> [SpaceInfo] {
@@ -141,6 +144,18 @@ final class ProductionSpaces: SpacesProtocol {
         NSWorkspace.shared.notificationCenter.removeObserver(entry.observer)
         return true
     }
+
+    func addSpaceLifecycleCallback(callback: @escaping (SpaceLifecycleEvent) -> Void) -> UInt64 {
+        let id = nextLifecycleCallbackID
+        nextLifecycleCallbackID += 1
+        lifecycleCallbacks[id] = callback
+        return id
+    }
+
+    func removeSpaceLifecycleCallback(id: UInt64) -> Bool {
+        lifecycleCallbacks.removeValue(forKey: id) != nil
+    }
+
 
     // MARK: - Private
 

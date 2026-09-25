@@ -13,6 +13,9 @@ public final class SimulatedSpaces: SpacesProtocol {
 
     private var nextCallbackID: UInt64 = 1
     private var callbacks: [UInt64: (Int) -> Void] = [:]
+    private var nextLifecycleCallbackID: UInt64 = 1
+    private var lifecycleCallbacks: [UInt64: (SpaceLifecycleEvent) -> Void] = [:]
+
 
     /// Records of space changes for test verification.
     public private(set) var spaceChangeLog: [(from: Int, to: Int)] = []
@@ -120,4 +123,22 @@ public final class SimulatedSpaces: SpacesProtocol {
     public func removeSpaceChangeCallback(id: UInt64) -> Bool {
         callbacks.removeValue(forKey: id) != nil
     }
+
+    public func addSpaceLifecycleCallback(callback: @escaping (SpaceLifecycleEvent) -> Void) -> UInt64 {
+        let id = nextLifecycleCallbackID
+        nextLifecycleCallbackID += 1
+        lifecycleCallbacks[id] = callback
+        return id
+    }
+
+    public func removeSpaceLifecycleCallback(id: UInt64) -> Bool {
+        lifecycleCallbacks.removeValue(forKey: id) != nil
+    }
+
+    public func simulateSpaceLifecycleEvent(_ event: SpaceLifecycleEvent) {
+        for id in lifecycleCallbacks.keys.sorted() {
+            lifecycleCallbacks[id]?(event)
+        }
+    }
+
 }

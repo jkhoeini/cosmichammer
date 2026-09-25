@@ -86,6 +86,9 @@ private func CGDisplaySetInvertedPolarity(_ invertedPolarity: Bool)
 private let kIOFBSetTransform: UInt32 = 0x00000400
 
 final class ProductionScreen: ScreenProtocol {
+    private var nextDisplayCallbackID: UInt64 = 1
+    private var displayCallbacks: [UInt64: (DisplayReconfigurationEvent) -> Void] = [:]
+
 
     // MARK: - Screen enumeration
 
@@ -458,6 +461,18 @@ final class ProductionScreen: ScreenProtocol {
         guard CGGetOnlineDisplayList(maxDisplays, displays, &count) == .success else { return [] }
         return (0..<Int(count)).map { displays[$0] }
     }
+
+    func addDisplayReconfigurationCallback(callback: @escaping (DisplayReconfigurationEvent) -> Void) -> UInt64 {
+        let id = nextDisplayCallbackID
+        nextDisplayCallbackID += 1
+        displayCallbacks[id] = callback
+        return id
+    }
+
+    func removeDisplayReconfigurationCallback(id: UInt64) -> Bool {
+        displayCallbacks.removeValue(forKey: id) != nil
+    }
+
 
     // MARK: - Private helpers
 

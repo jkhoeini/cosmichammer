@@ -62,6 +62,25 @@ public struct GammaTable: Sendable {
         self.blue = blue
     }
 }
+public struct DisplayReconfigurationEvent: Equatable, Sendable {
+    public enum Kind: String, Sendable {
+        case added
+        case removed
+        case moved
+        case resized
+        case disabled
+        case enabled
+    }
+
+    public let kind: Kind
+    public let displayID: UInt32
+
+    public init(kind: Kind, displayID: UInt32) {
+        self.kind = kind
+        self.displayID = displayID
+    }
+}
+
 
 public protocol ScreenProtocol: AnyObject {
     // MARK: - Screen enumeration
@@ -121,4 +140,9 @@ public protocol ScreenProtocol: AnyObject {
     func displayBounds(forScreenID id: UInt32) -> (x: Double, y: Double, width: Double, height: Double)
     func mainDisplayID() -> UInt32
     func onlineDisplayIDs() -> [UInt32]
+
+    // MARK: - Display reconfiguration
+    func addDisplayReconfigurationCallback(callback: @escaping (DisplayReconfigurationEvent) -> Void) -> UInt64
+    func removeDisplayReconfigurationCallback(id: UInt64) -> Bool
+
 }

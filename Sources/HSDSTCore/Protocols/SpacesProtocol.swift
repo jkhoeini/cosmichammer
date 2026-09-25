@@ -6,6 +6,21 @@ public enum SpaceType: Int, Sendable {
     case system = 2
     case unknown = -1
 }
+public struct SpaceLifecycleEvent: Equatable, Sendable {
+    public enum Kind: String, Sendable {
+        case created
+        case destroyed
+    }
+
+    public let kind: Kind
+    public let spaceID: Int
+
+    public init(kind: Kind, spaceID: Int) {
+        self.kind = kind
+        self.spaceID = spaceID
+    }
+}
+
 
 public struct SpaceInfo: Sendable {
     public var id: Int
@@ -38,4 +53,7 @@ public protocol SpacesProtocol: AnyObject {
     func spaceCount() -> Int
     func addSpaceChangeCallback(callback: @escaping (Int) -> Void) -> UInt64
     func removeSpaceChangeCallback(id: UInt64) -> Bool
+    func addSpaceLifecycleCallback(callback: @escaping (SpaceLifecycleEvent) -> Void) -> UInt64
+    func removeSpaceLifecycleCallback(id: UInt64) -> Bool
+
 }

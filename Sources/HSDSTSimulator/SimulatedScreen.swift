@@ -25,6 +25,9 @@ public final class SimulatedScreen: ScreenProtocol {
     public var uuids: [UInt32: String] = [1: "37D8832A-2D66-02CA-B9F7-8F30A301B230"]
     public var displayInfos: [UInt32: [String: Any]] = [:]
     public var primaryScreenID: UInt32 = 1
+    private var nextDisplayCallbackID: UInt64 = 1
+    private var displayCallbacks: [UInt64: (DisplayReconfigurationEvent) -> Void] = [:]
+
 
     public init(rng: RPRNG, faults: FaultConfig) {
         self.rng = rng
@@ -230,4 +233,22 @@ public final class SimulatedScreen: ScreenProtocol {
     public func onlineDisplayIDs() -> [UInt32] {
         screens.map { $0.id }
     }
+
+    public func addDisplayReconfigurationCallback(callback: @escaping (DisplayReconfigurationEvent) -> Void) -> UInt64 {
+        let id = nextDisplayCallbackID
+        nextDisplayCallbackID += 1
+        displayCallbacks[id] = callback
+        return id
+    }
+
+    public func removeDisplayReconfigurationCallback(id: UInt64) -> Bool {
+        displayCallbacks.removeValue(forKey: id) != nil
+    }
+
+    public func simulateDisplayReconfigurationEvent(_ event: DisplayReconfigurationEvent) {
+        for id in displayCallbacks.keys.sorted() {
+            displayCallbacks[id]?(event)
+        }
+    }
+
 }
