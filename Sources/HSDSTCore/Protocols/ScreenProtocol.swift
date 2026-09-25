@@ -70,6 +70,7 @@ public struct DisplayReconfigurationEvent: Equatable, Sendable {
         case resized
         case disabled
         case enabled
+        case configurationChanged
     }
 
     public let kind: Kind

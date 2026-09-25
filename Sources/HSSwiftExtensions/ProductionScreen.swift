@@ -97,15 +97,19 @@ func displayReconfigurationEvent(
         kind = .removed
     } else if flags.contains(.movedFlag) {
         kind = .moved
-    } else if flags.contains(.desktopShapeChangedFlag) {
+    } else if flags.contains(.desktopShapeChangedFlag) || flags.contains(.setModeFlag) {
         kind = .resized
     } else if flags.contains(.disabledFlag) {
         kind = .disabled
     } else if flags.contains(.enabledFlag) {
         kind = .enabled
+    } else if flags.contains(.setMainFlag) || flags.contains(.mirrorFlag) ||
+              flags.contains(.unMirrorFlag) {
+        kind = .configurationChanged
     } else {
         return nil
     }
+
     return DisplayReconfigurationEvent(kind: kind, displayID: displayID)
 }
 

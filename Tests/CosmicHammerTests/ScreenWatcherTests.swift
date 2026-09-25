@@ -76,14 +76,24 @@ extension CosmicHammerTests {
                 let screen = environmentGet(L).screen as! SimulatedScreen
                 #expect(luaEval(L, """
                     count = 0
+                    weak = setmetatable({}, { __mode = 'v' })
                     watcher = mod.newWithDisplayEvents(function() count = count + 1 end):start()
-                    alias = watcher
+                    weak[1] = watcher
                     watcher = nil
                     collectgarbage()
+                    collectgarbage()
+                    pinnedType = type(weak[1])
                 """))
+                #expect(luaEvalString(L, "return pinnedType") == "userdata")
                 screen.simulateDisplayReconfigurationEvent(.init(kind: .added, displayID: 3))
                 #expect(luaEvalString(L, "return tostring(count)") == "1")
-                #expect(luaEval(L, "alias:stop(); alias = nil; collectgarbage(); collectgarbage()"))
+                #expect(luaEval(L, """
+                    weak[1]:stop()
+                    collectgarbage()
+                    collectgarbage()
+                """))
+                #expect(luaEvalString(L, "return type(weak[1])") == "nil")
+
             }
         }
     }

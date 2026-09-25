@@ -120,6 +120,18 @@ extension CosmicHammerTests {
             #expect(displayReconfigurationEvent(
                 displayID: 7, flags: [.enabledFlag]
             ) == .init(kind: .enabled, displayID: 7))
+            #expect(displayReconfigurationEvent(
+                displayID: 7, flags: [.setModeFlag]
+            ) == .init(kind: .resized, displayID: 7))
+            #expect(displayReconfigurationEvent(
+                displayID: 7, flags: [.setMainFlag]
+            ) == .init(kind: .configurationChanged, displayID: 7))
+            #expect(displayReconfigurationEvent(
+                displayID: 7, flags: [.mirrorFlag]
+            ) == .init(kind: .configurationChanged, displayID: 7))
+            #expect(displayReconfigurationEvent(
+                displayID: 7, flags: [.unMirrorFlag]
+            ) == .init(kind: .configurationChanged, displayID: 7))
             #expect(displayReconfigurationEvent(displayID: 7, flags: []) == nil)
         }
     }
@@ -128,5 +140,6 @@ extension CosmicHammerTests {
 private extension DisplayReconfigurationEvent.Kind {
     static let allCasesForTesting: [Self] = [
         .added, .removed, .moved, .resized, .disabled, .enabled,
+        .configurationChanged,
     ]
 }

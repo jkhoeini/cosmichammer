@@ -921,7 +921,8 @@ private func handleGammaDisplayReconfiguration(
         currentGammas.removeObject(forKey: NSNumber(value: event.displayID))
     case .enabled:
         break
-    case .moved, .resized:
+    case .moved, .resized, .configurationChanged:
+
         DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
             screen_gammaReapply(event.displayID, using: screen)
         }
