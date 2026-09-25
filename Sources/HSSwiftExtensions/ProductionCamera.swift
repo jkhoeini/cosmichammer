@@ -9,7 +9,7 @@ final class ProductionCamera: CameraProtocol {
 
     func allCameras() -> [CameraDeviceInfo] {
         let discoverySession = AVCaptureDevice.DiscoverySession(
-            deviceTypes: [.builtInWideAngleCamera, .externalUnknown],
+            deviceTypes: [.builtInWideAngleCamera, .external],
             mediaType: .video,
             position: .unspecified
         )
@@ -18,7 +18,7 @@ final class ProductionCamera: CameraProtocol {
 
     func cameraByName(_ name: String) -> CameraDeviceInfo? {
         let discoverySession = AVCaptureDevice.DiscoverySession(
-            deviceTypes: [.builtInWideAngleCamera, .externalUnknown],
+            deviceTypes: [.builtInWideAngleCamera, .external],
             mediaType: .video,
             position: .unspecified
         )
@@ -55,7 +55,7 @@ final class ProductionCamera: CameraProtocol {
         nextWatcherID += 1
 
         let observer = NotificationCenter.default.addObserver(
-            forName: .AVCaptureDeviceWasConnected,
+            forName: AVCaptureDevice.wasConnectedNotification,
             object: nil, queue: .main
         ) { notification in
             guard let device = notification.object as? AVCaptureDevice else { return }
@@ -64,7 +64,7 @@ final class ProductionCamera: CameraProtocol {
         }
 
         let observer2 = NotificationCenter.default.addObserver(
-            forName: .AVCaptureDeviceWasDisconnected,
+            forName: AVCaptureDevice.wasDisconnectedNotification,
             object: nil, queue: .main
         ) { notification in
             guard let device = notification.object as? AVCaptureDevice else { return }

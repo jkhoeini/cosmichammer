@@ -1,5 +1,12 @@
 import Foundation
 
+public enum SpeechSyncValue: Sendable, Equatable {
+    case string(String)
+    case integer(Int64)
+    case number(Double)
+    case boolean(Bool)
+}
+
 /// Events fired by a speech synthesizer via its delegate callback.
 public enum SpeechDelegateEvent: Sendable {
     /// The synthesizer is about to speak a word range in the given text.
@@ -9,7 +16,7 @@ public enum SpeechDelegateEvent: Sendable {
     /// The synthesizer encountered an error at a character index.
     case didEncounterError(characterIndex: Int, text: String, message: String)
     /// The synthesizer encountered a sync message.
-    case didEncounterSync(syncValue: Any?)
+    case didEncounterSync(syncValue: SpeechSyncValue?)
     /// The synthesizer finished speaking.
     case didFinish(success: Bool)
 }

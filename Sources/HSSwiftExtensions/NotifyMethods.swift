@@ -83,6 +83,10 @@ func notification_send(_ L: LuaState) throws -> CInt {
     note.isPresented = false
     wrapper.note = note
     notification.deliverUserNotification(wrapper.note)
+    if let seconds = (userInfo[KEY_WITHDRAWAFTER] as? NSNumber)?.doubleValue,
+       seconds > 0 {
+        nt_scheduleWithdrawTimer(gus: gus, after: seconds, notification: notification)
+    }
 
     lua_pushvalue(L, 1)
     return 1
@@ -136,6 +140,10 @@ func notification_scheduleNotification(_ L: LuaState) throws -> CInt {
     note.isPresented = false
     wrapper.note = note
     notification.scheduleUserNotification(wrapper.note)
+    if let seconds = (userInfo[KEY_WITHDRAWAFTER] as? NSNumber)?.doubleValue,
+       seconds > 0 {
+        nt_scheduleWithdrawTimer(gus: gus, after: seconds, from: date, notification: notification)
+    }
 
     lua_settop(L, 1)
     return 1
@@ -241,7 +249,7 @@ private func nt_genericStringMethod(
 
     if lua_isnone(L, 2) {
         lua_pushany(L, read(wrapper.note) as NSString?)
-    } else if let gus, record != nil {
+    } else if gus != nil {
         if nt_isLocked(record) {
             throw L.error(nt_lockedError())
         }
@@ -250,18 +258,12 @@ private func nt_genericStringMethod(
         write(&note, newValue)
         wrapper.note = note
         if let recordKey, let record {
-            record[recordKey] = newValue ?? NSNull()
+            if let newValue {
+                record[recordKey] = newValue
+            } else {
+                record.removeObject(forKey: recordKey)
+            }
         }
-        lua_pushvalue(L, 1)
-    } else if gus != nil && record == nil {
-        // Not tracked: still apply to the wrapper note.
-        if nt_isLocked(record) {
-            throw L.error(nt_lockedError())
-        }
-        var note = wrapper.note
-        let newValue: String? = lua_isnil(L, 2) ? nil : (lua_tovalue(L, at: 2) as? String ?? "")
-        write(&note, newValue)
-        wrapper.note = note
         lua_pushvalue(L, 1)
     } else {
         throw L.error(nt_notOursError())
@@ -502,8 +504,13 @@ func notification_contentImage(_ L: LuaState) throws -> CInt {
         }
         let image = lua_isnil(L, 2) ? nil : toNSImage(L, at: 2)
         var note = wrapper.note
-        if let image {
-            note.contentImageData = image.tiffRepresentation
+        if let image,
+           let tiffData = image.tiffRepresentation,
+           let bitmap = NSBitmapImageRep(data: tiffData) {
+            guard let pngData = bitmap.representation(using: .png, properties: [:]) else {
+                throw L.error("unable to encode notification content image as PNG")
+            }
+            note.contentImageData = pngData
         } else {
             note.contentImageData = nil
         }
@@ -643,15 +650,14 @@ func notification_withdrawAfter(_ L: LuaState) throws -> CInt {
         if nt_isLocked(record) {
             throw L.error(nt_lockedError())
         }
-        let value = lua_tovalue(L, at: 2)
-        if let number = value as? NSNumber {
-            // Cancel/replace any pending timer only when already dispatched;
-            // the timer itself is scheduled at send()/activation time.
-            if (record?[KEY_LOCKED] as? NSNumber)?.boolValue == true, number.doubleValue <= 0 {
-                nt_cancelWithdrawTimer(gus: gus)
-            }
+        guard lua_type(L, 2) == LUA_TNUMBER else {
+            throw L.error("bad argument #2: expected a non-negative number")
         }
-        record?[KEY_WITHDRAWAFTER] = value
+        let seconds = lua_tonumber(L, 2)
+        guard seconds.isFinite, seconds >= 0 else {
+            throw L.error("bad argument #2: expected a finite, non-negative number")
+        }
+        record?[KEY_WITHDRAWAFTER] = NSNumber(value: seconds)
         lua_pushvalue(L, 1)
     } else {
         throw L.error(nt_notOursError())

@@ -21,18 +21,18 @@ let package = Package(
     platforms: [.macOS(.v26)],
     products: [
         .executable(name: "CosmicHammer", targets: ["HSApp"]),
-        .library(name: "CosmicHammerLibs", type: .static, targets: ["HSExtensions", "HSSwiftExtensions"]),
         .executable(name: "hs", targets: ["hs"]),
         .executable(name: "OTELBenchmarks", targets: ["OTELBenchmarks"]),
     ],
     dependencies: [
         .package(url: "https://github.com/armadsen/ORSSerialPort", exact: "2.1.0"),
-        .package(url: "https://github.com/apple/swift-nio.git", from: "2.97.1"),
-        .package(url: "https://github.com/apple/swift-protobuf.git", from: "1.36.1"),
+        .package(url: "https://github.com/apple/swift-nio.git", from: "2.103.0"),
+        .package(url: "https://github.com/apple/swift-collections.git", exact: "1.6.0"),
+        .package(url: "https://github.com/apple/swift-protobuf.git", from: "1.38.1"),
         .package(url: "https://github.com/grpc/grpc-swift.git", exact: "1.27.5"),
-        .package(url: "https://github.com/open-telemetry/opentelemetry-swift-core.git", from: "2.4.1"),
-        .package(url: "https://github.com/open-telemetry/opentelemetry-swift.git", from: "2.4.1"),
-        .package(url: "https://github.com/swiftlang/swift-markdown.git", from: "0.5.0"),
+        .package(url: "https://github.com/open-telemetry/opentelemetry-swift-core.git", from: "2.6.0"),
+        .package(url: "https://github.com/open-telemetry/opentelemetry-swift.git", from: "2.5.2"),
+        .package(url: "https://github.com/swiftlang/swift-markdown.git", from: "0.9.0"),
         .package(url: "https://github.com/tomsci/LuaSwift.git", revision: "985e19af1ae62639e54e4ce2a9f7712a29b5432c"), // Swift 6.4 fix; no tagged release yet
     ],
     targets: [
@@ -46,7 +46,7 @@ let package = Package(
             ],
             path: "Sources/HSDSTCore",
             swiftSettings: [
-                .swiftLanguageMode(.v5),
+                .swiftLanguageMode(.v6),
             ]
         ),
         // ---------------------------------------------------------------
@@ -57,7 +57,7 @@ let package = Package(
             dependencies: ["HSDSTCore"],
             path: "Sources/HSDSTSimulator",
             swiftSettings: [
-                .swiftLanguageMode(.v5),
+                .swiftLanguageMode(.v6),
             ]
         ),
         // ---------------------------------------------------------------
@@ -139,6 +139,7 @@ let package = Package(
                 .product(name: "OpenTelemetryProtocolExporterHTTP", package: "opentelemetry-swift"),
                 .product(name: "StdoutExporter", package: "opentelemetry-swift-core"),
                 .product(name: "GRPC", package: "grpc-swift"),
+                .product(name: "Collections", package: "swift-collections"),
                 .product(name: "NIO", package: "swift-nio"),
                 .product(name: "SwiftProtobuf", package: "swift-protobuf"),
                 .product(name: "ORSSerial", package: "ORSSerialPort"),
@@ -173,7 +174,7 @@ let package = Package(
             path: "Sources/hs",
             exclude: ["hs.man", "hs.m"],
             swiftSettings: [
-                .swiftLanguageMode(.v5),
+                .swiftLanguageMode(.v6),
             ],
             linkerSettings: [
                 .linkedFramework("AppKit"),

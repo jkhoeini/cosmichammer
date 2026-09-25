@@ -43,11 +43,19 @@ final class ProductionSpeech: SpeechProtocol {
 
         func speechSynthesizer(_ sender: NSSpeechSynthesizer,
                                didEncounterSyncMessage errorMessage: String) {
-            var syncValue: Any?
-            do {
-                syncValue = try sender.object(
-                    forProperty: NSSpeechSynthesizer.SpeechPropertyKey.recentSync)
-            } catch {}
+            let rawValue = try? sender.object(
+                forProperty: NSSpeechSynthesizer.SpeechPropertyKey.recentSync
+            )
+            let syncValue: SpeechSyncValue?
+            switch rawValue {
+            case let value as String: syncValue = .string(value)
+            case let value as NSNumber where CFGetTypeID(value) == CFBooleanGetTypeID():
+                syncValue = .boolean(value.boolValue)
+            case let value as NSNumber where CFNumberIsFloatType(value):
+                syncValue = .number(value.doubleValue)
+            case let value as NSNumber: syncValue = .integer(value.int64Value)
+            default: syncValue = rawValue.map { .string(String(describing: $0)) }
+            }
             delegateCallback?(.didEncounterSync(syncValue: syncValue))
         }
 

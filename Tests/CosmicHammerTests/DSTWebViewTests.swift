@@ -93,19 +93,31 @@ struct DSTWebViewTests {
         let wv = env.webView as! SimulatedWebView
 
         let id = wv.createWebView(frame: (x: 0, y: 0, width: 800, height: 600))
-        let result = wv.evaluateJavaScript(webViewID: id, script: "document.title")
-        #expect(result == "")
+        var result: Any?
+        var scriptError: Error?
+        let started = wv.evaluateJavaScript(webViewID: id, script: "document.title") { value, error in
+            result = value
+            scriptError = error
+        }
+        #expect(started)
+        #expect(scriptError == nil)
+        #expect(result as? String == "")
         #expect(wv.executedScripts.count == 1)
         #expect(wv.executedScripts[0].script == "document.title")
     }
 
-    @Test func evaluateJavaScriptOnNonexistentReturnsNil() {
+    @Test func evaluateJavaScriptOnNonexistentReturnsFalseWithoutCompletion() {
         let harness = SimulatorHarness(seed: 42)
         let env = harness.createEnvironment()
         let wv = env.webView as! SimulatedWebView
+        var completed = false
 
-        #expect(wv.evaluateJavaScript(webViewID: 999, script: "1+1") == nil)
+        #expect(!wv.evaluateJavaScript(webViewID: 999, script: "1+1") { _, _ in
+            completed = true
+        })
+        #expect(!completed)
     }
+
 
     @Test func showAndHideToggleVisibility() {
         let harness = SimulatorHarness(seed: 42)

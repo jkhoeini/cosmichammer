@@ -1,8 +1,12 @@
 import AppKit
+import CryptoKit
 import HSDSTCore
 import UserNotifications
 
 final class ProductionNotification: NotificationProtocol {
+    private static let categoriesLock = NSLock()
+    private static var categories: [String: UNNotificationCategory] = [:]
+
     func addObserver(name: String, object: AnyObject?,
                      handler: @escaping ([String: Any]) -> Void) -> any NotificationObserverToken {
         let observer = NotificationCenter.default.addObserver(
@@ -63,9 +67,11 @@ final class ProductionNotification: NotificationProtocol {
         content.subtitle = notification.subtitle
         content.body = notification.informativeText
         if let soundName = notification.soundName {
-            content.sound = UNNotificationSound(named: UNNotificationSoundName(rawValue: soundName))
+            content.sound = soundName == "DefaultSoundName"
+                ? .default
+                : UNNotificationSound(named: UNNotificationSoundName(rawValue: soundName))
         }
-        if notification.hasActionButton || notification.hasReplyButton {
+        if notification.hasActionButton || notification.hasReplyButton || !notification.additionalActions.isEmpty {
             content.categoryIdentifier = ProductionNotification.categoryIdentifier(
                 for: notification
             )
@@ -93,19 +99,28 @@ final class ProductionNotification: NotificationProtocol {
         }
         for action in notification.additionalActions {
             actions.append(UNNotificationAction(
-                identifier: "hs.notify.\(action.identifier)",
+                identifier: "\(UserNotificationSemantics.actionPrefix)\(action.identifier)",
                 title: action.title
             ))
         }
-        let id = "hs.notify.category.\(actions.map(\.identifier).joined(separator: "|"))"
-        UNUserNotificationCenter.current().setNotificationCategories([
-            UNNotificationCategory(
-                identifier: id,
-                actions: actions,
-                intentIdentifiers: [],
-                options: []
-            )
-        ])
+
+        let categoryDescription = actions.map { "\($0.identifier)\u{0}\($0.title)" }
+            .joined(separator: "\u{1}") + "\u{2}\(notification.responsePlaceholder)"
+        let digest = SHA256.hash(data: Data(categoryDescription.utf8))
+            .map { String(format: "%02x", $0) }
+            .joined()
+        let id = "\(UserNotificationSemantics.categoryPrefix)\(digest)"
+        let category = UNNotificationCategory(
+            identifier: id,
+            actions: actions,
+            intentIdentifiers: [],
+            options: []
+        )
+        categoriesLock.lock()
+        categories[id] = category
+        let registeredCategories = Set(categories.values)
+        categoriesLock.unlock()
+        UNUserNotificationCenter.current().setNotificationCategories(registeredCategories)
         return id
     }
 
@@ -129,7 +144,7 @@ final class ProductionNotification: NotificationProtocol {
             } else if !granted {
                 NSLog("notify: authorization denied by user")
             }
-            var content = self.makeContent(notification)
+            let content = self.makeContent(notification)
             if let attachment = try? self.attachment(for: notification) {
                 content.attachments = [attachment]
             }
@@ -236,17 +251,7 @@ final class ProductionNotification: NotificationProtocol {
 
     static func note(from notification: UNNotification) -> UserNotification {
         let content = notification.request.content
-        var actions: [(identifier: String, title: String)] = []
-        if content.categoryIdentifier.hasPrefix("hs.notify.category.") {
-            let raw = String(content.categoryIdentifier.dropFirst("hs.notify.category.".count))
-            actions = raw.isEmpty ? [] : raw.split(separator: "|").map { rawID in
-                let id = String(rawID)
-                if id == UserNotificationActionIdentifier.reply {
-                    return (identifier: id, title: "Reply")
-                }
-                return (identifier: id, title: id.hasPrefix("hs.notify.") ? String(id.dropFirst("hs.notify.".count)) : id)
-            }
-        }
+        let actions = snapshotActions(from: content.userInfo)
         // UNNotificationSound has no name getter, so the original sound name is
         // carried in the record snapshot via userInfo and restored on read.
         var soundName: String?
@@ -260,15 +265,14 @@ final class ProductionNotification: NotificationProtocol {
             subtitle: content.subtitle,
             informativeText: content.body,
             soundName: soundName,
-            hasActionButton: content.categoryIdentifier.hasPrefix("hs.notify.category."),
-            actionButtonTitle: actions.first(where: { $0.identifier == UserNotificationActionIdentifier.actionButton })?.title
-                ?? (actions.first(where: { $0.identifier == UserNotificationActionIdentifier.reply })?.title ?? "Show"),
+            hasActionButton: snapshotBool(KEY_HASACTIONBUTTON, from: content.userInfo),
+            actionButtonTitle: content.userInfo[KEY_ACTIONBUTTON_TITLE] as? String ?? "Show",
             otherButtonTitle: "",
-            hasReplyButton: actions.contains(where: { $0.identifier == UserNotificationActionIdentifier.reply }),
+            hasReplyButton: snapshotBool(KEY_HASREPLYBUTTON, from: content.userInfo),
             isDelivered: true,
             isPresented: false,
             actualDeliveryDate: notification.date,
-            additionalActions: actions.filter { $0.identifier != UserNotificationActionIdentifier.actionButton && $0.identifier != UserNotificationActionIdentifier.reply },
+            additionalActions: actions,
             userInfo: content.userInfo as? [String: Any] ?? [:]
         )
         if let response = content.userInfo[KEY_RESPONSE] as? String {
@@ -288,17 +292,7 @@ final class ProductionNotification: NotificationProtocol {
 
     static func note(fromPending request: UNNotificationRequest) -> UserNotification {
         let content = request.content
-        var actions: [(identifier: String, title: String)] = []
-        if content.categoryIdentifier.hasPrefix("hs.notify.category.") {
-            let raw = String(content.categoryIdentifier.dropFirst("hs.notify.category.".count))
-            actions = raw.isEmpty ? [] : raw.split(separator: "|").map { rawID in
-                let id = String(rawID)
-                if id == UserNotificationActionIdentifier.reply {
-                    return (identifier: id, title: "Reply")
-                }
-                return (identifier: id, title: id.hasPrefix("hs.notify.") ? String(id.dropFirst("hs.notify.".count)) : id)
-            }
-        }
+        let actions = snapshotActions(from: content.userInfo)
         var soundName: String?
         if content.sound != nil {
             soundName = content.userInfo[KEY_SOUNDNAME] as? String
@@ -310,13 +304,24 @@ final class ProductionNotification: NotificationProtocol {
             subtitle: content.subtitle,
             informativeText: content.body,
             soundName: soundName,
-            hasActionButton: content.categoryIdentifier.hasPrefix("hs.notify.category."),
-            actionButtonTitle: actions.first(where: { $0.identifier == UserNotificationActionIdentifier.actionButton })?.title
-                ?? (actions.first(where: { $0.identifier == UserNotificationActionIdentifier.reply })?.title ?? "Show"),
+            hasActionButton: snapshotBool(KEY_HASACTIONBUTTON, from: content.userInfo),
+            actionButtonTitle: content.userInfo[KEY_ACTIONBUTTON_TITLE] as? String ?? "Show",
             otherButtonTitle: "",
-            hasReplyButton: actions.contains(where: { $0.identifier == UserNotificationActionIdentifier.reply }),
-            additionalActions: actions.filter { $0.identifier != UserNotificationActionIdentifier.actionButton && $0.identifier != UserNotificationActionIdentifier.reply },
+            hasReplyButton: snapshotBool(KEY_HASREPLYBUTTON, from: content.userInfo),
+            additionalActions: actions,
             userInfo: content.userInfo as? [String: Any] ?? [:]
         )
+    }
+
+    private static func snapshotBool(_ key: String, from userInfo: [AnyHashable: Any]) -> Bool {
+        (userInfo[key] as? NSNumber)?.boolValue ?? false
+    }
+
+    private static func snapshotActions(from userInfo: [AnyHashable: Any]) -> [(identifier: String, title: String)] {
+        guard let stored = userInfo[KEY_ADDITIONALACTIONS] as? [[String: String]] else { return [] }
+        return stored.compactMap { action in
+            guard let identifier = action["identifier"], let title = action["title"] else { return nil }
+            return (identifier: identifier, title: title)
+        }
     }
 }

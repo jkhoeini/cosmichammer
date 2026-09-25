@@ -15,6 +15,30 @@ public enum UserNotificationActionIdentifier {
     public static let reply = "hs.notify.reply"
 }
 
+public enum UserNotificationSemantics {
+    public static let alwaysPresentKey = "alwaysPresent"
+    public static let actionPrefix = "hs.notify."
+    public static let categoryPrefix = "hs.notify.category."
+
+    public static func activationType(actionIdentifier: String?, categoryIdentifier: String?) -> Int {
+        switch actionIdentifier {
+        case nil, "", UserNotificationActionIdentifier.defaultAction:
+            return 1
+        case UserNotificationActionIdentifier.dismissAction:
+            return 0
+        case UserNotificationActionIdentifier.actionButton:
+            return 2
+        case UserNotificationActionIdentifier.reply:
+            return 3
+        default:
+            guard let actionIdentifier,
+                  actionIdentifier.hasPrefix(actionPrefix),
+                  categoryIdentifier?.hasPrefix(categoryPrefix) == true else { return 1 }
+            return 4
+        }
+    }
+}
+
 public struct UserNotification {
     public var identifier: String
     public var title: String
@@ -100,9 +124,8 @@ public protocol NotificationProtocol: AnyObject {
     func deliveredUserNotifications() -> [UserNotification]
     func scheduledUserNotifications() -> [UserNotification]
 
-    /// UN willPresent equivalent: consult the foreground presentation path.
-    /// Returns the presentation options the delegate would honor (empty when
-    /// the notification should not be shown while the app is frontmost).
+    /// UN willPresent equivalent. Returns true when the notification should be
+    /// shown while the app is frontmost.
     func presentNotification(_ notification: UserNotification) -> Bool
     /// Test hook: fire a didReceive-like activation for a delivered
     /// notification without touching the real OS notification center.

@@ -3,6 +3,7 @@
 set shell := ["bash", "-euo", "pipefail", "-c"]
 
 build_dir := "build"
+private_framework_flags := "-Xlinker -F -Xlinker '$(xcrun --show-sdk-path)/System/Library/PrivateFrameworks'"
 
 default:
     @just --list
@@ -22,8 +23,13 @@ build config="Debug": (_build-inputs config)
 _build-inputs config="Debug": build-version docs-json (_swift-binaries config)
 
 _swift-binaries config="Debug":
+    #!/usr/bin/env bash
+    set -euo pipefail
     just hs-cli
-    just spm-binary {{ config }}
+    config_lower="$(printf '%s' '{{ config }}' | tr '[:upper:]' '[:lower:]')"
+    mkdir -p {{ build_dir }}
+    eval "swift build -c '$config_lower' --product CosmicHammer {{ private_framework_flags }}" \
+        2>&1 | tee "{{ build_dir }}/{{ config }}-build.log"
 
 # Write build/version.env and build/version.json
 build-version:
@@ -40,13 +46,14 @@ _docs-tool:
 docs-json: _docs-tool
     ./scripts/build/docs-json.sh {{ build_dir }}/docs
 
+# Build a SwiftPM product with the private-framework search path required by
+# statically linked SkyLight/CoreDisplay extensions.
+spm product profile="debug":
+    eval "swift build -c {{ profile }} --product '{{ product }}' {{ private_framework_flags }}"
+
 # Build the release hs CLI product
 hs-cli:
-    swift build -c release --product hs
-
-# Build the CosmicHammer SPM executable (config: Debug or Release)
-spm-binary config="Debug":
-    ./scripts/build/spm-binary.sh {{ config }} {{ build_dir }}
+    just spm hs release
 
 # Copy runtime/test resources into a resource root
 resources dest docs_json="{{ build_dir }}/docs/docs.json":
@@ -81,29 +88,23 @@ _test resource_root:
     #!/usr/bin/env bash
     set -euo pipefail
     mkdir -p {{ build_dir }}
-    SDK_PATH="$(xcrun --show-sdk-path)"
     export COSMIC_HAMMER_TEST_RESOURCES="$(pwd)/{{ resource_root }}"
     if [ ! -d "$COSMIC_HAMMER_TEST_RESOURCES" ]; then
         echo "error: missing test resources: $COSMIC_HAMMER_TEST_RESOURCES" >&2
         exit 1
     fi
-    swift test \
-        -Xlinker -F -Xlinker "${SDK_PATH}/System/Library/PrivateFrameworks" \
-        2>&1 | tee {{ build_dir }}/test.log
+    eval "swift test {{ private_framework_flags }}" 2>&1 | tee {{ build_dir }}/test.log
 
 _test-filter resource_root filter:
     #!/usr/bin/env bash
     set -euo pipefail
     mkdir -p {{ build_dir }}
-    SDK_PATH="$(xcrun --show-sdk-path)"
     export COSMIC_HAMMER_TEST_RESOURCES="$(pwd)/{{ resource_root }}"
     if [ ! -d "$COSMIC_HAMMER_TEST_RESOURCES" ]; then
         echo "error: missing test resources: $COSMIC_HAMMER_TEST_RESOURCES" >&2
         exit 1
     fi
-    swift test \
-        --filter "{{ filter }}" \
-        -Xlinker -F -Xlinker "${SDK_PATH}/System/Library/PrivateFrameworks" \
+    eval "swift test --filter '{{ filter }}' {{ private_framework_flags }}" \
         2>&1 | tee {{ build_dir }}/otel-test-{{ filter }}.log
 
 # Check generated files against their source manifests
@@ -137,17 +138,17 @@ verify: check-generated docs-lint test-built
 
 # Quick local OTEL benchmark run. Advisory only; not part of verify.
 bench-otel suite="smoke" iterations="10000" samples="5":
-    SDK_PATH="$(xcrun --show-sdk-path)"; swift run -c release -Xlinker -F -Xlinker "$SDK_PATH/System/Library/PrivateFrameworks" OTELBenchmarks --suite {{ suite }} --iterations {{ iterations }} --samples {{ samples }} --warmup 1 --telemetry simulated --output pretty
+    eval "swift run -c release {{ private_framework_flags }} OTELBenchmarks --suite '{{ suite }}' --iterations '{{ iterations }}' --samples '{{ samples }}' --warmup 1 --telemetry simulated --output pretty"
 
 # Local OTEL benchmark smoke. Writes advisory JSON output.
 bench-otel-smoke:
     mkdir -p {{ build_dir }}/otel-benchmarks
-    SDK_PATH="$(xcrun --show-sdk-path)"; swift run -c release -Xlinker -F -Xlinker "$SDK_PATH/System/Library/PrivateFrameworks" OTELBenchmarks --suite smoke --iterations 5000 --samples 3 --warmup 1 --telemetry simulated --output json > {{ build_dir }}/otel-benchmarks/otel-smoke.json
+    eval "swift run -c release {{ private_framework_flags }} OTELBenchmarks --suite smoke --iterations 5000 --samples 3 --warmup 1 --telemetry simulated --output json" > {{ build_dir }}/otel-benchmarks/otel-smoke.json
 
 # Longer local advisory OTEL benchmark suite. Writes JSON output.
 bench-otel-full:
     mkdir -p {{ build_dir }}/otel-benchmarks
-    SDK_PATH="$(xcrun --show-sdk-path)"; swift run -c release -Xlinker -F -Xlinker "$SDK_PATH/System/Library/PrivateFrameworks" OTELBenchmarks --suite all --iterations 50000 --samples 10 --warmup 3 --telemetry simulated --output json > {{ build_dir }}/otel-benchmarks/otel-full.json
+    eval "swift run -c release {{ private_framework_flags }} OTELBenchmarks --suite all --iterations 50000 --samples 10 --warmup 3 --telemetry simulated --output json" > {{ build_dir }}/otel-benchmarks/otel-full.json
 
 # Focused deterministic OTEL smoke tests.
 otel-test: test-resources

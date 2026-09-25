@@ -1,4 +1,3 @@
-import AppKit
 import Foundation
 
 public struct WebViewHandle: Sendable {
@@ -30,21 +29,24 @@ public struct WebViewHandle: Sendable {
 
 public enum WebViewNavigationAction: Sendable {
     case load(url: String)
+    case loadRequest(URLRequest)
     case loadHTML(html: String, baseURL: String?)
     case goBack
     case goForward
     case reload
+    case reloadFromOrigin
     case stop
 }
 
 public protocol WebViewProtocol: AnyObject {
     func createWebView(frame: (x: Double, y: Double, width: Double, height: Double)) -> UInt64
-    /// Registers an externally created NSView (e.g. an HSWebViewView owned by the Lua
-    /// userdata model) with the protocol layer and returns its protocol ID.
-    func registerWebView(_ view: NSView) -> UInt64
+    /// Registers an externally created web-view object with the protocol layer.
+    func registerWebView(_ view: AnyObject) -> UInt64
     func destroyWebView(id: UInt64) -> Bool
     func navigate(webViewID: UInt64, action: WebViewNavigationAction) -> Bool
-    func evaluateJavaScript(webViewID: UInt64, script: String) -> String?
+    @discardableResult
+    func evaluateJavaScript(webViewID: UInt64, script: String,
+                            completion: @escaping (Any?, Error?) -> Void) -> Bool
     func getTitle(webViewID: UInt64) -> String?
     func getURL(webViewID: UInt64) -> String?
     func isLoading(webViewID: UInt64) -> Bool
@@ -52,6 +54,8 @@ public protocol WebViewProtocol: AnyObject {
     func show(webViewID: UInt64) -> Bool
     func hide(webViewID: UInt64) -> Bool
     func setAlpha(webViewID: UInt64, alpha: Double) -> Bool
+    func getAlpha(webViewID: UInt64) -> Double?
+    func isVisible(webViewID: UInt64) -> Bool?
     func setNavigationCallback(webViewID: UInt64, callback: @escaping (String, String) -> Void) -> Bool
     func clearDataStore(types: [String]) -> Bool
     func addUserScript(webViewID: UInt64, script: String, injectionTime: Int, forMainFrameOnly: Bool) -> Bool

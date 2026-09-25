@@ -23,7 +23,7 @@ private let kMaxHTTPServerConnections = 1000
 ///
 /// All work is dispatched on `DispatchQueue.main` to match the threading
 /// model of the rest of Cosmic Hammer.
-class NWHTTPServer {
+final class NWHTTPServer {
 
     // MARK: - Public Types
 

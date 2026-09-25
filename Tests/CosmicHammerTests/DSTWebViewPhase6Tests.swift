@@ -55,8 +55,16 @@ struct DSTWebViewPhase6Tests {
         #expect(wv.navigate(webViewID: id, action: .stop) == true)
         #expect(wv.isLoading(webViewID: id) == false)
 
-        // evaluateJavaScript records through the protocol
-        #expect(wv.evaluateJavaScript(webViewID: id, script: "1+1") == "")
+        // evaluateJavaScript records through the protocol and completes with its result.
+        var scriptResult: Any?
+        var scriptError: Error?
+        let started = wv.evaluateJavaScript(webViewID: id, script: "1+1") { result, error in
+            scriptResult = result
+            scriptError = error
+        }
+        #expect(started)
+        #expect(scriptError == nil)
+        #expect(scriptResult as? String == "")
         #expect(wv.executedScripts.count == 1)
         #expect(wv.executedScripts[0].webViewID == id)
         #expect(wv.executedScripts[0].script == "1+1")
@@ -148,7 +156,7 @@ struct DSTWebViewPhase6Tests {
             return "ok"
         """)
         #expect(result == "ok")
-        #expect(wv.webViews.count == before + 1)
+        #expect(wv.webViews.count == before)
     }
 
     @Test @MainActor func webviewUrlRoundTripRoutesThroughSimulator() {
@@ -193,12 +201,9 @@ struct DSTWebViewPhase6Tests {
 
         #expect(runLua("return __wv6:loading()") == "false")
 
+        let historyCount = wv.navigationHistory.count
         runLua("__wv6:stopLoading()")
-        #expect(wv.navigationHistory.contains { entry in
-            guard entry.webViewID == id else { return false }
-            if case .stop = entry.action { return true }
-            return false
-        })
+        #expect(wv.navigationHistory.count == historyCount)
     }
 
     @Test @MainActor func webviewGoBackGoForwardReloadRouteThroughSimulator() {
@@ -263,12 +268,14 @@ struct DSTWebViewPhase6Tests {
 
         runLua("__wv6:show()")
         #expect(wv.webViews[id]?.isVisible == true)
+        #expect(runLua("return __wv6:isVisible()") == "true")
 
         runLua("__wv6:hide()")
         #expect(wv.webViews[id]?.isVisible == false)
+        #expect(runLua("return __wv6:isVisible()") == "false")
 
-        // setAlpha routes through the protocol; the alpha getter stays on the window.
         runLua("__wv6:alpha(0.5)")
         #expect(wv.webViews[id]?.alpha == 0.5)
+        #expect(runLua("return __wv6:alpha()") == "0.5")
     }
 }

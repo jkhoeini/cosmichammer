@@ -5,7 +5,7 @@ public final class SimulatedProcess: ProcessProtocol {
     private var rng: RPRNG
     private let faults: FaultConfig
     private let eventLoop: EventLoopProtocol
-    private static var nextPID: Int32 = 1000
+    private var nextPID: Int32 = 1000
 
     public var scriptedResults: [String: ProcessResult] = [:]
     /// Commands listed here stay running until explicitly terminated.
@@ -21,8 +21,8 @@ public final class SimulatedProcess: ProcessProtocol {
     }
 
     private func allocatePID() -> Int32 {
-        let pid = SimulatedProcess.nextPID
-        SimulatedProcess.nextPID += 1
+        let pid = nextPID
+        nextPID += 1
         return pid
     }
 

@@ -388,7 +388,13 @@ public func luaopen_hs_libspeech(_ L: UnsafeMutablePointer<lua_State>!) -> Int32
                             cb.push(onto: _L)
                             _L.push(userdata: synth)
                             _L.push("didEncounterSync")
-                            lua_pushany(_L, syncValue as? NSObject)
+                            switch syncValue {
+                            case .string(let value): _L.push(value)
+                            case .integer(let value): _L.push(lua_Integer(value))
+                            case .number(let value): _L.push(value)
+                            case .boolean(let value): _L.push(value)
+                            case nil: lua_pushnil(_L)
+                            }
                             if luaTelemetryPCall(
                                 _L,
                                 nargs: 3,

@@ -275,7 +275,9 @@ func webview_url(_ L: LuaState) throws -> CInt {
         if let theNSURL = theNSURL {
             if let protocolID = theView.protocolID,
                let webview = wv_webviewProtocol(L) {
-                _ = webview.navigate(webViewID: protocolID, action: .load(url: theNSURL.url?.absoluteString ?? ""))
+                guard webview.navigate(webViewID: protocolID, action: .loadRequest(theNSURL)) else {
+                    throw LuaCallError("unable to load URL request")
+                }
             } else {
                 wv_delayUntilViewStopsLoading(theView) {
                     let navID = theView.load(theNSURL)
@@ -379,13 +381,13 @@ func webview_stopLoading(_ L: LuaState) throws -> CInt {
     let theView = theWindow.contentView as! HSWebViewView
     if let protocolID = theView.protocolID,
        let webview = wv_webviewProtocol(L) {
-        if !webview.isLoading(webViewID: protocolID) {
+        if webview.isLoading(webViewID: protocolID) {
             _ = webview.navigate(webViewID: protocolID, action: .stop)
         }
         lua_settop(L, 1)
         return 1
     }
-    if !theView.isLoading { theView.stopLoading() }
+    if theView.isLoading { theView.stopLoading() }
     lua_settop(L, 1)
     return 1
 }
@@ -459,7 +461,8 @@ func webview_reload(_ L: LuaState) throws -> CInt {
 
     if let protocolID = theView.protocolID,
        let webview = wv_webviewProtocol(L) {
-        _ = webview.navigate(webViewID: protocolID, action: .reload)
+        let action: WebViewNavigationAction = validate ? .reloadFromOrigin : .reload
+        _ = webview.navigate(webViewID: protocolID, action: action)
         lua_pushvalue(L, 1)
         return 1
     }
@@ -690,8 +693,8 @@ func webview_evaluateJavaScript(_ L: LuaState) throws -> CInt {
 
     if let protocolID = theView.protocolID,
        let webview = wv_webviewProtocol(L) {
-        let result = webview.evaluateJavaScript(webViewID: protocolID, script: javascript)
-        if let cb = callbackValue {
+        let started = webview.evaluateJavaScript(webViewID: protocolID, script: javascript) { obj, error in
+            guard let cb = callbackValue else { return }
             DispatchQueue.main.async {
                 let blockL = lua_getCurrentState()
                 defer {
@@ -701,21 +704,24 @@ func webview_evaluateJavaScript(_ L: LuaState) throws -> CInt {
                 }
                 guard lua_isStateGenerationValid(lsCanary), let blockL = blockL else { return }
                 cb.push(onto: blockL)
-                wv_pushAny(blockL, result as? NSObject)
-                wv_NSError_toLua(blockL, nil)
+                wv_pushAny(blockL, obj as? NSObject)
+                wv_NSError_toLua(blockL, error as NSError?)
                 if luaTelemetryPCall(
                     blockL,
                     nargs: 2,
                     nresults: 0,
                     callbackName: "hs.webview.evaluateJavaScript",
                     attributes: [
-                        "webview.javascript.success": true,
-                        "webview.javascript.has_result": result != nil,
+                        "webview.javascript.success": error == nil,
+                        "webview.javascript.has_result": obj != nil,
                     ]
                 ) != LUA_OK { lua_pop(blockL, 1) }
             }
-        } else {
+        }
+        if !started || callbackValue == nil {
+            callbackValue = nil
             callbackGaugeToken?.finish(L: L)
+            callbackGaugeToken = nil
         }
 
         lua_settop(L, 1)
@@ -887,9 +893,10 @@ func webview_show(_ L: LuaState) throws -> CInt {
     let theWindow = wv_getWindowFromUD(L, 1)
     let fadeTime: TimeInterval = (lua_gettop(L) == 2) ? lua_tonumber(L, 2) : 0.0
 
-    if let protocolID = (theWindow.contentView as? HSWebViewView)?.protocolID,
+    if fadeTime == 0,
+       let protocolID = (theWindow.contentView as? HSWebViewView)?.protocolID,
        let webview = wv_webviewProtocol(L) {
-        _ = webview.show(webViewID: protocolID)
+        precondition(webview.show(webViewID: protocolID), "registered webview must have a window")
         lua_pushvalue(L, 1)
         return 1
     }
@@ -907,9 +914,10 @@ func webview_hide(_ L: LuaState) throws -> CInt {
     let theWindow = wv_getWindowFromUD(L, 1)
     let fadeTime: TimeInterval = (lua_gettop(L) == 2) ? lua_tonumber(L, 2) : 0.0
 
-    if let protocolID = (theWindow.contentView as? HSWebViewView)?.protocolID,
+    if fadeTime == 0,
+       let protocolID = (theWindow.contentView as? HSWebViewView)?.protocolID,
        let webview = wv_webviewProtocol(L) {
-        _ = webview.hide(webViewID: protocolID)
+        precondition(webview.hide(webViewID: protocolID), "registered webview must have a window")
         lua_pushvalue(L, 1)
         return 1
     }
@@ -1005,7 +1013,13 @@ func webview_hswindow(_ L: LuaState) throws -> CInt {
 func webview_isVisible(_ L: LuaState) throws -> CInt {
     luaL_checkudata(L, 1, wv_USERDATA_TAG)
     let theWindow = wv_getWindowFromUD(L, 1)
-    L.push(theWindow.isVisible)
+    if let protocolID = (theWindow.contentView as? HSWebViewView)?.protocolID,
+       let webview = wv_webviewProtocol(L),
+       let visible = webview.isVisible(webViewID: protocolID) {
+        L.push(visible)
+    } else {
+        L.push(theWindow.isVisible)
+    }
     return 1
 }
 
@@ -1132,9 +1146,10 @@ func webview_alpha(_ L: LuaState) throws -> CInt {
     if let protocolID = (theWindow.contentView as? HSWebViewView)?.protocolID,
        let webview = wv_webviewProtocol(L) {
         if lua_gettop(L) == 1 {
-            // The protocol exposes alpha through setAlpha only; the getter stays
-            // on the window (the Lua model owns the window's alphaValue).
-            L.push(lua_Number(theWindow.alphaValue))
+            guard let alpha = webview.getAlpha(webViewID: protocolID) else {
+                preconditionFailure("registered webview must have a window")
+            }
+            L.push(lua_Number(alpha))
             return 1
         }
         let newLevel = luaL_checknumber(L, 2)
@@ -1967,6 +1982,12 @@ func wv_userdata_gc(_ L: LuaState) throws -> CInt {
         theView.navigationCallback = nil
         theView.policyCallback = nil
         theView.sslCallback = nil
+        if let protocolID = theView.protocolID,
+           let webview = wv_webviewProtocol(L) {
+            let destroyed = webview.destroyWebView(id: protocolID)
+            assert(destroyed, "webview protocol state must exist until userdata teardown")
+            theView.protocolID = nil
+        }
     }
 
     if theWindow.toolbar != nil {

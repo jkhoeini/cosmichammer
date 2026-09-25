@@ -295,6 +295,8 @@ private func _import_luaopen_hs_libwindow(_ L: UnsafeMutablePointer<lua_State>!)
 /// Call after lua_State creation and before setup.lua runs.
 @_cdecl("HSExtensionsRegisterAll")
 func hsExtensionsRegisterAll(_ L: UnsafeMutablePointer<lua_State>!) {
+    precondition(L != nil, "extension registration requires a Lua state")
+    let stackTop = lua_gettop(L)
     let preload: [(String, @convention(c) (UnsafeMutablePointer<lua_State>?) -> Int32)] = [
         ("hs.libapplication", _import_luaopen_hs_libapplication),
         ("hs.libapplicationwatcher", _import_luaopen_hs_libapplicationwatcher),
@@ -391,10 +393,13 @@ func hsExtensionsRegisterAll(_ L: UnsafeMutablePointer<lua_State>!) {
         ("hs.libwindow", _import_luaopen_hs_libwindow),
     ]
 
+    let names = preload.map(\.0)
+    precondition(Set(names).count == names.count, "duplicate package.preload key")
     luaL_getsubtable(L, LUA_REGISTRYINDEX_VALUE, "_PRELOAD")
     for (name, fn) in preload {
         lua_pushcclosure(L, fn, 0)
         lua_setfield(L, -2, name)
     }
     lua_pop(L, 1)
+    assert(lua_gettop(L) == stackTop, "extension registration must balance the Lua stack")
 }

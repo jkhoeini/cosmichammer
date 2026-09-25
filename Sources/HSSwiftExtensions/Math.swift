@@ -11,7 +11,7 @@ import Lua
 ///
 /// Returns:
 ///  * A random number between 0 and 1
-private let math_randomFloat: () throws -> Double = {
+private func math_randomFloat() throws -> Double {
     Double(arc4random()) / Double(UInt32.max)
 }
 
@@ -27,7 +27,7 @@ private let math_randomFloat: () throws -> Double = {
 ///  * A randomly chosen integer between `start` and `end`
 /// Returns a random integer in [start, end], or nil for invalid ranges
 /// (start < 0, end <= 0, end <= start).
-private let math_randomFromRange: (Int, Int) throws -> Int? = { start, end in
+private func math_randomFromRange(_ start: Int, _ end: Int) throws -> Int? {
     let s = Int32(start)
     let e = Int32(end)
 

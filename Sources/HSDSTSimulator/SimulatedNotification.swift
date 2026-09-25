@@ -1,10 +1,6 @@
 import Foundation
 import HSDSTCore
 
-// Tracking keys shared with the hs.notify module layer (KEY_ALWAYSPRESENT is
-// defined in HSSwiftExtensions/Notify.swift; redefine locally since
-// HSDSTSimulator cannot import the app extension target).
-private let KEY_ALWAYSPRESENT = "alwaysPresent"
 
 public final class SimulatedNotification: NotificationProtocol {
     private var rng: RPRNG
@@ -85,7 +81,7 @@ public final class SimulatedNotification: NotificationProtocol {
     /// UN willPresent equivalent: honor KEY_ALWAYSPRESENT from the userInfo
     /// (defaults to true like the production delegate).
     public func presentNotification(_ notification: UserNotification) -> Bool {
-        (notification.userInfo[KEY_ALWAYSPRESENT] as? NSNumber)?.boolValue ?? true
+        (notification.userInfo[UserNotificationSemantics.alwaysPresentKey] as? NSNumber)?.boolValue ?? true
     }
 
     /// Test hook: fire a didReceive-like activation for a delivered
@@ -102,25 +98,17 @@ public final class SimulatedNotification: NotificationProtocol {
         // No registered callback: mark the activation on the stored note so
         // callers reading the simulator state see the response.
         if let idx = deliveredNotifs.firstIndex(where: { $0.identifier == identifier }) {
-            deliveredNotifs[idx].activationType = activationType(forAction: actionIdentifier)
+            let categoryIdentifier = actionIdentifier?.hasPrefix(UserNotificationSemantics.actionPrefix) == true
+                ? UserNotificationSemantics.categoryPrefix
+                : nil
+            deliveredNotifs[idx].activationType = UserNotificationSemantics.activationType(
+                actionIdentifier: actionIdentifier,
+                categoryIdentifier: categoryIdentifier
+            )
             deliveredNotifs[idx].response = userText
         }
     }
 
-    private func activationType(forAction actionIdentifier: String?) -> Int {
-        switch actionIdentifier {
-        case nil, UserNotificationActionIdentifier.defaultAction:
-            return 1 // contentsClicked
-        case UserNotificationActionIdentifier.dismissAction:
-            return 0 // none
-        case UserNotificationActionIdentifier.actionButton:
-            return 2 // actionButtonClicked
-        case UserNotificationActionIdentifier.reply:
-            return 3 // replied
-        default:
-            return 4 // additionalActionClicked
-        }
-    }
 
     public func scheduleUserNotification(_ notification: UserNotification) {
         scheduledNotifs.append(notification)

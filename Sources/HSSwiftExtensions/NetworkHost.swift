@@ -8,7 +8,7 @@ private let USERDATA_TAG = "hs.network.host"
 
 // MARK: - Support Functions and Classes
 
-private class HSHost: NSObject {
+private final class HSHost: NSObject {
     var theHostObj: CFHost?
     var callback: LuaValue?
     var resolveType: CFHostInfoType

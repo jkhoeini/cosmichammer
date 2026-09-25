@@ -19,7 +19,7 @@ public final class SimulatedInput: InputProtocol {
 
     public func createEventSource() -> Any? { nil }
 
-    public struct SystemHotkeyCombo: Hashable {
+    public struct SystemHotkeyCombo: Hashable, Sendable {
         public let keyCode: UInt32
         public let mods: UInt32
 

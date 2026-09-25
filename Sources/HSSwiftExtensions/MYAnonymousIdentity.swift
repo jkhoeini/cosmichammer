@@ -125,20 +125,19 @@ func MYGetCertificateDigest(_ cert: SecCertificate) -> Data {
 // MARK: - Key Generation
 
 private func generateRSAKeyPair(sizeInBits: Int, permanent: Bool, label: String) -> (SecKey, SecKey)? {
-    let pairAttrs: [CFString: Any] = [
+    let attributes: [CFString: Any] = [
         kSecAttrKeyType: kSecAttrKeyTypeRSA,
         kSecAttrKeySizeInBits: sizeInBits,
         kSecAttrLabel: label,
         kSecAttrIsPermanent: permanent,
     ]
-
-    var publicKey: SecKey?
-    var privateKey: SecKey?
-    let err = SecKeyGeneratePair(pairAttrs as CFDictionary, &publicKey, &privateKey)
-    guard err == noErr, let pub = publicKey, let priv = privateKey else {
+    var error: Unmanaged<CFError>?
+    guard let privateKey = SecKeyCreateRandomKey(attributes as CFDictionary, &error),
+          let publicKey = SecKeyCopyPublicKey(privateKey) else {
+        if let error { os_log(.error, "RSA key generation failed: %{public}s", error.takeRetainedValue().localizedDescription) }
         return nil
     }
-    return (pub, priv)
+    return (publicKey, privateKey)
 }
 
 // MARK: - Certificate Generation
@@ -200,17 +199,17 @@ private func getPublicKeyData(_ publicKey: SecKey) -> Data? {
 }
 
 private func signData(privateKey: SecKey, inputData: Data) -> Data? {
-    guard let transform = SecSignTransformCreate(privateKey, nil) else { return nil }
-
-    guard SecTransformSetAttribute(transform, kSecDigestTypeAttribute, kSecDigestSHA1, nil) != false,
-          SecTransformSetAttribute(transform, kSecTransformInputAttributeName, inputData as CFData, nil) != false else {
+    var error: Unmanaged<CFError>?
+    guard let signature = SecKeyCreateSignature(
+        privateKey,
+        .rsaSignatureMessagePKCS1v15SHA256,
+        inputData as CFData,
+        &error
+    ) else {
+        if let error { os_log(.error, "Certificate signing failed: %{public}s", error.takeRetainedValue().localizedDescription) }
         return nil
     }
-
-    var error: Unmanaged<CFError>?
-    let resultData = SecTransformExecute(transform, &error)
-    guard error == nil else { return nil }
-    return resultData as? Data
+    return signature as Data
 }
 
 // MARK: - Keychain Operations

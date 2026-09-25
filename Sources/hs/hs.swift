@@ -1,11 +1,11 @@
 import AppKit
 import Foundation
 import Darwin.sysexits
-import CEditline
+@preconcurrency import CEditline
 
 private let defaultPortName = "Cosmic Hammer"
 private let defaultTimeout: CFTimeInterval = 4.0
-private let bundleID = "org.cosmic-hammer.CosmicHammer" as CFString
+private let bundleID = "org.cosmic-hammer.CosmicHammer"
 
 /// XDG state dir for Cosmic Hammer: `${XDG_STATE_HOME:-~/.local/state}/cosmichammer`.
 /// Duplicated (not shared) from the app's `XDGPaths` because the `hs` CLI is a
@@ -46,7 +46,7 @@ private struct Colors {
 
     static func ansi() -> Colors {
         func pref(_ key: String, fallback: String) -> String {
-            if let v = CFPreferencesCopyAppValue(key as CFString, bundleID) as? String { return v }
+            if let v = CFPreferencesCopyAppValue(key as CFString, bundleID as CFString) as? String { return v }
             return fallback
         }
         return Colors(
@@ -246,26 +246,30 @@ private func localCallback(_: CFMessagePort?, msgid: Int32, data: CFData?, info:
 
 // MARK: - Tab completion
 
-private var completionClient: HSClient?
+private final class CompletionContext: @unchecked Sendable {
+    var client: HSClient?
+    var items: [String] = []
+    var index = 0
+}
+
+private let completionContext = CompletionContext()
 
 private func completionGenerator(_ text: UnsafePointer<CChar>?, _ state: Int32) -> UnsafeMutablePointer<CChar>? {
-    struct State { static var items: [String] = []; static var idx = 0 }
-    guard let text, let client = completionClient else { return nil }
+    guard let text, let client = completionContext.client else { return nil }
 
     if state == 0 {
-        State.items = []
-        State.idx = 0
+        completionContext.items.removeAll(keepingCapacity: true)
+        completionContext.index = 0
         let query = "require(\"hs.json\").encode(hs.completionsForInputString(\"\(String(cString: text))\"))"
         if let data = client.sendToRemote(query, msgID: .query, wantResponse: true),
-           let arr = try? JSONSerialization.jsonObject(with: data) as? [String] {
-            State.items = arr
+           let completions = try? JSONSerialization.jsonObject(with: data) as? [String] {
+            completionContext.items = completions
         }
     }
 
-    guard State.idx < State.items.count else { return nil }
-    let s = State.items[State.idx]
-    State.idx += 1
-    return strdup(s)
+    guard completionContext.index < completionContext.items.count else { return nil }
+    defer { completionContext.index += 1 }
+    return strdup(completionContext.items[completionContext.index])
 }
 
 private func completionHandler(_ text: UnsafePointer<CChar>?, _: Int32, _: Int32) -> UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>? {
@@ -286,6 +290,7 @@ private func portError(_ code: Int32) -> String {
     }
 }
 
+@MainActor
 private func launchCosmicHammer(auto: Bool) -> Bool {
     if !auto {
         let alert = NSAlert()
@@ -472,10 +477,10 @@ struct HSCli {
 
         if client.exitCode == EX_OK && interactive {
             client.autoReconnect = true
-            completionClient = client
+            completionContext.client = client
 
-            let saveHistory = (CFPreferencesCopyAppValue("ipc.cli.saveHistory" as CFString, bundleID) as? Bool) ?? false
-            let historyLimit: Int32 = (CFPreferencesCopyAppValue("ipc.cli.historyLimit" as CFString, bundleID) as? NSNumber)?.int32Value ?? 1000
+            let saveHistory = (CFPreferencesCopyAppValue("ipc.cli.saveHistory" as CFString, bundleID as CFString) as? Bool) ?? false
+            let historyLimit: Int32 = (CFPreferencesCopyAppValue("ipc.cli.historyLimit" as CFString, bundleID as CFString) as? NSNumber)?.int32Value ?? 1000
             // History lives under the XDG state dir, independent of the config location.
             let stateHome = xdgStateHome()
             let historyPath = (stateHome as NSString).appendingPathComponent(".cli.history")
@@ -502,7 +507,7 @@ struct HSCli {
             }
 
             if saveHistory { write_history(historyPath); history_truncate_file(historyPath, historyLimit) }
-            completionClient = nil
+            completionContext.client = nil
         }
 
         client.unregisterWithRemote()

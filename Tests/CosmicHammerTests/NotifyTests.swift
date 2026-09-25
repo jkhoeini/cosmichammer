@@ -279,29 +279,37 @@ extension CosmicHammerTests {
 
         // MARK: - withdrawAfter behavior
 
-        @Test func testWithdrawAfterSchedulesDispatchWorkItemAndActivationCancels() throws {
+        @Test func testWithdrawAfterSchedulesOnSendAndRemovesDeliveredNotification() async throws {
             let saved = lua_getCurrentState()
+            var notificationBackend: SimulatedNotification!
             try withModuleLoaded(luaopen_hs_libnotify) { L in
                 lua_setCurrentState(L)
                 defer { lua_setCurrentState(saved) }
 
-                let env = environmentGet(L)
-                let sim = env.notification as! SimulatedNotification
-
+                let sim = environmentGet(L).notification as! SimulatedNotification
+                notificationBackend = sim
                 #expect(luaEval(L, """
                     n = mod._new('withdraw-after-test')
-                    n:withdrawAfter(0.2)
+                    n:withdrawAfter(0.05)
                     n:send()
                     """))
                 #expect(sim.deliveredNotifs.count == 1)
-                // Simulate the delegate's auto-withdraw scheduling path.
-                let gus = sim.deliveredNotifs[0].identifier
-                nt_scheduleWithdrawTimer(gus: gus, after: 0.2)
             }
-            // Pump the main run loop until the timer fires (2s budget).
-            let deadline = Date().addingTimeInterval(2.0)
-            while Date() < deadline {
-                RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+
+            try await _Concurrency.Task.sleep(for: .milliseconds(250))
+            #expect(notificationBackend.deliveredNotifs.isEmpty)
+        }
+
+        @Test func testWithdrawAfterRejectsInvalidDurations() throws {
+            try withModuleLoaded(luaopen_hs_libnotify) { L in
+                let saved = lua_getCurrentState()
+                lua_setCurrentState(L)
+                defer { lua_setCurrentState(saved) }
+
+                #expect(luaEval(L, "n = mod._new('withdraw-after-validation')"))
+                #expect(luaErrorMsg(L, "n:withdrawAfter(-1)")?.contains("non-negative") == true)
+                #expect(luaErrorMsg(L, "n:withdrawAfter(0/0)")?.contains("finite") == true)
+                #expect(luaErrorMsg(L, "n:withdrawAfter('soon')")?.contains("number") == true)
             }
         }
 

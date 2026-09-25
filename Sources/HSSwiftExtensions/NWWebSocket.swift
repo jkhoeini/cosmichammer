@@ -31,7 +31,7 @@ private let kMaxWebSocketFramesPerCall = 10_000
 /// is torn down immediately.
 private let kMaxWebSocketPayloadSize: UInt64 = 16_777_216
 
-class NWWebSocketServer {
+final class NWWebSocketServer {
 
     // MARK: Public properties
 
@@ -52,7 +52,6 @@ class NWWebSocketServer {
 
     // MARK: Private state
 
-    private let queue = DispatchQueue(label: "NWWebSocketServer")
 
     /// Partial frame data accumulated while reading.
     private var readBuffer = Data()
@@ -162,7 +161,7 @@ class NWWebSocketServer {
         guard let connection = clientConnection else { return }
         sendCloseFrame(on: connection)
         // Give the close frame a moment to flush before tearing down.
-        queue.asyncAfter(deadline: .now() + .milliseconds(100)) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(100)) { [weak self] in
             connection.cancel()
             self?.clientConnection = nil
             self?.clientHeaders = [:]

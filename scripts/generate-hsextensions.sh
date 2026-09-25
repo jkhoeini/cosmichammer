@@ -316,6 +316,8 @@ HDR
 /// Call after lua_State creation and before setup.lua runs.
 @_cdecl("HSExtensionsRegisterAll")
 func hsExtensionsRegisterAll(_ L: UnsafeMutablePointer<lua_State>!) {
+    precondition(L != nil, "extension registration requires a Lua state")
+    let stackTop = lua_gettop(L)
     let preload: [(String, @convention(c) (UnsafeMutablePointer<lua_State>?) -> Int32)] = [
 HDR
     while IFS=$'\t' read -r symbol key; do
@@ -324,12 +326,15 @@ HDR
     cat <<'HDR'
     ]
 
+    let names = preload.map(\.0)
+    precondition(Set(names).count == names.count, "duplicate package.preload key")
     luaL_getsubtable(L, LUA_REGISTRYINDEX_VALUE, "_PRELOAD")
     for (name, fn) in preload {
         lua_pushcclosure(L, fn, 0)
         lua_setfield(L, -2, name)
     }
     lua_pop(L, 1)
+    assert(lua_gettop(L) == stackTop, "extension registration must balance the Lua stack")
 }
 HDR
 } > "$OUT_SWIFT"

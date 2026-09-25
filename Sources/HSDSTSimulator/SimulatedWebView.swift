@@ -13,7 +13,7 @@ public final class SimulatedWebView: WebViewProtocol {
     public var navigationCallbacks: [UInt64: (String, String) -> Void] = [:]
     /// NSViews registered via registerWebView, keyed by protocol ID. Opaque tokens only —
     /// the simulator never touches the real WebKit.
-    public var registeredViews: [UInt64: NSView] = [:]
+    public var registeredViews: [UInt64: AnyObject] = [:]
 
     private var nextID: UInt64 = 1
 
@@ -30,8 +30,8 @@ public final class SimulatedWebView: WebViewProtocol {
         return id
     }
 
-    public func registerWebView(_ view: NSView) -> UInt64 {
-        // Store the NSView as an opaque token; the simulator never touches WebKit.
+    public func registerWebView(_ view: AnyObject) -> UInt64 {
+        // Store the object as an opaque token; the simulator never touches WebKit.
         let id = nextID
         nextID += 1
         registeredViews[id] = view
@@ -59,9 +59,14 @@ public final class SimulatedWebView: WebViewProtocol {
             handle.isLoading = false
             handle.title = "Page at \(url)"
             handle.canGoBack = true
-            if let cb = navigationCallbacks[webViewID] {
-                cb("didFinishNavigation", url)
-            }
+            navigationCallbacks[webViewID]?("didFinishNavigation", url)
+        case .loadRequest(let request):
+            guard let url = request.url?.absoluteString else { return false }
+            handle.url = url
+            handle.isLoading = false
+            handle.title = "Page at \(url)"
+            handle.canGoBack = true
+            navigationCallbacks[webViewID]?("didFinishNavigation", url)
         case .loadHTML(let html, _):
             handle.url = nil
             handle.isLoading = false
@@ -72,7 +77,7 @@ public final class SimulatedWebView: WebViewProtocol {
             handle.canGoForward = true
         case .goForward:
             guard handle.canGoForward else { return false }
-        case .reload:
+        case .reload, .reloadFromOrigin:
             handle.isLoading = false
             if let url = handle.url, let cb = navigationCallbacks[webViewID] {
                 cb("didFinishNavigation", url)
@@ -85,10 +90,13 @@ public final class SimulatedWebView: WebViewProtocol {
         return true
     }
 
-    public func evaluateJavaScript(webViewID: UInt64, script: String) -> String? {
-        guard webViews[webViewID] != nil else { return nil }
+    @discardableResult
+    public func evaluateJavaScript(webViewID: UInt64, script: String,
+                                   completion: @escaping (Any?, Error?) -> Void) -> Bool {
+        guard webViews[webViewID] != nil else { return false }
         executedScripts.append((webViewID: webViewID, script: script))
-        return ""
+        completion("", nil)
+        return true
     }
 
     public func getTitle(webViewID: UInt64) -> String? {
@@ -129,6 +137,14 @@ public final class SimulatedWebView: WebViewProtocol {
         handle.alpha = alpha
         webViews[webViewID] = handle
         return true
+    }
+
+    public func getAlpha(webViewID: UInt64) -> Double? {
+        webViews[webViewID]?.alpha
+    }
+
+    public func isVisible(webViewID: UInt64) -> Bool? {
+        webViews[webViewID]?.isVisible
     }
 
     public func setNavigationCallback(webViewID: UInt64, callback: @escaping (String, String) -> Void) -> Bool {

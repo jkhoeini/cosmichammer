@@ -33,7 +33,7 @@ frameworks="${contents}/Frameworks"
 [[ -f "$version_env" ]] || fail "missing ${version_env}; run 'just build-version' first"
 [[ -f "$docs_json" ]] || fail "missing ${docs_json}; run 'just docs-json' first"
 [[ -x "${repo_root}/.build/${spm_config}/CosmicHammer" ]] \
-    || fail "missing .build/${spm_config}/CosmicHammer; run 'just spm-binary ${config_name}' first"
+    || fail "missing .build/${spm_config}/CosmicHammer; run 'just build ${config_name}' first"
 [[ -x "${repo_root}/.build/release/hs" ]] \
     || fail "missing .build/release/hs; run 'just hs-cli' first"
 

@@ -124,33 +124,35 @@ final class HSModuleNotificationManager: NSObject {
         let content = response.notification.request.content
         guard let gus = content.userInfo[KEY_ID] as? String else { return }
 
-        // however we *might* need to recreate the local record so we can update KEY_DELIVERED
-        if nt_specifics == nil { nt_specifics = NSMutableDictionary() }
-        if nt_specifics[gus] == nil {
-            nt_specifics[gus] = (content.userInfo as NSDictionary).mutableCopy()
-        }
-        guard let userInfo = nt_specifics[gus] as? NSMutableDictionary else { return }
-        userInfo[KEY_DELIVERED] = true // just in case its a holdover from before a reload/relaunch
-
-        // Compute the hs.notify activation type from the UN action identifier.
-        let activationType = nt_activationType(for: response.actionIdentifier, category: content.categoryIdentifier)
-        userInfo[KEY_ACTIVATIONTYPE] = NSNumber(value: activationType)
+        // UN invokes its delegate off-main. All module state and Lua work stays
+        // serialized on the main run loop.
+        let activationType = nt_activationType(
+            for: response.actionIdentifier,
+            category: content.categoryIdentifier
+        )
         let userText = (response as? UNTextInputNotificationResponse)?.userText
-        if response.actionIdentifier == UserNotificationActionIdentifier.reply, let userText {
-            userInfo[KEY_RESPONSE] = userText
-        }
-        if let additional = nt_additionalActivationAction(
-            for: response.actionIdentifier, category: content.categoryIdentifier
-        ) {
-            userInfo[KEY_ADDITIONALACTIVATION] = additional
-        }
-
         performOnMainRunLoop {
+            if nt_specifics == nil { nt_specifics = NSMutableDictionary() }
+            if nt_specifics[gus] == nil {
+                nt_specifics[gus] = (content.userInfo as NSDictionary).mutableCopy()
+            }
+            guard let record = nt_specifics[gus] as? NSMutableDictionary else { return }
+            record[KEY_DELIVERED] = true
+            record[KEY_ACTIVATIONTYPE] = NSNumber(value: activationType)
+            if response.actionIdentifier == UserNotificationActionIdentifier.reply, let userText {
+                record[KEY_RESPONSE] = userText
+            }
+            if let additional = nt_additionalActivationAction(
+                for: response.actionIdentifier,
+                category: content.categoryIdentifier
+            ) {
+                record[KEY_ADDITIONALACTIVATION] = additional
+            }
             nt_handleActivation(
                 gus: gus,
                 activationType: activationType,
                 delivered: true,
-                record: userInfo,
+                record: record,
                 actionIdentifier: response.actionIdentifier,
                 userText: userText
             )
@@ -165,15 +167,13 @@ final class HSModuleNotificationManager: NSObject {
         }
         guard let gus = userInfo[KEY_ID] as? String else { return false }
 
-        // if it's ours, we've copied the necessary info into the userInfo dictionary...
-        if nt_specifics == nil { nt_specifics = NSMutableDictionary() }
-        if nt_specifics[gus] == nil {
-            nt_specifics[gus] = (userInfo as NSDictionary).mutableCopy()
-        }
-        guard let userInfo = nt_specifics[gus] as? NSMutableDictionary else { return false }
-        userInfo[KEY_DELIVERED] = true
         let alwaysPresent = (userInfo[KEY_ALWAYSPRESENT] as? NSNumber)?.boolValue ?? true
         performOnMainRunLoop {
+            if nt_specifics == nil { nt_specifics = NSMutableDictionary() }
+            if nt_specifics[gus] == nil {
+                nt_specifics[gus] = (userInfo as NSDictionary).mutableCopy()
+            }
+            (nt_specifics[gus] as? NSMutableDictionary)?[KEY_DELIVERED] = true
             nt_recordPresentation(gus: gus, presented: alwaysPresent, deliveryDate: deliveryDate)
         }
         return alwaysPresent
@@ -223,24 +223,10 @@ private func nt_recordPresentation(gus: String, presented: Bool, deliveryDate: D
 
 /// Map a UN action identifier + category to the hs.notify numeric activation type.
 func nt_activationType(for actionIdentifier: String?, category: String?) -> Int {
-    switch actionIdentifier {
-    case nil, "", UserNotificationActionIdentifier.defaultAction:
-        return 1 // contentsClicked
-    case UserNotificationActionIdentifier.dismissAction:
-        return 0 // none
-    case UserNotificationActionIdentifier.actionButton:
-        return 2 // actionButtonClicked
-    case UserNotificationActionIdentifier.reply:
-        return 3 // replied
-    default:
-        // Additional actions are registered as "hs.notify.<identifier>" within
-        // the notification's "hs.notify.category.*" category.
-        if let actionIdentifier, actionIdentifier.hasPrefix("hs.notify."),
-           let category, category.hasPrefix("hs.notify.category.") {
-            return 4 // additionalActionClicked
-        }
-        return 1 // unknown action: treat as a body activation
-    }
+    UserNotificationSemantics.activationType(
+        actionIdentifier: actionIdentifier,
+        categoryIdentifier: category
+    )
 }
 
 /// Extract the selected additional action title from an
@@ -328,12 +314,17 @@ func nt_handleActivation(
 
 // MARK: - withdrawAfter timers
 
-func nt_scheduleWithdrawTimer(gus: String, after seconds: Double, from deliveryTime: Date? = nil) {
+func nt_scheduleWithdrawTimer(
+    gus: String,
+    after seconds: Double,
+    from deliveryTime: Date? = nil,
+    notification: any NotificationProtocol
+) {
     nt_cancelWithdrawTimer(gus: gus)
     let item = DispatchWorkItem {
-        guard let env = environmentGetGlobalOrNil() else { return }
-        env.notification.removeDeliveredUserNotification(identifier: gus)
-        if let userInfo = nt_specifics[gus] as? NSMutableDictionary {
+        notification.removeDeliveredUserNotification(identifier: gus)
+        if let specifics = nt_specifics,
+           let userInfo = specifics[gus] as? NSMutableDictionary {
             userInfo[KEY_DELIVERED] = false
         }
         if let wrapper = nt_wrapperRegistry?[gus] as? HSNotifyObject {
@@ -353,11 +344,6 @@ func nt_cancelWithdrawTimer(gus: String) {
     }
 }
 
-func nt_cancelAllWithdrawTimers() {
-    for gus in Array(nt_withdrawTimers.keys) {
-        nt_cancelWithdrawTimer(gus: gus)
-    }
-}
 
 /// Copy the wrapper's content configuration into the record so the userInfo
 /// copied into the UN content restores it when the record is recreated after a
@@ -366,7 +352,11 @@ func nt_recordContentConfig(_ userInfo: NSMutableDictionary, _ note: UserNotific
     userInfo[KEY_TITLE] = note.title
     userInfo[KEY_SUBTITLE] = note.subtitle
     userInfo[KEY_INFORMATIVETEXT] = note.informativeText
-    userInfo[KEY_SOUNDNAME] = note.soundName ?? NSNull()
+    if let soundName = note.soundName {
+        userInfo[KEY_SOUNDNAME] = soundName
+    } else {
+        userInfo.removeObject(forKey: KEY_SOUNDNAME)
+    }
     userInfo[KEY_HASACTIONBUTTON] = NSNumber(value: note.hasActionButton)
     userInfo[KEY_ACTIONBUTTON_TITLE] = note.actionButtonTitle
     userInfo[KEY_HASREPLYBUTTON] = NSNumber(value: note.hasReplyButton)
@@ -591,7 +581,8 @@ func nt_pushNotification(
     // or a fresh one from the given note.
     if nt_specifics == nil { nt_specifics = NSMutableDictionary() }
     let wrapper: HSNotifyObject
-    if let gus, let existing = nt_wrapperRegistry?[gus] as? HSNotifyObject {
+    let candidateGus = gus ?? note?.userInfo[KEY_ID] as? String
+    if let candidateGus, let existing = nt_wrapperRegistry?[candidateGus] as? HSNotifyObject {
         wrapper = existing
     } else if let gus, let userInfo = nt_specifics[gus] as? NSMutableDictionary {
         var rebuilt = UserNotification(
@@ -676,7 +667,7 @@ private func nt_userdata_eq(_ L: LuaState) throws -> CInt {
     if luaL_testudata(L, 1, nt_USERDATA_TAG) != nil && luaL_testudata(L, 2, nt_USERDATA_TAG) != nil {
         let obj1 = nt_getNotification(L, 1)
         let obj2 = nt_getNotification(L, 2)
-        L.push(obj1 === obj2)
+        L.push(obj1.note.identifier == obj2.note.identifier)
     } else {
         L.push(false)
     }
@@ -690,7 +681,6 @@ func nt_userdata_gc(_ L: LuaState) throws -> CInt {
         let wrapper = Unmanaged<HSNotifyObject>.fromOpaque(rawPtr).takeRetainedValue()
 
         if let gus = wrapper.note.userInfo[KEY_ID] as? String, nt_specifics != nil { // it's ours
-            nt_cancelWithdrawTimer(gus: gus)
             if let userInfo = wrapper.record ?? (nt_specifics[gus] as? NSMutableDictionary) { // and we have a record for it
                 let selfRefCount = (userInfo[KEY_SELFREFCOUNT] as? NSNumber)?.intValue ?? 0
                 let newSelfRefCount = selfRefCount - 1
@@ -724,7 +714,6 @@ private func nt_meta_gc(_ L: LuaState) throws -> CInt {
     }
     nt_wrapperRegistry?.removeAllObjects()
     nt_wrapperRegistry = nil
-    nt_cancelAllWithdrawTimers()
     return 0
 }
 

@@ -12,11 +12,11 @@ final class ProductionWebView: WebViewProtocol {
         var navigationCallback: ((String, String) -> Void)?
 
         init(webView: WKWebView) {
-            // Externally registered view (registerWebView) — the Lua model owns its window.
+            // Externally registered views keep their existing delegates; the Lua-owned
+            // HSWebViewView implements navigation, policy, authentication, and UI callbacks.
             self.window = nil
             self.webView = webView
             super.init()
-            webView.navigationDelegate = self
         }
 
         init(frame: NSRect) {
@@ -62,14 +62,9 @@ final class ProductionWebView: WebViewProtocol {
         return id
     }
 
-    func registerWebView(_ view: NSView) -> UInt64 {
-        guard let webView = view as? WKWebView else {
-            // Unregistrable view type: allocate an ID with no backing state so
-            // core operations no-op through the standard missing-ID paths.
-            let id = nextID
-            nextID += 1
-            return id
-        }
+    func registerWebView(_ view: AnyObject) -> UInt64 {
+        precondition(view is WKWebView, "WebViewProtocol only accepts WKWebView instances")
+        let webView = view as! WKWebView
         let id = nextID
         nextID += 1
         webViews[id] = WebViewState(webView: webView)
@@ -89,6 +84,8 @@ final class ProductionWebView: WebViewProtocol {
         case .load(let url):
             guard let nsURL = URL(string: url) else { return false }
             state.webView.load(URLRequest(url: nsURL))
+        case .loadRequest(let request):
+            state.webView.load(request)
         case .loadHTML(let html, let baseURL):
             let base = baseURL.flatMap { URL(string: $0) }
             state.webView.loadHTMLString(html, baseURL: base)
@@ -98,27 +95,19 @@ final class ProductionWebView: WebViewProtocol {
             state.webView.goForward()
         case .reload:
             state.webView.reload()
+        case .reloadFromOrigin:
+            state.webView.reloadFromOrigin()
         case .stop:
             state.webView.stopLoading()
         }
         return true
     }
 
-    func evaluateJavaScript(webViewID: UInt64, script: String) -> String? {
-        guard let state = webViews[webViewID] else { return nil }
-        var result: String?
-        let semaphore = DispatchSemaphore(value: 0)
-
-        state.webView.evaluateJavaScript(script) { value, _ in
-            if let value = value {
-                result = "\(value)"
-            }
-            semaphore.signal()
-        }
-
-        // Wait briefly for result (non-blocking on main thread is complex)
-        _ = semaphore.wait(timeout: .now() + 5)
-        return result
+    func evaluateJavaScript(webViewID: UInt64, script: String,
+                            completion: @escaping (Any?, Error?) -> Void) -> Bool {
+        guard let state = webViews[webViewID] else { return false }
+        state.webView.evaluateJavaScript(script, completionHandler: completion)
+        return true
     }
 
     func getTitle(webViewID: UInt64) -> String? {
@@ -136,29 +125,45 @@ final class ProductionWebView: WebViewProtocol {
     func setFrame(webViewID: UInt64,
                   frame: (x: Double, y: Double, width: Double, height: Double)) -> Bool
     {
-        guard let state = webViews[webViewID] else { return false }
-        state.window?.setFrame(
+        guard let state = webViews[webViewID],
+              let window = state.window ?? state.webView.window else { return false }
+        window.setFrame(
             NSRect(x: frame.x, y: frame.y, width: frame.width, height: frame.height),
             display: true)
         return true
     }
 
     func show(webViewID: UInt64) -> Bool {
-        guard let state = webViews[webViewID] else { return false }
-        state.window?.orderFront(nil)
+        guard let state = webViews[webViewID],
+              let window = state.window ?? state.webView.window else { return false }
+        window.makeKeyAndOrderFront(nil)
         return true
     }
 
     func hide(webViewID: UInt64) -> Bool {
-        guard let state = webViews[webViewID] else { return false }
-        state.window?.orderOut(nil)
+        guard let state = webViews[webViewID],
+              let window = state.window ?? state.webView.window else { return false }
+        window.orderOut(nil)
         return true
     }
 
     func setAlpha(webViewID: UInt64, alpha: Double) -> Bool {
-        guard let state = webViews[webViewID] else { return false }
-        state.window?.alphaValue = CGFloat(alpha)
+        guard let state = webViews[webViewID],
+              let window = state.window ?? state.webView.window else { return false }
+        window.alphaValue = CGFloat(alpha)
         return true
+    }
+
+    func getAlpha(webViewID: UInt64) -> Double? {
+        guard let state = webViews[webViewID],
+              let window = state.window ?? state.webView.window else { return nil }
+        return Double(window.alphaValue)
+    }
+
+    func isVisible(webViewID: UInt64) -> Bool? {
+        guard let state = webViews[webViewID],
+              let window = state.window ?? state.webView.window else { return nil }
+        return window.isVisible
     }
 
     func setNavigationCallback(webViewID: UInt64,

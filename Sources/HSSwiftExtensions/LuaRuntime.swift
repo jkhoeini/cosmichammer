@@ -1294,12 +1294,8 @@ func MJLuaDealloc() {
         // NOW nil the state — lua_close is done, no more finalizers running.
         lua_setCurrentState(nil)
 
-        // Release the Environment from our saved pointer — NOT from the
-        // now-freed lua_State. This was the crash: environmentDetach(L)
-        // called lua_getextraspace on freed memory.
-        if let raw = envRaw {
-            Unmanaged<Environment>.fromOpaque(raw).release()
-        }
+        // Match environmentAttach's retained ownership after lua_close.
+        environmentRelease(envRaw)
     }
 }
 
