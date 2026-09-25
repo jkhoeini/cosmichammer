@@ -1,6 +1,4 @@
 import Foundation
-
-@_silgen_name("launchCosmicHammer")
-func launchCosmicHammer() -> Int32
+import HSSwiftExtensions
 
 exit(launchCosmicHammer())

@@ -546,7 +546,7 @@ private extension String {
 // MARK: - Entry point
 
 @_cdecl("launchCosmicHammer")
-func launchCosmicHammer() -> Int32 {
+public func launchCosmicHammer() -> Int32 {
     autoreleasepool {
         let app = NSApplication.shared
         let delegate = MJAppDelegate()

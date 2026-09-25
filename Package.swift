@@ -155,7 +155,7 @@ let package = Package(
         // ---------------------------------------------------------------
         .executableTarget(
             name: "HSApp",
-            dependencies: ["HSExtensions"],
+            dependencies: ["HSExtensions", "HSSwiftExtensions"],
             path: "Sources/HSApp"
         ),
         // ---------------------------------------------------------------
