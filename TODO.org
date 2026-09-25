@@ -43,12 +43,32 @@ LuaSkin → LuaSwift).
 *** TODO Generate a new app icon
 
 
-*** TODO Add direct Space lifecycle and granular display watcher events
+*** DONE Add direct Space lifecycle and granular display watcher events
     CosmicHammer currently exposes active-Space changes through
     ~hs.spaces.watcher~ and aggregate screen-layout changes through
     ~hs.screen.watcher~. Consumers must diff ~hs.spaces.allSpaces()~ snapshots
     to infer Space creation/destruction, and cannot identify which display was
     added, removed, moved, or resized from the watcher callback.
+
+    Completed 2026-09-25. Added ~hs.spaces.watcher.newWithLifecycle~ with
+    ~created~/~destroyed~ events and ~hs.screen.watcher.newWithDisplayEvents~
+    with ~added~/~removed~/~moved~/~resized~ events. Both callbacks carry the
+    ephemeral native ID and preserve all existing watcher constructors.
+
+    Native Space delivery registers SkyLight IDs 1327/1328 once per process,
+    rejects undersized payloads, dispatches to the main queue, filters created
+    IDs to user/fullscreen Spaces, rejects unknown destroyed IDs, deduplicates,
+    and retains active-Space topology diffing as a fail-closed fallback.
+    Display delivery centralizes one CoreGraphics registration in
+    ~ProductionScreen~, ignores before-change callbacks, applies deterministic
+    multi-flag precedence, and shares the source with gamma maintenance.
+
+    Simulator-backed tests cover every event kind, stable fan-out, removal,
+    invalid payloads, semantic guards, snapshot diffing, flag precedence,
+    Lua payloads, self-pinning, idempotent stop, and no callbacks after stop.
+    Focused Space/display protocol and watcher suites pass. Full verification
+    and an isolated production boot smoke are recorded with the final project
+    commit; physical Space/display lifecycle validation remains manual.
 
 **** Why yabai can emit these signals directly
      Source-verified against upstream yabai master at commit
