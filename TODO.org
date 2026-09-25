@@ -66,9 +66,10 @@ LuaSkin → LuaSwift).
     Simulator-backed tests cover every event kind, stable fan-out, removal,
     invalid payloads, semantic guards, snapshot diffing, flag precedence,
     Lua payloads, self-pinning, idempotent stop, and no callbacks after stop.
-    Focused Space/display protocol and watcher suites pass. Full verification
-    and an isolated production boot smoke are recorded with the final project
-    commit; physical Space/display lifecycle validation remains manual.
+    Focused Space/display protocol and watcher suites pass. Final ~just verify~
+    passes 1078 tests in 129 suites; an isolated production app boot reached
+    Lua initialization without crashing. Physical Space/display lifecycle
+    validation remains manual.
 
 **** Why yabai can emit these signals directly
      Source-verified against upstream yabai master at commit
