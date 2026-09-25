@@ -20,9 +20,23 @@ LuaSkin → LuaSwift).
 
 * TODO — Modernization (macOS 26 Tahoe)
 
-*** TODO Rewrite ~notify~ extension: ~NSUserNotification~ → ~UNUserNotificationCenter~
-    ~Sources/HSSwiftExtensions/Notify.swift~ (+ ~NotifyMethods.swift~).
-    Code explicitly defers migration. Complete rewrite needed.
+*** DONE Rewrite ~notify~ extension: ~NSUserNotification~ → ~UNUserNotificationCenter~
+    Completed 2026-09-25. All ~NSUserNotification~/~NSUserNotificationCenter~ usage replaced
+    with ~UNUserNotificationCenter~, routed through the DST ~NotificationProtocol~ layer.
+    Production: ~UNMutableNotificationContent~, ~UNCalendarNotificationTrigger~, per-notification
+    categories (~UNNotificationAction~/~UNTextInputNotificationAction~ for Reply), lazy
+    ~requestAuthorization~, content image as ~UNNotificationAttachment~.
+    ~MJUserNotificationManager~ is now the process-wide ~UNUserNotificationCenterDelegate~
+    (installed at AppDelegate boot, idempotent at module load), routes ~hs.notify~ responses
+    and fires MJNotification callbacks on the main run loop. Deleted ~nt_old_delegate~ NS
+    chain; module ~__gc~ no longer nils the shared UN delegate; ~withdrawAfter~ via per-gus
+    ~DispatchWorkItem~; userdata wrapper ~HSNotifyObject~ holds mutable ~UserNotification~.
+    Unsupported NS-only fields (~otherButtonTitle~, ~setIdImage~,
+    ~alwaysShowAdditionalActions~) kept as documented no-ops. Activation types stay 0-4
+    computed from ~UNNotificationResponse~. SimulatedNotification implements
+    ~presentNotification~/~activateNotification~ test hooks; DST tests never touch the real
+    UN center. Verified: ~grep NSUserNotification Sources/~ → 0 hits; full ~just verify~
+    green (1067 tests, 128 suites).
 
 *** TODO Rename the app (new name, bundle ID, branding)
 
@@ -1111,10 +1125,12 @@ LuaSkin → LuaSwift).
 
 * TODO — Remaining Build Cleanup
 
-*** TODO Replace Xcode-style ~$(VARIABLE)~ placeholders in Info.plist
-    ~CosmicHammer-Info.plist~ uses Xcode substitution syntax
-    (~$(MARKETING_VERSION)~, ~${EXECUTABLE_NAME}~, etc.) even though the
-    justfile already ~sed~-replaces them. Use a simpler template format.
+*** DONE Replace Xcode-style ~$(VARIABLE)~ placeholders in Info.plist
+    Completed 2026-09-25. ~CosmicHammer-Info.plist~ now uses ~@TOKEN@~ template markers
+    (~@MARKETING_VERSION@~, ~@EXECUTABLE_NAME@~, ~@PRODUCT_BUNDLE_IDENTIFIER@~,
+    ~@PRODUCT_NAME@~, ~@CURRENT_PROJECT_VERSION@~, ~@MACOSX_DEPLOYMENT_TARGET@~);
+    ~scripts/build/version-metadata.sh~ validates the new tokens. Verified: ~just build~
+    resolves all values, ~plutil -lint~ OK, zero leftover tokens in the built bundle.
 
 *** DONE Fix all failing tests via DST simulators
     Completed 2026-06-19.
@@ -1204,11 +1220,16 @@ LuaSkin → LuaSwift).
     - ~Menubar.swift~ — NSStatusBar.system.statusItem.
     - ~Spotlight.swift~ — NSMetadataQuery.
 
-*** TODO Remove unnecessary ~@objc~ annotations
-    482 ~@objc~ usages across ~Sources/HSSwiftExtensions/~ were required
-    by LuaSkin's ObjC runtime dispatch. Now that LuaSkin is removed,
-    most can be deleted. Keep only those needed for ObjC interop
-    (NSNotification selectors, KVO, delegate callbacks from AppKit).
+*** DONE Remove unnecessary ~@objc~ annotations
+    Completed 2026-09-25. Census: 114 ~@objc~ usages remain across
+    ~Sources/HSSwiftExtensions/~ (the 482 estimate was from the LuaSkin era; after the
+    ObjC→Swift port the majority became load-bearing). Removed the 14 verified-dead
+    annotations: ~@objc~ static funcs in ~HSuicore.swift~ (name/path/info/
+    preferredLocalizations/localizations/launchByName/launchByBundleID/orderedWindowIDs/
+    snapshot/focusedWindow — no ObjC callers remain) and ~HSGrowingTextField.resetGrowth~
+    (direct Swift call). The remaining ~100 are load-bearing: ~NSClassFromString~ class
+    renames, ~perform(Selector)~ dispatch, ~#selector~ callbacks, NSNotification selectors,
+    KVO, KVC reads in ~Console.swift~, and AppKit delegate/drag-destination methods.
 
 *** DONE Adopt LuaSwift Swift APIs in extensions → see dedicated effort
     Superseded by the dedicated top-level effort
@@ -1872,10 +1893,22 @@ LuaSkin → LuaSwift).
 
 * TODO — Architecture (design decisions needed)
 
-*** TODO Evaluate ~-all_load~ linker flag removal
-    Forces linking all ObjC symbols. Was needed for LuaSkin's
-    ~__attribute__((used))~ registration arrays. May no longer be
-    required now that LuaSkin is removed — needs investigation.
+*** DONE Evaluate ~-all_load~ linker flag removal
+    Completed 2026-09-25. Removed ~-ObjC -all_load~ from ~HSExtensions~ linkerSettings in
+    ~Package.swift~. The flag was needed for LuaSkin registration arrays (removed 2026-06);
+    keep-alive is now handled by the generated ~HSExtensionsRegisterAll~ symbol references
+    (every ~luaopen_hs_lib*~ entry is ~@_silgen_name~-imported and called). Verified:
+    build green, 843 ~luaopen~ symbols + 250 ObjC classes present in the linked binary,
+    55.7 MB binary, app boots user config without crash. No dead-stripping of extension
+    objects occurred (no ~.m~ files have zero external references; the only remaining
+    ~.m~ is ~ObjCExceptionCatch.m~ whose ~objc_tryCatch~ is ~@_silgen_name~-imported).
+    Bonus fix: the toolchain update to Swift 6.4 broke the pinned LuaSwift 1.0.0 compile
+    (~traceback ? defaultTracebackFn : nil~ C-pointer formation); pinned LuaSwift to
+    upstream fix commit ~985e19a~ (no tagged release yet). Also fixed a boot crash:
+    ~installMetatableBoilerplate~ and 29 extension ~__gc~ handlers read the userdata as an
+    ~Any~ existential box, but LuaSwift 1.0.0 stores ~T~ inline (8-byte class ref) —
+    replaced with ~Unmanaged~ class-ref release via shared ~lua_releaseUserdataObject~
+    helper.
 
 * TODO — Single-binary migration (drop .app bundle)
 :PROPERTIES:
@@ -3095,10 +3128,18 @@ LuaSkin → LuaSwift).
    ~NSEvent(cgEvent:)~ bridge cannot be simulated; ~eventtapCallback~
    receives raw CGEvent from OS.
 
-** IN-PROGRESS Phase 6: WebView — Selective (LOW risk, ~200 lines)
-   Only migrate ~10 core operations (create, navigate, eval JS, show/hide).
-   Leave unsimulated: Toolbar (1,629 lines), user content, data store,
-   navigation delegate callbacks, certificate inspection.
+** DONE Phase 6: WebView — Selective (LOW risk, ~200 lines)
+   Completed 2026-09-25. Routed 11 core webview view operations through
+   ~WebViewProtocol~: webview_new registers the created ~HSWebViewView~ via the new
+   ~registerWebView(_ view: NSView)~ protocol method (no default impl); url/title/loading/
+   stopLoading/goForward/goBack/reload/evaluateJavaScript/show/hide/alpha route through
+   ~environmentGet(L).webView~ keyed by the view ~protocolID~, with nil-ID direct fallback.
+   Window/UI operations (html, level, orders, preferences, callbacks) stay direct.
+   ~SimulatedWebView~ stores registered views as opaque tokens so DST tests exercise the
+   core-ops state machine without real WebKit. Toolbar, user content, data store,
+   navigation delegate callbacks, and certificate inspection remain unsimulated by design.
+   Verified: ~just build~ green; ~DSTWebViewPhase6~ 11/11, ~DSTWebView~ 20/20, all
+   Webview-named suites pass.
 
 ** DONE Production implementation stubs — restore original OS API calls
    The DST migration was a pure refactoring. Production stubs mean the
