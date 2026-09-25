@@ -149,5 +149,49 @@ extension CosmicHammerTests {
                 #expect(gaugeValues.last == gaugeValues.first.map { max(0, $0 - 1) })
             }
         }
+
+        @Test func spaceLifecycleWatcherDeliversTypedEventsAndStops() {
+            withModuleLoaded(luaopen_hs_libspaces_watcher) { L in
+                let saved = lua_getCurrentState()
+                lua_setCurrentState(L)
+                defer { lua_setCurrentState(saved) }
+
+                let spaces = environmentGet(L).spaces as! SimulatedSpaces
+                #expect(luaEval(L, """
+                    events = {}
+                    watcher = mod.newWithLifecycle(function(event, spaceID)
+                        table.insert(events, event .. ':' .. spaceID)
+                    end):start()
+                    """))
+
+                spaces.simulateSpaceLifecycleEvent(.init(kind: .created, spaceID: 7))
+                spaces.simulateSpaceLifecycleEvent(.init(kind: .destroyed, spaceID: 7))
+                #expect(luaEvalString(L, "return table.concat(events, ',')") ==
+                        "created:7,destroyed:7")
+
+                #expect(luaEval(L, "watcher:stop(); watcher:stop()"))
+                spaces.simulateSpaceLifecycleEvent(.init(kind: .created, spaceID: 8))
+                #expect(luaEvalString(L, "return table.concat(events, ',')") ==
+                        "created:7,destroyed:7")
+            }
+        }
+
+        @Test func multipleSpaceLifecycleWatchersFanOut() {
+            withModuleLoaded(luaopen_hs_libspaces_watcher) { L in
+                let saved = lua_getCurrentState()
+                lua_setCurrentState(L)
+                defer { lua_setCurrentState(saved) }
+
+                let spaces = environmentGet(L).spaces as! SimulatedSpaces
+                #expect(luaEval(L, """
+                    first, second = 0, 0
+                    w1 = mod.newWithLifecycle(function() first = first + 1 end):start()
+                    w2 = mod.newWithLifecycle(function() second = second + 1 end):start()
+                    """))
+                spaces.simulateSpaceLifecycleEvent(.init(kind: .created, spaceID: 9))
+                #expect(luaEvalString(L, "return first .. ':' .. second") == "1:1")
+                #expect(luaEval(L, "w1:stop(); w2:stop()"))
+            }
+        }
     }
 }

@@ -29,14 +29,23 @@ private func recordActiveScreenWatcherGauge(_ L: UnsafeMutablePointer<lua_State>
 
 // MARK: - MJScreenWatcher
 
+private enum ScreenWatcherMode {
+    case layout
+    case activeDisplay
+    case displayEvents
+}
+
 private class MJScreenWatcher: NSObject, LuaTeardownable {
     var callback: LuaValue?
-    var includeActive: Bool = false
+    var mode: ScreenWatcherMode = .layout
     var running: Bool = false
+    var selfRef: Int32 = LUA_NOREF
     var generation: UInt64 = 0
     var screenParamsToken: (any NotificationObserverToken)?
     var activeDisplayToken: (any NotificationObserverToken)?
+    var displayCallbackID: UInt64?
     weak var notificationRef: (any NotificationProtocol)?
+    weak var screenRef: (any ScreenProtocol)?
     private var tornDown = false
 
     func teardown() {
@@ -50,31 +59,46 @@ private class MJScreenWatcher: NSObject, LuaTeardownable {
     }
 
     func screensChanged(isActiveDisplayChange: Bool) {
+        invokeCallback(
+            argumentCount: mode == .activeDisplay ? 1 : 0,
+            attributes: ["screen.active_display_change": isActiveDisplayChange]
+        ) { L in
+            if mode == .activeDisplay {
+                isActiveDisplayChange ? L.push(true) : lua_pushnil(L)
+            }
+        }
+    }
+
+    func displayChanged(_ event: DisplayReconfigurationEvent) {
+        invokeCallback(
+            argumentCount: 2,
+            attributes: ["display.id": event.displayID, "display.event": event.kind.rawValue]
+        ) { L in
+            L.push(event.kind.rawValue)
+            L.push(lua_Integer(event.displayID))
+        }
+    }
+
+    private func invokeCallback(
+        argumentCount: Int32,
+        attributes: [String: Any],
+        pushArguments: (LuaState) -> Void
+    ) {
         guard !tornDown else { return }
         guard lua_isStateGenerationValid(generation) else {
             teardown()
             return
         }
-        guard let cb = callback else { return }
+        guard let callback, let L = lua_getCurrentState() else { return }
 
-        let L = lua_getCurrentState()!
-
-        let argCount: Int32 = includeActive ? 1 : 0
-
-        cb.push(onto: L)
-        if includeActive {
-            if isActiveDisplayChange {
-                L.push(true)
-            } else {
-                lua_pushnil(L)
-            }
-        }
+        callback.push(onto: L)
+        pushArguments(L)
         if luaTelemetryPCall(
             L,
-            nargs: argCount,
+            nargs: argumentCount,
             nresults: 0,
             callbackName: "hs.screen.watcher",
-            attributes: ["screen.active_display_change": isActiveDisplayChange]
+            attributes: attributes
         ) != LUA_OK {
             lua_pop(L, 1)
         }
@@ -82,24 +106,36 @@ private class MJScreenWatcher: NSObject, LuaTeardownable {
 
     func start(_ L: UnsafeMutablePointer<lua_State>) {
         guard !running else { return }
+
+        lua_pushvalue(L, 1)
+        selfRef = luaL_ref(L, LUA_REGISTRYINDEX_VALUE)
         running = true
 
-        let notif = environmentGet(L).notification
-        notificationRef = notif
-
-        screenParamsToken = notif.addObserver(
-            name: NSApplication.didChangeScreenParametersNotification.rawValue,
-            object: nil
-        ) { [weak self] _ in
-            self?.screensChanged(isActiveDisplayChange: false)
-        }
-
-        if includeActive {
-            activeDisplayToken = notif.addWorkspaceObserver(
-                name: "NSWorkspaceActiveDisplayDidChangeNotification",
+        switch mode {
+        case .layout, .activeDisplay:
+            let notification = environmentGet(L).notification
+            notificationRef = notification
+            screenParamsToken = notification.addObserver(
+                name: NSApplication.didChangeScreenParametersNotification.rawValue,
                 object: nil
             ) { [weak self] _ in
-                self?.screensChanged(isActiveDisplayChange: true)
+                self?.screensChanged(isActiveDisplayChange: false)
+            }
+            if mode == .activeDisplay {
+                activeDisplayToken = notification.addWorkspaceObserver(
+                    name: "NSWorkspaceActiveDisplayDidChangeNotification",
+                    object: nil
+                ) { [weak self] _ in
+                    self?.screensChanged(isActiveDisplayChange: true)
+                }
+            }
+        case .displayEvents:
+            let screen = environmentGet(L).screen
+            screenRef = screen
+            displayCallbackID = screen.addDisplayReconfigurationCallback { [weak self] event in
+                guard event.kind == .added || event.kind == .removed ||
+                      event.kind == .moved || event.kind == .resized else { return }
+                self?.displayChanged(event)
             }
         }
 
@@ -110,6 +146,10 @@ private class MJScreenWatcher: NSObject, LuaTeardownable {
     func stop(_ L: UnsafeMutablePointer<lua_State>? = lua_getCurrentState()) {
         guard running else { return }
         running = false
+        if let L, selfRef != LUA_NOREF {
+            luaL_unref(L, LUA_REGISTRYINDEX_VALUE, selfRef)
+            selfRef = LUA_NOREF
+        }
         if let token = screenParamsToken {
             notificationRef?.removeObserver(token)
             screenParamsToken = nil
@@ -118,6 +158,12 @@ private class MJScreenWatcher: NSObject, LuaTeardownable {
             notificationRef?.removeObserver(token)
             activeDisplayToken = nil
         }
+        if let callbackID = displayCallbackID {
+            _ = screenRef?.removeDisplayReconfigurationCallback(id: callbackID)
+            displayCallbackID = nil
+        }
+        screenRef = nil
+
         activeScreenWatcherCount = max(0, activeScreenWatcherCount - 1)
         recordActiveScreenWatcherGauge(L)
     }
@@ -154,7 +200,7 @@ public func luaopen_hs_libscreenwatcher(_ L: UnsafeMutablePointer<lua_State>!) -
         installMetatableBoilerplate(L, for: MJScreenWatcher.self, tag: USERDATA_TAG)
 
         // Create module table
-        lua_createtable(L, 0, 2)
+        lua_createtable(L, 0, 3)
 
         /// hs.screen.watcher.new(fn) -> watcher
         /// Constructor
@@ -176,7 +222,7 @@ public func luaopen_hs_libscreenwatcher(_ L: UnsafeMutablePointer<lua_State>!) -
             let watcher = MJScreenWatcher()
             watcher.callback = cb
             watcher.generation = lua_currentStateGeneration()
-            watcher.includeActive = false
+            watcher.mode = .layout
 
             L.push(userdata: watcher)
 
@@ -208,12 +254,36 @@ public func luaopen_hs_libscreenwatcher(_ L: UnsafeMutablePointer<lua_State>!) -
             let watcher = MJScreenWatcher()
             watcher.callback = cb
             watcher.generation = lua_currentStateGeneration()
-            watcher.includeActive = true
+            watcher.mode = .activeDisplay
 
             L.push(userdata: watcher)
 
             return 1
         }
         lua_setfield(L, -2, "newWithActiveScreen")
+
+        /// hs.screen.watcher.newWithDisplayEvents(fn) -> watcher
+        /// Constructor
+        /// Creates a watcher for granular display reconfiguration events.
+        ///
+        /// Parameters:
+        ///  * fn - A function receiving `event` (`"added"`, `"removed"`, `"moved"`, or `"resized"`) and the ephemeral display ID.
+        ///
+        /// Returns:
+        ///  * An `hs.screen.watcher` object
+        ///
+        /// Notes:
+        ///  * CoreGraphics can emit multi-flag before/after bursts. This watcher reports one event per accepted after-change callback; re-query `hs.screen.allScreens()` for current topology.
+        L.push { (L: LuaState) throws -> CInt in
+            luaL_checktype(L, 1, LUA_TFUNCTION)
+
+            let watcher = MJScreenWatcher()
+            watcher.callback = L.ref(index: 1)
+            watcher.generation = lua_currentStateGeneration()
+            watcher.mode = .displayEvents
+            L.push(userdata: watcher)
+            return 1
+        }
+        lua_setfield(L, -2, "newWithDisplayEvents")
     }
 }

@@ -25,12 +25,20 @@ private func recordActiveSpacesWatcherGauge(_ L: UnsafeMutablePointer<lua_State>
 
 // MARK: - SpaceWatcher Class
 
+private enum SpaceWatcherMode {
+    case active
+    case lifecycle
+}
+
 private class SpaceWatcher: NSObject, LuaTeardownable {
     var callback: LuaValue?
+    var mode: SpaceWatcherMode = .active
     var running: Bool = false
     var selfRef: Int32 = LUA_NOREF
     var generation: UInt64 = 0
     var observerToken: (any NotificationObserverToken)?
+    var lifecycleCallbackID: UInt64?
+    weak var spacesRef: (any SpacesProtocol)?
     private var tornDown = false
 
     func teardown() {
@@ -42,27 +50,44 @@ private class SpaceWatcher: NSObject, LuaTeardownable {
         callback = nil
     }
 
-    // Call the lua callback function.
-    func callbackFired(dict: NSDictionary?, space: Int32) {
+    func callbackFired(space: Int) {
+        invokeCallback(argumentCount: 1, attributes: ["space.id": space]) { L in
+            L.push(lua_Integer(space))
+        }
+    }
+
+    func lifecycleCallbackFired(_ event: SpaceLifecycleEvent) {
+        invokeCallback(
+            argumentCount: 2,
+            attributes: ["space.id": event.spaceID, "space.event": event.kind.rawValue]
+        ) { L in
+            L.push(event.kind.rawValue)
+            L.push(lua_Integer(event.spaceID))
+        }
+    }
+
+    private func invokeCallback(
+        argumentCount: Int32,
+        attributes: [String: Any],
+        pushArguments: (LuaState) -> Void
+    ) {
         guard !tornDown else { return }
         guard lua_isStateGenerationValid(generation) else {
             teardown()
             return
         }
-        if let cb = callback {
-            let L = lua_getCurrentState()!
+        guard let callback, let L = lua_getCurrentState() else { return }
 
-            cb.push(onto: L)
-            L.push(lua_Integer(space))
-            if luaTelemetryPCall(
-                L,
-                nargs: 1,
-                nresults: 0,
-                callbackName: "hs.spaces.watcher",
-                attributes: ["space.id": space]
-            ) != LUA_OK {
-                lua_pop(L, 1)
-            }
+        callback.push(onto: L)
+        pushArguments(L)
+        if luaTelemetryPCall(
+            L,
+            nargs: argumentCount,
+            nresults: 0,
+            callbackName: "hs.spaces.watcher",
+            attributes: attributes
+        ) != LUA_OK {
+            lua_pop(L, 1)
         }
     }
 
@@ -75,14 +100,20 @@ private class SpaceWatcher: NSObject, LuaTeardownable {
         running = true
 
         let spacesService = environmentGet(L).spaces
-        observerToken = environmentGet(L).notification.addWorkspaceObserver(
-            name: NSWorkspace.activeSpaceDidChangeNotification.rawValue,
-            object: nil
-        ) { [weak self] userInfo in
-            guard let self = self else { return }
-            let spaceID = spacesService.activeSpace() ?? -1
-            let currentSpace = Int32(clamping: spaceID)
-            self.callbackFired(dict: userInfo as NSDictionary, space: currentSpace)
+        spacesRef = spacesService
+        switch mode {
+        case .active:
+            observerToken = environmentGet(L).notification.addWorkspaceObserver(
+                name: NSWorkspace.activeSpaceDidChangeNotification.rawValue,
+                object: nil
+            ) { [weak self] _ in
+                guard let self else { return }
+                self.callbackFired(space: spacesService.activeSpace() ?? -1)
+            }
+        case .lifecycle:
+            lifecycleCallbackID = spacesService.addSpaceLifecycleCallback { [weak self] event in
+                self?.lifecycleCallbackFired(event)
+            }
         }
 
         activeSpacesWatcherCount += 1
@@ -105,6 +136,12 @@ private class SpaceWatcher: NSObject, LuaTeardownable {
             }
             observerToken = nil
         }
+        if let callbackID = lifecycleCallbackID {
+            _ = spacesRef?.removeSpaceLifecycleCallback(id: callbackID)
+            lifecycleCallbackID = nil
+        }
+        spacesRef = nil
+
 
         activeSpacesWatcherCount = max(0, activeSpacesWatcherCount - 1)
         recordActiveSpacesWatcherGauge(L)
@@ -142,7 +179,7 @@ public func luaopen_hs_libspaces_watcher(_ L: UnsafeMutablePointer<lua_State>!) 
         installMetatableBoilerplate(L, for: SpaceWatcher.self, tag: USERDATA_TAG)
 
         // Create module table
-        lua_createtable(L, 0, 1)
+        lua_createtable(L, 0, 2)
 
         /// hs.spaces.watcher.new(handler) -> watcher
         /// Constructor
@@ -167,5 +204,29 @@ public func luaopen_hs_libspaces_watcher(_ L: UnsafeMutablePointer<lua_State>!) 
             return 1
         }
         lua_setfield(L, -2, "new")
+
+        /// hs.spaces.watcher.newWithLifecycle(handler) -> watcher
+        /// Constructor
+        /// Creates a watcher for Space creation and destruction events.
+        ///
+        /// Parameters:
+        ///  * handler - A function receiving `event` (`"created"` or `"destroyed"`) and the ephemeral numeric Space ID.
+        ///
+        /// Returns:
+        ///  * An `hs.spaces.watcher` object
+        ///
+        /// Notes:
+        ///  * This experimental API uses private SkyLight notifications plus topology-diff fallback. Re-query `hs.spaces.allSpaces()` for current topology.
+        L.push { (L: LuaState) throws -> CInt in
+            luaL_checktype(L, 1, LUA_TFUNCTION)
+
+            let watcher = SpaceWatcher()
+            watcher.callback = L.ref(index: 1)
+            watcher.generation = lua_currentStateGeneration()
+            watcher.mode = .lifecycle
+            L.push(userdata: watcher)
+            return 1
+        }
+        lua_setfield(L, -2, "newWithLifecycle")
     }
 }
