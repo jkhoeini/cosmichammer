@@ -21,7 +21,7 @@ import Cocoa
         invalidateIntrinsicContentSize()
     }
 
-    @objc public func resetGrowth() {
+    public func resetGrowth() {
         hasLastIntrinsicSize = false
         invalidateIntrinsicContentSize()
     }

@@ -456,40 +456,40 @@ private let watcherCallback: AXObserverCallback = { _, element, notificationName
         return HSapplication(pid: thePID, withState: L)
     }
 
-    @objc static func name(forBundleID bundleID: String) -> String? {
+    static func name(forBundleID bundleID: String) -> String? {
         guard let path = Self.path(forBundleID: bundleID),
               let bundle = Bundle(path: path) else { return nil }
         return bundle.object(forInfoDictionaryKey: kCFBundleNameKey as String) as? String
     }
 
-    @objc static func path(forBundleID bundleID: String) -> String? {
+    static func path(forBundleID bundleID: String) -> String? {
         NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID)?.path
     }
 
-    @objc static func info(forBundleID bundleID: String) -> NSDictionary? {
+    static func info(forBundleID bundleID: String) -> NSDictionary? {
         guard let path = Self.path(forBundleID: bundleID) else { return nil }
         return Self.info(forBundlePath: path)
     }
 
-    @objc static func info(forBundlePath bundlePath: String) -> NSDictionary? {
+    static func info(forBundlePath bundlePath: String) -> NSDictionary? {
         Bundle(path: bundlePath)?.infoDictionary as NSDictionary?
     }
 
-    @objc static func preferredLocalizations(forBundleID bundleID: String) -> [String]? {
+    static func preferredLocalizations(forBundleID bundleID: String) -> [String]? {
         guard let path = Self.path(forBundleID: bundleID) else { return nil }
         return Self.preferredLocalizations(forBundlePath: path)
     }
 
-    @objc static func preferredLocalizations(forBundlePath bundlePath: String) -> [String]? {
+    static func preferredLocalizations(forBundlePath bundlePath: String) -> [String]? {
         Bundle(path: bundlePath)?.preferredLocalizations
     }
 
-    @objc static func localizations(forBundleID bundleID: String) -> [String]? {
+    static func localizations(forBundleID bundleID: String) -> [String]? {
         guard let path = Self.path(forBundleID: bundleID) else { return nil }
         return Self.localizations(forBundlePath: path)
     }
 
-    @objc static func localizations(forBundlePath bundlePath: String) -> [String]? {
+    static func localizations(forBundlePath bundlePath: String) -> [String]? {
         Bundle(path: bundlePath)?.localizations
     }
 
@@ -506,11 +506,11 @@ private let watcherCallback: AXObserverCallback = { _, element, notificationName
         }
     }
 
-    @objc static func launchByName(_ name: String) -> Bool {
+    static func launchByName(_ name: String) -> Bool {
         NSWorkspace.shared.launchApplication(name)
     }
 
-    @objc static func launchByBundleID(_ bundleID: String) -> Bool {
+    static func launchByBundleID(_ bundleID: String) -> Bool {
         NSWorkspace.shared.launchApplication(
             withBundleIdentifier: bundleID,
             options: [],
@@ -672,7 +672,7 @@ private let watcherCallback: AXObserverCallback = { _, element, notificationName
 
     // MARK: Class methods
 
-    @objc static func orderedWindowIDs() -> [NSNumber] {
+    static func orderedWindowIDs() -> [NSNumber] {
         guard let wins = _CGWindowListCreate([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) else {
             os_log(.default, "BREADCRUMB: hs.window._orderedwinids CGWindowListCreate returned NULL")
             return []
@@ -691,7 +691,7 @@ private let watcherCallback: AXObserverCallback = { _, element, notificationName
         return result
     }
 
-    @objc static func snapshot(forID windowID: CGWindowID, keepTransparency: Bool) -> NSImage? {
+    static func snapshot(forID windowID: CGWindowID, keepTransparency: Bool) -> NSImage? {
         let imageOption: CGWindowImageOption = keepTransparency ? [] : .shouldBeOpaque
         let windowRect = CGRect.null
         guard let windowImage = hs_CGWindowListCreateImage?(
@@ -702,7 +702,7 @@ private let watcherCallback: AXObserverCallback = { _, element, notificationName
         return NSImage(cgImage: windowImage, size: windowRect.size)
     }
 
-    @objc static func focusedWindow() -> HSwindow? {
+    static func focusedWindow() -> HSwindow? {
         var appRef: CFTypeRef?
         AXUIElementCopyAttributeValue(systemWideElement(), kAXFocusedApplicationAttribute as CFString, &appRef)
         guard let appRef = appRef else { return nil }
