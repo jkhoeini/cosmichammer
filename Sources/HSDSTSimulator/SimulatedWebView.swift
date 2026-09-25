@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import HSDSTCore
 
@@ -10,6 +11,9 @@ public final class SimulatedWebView: WebViewProtocol {
     public var navigationHistory: [(webViewID: UInt64, action: WebViewNavigationAction)] = []
     public var userScripts: [UInt64: [(script: String, injectionTime: Int, forMainFrameOnly: Bool)]] = [:]
     public var navigationCallbacks: [UInt64: (String, String) -> Void] = [:]
+    /// NSViews registered via registerWebView, keyed by protocol ID. Opaque tokens only —
+    /// the simulator never touches the real WebKit.
+    public var registeredViews: [UInt64: NSView] = [:]
 
     private var nextID: UInt64 = 1
 
@@ -26,8 +30,19 @@ public final class SimulatedWebView: WebViewProtocol {
         return id
     }
 
+    public func registerWebView(_ view: NSView) -> UInt64 {
+        // Store the NSView as an opaque token; the simulator never touches WebKit.
+        let id = nextID
+        nextID += 1
+        registeredViews[id] = view
+        webViews[id] = WebViewHandle(id: id)
+        userScripts[id] = []
+        return id
+    }
+
     public func destroyWebView(id: UInt64) -> Bool {
         guard webViews.removeValue(forKey: id) != nil else { return false }
+        registeredViews.removeValue(forKey: id)
         userScripts.removeValue(forKey: id)
         navigationCallbacks.removeValue(forKey: id)
         return true

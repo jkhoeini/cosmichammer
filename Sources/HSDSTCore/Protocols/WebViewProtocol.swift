@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 
 public struct WebViewHandle: Sendable {
@@ -38,6 +39,9 @@ public enum WebViewNavigationAction: Sendable {
 
 public protocol WebViewProtocol: AnyObject {
     func createWebView(frame: (x: Double, y: Double, width: Double, height: Double)) -> UInt64
+    /// Registers an externally created NSView (e.g. an HSWebViewView owned by the Lua
+    /// userdata model) with the protocol layer and returns its protocol ID.
+    func registerWebView(_ view: NSView) -> UInt64
     func destroyWebView(id: UInt64) -> Bool
     func navigate(webViewID: UInt64, action: WebViewNavigationAction) -> Bool
     func evaluateJavaScript(webViewID: UInt64, script: String) -> String?

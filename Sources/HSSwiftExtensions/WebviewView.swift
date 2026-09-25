@@ -19,6 +19,9 @@ class HSWebViewView: WKWebView, WKNavigationDelegate, WKUIDelegate {
     var examineInvalidCertificates: Bool = false
     var trackingID: WKNavigation?
     var generation: UInt64 = 0
+    /// Protocol-layer ID assigned when the view is registered with the WebViewProtocol
+    /// (see webview_new). Routes core view operations through the protocol in DST mode.
+    var protocolID: UInt64?
 
     override init(frame frameRect: NSRect, configuration: WKWebViewConfiguration) {
         super.init(frame: frameRect, configuration: configuration)

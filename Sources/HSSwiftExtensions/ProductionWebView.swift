@@ -7,9 +7,17 @@ final class ProductionWebView: WebViewProtocol {
     private var webViews: [UInt64: WebViewState] = [:]
 
     private class WebViewState: NSObject, WKNavigationDelegate {
-        let window: NSWindow
+        let window: NSWindow?
         let webView: WKWebView
         var navigationCallback: ((String, String) -> Void)?
+
+        init(webView: WKWebView) {
+            // Externally registered view (registerWebView) — the Lua model owns its window.
+            self.window = nil
+            self.webView = webView
+            super.init()
+            webView.navigationDelegate = self
+        }
 
         init(frame: NSRect) {
             let config = WKWebViewConfiguration()
@@ -23,7 +31,7 @@ final class ProductionWebView: WebViewProtocol {
                 styleMask: [.titled, .closable, .miniaturizable, .resizable],
                 backing: .buffered,
                 defer: false)
-            window.contentView = webView
+            window?.contentView = webView
             super.init()
             webView.navigationDelegate = self
         }
@@ -54,10 +62,24 @@ final class ProductionWebView: WebViewProtocol {
         return id
     }
 
+    func registerWebView(_ view: NSView) -> UInt64 {
+        guard let webView = view as? WKWebView else {
+            // Unregistrable view type: allocate an ID with no backing state so
+            // core operations no-op through the standard missing-ID paths.
+            let id = nextID
+            nextID += 1
+            return id
+        }
+        let id = nextID
+        nextID += 1
+        webViews[id] = WebViewState(webView: webView)
+        return id
+    }
+
     func destroyWebView(id: UInt64) -> Bool {
         guard let state = webViews.removeValue(forKey: id) else { return false }
         state.webView.stopLoading()
-        state.window.close()
+        state.window?.close()
         return true
     }
 
@@ -115,7 +137,7 @@ final class ProductionWebView: WebViewProtocol {
                   frame: (x: Double, y: Double, width: Double, height: Double)) -> Bool
     {
         guard let state = webViews[webViewID] else { return false }
-        state.window.setFrame(
+        state.window?.setFrame(
             NSRect(x: frame.x, y: frame.y, width: frame.width, height: frame.height),
             display: true)
         return true
@@ -123,19 +145,19 @@ final class ProductionWebView: WebViewProtocol {
 
     func show(webViewID: UInt64) -> Bool {
         guard let state = webViews[webViewID] else { return false }
-        state.window.orderFront(nil)
+        state.window?.orderFront(nil)
         return true
     }
 
     func hide(webViewID: UInt64) -> Bool {
         guard let state = webViews[webViewID] else { return false }
-        state.window.orderOut(nil)
+        state.window?.orderOut(nil)
         return true
     }
 
     func setAlpha(webViewID: UInt64, alpha: Double) -> Bool {
         guard let state = webViews[webViewID] else { return false }
-        state.window.alphaValue = CGFloat(alpha)
+        state.window?.alphaValue = CGFloat(alpha)
         return true
     }
 
